@@ -64,14 +64,6 @@ function generateCSV(bikelanes, history, unit) {
   lines.push(`${formatNum(convert(bikelanes.totals.miles))}`);
   lines.push('');
 
-  // By County
-  lines.push('BY COUNTY');
-  lines.push(`County,${unitLabel}`);
-  for (const [countyName, county] of Object.entries(bikelanes.counties)) {
-    lines.push(`${escapeCSV(countyName)},${formatNum(convert(county.totalMiles))}`);
-  }
-  lines.push('');
-
   // By Class
   lines.push('BY BIKE LANE CLASS');
   lines.push(`Class,${unitLabel}`);
@@ -80,22 +72,23 @@ function generateCSV(bikelanes, history, unit) {
   }
   lines.push('');
 
-  // County Details - By Class
-  for (const [countyName, county] of Object.entries(bikelanes.counties)) {
-    lines.push(`COUNTY DETAILS - ${countyName.toUpperCase()}`);
-    lines.push(`Class,${unitLabel}`);
-    for (const item of county.byClass) {
-      lines.push(`${escapeCSV(item.className)},${formatNum(convert(item.miles))}`);
-    }
-    lines.push('');
-  }
-
-  // City Details
+  // City Details with class breakdown (bike lanes are administered by cities)
   for (const [countyName, county] of Object.entries(bikelanes.counties)) {
     lines.push(`CITIES - ${countyName.toUpperCase()} COUNTY`);
-    lines.push(`City,${unitLabel}`);
+    lines.push(`City,Class I,Class II,Class III,Class IV,Total`);
     for (const city of county.byCity) {
-      lines.push(`${escapeCSV(city.name)},${formatNum(convert(city.miles))}`);
+      const class1 = city.byClass.find(c => c.class === 1);
+      const class2 = city.byClass.find(c => c.class === 2);
+      const class3 = city.byClass.find(c => c.class === 3);
+      const class4 = city.byClass.find(c => c.class === 4);
+      lines.push([
+        escapeCSV(city.name),
+        class1 ? formatNum(convert(class1.miles)) : '',
+        class2 ? formatNum(convert(class2.miles)) : '',
+        class3 ? formatNum(convert(class3.miles)) : '',
+        class4 ? formatNum(convert(class4.miles)) : '',
+        formatNum(convert(city.miles))
+      ].join(','));
     }
     lines.push('');
   }

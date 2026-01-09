@@ -1,12 +1,14 @@
 /**
  * Fetches bike lane data from MTC Regional Bike Facilities API
  * Aggregates by county, city, and bike lane class type
+ * Supplements with city-level data for Class IV (separated bikeways)
  * Appends to history.json when running in CI environment
  */
 
 const fs = require('fs');
 const path = require('path');
 const { getCityBoundaries, findCityForPoint, getPolylineMidpoint } = require('./cityBoundaries');
+const { getSupplementalData } = require('./supplementalSources');
 
 // County bounding boxes (approximate, WGS84)
 // Source: US Census TIGER/Line data
@@ -143,11 +145,13 @@ function aggregateByClass(features) {
 
 /**
  * Aggregate features by city using spatial intersection
+ * Includes class breakdown per city
  */
 function aggregateByCity(features, cityBoundaries, countyName) {
   const byCity = {};
 
   for (const feature of features) {
+    const classType = feature.attributes.class;
     const miles = calculatePolylineLength(feature.geometry.paths);
     const midpoint = getPolylineMidpoint(feature.geometry.paths);
 
@@ -164,19 +168,38 @@ function aggregateByCity(features, cityBoundaries, countyName) {
       byCity[cityName] = {
         name: cityName,
         miles: 0,
-        segments: 0
+        segments: 0,
+        byClass: {}
       };
     }
 
     byCity[cityName].miles += miles;
     byCity[cityName].segments += 1;
+
+    // Track by class within city
+    if (!byCity[cityName].byClass[classType]) {
+      byCity[cityName].byClass[classType] = {
+        class: classType,
+        className: CLASS_NAMES[classType] || `Class ${classType}`,
+        miles: 0,
+        segments: 0
+      };
+    }
+    byCity[cityName].byClass[classType].miles += miles;
+    byCity[cityName].byClass[classType].segments += 1;
   }
 
-  // Round miles and sort by miles (descending)
+  // Round miles and convert byClass to sorted array
   return Object.values(byCity)
-    .map(item => ({
-      ...item,
-      miles: Math.round(item.miles * 100) / 100
+    .map(city => ({
+      ...city,
+      miles: Math.round(city.miles * 100) / 100,
+      byClass: Object.values(city.byClass)
+        .map(item => ({
+          ...item,
+          miles: Math.round(item.miles * 100) / 100
+        }))
+        .sort((a, b) => a.class - b.class)
     }))
     .sort((a, b) => b.miles - a.miles);
 }
@@ -245,6 +268,75 @@ module.exports = async function() {
     }
   }
 
+  // Fetch supplemental Class IV data from city sources
+  const supplemental = await getSupplementalData();
+
+  // Merge supplemental Class IV data
+  for (const [countyName, countySupp] of Object.entries(supplemental.counties)) {
+    if (results.counties[countyName]) {
+      // Add Class IV to county byClass if not present
+      const hasClass4 = results.counties[countyName].byClass.some(c => c.class === 4);
+      if (!hasClass4 && countySupp.totalClass4Miles > 0) {
+        results.counties[countyName].byClass.push({
+          class: 4,
+          className: CLASS_NAMES[4],
+          miles: countySupp.totalClass4Miles,
+          segments: 0, // Not tracked at segment level from supplemental
+          source: 'Supplemental city data',
+          supplemental: true
+        });
+        results.counties[countyName].byClass.sort((a, b) => a.class - b.class);
+
+        // Update county total
+        results.counties[countyName].totalMiles = Math.round(
+          (results.counties[countyName].totalMiles + countySupp.totalClass4Miles) * 100
+        ) / 100;
+
+        // Add to grand totals
+        results.totals.miles += countySupp.totalClass4Miles;
+
+        // Add to totals byClass
+        if (!results.totals.byClass[4]) {
+          results.totals.byClass[4] = {
+            class: 4,
+            className: CLASS_NAMES[4],
+            miles: 0,
+            segments: 0,
+            supplemental: true
+          };
+        }
+        results.totals.byClass[4].miles += countySupp.totalClass4Miles;
+      }
+
+      // Add supplemental city data to city-level byClass arrays
+      for (const [cityName, cityData] of Object.entries(countySupp.cities)) {
+        const cityEntry = results.counties[countyName].byCity.find(c => c.name === cityName);
+        if (cityEntry && cityData.class4) {
+          // Add Class IV to city's byClass array
+          const hasClass4 = cityEntry.byClass.some(c => c.class === 4);
+          if (!hasClass4) {
+            cityEntry.byClass.push({
+              class: 4,
+              className: CLASS_NAMES[4],
+              miles: cityData.class4.miles,
+              segments: cityData.class4.segments,
+              source: cityData.class4.source,
+              sourceUrl: cityData.class4.sourceUrl,
+              supplemental: true
+            });
+            cityEntry.byClass.sort((a, b) => a.class - b.class);
+
+            // Update city total miles
+            cityEntry.miles = Math.round((cityEntry.miles + cityData.class4.miles) * 100) / 100;
+          }
+        }
+      }
+    }
+  }
+
+  // Store supplemental sources for display
+  results.supplementalSources = supplemental.sources;
+
   // Round and convert totals
   results.totals.miles = Math.round(results.totals.miles * 100) / 100;
   results.totals.byClass = Object.values(results.totals.byClass)
@@ -254,7 +346,7 @@ module.exports = async function() {
     }))
     .sort((a, b) => a.class - b.class);
 
-  console.log(`Total: ${results.totals.segments} segments, ${results.totals.miles} miles`);
+  console.log(`Total: ${results.totals.segments} segments, ${results.totals.miles} miles (including supplemental Class IV)`);
 
   // Append to history if running in CI environment
   const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';

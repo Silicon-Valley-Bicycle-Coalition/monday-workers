@@ -4,7 +4,7 @@ title: Home
 permalink: /
 ---
 
-<h1>Bike Lanes in the Bay Area</h1>
+<h1>Silicon Valley Bicycle Coalition Bike Lanes</h1>
 
 <p>Tracking bicycle infrastructure in San Mateo and Santa Clara Counties.</p>
 
@@ -17,95 +17,42 @@ permalink: /
       <span class="stat-alt">({{ bikelanes.totals.miles | formatDistance('km') | safe }} kilometers)</span>
     </div>
   </div>
-</section>
-
-<section>
-  <h2>By County</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>County</th>
-        <th>Miles</th>
-        <th>Kilometers</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for countyName, county in bikelanes.counties %}
-      <tr>
-        <td>{{ countyName }}</td>
-        <td data-label="Miles">{{ county.totalMiles | formatDistance('mi') | safe }}</td>
-        <td data-label="Kilometers">{{ county.totalMiles | formatDistance('km') | safe }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<section>
-  <h2>By Bike Lane Class</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Class</th>
-        <th>Miles</th>
-        <th>Kilometers</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in bikelanes.totals.byClass %}
-      <tr>
-        <td>{{ item.className }}</td>
-        <td data-label="Miles">{{ item.miles | formatDistance('mi') | safe }}</td>
-        <td data-label="Kilometers">{{ item.miles | formatDistance('km') | safe }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<section>
-  <h2>County Details</h2>
-  {% for countyName, county in bikelanes.counties %}
-  <h3>{{ countyName }} County</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Class</th>
-        <th>Miles</th>
-        <th>Kilometers</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in county.byClass %}
-      <tr>
-        <td>{{ item.className }}</td>
-        <td data-label="Miles">{{ item.miles | formatDistance('mi') | safe }}</td>
-        <td data-label="Kilometers">{{ item.miles | formatDistance('km') | safe }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endfor %}
+  <h3>By Class</h3>
+  <div class="stat-cards stat-cards-grid">
+    {% for item in bikelanes.totals.byClass %}
+    <div class="stat-card">
+      <span class="stat-value">{{ item.miles | formatDistance('mi') | safe }}</span>
+      <span class="stat-label">{{ item.className }}{% if item.supplemental %}<span class="source-badge" title="Data from supplemental city sources">*</span>{% endif %}</span>
+      <span class="stat-alt">({{ item.miles | formatDistance('km') | safe }} km)</span>
+    </div>
+    {% endfor %}
+  </div>
 </section>
 
 <section>
   <h2>By City</h2>
   {% for countyName, county in bikelanes.counties %}
   <h3>{{ countyName }} County</h3>
-  <table>
+  <table class="city-class-table">
     <thead>
       <tr>
         <th>City</th>
-        <th>Miles</th>
-        <th>Kilometers</th>
+        <th>Class I</th>
+        <th>Class II</th>
+        <th>Class III</th>
+        <th>Class IV</th>
+        <th>Total</th>
       </tr>
     </thead>
     <tbody>
       {% for city in county.byCity %}
       <tr>
         <td>{{ city.name }}</td>
-        <td data-label="Miles">{{ city.miles | formatDistance('mi') | safe }}</td>
-        <td data-label="Kilometers">{{ city.miles | formatDistance('km') | safe }}</td>
+        <td data-label="Class I">{{ city | cityClassMiles(1) | safe }}</td>
+        <td data-label="Class II">{{ city | cityClassMiles(2) | safe }}</td>
+        <td data-label="Class III">{{ city | cityClassMiles(3) | safe }}</td>
+        <td data-label="Class IV">{{ city | cityClassMiles(4) | safe }}</td>
+        <td data-label="Total">{{ city.miles | formatDistance('mi') | safe }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -159,8 +106,16 @@ permalink: /
     <li><strong>Class I - Bike Path:</strong> Separate paved paths for bicycles and pedestrians, physically separated from motor vehicle traffic</li>
     <li><strong>Class II - Bike Lane:</strong> Striped lanes on streets designated for bicycle use</li>
     <li><strong>Class III - Bike Route:</strong> Shared roadways with signage indicating bicycle routes</li>
+    <li><strong>Class IV - Separated Bikeway:</strong> Protected bike lanes with physical separation from motor vehicle traffic (cycle tracks)</li>
   </ul>
-  <p><small>Data is refreshed weekly. Historical tracking began when this site was launched.</small></p>
+  <h3>Data Sources</h3>
+  <p>The MTC regional dataset does not currently include Class IV separated bikeways. To provide complete data, Class IV facilities are supplemented from city-level open data sources:</p>
+  <ul>
+    {% for source in bikelanes.supplementalSources %}
+    <li><a href="{{ source.url }}">{{ source.name }}</a> — {{ source.coverage }} {{ source.dataType }}</li>
+    {% endfor %}
+  </ul>
+  <p><small>Items marked with * indicate data from supplemental city sources. Data is refreshed weekly. Historical tracking began when this site was launched.</small></p>
 </section>
 
 <footer class="data-info">
