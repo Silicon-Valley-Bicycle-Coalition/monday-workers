@@ -219,6 +219,20 @@ section {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
 }
 
+.stat-card-large {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 2rem 3rem;
+}
+
+.stat-card-large .stat-value {
+  font-size: 3.5rem;
+}
+
+.stat-card-large .stat-label {
+  font-size: 1rem;
+}
+
 .stat-value {
   display: block;
   font-size: 2.5rem;
@@ -359,9 +373,12 @@ footer p:last-child {
   margin-bottom: 0;
 }
 
-/* Download button */
-.download-link {
-  margin-top: 1rem !important;
+/* Download buttons */
+.download-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .btn-download {
@@ -416,6 +433,10 @@ footer p:last-child {
     font-size: 2rem;
   }
 
+  .stat-card-large .stat-value {
+    font-size: 3rem;
+  }
+
   th, td {
     padding: 0.75rem;
   }
@@ -444,8 +465,16 @@ footer p:last-child {
     padding: 1rem;
   }
 
+  .stat-card-large {
+    padding: 1.5rem 2rem;
+  }
+
   .stat-value {
     font-size: 1.75rem;
+  }
+
+  .stat-card-large .stat-value {
+    font-size: 2.5rem;
   }
 }
 

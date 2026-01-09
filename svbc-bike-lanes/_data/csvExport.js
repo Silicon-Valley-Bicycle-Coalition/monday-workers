@@ -47,7 +47,6 @@ function escapeCSV(field) {
 function generateCSV(bikelanes, history, unit) {
   const isKm = unit === 'km';
   const unitLabel = isKm ? 'Kilometers' : 'Miles';
-  const unitShort = isKm ? 'km' : 'mi';
   const convert = (miles) => isKm ? miles * MI_TO_KM : miles;
 
   const lines = [];
@@ -60,33 +59,33 @@ function generateCSV(bikelanes, history, unit) {
   lines.push('');
 
   // Regional Totals
-  lines.push('REGIONAL TOTALS');
-  lines.push(`Total ${unitLabel},Segments`);
-  lines.push(`${formatNum(convert(bikelanes.totals.miles))},${bikelanes.totals.segments}`);
+  lines.push('REGIONAL TOTAL');
+  lines.push(`Total ${unitLabel}`);
+  lines.push(`${formatNum(convert(bikelanes.totals.miles))}`);
   lines.push('');
 
   // By County
   lines.push('BY COUNTY');
-  lines.push(`County,Total ${unitLabel},Segments`);
+  lines.push(`County,${unitLabel}`);
   for (const [countyName, county] of Object.entries(bikelanes.counties)) {
-    lines.push(`${escapeCSV(countyName)},${formatNum(convert(county.totalMiles))},${county.totalSegments}`);
+    lines.push(`${escapeCSV(countyName)},${formatNum(convert(county.totalMiles))}`);
   }
   lines.push('');
 
   // By Class
   lines.push('BY BIKE LANE CLASS');
-  lines.push(`Class,Total ${unitLabel},Segments`);
+  lines.push(`Class,${unitLabel}`);
   for (const item of bikelanes.totals.byClass) {
-    lines.push(`${escapeCSV(item.className)},${formatNum(convert(item.miles))},${item.segments}`);
+    lines.push(`${escapeCSV(item.className)},${formatNum(convert(item.miles))}`);
   }
   lines.push('');
 
   // County Details
   for (const [countyName, county] of Object.entries(bikelanes.counties)) {
     lines.push(`COUNTY DETAILS - ${countyName.toUpperCase()}`);
-    lines.push(`Class,${unitLabel},Segments`);
+    lines.push(`Class,${unitLabel}`);
     for (const item of county.byClass) {
-      lines.push(`${escapeCSV(item.className)},${formatNum(convert(item.miles))},${item.segments}`);
+      lines.push(`${escapeCSV(item.className)},${formatNum(convert(item.miles))}`);
     }
     lines.push('');
   }

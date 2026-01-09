@@ -16,15 +16,11 @@ permalink: "{{ currentUnit.path }}"
 <p>Tracking bicycle infrastructure in San Mateo and Santa Clara Counties.</p>
 
 <section class="summary">
-  <h2>Regional Totals</h2>
+  <h2>Regional Total</h2>
   <div class="stat-cards">
-    <div class="stat-card">
+    <div class="stat-card stat-card-large">
       <span class="stat-value">{{ bikelanes.totals.miles | formatDistance(unit) }}</span>
-      <span class="stat-label">Total {{ unitLabel | capitalize }}</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-value">{{ bikelanes.totals.segments | localeNumber }}</span>
-      <span class="stat-label">Segments</span>
+      <span class="stat-label">{{ unitLabel }} of Bike Lanes</span>
     </div>
   </div>
 </section>
@@ -35,16 +31,14 @@ permalink: "{{ currentUnit.path }}"
     <thead>
       <tr>
         <th>County</th>
-        <th>Total {{ unitLabel | capitalize }}</th>
-        <th>Segments</th>
+        <th>{{ unitLabel | capitalize }}</th>
       </tr>
     </thead>
     <tbody>
       {% for countyName, county in bikelanes.counties %}
       <tr>
         <td>{{ countyName }}</td>
-        <td data-label="Total {{ unitLabel | capitalize }}">{{ county.totalMiles | formatDistance(unit) }}</td>
-        <td data-label="Segments">{{ county.totalSegments | localeNumber }}</td>
+        <td data-label="{{ unitLabel | capitalize }}">{{ county.totalMiles | formatDistance(unit) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -57,16 +51,14 @@ permalink: "{{ currentUnit.path }}"
     <thead>
       <tr>
         <th>Class</th>
-        <th>Total {{ unitLabel | capitalize }}</th>
-        <th>Segments</th>
+        <th>{{ unitLabel | capitalize }}</th>
       </tr>
     </thead>
     <tbody>
       {% for item in bikelanes.totals.byClass %}
       <tr>
         <td>{{ item.className }}</td>
-        <td data-label="Total {{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
-        <td data-label="Segments">{{ item.segments | localeNumber }}</td>
+        <td data-label="{{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -82,7 +74,6 @@ permalink: "{{ currentUnit.path }}"
       <tr>
         <th>Class</th>
         <th>{{ unitLabel | capitalize }}</th>
-        <th>Segments</th>
       </tr>
     </thead>
     <tbody>
@@ -90,7 +81,6 @@ permalink: "{{ currentUnit.path }}"
       <tr>
         <td>{{ item.className }}</td>
         <td data-label="{{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
-        <td data-label="Segments">{{ item.segments | localeNumber }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -141,10 +131,14 @@ permalink: "{{ currentUnit.path }}"
 <footer class="data-info">
   <p><small>Data fetched: {{ bikelanes.fetchedAt | readableDate }}</small></p>
   <p><small>Source: <a href="{{ bikelanes.sourceUrl }}">{{ bikelanes.source }}</a></small></p>
-  <p class="download-link">
-    <a href="/data/bike-lanes-{{ unit }}.csv" download class="btn-download">
+  <div class="download-buttons">
+    <a href="/data/bike-lanes-mi.csv" download class="btn-download">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Download CSV ({{ unitLabel | upper }})
+      Download CSV (MI)
     </a>
-  </p>
+    <a href="/data/bike-lanes-km.csv" download class="btn-download">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download CSV (KM)
+    </a>
+  </div>
 </footer>

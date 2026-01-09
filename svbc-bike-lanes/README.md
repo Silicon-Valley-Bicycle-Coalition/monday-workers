@@ -65,7 +65,16 @@ The MTC Regional Bike Facilities dataset does not include city/jurisdiction attr
 - [x] Ensure responsive design for mobile viewing
 - [x] Add SVBC logo to header
 
-### Phase 6: Build & Deployment
+### Phase 6: Polish & Documentation
+
+- [ ] Add data source attribution and methodology notes
+- [ ] Add last updated timestamp to site
+- [ ] Test across browsers
+- [ ] Write deployment/maintenance documentation
+- [ ] Add link to SVBC main website
+
+### Phase 7: Build & Deployment
+
 - [ ] Create GitHub repository
 - [ ] Set up GitHub Actions workflow for:
   - [ ] Weekly scheduled builds (cron)
@@ -75,13 +84,6 @@ The MTC Regional Bike Facilities dataset does not include city/jurisdiction attr
   - [ ] Deploy to GitHub Pages
 - [ ] Configure GitHub Pages settings
 - [ ] Test full build pipeline
-
-### Phase 7: Polish & Documentation
-- [ ] Add data source attribution and methodology notes
-- [ ] Add last updated timestamp to site
-- [ ] Test across browsers
-- [ ] Write deployment/maintenance documentation
-- [ ] Add link to SVBC main website
 
 ---
 
