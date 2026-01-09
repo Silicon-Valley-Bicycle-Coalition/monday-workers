@@ -20,7 +20,6 @@ The MTC Regional Bike Facilities dataset does not include city/jurisdiction attr
 ## Future Enhancements
 
 - **City-level breakdowns** - If a data source with city attribution becomes available
-- **SVBC branding** - Apply Silicon Valley Bicycle Coalition visual identity
 - **Interactive maps** - Visualize bike lane locations geographically
 
 ---
@@ -59,12 +58,12 @@ The MTC Regional Bike Facilities dataset does not include city/jurisdiction attr
 - [x] Add historical trends section on homepage
 
 ### Phase 5: Styling & Branding
-- [ ] Source SVBC brand colors from bikesiliconvalley.org
-- [ ] Source/download SVBC logo
-- [ ] Create CSS stylesheet with SVBC branding
-- [ ] Style tables for readability
-- [ ] Ensure responsive design for mobile viewing
-- [ ] Add SVBC logo to header
+- [x] Source SVBC brand colors from bikesiliconvalley.org
+- [x] Source/download SVBC logo
+- [x] Create CSS stylesheet with SVBC branding
+- [x] Style tables for readability
+- [x] Ensure responsive design for mobile viewing
+- [x] Add SVBC logo to header
 
 ### Phase 6: Build & Deployment
 - [ ] Create GitHub repository
