@@ -1,0 +1,42 @@
+# Woodpecker CI workflow for Codeberg
+# Builds the site and deploys to Cloudflare Pages
+
+when:
+  - event: push
+    branch: main
+  - event: cron
+    cron: weekly
+
+steps:
+  # Install dependencies and build
+  - name: build
+    image: node:20-alpine
+    commands:
+      - npm ci
+      - npm run build
+    environment:
+      CI: "true"
+
+  # Commit updated history.json back to repo (only on cron builds)
+  - name: commit-history
+    image: alpine/git
+    when:
+      - event: cron
+    commands:
+      - git config user.name "Woodpecker CI"
+      - git config user.email "ci@codeberg.org"
+      - git add _data/history.json
+      - git diff --staged --quiet || git commit -m "chore: update historical data [skip ci]"
+      - git push origin main
+    secrets:
+      - codeberg_token
+
+  # Deploy to Cloudflare Pages
+  - name: deploy
+    image: node:20-alpine
+    commands:
+      - npm install -g wrangler
+      - wrangler pages deploy _site --project-name=svbc-bike-lanes --branch=main
+    secrets:
+      - cloudflare_account_id
+      - cloudflare_api_token

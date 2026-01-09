@@ -4,6 +4,9 @@ node_modules/
 # Build output
 _site/
 
+# Data caches (regenerated during build)
+_data/*.cache.json
+
 # Environment variables
 .env
 .env.local
