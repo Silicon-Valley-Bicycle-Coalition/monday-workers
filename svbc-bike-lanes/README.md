@@ -5,14 +5,23 @@ A static website built with [11ty](https://www.11ty.dev/) that tracks the total 
 ## Features
 
 - **County-level totals** for San Mateo and Santa Clara Counties
-- **City-level breakdowns** showing bike lane miles per municipality
 - **Class type analysis** (Class I, II, III, IV bike facilities)
 - **Historical tracking** to monitor progress over time
-- **SVBC branding** consistent with Silicon Valley Bicycle Coalition identity
+- **Weekly automated updates** via GitHub Actions
 
 ## Data Source
 
 Data is fetched from the [MTC Regional Bike Facilities](https://opendata.mtc.ca.gov/datasets/regional-bike-facilities) ArcGIS REST API during each build.
+
+### Data Limitations
+
+The MTC Regional Bike Facilities dataset does not include city/jurisdiction attribution for bike lane segments. As a result, this site currently provides county-level and class-type breakdowns only.
+
+## Future Enhancements
+
+- **City-level breakdowns** - If a data source with city attribution becomes available
+- **SVBC branding** - Apply Silicon Valley Bicycle Coalition visual identity
+- **Interactive maps** - Visualize bike lane locations geographically
 
 ---
 
@@ -32,7 +41,6 @@ Data is fetched from the [MTC Regional Bike Facilities](https://opendata.mtc.ca.
 - [x] Create data fetching script to query bike lanes for Santa Clara County
 - [x] Parse and aggregate data by:
   - [x] County
-  - [ ] City/jurisdiction (deferred - data source lacks city field)
   - [x] Bike lane class type (I, II, III, IV)
 - [x] Calculate total miles from geometry/length data
 - [x] Save fetched data as JSON for 11ty to consume
@@ -47,7 +55,6 @@ Data is fetched from the [MTC Regional Bike Facilities](https://opendata.mtc.ca.
 - [x] Create base layout template with HTML structure
 - [x] Create homepage with summary dashboard
 - [x] Create county breakdown table
-- [ ] Create city-level breakdown table (deferred - data source lacks city field)
 - [x] Create bike lane class type breakdown table
 - [x] Add historical trends section on homepage
 
