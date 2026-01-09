@@ -64,11 +64,18 @@ module.exports = function(eleventyConfig) {
   });
 
   // Format distance with unit conversion
+  // Wraps decimal portion in span for styling
   eleventyConfig.addFilter("formatDistance", function(miles, unit) {
     if (miles === null || miles === undefined) return '—';
     const value = unit === 'km' ? miles * 1.60934 : miles;
     const rounded = Math.round(value * 10) / 10;
-    return rounded.toLocaleString();
+    const formatted = rounded.toLocaleString();
+    // Split at decimal point and wrap decimal portion
+    const parts = formatted.split('.');
+    if (parts.length === 2) {
+      return `${parts[0]}<span class="decimal">.${parts[1]}</span>`;
+    }
+    return formatted;
   });
 
   // Format change value with unit conversion

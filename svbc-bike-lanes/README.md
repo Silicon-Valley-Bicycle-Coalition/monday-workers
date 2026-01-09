@@ -67,11 +67,11 @@ The MTC Regional Bike Facilities dataset does not include city/jurisdiction attr
 
 ### Phase 6: Polish & Documentation
 
-- [ ] Add data source attribution and methodology notes
-- [ ] Add last updated timestamp to site
+- [x] Add data source attribution and methodology notes
+- [x] Add last updated timestamp to site
 - [ ] Test across browsers
-- [ ] Write deployment/maintenance documentation
-- [ ] Add link to SVBC main website
+- [x] Write deployment/maintenance documentation
+- [x] Add link to SVBC main website
 
 ### Phase 7: Build & Deployment
 
@@ -140,6 +140,48 @@ npm run dev
 # Build for production
 npm run build
 ```
+
+## Deployment
+
+### GitHub Pages Setup
+
+1. Push this repository to GitHub
+2. Go to repository Settings > Pages
+3. Set source to "GitHub Actions"
+4. The included workflow will automatically build and deploy on push
+
+### Manual Deployment
+
+To deploy manually to any static hosting:
+
+```bash
+npm run build
+# Upload contents of _site/ directory to your host
+```
+
+## Maintenance
+
+### Data Updates
+
+Data is fetched from the MTC API during each build. To update the site with fresh data:
+
+1. **Automated**: The GitHub Actions workflow runs weekly (configured in `.github/workflows/build.yml`)
+2. **Manual**: Trigger a manual workflow run from the Actions tab, or run `npm run build` locally
+
+### Historical Data
+
+Historical snapshots are stored in `_data/history.json`. This file is automatically updated during CI builds when the `CI` environment variable is set. The history tracks:
+
+- Total miles by county
+- Breakdown by bike lane class
+- Date of each snapshot
+
+### Adding New Counties
+
+To add additional counties, modify `_data/bikelanes.js`:
+
+1. Add the county name to the `COUNTIES` object with its FIPS code
+2. The data fetching will automatically include the new county
 
 ## License
 

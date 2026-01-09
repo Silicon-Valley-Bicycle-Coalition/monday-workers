@@ -1,15 +1,8 @@
 ---
 layout: layouts/base.njk
 title: Home
-pagination:
-  data: units
-  size: 1
-  alias: currentUnit
-permalink: "{{ currentUnit.path }}"
+permalink: /
 ---
-
-{% set unit = currentUnit.code %}
-{% set unitLabel = currentUnit.shortLabel %}
 
 <h1>Bike Lanes in the Bay Area</h1>
 
@@ -19,8 +12,9 @@ permalink: "{{ currentUnit.path }}"
   <h2>Regional Total</h2>
   <div class="stat-cards">
     <div class="stat-card stat-card-large">
-      <span class="stat-value">{{ bikelanes.totals.miles | formatDistance(unit) }}</span>
-      <span class="stat-label">{{ unitLabel }} of Bike Lanes</span>
+      <span class="stat-value">{{ bikelanes.totals.miles | formatDistance('mi') | safe }}</span>
+      <span class="stat-label">miles of Bike Lanes</span>
+      <span class="stat-alt">({{ bikelanes.totals.miles | formatDistance('km') | safe }} kilometers)</span>
     </div>
   </div>
 </section>
@@ -31,14 +25,16 @@ permalink: "{{ currentUnit.path }}"
     <thead>
       <tr>
         <th>County</th>
-        <th>{{ unitLabel | capitalize }}</th>
+        <th>Miles</th>
+        <th>Kilometers</th>
       </tr>
     </thead>
     <tbody>
       {% for countyName, county in bikelanes.counties %}
       <tr>
         <td>{{ countyName }}</td>
-        <td data-label="{{ unitLabel | capitalize }}">{{ county.totalMiles | formatDistance(unit) }}</td>
+        <td data-label="Miles">{{ county.totalMiles | formatDistance('mi') | safe }}</td>
+        <td data-label="Kilometers">{{ county.totalMiles | formatDistance('km') | safe }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -51,14 +47,16 @@ permalink: "{{ currentUnit.path }}"
     <thead>
       <tr>
         <th>Class</th>
-        <th>{{ unitLabel | capitalize }}</th>
+        <th>Miles</th>
+        <th>Kilometers</th>
       </tr>
     </thead>
     <tbody>
       {% for item in bikelanes.totals.byClass %}
       <tr>
         <td>{{ item.className }}</td>
-        <td data-label="{{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
+        <td data-label="Miles">{{ item.miles | formatDistance('mi') | safe }}</td>
+        <td data-label="Kilometers">{{ item.miles | formatDistance('km') | safe }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -73,14 +71,16 @@ permalink: "{{ currentUnit.path }}"
     <thead>
       <tr>
         <th>Class</th>
-        <th>{{ unitLabel | capitalize }}</th>
+        <th>Miles</th>
+        <th>Kilometers</th>
       </tr>
     </thead>
     <tbody>
       {% for item in county.byClass %}
       <tr>
         <td>{{ item.className }}</td>
-        <td data-label="{{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
+        <td data-label="Miles">{{ item.miles | formatDistance('mi') | safe }}</td>
+        <td data-label="Kilometers">{{ item.miles | formatDistance('km') | safe }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -96,10 +96,9 @@ permalink: "{{ currentUnit.path }}"
     <thead>
       <tr>
         <th>Date</th>
-        <th>Total {{ unitLabel | capitalize }}</th>
+        <th>Total Miles</th>
+        <th>Total Kilometers</th>
         <th>Change</th>
-        <th>San Mateo</th>
-        <th>Santa Clara</th>
       </tr>
     </thead>
     <tbody>
@@ -109,16 +108,15 @@ permalink: "{{ currentUnit.path }}"
       {% set prevSnapshot = reversedSnapshots[prevIndex] if prevIndex < reversedSnapshots.length else null %}
       <tr>
         <td>{{ snapshot.date | shortDate }}</td>
-        <td data-label="Total {{ unitLabel | capitalize }}">{{ snapshot.totals.miles | formatDistance(unit) }}</td>
+        <td data-label="Total Miles">{{ snapshot.totals.miles | formatDistance('mi') | safe }}</td>
+        <td data-label="Total Kilometers">{{ snapshot.totals.miles | formatDistance('km') | safe }}</td>
         <td data-label="Change" class="change {% if prevSnapshot %}{% if snapshot.totals.miles > prevSnapshot.totals.miles %}positive{% elif snapshot.totals.miles < prevSnapshot.totals.miles %}negative{% endif %}{% endif %}">
           {% if prevSnapshot %}
-            {{ (snapshot.totals.miles - prevSnapshot.totals.miles) | formatChangeWithUnit(unit) }}
+            {{ (snapshot.totals.miles - prevSnapshot.totals.miles) | formatChangeWithUnit('mi') }}
           {% else %}
             —
           {% endif %}
         </td>
-        <td data-label="San Mateo">{{ snapshot.counties['San Mateo'].totalMiles | formatDistance(unit) }}</td>
-        <td data-label="Santa Clara">{{ snapshot.counties['Santa Clara'].totalMiles | formatDistance(unit) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -128,8 +126,20 @@ permalink: "{{ currentUnit.path }}"
   {% endif %}
 </section>
 
+<section class="methodology">
+  <h2>About This Data</h2>
+  <p>This tracker displays bike lane infrastructure data for San Mateo and Santa Clara Counties in the San Francisco Bay Area. Data is sourced from the <a href="https://opendata.mtc.ca.gov/datasets/regional-bike-facilities">MTC Regional Bike Facilities</a> dataset maintained by the Metropolitan Transportation Commission.</p>
+  <h3>Bike Lane Classifications</h3>
+  <ul>
+    <li><strong>Class I - Bike Path:</strong> Separate paved paths for bicycles and pedestrians, physically separated from motor vehicle traffic</li>
+    <li><strong>Class II - Bike Lane:</strong> Striped lanes on streets designated for bicycle use</li>
+    <li><strong>Class III - Bike Route:</strong> Shared roadways with signage indicating bicycle routes</li>
+  </ul>
+  <p><small>Data is refreshed weekly. Historical tracking began when this site was launched.</small></p>
+</section>
+
 <footer class="data-info">
-  <p><small>Data fetched: {{ bikelanes.fetchedAt | readableDate }}</small></p>
+  <p><small>Last updated: {{ bikelanes.fetchedAt | readableDate }}</small></p>
   <p><small>Source: <a href="{{ bikelanes.sourceUrl }}">{{ bikelanes.source }}</a></small></p>
   <div class="download-buttons">
     <a href="/data/bike-lanes-mi.csv" download class="btn-download">

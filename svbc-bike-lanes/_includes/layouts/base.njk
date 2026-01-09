@@ -14,11 +14,6 @@
         <img src="/assets/svbc-logo.webp" alt="Silicon Valley Bicycle Coalition" width="200" height="80">
       </a>
       <span class="site-title">Bike Lane Tracker</span>
-      <div class="unit-toggle">
-        {% for unit in units %}
-        <a href="{{ unit.path }}" class="unit-btn {% if currentUnit.code == unit.code %}active{% endif %}" title="{{ unit.label }}">{{ unit.shortLabel }}</a>
-        {% endfor %}
-      </div>
     </nav>
   </header>
 
