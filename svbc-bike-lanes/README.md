@@ -19,11 +19,11 @@ Data is fetched from the [Caltrans ArcGIS REST API](https://caltrans.maps.arcgis
 ## TODO: Project Setup
 
 ### Phase 1: Project Initialization
-- [ ] Initialize npm project with package.json
-- [ ] Install 11ty and dependencies
-- [ ] Create basic 11ty directory structure
-- [ ] Set up .gitignore for Node.js/11ty project
-- [ ] Create initial 11ty config file (.eleventy.js)
+- [x] Initialize npm project with package.json
+- [x] Install 11ty and dependencies
+- [x] Create basic 11ty directory structure
+- [x] Set up .gitignore for Node.js/11ty project
+- [x] Create initial 11ty config file (.eleventy.js)
 
 ### Phase 2: Data Fetching
 - [ ] Research Caltrans ArcGIS API endpoints for bike facilities
@@ -44,7 +44,7 @@ Data is fetched from the [Caltrans ArcGIS REST API](https://caltrans.maps.arcgis
 - [ ] Create 11ty data file to make history available to templates
 
 ### Phase 4: Templates & Pages
-- [ ] Create base layout template with HTML structure
+- [x] Create base layout template with HTML structure
 - [ ] Create homepage with summary dashboard
 - [ ] Create county breakdown page (or section)
 - [ ] Create city-level breakdown table

@@ -1,0 +1,25 @@
+{
+  "name": "svbc-bike-lanes",
+  "version": "0.1.0",
+  "description": "Track bike lane miles in San Mateo and Santa Clara Counties",
+  "main": "index.js",
+  "scripts": {
+    "dev": "eleventy --serve",
+    "build": "eleventy"
+  },
+  "keywords": [
+    "svbc",
+    "bike-lanes",
+    "silicon-valley",
+    "11ty",
+    "eleventy"
+  ],
+  "author": "Silicon Valley Bicycle Coalition",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.2"
+  }
+}
