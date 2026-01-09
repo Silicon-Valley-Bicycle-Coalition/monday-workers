@@ -38,10 +38,10 @@ Data is fetched from the [MTC Regional Bike Facilities](https://opendata.mtc.ca.
 - [x] Save fetched data as JSON for 11ty to consume
 
 ### Phase 3: Historical Data Storage
-- [ ] Design JSON schema for historical data storage
-- [ ] Create script to append new data snapshots with timestamps
-- [ ] Store historical data in `_data/history.json` (or similar)
-- [ ] Create 11ty data file to make history available to templates
+- [x] Design JSON schema for historical data storage
+- [x] Create script to append new data snapshots with timestamps
+- [x] Store historical data in `_data/history.json`
+- [x] Create 11ty data file to make history available to templates
 
 ### Phase 4: Templates & Pages
 - [x] Create base layout template with HTML structure

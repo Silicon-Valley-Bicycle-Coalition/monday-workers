@@ -1,7 +1,11 @@
 /**
  * Fetches bike lane data from MTC Regional Bike Facilities API
  * Aggregates by county and bike lane class type
+ * Appends to history.json when running in CI environment
  */
+
+const fs = require('fs');
+const path = require('path');
 
 // County bounding boxes (approximate, WGS84)
 // Source: US Census TIGER/Line data
@@ -206,5 +210,59 @@ module.exports = async function() {
 
   console.log(`Total: ${results.totals.segments} segments, ${results.totals.miles} miles`);
 
+  // Append to history if running in CI environment
+  const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+
+  if (isCI) {
+    await appendToHistory(results);
+  } else {
+    console.log('Skipping history update (not in CI environment)');
+  }
+
   return results;
 };
+
+/**
+ * Append current data snapshot to history.json
+ * Only adds if no snapshot exists for today's date
+ */
+async function appendToHistory(data) {
+  const historyPath = path.join(__dirname, 'history.json');
+
+  // Read existing history
+  let history = { snapshots: [] };
+  try {
+    const historyContent = fs.readFileSync(historyPath, 'utf8');
+    history = JSON.parse(historyContent);
+  } catch (error) {
+    console.log('  Creating new history.json');
+  }
+
+  // Get today's date (YYYY-MM-DD)
+  const today = new Date().toISOString().split('T')[0];
+
+  // Check if snapshot for today already exists
+  const existingSnapshot = history.snapshots.find(s => s.date === today);
+  if (existingSnapshot) {
+    console.log(`  History snapshot for ${today} already exists, skipping`);
+    return;
+  }
+
+  // Create snapshot
+  const snapshot = {
+    date: today,
+    fetchedAt: data.fetchedAt,
+    totals: data.totals,
+    counties: data.counties
+  };
+
+  // Append to history
+  history.snapshots.push(snapshot);
+
+  // Sort by date (oldest first)
+  history.snapshots.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Write back to file
+  fs.writeFileSync(historyPath, JSON.stringify(history, null, 2) + '\n');
+  console.log(`  Added history snapshot for ${today}`);
+}

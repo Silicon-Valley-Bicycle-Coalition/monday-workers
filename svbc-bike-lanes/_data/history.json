@@ -1,0 +1,84 @@
+{
+  "snapshots": [
+    {
+      "date": "2026-01-09",
+      "fetchedAt": "2026-01-09T21:36:09.133Z",
+      "totals": {
+        "miles": 1432.74,
+        "segments": 3109,
+        "byClass": [
+          {
+            "class": 1,
+            "className": "Class I - Bike Path",
+            "miles": 229.1,
+            "segments": 465
+          },
+          {
+            "class": 2,
+            "className": "Class II - Bike Lane",
+            "miles": 764.2,
+            "segments": 1777
+          },
+          {
+            "class": 3,
+            "className": "Class III - Bike Route",
+            "miles": 439.44,
+            "segments": 867
+          }
+        ]
+      },
+      "counties": {
+        "San Mateo": {
+          "fips": "06081",
+          "totalMiles": 658.71,
+          "totalSegments": 1329,
+          "byClass": [
+            {
+              "class": 1,
+              "className": "Class I - Bike Path",
+              "miles": 126.79,
+              "segments": 245
+            },
+            {
+              "class": 2,
+              "className": "Class II - Bike Lane",
+              "miles": 225.18,
+              "segments": 467
+            },
+            {
+              "class": 3,
+              "className": "Class III - Bike Route",
+              "miles": 306.74,
+              "segments": 617
+            }
+          ]
+        },
+        "Santa Clara": {
+          "fips": "06085",
+          "totalMiles": 774.03,
+          "totalSegments": 1780,
+          "byClass": [
+            {
+              "class": 1,
+              "className": "Class I - Bike Path",
+              "miles": 102.31,
+              "segments": 220
+            },
+            {
+              "class": 2,
+              "className": "Class II - Bike Lane",
+              "miles": 539.02,
+              "segments": 1310
+            },
+            {
+              "class": 3,
+              "className": "Class III - Bike Route",
+              "miles": 132.7,
+              "segments": 250
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
