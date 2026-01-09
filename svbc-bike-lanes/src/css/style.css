@@ -374,6 +374,12 @@ th:nth-child(6) {
   white-space: nowrap;
 }
 
+/* Unincorporated areas - muted styling */
+.city-unincorporated {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
 /* Change indicators */
 .change {
   font-weight: 600;

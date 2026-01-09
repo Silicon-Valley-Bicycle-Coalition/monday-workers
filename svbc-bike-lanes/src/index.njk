@@ -47,7 +47,7 @@ permalink: /
     <tbody>
       {% for city in county.byCity %}
       <tr>
-        <td>{{ city.name }}</td>
+        <td{% if city.name == "Unincorporated" %} class="city-unincorporated"{% endif %}>{{ city.name }}</td>
         <td data-label="Class I">{{ city | cityClassMiles(1) | safe }}</td>
         <td data-label="Class II">{{ city | cityClassMiles(2) | safe }}</td>
         <td data-label="Class III">{{ city | cityClassMiles(3) | safe }}</td>
