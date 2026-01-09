@@ -1,7 +1,15 @@
 ---
 layout: layouts/base.njk
 title: Home
+pagination:
+  data: units
+  size: 1
+  alias: currentUnit
+permalink: "{{ currentUnit.path }}"
 ---
+
+{% set unit = currentUnit.code %}
+{% set unitLabel = currentUnit.shortLabel %}
 
 <h1>Bike Lanes in the Bay Area</h1>
 
@@ -11,8 +19,8 @@ title: Home
   <h2>Regional Totals</h2>
   <div class="stat-cards">
     <div class="stat-card">
-      <span class="stat-value">{{ bikelanes.totals.miles | round(1) }}</span>
-      <span class="stat-label">Total Miles</span>
+      <span class="stat-value">{{ bikelanes.totals.miles | formatDistance(unit) }}</span>
+      <span class="stat-label">Total {{ unitLabel | capitalize }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">{{ bikelanes.totals.segments | localeNumber }}</span>
@@ -27,7 +35,7 @@ title: Home
     <thead>
       <tr>
         <th>County</th>
-        <th>Total Miles</th>
+        <th>Total {{ unitLabel | capitalize }}</th>
         <th>Segments</th>
       </tr>
     </thead>
@@ -35,7 +43,7 @@ title: Home
       {% for countyName, county in bikelanes.counties %}
       <tr>
         <td>{{ countyName }}</td>
-        <td data-label="Total Miles">{{ county.totalMiles | round(1) }}</td>
+        <td data-label="Total {{ unitLabel | capitalize }}">{{ county.totalMiles | formatDistance(unit) }}</td>
         <td data-label="Segments">{{ county.totalSegments | localeNumber }}</td>
       </tr>
       {% endfor %}
@@ -49,7 +57,7 @@ title: Home
     <thead>
       <tr>
         <th>Class</th>
-        <th>Total Miles</th>
+        <th>Total {{ unitLabel | capitalize }}</th>
         <th>Segments</th>
       </tr>
     </thead>
@@ -57,7 +65,7 @@ title: Home
       {% for item in bikelanes.totals.byClass %}
       <tr>
         <td>{{ item.className }}</td>
-        <td data-label="Total Miles">{{ item.miles | round(1) }}</td>
+        <td data-label="Total {{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
         <td data-label="Segments">{{ item.segments | localeNumber }}</td>
       </tr>
       {% endfor %}
@@ -73,7 +81,7 @@ title: Home
     <thead>
       <tr>
         <th>Class</th>
-        <th>Miles</th>
+        <th>{{ unitLabel | capitalize }}</th>
         <th>Segments</th>
       </tr>
     </thead>
@@ -81,7 +89,7 @@ title: Home
       {% for item in county.byClass %}
       <tr>
         <td>{{ item.className }}</td>
-        <td data-label="Miles">{{ item.miles | round(1) }}</td>
+        <td data-label="{{ unitLabel | capitalize }}">{{ item.miles | formatDistance(unit) }}</td>
         <td data-label="Segments">{{ item.segments | localeNumber }}</td>
       </tr>
       {% endfor %}
@@ -98,7 +106,7 @@ title: Home
     <thead>
       <tr>
         <th>Date</th>
-        <th>Total Miles</th>
+        <th>Total {{ unitLabel | capitalize }}</th>
         <th>Change</th>
         <th>San Mateo</th>
         <th>Santa Clara</th>
@@ -111,16 +119,16 @@ title: Home
       {% set prevSnapshot = reversedSnapshots[prevIndex] if prevIndex < reversedSnapshots.length else null %}
       <tr>
         <td>{{ snapshot.date | shortDate }}</td>
-        <td data-label="Total Miles">{{ snapshot.totals.miles | round(1) | localeNumber }}</td>
+        <td data-label="Total {{ unitLabel | capitalize }}">{{ snapshot.totals.miles | formatDistance(unit) }}</td>
         <td data-label="Change" class="change {% if prevSnapshot %}{% if snapshot.totals.miles > prevSnapshot.totals.miles %}positive{% elif snapshot.totals.miles < prevSnapshot.totals.miles %}negative{% endif %}{% endif %}">
           {% if prevSnapshot %}
-            {{ (snapshot.totals.miles - prevSnapshot.totals.miles) | formatChange }}
+            {{ (snapshot.totals.miles - prevSnapshot.totals.miles) | formatChangeWithUnit(unit) }}
           {% else %}
             —
           {% endif %}
         </td>
-        <td data-label="San Mateo">{{ snapshot.counties['San Mateo'].totalMiles | round(1) }}</td>
-        <td data-label="Santa Clara">{{ snapshot.counties['Santa Clara'].totalMiles | round(1) }}</td>
+        <td data-label="San Mateo">{{ snapshot.counties['San Mateo'].totalMiles | formatDistance(unit) }}</td>
+        <td data-label="Santa Clara">{{ snapshot.counties['Santa Clara'].totalMiles | formatDistance(unit) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -133,4 +141,10 @@ title: Home
 <footer class="data-info">
   <p><small>Data fetched: {{ bikelanes.fetchedAt | readableDate }}</small></p>
   <p><small>Source: <a href="{{ bikelanes.sourceUrl }}">{{ bikelanes.source }}</a></small></p>
+  <p class="download-link">
+    <a href="/data/bike-lanes-{{ unit }}.csv" download class="btn-download">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download CSV ({{ unitLabel | upper }})
+    </a>
+  </p>
 </footer>

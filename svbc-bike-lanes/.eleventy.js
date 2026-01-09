@@ -1,9 +1,21 @@
+const { writeCSVFiles } = require('./_data/csvExport');
+
 module.exports = function(eleventyConfig) {
   // Copy CSS files to output
   eleventyConfig.addPassthroughCopy("src/css");
 
   // Copy static assets to output
   eleventyConfig.addPassthroughCopy("src/assets");
+
+  // Generate CSV export files after build
+  eleventyConfig.on('eleventy.after', async ({ dir }) => {
+    const bikelanes = require('./_data/bikelanes');
+    const history = require('./_data/history.json');
+
+    // bikelanes is an async function, so we need to call it
+    const bikelanesData = await bikelanes();
+    await writeCSVFiles(bikelanesData, history, dir.output);
+  });
 
   // Custom filters
   eleventyConfig.addFilter("localeNumber", function(num) {
@@ -40,6 +52,30 @@ module.exports = function(eleventyConfig) {
   eleventyConfig.addFilter("formatChange", function(num) {
     if (num === null || num === undefined) return '—';
     const rounded = Math.round(num * 10) / 10;
+    if (rounded > 0) return '+' + rounded;
+    if (rounded < 0) return rounded.toString();
+    return '0';
+  });
+
+  // Convert miles to kilometers
+  eleventyConfig.addFilter("toKm", function(miles) {
+    if (miles === null || miles === undefined) return miles;
+    return miles * 1.60934;
+  });
+
+  // Format distance with unit conversion
+  eleventyConfig.addFilter("formatDistance", function(miles, unit) {
+    if (miles === null || miles === undefined) return '—';
+    const value = unit === 'km' ? miles * 1.60934 : miles;
+    const rounded = Math.round(value * 10) / 10;
+    return rounded.toLocaleString();
+  });
+
+  // Format change value with unit conversion
+  eleventyConfig.addFilter("formatChangeWithUnit", function(num, unit) {
+    if (num === null || num === undefined) return '—';
+    const value = unit === 'km' ? num * 1.60934 : num;
+    const rounded = Math.round(value * 10) / 10;
     if (rounded > 0) return '+' + rounded;
     if (rounded < 0) return rounded.toString();
     return '0';
