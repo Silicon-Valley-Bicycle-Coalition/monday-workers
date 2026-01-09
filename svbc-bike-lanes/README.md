@@ -1,6 +1,6 @@
 # SVBC Bike Lanes Tracker
 
-A static website built with [11ty](https://www.11ty.dev/) that tracks the total miles of bike lanes in San Mateo and Santa Clara Counties. Data is sourced from MTA/Caltrans Regional Bike Facilities mapping data and updated weekly.
+A static website built with [11ty](https://www.11ty.dev/) that tracks the total miles of bike lanes in San Mateo and Santa Clara Counties. Data is sourced from MTC Regional Bike Facilities mapping data and updated weekly.
 
 ## Features
 
@@ -12,7 +12,7 @@ A static website built with [11ty](https://www.11ty.dev/) that tracks the total 
 
 ## Data Source
 
-Data is fetched from the [Caltrans ArcGIS REST API](https://caltrans.maps.arcgis.com/) Regional Bike Facilities layer during each build.
+Data is fetched from the [MTC Regional Bike Facilities](https://opendata.mtc.ca.gov/datasets/regional-bike-facilities) ArcGIS REST API during each build.
 
 ---
 
@@ -26,16 +26,16 @@ Data is fetched from the [Caltrans ArcGIS REST API](https://caltrans.maps.arcgis
 - [x] Create initial 11ty config file (.eleventy.js)
 
 ### Phase 2: Data Fetching
-- [ ] Research Caltrans ArcGIS API endpoints for bike facilities
-- [ ] Identify the correct layer ID for Regional Bike Facilities
-- [ ] Create data fetching script to query bike lanes for San Mateo County (FIPS: 081)
-- [ ] Create data fetching script to query bike lanes for Santa Clara County (FIPS: 085)
-- [ ] Parse and aggregate data by:
-  - [ ] County
-  - [ ] City/jurisdiction
-  - [ ] Bike lane class type (I, II, III, IV)
-- [ ] Calculate total miles from geometry/length data
-- [ ] Save fetched data as JSON for 11ty to consume
+- [x] Research MTC ArcGIS API endpoints for bike facilities
+- [x] Identify the correct layer ID for Regional Bike Facilities
+- [x] Create data fetching script to query bike lanes for San Mateo County
+- [x] Create data fetching script to query bike lanes for Santa Clara County
+- [x] Parse and aggregate data by:
+  - [x] County
+  - [ ] City/jurisdiction (deferred - data source lacks city field)
+  - [x] Bike lane class type (I, II, III, IV)
+- [x] Calculate total miles from geometry/length data
+- [x] Save fetched data as JSON for 11ty to consume
 
 ### Phase 3: Historical Data Storage
 - [ ] Design JSON schema for historical data storage
@@ -45,10 +45,10 @@ Data is fetched from the [Caltrans ArcGIS REST API](https://caltrans.maps.arcgis
 
 ### Phase 4: Templates & Pages
 - [x] Create base layout template with HTML structure
-- [ ] Create homepage with summary dashboard
-- [ ] Create county breakdown page (or section)
-- [ ] Create city-level breakdown table
-- [ ] Create bike lane class type breakdown table
+- [x] Create homepage with summary dashboard
+- [x] Create county breakdown table
+- [ ] Create city-level breakdown table (deferred - data source lacks city field)
+- [x] Create bike lane class type breakdown table
 - [ ] Add historical trends section/page
 
 ### Phase 5: Styling & Branding
@@ -82,7 +82,7 @@ Data is fetched from the [Caltrans ArcGIS REST API](https://caltrans.maps.arcgis
 ## Tech Stack
 
 - **Static Site Generator:** 11ty (Eleventy)
-- **Data Source:** Caltrans ArcGIS REST API
+- **Data Source:** MTC Regional Bike Facilities ArcGIS REST API
 - **Hosting:** GitHub Pages
 - **CI/CD:** GitHub Actions (weekly scheduled builds)
 - **Styling:** CSS (no framework, SVBC branded)

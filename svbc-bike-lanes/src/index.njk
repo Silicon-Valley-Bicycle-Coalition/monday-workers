@@ -7,13 +7,90 @@ title: Home
 
 <p>Tracking bicycle infrastructure in San Mateo and Santa Clara Counties.</p>
 
-<section>
-  <h2>Coming Soon</h2>
-  <p>This site will display:</p>
-  <ul>
-    <li>Total bike lane miles by county</li>
-    <li>City-level breakdowns</li>
-    <li>Bike lane class types (I, II, III, IV)</li>
-    <li>Historical trends over time</li>
-  </ul>
+<section class="summary">
+  <h2>Regional Totals</h2>
+  <div class="stat-cards">
+    <div class="stat-card">
+      <span class="stat-value">{{ bikelanes.totals.miles | round(1) }}</span>
+      <span class="stat-label">Total Miles</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ bikelanes.totals.segments | localeNumber }}</span>
+      <span class="stat-label">Segments</span>
+    </div>
+  </div>
 </section>
+
+<section>
+  <h2>By County</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>County</th>
+        <th>Total Miles</th>
+        <th>Segments</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for countyName, county in bikelanes.counties %}
+      <tr>
+        <td>{{ countyName }}</td>
+        <td>{{ county.totalMiles | round(1) }}</td>
+        <td>{{ county.totalSegments | localeNumber }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>By Bike Lane Class</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Class</th>
+        <th>Total Miles</th>
+        <th>Segments</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in bikelanes.totals.byClass %}
+      <tr>
+        <td>{{ item.className }}</td>
+        <td>{{ item.miles | round(1) }}</td>
+        <td>{{ item.segments | localeNumber }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>County Details</h2>
+  {% for countyName, county in bikelanes.counties %}
+  <h3>{{ countyName }} County</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Class</th>
+        <th>Miles</th>
+        <th>Segments</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in county.byClass %}
+      <tr>
+        <td>{{ item.className }}</td>
+        <td>{{ item.miles | round(1) }}</td>
+        <td>{{ item.segments | localeNumber }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</section>
+
+<footer class="data-info">
+  <p><small>Data fetched: {{ bikelanes.fetchedAt | readableDate }}</small></p>
+  <p><small>Source: <a href="{{ bikelanes.sourceUrl }}">{{ bikelanes.source }}</a></small></p>
+</footer>
