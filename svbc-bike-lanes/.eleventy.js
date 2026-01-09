@@ -26,6 +26,25 @@ module.exports = function(eleventyConfig) {
     return Math.round(num * factor) / factor;
   });
 
+  // Format date as short date (Jan 9, 2026)
+  eleventyConfig.addFilter("shortDate", function(dateStr) {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  });
+
+  // Format change value with + or - prefix
+  eleventyConfig.addFilter("formatChange", function(num) {
+    if (num === null || num === undefined) return '—';
+    const rounded = Math.round(num * 10) / 10;
+    if (rounded > 0) return '+' + rounded;
+    if (rounded < 0) return rounded.toString();
+    return '0';
+  });
+
   return {
     dir: {
       input: "src",

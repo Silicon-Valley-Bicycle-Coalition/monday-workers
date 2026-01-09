@@ -150,3 +150,28 @@ th:nth-child(3) {
 .data-info p {
   margin-bottom: 0.25rem;
 }
+
+/* Change indicators */
+.change {
+  font-weight: 600;
+}
+
+.change.positive {
+  color: #28a745;
+}
+
+.change.negative {
+  color: #dc3545;
+}
+
+/* No data message */
+.no-data {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* History table - align numeric columns right */
+section:has(h2:contains("Historical")) table td:nth-child(n+2),
+section:has(h2:contains("Historical")) table th:nth-child(n+2) {
+  text-align: right;
+}

@@ -49,7 +49,7 @@ Data is fetched from the [MTC Regional Bike Facilities](https://opendata.mtc.ca.
 - [x] Create county breakdown table
 - [ ] Create city-level breakdown table (deferred - data source lacks city field)
 - [x] Create bike lane class type breakdown table
-- [ ] Add historical trends section/page
+- [x] Add historical trends section on homepage
 
 ### Phase 5: Styling & Branding
 - [ ] Source SVBC brand colors from bikesiliconvalley.org

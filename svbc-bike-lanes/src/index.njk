@@ -90,6 +90,46 @@ title: Home
   {% endfor %}
 </section>
 
+<section>
+  <h2>Historical Trends</h2>
+  {% if history.snapshots.length > 0 %}
+  <p>Tracking changes in bike infrastructure over time.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Total Miles</th>
+        <th>Change</th>
+        <th>San Mateo</th>
+        <th>Santa Clara</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set reversedSnapshots = history.snapshots | reverse %}
+      {% for snapshot in reversedSnapshots %}
+      {% set prevIndex = loop.index %}
+      {% set prevSnapshot = reversedSnapshots[prevIndex] if prevIndex < reversedSnapshots.length else null %}
+      <tr>
+        <td>{{ snapshot.date | shortDate }}</td>
+        <td>{{ snapshot.totals.miles | round(1) | localeNumber }}</td>
+        <td class="change {% if prevSnapshot %}{% if snapshot.totals.miles > prevSnapshot.totals.miles %}positive{% elif snapshot.totals.miles < prevSnapshot.totals.miles %}negative{% endif %}{% endif %}">
+          {% if prevSnapshot %}
+            {{ (snapshot.totals.miles - prevSnapshot.totals.miles) | formatChange }}
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{{ snapshot.counties['San Mateo'].totalMiles | round(1) }}</td>
+        <td>{{ snapshot.counties['Santa Clara'].totalMiles | round(1) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="no-data">No historical data available yet. Data will be collected during weekly builds.</p>
+  {% endif %}
+</section>
+
 <footer class="data-info">
   <p><small>Data fetched: {{ bikelanes.fetchedAt | readableDate }}</small></p>
   <p><small>Source: <a href="{{ bikelanes.sourceUrl }}">{{ bikelanes.source }}</a></small></p>
