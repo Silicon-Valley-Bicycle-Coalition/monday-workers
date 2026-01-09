@@ -89,6 +89,31 @@ permalink: /
 </section>
 
 <section>
+  <h2>By City</h2>
+  {% for countyName, county in bikelanes.counties %}
+  <h3>{{ countyName }} County</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>City</th>
+        <th>Miles</th>
+        <th>Kilometers</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for city in county.byCity %}
+      <tr>
+        <td>{{ city.name }}</td>
+        <td data-label="Miles">{{ city.miles | formatDistance('mi') | safe }}</td>
+        <td data-label="Kilometers">{{ city.miles | formatDistance('km') | safe }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</section>
+
+<section>
   <h2>Historical Trends</h2>
   {% if history.snapshots.length > 0 %}
   <p>Tracking changes in bike infrastructure over time.</p>

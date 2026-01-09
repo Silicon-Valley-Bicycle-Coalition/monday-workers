@@ -1,11 +1,12 @@
 /**
  * Fetches bike lane data from MTC Regional Bike Facilities API
- * Aggregates by county and bike lane class type
+ * Aggregates by county, city, and bike lane class type
  * Appends to history.json when running in CI environment
  */
 
 const fs = require('fs');
 const path = require('path');
+const { getCityBoundaries, findCityForPoint, getPolylineMidpoint } = require('./cityBoundaries');
 
 // County bounding boxes (approximate, WGS84)
 // Source: US Census TIGER/Line data
@@ -141,10 +142,53 @@ function aggregateByClass(features) {
 }
 
 /**
+ * Aggregate features by city using spatial intersection
+ */
+function aggregateByCity(features, cityBoundaries, countyName) {
+  const byCity = {};
+
+  for (const feature of features) {
+    const miles = calculatePolylineLength(feature.geometry.paths);
+    const midpoint = getPolylineMidpoint(feature.geometry.paths);
+
+    let cityName = 'Unincorporated';
+    if (midpoint) {
+      const [lon, lat] = midpoint;
+      const cityInfo = findCityForPoint(lon, lat, cityBoundaries);
+      if (cityInfo && cityInfo.county === countyName) {
+        cityName = cityInfo.name;
+      }
+    }
+
+    if (!byCity[cityName]) {
+      byCity[cityName] = {
+        name: cityName,
+        miles: 0,
+        segments: 0
+      };
+    }
+
+    byCity[cityName].miles += miles;
+    byCity[cityName].segments += 1;
+  }
+
+  // Round miles and sort by miles (descending)
+  return Object.values(byCity)
+    .map(item => ({
+      ...item,
+      miles: Math.round(item.miles * 100) / 100
+    }))
+    .sort((a, b) => b.miles - a.miles);
+}
+
+/**
  * Main data fetching function - called by 11ty at build time
  */
 module.exports = async function() {
   console.log('Fetching bike lane data from MTC API...');
+
+  // Load city boundaries for spatial intersection
+  const cityBoundaries = await getCityBoundaries();
 
   const results = {
     fetchedAt: new Date().toISOString(),
@@ -164,6 +208,7 @@ module.exports = async function() {
     try {
       const features = await queryBikeFacilities(countyData.bounds);
       const byClass = aggregateByClass(features);
+      const byCity = aggregateByCity(features, cityBoundaries, countyName);
 
       const totalMiles = byClass.reduce((sum, item) => sum + item.miles, 0);
       const totalSegments = byClass.reduce((sum, item) => sum + item.segments, 0);
@@ -172,7 +217,8 @@ module.exports = async function() {
         fips: countyData.fips,
         totalMiles: Math.round(totalMiles * 100) / 100,
         totalSegments: totalSegments,
-        byClass: byClass
+        byClass: byClass,
+        byCity: byCity
       };
 
       // Add to grand totals
@@ -192,7 +238,7 @@ module.exports = async function() {
         results.totals.byClass[item.class].segments += item.segments;
       }
 
-      console.log(`    Found ${totalSegments} segments, ${totalMiles.toFixed(2)} miles`);
+      console.log(`    Found ${totalSegments} segments, ${totalMiles.toFixed(2)} miles in ${byCity.length} cities`);
     } catch (error) {
       console.error(`  Error fetching ${countyName} County:`, error.message);
       throw error; // Fail the build

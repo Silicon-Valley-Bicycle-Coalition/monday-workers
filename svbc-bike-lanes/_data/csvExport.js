@@ -80,12 +80,22 @@ function generateCSV(bikelanes, history, unit) {
   }
   lines.push('');
 
-  // County Details
+  // County Details - By Class
   for (const [countyName, county] of Object.entries(bikelanes.counties)) {
     lines.push(`COUNTY DETAILS - ${countyName.toUpperCase()}`);
     lines.push(`Class,${unitLabel}`);
     for (const item of county.byClass) {
       lines.push(`${escapeCSV(item.className)},${formatNum(convert(item.miles))}`);
+    }
+    lines.push('');
+  }
+
+  // City Details
+  for (const [countyName, county] of Object.entries(bikelanes.counties)) {
+    lines.push(`CITIES - ${countyName.toUpperCase()} COUNTY`);
+    lines.push(`City,${unitLabel}`);
+    for (const city of county.byCity) {
+      lines.push(`${escapeCSV(city.name)},${formatNum(convert(city.miles))}`);
     }
     lines.push('');
   }
