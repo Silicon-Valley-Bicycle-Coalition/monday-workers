@@ -1,19 +1,70 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
-# Secret Detection customization: https://docs.gitlab.com/user/application_security/secret_detection/pipeline/configure
-# Dependency Scanning customization: https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#customizing-the-dependency-scanning-settings
-# Container Scanning customization: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
+# GitLab CI/CD for SVBC Bike Lanes Tracker
+# Builds, deploys to Cloudflare Pages, and updates historical data weekly
+
 stages:
-- test
-- secret-detection
-sast:
-  stage: test
+  - test
+  - secret-detection
+  - build
+  - deploy
+
+# Security scanning templates
 include:
-- template: Security/SAST.gitlab-ci.yml
-- template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
 variables:
   SECRET_DETECTION_ENABLED: 'true'
+
+sast:
+  stage: test
+
 secret_detection:
   stage: secret-detection
+
+# Build the static site
+build:
+  stage: build
+  image: node:20
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - _site/
+      - _data/history.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# Deploy to Cloudflare Pages
+deploy:
+  stage: deploy
+  image: node:20
+  needs: [build]
+  script:
+    - npm install -g wrangler
+    - wrangler pages deploy _site --project-name=svbc-bike-lanes
+  environment:
+    name: production
+    url: https://svbc-bike-lanes.pages.dev
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# Commit updated history back to repo (scheduled builds only)
+update-history:
+  stage: deploy
+  image: alpine/git
+  needs: [build]
+  script:
+    - git config user.email "ci@gitlab.com"
+    - git config user.name "GitLab CI"
+    - git clone https://oauth2:${GITLAB_TOKEN}@gitlab.com/${CI_PROJECT_PATH}.git repo
+    - cp _data/history.json repo/_data/history.json
+    - cd repo
+    - git add _data/history.json
+    - 'git diff --cached --quiet || git commit -m "chore: update historical data [skip ci]"'
+    - git push origin main
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
