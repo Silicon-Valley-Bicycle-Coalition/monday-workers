@@ -105,6 +105,25 @@ header .site-title {
   flex: 1;
 }
 
+/* Hidden utility class */
+.hidden {
+  display: none !important;
+}
+
+/* Section controls (e.g., unit toggle above tables) */
+.section-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+/* Unit label in table headers */
+.unit-label {
+  font-weight: normal;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
 /* Unit Toggle */
 .unit-toggle {
   display: flex;
@@ -124,6 +143,10 @@ header .site-title {
   transition: all 0.2s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .unit-btn:hover {

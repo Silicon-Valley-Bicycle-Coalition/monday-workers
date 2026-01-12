@@ -21,6 +21,38 @@
     {{ content | safe }}
   </main>
 
+  <script>
+    // Unit toggle functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const toggle = document.getElementById('city-unit-toggle');
+      if (!toggle) return;
+
+      toggle.addEventListener('click', function(e) {
+        const btn = e.target.closest('.unit-btn');
+        if (!btn || btn.classList.contains('active')) return;
+
+        const unit = btn.dataset.unit;
+
+        // Update active button
+        toggle.querySelectorAll('.unit-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Update unit labels in table headers
+        document.querySelectorAll('.city-class-table .unit-label').forEach(label => {
+          label.textContent = '(' + unit + ')';
+        });
+
+        // Toggle visibility of unit values
+        document.querySelectorAll('.city-class-table .unit-mi').forEach(el => {
+          el.classList.toggle('hidden', unit === 'km');
+        });
+        document.querySelectorAll('.city-class-table .unit-km').forEach(el => {
+          el.classList.toggle('hidden', unit === 'mi');
+        });
+      });
+    });
+  </script>
+
   <footer>
     <p>Data sourced from <a href="https://opendata.mtc.ca.gov/datasets/regional-bike-facilities">MTC Regional Bike Facilities</a></p>
     <p>&copy; {{ currentYear }} <a href="{{ site.url }}">Silicon Valley Bicycle Coalition</a></p>

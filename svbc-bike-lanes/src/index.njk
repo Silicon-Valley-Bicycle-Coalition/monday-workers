@@ -31,28 +31,49 @@ permalink: /
 
 <section>
   <h2>By City</h2>
+  <div class="section-controls">
+    <div class="unit-toggle" id="city-unit-toggle">
+      <button type="button" class="unit-btn active" data-unit="mi">MI</button>
+      <button type="button" class="unit-btn" data-unit="km">KM</button>
+    </div>
+  </div>
   {% for countyName, county in bikelanes.counties %}
   <h3>{{ countyName }} County</h3>
   <table class="city-class-table">
     <thead>
       <tr>
         <th>City</th>
-        <th>Class I</th>
-        <th>Class II</th>
-        <th>Class III</th>
-        <th>Class IV</th>
-        <th>Total</th>
+        <th>Class I <span class="unit-label">(mi)</span></th>
+        <th>Class II <span class="unit-label">(mi)</span></th>
+        <th>Class III <span class="unit-label">(mi)</span></th>
+        <th>Class IV <span class="unit-label">(mi)</span></th>
+        <th>Total <span class="unit-label">(mi)</span></th>
       </tr>
     </thead>
     <tbody>
       {% for city in county.byCity %}
       <tr>
         <td{% if city.name == "Unincorporated" %} class="city-unincorporated"{% endif %}>{{ city.name }}</td>
-        <td data-label="Class I">{{ city | cityClassMiles(1) | safe }}</td>
-        <td data-label="Class II">{{ city | cityClassMiles(2) | safe }}</td>
-        <td data-label="Class III">{{ city | cityClassMiles(3) | safe }}</td>
-        <td data-label="Class IV">{{ city | cityClassMiles(4) | safe }}</td>
-        <td data-label="Total">{{ city.miles | formatDistance('mi') | safe }}</td>
+        <td data-label="Class I">
+          <span class="unit-mi">{{ city | cityClassMiles(1) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(1) | safe }}</span>
+        </td>
+        <td data-label="Class II">
+          <span class="unit-mi">{{ city | cityClassMiles(2) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(2) | safe }}</span>
+        </td>
+        <td data-label="Class III">
+          <span class="unit-mi">{{ city | cityClassMiles(3) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(3) | safe }}</span>
+        </td>
+        <td data-label="Class IV">
+          <span class="unit-mi">{{ city | cityClassMiles(4) | safe }}</span>
+          <span class="unit-km hidden">{{ city | cityClassKm(4) | safe }}</span>
+        </td>
+        <td data-label="Total">
+          <span class="unit-mi">{{ city.miles | formatDistance('mi') | safe }}</span>
+          <span class="unit-km hidden">{{ city.miles | formatDistance('km') | safe }}</span>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

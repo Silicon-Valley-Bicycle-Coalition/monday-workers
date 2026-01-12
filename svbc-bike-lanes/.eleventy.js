@@ -102,6 +102,21 @@ module.exports = function(eleventyConfig) {
     return result;
   });
 
+  // Get city class kilometers with formatting
+  eleventyConfig.addFilter("cityClassKm", function(city, classNum) {
+    const classData = city.byClass.find(c => c.class === classNum);
+    if (!classData) return '—';
+    const km = classData.miles * 1.60934;
+    const rounded = Math.round(km * 10) / 10;
+    const formatted = rounded.toLocaleString();
+    const parts = formatted.split('.');
+    let result = parts.length === 2 ? `${parts[0]}<span class="decimal">.${parts[1]}</span>` : formatted;
+    if (classData.supplemental) {
+      result += '<span class="source-badge" title="Data from supplemental city sources">*</span>';
+    }
+    return result;
+  });
+
   return {
     dir: {
       input: "src",
