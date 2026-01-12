@@ -1,0 +1,28 @@
+{
+  "fetchedAt": "2026-01-09T23:03:59.772Z",
+  "counties": {
+    "Santa Clara": {
+      "cities": {
+        "San Jose": {
+          "class4": {
+            "class": 4,
+            "className": "Class IV - Separated Bikeway",
+            "miles": 72.64,
+            "segments": 429,
+            "source": "San Jose Open Data",
+            "sourceUrl": "https://data.sanjoseca.gov/dataset/bikeways"
+          }
+        }
+      },
+      "totalClass4Miles": 72.64
+    }
+  },
+  "sources": [
+    {
+      "name": "San Jose Open Data",
+      "url": "https://data.sanjoseca.gov/dataset/bikeways",
+      "coverage": "San Jose",
+      "dataType": "Class IV Separated Bikeways"
+    }
+  ]
+}
