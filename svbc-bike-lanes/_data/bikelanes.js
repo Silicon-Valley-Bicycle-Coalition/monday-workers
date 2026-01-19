@@ -146,23 +146,40 @@ function aggregateByClass(features) {
 /**
  * Aggregate features by city using spatial intersection
  * Includes class breakdown per city
+ * Returns both city data and features that belong to this county
  */
 function aggregateByCity(features, cityBoundaries, countyName) {
   const byCity = {};
+  const countyFeatures = []; // Track features that actually belong to this county
 
   for (const feature of features) {
     const classType = feature.attributes.class;
-    const miles = calculatePolylineLength(feature.geometry.paths);
     const midpoint = getPolylineMidpoint(feature.geometry.paths);
 
     let cityName = 'Unincorporated';
+    let belongsToCounty = true;
+
     if (midpoint) {
       const [lon, lat] = midpoint;
       const cityInfo = findCityForPoint(lon, lat, cityBoundaries);
-      if (cityInfo && cityInfo.county === countyName) {
-        cityName = cityInfo.name;
+      if (cityInfo) {
+        if (cityInfo.county === countyName) {
+          cityName = cityInfo.name;
+        } else {
+          // This segment is in another county's city - skip it
+          // It will be counted when that county is processed
+          belongsToCounty = false;
+        }
       }
     }
+
+    // Skip segments that belong to another county
+    if (!belongsToCounty) {
+      continue;
+    }
+
+    countyFeatures.push(feature);
+    const miles = calculatePolylineLength(feature.geometry.paths);
 
     if (!byCity[cityName]) {
       byCity[cityName] = {
@@ -190,7 +207,7 @@ function aggregateByCity(features, cityBoundaries, countyName) {
   }
 
   // Round miles and convert byClass to sorted array
-  return Object.values(byCity)
+  const citiesArray = Object.values(byCity)
     .map(city => ({
       ...city,
       miles: Math.round(city.miles * 100) / 100,
@@ -202,6 +219,12 @@ function aggregateByCity(features, cityBoundaries, countyName) {
         .sort((a, b) => a.class - b.class)
     }))
     .sort((a, b) => b.miles - a.miles);
+
+  // Return both the city breakdown and the filtered features
+  return {
+    byCity: citiesArray,
+    countyFeatures: countyFeatures
+  };
 }
 
 /**
@@ -230,8 +253,12 @@ module.exports = async function() {
 
     try {
       const features = await queryBikeFacilities(countyData.bounds);
-      const byClass = aggregateByClass(features);
-      const byCity = aggregateByCity(features, cityBoundaries, countyName);
+
+      // First aggregate by city to filter out segments that belong to other counties
+      const { byCity, countyFeatures } = aggregateByCity(features, cityBoundaries, countyName);
+
+      // Use filtered features for class aggregation (excludes other-county segments)
+      const byClass = aggregateByClass(countyFeatures);
 
       const totalMiles = byClass.reduce((sum, item) => sum + item.miles, 0);
       const totalSegments = byClass.reduce((sum, item) => sum + item.segments, 0);
