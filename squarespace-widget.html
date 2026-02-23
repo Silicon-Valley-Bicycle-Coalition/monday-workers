@@ -1,0 +1,341 @@
+<!--
+  SVBC Eventbrite Events Widget
+  ==============================
+  Paste this into a Squarespace Code Block.
+  
+  REQUIRES: The svbc-events Cloudflare Worker to be deployed first.
+  Update the WORKER_URL in the script below to match your Worker's URL.
+-->
+
+<div id="svbc-events"></div>
+
+<style>
+  #svbc-events {
+    --svbc-green: #4a7c59;
+    --svbc-green-light: #e8f0eb;
+    --svbc-green-dark: #3a6347;
+    --svbc-text: #2c2c2c;
+    --svbc-text-muted: #6b7280;
+    --svbc-border: #e5e7eb;
+    --svbc-radius: 8px;
+
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--svbc-text);
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem 0;
+  }
+
+  #svbc-events *, #svbc-events *::before, #svbc-events *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  .svbc-loading {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--svbc-text-muted);
+    font-size: 0.95rem;
+  }
+
+  .svbc-loading-spinner {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--svbc-border);
+    border-top-color: var(--svbc-green);
+    border-radius: 50%;
+    animation: svbc-spin 0.7s linear infinite;
+    margin-bottom: 0.75rem;
+  }
+
+  @keyframes svbc-spin { to { transform: rotate(360deg); } }
+
+  .svbc-error {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #b91c1c;
+    background: #fef2f2;
+    border-radius: var(--svbc-radius);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .svbc-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--svbc-text-muted);
+    font-size: 0.95rem;
+  }
+
+  .svbc-event {
+    display: flex;
+    gap: 1.25rem;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--svbc-border);
+    transition: opacity 0.2s ease;
+  }
+
+  .svbc-event:last-child { border-bottom: none; }
+  .svbc-event:hover { opacity: 0.88; }
+
+  .svbc-date-badge {
+    flex-shrink: 0;
+    width: 58px;
+    text-align: center;
+    padding-top: 2px;
+  }
+
+  .svbc-date-month {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--svbc-green);
+    margin-bottom: 2px;
+  }
+
+  .svbc-date-day {
+    display: block;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--svbc-text);
+  }
+
+  .svbc-date-dow {
+    display: block;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--svbc-text-muted);
+    margin-top: 3px;
+  }
+
+  .svbc-event-img {
+    flex-shrink: 0;
+    width: 140px;
+    height: 90px;
+    border-radius: var(--svbc-radius);
+    overflow: hidden;
+    background: var(--svbc-green-light);
+  }
+
+  .svbc-event-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .svbc-event-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .svbc-event-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 0.35rem;
+  }
+
+  .svbc-event-title a {
+    color: var(--svbc-text);
+    text-decoration: none;
+  }
+
+  .svbc-event-title a:hover { color: var(--svbc-green); }
+
+  .svbc-event-meta {
+    font-size: 0.85rem;
+    color: var(--svbc-text-muted);
+    line-height: 1.5;
+  }
+
+  .svbc-event-meta .svbc-sep {
+    margin: 0 0.4em;
+    opacity: 0.4;
+  }
+
+  .svbc-event-summary {
+    font-size: 0.85rem;
+    color: var(--svbc-text-muted);
+    line-height: 1.5;
+    margin-top: 0.4rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .svbc-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  .svbc-badge-free {
+    background: var(--svbc-green-light);
+    color: var(--svbc-green-dark);
+  }
+
+  .svbc-badge-paid {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  @media (max-width: 600px) {
+    .svbc-event {
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .svbc-event-img {
+      width: 100%;
+      height: 160px;
+      order: -1;
+    }
+
+    .svbc-date-badge {
+      width: auto;
+      display: flex;
+      gap: 0.4em;
+      align-items: baseline;
+      padding-top: 0;
+    }
+
+    .svbc-date-month, .svbc-date-day, .svbc-date-dow {
+      display: inline;
+      font-size: 0.85rem;
+    }
+
+    .svbc-date-day { font-size: 1rem; }
+  }
+</style>
+
+<script>
+(function() {
+  // ╔═══════════════════════════════════════════════════╗
+  // ║  CONFIG — Update WORKER_URL after deploying       ║
+  // ╚═══════════════════════════════════════════════════╝
+  var WORKER_URL = 'https://svbc-events.YOUR-SUBDOMAIN.workers.dev/events';
+  var SHOW_IMAGE = true;
+  var SHOW_DESCRIPTION = true;
+  var MAX_EVENTS = 20;
+  // ╔═══════════════════════════════════════════════════╗
+  // ║  END CONFIG                                       ║
+  // ╚═══════════════════════════════════════════════════╝
+
+  var container = document.getElementById('svbc-events');
+
+  container.innerHTML =
+    '<div class="svbc-loading">' +
+      '<div class="svbc-loading-spinner"></div>' +
+      '<div>Loading events\u2026</div>' +
+    '</div>';
+
+  fetch(WORKER_URL + '?page_size=' + MAX_EVENTS)
+    .then(function(res) {
+      if (!res.ok) throw new Error('Worker returned ' + res.status);
+      return res.json();
+    })
+    .then(function(data) {
+      var events = data.events || [];
+
+      if (events.length === 0) {
+        container.innerHTML =
+          '<div class="svbc-empty">No upcoming events right now \u2014 check back soon!</div>';
+        return;
+      }
+
+      var html = '';
+      events.forEach(function(evt) {
+        var start = new Date(evt.start.local);
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+        var month = months[start.getMonth()];
+        var day = start.getDate();
+        var dow = days[start.getDay()];
+
+        var hours = start.getHours();
+        var minutes = start.getMinutes();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        var timeStr = hours + (minutes > 0 ? ':' + (minutes < 10 ? '0' : '') + minutes : '') + ' ' + ampm;
+
+        var venue = '';
+        if (evt.venue && evt.venue.name) {
+          venue = evt.venue.name;
+          if (evt.venue.city) venue += ', ' + evt.venue.city;
+        } else if (evt.online_event) {
+          venue = 'Online Event';
+        }
+
+        var badgeHtml = evt.is_free
+          ? '<span class="svbc-badge svbc-badge-free">Free</span>'
+          : '<span class="svbc-badge svbc-badge-paid">Tickets</span>';
+
+        var imgHtml = '';
+        if (SHOW_IMAGE && evt.logo_url) {
+          imgHtml =
+            '<div class="svbc-event-img">' +
+              '<img src="' + evt.logo_url + '" alt="" loading="lazy">' +
+            '</div>';
+        }
+
+        var descHtml = '';
+        if (SHOW_DESCRIPTION && evt.summary) {
+          descHtml = '<div class="svbc-event-summary">' + esc(evt.summary) + '</div>';
+        }
+
+        html +=
+          '<div class="svbc-event">' +
+            '<div class="svbc-date-badge">' +
+              '<span class="svbc-date-month">' + month + '</span>' +
+              '<span class="svbc-date-day">' + day + '</span>' +
+              '<span class="svbc-date-dow">' + dow + '</span>' +
+            '</div>' +
+            imgHtml +
+            '<div class="svbc-event-info">' +
+              '<div class="svbc-event-title">' +
+                '<a href="' + evt.url + '" target="_blank" rel="noopener">' +
+                  esc(evt.name) +
+                '</a>' +
+                badgeHtml +
+              '</div>' +
+              '<div class="svbc-event-meta">' +
+                '<span>' + timeStr + '</span>' +
+                (venue ? '<span class="svbc-sep">\u00b7</span><span>' + esc(venue) + '</span>' : '') +
+              '</div>' +
+              descHtml +
+            '</div>' +
+          '</div>';
+      });
+
+      container.innerHTML = html;
+    })
+    .catch(function(err) {
+      console.error('SVBC Events Widget Error:', err);
+      container.innerHTML =
+        '<div class="svbc-error">' +
+          '<strong>Couldn\'t load events.</strong><br>' +
+          'Check the browser console for details.' +
+        '</div>';
+    });
+
+  function esc(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>

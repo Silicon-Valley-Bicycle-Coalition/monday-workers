@@ -1,0 +1,11 @@
+{
+  "name": "svbc-events-widget",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker + Squarespace widget to display SVBC Eventbrite events",
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy",
+    "tail": "npx wrangler tail"
+  }
+}
