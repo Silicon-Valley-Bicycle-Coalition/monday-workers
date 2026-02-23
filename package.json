@@ -4,8 +4,14 @@
   "private": true,
   "description": "Cloudflare Worker + Squarespace widget to display SVBC Eventbrite events",
   "scripts": {
-    "dev": "npx wrangler dev",
-    "deploy": "npx wrangler deploy",
-    "tail": "npx wrangler tail"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.99.0"
   }
 }

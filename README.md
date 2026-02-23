@@ -19,9 +19,10 @@ Displays upcoming Silicon Valley Bicycle Coalition events from Eventbrite on the
 ## Files
 
 ```
-src/worker.js              Cloudflare Worker (API proxy + cache)
+src/worker.ts              Cloudflare Worker (API proxy + cache, TypeScript)
 squarespace-widget.html    HTML/CSS/JS to paste into a Squarespace Code Block
 wrangler.toml              Wrangler deployment config
+tsconfig.json              TypeScript configuration
 .dev.vars.example          Template for local secrets
 ```
 
@@ -38,7 +39,7 @@ wrangler.toml              Wrangler deployment config
 ```sh
 git clone <this-repo>
 cd svbc-events-widget
-npm install wrangler --save-dev
+npm install
 ```
 
 ### 2. Authenticate with Cloudflare
@@ -101,7 +102,7 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 ```sh
 cp .dev.vars.example .dev.vars
 # Edit .dev.vars with the real Eventbrite token
-npx wrangler dev
+npm run dev
 ```
 
 The Worker runs at `http://localhost:8787`. Open `squarespace-widget.html` in a browser (temporarily point `WORKER_URL` to localhost) to test the full flow.
