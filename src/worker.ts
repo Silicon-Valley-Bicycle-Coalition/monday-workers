@@ -705,6 +705,16 @@ function widgetHTML(
   }
 })();
 <\/script>
+<script>
+(function(){
+  function postHeight(){
+    var h = document.documentElement.scrollHeight;
+    window.parent.postMessage({svbcEventsHeight: h}, "*");
+  }
+  new ResizeObserver(postHeight).observe(document.body);
+  postHeight();
+})();
+<\/script>
 </body>
 </html>`;
 }

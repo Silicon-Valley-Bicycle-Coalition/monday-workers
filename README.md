@@ -61,12 +61,12 @@ Paste the **Private token** from Eventbrite when prompted. This is stored encryp
 npx wrangler deploy
 ```
 
-Note the URL it prints, e.g. `https://svbc-events.<subdomain>.workers.dev`
+Note the URL it prints, e.g. `https://events.bikesiliconvalley.org`
 
 ### 5. Test
 
 ```sh
-curl https://svbc-events.<subdomain>.workers.dev/events
+curl https://events.bikesiliconvalley.org/events
 ```
 
 You should see JSON with upcoming events. Run it again and check the `X-Cache` header — the second request should show `HIT`.
@@ -78,12 +78,24 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 
 ```html
 <iframe
-  src="https://svbc-events.<subdomain>.workers.dev/widget"
-  style="width:100%;border:none;min-height:800px"
+  id="svbc-events"
+  src="https://events.bikesiliconvalley.org/widget?organizer=21763925459"
+  style="width:100%;border:none;min-height:800px;overflow:hidden"
   loading="lazy"
   title="SVBC Upcoming Events"
 ></iframe>
+<script>
+window.addEventListener("message", function(e) {
+  if (e.data && e.data.svbcEventsHeight) {
+    document.getElementById("svbc-events").style.height = e.data.svbcEventsHeight + "px";
+  }
+});
+</script>
 ```
+
+The widget posts its content height to the parent page via `postMessage`, and the listener script resizes the iframe to fit. This eliminates scrollbars and blank space.
+
+   The `src` URL accepts query params to customize the display — see [Widget query params](#widget-widget-query-params) and [Organizer IDs](#organizer-ids) below.
 
 3. Save and publish
 
@@ -104,6 +116,7 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 | `images` | `true` | Set to `false` to hide event images |
 | `descriptions` | `true` | Set to `false` to hide event summaries |
 | `organizer` | _(all)_ | Filter to a specific Eventbrite organizer profile |
+| `layout` | `list` | Set to `grid` for a multi-column card layout |
 
 Example: `/widget?max=10&images=false`
 
