@@ -1,13 +1,13 @@
 # SVBC Events Widget
 
-Displays upcoming Silicon Valley Bicycle Coalition events from Eventbrite on the SVBC Squarespace website. Replaces the paid [eventscalendar.co](https://eventscalendar.co) service.
+Displays upcoming Silicon Valley Bicycle Coalition events from Eventbrite on the SVBC Squarespace website.
 
 ## Architecture
 
-```
+```text
 ┌──────────────┐      ┌─────────────────────┐      ┌───────────────┐
 │  Squarespace │─────▶│  Cloudflare Worker   │─────▶│ Eventbrite    │
-│  (widget JS) │      │  (edge-cached proxy) │      │ API v3        │
+│  (iframe)    │      │  (proxy + widget)    │      │ API v3        │
 └──────────────┘      └─────────────────────┘      └───────────────┘
                               │
                        Cloudflare Cache
@@ -18,9 +18,8 @@ Displays upcoming Silicon Valley Bicycle Coalition events from Eventbrite on the
 
 ## Files
 
-```
-src/worker.ts              Cloudflare Worker (API proxy + cache, TypeScript)
-squarespace-widget.html    HTML/CSS/JS to paste into a Squarespace Code Block
+```text
+src/worker.ts              Cloudflare Worker (API proxy + widget + cache)
 wrangler.toml              Wrangler deployment config
 tsconfig.json              TypeScript configuration
 .dev.vars.example          Template for local secrets
@@ -74,10 +73,19 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 
 ### 6. Add the widget to Squarespace
 
-1. Open `squarespace-widget.html`
-2. Update `WORKER_URL` on line 24 to your Worker URL (ending in `/events`)
-3. In Squarespace, edit the events page → add a **Code Block** → paste the contents
-4. Save and publish
+1. In Squarespace, edit the events page → add a **Code Block**
+2. Paste an iframe pointing at your Worker:
+
+```html
+<iframe
+  src="https://svbc-events.<subdomain>.workers.dev/widget"
+  style="width:100%;border:none;min-height:800px"
+  loading="lazy"
+  title="SVBC Upcoming Events"
+></iframe>
+```
+
+3. Save and publish
 
 ## Configuration
 
@@ -88,14 +96,15 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 | `EVENTBRITE_ORG_ID` | `9974694499` | SVBC's Eventbrite organization ID |
 | `CACHE_TTL` | `900` | Edge cache lifetime in seconds (15 min) |
 
-### Widget (`squarespace-widget.html`)
+### Widget (`/widget` query params)
 
-| Variable | Default | Description |
+| Param | Default | Description |
 |---|---|---|
-| `WORKER_URL` | — | Your deployed Worker URL |
-| `SHOW_IMAGE` | `true` | Display event images |
-| `SHOW_DESCRIPTION` | `true` | Display event summary text |
-| `MAX_EVENTS` | `20` | Number of events to display |
+| `max` | `20` | Number of events to display (max 50) |
+| `images` | `true` | Set to `false` to hide event images |
+| `descriptions` | `true` | Set to `false` to hide event summaries |
+
+Example: `/widget?max=10&images=false`
 
 ## Local development
 
@@ -105,7 +114,7 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-The Worker runs at `http://localhost:8787`. Open `squarespace-widget.html` in a browser (temporarily point `WORKER_URL` to localhost) to test the full flow.
+The Worker runs at `http://localhost:8787`. Visit `http://localhost:8787/widget` to preview the widget, or `http://localhost:8787/events` for the JSON API.
 
 ## How the cache works
 

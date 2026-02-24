@@ -6,8 +6,7 @@ SVBC Events Widget — a Cloudflare Worker that proxies the Eventbrite API (keep
 
 ## Architecture
 
-- `src/worker.ts` — Single-file Cloudflare Worker (TypeScript). Handles CORS, edge caching via `caches.default`, and Eventbrite API proxying.
-- `squarespace-widget.html` — Self-contained HTML/CSS/JS snippet pasted into a Squarespace Code Block. Fetches from the Worker and renders event cards.
+- `src/worker.ts` — Single-file Cloudflare Worker (TypeScript). Handles CORS, edge caching via `caches.default`, Eventbrite API proxying, and serves the widget HTML at `/widget`.
 - `wrangler.toml` — Wrangler config with env vars (`EVENTBRITE_ORG_ID`, `CACHE_TTL`).
 - `tsconfig.json` — TypeScript config targeting ESNext with `@cloudflare/workers-types`.
 
@@ -17,11 +16,13 @@ SVBC Events Widget — a Cloudflare Worker that proxies the Eventbrite API (keep
 - `npm run deploy` — Deploy Worker to Cloudflare
 - `npm run tail` — Stream live Worker logs
 - `npm run check` — Run TypeScript type-checking (`tsc --noEmit`)
+- `npm test` — Run unit tests (Vitest + `@cloudflare/vitest-pool-workers`)
 
 ## Key details
 
 - TypeScript with `@cloudflare/workers-types`. Wrangler handles transpilation — no separate build step.
-- No test framework is configured.
+- Tests use `@cloudflare/vitest-pool-workers` with `fetchMock` to intercept outbound Eventbrite calls. Tests live in `test/`.
 - The `EVENTBRITE_TOKEN` secret is set via `npx wrangler secret put`, never stored in code.
 - CORS allows `bikesiliconvalley.org` and `localhost` origins.
-- The Worker only serves GET on `/` and `/events`; everything else returns 404.
+- The Worker serves GET on `/`, `/events` (JSON API), and `/widget` (embeddable HTML page); everything else returns 404.
+- `/widget` accepts query params: `max`, `images`, `descriptions`.
