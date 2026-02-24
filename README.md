@@ -104,9 +104,8 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 | `images` | `true` | Set to `false` to hide event images |
 | `descriptions` | `true` | Set to `false` to hide event summaries |
 | `organizer` | _(all)_ | Filter to a specific Eventbrite organizer profile |
-| `layout` | `list` | `grid` for multi-column card layout, `list` for single-column |
 
-Example: `/widget?max=10&images=false` or `/widget?layout=grid&organizer=17135810858`
+Example: `/widget?max=10&images=false`
 
 ### Organizer IDs
 
