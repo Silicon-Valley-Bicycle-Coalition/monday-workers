@@ -103,8 +103,21 @@ You should see JSON with upcoming events. Run it again and check the `X-Cache` h
 | `max` | `20` | Number of events to display (max 50) |
 | `images` | `true` | Set to `false` to hide event images |
 | `descriptions` | `true` | Set to `false` to hide event summaries |
+| `organizer` | _(all)_ | Filter to a specific Eventbrite organizer profile |
+| `layout` | `list` | `grid` for multi-column card layout, `list` for single-column |
 
-Example: `/widget?max=10&images=false`
+Example: `/widget?max=10&images=false` or `/widget?layout=grid&organizer=17135810858`
+
+### Organizer IDs
+
+Use the `organizer` query param to show events from a specific organizer profile:
+
+| Organizer ID | Name | Example |
+| --- | --- | --- |
+| `21763925459` | Silicon Valley Bicycle Coalition (main) | `/widget?organizer=21763925459` |
+| `17135810858` | Silicon Valley Bicycle Coalition (volunteering) | `/widget?organizer=17135810858` |
+
+Without the `organizer` param, events from all organizers are shown.
 
 ## Local development
 
@@ -129,7 +142,7 @@ The `X-Cache` response header shows `HIT` or `MISS` for debugging.
 ## Eventbrite credentials
 
 | Credential | Where it's used | Sensitive? |
-|---|---|---|
+| --- | --- | --- |
 | API key (`KEV3IXL...`) | Not used | — |
 | Private token (`GQNO2O...`) | Worker secret | **Yes** — stored encrypted in Cloudflare, never in code |
 | Public token (`MRZOTJ...`) | Not used (can't list org events) | No |

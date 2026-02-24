@@ -41,18 +41,18 @@ function fakeEventbriteResponse(overrides: Record<string, unknown>[] = []) {
             url: "https://eventbrite.com/e/123",
             start: {
               timezone: "America/Los_Angeles",
-              local: "2025-05-15T08:00:00",
-              utc: "2025-05-15T15:00:00Z",
+              local: "2099-05-15T08:00:00",
+              utc: "2099-05-15T15:00:00Z",
             },
             end: {
               timezone: "America/Los_Angeles",
-              local: "2025-05-15T10:00:00",
-              utc: "2025-05-15T17:00:00Z",
+              local: "2099-05-15T10:00:00",
+              utc: "2099-05-15T17:00:00Z",
             },
             is_free: true,
             online_event: false,
             summary: "Join us for Bike to Work Day!",
-            logo: { url: "https://img.example.com/logo.png" },
+            logo: { url: "https://img.example.com/logo.png", original: { url: "https://img.example.com/logo-original.png" } },
             venue: {
               name: "City Hall",
               address: {
@@ -241,6 +241,61 @@ describe("widget", () => {
     const html = await res.text();
     expect(html).toContain("var MAX_EVENTS = 50");
   });
+
+  it("includes client-side past-event filter", async () => {
+    const res = await call(req("/widget"));
+    const html = await res.text();
+    expect(html).toContain("filter(function");
+    expect(html).toContain("new Date(evt.start.utc)");
+  });
+
+  it("defaults to list layout", async () => {
+    const res = await call(req("/widget"));
+    const html = await res.text();
+    expect(html).toContain('var LAYOUT = "list"');
+  });
+
+  it("respects layout=grid query param", async () => {
+    const res = await call(req("/widget?layout=grid"));
+    const html = await res.text();
+    expect(html).toContain('var LAYOUT = "grid"');
+    expect(html).toContain("svbc-grid");
+  });
+});
+
+describe("organizer query param", () => {
+  it("returns 400 for unknown organizer ID", async () => {
+    const res = await call(req("/events?organizer=9999999999"));
+    expect(res.status).toBe(400);
+    const data = await res.json<{ error: string }>();
+    expect(data.error).toContain("Unknown organizer");
+  });
+
+  it("accepts an allowed organizer ID", async () => {
+    mockEventbrite();
+    const res = await call(req("/events?organizer=17135810858"));
+    expect(res.status).toBe(200);
+  });
+
+  it("widget passes organizer through to client-side fetch URL", async () => {
+    const res = await call(req("/widget?organizer=17135810858"));
+    const html = await res.text();
+    expect(html).toContain("&organizer=17135810858");
+  });
+
+  it("widget rejects unknown organizer ID", async () => {
+    const res = await call(req("/widget?organizer=9999999999"));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns all events when no organizer is specified", async () => {
+    mockEventbrite();
+    const res = await call(req("/events"));
+    expect(res.status).toBe(200);
+    const html = await call(req("/widget"));
+    const widgetHtml = await html.text();
+    expect(widgetHtml).not.toContain("&organizer=");
+  });
 });
 
 describe("event mapping", () => {
@@ -263,7 +318,7 @@ describe("event mapping", () => {
     expect(evt.url).toBe("https://eventbrite.com/e/123");
     expect(evt.is_free).toBe(true);
     expect(evt.summary).toBe("Join us for Bike to Work Day!");
-    expect(evt.logo_url).toBe("https://img.example.com/logo.png");
+    expect(evt.logo_url).toBe("https://img.example.com/logo-original.png");
     expect(evt.venue).toEqual({
       name: "City Hall",
       city: "San Jose",
@@ -277,8 +332,8 @@ describe("event mapping", () => {
         {
           name: { text: "Virtual Ride" },
           url: "https://eventbrite.com/e/456",
-          start: { timezone: "UTC", local: "2025-06-01T18:00:00", utc: "2025-06-01T18:00:00Z" },
-          end: { timezone: "UTC", local: "2025-06-01T19:00:00", utc: "2025-06-01T19:00:00Z" },
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
           is_free: false,
           online_event: true,
           summary: "",
@@ -292,5 +347,68 @@ describe("event mapping", () => {
     const evt = data.events[0];
     expect(evt.venue).toBeNull();
     expect(evt.logo_url).toBeNull();
+  });
+
+  it("falls back to logo.url when original is missing", async () => {
+    mockEventbrite(
+      fakeEventbriteResponse([
+        {
+          name: { text: "Fallback Logo" },
+          url: "https://eventbrite.com/e/789",
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "",
+          logo: { url: "https://img.example.com/cropped.png" },
+        },
+      ]),
+    );
+
+    const res = await call(req("/events"));
+    const data = await res.json<{ events: Array<{ logo_url: string }> }>();
+    expect(data.events[0].logo_url).toBe("https://img.example.com/cropped.png");
+  });
+
+  it("strips crop params from image URL", async () => {
+    mockEventbrite(
+      fakeEventbriteResponse([
+        {
+          name: { text: "Cropped Image" },
+          url: "https://eventbrite.com/e/101",
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "",
+          logo: { url: "https://img.evbuc.com/img?auto=format&q=75&rect=0%2C0%2C940%2C470&h=200&w=450&s=abc123" },
+        },
+      ]),
+    );
+
+    const res = await call(req("/events"));
+    const data = await res.json<{ events: Array<{ logo_url: string }> }>();
+    expect(data.events[0].logo_url).toBe("https://img.evbuc.com/img?auto=format&q=75&s=abc123");
+  });
+
+  it("strips focal-point crop params from image URL", async () => {
+    mockEventbrite(
+      fakeEventbriteResponse([
+        {
+          name: { text: "Focal Crop" },
+          url: "https://eventbrite.com/e/102",
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "",
+          logo: { url: "https://img.evbuc.com/img?crop=focalpoint&fit=crop&h=200&w=450&auto=format%2Ccompress&q=75&sharp=10&fp-x=0.08&fp-y=0.54&s=abc" },
+        },
+      ]),
+    );
+
+    const res = await call(req("/events"));
+    const data = await res.json<{ events: Array<{ logo_url: string }> }>();
+    expect(data.events[0].logo_url).toBe("https://img.evbuc.com/img?auto=format%2Ccompress&q=75&sharp=10&s=abc");
   });
 });
