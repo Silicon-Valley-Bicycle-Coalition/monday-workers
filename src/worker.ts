@@ -611,7 +611,7 @@ function widgetHTML(
 
         var locationStr = "";
         if (evt.venue && evt.venue.name) {
-          locationStr = evt.venue.name;
+          locationStr = esc(evt.venue.name);
           if (evt.venue.address) locationStr += " | " + esc(evt.venue.address);
         } else if (evt.online_event) {
           locationStr = "Online Event";
@@ -760,10 +760,12 @@ function handleCORS(request: Request, response: Response): Response {
   const origin = request.headers.get("Origin") || "";
   const headers = new Headers(response.headers);
 
-  if (ALLOWED_ORIGINS.some((o) => origin.startsWith(o)) || origin === "") {
-    headers.set("Access-Control-Allow-Origin", origin || "*");
-  } else {
+  if (origin === "") {
+    headers.set("Access-Control-Allow-Origin", "*");
+  } else if (ALLOWED_ORIGINS.includes(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
+  } else {
+    headers.set("Access-Control-Allow-Origin", "*");
   }
 
   headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");

@@ -151,14 +151,12 @@ describe("CORS", () => {
     );
   });
 
-  it("disallowed origin still gets CORS header", async () => {
+  it("disallowed origin gets wildcard", async () => {
     mockEventbrite();
     const res = await call(
       req("/events", { origin: "https://evil.com" }),
     );
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(
-      "https://evil.com",
-    );
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
   });
 
   it("no origin gets wildcard", async () => {
