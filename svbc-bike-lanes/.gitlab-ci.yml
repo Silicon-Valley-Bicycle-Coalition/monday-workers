@@ -55,7 +55,9 @@ deploy:
 # Commit updated history back to repo (scheduled builds only)
 update-history:
   stage: deploy
-  image: alpine/git
+  image: 
+    name: alpine/git
+    entrypoint: [""]
   needs: [build]
   script:
     - git config user.email "ci@gitlab.com"

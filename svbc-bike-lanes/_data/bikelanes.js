@@ -313,14 +313,36 @@ module.exports = async function() {
           supplemental: true
         });
         results.counties[countyName].byClass.sort((a, b) => a.class - b.class);
+    if (!results.counties[countyName]) continue;
 
         // Update county total
         results.counties[countyName].totalMiles = Math.round(
           (results.counties[countyName].totalMiles + countySupp.totalClass4Miles) * 100
         ) / 100;
+    for (const [cityName, citySuppData] of Object.entries(countySupp.cities)) {
+      const sourceConfig = supplemental.sources.find(s => s.coverage === cityName);
+      const cityIndex = results.counties[countyName].byCity.findIndex(c => c.name === cityName);
+      const cityEntry = cityIndex > -1 ? results.counties[countyName].byCity[cityIndex] : null;
 
         // Add to grand totals
         results.totals.miles += countySupp.totalClass4Miles;
+      // Handle comprehensive sources (e.g., San Jose all classes)
+      if (sourceConfig && sourceConfig.comprehensive) {
+        console.log(`    Replacing MTC data for ${cityName} with comprehensive supplemental source.`);
+        
+        // 1. If city exists from MTC data, subtract its contribution from totals
+        if (cityEntry) {
+          results.totals.miles -= cityEntry.miles;
+          results.counties[countyName].totalMiles -= cityEntry.miles;
+          for (const classData of cityEntry.byClass) {
+            const totalClassEntry = results.totals.byClass[classData.class];
+            if (totalClassEntry) {
+              totalClassEntry.miles -= classData.miles;
+            }
+          }
+          // Remove the old MTC-based city entry
+          results.counties[countyName].byCity.splice(cityIndex, 1);
+        }
 
         // Add to totals byClass
         if (!results.totals.byClass[4]) {
@@ -331,6 +353,25 @@ module.exports = async function() {
             segments: 0,
             supplemental: true
           };
+        // 2. Add the new comprehensive city data
+        const newCityData = {
+          name: cityName,
+          miles: citySuppData.totalMiles,
+          segments: citySuppData.byClass.reduce((sum, c) => sum + c.segments, 0),
+          byClass: citySuppData.byClass,
+        };
+        results.counties[countyName].byCity.push(newCityData);
+
+        // 3. Add new contributions to totals
+        results.totals.miles += newCityData.miles;
+        results.counties[countyName].totalMiles += newCityData.miles;
+        for (const classData of newCityData.byClass) {
+          let totalClassEntry = results.totals.byClass[classData.class];
+          if (!totalClassEntry) {
+            results.totals.byClass[classData.class] = { ...classData, miles: 0, segments: 0 };
+            totalClassEntry = results.totals.byClass[classData.class];
+          }
+          totalClassEntry.miles += classData.miles;
         }
         results.totals.byClass[4].miles += countySupp.totalClass4Miles;
       }
@@ -352,13 +393,36 @@ module.exports = async function() {
               supplemental: true
             });
             cityEntry.byClass.sort((a, b) => a.class - b.class);
+      // Handle non-comprehensive, Class IV-only sources
+      } else if (cityEntry && citySuppData.class4) {
+        const hasClass4 = cityEntry.byClass.some(c => c.class === 4);
+        if (!hasClass4) {
+          console.log(`    Adding supplemental Class IV data for ${cityName}.`);
+          const class4Data = citySuppData.class4;
 
             // Update city total miles
             cityEntry.miles = Math.round((cityEntry.miles + cityData.class4.miles) * 100) / 100;
+          // Add to city
+          cityEntry.byClass.push(class4Data);
+          cityEntry.byClass.sort((a, b) => a.class - b.class);
+          cityEntry.miles += class4Data.miles;
+
+          // Add to county total
+          results.counties[countyName].totalMiles += class4Data.miles;
+
+          // Add to grand totals
+          results.totals.miles += class4Data.miles;
+          let totalClass4 = results.totals.byClass[4];
+          if (!totalClass4) {
+            results.totals.byClass[4] = { ...class4Data, miles: 0, segments: 0 };
+            totalClass4 = results.totals.byClass[4];
           }
+          totalClass4.miles += class4Data.miles;
         }
       }
     }
+    // Re-sort cities by mileage after modifications
+    results.counties[countyName].byCity.sort((a, b) => b.miles - a.miles);
   }
 
   // Store supplemental sources for display

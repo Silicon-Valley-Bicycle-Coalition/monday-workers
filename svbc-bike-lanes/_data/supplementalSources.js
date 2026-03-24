@@ -11,6 +11,14 @@ const path = require('path');
 const CACHE_FILE = path.join(__dirname, 'supplementalSources.cache.json');
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// Bike lane class descriptions (to avoid circular dependency with bikelanes.js)
+const CLASS_NAMES = {
+  1: 'Class I - Bike Path',
+  2: 'Class II - Bike Lane',
+  3: 'Class III - Bike Route',
+  4: 'Class IV - Separated Bikeway'
+};
+
 // San Jose Bikeways API
 const SAN_JOSE_API = 'https://geo.sanjoseca.gov/server/rest/services/OPN/OPN_OpenDataService/MapServer/418';
 
@@ -24,19 +32,24 @@ const SOURCES = {
     classField: 'EXISTINGBIKEWAYCLASS',
     statusField: 'STATUS',
     milesField: 'SEGMENTMILES',
+    // This source is comprehensive and should replace MTC data for this city
+    comprehensive: true,
     classMapping: {
+      'Class 1': 1,
+      'Class 2': 2,
+      'Class 3': 3,
       'Class 4': 4
-    }
+    },
   }
 };
 
 /**
- * Query San Jose bikeways for Class IV data
+ * Query San Jose bikeways for all existing classes
  */
-async function querySanJoseClass4() {
+async function querySanJoseBikeways() {
   const params = new URLSearchParams({
-    where: "STATUS='Existing' AND EXISTINGBIKEWAYCLASS='Class 4'",
-    outFields: 'EXISTINGBIKEWAYCLASS,SEGMENTMILES,STREETNAME,FULLSTREETNAME',
+    where: "STATUS='Existing'",
+    outFields: 'EXISTINGBIKEWAYCLASS,SEGMENTMILES',
     returnGeometry: 'false',
     f: 'json'
   });
@@ -58,25 +71,40 @@ async function querySanJoseClass4() {
 }
 
 /**
- * Aggregate San Jose Class IV data
+ * Aggregate all San Jose bikeway data by class
  */
-function aggregateSanJoseClass4(features) {
+function aggregateSanJoseBikeways(features) {
+  const byClass = {};
   let totalMiles = 0;
-  let segments = 0;
 
   for (const feature of features) {
     const miles = feature.attributes.SEGMENTMILES || 0;
-    totalMiles += miles;
-    segments += 1;
+    const className = feature.attributes.EXISTINGBIKEWAYCLASS;
+    const classNum = SOURCES['San Jose'].classMapping[className];
+
+    if (classNum && miles > 0) {
+      if (!byClass[classNum]) {
+        byClass[classNum] = {
+          class: classNum,
+          className: CLASS_NAMES[classNum] || `Class ${classNum}`,
+          miles: 0,
+          segments: 0,
+          source: 'San Jose Open Data',
+          sourceUrl: 'https://data.sanjoseca.gov/dataset/bikeways',
+          supplemental: true
+        };
+      }
+      byClass[classNum].miles += miles;
+      byClass[classNum].segments += 1;
+      totalMiles += miles;
+    }
   }
 
   return {
-    class: 4,
-    className: 'Class IV - Separated Bikeway',
-    miles: Math.round(totalMiles * 100) / 100,
-    segments: segments,
-    source: 'San Jose Open Data',
-    sourceUrl: 'https://data.sanjoseca.gov/dataset/bikeways'
+    totalMiles: Math.round(totalMiles * 100) / 100,
+    byClass: Object.values(byClass)
+      .map(c => ({ ...c, miles: Math.round(c.miles * 100) / 100 }))
+      .sort((a, b) => a.class - b.class)
   };
 }
 
@@ -95,21 +123,18 @@ async function fetchSupplementalData() {
 
   // Fetch San Jose Class IV
   try {
-    console.log('    Fetching San Jose Class IV bikeways...');
-    const features = await querySanJoseClass4();
-    const class4Data = aggregateSanJoseClass4(features);
+    console.log('    Fetching all San Jose bikeways...');
+    const features = await querySanJoseBikeways();
+    const sanJoseData = aggregateSanJoseBikeways(features);
 
     if (!supplemental.counties['Santa Clara']) {
       supplemental.counties['Santa Clara'] = {
-        cities: {},
-        totalClass4Miles: 0
+        cities: {}
       };
     }
 
-    supplemental.counties['Santa Clara'].cities['San Jose'] = {
-      class4: class4Data
-    };
-    supplemental.counties['Santa Clara'].totalClass4Miles += class4Data.miles;
+    // Store the comprehensive data for San Jose
+    supplemental.counties['Santa Clara'].cities['San Jose'] = sanJoseData;
 
     supplemental.sources.push({
       name: 'San Jose Open Data',
@@ -118,7 +143,7 @@ async function fetchSupplementalData() {
       dataType: 'Class IV Separated Bikeways'
     });
 
-    console.log(`      Found ${class4Data.segments} Class IV segments, ${class4Data.miles} miles`);
+    console.log(`      Found ${sanJoseData.totalMiles} total miles across ${sanJoseData.byClass.length} classes`);
   } catch (error) {
     console.error('    Error fetching San Jose data:', error.message);
   }
