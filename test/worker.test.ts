@@ -1,10 +1,9 @@
+import { env } from "cloudflare:workers";
 import {
-  env,
-  fetchMock,
   createExecutionContext,
   waitOnExecutionContext,
 } from "cloudflare:test";
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import worker from "../src/worker";
 
 const ORIGIN = "http://localhost";
@@ -70,32 +69,57 @@ function fakeEventbriteResponse(overrides: Record<string, unknown>[] = []) {
 }
 
 // ---------------------------------------------------------------------------
-// Setup: intercept all outbound fetch calls
+// Setup: mock globalThis.fetch for outbound calls
 // ---------------------------------------------------------------------------
 
+const originalFetch = globalThis.fetch;
+let fetchSpy: ReturnType<typeof vi.fn>;
+
 beforeAll(() => {
-  fetchMock.activate();
-  fetchMock.disableNetConnect();
+  fetchSpy = vi.fn();
+  globalThis.fetch = fetchSpy;
 });
 
-afterEach(() => fetchMock.assertNoPendingInterceptors());
+beforeEach(async () => {
+  // Clear edge cache to prevent stale responses leaking between tests
+  const cache = caches.default;
+  for (const key of [
+    "http://worker.test/events?page_size=20&organizer=all&v=3",
+    "http://worker.test/events?page_size=50&organizer=all&v=3",
+    "http://worker.test/events?page_size=20&organizer=17135810858&v=3",
+  ]) {
+    await cache.delete(new Request(key));
+  }
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  fetchSpy.mockReset();
+});
 
 /** Mocks a successful Eventbrite API response. */
 function mockEventbrite(body = fakeEventbriteResponse()) {
-  fetchMock
-    .get("https://www.eventbriteapi.com")
-    .intercept({ path: /^\/v3\/organizations\/.*\/events/ })
-    .reply(200, JSON.stringify(body), {
-      headers: { "Content-Type": "application/json" },
-    });
+  fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes("eventbriteapi.com")) {
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected fetch to ${url}`);
+  });
 }
 
 /** Mocks an Eventbrite API error. */
 function mockEventbriteError(status: number, body: string) {
-  fetchMock
-    .get("https://www.eventbriteapi.com")
-    .intercept({ path: /^\/v3\/organizations\/.*\/events/ })
-    .reply(status, body);
+  fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes("eventbriteapi.com")) {
+      return new Response(body, { status });
+    }
+    throw new Error(`Unexpected fetch to ${url}`);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -176,15 +200,16 @@ describe("cache headers", () => {
 
 describe("page_size", () => {
   it("clamps page_size to 50", async () => {
-    // We verify the worker passes page_size=50 to Eventbrite
-    fetchMock
-      .get("https://www.eventbriteapi.com")
-      .intercept({
-        path: (path: string) => path.includes("page_size=50"),
-      })
-      .reply(200, JSON.stringify(fakeEventbriteResponse()), {
-        headers: { "Content-Type": "application/json" },
-      });
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("page_size=50")) {
+        return new Response(JSON.stringify(fakeEventbriteResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Expected page_size=50 in URL, got: ${url}`);
+    });
 
     const res = await call(req("/events?page_size=999"));
     expect(res.status).toBe(200);

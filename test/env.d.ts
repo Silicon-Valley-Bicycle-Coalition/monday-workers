@@ -1,4 +1,4 @@
-declare module "cloudflare:test" {
+declare module "cloudflare:workers" {
   interface ProvidedEnv {
     EVENTBRITE_ORG_ID: string;
     CACHE_TTL: string;
