@@ -230,7 +230,7 @@ async function fetchEvents(
 
   const now = new Date();
   const rawEvents = (data.events || [])
-    .filter((evt) => evt.listed !== false)
+    .filter((evt) => evt.listed !== false && evt.invite_only !== true)
     .filter((evt) => !organizerId || evt.organizer_id === organizerId);
   const events: EventItem[] = rawEvents
     .map((evt) => ({

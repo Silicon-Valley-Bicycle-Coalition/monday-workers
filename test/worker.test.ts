@@ -84,9 +84,9 @@ beforeEach(async () => {
   // Clear edge cache to prevent stale responses leaking between tests
   const cache = caches.default;
   for (const key of [
-    "http://worker.test/events?page_size=20&organizer=all&v=3",
-    "http://worker.test/events?page_size=50&organizer=all&v=3",
-    "http://worker.test/events?page_size=20&organizer=17135810858&v=3",
+    "http://worker.test/events?page_size=20&organizer=all&v=4",
+    "http://worker.test/events?page_size=50&organizer=all&v=4",
+    "http://worker.test/events?page_size=20&organizer=17135810858&v=4",
   ]) {
     await cache.delete(new Request(key));
   }
@@ -354,6 +354,39 @@ describe("private events", () => {
     const data = await res.json<{ events: Array<{ name: string }>; total: number }>();
     expect(data.events).toHaveLength(1);
     expect(data.events[0].name).toBe("Public Ride");
+  });
+
+  it("excludes events with invite_only=true", async () => {
+    mockEventbrite(
+      fakeEventbriteResponse([
+        {
+          name: { text: "Open Ride" },
+          url: "https://eventbrite.com/e/400",
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "An open event",
+          logo: null,
+        },
+        {
+          name: { text: "Invite-Only Planning" },
+          url: "https://eventbrite.com/e/500",
+          start: { timezone: "UTC", local: "2099-06-01T20:00:00", utc: "2099-06-01T20:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T21:00:00", utc: "2099-06-01T21:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "An invite-only event",
+          logo: null,
+          invite_only: true,
+        },
+      ]),
+    );
+
+    const res = await call(req("/events"));
+    const data = await res.json<{ events: Array<{ name: string }> }>();
+    expect(data.events).toHaveLength(1);
+    expect(data.events[0].name).toBe("Open Ride");
   });
 
   it("includes events with no listed field (defaults to public)", async () => {
