@@ -229,9 +229,9 @@ async function fetchEvents(
   }>();
 
   const now = new Date();
-  const rawEvents = organizerId
-    ? (data.events || []).filter((evt) => evt.organizer_id === organizerId)
-    : (data.events || []);
+  const rawEvents = (data.events || [])
+    .filter((evt) => evt.listed !== false)
+    .filter((evt) => !organizerId || evt.organizer_id === organizerId);
   const events: EventItem[] = rawEvents
     .map((evt) => ({
       name: evt.name?.text || evt.name?.html || "Untitled",

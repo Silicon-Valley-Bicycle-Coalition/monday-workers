@@ -296,6 +296,63 @@ describe("organizer query param", () => {
   });
 });
 
+describe("private events", () => {
+  it("excludes events with listed=false", async () => {
+    mockEventbrite(
+      fakeEventbriteResponse([
+        {
+          name: { text: "Public Ride" },
+          url: "https://eventbrite.com/e/100",
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "A public event",
+          logo: null,
+          listed: true,
+        },
+        {
+          name: { text: "Private Board Meeting" },
+          url: "https://eventbrite.com/e/200",
+          start: { timezone: "UTC", local: "2099-06-01T20:00:00", utc: "2099-06-01T20:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T21:00:00", utc: "2099-06-01T21:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "A private event",
+          logo: null,
+          listed: false,
+        },
+      ]),
+    );
+
+    const res = await call(req("/events"));
+    const data = await res.json<{ events: Array<{ name: string }>; total: number }>();
+    expect(data.events).toHaveLength(1);
+    expect(data.events[0].name).toBe("Public Ride");
+  });
+
+  it("includes events with no listed field (defaults to public)", async () => {
+    mockEventbrite(
+      fakeEventbriteResponse([
+        {
+          name: { text: "Legacy Event" },
+          url: "https://eventbrite.com/e/300",
+          start: { timezone: "UTC", local: "2099-06-01T18:00:00", utc: "2099-06-01T18:00:00Z" },
+          end: { timezone: "UTC", local: "2099-06-01T19:00:00", utc: "2099-06-01T19:00:00Z" },
+          is_free: true,
+          online_event: false,
+          summary: "No listed field",
+          logo: null,
+        },
+      ]),
+    );
+
+    const res = await call(req("/events"));
+    const data = await res.json<{ events: Array<{ name: string }> }>();
+    expect(data.events).toHaveLength(1);
+  });
+});
+
 describe("event mapping", () => {
   it("maps Eventbrite fields to simplified shape", async () => {
     mockEventbrite();
