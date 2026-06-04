@@ -32,6 +32,7 @@ const ALLOWED_ORIGINS: string[] = [
 const ALLOWED_ORGANIZERS: string[] = [
   "21763925459",   // Silicon Valley Bicycle Coalition (main)
   "17135810858",   // Silicon Valley Bicycle Coalition (volunteering)
+  "121346572357",  // Silicon Valley Bicycle Coalition (bike parking)
 ];
 
 // ---------------------------------------------------------------------------
