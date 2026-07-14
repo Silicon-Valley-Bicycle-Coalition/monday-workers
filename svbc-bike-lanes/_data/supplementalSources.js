@@ -140,7 +140,8 @@ async function fetchSupplementalData() {
       name: 'San Jose Open Data',
       url: 'https://data.sanjoseca.gov/dataset/bikeways',
       coverage: 'San Jose',
-      dataType: 'Class IV Separated Bikeways'
+      dataType: 'Class IV Separated Bikeways',
+      comprehensive: SOURCES['San Jose'].comprehensive
     });
 
     console.log(`      Found ${sanJoseData.totalMiles} total miles across ${sanJoseData.byClass.length} classes`);
