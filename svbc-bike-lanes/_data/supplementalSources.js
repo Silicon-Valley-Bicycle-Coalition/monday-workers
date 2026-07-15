@@ -34,14 +34,20 @@ const SOURCES = {
     milesField: 'SEGMENTMILES',
     // This source is comprehensive and should replace MTC data for this city
     comprehensive: true,
-    classMapping: {
-      'Class 1': 1,
-      'Class 2': 2,
-      'Class 3': 3,
-      'Class 4': 4
-    },
+    // Matches the leading class number regardless of suffix, e.g.
+    // "Class 1", "Class 2 (Buffered)", "Class 3 (Sharrow)", "Class 2 (BUFFERED)"
+    classPattern: /Class\s*(\d)/i,
   }
 };
+
+/**
+ * Extract the class number (1-4) from a raw bikeway class label
+ */
+function parseClassNumber(className, pattern) {
+  if (!className) return null;
+  const match = String(className).match(pattern);
+  return match ? parseInt(match[1], 10) : null;
+}
 
 /**
  * Query San Jose bikeways for all existing classes
@@ -80,7 +86,7 @@ function aggregateSanJoseBikeways(features) {
   for (const feature of features) {
     const miles = feature.attributes.SEGMENTMILES || 0;
     const className = feature.attributes.EXISTINGBIKEWAYCLASS;
-    const classNum = SOURCES['San Jose'].classMapping[className];
+    const classNum = parseClassNumber(className, SOURCES['San Jose'].classPattern);
 
     if (classNum && miles > 0) {
       if (!byClass[classNum]) {
@@ -140,7 +146,7 @@ async function fetchSupplementalData() {
       name: 'San Jose Open Data',
       url: 'https://data.sanjoseca.gov/dataset/bikeways',
       coverage: 'San Jose',
-      dataType: 'Class IV Separated Bikeways',
+      dataType: 'All Bikeway Classes (comprehensive)',
       comprehensive: SOURCES['San Jose'].comprehensive
     });
 

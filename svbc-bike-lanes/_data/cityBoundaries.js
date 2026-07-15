@@ -172,5 +172,6 @@ async function getCityBoundaries() {
 module.exports = {
   getCityBoundaries,
   findCityForPoint,
-  getPolylineMidpoint
+  getPolylineMidpoint,
+  pointInPolygon
 };
