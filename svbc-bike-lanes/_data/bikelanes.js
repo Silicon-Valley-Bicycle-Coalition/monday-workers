@@ -8,9 +8,13 @@
 const fs = require('fs');
 const path = require('path');
 const { getCityBoundaries, findCityForPoint, getPolylineMidpoint } = require('./cityBoundaries');
+const { getCountyBoundaries, resolveCountyForPoint } = require('./countyBoundaries');
 const { getSupplementalData } = require('./supplementalSources');
 
-// County bounding boxes (approximate, WGS84)
+// County bounding boxes (approximate, WGS84) - used only to fetch a superset
+// of candidate segments from the MTC API. Actual county attribution uses the
+// real polygons from countyBoundaries.js, since these boxes are much larger
+// than the counties' true shape.
 // Source: US Census TIGER/Line data
 const COUNTIES = {
   'San Mateo': {
@@ -148,7 +152,7 @@ function aggregateByClass(features) {
  * Includes class breakdown per city
  * Returns both city data and features that belong to this county
  */
-function aggregateByCity(features, cityBoundaries, countyName) {
+function aggregateByCity(features, cityBoundaries, countyName, countyBoundaries) {
   const byCity = {};
   const countyFeatures = []; // Track features that actually belong to this county
 
@@ -170,6 +174,12 @@ function aggregateByCity(features, cityBoundaries, countyName) {
           // It will be counted when that county is processed
           belongsToCounty = false;
         }
+      } else {
+        // Not inside any known city - resolve against real county polygons
+        // (not the query bounding box) so segments in the gap between the
+        // box and the true county shape - or in the overlap between two
+        // adjacent counties' boxes - are attributed to exactly one county.
+        belongsToCounty = resolveCountyForPoint(lon, lat, countyBoundaries) === countyName;
       }
     }
 
@@ -233,8 +243,9 @@ function aggregateByCity(features, cityBoundaries, countyName) {
 module.exports = async function() {
   console.log('Fetching bike lane data from MTC API...');
 
-  // Load city boundaries for spatial intersection
+  // Load city and county boundaries for spatial intersection
   const cityBoundaries = await getCityBoundaries();
+  const countyBoundaries = await getCountyBoundaries();
 
   const results = {
     fetchedAt: new Date().toISOString(),
@@ -255,7 +266,7 @@ module.exports = async function() {
       const features = await queryBikeFacilities(countyData.bounds);
 
       // First aggregate by city to filter out segments that belong to other counties
-      const { byCity, countyFeatures } = aggregateByCity(features, cityBoundaries, countyName);
+      const { byCity, countyFeatures } = aggregateByCity(features, cityBoundaries, countyName, countyBoundaries);
 
       // Use filtered features for class aggregation (excludes other-county segments)
       const byClass = aggregateByClass(countyFeatures);
