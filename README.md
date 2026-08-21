@@ -105,8 +105,10 @@ redeploy any of these against their own Monday.com/CRM setup with no copyleft ob
 review overhead — the goal here is adoption, not protecting this code from reuse.
 
 This repo exists as a deliberate split from SVBC's private planning repo, so the migration plan
-and data-survey docs (which contain SVBC-internal detail) stay private while the Workers are
-public. Keep it that way: nothing from the private repo's `docs/` tree belongs here.
+and data-survey docs (which contain SVBC-internal detail) stay private while the Workers can be
+public. (As of 2026-08-21 this repo is still set to private on GitLab — flipping it public is
+pending.) Keep the split clean either way: nothing from the private repo's `docs/` tree belongs
+here.
 
 ## Build order
 
