@@ -1,9 +1,8 @@
 # donor-portal
 
-**Status:** Decided — build.
-**Priority:** Post-migration, non-blocking on the October cutover — but blocked on the Membership
-board's minimal Status/Tier design being finished first (see below). Not safe to start until that
-lands.
+**Status:** Decided — build. Unblocked 2026-08-21: the minimal Status/Tier Membership slice is
+confirmed stable to build against, ahead of the full Membership board design.
+**Priority:** Post-migration, non-blocking on the October cutover.
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript, D1 (tokens/sessions only — Monday stays the system of record, this
 Worker doesn't duplicate donor data into its own database).
@@ -25,15 +24,19 @@ than silently assumed in:
 * **Tax-deductibility receipts.** Showing a donor their own giving history is not the same
   document as an IRS-compliant annual acknowledgment letter. Monday has no receipting primitive
   (same gap noted in the Funraise Option B/C discussion in the plan) and generating compliant tax
-  documents is real compliance surface this build doesn't take on. If the board wants this, it's
-  its own deliverable — say so explicitly in the UI copy so donors don't mistake this for a tax
-  document.
+  documents is real compliance surface this build doesn't take on. **Decided 2026-08-21: scoped
+  as its own separate deliverable** (likely a Workers cron generating year-end letters from the
+  Donations board — see the plan's Post-Migration Follow-ups). Say so explicitly in the UI copy
+  so donors don't mistake this portal for a tax document.
 * **Editing their own info.** Read-only, for the same rollback-safety reason
   `workers/salesforce-import` never writes back to Salesforce. A self-service edit path needs its
   own scope (validation, an audit trail, a staff review step) and shouldn't ride along with "let
   them see their data."
 
-## Blocking precondition
+## Blocking precondition — resolved
+
+**Resolved 2026-08-21: the minimal Status/Tier slice is confirmed stable to build against**, ahead
+of the full renewal-workflow design. The original reasoning, kept for context:
 
 **The Membership board needs a Status and a Tier field before this can be built at all** —
 "membership benefits" is meaningless without knowing whether someone's membership is current and
@@ -76,12 +79,12 @@ matches a Donors-board item, they get a login link; if it doesn't, show the same
 message either way (don't reveal whether an address is in the system — an email-enumeration
 guard). No account-creation step, nothing to reset.
 
-**Open decision, needed before build: one email matching multiple Donor items.** Households and
-couples share email addresses, and the dedup work (`docs/10-contact-deduplication.md` in the
-private planning repo) proves collisions exist in this data. Decide the behavior deliberately — show all matched items'
-history, show none and route to staff, or pick-one with explicit labeling. The accidental default
-(first match wins) can show one family member another's giving history by design. Tracked in the
-plan's Decisions Needed.
+**Decided (2026-08-21): one email matching multiple Donor items → show all matches, explicitly
+labeled.** Households and couples share email addresses, and dedup analysis proved collisions
+exist in this data. The portal renders each matched person's history under its own name header —
+people sharing an inbox already receive each other's receipts, and explicit labeling prevents
+silent misattribution. Never fall into the accidental default (first match wins), which can show
+one family member another's giving history unlabeled.
 
 **Cloudflare Access (Zero Trust) was considered and ruled out for this specific use.** It's the
 right fit for gating small internal tools to a handful of staff — its free tier caps at 50 users —

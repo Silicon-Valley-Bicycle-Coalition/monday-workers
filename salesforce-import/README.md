@@ -42,17 +42,26 @@ import too if this isn't reconciled first. Full detail:
 This is listed first in the plan's Decisions Needed for a reason — treat it as a hard gate on
 starting the import build, not a parallel task.
 
-**New, from the org-customization audit — also gate the build on these before finalizing scope:**
+**New, from the org-customization audit — also gate the build on these before finalizing scope
+(status as of 2026-08-21 — two of three resolved):**
 
-* **Click & Pledge (2014–2022 legacy donation history) disposition** — migrate, archive, or drop?
-  A second, previously-undiscovered donation platform with 6,235 transactions and no live sync to
-  maintain, but a real decision with a real cost either way. See `05` §1d.
-* **Mailchimp consent staleness** — the Salesforce-side Mailchimp sync (`MC4SF`, 540,000+ records)
-  has written nothing since 2025-10-19. If Mailchimp is the real system of record for email
-  consent, Salesforce's opt-out flags may be stale by ~10 months — **do not write opt-out fields to
-  Monday until this is confirmed.** See `05` §1g.
+* ~~**Click & Pledge (2014–2022 legacy donation history) disposition**~~ **Resolved: migrate** all
+  6,235 transactions into the Donations board as historical records — now in this script's scope.
+  See `05` §1d.
+* ~~**Mailchimp consent staleness**~~ **Resolved: Mailchimp is the consent system of record.**
+  Live query confirmed the `MC4SF` sync's last write was 2025-10-20 — dead for ten months. This
+  script must **not** write Salesforce's opt-out flags as authoritative; consent imports from a
+  fresh Mailchimp export at cutover. See `05` §1g.
 * **Membership board scope** — `Membership__c` (20,510 records, second-largest object in the org)
-  has no field mapping or board design anywhere in this plan yet. See `05` §1e–§2.
+  has no field mapping or board design anywhere in this plan yet. See `05` §1e–§2. **Still open —
+  the last decision gating this script's finalization.**
+
+**Also added to scope by the 2026-08-21 decisions** (details in `05` §1a/§1b/§1i/§1j and the
+plan's Decisions Needed): Sponsorship/Grants/Contracts Opportunity history (3,613 + 125 + 478
+records — the record-type count query proved these are real, not greenfield); volunteer history
+2014–2020 as historical records; the recent ~2-year slice of Tasks/EmailMessages onto the Donors'
+Activities board; `Secondary_Email__c` as its own labeled column on Person items; and a
+`ContactHistory` flat export (68,831 rows) into the backup archive.
 
 ## Data flow
 
