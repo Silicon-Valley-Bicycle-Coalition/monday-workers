@@ -43,7 +43,8 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`committee-calendars`](committee-calendars/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`gemini-reports`](gemini-reports/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Recommended, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
-| [`donor-portal`](donor-portal/README.md) | Decided — build | Post-migration, non-blocking (blocked on Membership design) | Unassigned |
+| [`donor-portal`](donor-portal/README.md) | Decided — build | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
+| [`membership-reminders`](membership-reminders/README.md) | Decided — build | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
 plan for both:
@@ -114,8 +115,10 @@ here.
 
 1. **`salesforce-import`** and **`funraise-sync`** first — both are blocking on the October
    Salesforce cutover; everything else here is explicitly post-migration and non-blocking.
-2. Everything else can happen in any order, gated mainly by owner availability (see the table
+2. **`membership-reminders` next** — it's post-migration but time-sensitive: Salesforce's
+   renewal-reminder automation dies at retirement, and members stop being asked to renew until
+   this ships.
+3. Everything else can happen in any order, gated mainly by owner availability (see the table
    above — most rows are unassigned) and, for `volunteermatch-sync`, by Idealist confirming terms.
-3. **`donor-portal` specifically also needs the Membership board's minimal Status/Tier design
-   finished first** (see `docs/06-staff-process-guide.md` §8, private planning repo) — it's the only Worker here with a
-   dependency on another undecided piece of this plan, not just an owner.
+   `donor-portal`'s former dependency on the Membership design was resolved 2026-08-21 — the
+   Status/Tier slice it needs is now part of the import scope.

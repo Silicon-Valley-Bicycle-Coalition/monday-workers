@@ -52,9 +52,11 @@ starting the import build, not a parallel task.
   Live query confirmed the `MC4SF` sync's last write was 2025-10-20 — dead for ten months. This
   script must **not** write Salesforce's opt-out flags as authoritative; consent imports from a
   fresh Mailchimp export at cutover. See `05` §1g.
-* **Membership board scope** — `Membership__c` (20,510 records, second-largest object in the org)
-  has no field mapping or board design anywhere in this plan yet. See `05` §1e–§2. **Still open —
-  the last decision gating this script's finalization.**
+* ~~**Membership board scope**~~ **Resolved 2026-08-21 — the script's scope is now final.** No
+  new board: 4 member-level columns on Donors (Status/Tier/Since/Until, for 10,270 members with
+  Lifetime normalization) and 3 per-term columns on the linked Donation items (Term Start/End,
+  Type), matched via the 100%-filled `Opportunity__c` link with a 1:1 assertion. Full mapping in
+  `05` §2; the renewal emails become the new `membership-reminders` Worker.
 
 **Also added to scope by the 2026-08-21 decisions** (details in `05` §1a/§1b/§1i/§1j and the
 plan's Decisions Needed): Sponsorship/Grants/Contracts Opportunity history (3,613 + 125 + 478
