@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
 import { dataPath, readNdjson, writeJson, writeNdjson } from '../artifacts.js';
@@ -16,14 +17,26 @@ import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
 type Row = Record<string, unknown>;
 const load = (name: string) => readNdjson<Row>(dataPath('extract', `${name}.ndjson`));
 
-export async function runTransform(_args: string[]): Promise<number> {
+export async function runTransform(args: string[]): Promise<number> {
   const cfg = loadConfig();
+  const noConsent = args.includes('--no-consent');
+  const consentPath = dataPath('extract', 'consent.ndjson');
+  const consentExists = existsSync(consentPath);
+  if (!consentExists && !noConsent) {
+    console.error('transform: data/extract/consent.ndjson not found — run ' +
+      '"extract --consent <mailchimp.csv>" first, or pass --no-consent to proceed without consent data');
+    return 1;
+  }
+  if (!consentExists) console.warn('transform: consent.ndjson not found — proceeding with ' +
+    '--no-consent (empty consent map, every contact will show "Not in Mailchimp")');
+
   const [contacts, accounts, opportunities, memberships, affiliations, subscriptions, pledges,
     events, registrations, campaigns, cnp, volunteerHours, tasksRecent, emailsRecent, consentRows] =
     await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('memberships'),
       load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
       load('registrations'), load('campaigns'), load('clickpledge_transactions'),
-      load('volunteer_hours'), load('tasks_recent'), load('emails_recent'), load('consent').catch(() => [])]);
+      load('volunteer_hours'), load('tasks_recent'), load('emails_recent'),
+      consentExists ? load('consent') : Promise.resolve([])]);
 
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
   const geoCache = new GeoCache();
@@ -40,13 +53,23 @@ export async function runTransform(_args: string[]): Promise<number> {
   const memberSummaries = deriveMembers(terms, cfg.cutoverDateISO);
   const { columns: termCols, violations: membershipViolations } = termColumnsByOpportunity(terms);
 
+  // Click & Pledge dedup against Opportunities, computed FIRST — the deduped C&P set feeds both
+  // the People inclusion sets below (a C&P-only donor must still become a Person) and the donor
+  // rollups further down, so it must exist before `inc` is built.
+  const { unique: cnpUnique } = cnpOverlapCheck(cnp, opportunities);
+  const cnpDonorOf = (t: Row) => t['CnP_PaaS__Contact__c'] as string | null; // Accounts aren't People — contacts only.
+  const cnpDonorIds = new Set(cnpUnique.map(cnpDonorOf).filter((x): x is string => !!x));
+  const cnpRecentDonorIds = new Set(cnpUnique
+    .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
+    .map(cnpDonorOf).filter((x): x is string => !!x));
+
   // Inclusion sets.
   const donorOf = (o: Row) => (o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c']) as string | null;
   const inc: InclusionInput = {
-    donorIds: new Set(opportunities.map(donorOf).filter((x): x is string => !!x)),
-    recentDonorIds: new Set(opportunities
+    donorIds: new Set([...opportunities.map(donorOf).filter((x): x is string => !!x), ...cnpDonorIds]),
+    recentDonorIds: new Set([...opportunities
       .filter((o) => (o['CloseDate'] as string) >= cfg.peopleActiveSinceISO)
-      .map(donorOf).filter((x): x is string => !!x)),
+      .map(donorOf).filter((x): x is string => !!x), ...cnpRecentDonorIds]),
     memberSummaries,
     registrantIds: new Set(registrations.map((r) => r['funraise__Registrant__c'] as string).filter(Boolean)),
     volunteerIds: new Set(volunteerHours.map((v) => v['GW_Volunteers__Contact__c'] as string).filter(Boolean)),
@@ -65,11 +88,8 @@ export async function runTransform(_args: string[]): Promise<number> {
     if (!affiliationOrgsByContact.has(contactId)) affiliationOrgsByContact.set(contactId, []);
     affiliationOrgsByContact.get(contactId)!.push(orgId);
   }
-  const rollups = (() => {
-    const { unique } = cnpOverlapCheck(cnp, opportunities);
-    return { map: donorRollups(opportunities, unique), cnpUnique: unique,
-      overlap: cnp.length - unique.length };
-  })();
+  const rollups = { map: donorRollups(opportunities, cnpUnique), cnpUnique,
+    overlap: cnp.length - cnpUnique.length };
 
   const payloads: ItemPayload[] = [];
   const includedContactIds = new Set<string>();

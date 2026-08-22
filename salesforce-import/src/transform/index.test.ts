@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runTransform } from './index.js';
 import { writeNdjson, writeJson, readNdjson, readJson, dataPath } from '../artifacts.js';
 import type { ItemPayload, TransformReport } from './types.js';
 
+const prov = { CreatedDate: '2020-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
+  LastModifiedDate: '2020-01-01T00:00:00Z', LastModifiedBy: { Name: 'X' } };
+
 async function seed() {
-  const prov = { CreatedDate: '2020-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
-    LastModifiedDate: '2020-01-01T00:00:00Z', LastModifiedBy: { Name: 'X' } };
   await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
     { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
     { Id: 'c2', FirstName: 'Eva', LastName: 'M', Email: 'e@b.c', ...prov }, // email-only → excluded
@@ -82,5 +83,37 @@ describe('runTransform', () => {
         Start_Date__c: '2025-01-15', WEC_End_Date_Manual__c: '2026-01-15' },
     ]);
     expect(await runTransform([])).toBe(1);
+  });
+
+  it('fails with a named remediation when consent.ndjson is missing and --no-consent is not passed', async () => {
+    rmSync(dataPath('extract', 'consent.ndjson'));
+    expect(await runTransform([])).toBe(1);
+  });
+
+  it('proceeds with an empty consent map when --no-consent is passed and the file is missing', async () => {
+    rmSync(dataPath('extract', 'consent.ndjson'));
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const ada = payloads.find((p) => p.sfId === 'c1')!;
+    expect(ada.columns['Email Consent']).toEqual({ label: 'Not in Mailchimp' });
+  });
+
+  it('includes a C&P-only donor as People (historical for an old gift), with a resolving Donor link', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
+      { Id: 'c4', FirstName: 'CnP', LastName: 'Only', ...prov }, // no opportunities, membership, etc.
+    ]);
+    await writeNdjson(dataPath('extract', 'clickpledge_transactions.ndjson'), [
+      { Id: 'cnp1', Name: 'Old C&P Gift', CnP_PaaS__Contact__c: 'c4',
+        CnP_PaaS__TransactionDate__c: '2015-05-01', CnP_PaaS__TotalCharged__c: 40, ...prov },
+    ]);
+    expect(await runTransform([])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+    const c4 = bySf.get('c4');
+    expect(c4).toBeDefined();
+    expect(c4!.board).toBe('people-historical'); // old C&P date, before peopleActiveSinceISO
+    const cnpPayload = bySf.get('cnp1')!;
+    expect(cnpPayload.links).toEqual([{ column: 'Donor', targetSfIds: ['c4'] }]);
   });
 });
