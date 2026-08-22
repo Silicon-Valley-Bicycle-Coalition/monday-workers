@@ -1193,6 +1193,11 @@ export async function checkLoginRateLimit(
   now: Date
 ): Promise<boolean> {
   const nowISO = now.toISOString();
+  const sinceISO = new Date(now.getTime() - deps.config.emailWindowSeconds * 1000).toISOString();
+
+  // Count attempts prior to this one, then record this one — so "emailMaxAttempts" means
+  // "this many attempts already used in the window", and the next one past that is denied.
+  const priorCount = await deps.attemptStore.countRecentAttempts(email, sinceISO);
   await deps.attemptStore.recordAttempt(email, nowISO);
 
   const ipResult = await deps.ipLimiter.limit(ip);
@@ -1200,10 +1205,7 @@ export async function checkLoginRateLimit(
     return false;
   }
 
-  const sinceISO = new Date(now.getTime() - deps.config.emailWindowSeconds * 1000).toISOString();
-  const recentCount = await deps.attemptStore.countRecentAttempts(email, sinceISO);
-
-  return recentCount <= deps.config.emailMaxAttempts;
+  return priorCount < deps.config.emailMaxAttempts;
 }
 ```
 
