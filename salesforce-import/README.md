@@ -50,10 +50,11 @@ npm run cli -- validate             # reconciliation + data/validate/sample.csv 
 ```
 
 **Sandbox week:** set `monday.boardSuffix` to `" (sandbox)"` in config, and delete `data/load/`
-between full rehearsals. A `load --limit N` smoke run can create connect columns without board
-defaults if the target board isn't included in that limited run, and a later full run does not
-retroactively patch them — run a full `--dry-run` first, and delete `data/load/` between sandbox
-rehearsals rather than layering limited runs on top of each other.
+between full rehearsals. A run against a partial `payloads.ndjson` (e.g. a partial extract, not
+`load --limit N`, which only caps items per board and never drops a board from the run) can create
+connect columns without board defaults if a link's target board has zero payloads that run, and a
+later full run does not retroactively patch them — run a full `--dry-run` first, and delete
+`data/load/` between sandbox rehearsals rather than layering partial runs on top of each other.
 
 **Cutover:** freeze Funraise sync first (doc 03 §7), re-run `extract` fresh, then keep `data/` as
 the migration audit artifact alongside the backup archive.
