@@ -1680,7 +1680,7 @@ function eventRow(overrides: Partial<EventRow> = {}): EventRow {
     eventId: 'evt-1',
     entityType: 'transaction',
     rawPayload: JSON.stringify({ amount: 100 }),
-    matchedDonorItemId: 'donor-1',
+    matchedDonorItemId: '1',
     mondayItemId: null,
     status: 'queued',
     error: null,
