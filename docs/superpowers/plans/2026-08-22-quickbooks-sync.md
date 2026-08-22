@@ -2733,7 +2733,7 @@ import type { MondayEventStore } from '../db/mondayEvents';
 import type { MapStore } from '../db/map';
 import type { MondayClient } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
-import type { QbEventRow, MondayEventRow, QueueMessage, QuickbooksSyncConfig } from '../types';
+import type { EntityType, MapEntry, QbEventRow, MondayEventRow, QueueMessage, QuickbooksSyncConfig } from '../types';
 
 const config: QuickbooksSyncConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', boards: { customers: 111, invoices: 222, products: 333 } },
@@ -2893,9 +2893,9 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       ),
     });
     const mapStore = fakeMapStore({
-      getByQbId: vi.fn(async (entityType: string, qbId: string) => {
+      getByQbId: vi.fn(async (entityType: EntityType, qbId: string): Promise<MapEntry | null> => {
         if (entityType === 'customer' && qbId === 'qb-1') {
-          return { entityType: 'customer', qbId: 'qb-1', mondayItemId: 'cust-item-1', mondayBoardId: 111, createdAt: '' };
+          return { entityType: 'customer', qbId: 'qb-1', mondayItemId: '111', mondayBoardId: 111, createdAt: '' };
         }
         return null;
       }),
