@@ -1,0 +1,11 @@
+{
+  "name": "svbc-membership-reminders",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "triggers": {
+    // Once daily, 15:00 UTC = 7am Pacific (PDT) / 8am Pacific (PST). The exact fire
+    // hour doesn't affect correctness — dates.ts computes "today" in America/Los_Angeles
+    // independent of when the cron actually fires.
+    "crons": ["0 15 * * *"]
+  }
+}
