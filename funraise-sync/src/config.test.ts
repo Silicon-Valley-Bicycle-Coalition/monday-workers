@@ -39,6 +39,12 @@ describe('validateConfig', () => {
     expect(() => validateConfig(missing)).toThrow(/monday/);
   });
 
+  it('throws when monday.apiUrl is missing', () => {
+    const { apiUrl, ...mondayRest } = validConfig.monday;
+    const broken = { ...validConfig, monday: mondayRest };
+    expect(() => validateConfig(broken)).toThrow(/apiUrl/);
+  });
+
   it('throws when a required board key is missing', () => {
     const { 'donations:live': _drop, ...boards } = validConfig.monday.boards;
     const broken = { ...validConfig, monday: { ...validConfig.monday, boards } };

@@ -27,6 +27,10 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
   }
   const monday = cfg.monday as Record<string, unknown>;
 
+  if (typeof monday.apiUrl !== 'string' || monday.apiUrl === '') {
+    throw new Error('config: missing required key "monday.apiUrl"');
+  }
+
   if (typeof monday.boards !== 'object' || monday.boards === null) {
     throw new Error('config: missing required key "monday.boards"');
   }
