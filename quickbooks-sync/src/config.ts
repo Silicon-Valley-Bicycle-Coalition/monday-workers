@@ -9,31 +9,42 @@ const REQUIRED_QUICKBOOKS_SYNC_KEYS = [
 ] as const;
 const REQUIRED_ENTITY_KEYS = ['customer', 'invoice', 'product'] as const;
 
+// Every nested object is unwrapped through this, so a non-object where an object is required
+// reads the same as an outright missing key.
+function requireObject(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`config: missing required key "${path}"`);
+  }
+  return value as Record<string, unknown>;
+}
+
 export function validateConfig(raw: unknown): QuickbooksSyncConfig {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
   }
   const cfg = raw as Record<string, unknown>;
 
-  if (typeof cfg.monday !== 'object' || cfg.monday === null) {
-    throw new Error('config: missing required key "monday"');
-  }
-  const monday = cfg.monday as Record<string, unknown>;
+  const monday = requireObject(cfg.monday, 'monday');
 
-  if (typeof monday.boards !== 'object' || monday.boards === null) {
-    throw new Error('config: missing required key "monday.boards"');
+  if (typeof monday.apiUrl !== 'string') {
+    throw new Error('config: "monday.apiUrl" must be a string');
   }
-  const boards = monday.boards as Record<string, unknown>;
+
+  const boards = requireObject(monday.boards, 'monday.boards');
   for (const key of REQUIRED_BOARD_KEYS) {
     if (!(key in boards)) {
       throw new Error(`config: missing required key "monday.boards.${key}"`);
     }
+    // Load-bearing, not cosmetic: the Monday webhook route compares an incoming numeric boardId
+    // against this value with ===. A board id typo'd as a string would never match, silently
+    // dropping every Monday event as "wrong board" with no error anywhere.
+    const boardId = boards[key];
+    if (boardId !== null && typeof boardId !== 'number') {
+      throw new Error(`config: "monday.boards.${key}" must be a number or null`);
+    }
   }
 
-  if (typeof cfg.quickbooksSync !== 'object' || cfg.quickbooksSync === null) {
-    throw new Error('config: missing required key "quickbooksSync"');
-  }
-  const quickbooksSync = cfg.quickbooksSync as Record<string, unknown>;
+  const quickbooksSync = requireObject(cfg.quickbooksSync, 'quickbooksSync');
 
   for (const key of REQUIRED_QUICKBOOKS_SYNC_KEYS) {
     if (!(key in quickbooksSync)) {
@@ -41,20 +52,14 @@ export function validateConfig(raw: unknown): QuickbooksSyncConfig {
     }
   }
 
-  if (typeof quickbooksSync.columnMap !== 'object' || quickbooksSync.columnMap === null) {
-    throw new Error('config: missing required key "quickbooksSync.columnMap"');
-  }
-  const columnMap = quickbooksSync.columnMap as Record<string, unknown>;
+  const columnMap = requireObject(quickbooksSync.columnMap, 'quickbooksSync.columnMap');
   for (const key of REQUIRED_ENTITY_KEYS) {
     if (!(key in columnMap)) {
       throw new Error(`config: missing required key "quickbooksSync.columnMap.${key}"`);
     }
   }
 
-  if (typeof quickbooksSync.itemNameField !== 'object' || quickbooksSync.itemNameField === null) {
-    throw new Error('config: missing required key "quickbooksSync.itemNameField"');
-  }
-  const itemNameField = quickbooksSync.itemNameField as Record<string, unknown>;
+  const itemNameField = requireObject(quickbooksSync.itemNameField, 'quickbooksSync.itemNameField');
   for (const key of REQUIRED_ENTITY_KEYS) {
     if (!(key in itemNameField)) {
       throw new Error(`config: missing required key "quickbooksSync.itemNameField.${key}"`);

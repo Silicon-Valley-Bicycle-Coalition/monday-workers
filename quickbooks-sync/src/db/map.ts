@@ -26,6 +26,13 @@ function toMapEntry(record: D1MapRecord): MapEntry {
 
 const SELECT_COLUMNS = 'entity_type, qb_id, monday_item_id, monday_board_id, created_at';
 
+// D1 surfaces SQLite constraint failures as an Error whose message carries SQLite's own text,
+// typically wrapped as `D1_ERROR: UNIQUE constraint failed: ...`.
+function isUniqueConstraintError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test(message);
+}
+
 export class D1MapStore implements MapStore {
   constructor(private db: D1Database) {}
 
@@ -46,15 +53,28 @@ export class D1MapStore implements MapStore {
   }
 
   async createMapping(entry: MapEntry): Promise<void> {
-    await this.db
-      .prepare(
-        `INSERT INTO qb_monday_map (entity_type, qb_id, monday_item_id, monday_board_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT (entity_type, qb_id) DO UPDATE SET
-           monday_item_id = excluded.monday_item_id,
-           monday_board_id = excluded.monday_board_id`
-      )
-      .bind(entry.entityType, entry.qbId, entry.mondayItemId, entry.mondayBoardId, entry.createdAt)
-      .run();
+    try {
+      await this.db
+        .prepare(
+          `INSERT INTO qb_monday_map (entity_type, qb_id, monday_item_id, monday_board_id, created_at)
+           VALUES (?1, ?2, ?3, ?4, ?5)
+           ON CONFLICT (entity_type, qb_id) DO UPDATE SET
+             monday_item_id = excluded.monday_item_id,
+             monday_board_id = excluded.monday_board_id`
+        )
+        .bind(entry.entityType, entry.qbId, entry.mondayItemId, entry.mondayBoardId, entry.createdAt)
+        .run();
+    } catch (err) {
+      // The upsert only resolves the (entity_type, qb_id) primary-key conflict. The separate
+      // unique index on (entity_type, monday_item_id) can still fire when two different qb_ids
+      // try to claim the same Monday item — surface that as a named application error rather
+      // than a raw SQLite constraint message.
+      if (isUniqueConstraintError(err)) {
+        throw new Error(
+          `qb_monday_map: monday_item_id "${entry.mondayItemId}" is already mapped to a different qb_id for entity type "${entry.entityType}"`
+        );
+      }
+      throw err;
+    }
   }
 }

@@ -44,6 +44,31 @@ describe('D1MapStore', () => {
     expect(await store.getByQbId('invoice', 'shared-id')).toBeNull();
   });
 
+  it('reports a clear error when a monday_item_id is claimed by a second qb_id', async () => {
+    const store = new D1MapStore(env.DB);
+    await store.createMapping({
+      entityType: 'customer',
+      qbId: 'qb-first',
+      mondayItemId: 'contested-item',
+      mondayBoardId: 1,
+      createdAt: '2026-08-22T00:00:00.000Z',
+    });
+
+    // Trips the (entity_type, monday_item_id) unique index, which the upsert's ON CONFLICT
+    // clause does not cover — the raw SQLite error is translated into a named one.
+    await expect(
+      store.createMapping({
+        entityType: 'customer',
+        qbId: 'qb-second',
+        mondayItemId: 'contested-item',
+        mondayBoardId: 1,
+        createdAt: '2026-08-22T01:00:00.000Z',
+      })
+    ).rejects.toThrow(
+      'qb_monday_map: monday_item_id "contested-item" is already mapped to a different qb_id for entity type "customer"'
+    );
+  });
+
   it('upserts on a second createMapping call for the same entityType/qbId', async () => {
     const store = new D1MapStore(env.DB);
     await store.createMapping({

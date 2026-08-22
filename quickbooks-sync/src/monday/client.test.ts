@@ -54,4 +54,18 @@ describe('HttpMondayClient', () => {
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
     await expect(client.createItem(1, 'x', {})).rejects.toThrow(/Board not found/);
   });
+
+  it('surfaces the server message on a 200 response carrying neither data nor errors', async () => {
+    // monday.com's shape for some auth and rate-limit failures — without a guard this becomes a
+    // confusing "Cannot read properties of undefined" further down the call stack.
+    mockFetchOnce({ error_message: 'Not Authenticated', status_code: 401 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    await expect(client.createItem(1, 'x', {})).rejects.toThrow(/Not Authenticated.*401/);
+  });
+
+  it('includes the whole body when a data-less response has no error_message', async () => {
+    mockFetchOnce({ something: 'unexpected' });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    await expect(client.createItem(1, 'x', {})).rejects.toThrow(/something.*unexpected/);
+  });
 });

@@ -54,6 +54,40 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/columnMap.customer/);
   });
 
+  it('accepts numeric board ids alongside nulls', () => {
+    const filledIn = {
+      ...validConfig,
+      monday: { ...validConfig.monday, boards: { customers: 123, invoices: 456, products: null } },
+    };
+    expect(validateConfig(filledIn)).toEqual(filledIn);
+  });
+
+  it('throws when a board id is a string instead of a number', () => {
+    // A quoted board id would compare unequal to the numeric boardId on every incoming Monday
+    // webhook, silently ignoring every event — so this has to fail loudly at startup.
+    const broken = {
+      ...validConfig,
+      monday: { ...validConfig.monday, boards: { ...validConfig.monday.boards, customers: '12345' } },
+    };
+    expect(() => validateConfig(broken)).toThrow(/monday.boards.customers.*number or null/);
+  });
+
+  it('throws when a board id is neither a number nor null', () => {
+    const broken = {
+      ...validConfig,
+      monday: { ...validConfig.monday, boards: { ...validConfig.monday.boards, invoices: true } },
+    };
+    expect(() => validateConfig(broken)).toThrow(/monday.boards.invoices/);
+  });
+
+  it('throws when apiUrl is missing or not a string', () => {
+    const { apiUrl, ...monday } = validConfig.monday;
+    expect(() => validateConfig({ ...validConfig, monday })).toThrow(/monday.apiUrl.*string/);
+    expect(() => validateConfig({ ...validConfig, monday: { ...validConfig.monday, apiUrl: 42 } })).toThrow(
+      /monday.apiUrl.*string/
+    );
+  });
+
   it('throws when itemNameField is missing an entity key', () => {
     const { invoice, ...itemNameField } = validConfig.quickbooksSync.itemNameField;
     const broken = {
