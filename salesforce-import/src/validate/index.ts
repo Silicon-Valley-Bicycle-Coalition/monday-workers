@@ -48,7 +48,26 @@ export async function runValidate(args: string[]): Promise<number> {
     detail: missing.length === 0 ? `all ${payloads.length} payloads landed`
       : `${missing.length} payloads never landed (first: ${missing[0]!.board}/${missing[0]!.sfId})` });
 
-  // 2. Reconciliation (doc 03 §7 — figures move while Funraise still syncs; freeze before final run).
+  // 2. Link integrity — every payload link should have been written by load, or be explainable
+  // by design (all its targets were deliberately never migrated, e.g. excluded contacts).
+  let linksNotWritten = 0;
+  let skippedByDesign = 0;
+  let unresolvableTargets = 0;
+  for (const p of payloads) {
+    for (const link of p.links ?? []) {
+      const resolvedCount = link.targetSfIds.filter((id) => ledger.itemId(id) !== undefined).length;
+      unresolvableTargets += link.targetSfIds.length - resolvedCount;
+      if (ledger.linkDone(p.sfId, link.column)) continue;
+      if (resolvedCount > 0) linksNotWritten++;
+      else skippedByDesign++; // zero resolvable targets — skipped by design, not a failure
+    }
+  }
+  const ledgerFailureCount = ledger.failures().length;
+  checks.push({ name: 'link-integrity', ok: linksNotWritten === 0 && ledgerFailureCount === 0,
+    detail: `${linksNotWritten} links not written, ${unresolvableTargets} unresolvable targets ` +
+      `(${skippedByDesign} skipped-by-design), ${ledgerFailureCount} ledger failures` });
+
+  // 3. Reconciliation (doc 03 §7 — figures move while Funraise still syncs; freeze before final run).
   const r = cfg.reconciliation;
   const funraiseDonations = payloads.filter((p) =>
     p.board.startsWith('donations:') && !!p.columns['Funraise ID']);
@@ -70,7 +89,7 @@ export async function runValidate(args: string[]): Promise<number> {
   recCheck('recon-organizations',
     payloads.filter((p) => p.board === 'organizations').length, r['organizations']);
 
-  // 3. Stratified sample sheet (~300 rows, floor 30/category, proportional above, seeded PRNG).
+  // 4. Stratified sample sheet (~300 rows, floor 30/category, proportional above, seeded PRNG).
   const byCategory = new Map<string, ItemPayload[]>();
   for (const p of payloads) {
     const cat = CATEGORY(p.board);
