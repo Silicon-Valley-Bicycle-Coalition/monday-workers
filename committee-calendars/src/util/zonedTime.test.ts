@@ -19,4 +19,11 @@ describe('zonedTimeToUtc', () => {
     const result = zonedTimeToUtc(2026, 11, 9, 17, 0, 'America/Los_Angeles');
     expect(result.toISOString()).toBe('2026-11-10T01:00:00.000Z');
   });
+
+  it('correctly resolves a morning local time on the spring-forward transition day itself', () => {
+    // DST begins 2 AM -> 3 AM local on the second Sunday of March. 2026's is March 8.
+    // 9:00 AM local that day is already PDT (UTC-7), not PST (UTC-8).
+    const result = zonedTimeToUtc(2026, 3, 8, 9, 0, 'America/Los_Angeles');
+    expect(result.toISOString()).toBe('2026-03-08T16:00:00.000Z');
+  });
 });

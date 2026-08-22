@@ -28,6 +28,8 @@ function getTimeZoneOffsetMinutes(instant: Date, timeZone: string): number {
  */
 export function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
   const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  const offsetMinutes = getTimeZoneOffsetMinutes(utcGuess, timeZone);
-  return new Date(utcGuess.getTime() - offsetMinutes * 60000);
+  const firstOffset = getTimeZoneOffsetMinutes(utcGuess, timeZone);
+  const refined = new Date(utcGuess.getTime() - firstOffset * 60000);
+  const secondOffset = getTimeZoneOffsetMinutes(refined, timeZone);
+  return new Date(utcGuess.getTime() - secondOffset * 60000);
 }
