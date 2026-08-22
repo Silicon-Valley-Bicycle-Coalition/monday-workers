@@ -56,8 +56,11 @@ connect columns without board defaults if a link's target board has zero payload
 later full run does not retroactively patch them — run a full `--dry-run` first, and delete
 `data/load/` between sandbox rehearsals rather than layering partial runs on top of each other.
 
-**Cutover:** freeze Funraise sync first (doc 03 §7), re-run `extract` fresh, then keep `data/` as
-the migration audit artifact alongside the backup archive.
+**Cutover:** freeze Funraise sync first (doc 03 §7), delete `data/load/` (boards.json + the
+ledger) — sandbox board ids and ledger entries left over from rehearsals would otherwise redirect
+writes to the sandbox boards or suppress them entirely, since the ledger would report those items
+as already loaded — re-run `extract` fresh, then keep `data/` as the migration audit artifact
+alongside the backup archive.
 
 ## Why not the live connector
 
