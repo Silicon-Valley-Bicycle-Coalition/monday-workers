@@ -1,0 +1,41 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boards": {
+      "donations:live": 8845443596,
+      "recurring-gifts": null,
+      "event-registrations": null,
+      "people-live": null
+    }
+  },
+  "funraiseSync": {
+    "columnMap": {
+      "transaction": {
+        "amount": "numeric_column_id",
+        "description": "text_column_id",
+        "status": "status_column_id",
+        "createdAt": "date_column_id"
+      },
+      "recurringGift": {
+        "amount": "numeric_column_id",
+        "frequency": "text_column_id",
+        "status": "status_column_id"
+      },
+      "registration": {
+        "eventName": "text_column_id",
+        "registeredAt": "date_column_id"
+      }
+    },
+    "donorExternalIdField": "donor.contactId",
+    "donorExternalIdColumn": "funraise__fr_id__c",
+    "donorEmailColumn": "email",
+    "donorNameField": "donor.name",
+    "donorLinkColumn": "connect_boards_column_id",
+    "emailFieldPrecedence": ["donor.email"],
+    "statusField": "status",
+    "statusValueMap": {
+      "Posted": "Done"
+    },
+    "doNotMigrateFields": ["paymentMethod.lastFour", "paymentMethod.expiration"]
+  }
+}
