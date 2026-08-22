@@ -22,7 +22,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Type': 'text', 'Start': 'date', 'End': 'date', 'Active': 'checkbox',
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
-  'Employer Match Status': 'text', 'Employer Name': 'text',
+  'Employer Name': 'text',
   'Salesforce Created Date': 'date', 'Salesforce Created By': 'text',
   'Salesforce Modified Date': 'date', 'Salesforce Modified By': 'text',
 };
