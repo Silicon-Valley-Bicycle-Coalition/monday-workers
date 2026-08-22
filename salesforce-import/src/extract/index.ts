@@ -1,7 +1,7 @@
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
 import { dataPath, writeJson, writeNdjson } from '../artifacts.js';
-import { runSoql, type ExecFn } from './sfdx.js';
+import { CLI_ROW_CEILING, runSoql, runSoqlPaginated, type ExecFn } from './sfdx.js';
 import { checkSyncErrorGate } from './gate.js';
 import { buildExtracts } from './queries.js';
 
@@ -18,7 +18,14 @@ export async function runExtract(args: string[], deps: { exec?: ExecFn } = {}): 
 
   const counts: Record<string, number> = {};
   for (const ex of buildExtracts(cfg)) {
-    const rows = await runSoql(cfg.salesforceOrg, ex.soql.replace(/\s+/g, ' ').trim(), { exec: deps.exec });
+    const soql = ex.soql.replace(/\s+/g, ' ').trim();
+    const rows = ex.paginate
+      ? await runSoqlPaginated(cfg.salesforceOrg, soql, { exec: deps.exec })
+      : await runSoql(cfg.salesforceOrg, soql, { exec: deps.exec });
+    if (!ex.paginate && rows.length >= CLI_ROW_CEILING) {
+      // The CLI truncates silently at this ceiling — a full-looking page means data loss.
+      throw new Error(`extract: ${ex.name} returned ${rows.length} rows (CLI truncation ceiling) — mark it paginate: true`);
+    }
     const dir = ex.backupOnly ? 'backup' : 'extract';
     counts[ex.name] = await writeNdjson(dataPath(dir, `${ex.name}.ndjson`), rows);
     console.log(`extract: ${ex.name} → ${counts[ex.name]} rows (${dir})`);
