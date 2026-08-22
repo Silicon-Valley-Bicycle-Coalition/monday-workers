@@ -3,11 +3,14 @@
 **Status:** Decided — one-time custom import, not Monday's live Salesforce sync connector.
 **Priority:** Blocking. This is the central pre-migration engineering deliverable.
 **Owner:** Unassigned — needs an owner and an explicit time budget (see Risks in the plan).
-**Language:** TypeScript, per the plan's standing language policy. **Runtime:** Node.js script or a
-Cloudflare Worker is still open ("same shape as the other builds in this plan"); pick one before
-starting, since a one-time, long-running batch job may fit a plain Node script (no Worker
-execution-time limits to work around) better than a Worker. Decide and update this README once
-chosen — either way, write it in TypeScript.
+**Language:** TypeScript, per the plan's standing language policy. **Runtime: decided 2026-08-22 —
+a plain Node.js 20+ CLI, not a Cloudflare Worker.** A one-time, long-running batch job has no use
+for Worker execution limits, and the local filesystem is the right home for extracts, caches, and
+resume ledgers. ESM, run via `tsx`, Monday GraphQL via plain `fetch` — no Hono, no D1.
+
+**Implementation design:** `docs/11-salesforce-import-design.md` (private planning repo) — the
+approved pipeline architecture (extract → geocode → transform → load → validate), board topology,
+and the 2026-08-22 volume-scoping decisions summarized below.
 
 **Full technical requirements:** `docs/05-migration-script-requirements.md` (private planning repo).
 This README is the build/architecture overview; that document is the authoritative source-system
@@ -24,6 +27,40 @@ Move SVBC's Salesforce/NPSP data into Monday.com once, cleanly, with dedup and r
 integrity resolved by SVBC's own tested logic rather than trusted to a vendor connector. Not a
 live sync — Salesforce is being fully retired once the subscription lapses in October, so there's
 no ongoing two-way-sync requirement to build for.
+
+## Usage
+
+**Prerequisites:**
+
+* `sf` CLI authenticated to the org (extract shells out to it for the export).
+* `MONDAY_API_TOKEN` env var, issued to a **dedicated integration user** per the repo's
+  least-privilege policy — not a personal admin token.
+* Optional `GOOGLE_MAPS_API_KEY` for the geocode fallback (Census batch geocoder needs no key).
+* A fresh Mailchimp audience export CSV (consent system of record — see "Blocking preconditions").
+
+**Run sequence:**
+
+```sh
+npm run cli -- extract --consent path/to/mailchimp-export.csv   # refuses while Funraise sync errors exist
+npm run cli -- geocode
+npm run cli -- transform            # fails on assertion violations; read data/transform/report.json
+npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
+npm run cli -- load                 # idempotent; re-run to retry failures only
+npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
+```
+
+**Sandbox week:** set `monday.boardSuffix` to `" (sandbox)"` in config, and delete `data/load/`
+between full rehearsals. A run against a partial `payloads.ndjson` (e.g. a partial extract, not
+`load --limit N`, which only caps items per board and never drops a board from the run) can create
+connect columns without board defaults if a link's target board has zero payloads that run, and a
+later full run does not retroactively patch them — run a full `--dry-run` first, and delete
+`data/load/` between sandbox rehearsals rather than layering partial runs on top of each other.
+
+**Cutover:** freeze Funraise sync first (doc 03 §7), delete `data/load/` (boards.json + the
+ledger) — sandbox board ids and ledger entries left over from rehearsals would otherwise redirect
+writes to the sandbox boards or suppress them entirely, since the ledger would report those items
+as already loaded — re-run `extract` fresh, then keep `data/` as the migration audit artifact
+alongside the backup archive.
 
 ## Why not the live connector
 
@@ -93,13 +130,20 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
   Unique Advocacy-Specific Needs.
-* **Volume ceiling** — Monday's board ceiling (~10k items, ~20k on higher tiers) is far below
-  50,086 Salesforce Contacts. Do not load all Contacts. Scope the People board to
-  Funraise-attributed (1,993) and otherwise-active people; confirm the exact inclusion rule before
-  building — it's currently a plan-level constraint, not yet a written rule. **Also verify the
-  ceiling itself against Monday's current published limits (and whether archived items count)** —
-  it's the sole justification for excluding ~45k contacts, and Monday's guidance has shifted
-  between hard limits and performance recommendations over time.
+* **Volume ceiling — verified and resolved 2026-08-22.** Monday's limit is a hard
+  [10,000 items per board on Basic/Standard/Pro](https://support.monday.com/hc/en-us/articles/4404058746642-Item-and-subitem-limits-per-board)
+  (100k on Enterprise; archived items don't count), and the org this was built for is on Pro. That
+  caps not just People but Donations: full donation history (~54k records including Click & Pledge)
+  is 5x over, and even 2023-to-date alone exceeds one board. Two decisions follow, both now final:
+  **(1) Donations splits across era boards** — one live board plus historical era boards each sized
+  ≤ ~9k, cuts computed from the real `CloseDate` distribution at transform time, with script-computed
+  rollup columns (Lifetime Giving, First Gift, Gift Count) on every Donor item so stewardship totals
+  never require paging through eras. **(2) The People inclusion rule is written:** any contact with a
+  real relationship — ever a donor, member, event registrant, volunteer, Funraise supporter, or
+  org-affiliated (~12–15k of 50,086) — split as People (live, active since ~2019) + People
+  (Historical). Email-list-only contacts stay in Mailchimp (the consent system of record) and the
+  backup archive, not Monday. Full reasoning and sizing queries:
+  `docs/11-salesforce-import-design.md` (private planning repo).
 * **Duplicate matching** — ~1,000+ known duplicates; build and validate matching logic against
   sandbox copies repeatedly until merges reliably match SVBC's own judgment. **Keep the
   personal/professional-email case separate** — that's not a duplicate to merge (see Decisions
