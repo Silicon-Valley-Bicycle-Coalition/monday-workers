@@ -79,7 +79,7 @@ describe('MondayClient.stampReminderSent', () => {
     await client.stampReminderSent('123', 999, 'sent', '6w:2026-10-01');
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const [, requestInit] = fetchFn.mock.calls[0];
+    const [, requestInit] = fetchFn.mock.calls[0]!;
     const body = JSON.parse(requestInit.body as string);
     expect(body.variables).toEqual({
       boardId: 999,

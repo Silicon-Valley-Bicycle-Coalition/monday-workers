@@ -10,7 +10,7 @@ export function todayISOInTimeZone(timeZone: string): string {
 }
 
 export function addDaysISO(dateISO: string, days: number): string {
-  const [year, month, day] = dateISO.split('-').map(Number);
+  const [year, month, day] = dateISO.split('-').map(Number) as [number, number, number];
   const date = new Date(Date.UTC(year, month - 1, day));
   date.setUTCDate(date.getUTCDate() + days);
   const yyyy = date.getUTCFullYear();
