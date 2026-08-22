@@ -28,11 +28,15 @@ export interface Member {
   id: string;
   name: string;
   email: string;
+  membershipStatus: string;
   membershipTier: string;
   memberUntil: string; // YYYY-MM-DD
   remindersSent: string; // raw comma-separated stamp text, e.g. "6w:2026-10-01"
 }
 
 export interface RunSummary {
-  stages: Record<string, { sent: number; skipped: number; failed: number }>;
+  stages: Record<
+    string,
+    { sent: number; skipped: number; failed: number; stampFailed: number; queryFailed: boolean }
+  >;
 }

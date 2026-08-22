@@ -9,6 +9,7 @@ function member(overrides: Partial<Member> = {}): Member {
     id: '1',
     name: 'Jamie',
     email: 'jamie@example.org',
+    membershipStatus: 'Active',
     membershipTier: 'Individual',
     memberUntil: '2026-10-01',
     remindersSent: '',
@@ -18,15 +19,23 @@ function member(overrides: Partial<Member> = {}): Member {
 
 describe('isEligible', () => {
   it('is true for an active, non-Lifetime member with a Member Until date', () => {
-    expect(isEligible(member(), 'Lifetime')).toBe(true);
+    expect(isEligible(member(), 'Lifetime', 'Active')).toBe(true);
   });
 
   it('is false for a Lifetime member', () => {
-    expect(isEligible(member({ membershipTier: 'Lifetime' }), 'Lifetime')).toBe(false);
+    expect(isEligible(member({ membershipTier: 'Lifetime' }), 'Lifetime', 'Active')).toBe(false);
   });
 
   it('is false when Member Until is blank', () => {
-    expect(isEligible(member({ memberUntil: '' }), 'Lifetime')).toBe(false);
+    expect(isEligible(member({ memberUntil: '' }), 'Lifetime', 'Active')).toBe(false);
+  });
+
+  it('is false when membershipStatus is not the active value', () => {
+    expect(isEligible(member({ membershipStatus: 'Lapsed' }), 'Lifetime', 'Active')).toBe(false);
+  });
+
+  it('is false when email is blank', () => {
+    expect(isEligible(member({ email: '' }), 'Lifetime', 'Active')).toBe(false);
   });
 });
 

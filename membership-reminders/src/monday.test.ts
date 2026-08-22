@@ -23,6 +23,7 @@ describe('MondayClient.queryDueMembers', () => {
           boards: [
             {
               items_page: {
+                cursor: null,
                 items: [
                   {
                     id: '123',
@@ -32,6 +33,7 @@ describe('MondayClient.queryDueMembers', () => {
                       { id: 'tier', text: 'Individual' },
                       { id: 'until', text: '2026-10-01' },
                       { id: 'sent', text: '4w:2026-04-01' },
+                      { id: 'status', text: 'Active' },
                     ],
                   },
                 ],
@@ -48,11 +50,71 @@ describe('MondayClient.queryDueMembers', () => {
         id: '123',
         name: 'Jamie',
         email: 'jamie@example.org',
+        membershipStatus: 'Active',
         membershipTier: 'Individual',
         memberUntil: '2026-10-01',
         remindersSent: '4w:2026-04-01',
       },
     ]);
+  });
+
+  it('follows the cursor to fetch a second page via next_items_page', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        fakeResponse({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: 'cursor-1',
+                  items: [
+                    {
+                      id: '1',
+                      name: 'First',
+                      column_values: [
+                        { id: 'email', text: 'first@example.org' },
+                        { id: 'tier', text: 'Individual' },
+                        { id: 'until', text: '2026-10-01' },
+                        { id: 'sent', text: '' },
+                        { id: 'status', text: 'Active' },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        fakeResponse({
+          data: {
+            next_items_page: {
+              cursor: null,
+              items: [
+                {
+                  id: '2',
+                  name: 'Second',
+                  column_values: [
+                    { id: 'email', text: 'second@example.org' },
+                    { id: 'tier', text: 'Individual' },
+                    { id: 'until', text: '2026-10-01' },
+                    { id: 'sent', text: '' },
+                    { id: 'status', text: 'Active' },
+                  ],
+                },
+              ],
+            },
+          },
+        }),
+      );
+    const client = new MondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const members = await client.queryDueMembers(999, columns, 'Active', '2026-10-01');
+
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(members.map((m) => m.id)).toEqual(['1', '2']);
+    expect(members.map((m) => m.email)).toEqual(['first@example.org', 'second@example.org']);
   });
 
   it('throws when the response has GraphQL errors', async () => {

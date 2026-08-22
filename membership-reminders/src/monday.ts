@@ -21,6 +21,7 @@ export function toMember(item: MondayItem, columns: MondayColumns): Member {
     id: item.id,
     name: item.name,
     email: columnText(item, columns.email),
+    membershipStatus: columnText(item, columns.membershipStatus),
     membershipTier: columnText(item, columns.membershipTier),
     memberUntil: columnText(item, columns.memberUntil),
     remindersSent: columnText(item, columns.remindersSent),
@@ -62,10 +63,19 @@ export class MondayClient {
     // NOTE: verify this query_params shape against Monday's current GraphQL API docs once the
     // sandbox Donors board exists — the exact rule syntax for status/date columns has changed
     // across Monday API versions.
-    const query = `
+    const columnIds = JSON.stringify([
+      columns.email,
+      columns.membershipTier,
+      columns.memberUntil,
+      columns.remindersSent,
+      columns.membershipStatus,
+    ]);
+
+    const firstPageQuery = `
       query ($boardId: ID!) {
         boards(ids: [$boardId]) {
           items_page(
+            limit: 500,
             query_params: {
               rules: [
                 { column_id: "${columns.membershipStatus}", compare_value: ["${activeStatusValue}"], operator: any_of },
@@ -73,10 +83,11 @@ export class MondayClient {
               ]
             }
           ) {
+            cursor
             items {
               id
               name
-              column_values(ids: [${JSON.stringify(columns.email)}, ${JSON.stringify(columns.membershipTier)}, ${JSON.stringify(columns.memberUntil)}, ${JSON.stringify(columns.remindersSent)}]) {
+              column_values(ids: ${columnIds}) {
                 id
                 text
               }
@@ -85,11 +96,39 @@ export class MondayClient {
         }
       }
     `;
-    const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
-      boardId,
-    });
-    const items = data.boards[0]?.items_page.items ?? [];
-    return items.map((item) => toMember(item, columns));
+
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          items {
+            id
+            name
+            column_values(ids: ${columnIds}) {
+              id
+              text
+            }
+          }
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId });
+    const firstPage = firstData.boards[0]?.items_page;
+    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      allItems.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    return allItems.map((item) => toMember(item, columns));
   }
 
   async stampReminderSent(

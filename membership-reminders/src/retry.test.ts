@@ -25,4 +25,24 @@ describe('withRetry', () => {
     await expect(withRetry(fn, { attempts: 2, delayMs: 0 })).rejects.toThrow('always fails');
     expect(fn).toHaveBeenCalledTimes(2);
   });
+
+  it('doubles the delay on each successive retry', async () => {
+    const delays: number[] = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal('setTimeout', ((cb: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      cb();
+      return 0 as unknown as ReturnType<typeof originalSetTimeout>;
+    }) as typeof setTimeout);
+
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('e1'))
+      .mockRejectedValueOnce(new Error('e2'))
+      .mockResolvedValue('ok');
+    await withRetry(fn, { attempts: 3, delayMs: 100 });
+
+    expect(delays).toEqual([100, 200]);
+    vi.unstubAllGlobals();
+  });
 });

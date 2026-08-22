@@ -19,6 +19,10 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const monday = new MondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
-    ctx.waitUntil(runReminders(config, { monday, sendEmail: sendReminderEmail }));
+    ctx.waitUntil(
+      runReminders(config, { monday, sendEmail: sendReminderEmail }).catch((err) => {
+        console.error(`[membership-reminders] run failed: ${(err as Error).message}`);
+      }),
+    );
   },
 };

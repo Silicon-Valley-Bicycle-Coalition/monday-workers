@@ -1,8 +1,10 @@
 import type { Member, StageConfig } from './types';
 
-export function isEligible(member: Member, lifetimeTierValue: string): boolean {
+export function isEligible(member: Member, lifetimeTierValue: string, activeStatusValue: string): boolean {
   if (member.membershipTier === lifetimeTierValue) return false;
   if (!member.memberUntil) return false;
+  if (!member.email) return false;
+  if (member.membershipStatus !== activeStatusValue) return false;
   return true;
 }
 
