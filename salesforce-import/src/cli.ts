@@ -4,6 +4,6 @@ import './extract/index.js';
 import './geocode/index.js';
 import './transform/index.js';
 import './load/index.js';
-// import './validate/index.js';
+import './validate/index.js';
 
 process.exitCode = await runCli(process.argv.slice(2));
