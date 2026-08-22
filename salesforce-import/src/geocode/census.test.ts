@@ -17,4 +17,18 @@ describe('censusBatch', () => {
     expect(out.get('K1')).toEqual({ lat: 37.34, lng: -121.9, city: 'San Jose', zip: '95112', source: 'census' });
     expect(out.has('K2')).toBe(false);
   });
+
+  it('chunks batches into 10,000 row requests', async () => {
+    let calls = 0;
+    const fetchFn = (async () => { calls++; return new Response(''); }) as typeof fetch;
+    const addresses = Array.from({ length: 10_001 }, (_, i) => ({
+      key: `K${i}`,
+      street: '123 Main St',
+      city: 'San Jose',
+      state: 'CA',
+      zip: '95112',
+    }));
+    await censusBatch(addresses, { fetchFn });
+    expect(calls).toBe(2); // 10,000 + 1 = 2 chunks
+  });
 });
