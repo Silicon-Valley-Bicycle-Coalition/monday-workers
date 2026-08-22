@@ -9,7 +9,7 @@ export interface Config {
   activitySliceSinceISO: string;
   eraMaxItems: number;
   monday: { apiUrl: string; boardSuffix: string; boards: Record<string, number | null> };
-  localNews: { rules: { cities: string[]; url: string }[]; defaultUrl: string };
+  localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;
 }
 

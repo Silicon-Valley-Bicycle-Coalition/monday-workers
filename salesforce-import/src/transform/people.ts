@@ -2,7 +2,7 @@ import type { Config } from '../config.js';
 import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
-import { collapseEmail, consentColumns, dateCol, localNewsUrl, provenanceColumns } from './fields.js';
+import { collapseEmail, consentColumns, dateCol, localNewsName, localNewsUrl, provenanceColumns } from './fields.js';
 
 export interface InclusionInput {
   donorIds: Set<string>; recentDonorIds: Set<string>;
@@ -27,12 +27,6 @@ export function classifyContact(
   return live ? 'people-live' : 'people-historical';
 }
 
-const NEWS_LABELS: Record<string, string> = {
-  'https://sanjosespotlight.com/': 'San Jose Spotlight',
-  'https://civicdigest.org': 'Civic Digest',
-  'https://localnewsmatters.org/': 'Local News Matters',
-};
-
 const emailCol = (e: string | null) => (e ? { email: e, text: e } : null);
 
 export function contactToPayload(
@@ -40,7 +34,9 @@ export function contactToPayload(
   deps: { consent: Map<string, string>; member?: MemberSummary; geo?: GeoResult; news: Config['localNews'] },
 ): ItemPayload {
   const email = collapseEmail(c);
-  const newsUrl = localNewsUrl(deps.geo?.city ?? (c['MailingCity'] as string | null), deps.news);
+  const newsCity = deps.geo?.city ?? (c['MailingCity'] as string | null);
+  const newsUrl = localNewsUrl(newsCity, deps.news);
+  const newsName = localNewsName(newsCity, deps.news);
   const secondary = (c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null;
   const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string } | null;
   const columns: Record<string, unknown> = {
@@ -52,7 +48,7 @@ export function contactToPayload(
       .filter(Boolean).join(', '),
     'City': deps.geo?.city ?? '', 'Zip': deps.geo?.zip ?? '',
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
-    'Local News': { url: newsUrl, text: NEWS_LABELS[newsUrl] ?? newsUrl },
+    'Local News': { url: newsUrl, text: newsName },
     'Do Not Solicit': account?.Do_Not_Solicit__c ? { checked: 'true' } : null,
     'Do Not Solicit Reason': (account?.Do_Not_Solicit_What__c ?? '') as string,
     'Employer Name': (c['dtd__company__c'] ?? '') as string,

@@ -41,3 +41,9 @@ export function localNewsUrl(city: string | null, cfg: Config['localNews']): str
   for (const rule of cfg.rules) if (rule.cities.includes(c)) return rule.url;
   return cfg.defaultUrl;
 }
+
+export function localNewsName(city: string | null, cfg: Config['localNews']): string {
+  const c = (city ?? '').trim().toLowerCase();
+  for (const rule of cfg.rules) if (rule.cities.includes(c)) return rule.name;
+  return cfg.defaultName;
+}

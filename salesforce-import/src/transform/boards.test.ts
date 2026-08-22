@@ -27,8 +27,8 @@ describe('pledgeColumnsBySubscription', () => {
 });
 
 describe('eventToPayload', () => {
-  const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/' }],
-    defaultUrl: 'https://localnewsmatters.org/' };
+  const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' }],
+    defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
   it('drops test events', () => {
     expect(eventToPayload({ Id: 'e1', Name: 'Test Event', ...prov }, news)).toBeNull();
   });

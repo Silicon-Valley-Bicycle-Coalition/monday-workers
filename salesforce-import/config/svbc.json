@@ -22,10 +22,11 @@
   },
   "localNews": {
     "rules": [
-      { "cities": ["san jose"], "url": "https://sanjosespotlight.com/" },
-      { "cities": ["santa clara", "cupertino", "campbell", "saratoga"], "url": "https://civicdigest.org" }
+      { "cities": ["san jose"], "url": "https://sanjosespotlight.com/", "name": "San Jose Spotlight" },
+      { "cities": ["santa clara", "cupertino", "campbell", "saratoga"], "url": "https://civicdigest.org", "name": "Civic Digest" }
     ],
-    "defaultUrl": "https://localnewsmatters.org/"
+    "defaultUrl": "https://localnewsmatters.org/",
+    "defaultName": "Local News Matters"
   },
   "reconciliation": {
     "funraiseOpportunities": 3648,

@@ -6,8 +6,8 @@ const emptyInc = (): InclusionInput => ({
   donorIds: new Set(), recentDonorIds: new Set(), memberSummaries: new Map(),
   registrantIds: new Set(), volunteerIds: new Set(), affiliatedIds: new Set(), recentActivityIds: new Set(),
 });
-const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/' }],
-  defaultUrl: 'https://localnewsmatters.org/' };
+const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' }],
+  defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
 
 describe('classifyContact', () => {
   const SINCE = '2019-01-01';

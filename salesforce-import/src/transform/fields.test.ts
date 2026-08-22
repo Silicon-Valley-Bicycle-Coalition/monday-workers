@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { provenanceColumns, collapseEmail, consentColumns, localNewsUrl, dateCol } from './fields.js';
+import { provenanceColumns, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
 
 describe('provenanceColumns', () => {
   it('maps SF audit fields to labeled columns', () => {
@@ -41,14 +41,27 @@ describe('consentColumns', () => {
 
 describe('localNewsUrl', () => {
   const cfg = { rules: [
-    { cities: ['san jose'], url: 'https://sanjosespotlight.com/' },
-    { cities: ['santa clara', 'cupertino', 'campbell', 'saratoga'], url: 'https://civicdigest.org' },
-  ], defaultUrl: 'https://localnewsmatters.org/' };
+    { cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' },
+    { cities: ['santa clara', 'cupertino', 'campbell', 'saratoga'], url: 'https://civicdigest.org', name: 'Civic Digest' },
+  ], defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
   it('matches case-insensitively and defaults', () => {
     expect(localNewsUrl('San Jose', cfg)).toBe('https://sanjosespotlight.com/');
     expect(localNewsUrl('CUPERTINO', cfg)).toBe('https://civicdigest.org');
     expect(localNewsUrl('Oakland', cfg)).toBe('https://localnewsmatters.org/');
     expect(localNewsUrl(null, cfg)).toBe('https://localnewsmatters.org/');
+  });
+});
+
+describe('localNewsName', () => {
+  const cfg = { rules: [
+    { cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' },
+    { cities: ['santa clara', 'cupertino', 'campbell', 'saratoga'], url: 'https://civicdigest.org', name: 'Civic Digest' },
+  ], defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
+  it('matches case-insensitively and defaults, sourced entirely from config', () => {
+    expect(localNewsName('San Jose', cfg)).toBe('San Jose Spotlight');
+    expect(localNewsName('CUPERTINO', cfg)).toBe('Civic Digest');
+    expect(localNewsName('Oakland', cfg)).toBe('Local News Matters');
+    expect(localNewsName(null, cfg)).toBe('Local News Matters');
   });
 });
 
