@@ -3,6 +3,7 @@ import type { FunraiseSyncConfig } from './types';
 const REQUIRED_BOARD_KEYS = ['donations:live', 'recurring-gifts', 'event-registrations', 'people-live'] as const;
 
 const REQUIRED_FUNRAISE_SYNC_KEYS = [
+  'itemNameField',
   'donorExternalIdField',
   'donorExternalIdColumn',
   'donorEmailColumn',

@@ -4,9 +4,11 @@ import type { MondayClient } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
 import { validateEnvelope } from './validate';
 import { matchDonor } from '../matching/donors';
+import { errorMessage } from '../util/errorMessage';
+import type { FunraiseQueueMessage } from '../consumer/processBatch';
 
 export interface QueueLike {
-  send(message: { eventId: string }): Promise<void>;
+  send(message: FunraiseQueueMessage): Promise<void>;
 }
 
 export interface AppDeps {
@@ -18,6 +20,8 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
+
+  app.get('/health', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/funraise/:entityType', async (c) => {
     const incomingSecret = c.req.header('x-hook-secret');
@@ -32,7 +36,7 @@ export function createApp(deps: AppDeps) {
       const body = await c.req.json();
       envelope = validateEnvelope(entityTypeParam, body);
     } catch (err) {
-      return c.json({ ok: false, error: (err as Error).message }, 200);
+      return c.json({ ok: false, error: errorMessage(err) }, 200);
     }
 
     const insertResult = await deps.eventStore.insertEvent({
@@ -54,8 +58,10 @@ export function createApp(deps: AppDeps) {
       await deps.queue.send({ eventId: envelope.eventId });
       await deps.eventStore.updateStatus(envelope.eventId, 'queued');
     } catch (err) {
+      const errMsg = errorMessage(err);
+      console.error(`funraise-sync webhook: donor match/enqueue failed for event "${envelope.eventId}": ${errMsg}`);
       await deps.eventStore.updateStatus(envelope.eventId, 'failed', {
-        error: (err as Error).message,
+        error: errMsg,
       });
     }
 

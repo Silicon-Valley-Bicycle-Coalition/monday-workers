@@ -13,6 +13,11 @@ const config: FunraiseSyncConfig = {
       recurringGift: { amount: 'numeric_col' },
       registration: { eventName: 'text_col' },
     },
+    itemNameField: {
+      transaction: 'description',
+      recurringGift: 'description',
+      registration: 'eventName',
+    },
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',

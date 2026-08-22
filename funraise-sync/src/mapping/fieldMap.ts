@@ -1,15 +1,9 @@
 import type { EntityType, FunraiseSyncConfig } from '../types';
-
-function getPath(obj: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (typeof acc !== 'object' || acc === null) return undefined;
-    return (acc as Record<string, unknown>)[key];
-  }, obj);
-}
+import { getPath } from '../util/getPath';
 
 type ColumnMapKey = keyof FunraiseSyncConfig['funraiseSync']['columnMap'];
 
-const ENTITY_MAP_KEY: Record<EntityType, ColumnMapKey> = {
+export const ENTITY_MAP_KEY: Record<EntityType, ColumnMapKey> = {
   transaction: 'transaction',
   subscription: 'recurringGift',
   pledge: 'recurringGift',

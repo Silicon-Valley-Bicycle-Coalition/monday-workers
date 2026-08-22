@@ -26,6 +26,11 @@
         "registeredAt": "date_column_id"
       }
     },
+    "itemNameField": {
+      "transaction": "description",
+      "recurringGift": "description",
+      "registration": "eventName"
+    },
     "donorExternalIdField": "donor.contactId",
     "donorExternalIdColumn": "funraise__fr_id__c",
     "donorEmailColumn": "email",

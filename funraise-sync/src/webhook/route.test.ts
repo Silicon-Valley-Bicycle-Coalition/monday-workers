@@ -11,6 +11,11 @@ const config: FunraiseSyncConfig = {
   },
   funraiseSync: {
     columnMap: { transaction: {}, recurringGift: {}, registration: {} },
+    itemNameField: {
+      transaction: 'description',
+      recurringGift: 'description',
+      registration: 'eventName',
+    },
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',
@@ -42,6 +47,15 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
 }
 
 describe('createApp', () => {
+  it('responds to GET /health with ok: true', async () => {
+    const app = createApp({ eventStore: fakeEventStore(), mondayClient: fakeMondayClient(), config, queue: { send: vi.fn() } });
+
+    const res = await app.request('/health');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
   it('echoes x-hook-secret on a handshake request without touching the event store', async () => {
     const eventStore = fakeEventStore();
     const app = createApp({ eventStore, mondayClient: fakeMondayClient(), config, queue: { send: vi.fn() } });

@@ -17,6 +17,11 @@ const validConfig = {
       recurringGift: { amount: 'numeric_col' },
       registration: { eventName: 'text_col' },
     },
+    itemNameField: {
+      transaction: 'description',
+      recurringGift: 'description',
+      registration: 'eventName',
+    },
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise__fr_id__c',
     donorEmailColumn: 'email',

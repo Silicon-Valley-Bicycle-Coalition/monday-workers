@@ -15,6 +15,11 @@ const config: FunraiseSyncConfig = {
       recurringGift: { amount: 'numeric_col' },
       registration: { eventName: 'text_col' },
     },
+    itemNameField: {
+      transaction: 'description',
+      recurringGift: 'description',
+      registration: 'eventName',
+    },
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',
@@ -123,6 +128,23 @@ describe('processFunraiseQueueBatch', () => {
     expect(eventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: 'monday API: HTTP 500' });
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('acks without re-creating a Monday item when the event is already written (idempotency guard)', async () => {
+    const eventStore: EventStore = {
+      insertEvent: vi.fn(),
+      updateStatus: vi.fn().mockResolvedValue(undefined),
+      getEvent: vi.fn().mockResolvedValue(eventRow({ status: 'written', mondayItemId: 'item-already-written' })),
+    };
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-should-not-happen' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues: vi.fn() };
+    const message = fakeMessage('evt-1');
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(createItem).not.toHaveBeenCalled();
   });
 
   it('fails and retries when the D1 row is missing', async () => {

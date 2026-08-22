@@ -1,7 +1,9 @@
 import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
 import type { EntityType, FunraiseSyncConfig } from '../types';
-import { mapToMondayColumns } from '../mapping/fieldMap';
+import { mapToMondayColumns, ENTITY_MAP_KEY } from '../mapping/fieldMap';
+import { getPath } from '../util/getPath';
+import { errorMessage } from '../util/errorMessage';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -37,8 +39,10 @@ export async function processFunraiseQueueBatch(
       await processOne(message.body.eventId, deps);
       message.ack();
     } catch (err) {
+      const errMsg = errorMessage(err);
+      console.error(`funraise-sync consumer: failed to process event "${message.body.eventId}": ${errMsg}`);
       await deps.eventStore.updateStatus(message.body.eventId, 'failed', {
-        error: (err as Error).message,
+        error: errMsg,
       });
       message.retry();
     }
@@ -49,6 +53,12 @@ async function processOne(eventId: string, deps: ProcessBatchDeps): Promise<void
   const event = await deps.eventStore.getEvent(eventId);
   if (event === null) {
     throw new Error(`funraise-sync consumer: no event row for "${eventId}"`);
+  }
+
+  // Idempotency guard: at-least-once delivery means a redelivery after a successful
+  // Monday write (but a failed subsequent D1 status update) must not create a duplicate item.
+  if (event.mondayItemId !== null) {
+    return;
   }
 
   const boardKey = BOARD_FOR_ENTITY[event.entityType];
@@ -65,7 +75,11 @@ async function processOne(eventId: string, deps: ProcessBatchDeps): Promise<void
     };
   }
 
-  const item = await deps.mondayClient.createItem(boardId, describeItemName(event.entityType, rawPayload), columnValues);
+  const item = await deps.mondayClient.createItem(
+    boardId,
+    describeItemName(event.entityType, rawPayload, deps.config),
+    columnValues
+  );
 
   await deps.eventStore.updateStatus(eventId, 'written', {
     mondayItemId: item.id,
@@ -73,7 +87,8 @@ async function processOne(eventId: string, deps: ProcessBatchDeps): Promise<void
   });
 }
 
-function describeItemName(entityType: EntityType, rawPayload: Record<string, unknown>): string {
-  const description = rawPayload.description;
-  return typeof description === 'string' && description.length > 0 ? description : `Funraise ${entityType}`;
+function describeItemName(entityType: EntityType, rawPayload: Record<string, unknown>, config: FunraiseSyncConfig): string {
+  const fieldPath = config.funraiseSync.itemNameField[ENTITY_MAP_KEY[entityType]];
+  const value = getPath(rawPayload, fieldPath);
+  return typeof value === 'string' && value.length > 0 ? value : `Funraise ${entityType}`;
 }

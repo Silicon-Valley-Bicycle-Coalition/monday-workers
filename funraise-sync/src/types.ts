@@ -1,3 +1,5 @@
+import type { FunraiseQueueMessage } from './consumer/processBatch';
+
 export type EntityType = 'transaction' | 'subscription' | 'pledge' | 'registration';
 export type EventStatus = 'received' | 'matched' | 'queued' | 'written' | 'failed';
 
@@ -31,6 +33,11 @@ export interface FunraiseSyncConfig {
       recurringGift: Record<string, string>;
       registration: Record<string, string>;
     };
+    itemNameField: {
+      transaction: string;
+      recurringGift: string;
+      registration: string;
+    };
     donorExternalIdField: string;
     donorExternalIdColumn: string;
     donorEmailColumn: string;
@@ -45,6 +52,6 @@ export interface FunraiseSyncConfig {
 
 export interface Env {
   DB: D1Database;
-  WRITE_QUEUE: Queue<{ eventId: string }>;
+  WRITE_QUEUE: Queue<FunraiseQueueMessage>;
   MONDAY_API_TOKEN: string;
 }

@@ -10,6 +10,11 @@ const config: FunraiseSyncConfig = {
   },
   funraiseSync: {
     columnMap: { transaction: {}, recurringGift: {}, registration: {} },
+    itemNameField: {
+      transaction: 'description',
+      recurringGift: 'description',
+      registration: 'eventName',
+    },
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',

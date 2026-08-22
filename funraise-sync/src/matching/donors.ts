@@ -1,16 +1,10 @@
 import type { MondayClient } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
+import { getPath } from '../util/getPath';
 
 export interface DonorMatchResult {
   donorItemId: string;
   created: boolean;
-}
-
-function getPath(obj: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (typeof acc !== 'object' || acc === null) return undefined;
-    return (acc as Record<string, unknown>)[key];
-  }, obj);
 }
 
 export async function matchDonor(
