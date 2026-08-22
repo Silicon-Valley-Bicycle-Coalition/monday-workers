@@ -28,6 +28,36 @@ integrity resolved by SVBC's own tested logic rather than trusted to a vendor co
 live sync — Salesforce is being fully retired once the subscription lapses in October, so there's
 no ongoing two-way-sync requirement to build for.
 
+## Usage
+
+**Prerequisites:**
+
+* `sf` CLI authenticated to the org (extract shells out to it for the export).
+* `MONDAY_API_TOKEN` env var, issued to a **dedicated integration user** per the repo's
+  least-privilege policy — not a personal admin token.
+* Optional `GOOGLE_MAPS_API_KEY` for the geocode fallback (Census batch geocoder needs no key).
+* A fresh Mailchimp audience export CSV (consent system of record — see "Blocking preconditions").
+
+**Run sequence:**
+
+```sh
+npm run cli -- extract --consent path/to/mailchimp-export.csv   # refuses while Funraise sync errors exist
+npm run cli -- geocode
+npm run cli -- transform            # fails on assertion violations; read data/transform/report.json
+npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
+npm run cli -- load                 # idempotent; re-run to retry failures only
+npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
+```
+
+**Sandbox week:** set `monday.boardSuffix` to `" (sandbox)"` in config, and delete `data/load/`
+between full rehearsals. A `load --limit N` smoke run can create connect columns without board
+defaults if the target board isn't included in that limited run, and a later full run does not
+retroactively patch them — run a full `--dry-run` first, and delete `data/load/` between sandbox
+rehearsals rather than layering limited runs on top of each other.
+
+**Cutover:** freeze Funraise sync first (doc 03 §7), re-run `extract` fresh, then keep `data/` as
+the migration audit artifact alongside the backup archive.
+
 ## Why not the live connector
 
 Monday's native Salesforce sync connector was the original plan. Rejected because: its dedup
