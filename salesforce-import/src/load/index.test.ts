@@ -9,6 +9,8 @@ import { MondayClient } from './monday.js';
 
 let created: { name: string; board: number }[];
 let linked: string[];
+let createItemVariables: Record<string, unknown>[];
+let linkVariables: Record<string, unknown>[];
 
 function fakeClient(failFor: Set<string> = new Set(), failLinksFor: Set<string> = new Set()): MondayClient {
   const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -17,12 +19,14 @@ function fakeClient(failFor: Set<string> = new Set(), failLinksFor: Set<string> 
     if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
     if (/create_column/.test(query)) return Response.json({ data: { create_column: { id: `c_${Math.random().toString(36).slice(2, 8)}` } } });
     if (/create_item/.test(query)) {
+      createItemVariables.push(variables);
       const name = variables.itemName as string;
       if (failFor.has(name)) return Response.json({ errors: [{ message: `boom: ${name}` }] });
       created.push({ name, board: Number(variables.boardId) });
       return Response.json({ data: { create_item: { id: String(100 + created.length) } } });
     }
     if (/change_multiple_column_values/.test(query)) {
+      linkVariables.push(variables);
       const itemId = variables.itemId as string;
       if (failLinksFor.has(itemId)) return Response.json({ errors: [{ message: `link boom: ${itemId}` }] });
       linked.push(itemId);
@@ -48,7 +52,7 @@ async function seed() {
 describe('runLoad', () => {
   beforeEach(async () => {
     process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-')));
-    created = []; linked = [];
+    created = []; linked = []; createItemVariables = []; linkVariables = [];
     process.env['MONDAY_API_TOKEN'] = 'test-token';
     await seed();
   });
@@ -57,6 +61,14 @@ describe('runLoad', () => {
     expect(await runLoad([], { client: fakeClient() })).toBe(0);
     expect(created.map((c) => c.name)).toEqual(['Acme', 'Ada', 'Gift']); // orgs before people before donations
     expect(linked.length).toBe(2);
+  });
+
+  it('sends create_labels_if_missing: true on both create_item and change_multiple_column_values', async () => {
+    expect(await runLoad([], { client: fakeClient() })).toBe(0);
+    expect(createItemVariables.length).toBeGreaterThan(0);
+    for (const v of createItemVariables) expect(v['create']).toBe(true);
+    expect(linkVariables.length).toBeGreaterThan(0);
+    for (const v of linkVariables) expect(v['create']).toBe(true);
   });
 
   it('dry-run writes nothing', async () => {

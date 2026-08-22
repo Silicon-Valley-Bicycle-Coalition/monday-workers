@@ -78,9 +78,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       }
       try {
         const res = await client.gql<{ create_item: { id: string } }>(
-          `mutation ($boardId: ID!, $itemName: String!, $cols: JSON) {
-             create_item (board_id: $boardId, item_name: $itemName, column_values: $cols) { id } }`,
-          { boardId: String(board.boardId), itemName: p.name, cols: JSON.stringify(colValues) });
+          `mutation ($boardId: ID!, $itemName: String!, $cols: JSON, $create: Boolean!) {
+             create_item (board_id: $boardId, item_name: $itemName, column_values: $cols,
+               create_labels_if_missing: $create) { id } }`,
+          { boardId: String(board.boardId), itemName: p.name, cols: JSON.stringify(colValues), create: true });
         await ledger.recordSuccess({ sfId: p.sfId, board: key, itemId: res.create_item.id });
       } catch (err) {
         await ledger.recordFailure({ sfId: p.sfId, board: key, error: String(err) });
@@ -110,10 +111,11 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         if (!colId) throw new Error(`load: board ${key} missing connect column "${link.column}"`);
         try {
           await client.gql(
-            `mutation ($boardId: ID!, $itemId: ID!, $cols: JSON!) {
-               change_multiple_column_values (board_id: $boardId, item_id: $itemId, column_values: $cols) { id } }`,
+            `mutation ($boardId: ID!, $itemId: ID!, $cols: JSON!, $create: Boolean!) {
+               change_multiple_column_values (board_id: $boardId, item_id: $itemId, column_values: $cols,
+                 create_labels_if_missing: $create) { id } }`,
             { boardId: String(board.boardId), itemId,
-              cols: JSON.stringify({ [colId]: { item_ids: targetIds } }) });
+              cols: JSON.stringify({ [colId]: { item_ids: targetIds } }), create: true });
           await ledger.recordLink(p.sfId, link.column);
         } catch (err) {
           await ledger.recordLinkFailure({ sfId: p.sfId, column: link.column, error: String(err) });
