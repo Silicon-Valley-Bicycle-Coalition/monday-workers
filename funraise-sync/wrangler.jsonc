@@ -1,0 +1,24 @@
+{
+  "name": "svbc-funraise-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-funraise-sync",
+      // Replace after running: wrangler d1 create svbc-funraise-sync
+      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [{ "queue": "funraise-sync-writes", "binding": "WRITE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "funraise-sync-writes",
+        "max_retries": 3,
+        "dead_letter_queue": "funraise-sync-writes-dlq"
+      }
+    ]
+  }
+}
