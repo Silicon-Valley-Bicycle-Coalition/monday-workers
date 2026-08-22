@@ -33,7 +33,7 @@ export function deriveMembers(terms: MembershipRow[], cutoverISO: string): Map<s
 }
 
 export function termColumnsByOpportunity(terms: MembershipRow[]): {
-  columns: Map<string, Record<string, unknown>>; violations: string[];
+  columns: Map<string, Record<string, unknown>>; ambiguous: string[];
 } {
   const grouped = new Map<string, MembershipRow[]>();
   for (const t of terms) {
@@ -41,14 +41,20 @@ export function termColumnsByOpportunity(terms: MembershipRow[]): {
     grouped.get(t.Opportunity__c)!.push(t);
   }
   const columns = new Map<string, Record<string, unknown>>();
-  const violations: string[] = [];
+  const ambiguous: string[] = [];
   for (const [oppId, rows] of grouped) {
-    if (rows.length > 1) { violations.push(`Opportunity ${oppId} has ${rows.length} membership terms`); continue; }
+    // Multi-term links are real in this org: joint/household memberships share one payment
+    // (identical term rows for two contacts), and historical imports attached thousands of
+    // terms to placeholder Opportunities. Write term columns only when every term agrees;
+    // never pick sides silently.
     const t = rows[0]!;
+    const agree = rows.every((r) => r.Start_Date__c === t.Start_Date__c &&
+      r.WEC_End_Date_Manual__c === t.WEC_End_Date_Manual__c && r.Type__c === t.Type__c);
+    if (!agree) { ambiguous.push(`Opportunity ${oppId} has ${rows.length} disagreeing membership terms`); continue; }
     columns.set(oppId, {
       'Term Start': dateCol(t.Start_Date__c), 'Term End': dateCol(t.WEC_End_Date_Manual__c),
       'Membership Type': t.Type__c ?? '',
     });
   }
-  return { columns, violations };
+  return { columns, ambiguous };
 }

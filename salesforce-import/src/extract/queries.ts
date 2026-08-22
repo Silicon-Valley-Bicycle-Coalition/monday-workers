@@ -53,8 +53,6 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         FROM GW_Volunteers__Volunteer_Hours__c` },
     { name: 'tasks_recent', soql: `SELECT Id, WhoId, Subject, ActivityDate, Status, Owner.Name,
         CreatedDate FROM Task WHERE ActivityDate >= ${cfg.activitySliceSinceISO}` },
-    { name: 'emails_recent', soql: `SELECT Id, Subject, MessageDate, FromAddress, ToAddress
-        FROM EmailMessage WHERE MessageDate >= ${cfg.activitySliceSinceISO}T00:00:00Z` },
     // backup-only artifacts (CSV-equivalent NDJSON in data/backup/)
     { name: 'contact_history', backupOnly: true, paginate: true, soql: `SELECT Id, ContactId, Field, OldValue, NewValue,
         CreatedById, CreatedDate FROM ContactHistory` },
