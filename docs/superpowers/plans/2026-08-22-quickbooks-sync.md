@@ -137,11 +137,13 @@ One clear responsibility per file: the two webhook routes never call the QuickBo
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
   },
   "include": ["src", "config", "test"]
 }
 ```
+
+`@cloudflare/vitest-plugin/types` (not just `@cloudflare/workers-types`) is required in this array for `tsc --noEmit` to resolve `cloudflare:test`/`cloudflare:workers` in `test/apply-migrations.ts` and any test file that imports from `cloudflare:workers` — confirmed by SDD Task 1's review loop (ledger: 2026-08-22).
 
 - [ ] **Step 3: Create `quickbooks-sync/migrations/0001_create_tables.sql`**
 
@@ -2552,7 +2554,7 @@ describe('createMondayWebhookApp', () => {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    expect((await res.json()).ignored).toBe(true);
+    expect((await res.json<{ ignored: boolean }>()).ignored).toBe(true);
     expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
   });
 
@@ -2576,7 +2578,7 @@ describe('createMondayWebhookApp', () => {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    expect((await res.json()).alreadyLinked).toBe(true);
+    expect((await res.json<{ alreadyLinked: boolean }>()).alreadyLinked).toBe(true);
     expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
     expect(queue.send).not.toHaveBeenCalled();
   });
@@ -2614,7 +2616,7 @@ describe('createMondayWebhookApp', () => {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    expect((await res.json()).duplicate).toBe(true);
+    expect((await res.json<{ duplicate: boolean }>()).duplicate).toBe(true);
     expect(queue.send).not.toHaveBeenCalled();
   });
 });
