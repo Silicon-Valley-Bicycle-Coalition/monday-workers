@@ -9,6 +9,5 @@
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist", "test", "**/*.test.ts"]
+  "include": ["src", "config", "test"]
 }
