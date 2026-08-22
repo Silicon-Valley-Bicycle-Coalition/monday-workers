@@ -61,6 +61,11 @@ export class HttpQuickBooksClient implements QuickBooksClient {
       refreshToken: json.refresh_token,
       accessTokenExpiresAt: new Date(Date.now() + json.expires_in * 1000).toISOString(),
     };
+    // Lockout risk: Intuit has already invalidated the previous refresh token by this point. If
+    // this D1 write fails, the Worker is left holding a refresh token that no longer works and
+    // no copy of the new one — every later call fails until the token pair is re-seeded by hand
+    // via Intuit's OAuth Playground (the same manual step described in the Task 15 provisioning
+    // notes). There's no automatic recovery from this state.
     await this.tokenStore.saveTokens(refreshedTokens);
     return refreshedTokens;
   }

@@ -51,6 +51,19 @@ export function parseQbNotifications(body: unknown): QbChangeNotification[] {
   return result;
 }
 
+// Compares two ASCII strings without short-circuiting on the first differing byte, so the time
+// taken doesn't reveal how much of a guessed signature was correct. Length is still observable
+// (unavoidable when comparing strings), but the byte-by-byte content is not.
+function constantTimeEquals(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i]! ^ (bBytes[i] ?? 0);
+  }
+  return diff === 0;
+}
+
 export async function verifyQbSignature(
   rawBody: string,
   signatureHeader: string | undefined,
@@ -67,5 +80,5 @@ export async function verifyQbSignature(
   );
   const signatureBytes = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
   const computed = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
-  return computed === signatureHeader;
+  return constantTimeEquals(computed, signatureHeader);
 }
