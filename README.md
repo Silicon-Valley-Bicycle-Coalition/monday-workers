@@ -40,7 +40,7 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
 | [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
-| [`committee-calendars`](committee-calendars/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
+| [`committee-calendars`](committee-calendars/README.md) | Decided — build (scoped 2026-08-22) | Post-migration, non-blocking | Unassigned |
 | [`gemini-reports`](gemini-reports/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
 | [`donor-portal`](donor-portal/README.md) | Decided — build | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
