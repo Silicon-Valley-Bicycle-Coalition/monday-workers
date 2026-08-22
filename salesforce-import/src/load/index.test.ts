@@ -10,7 +10,7 @@ import { MondayClient } from './monday.js';
 let created: { name: string; board: number }[];
 let linked: string[];
 
-function fakeClient(failFor: Set<string> = new Set()): MondayClient {
+function fakeClient(failFor: Set<string> = new Set(), failLinksFor: Set<string> = new Set()): MondayClient {
   const fetchFn = (async (_u: unknown, init: unknown) => {
     const { query, variables } = JSON.parse((init as { body: string }).body);
     if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '900' } } });
@@ -23,8 +23,10 @@ function fakeClient(failFor: Set<string> = new Set()): MondayClient {
       return Response.json({ data: { create_item: { id: String(100 + created.length) } } });
     }
     if (/change_multiple_column_values/.test(query)) {
-      linked.push(variables.itemId as string);
-      return Response.json({ data: { change_multiple_column_values: { id: variables.itemId } } });
+      const itemId = variables.itemId as string;
+      if (failLinksFor.has(itemId)) return Response.json({ errors: [{ message: `link boom: ${itemId}` }] });
+      linked.push(itemId);
+      return Response.json({ data: { change_multiple_column_values: { id: itemId } } });
     }
     throw new Error(`unexpected query: ${query.slice(0, 60)}`);
   }) as typeof fetch;
@@ -70,5 +72,27 @@ describe('runLoad', () => {
     created = [];
     expect(await runLoad([], { client: fakeClient() })).toBe(0);
     expect(created.map((c) => c.name)).toEqual(['Gift']); // Acme/Ada skipped via ledger
+  });
+
+  it('phase-2 link failures are ledgered distinctly, exit 1, and only the failed link retries', async () => {
+    // Items are created in order Acme, Ada, Gift, so their ids are deterministically
+    // 101/102/103 (id = 100 + created.length at the time of that create_item call). Failing
+    // the change_multiple_column_values call for itemId '103' fails Gift's own Donor link
+    // write without touching item creation for any of the three payloads.
+    expect(await runLoad([], { client: fakeClient(new Set(), new Set(['103'])) })).toBe(1);
+    expect(created.map((c) => c.name)).toEqual(['Acme', 'Ada', 'Gift']); // all items still created
+
+    const l = new Ledger(); await l.load();
+    expect(l.failures().map((f) => f.sfId)).toEqual(['o1']); // link failure, not an item-create failure
+    expect(l.linkDone('c1', 'Organization')).toBe(true); // Ada's link succeeded
+    expect(l.linkDone('o1', 'Donor')).toBe(false); // Gift's link did not
+
+    created = []; linked = [];
+    expect(await runLoad([], { client: fakeClient() })).toBe(0);
+    expect(created).toEqual([]); // no items re-created
+    expect(linked).toEqual(['103']); // only the previously-failed link retried
+    const l2 = new Ledger(); await l2.load();
+    expect(l2.failures()).toEqual([]);
+    expect(l2.linkDone('o1', 'Donor')).toBe(true);
   });
 });

@@ -29,6 +29,21 @@ export const COLUMN_TYPES: Record<string, string> = {
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
 
+// Which logical board(s) each connect column points at, so create_column can pass `defaults`
+// with the target board ids — without this, board_relation columns have no connected boards
+// configured on the real API and are useless.
+export const CONNECT_TARGETS: Record<string, string[] | 'donation-eras'> = {
+  'Donor': ['people-live', 'people-historical', 'organizations'],
+  'Organization': ['organizations'],
+  'Recurring Gift': ['recurring-gifts'],
+  'Campaign': ['campaigns'],
+  'Attendee': ['people-live', 'people-historical'],
+  'Event': ['events'],
+  'Payment': 'donation-eras',
+  'Volunteer': ['people-live', 'people-historical'],
+  'Person': ['people-live', 'people-historical'],
+};
+
 export type BoardMap = Record<string, { boardId: number; columns: Record<string, string> }>;
 
 const BOARD_LABELS: Record<string, string> = {
@@ -45,20 +60,35 @@ export async function ensureBoards(
   const path = dataPath('load', 'boards.json');
   const map: BoardMap = existsSync(path) ? await readJson<BoardMap>(path) : {};
 
+  // Pass 1: resolve/create every board id in this run FIRST, with no column work — so pass 2
+  // can look up target board ids for board_relation columns regardless of which board in
+  // `boardKeys` happens to provision first.
   for (const key of boardKeys) {
-    if (!map[key]) {
-      const known = cfg.monday.boards[key];
-      let boardId: number;
-      if (known) boardId = known;
-      else {
-        const label = (BOARD_LABELS[key] ?? eraLabels[key] ?? key) + cfg.monday.boardSuffix;
-        const res = await client.gql<{ create_board: { id: string } }>(
-          `mutation ($name: String!) { create_board (board_name: $name, board_kind: public) { id } }`,
-          { name: label });
-        boardId = Number(res.create_board.id);
-      }
-      map[key] = { boardId, columns: {} };
+    if (map[key]) continue;
+    const known = cfg.monday.boards[key];
+    let boardId: number;
+    if (known) boardId = known;
+    else {
+      const label = (BOARD_LABELS[key] ?? eraLabels[key] ?? key) + cfg.monday.boardSuffix;
+      const res = await client.gql<{ create_board: { id: string } }>(
+        `mutation ($name: String!) { create_board (board_name: $name, board_kind: public) { id } }`,
+        { name: label });
+      boardId = Number(res.create_board.id);
     }
+    map[key] = { boardId, columns: {} };
+  }
+
+  const resolveTargetBoardIds = (title: string): number[] => {
+    const targets = CONNECT_TARGETS[title];
+    if (!targets) return [];
+    const targetKeys = targets === 'donation-eras'
+      ? boardKeys.filter((k) => k.startsWith('donations:'))
+      : targets.filter((k) => boardKeys.includes(k));
+    return targetKeys.map((k) => map[k]?.boardId).filter((id): id is number => id !== undefined);
+  };
+
+  // Pass 2: fetch existing columns, then create anything missing.
+  for (const key of boardKeys) {
     const entry = map[key]!;
     const res = await client.gql<{ boards: { columns: { id: string; title: string }[] }[] }>(
       `query ($ids: [ID!]) { boards (ids: $ids) { columns { id title type } } }`,
@@ -67,12 +97,22 @@ export async function ensureBoards(
 
     for (const title of neededColumns.get(key) ?? []) {
       if (entry.columns[title]) continue;
-      const type = CONNECT_COLUMNS.has(title) ? 'board_relation' : COLUMN_TYPES[title];
+      const isConnect = CONNECT_COLUMNS.has(title);
+      const type = isConnect ? 'board_relation' : COLUMN_TYPES[title];
       if (!type) throw new Error(`boards: no COLUMN_TYPES entry for "${title}" — add it`);
+
+      let defaults: string | undefined;
+      if (isConnect) {
+        const boardIds = resolveTargetBoardIds(title);
+        if (boardIds.length > 0) defaults = JSON.stringify({ boardIds });
+        else console.warn(`boards: connect column "${title}" on ${key} has no resolvable ` +
+          `target boards this run — creating without defaults`);
+      }
+
       const res2 = await client.gql<{ create_column: { id: string } }>(
-        `mutation ($board: ID!, $title: String!, $type: ColumnType!) {
-           create_column (board_id: $board, title: $title, column_type: $type) { id } }`,
-        { board: String(entry.boardId), title, type });
+        `mutation ($board: ID!, $title: String!, $type: ColumnType!, $defaults: JSON) {
+           create_column (board_id: $board, title: $title, column_type: $type, defaults: $defaults) { id } }`,
+        { board: String(entry.boardId), title, type, defaults });
       entry.columns[title] = res2.create_column.id;
     }
   }

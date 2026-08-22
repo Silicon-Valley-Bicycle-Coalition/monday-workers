@@ -92,6 +92,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
 
   // Phase 2: connect-board links.
   let skippedLinks = 0;
+  let partialLinks = 0;
   for (const key of keys) {
     const board = boards[key]!;
     for (const p of byBoard.get(key)!) {
@@ -99,8 +100,12 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       if (!itemId) continue;
       for (const link of p.links ?? []) {
         if (ledger.linkDone(p.sfId, link.column)) continue;
-        const targetIds = link.targetSfIds.map((id) => ledger.itemId(id)).filter(Boolean).map(Number);
-        if (targetIds.length === 0) { skippedLinks++; continue; }
+        const resolved = link.targetSfIds
+          .map((id) => ledger.itemId(id))
+          .filter((id): id is string => id !== undefined);
+        if (resolved.length === 0) { skippedLinks++; continue; }
+        if (resolved.length < link.targetSfIds.length) partialLinks++;
+        const targetIds = resolved.map(Number);
         const colId = board.columns[link.column];
         if (!colId) throw new Error(`load: board ${key} missing connect column "${link.column}"`);
         try {
@@ -111,12 +116,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
               cols: JSON.stringify({ [colId]: { item_ids: targetIds } }) });
           await ledger.recordLink(p.sfId, link.column);
         } catch (err) {
-          await ledger.recordFailure({ sfId: p.sfId, board: key, error: `link ${link.column}: ${String(err)}` });
+          await ledger.recordLinkFailure({ sfId: p.sfId, column: link.column, error: String(err) });
         }
       }
     }
   }
   if (skippedLinks > 0) console.warn(`load: ${skippedLinks} links skipped (target not migrated)`);
+  if (partialLinks > 0) console.warn(`load: ${partialLinks} links wrote a partial set of targets ` +
+    `(some target items not yet migrated)`);
 
   const failures = ledger.failures();
   if (failures.length > 0) {

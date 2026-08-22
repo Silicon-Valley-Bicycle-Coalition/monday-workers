@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureBoards, COLUMN_TYPES } from './boards.js';
+import { ensureBoards, COLUMN_TYPES, CONNECT_TARGETS } from './boards.js';
 import { MondayClient } from './monday.js';
 import { loadConfig } from '../config.js';
 
@@ -30,6 +30,46 @@ describe('ensureBoards', () => {
       new Map([['organizations', new Set(['SF ID', 'Partner Type'])]]));
     expect(map['organizations']!.boardId).toBe(900);
     expect(map['organizations']!.columns['SF ID']).toBe('col_x');
+  });
+
+  it('board_relation columns are created with defaults pointing at target board ids', async () => {
+    // Two boards provisioned in the same run: organizations first (in boardKeys order),
+    // then people-live, which needs an 'Organization' connect column pointing back at
+    // organizations. Board ids are distinguished by the create_board mutation's $name
+    // variable since the generic scriptedClient() helper only dispatches on query text.
+    const boardIdByName: Record<string, string> = { Organizations: '901', People: '902' };
+    let orgColumnDefaults: string | undefined;
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) {
+        return Response.json({ data: { create_board: { id: boardIdByName[variables.name as string] } } });
+      }
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        if (variables.title === 'Organization') orgColumnDefaults = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    const cfg = loadConfig();
+    const map = await ensureBoards(client, cfg, ['organizations', 'people-live'], new Map([
+      ['organizations', new Set(['SF ID'])],
+      ['people-live', new Set(['Organization'])],
+    ]));
+
+    expect(map['organizations']!.boardId).toBe(901);
+    expect(map['people-live']!.boardId).toBe(902);
+    expect(orgColumnDefaults).toBeDefined();
+    expect(JSON.parse(orgColumnDefaults!).boardIds).toEqual([901]);
+  });
+
+  it('CONNECT_TARGETS declares a target for every connect column', () => {
+    for (const title of ['Donor', 'Organization', 'Recurring Gift', 'Campaign', 'Attendee',
+      'Event', 'Payment', 'Volunteer', 'Person']) {
+      expect(CONNECT_TARGETS[title], title).toBeDefined();
+    }
   });
 
   it('every transform column title has a declared type', () => {
