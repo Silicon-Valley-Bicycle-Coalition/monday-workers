@@ -12,10 +12,13 @@ async function seed() {
   await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
     { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
     { Id: 'c2', FirstName: 'Eva', LastName: 'M', Email: 'e@b.c', ...prov }, // email-only → excluded
+    // Affiliation-only inclusion: own org Account ∪ affiliation orgs, deduped, individual filtered.
+    { Id: 'c3', FirstName: 'Uma', LastName: 'N', AccountId: 'a-org', ...prov },
   ]);
   await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
     { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
     { Id: 'a-org', Name: 'Acme', npe01__SYSTEM_AccountType__c: null, Type: 'Sponsor', ...prov },
+    { Id: 'a-org2', Name: 'Beta Org', npe01__SYSTEM_AccountType__c: null, Type: 'Partner', ...prov },
   ]);
   await writeNdjson(dataPath('extract', 'opportunities.ndjson'), [
     { Id: 'o1', Name: 'Membership 2026', Amount: 60, CloseDate: '2026-01-15', StageName: 'Posted',
@@ -27,7 +30,15 @@ async function seed() {
     { Id: 'm1', Contact__c: 'c1', Opportunity__c: 'o1', Type__c: 'Renewal',
       Start_Date__c: '2026-01-15', WEC_End_Date_Manual__c: '2027-01-15' },
   ]);
-  for (const empty of ['payments', 'affiliations', 'relationships', 'subscriptions', 'pledges',
+  await writeNdjson(dataPath('extract', 'affiliations.ndjson'), [
+    // Second org — proves union with the contact's own AccountId.
+    { Id: 'af1', npe5__Contact__c: 'c3', npe5__Organization__c: 'a-org2', ...prov },
+    // Same org as AccountId — proves dedup.
+    { Id: 'af2', npe5__Contact__c: 'c3', npe5__Organization__c: 'a-org', ...prov },
+    // Individual account — proves it's filtered out of the Organization link.
+    { Id: 'af3', npe5__Contact__c: 'c3', npe5__Organization__c: 'a-ind', ...prov },
+  ]);
+  for (const empty of ['payments', 'relationships', 'subscriptions', 'pledges',
     'events', 'registrations', 'campaigns', 'clickpledge_transactions', 'volunteer_hours',
     'tasks_recent', 'emails_recent', 'consent']) {
     await writeNdjson(dataPath('extract', `${empty}.ndjson`), []);
@@ -51,6 +62,14 @@ describe('runTransform', () => {
     expect(bySf.get('o1')!.columns['Term Start']).toEqual({ date: '2026-01-15' });
     expect(bySf.get('a-org')!.board).toBe('organizations');
     expect(bySf.get('a-ind')).toBeUndefined();
+
+    // Organization-link union: own org Account ∪ affiliation orgs, deduped, individual excluded.
+    const uma = bySf.get('c3')!;
+    expect(uma.board).toBe('people-historical');                     // affiliation confers inclusion, not liveness
+    expect(uma.links).toHaveLength(1);
+    expect(uma.links![0]!.column).toBe('Organization');
+    expect(uma.links![0]!.targetSfIds.slice().sort()).toEqual(['a-org', 'a-org2']);
+
     const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
     expect(report.assertions.every((a) => a.violations.length === 0)).toBe(true);
   });
