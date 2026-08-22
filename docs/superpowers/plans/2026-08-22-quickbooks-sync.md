@@ -3223,10 +3223,23 @@ import { HttpMondayClient } from './monday/client';
 import { createMondayWebhookApp } from './monday/webhook/route';
 import { HttpQuickBooksClient } from './quickbooks/client';
 import { D1TokenStore } from './quickbooks/tokenStore';
-import { createQbWebhookApp } from './quickbooks/webhook/route';
+import { createQbWebhookApp, type QueueLike } from './quickbooks/webhook/route';
 import type { Env, QueueMessage } from './types';
 
 const config = validateConfig(rawConfig);
+
+// The installed @cloudflare/workers-types types Queue.send() as returning
+// Promise<QueueSendResponse>, not Promise<void>, and Message<T>[] arrives
+// readonly — neither matches QueueLike/QueueMessageLike as directly. This
+// adapter is a type-only bridge: it forwards the message unmodified and
+// discards the resolved value, which no caller reads.
+function toQueueLike(queue: Queue<QueueMessage>): QueueLike {
+  return {
+    async send(message: QueueMessage): Promise<void> {
+      await queue.send(message);
+    },
+  };
+}
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -3240,7 +3253,7 @@ export default {
       createQbWebhookApp({
         qbEventStore: new D1QbEventStore(env.DB),
         quickBooksClient,
-        queue: env.SYNC_QUEUE,
+        queue: toQueueLike(env.SYNC_QUEUE),
         verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
       })
     );
@@ -3249,7 +3262,7 @@ export default {
       createMondayWebhookApp({
         mondayEventStore: new D1MondayEventStore(env.DB),
         mapStore,
-        queue: env.SYNC_QUEUE,
+        queue: toQueueLike(env.SYNC_QUEUE),
         config,
       })
     );
@@ -3258,7 +3271,7 @@ export default {
   },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
-    await processSyncQueueBatch(batch.messages, {
+    await processSyncQueueBatch([...batch.messages], {
       qbEventStore: new D1QbEventStore(env.DB),
       mondayEventStore: new D1MondayEventStore(env.DB),
       mapStore: new D1MapStore(env.DB),
