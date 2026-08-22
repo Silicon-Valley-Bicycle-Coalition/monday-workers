@@ -28,4 +28,15 @@ describe('ingestConsent', () => {
       { email: 'a@b.c', status: 'unsubscribed' },
     ]);
   });
+
+  it('skips rows with unrecognized status', async () => {
+    const csv = 'Email Address,status\na@b.c,subscribed\nc@d.e,pending\nf@g.h,unsubscribed\n';
+    const p = join(dir, 'audience.csv');
+    writeFileSync(p, csv);
+    expect(await ingestConsent(p)).toBe(2);
+    expect(await readNdjson(dataPath('extract', 'consent.ndjson'))).toEqual([
+      { email: 'a@b.c', status: 'subscribed' },
+      { email: 'f@g.h', status: 'unsubscribed' },
+    ]);
+  });
 });

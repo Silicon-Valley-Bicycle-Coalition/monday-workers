@@ -32,10 +32,19 @@ export async function ingestConsent(csvPath: string): Promise<number> {
   const fileStatus = STATUSES.find((s) => basename(csvPath).toLowerCase().includes(s));
   if (statusIdx < 0 && !fileStatus) throw new Error(`consent: no status column and none inferable from filename`);
 
-  const rows = lines.slice(1).map((line) => {
-    const cells = parseCsvLine(line);
-    const status = (statusIdx >= 0 ? cells[statusIdx]?.trim().toLowerCase() : fileStatus) as Status;
-    return { email: (cells[emailIdx] ?? '').trim().toLowerCase(), status };
-  }).filter((r) => r.email);
+  let skippedCount = 0;
+  const rows = lines.slice(1)
+    .map((line) => {
+      const cells = parseCsvLine(line);
+      const statusStr = statusIdx >= 0 ? cells[statusIdx]?.trim().toLowerCase() : fileStatus;
+      if (!statusStr || !STATUSES.includes(statusStr as Status)) {
+        skippedCount++;
+        return null;
+      }
+      return { email: (cells[emailIdx] ?? '').trim().toLowerCase(), status: statusStr as Status };
+    })
+    .filter((r): r is { email: string; status: Status } => r !== null && Boolean(r.email));
+
+  if (skippedCount > 0) console.warn(`consent: skipped ${skippedCount} rows with unrecognized status`);
   return writeNdjson(dataPath('extract', 'consent.ndjson'), rows);
 }
