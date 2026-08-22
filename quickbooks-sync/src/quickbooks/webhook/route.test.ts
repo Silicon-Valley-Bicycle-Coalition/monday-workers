@@ -2,7 +2,22 @@ import { describe, it, expect, vi } from 'vitest';
 import { createQbWebhookApp } from './route';
 import { verifyQbSignature } from './validate';
 import type { QbEventStore } from '../../db/qbEvents';
+import type { QbEventRow } from '../../types';
 import type { QuickBooksClient } from '../client';
+
+function qbEventRow(overrides: Partial<QbEventRow> = {}): QbEventRow {
+  return {
+    eventId: '123:Customer:60:2026-08-22T00:00:00.000Z',
+    entityType: 'customer',
+    qbId: '60',
+    fetchedPayload: null,
+    status: 'received',
+    error: null,
+    receivedAt: '2026-08-22T00:00:00.000Z',
+    writtenAt: null,
+    ...overrides,
+  };
+}
 
 function fakeEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
   return {
@@ -108,9 +123,12 @@ describe('createQbWebhookApp', () => {
     expect(eventStore.updateStatus).toHaveBeenCalledWith('123:Customer:60:2026-08-22T00:00:00.000Z', 'queued');
   });
 
-  it('short-circuits on a duplicate notification without fetching or enqueueing', async () => {
+  it('short-circuits on a duplicate notification whose row already reached the queue', async () => {
     const { body, signature } = await signedBody(notificationPayload);
-    const eventStore = fakeEventStore({ insertEvent: vi.fn().mockResolvedValue('duplicate') });
+    const eventStore = fakeEventStore({
+      insertEvent: vi.fn().mockResolvedValue('duplicate'),
+      getEvent: vi.fn().mockResolvedValue(qbEventRow({ status: 'queued' })),
+    });
     const getEntity = vi.fn();
     const queue = { send: vi.fn() };
     const app = createQbWebhookApp({
@@ -125,6 +143,43 @@ describe('createQbWebhookApp', () => {
     expect(res.status).toBe(200);
     expect(getEntity).not.toHaveBeenCalled();
     expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it('resumes a duplicate notification whose row never reached the queue', async () => {
+    // The row exists in a pre-queue state because a prior delivery died between the insert and
+    // the enqueue. Skipping it here would lose the change permanently.
+    for (const status of ['received', 'fetched', 'failed'] as const) {
+      const { body, signature } = await signedBody(notificationPayload);
+      const eventStore = fakeEventStore({
+        insertEvent: vi.fn().mockResolvedValue('duplicate'),
+        getEvent: vi.fn().mockResolvedValue(qbEventRow({ status })),
+      });
+      const getEntity = vi.fn().mockResolvedValue({ Id: '60', DisplayName: 'Acme' });
+      const queue = { send: vi.fn().mockResolvedValue(undefined) };
+      const app = createQbWebhookApp({
+        qbEventStore: eventStore,
+        quickBooksClient: fakeQuickBooksClient({ getEntity }),
+        queue,
+        verifierToken,
+      });
+
+      const res = await app.request('/webhooks/quickbooks', {
+        method: 'POST',
+        body,
+        headers: { 'intuit-signature': signature },
+      });
+
+      expect(res.status).toBe(200);
+      expect(getEntity, `status ${status}`).toHaveBeenCalledWith('customer', '60');
+      expect(queue.send, `status ${status}`).toHaveBeenCalledWith({
+        direction: 'qb-to-monday',
+        eventId: '123:Customer:60:2026-08-22T00:00:00.000Z',
+      });
+      expect(eventStore.updateStatus, `status ${status}`).toHaveBeenCalledWith(
+        '123:Customer:60:2026-08-22T00:00:00.000Z',
+        'queued'
+      );
+    }
   });
 
   it('marks the event failed when the QuickBooks fetch throws, without crashing the request', async () => {

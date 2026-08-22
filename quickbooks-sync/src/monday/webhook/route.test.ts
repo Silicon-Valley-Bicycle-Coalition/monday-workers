@@ -2,7 +2,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { createMondayWebhookApp } from './route';
 import type { MondayEventStore } from '../../db/mondayEvents';
 import type { MapStore } from '../../db/map';
-import type { QuickbooksSyncConfig } from '../../types';
+import type { MondayEventRow, QuickbooksSyncConfig } from '../../types';
+
+function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow {
+  return {
+    eventId: '42',
+    mondayItemId: '42',
+    rawPayload: '{}',
+    status: 'received',
+    qbId: null,
+    error: null,
+    receivedAt: '2026-08-22T00:00:00.000Z',
+    writtenAt: null,
+    ...overrides,
+  };
+}
 
 const config: QuickbooksSyncConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', boards: { customers: 789, invoices: null, products: null } },
@@ -117,8 +131,11 @@ describe('createMondayWebhookApp', () => {
     expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'queued');
   });
 
-  it('short-circuits on a duplicate item event without enqueueing', async () => {
-    const mondayEventStore = fakeMondayEventStore({ insertEvent: vi.fn().mockResolvedValue('duplicate') });
+  it('short-circuits on a duplicate item event whose row already reached the queue', async () => {
+    const mondayEventStore = fakeMondayEventStore({
+      insertEvent: vi.fn().mockResolvedValue('duplicate'),
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'queued' })),
+    });
     const queue = { send: vi.fn() };
     const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
 
@@ -129,6 +146,49 @@ describe('createMondayWebhookApp', () => {
     });
 
     expect((await res.json<{ duplicate: boolean }>()).duplicate).toBe(true);
+    expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it('resumes a duplicate item event whose row never reached the queue', async () => {
+    // The row exists in a pre-queue state because a prior delivery died between the insert and
+    // the enqueue. Skipping it here would lose the new Customer permanently.
+    for (const status of ['received', 'fetched', 'failed'] as const) {
+      const mondayEventStore = fakeMondayEventStore({
+        insertEvent: vi.fn().mockResolvedValue('duplicate'),
+        getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status })),
+      });
+      const queue = { send: vi.fn().mockResolvedValue(undefined) };
+      const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
+
+      const res = await app.request('/webhooks/monday', {
+        method: 'POST',
+        body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(res.status).toBe(200);
+      expect((await res.json<{ resumed: boolean }>()).resumed, `status ${status}`).toBe(true);
+      expect(queue.send, `status ${status}`).toHaveBeenCalledWith({ direction: 'monday-to-qb', eventId: '42' });
+      expect(mondayEventStore.updateStatus, `status ${status}`).toHaveBeenCalledWith('42', 'queued');
+    }
+  });
+
+  it('returns a recorded error at HTTP 200 for a malformed JSON body instead of crashing', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const queue = { send: vi.fn() };
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
+
+    const res = await app.request('/webhooks/monday', {
+      method: 'POST',
+      body: 'not json at all{',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json<{ ok: boolean; error: string }>();
+    expect(json.ok).toBe(false);
+    expect(typeof json.error).toBe('string');
+    expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
     expect(queue.send).not.toHaveBeenCalled();
   });
 });

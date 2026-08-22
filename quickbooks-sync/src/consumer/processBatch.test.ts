@@ -283,6 +283,61 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
     expect(message.retry).toHaveBeenCalled();
   });
 
+  it('persists the new QuickBooks id in its own write before recording the mapping', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient(),
+      config,
+    });
+
+    // The id lands in D1 as 'fetched' before createMapping runs, so a failure in any later step
+    // leaves a row a retry can resume from instead of creating a second QuickBooks Customer.
+    expect(mondayEventStore.updateStatus).toHaveBeenNthCalledWith(1, '42', 'fetched', { qbId: 'qb-new' });
+    expect(mondayEventStore.updateStatus).toHaveBeenNthCalledWith(2, '42', 'written', {
+      qbId: 'qb-new',
+      writtenAt: expect.any(String),
+    });
+  });
+
+  it('does not create a second QuickBooks customer when a retry resumes a row that already has a qbId', async () => {
+    const mondayEventStore = fakeMondayEventStore({
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'fetched', qbId: 'qb-already-created' })),
+    });
+    const mapStore = fakeMapStore();
+    const createCustomer = vi.fn();
+    const quickBooksClient = fakeQuickBooksClient({ createCustomer });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore,
+      mondayClient: fakeMondayClient(),
+      quickBooksClient,
+      config,
+    });
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mapStore.createMapping).toHaveBeenCalledWith({
+      entityType: 'customer',
+      qbId: 'qb-already-created',
+      mondayItemId: '42',
+      mondayBoardId: 111,
+      createdAt: expect.any(String),
+    });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'written', {
+      qbId: 'qb-already-created',
+      writtenAt: expect.any(String),
+    });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('fails and retries when the monday_events row is missing', async () => {
     const mondayEventStore = fakeMondayEventStore({ getEvent: vi.fn().mockResolvedValue(null) });
     const message = fakeMessage({ direction: 'monday-to-qb', eventId: 'missing-item' });

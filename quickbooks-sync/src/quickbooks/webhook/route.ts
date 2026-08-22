@@ -1,8 +1,17 @@
 import { Hono } from 'hono';
 import type { QbEventStore } from '../../db/qbEvents';
-import type { QueueMessage } from '../../types';
+import type { QueueMessage, SyncStatus } from '../../types';
 import type { QuickBooksClient } from '../client';
 import { parseQbNotifications, verifyQbSignature } from './validate';
+
+// Statuses that prove an event actually reached the queue. Anything else on an existing row
+// means the row was inserted but the Worker died (CPU limit, timeout, throw) before enqueueing,
+// so the change never made it downstream — those rows are resumed rather than skipped.
+const REACHED_QUEUE_STATUSES: readonly SyncStatus[] = ['queued', 'written'];
+
+export function hasReachedQueue(status: SyncStatus): boolean {
+  return REACHED_QUEUE_STATUSES.includes(status);
+}
 
 export interface QueueLike {
   send(message: QueueMessage): Promise<void>;
@@ -41,7 +50,13 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
         receivedAt: new Date().toISOString(),
       });
 
-      if (insertResult === 'duplicate') continue;
+      if (insertResult === 'duplicate') {
+        // "A row already exists" is not the same as "this was already processed" — see
+        // hasReachedQueue. Only skip when the existing row genuinely reached the queue,
+        // otherwise fall through and resume it using the row that's already there.
+        const existing = await deps.qbEventStore.getEvent(notification.eventId);
+        if (existing === null || hasReachedQueue(existing.status)) continue;
+      }
 
       try {
         const record = await deps.quickBooksClient.getEntity(notification.entityType, notification.qbId);

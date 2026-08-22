@@ -83,8 +83,15 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   const itemName = typeof itemNameValue === 'string' && itemNameValue.length > 0 ? itemNameValue : event.qbId;
 
   if (existing) {
+    // Only mapped column values are propagated — a QuickBooks-side rename does not update the
+    // Monday item's name/title. Whether monday.com's GraphQL API supports renaming an existing
+    // item this way is an open question (see the design spec's caveat about verifying the
+    // GraphQL shape against a live account), so no mutation is attempted here.
     await deps.mondayClient.changeColumnValues(boardId, existing.mondayItemId, columnValues);
   } else {
+    // Known, accepted narrow window: if createItem succeeds but createMapping below throws, the
+    // queue retry re-runs this branch and creates a second Monday item. Closing it needs either a
+    // schema change or a Monday item-search capability; both are out of scope and tracked.
     const created = await deps.mondayClient.createItem(boardId, itemName, columnValues);
     await deps.mapStore.createMapping({
       entityType: event.entityType,
@@ -109,20 +116,37 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     throw new Error('config: monday.boards.customers is not configured');
   }
 
-  const columnValues = JSON.parse(event.rawPayload) as Record<string, unknown>;
-  const qbFields = mapMondayToQbCustomerFields(columnValues, deps.config);
-  const created = await deps.quickBooksClient.createCustomer(qbFields);
+  // Idempotency guard. A queue retry re-runs this function from the top, so calling
+  // createCustomer unconditionally would create a duplicate Customer in the accounting system
+  // of record every time a later step failed. event.qbId is persisted in its own D1 write the
+  // moment createCustomer resolves (below), so a non-null value here means a prior attempt
+  // already created the Customer — resume from that id instead of creating another.
+  let qbId = event.qbId;
 
+  if (qbId === null) {
+    const columnValues = JSON.parse(event.rawPayload) as Record<string, unknown>;
+    const qbFields = mapMondayToQbCustomerFields(columnValues, deps.config);
+    const created = await deps.quickBooksClient.createCustomer(qbFields);
+    qbId = created.id;
+
+    // Durably record the new id before doing anything else. 'fetched' is the intermediate
+    // signal for "the QuickBooks side is done, the local bookkeeping is not"; if either write
+    // below fails, the retry finds qbId set and skips straight past createCustomer.
+    await deps.mondayEventStore.updateStatus(eventId, 'fetched', { qbId });
+  }
+
+  // Safe to re-run on a resumed attempt: createMapping is an idempotent UPSERT on
+  // (entity_type, qb_id).
   await deps.mapStore.createMapping({
     entityType: 'customer',
-    qbId: created.id,
+    qbId,
     mondayItemId: event.mondayItemId,
     mondayBoardId: customersBoardId,
     createdAt: new Date().toISOString(),
   });
 
   await deps.mondayEventStore.updateStatus(eventId, 'written', {
-    qbId: created.id,
+    qbId,
     writtenAt: new Date().toISOString(),
   });
 }
