@@ -1,0 +1,40 @@
+{
+  "salesforceOrg": "svbc",
+  "cutoverDateISO": "2026-10-01",
+  "peopleActiveSinceISO": "2019-01-01",
+  "activitySliceSinceISO": "2024-08-01",
+  "eraMaxItems": 9000,
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boardSuffix": "",
+    "boards": {
+      "donations-live": 8845443596,
+      "activities": 8845443637,
+      "people-live": null,
+      "people-historical": null,
+      "organizations": null,
+      "recurring-gifts": null,
+      "events": null,
+      "event-registrations": null,
+      "campaigns": null,
+      "volunteers": null
+    }
+  },
+  "localNews": {
+    "rules": [
+      { "cities": ["san jose"], "url": "https://sanjosespotlight.com/" },
+      { "cities": ["santa clara", "cupertino", "campbell", "saratoga"], "url": "https://civicdigest.org" }
+    ],
+    "defaultUrl": "https://localnewsmatters.org/"
+  },
+  "reconciliation": {
+    "funraiseOpportunities": 3648,
+    "funraiseTotalAmountCents": 28622824,
+    "paymentsOnFunraiseOpps": 3466,
+    "activeSubscriptions": 537,
+    "subscriptionsAll": 601,
+    "eventRegistrations": 616,
+    "funraiseContacts": 1993,
+    "organizations": 2090
+  }
+}
