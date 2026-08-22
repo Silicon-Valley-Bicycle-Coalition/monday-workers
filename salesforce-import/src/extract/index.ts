@@ -23,6 +23,11 @@ export async function runExtract(args: string[], deps: { exec?: ExecFn } = {}): 
     counts[ex.name] = await writeNdjson(dataPath(dir, `${ex.name}.ndjson`), rows);
     console.log(`extract: ${ex.name} → ${counts[ex.name]} rows (${dir})`);
   }
+  const consentIdx = args.indexOf('--consent');
+  if (consentIdx >= 0 && args[consentIdx + 1]) {
+    const { ingestConsent } = await import('./consent.js');
+    counts['consent'] = await ingestConsent(args[consentIdx + 1]!);
+  }
   await writeJson(dataPath('extract', 'manifest.json'), {
     extractedAt: new Date().toISOString(), counts, syncErrorCount: gate.errorCount,
   });
