@@ -1,0 +1,24 @@
+{
+  "name": "svbc-quickbooks-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-quickbooks-sync",
+      // Replace after running: wrangler d1 create svbc-quickbooks-sync
+      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [{ "queue": "quickbooks-sync-writes", "binding": "SYNC_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "quickbooks-sync-writes",
+        "max_retries": 3,
+        "dead_letter_queue": "quickbooks-sync-writes-dlq"
+      }
+    ]
+  }
+}
