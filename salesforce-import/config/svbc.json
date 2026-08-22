@@ -8,7 +8,7 @@
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": "",
     "boards": {
-      "donations-live": 8845443596,
+      "donations:live": 8845443596,
       "activities": 8845443637,
       "people-live": null,
       "people-historical": null,
