@@ -283,15 +283,20 @@ await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 
 - [ ] **Step 9: Create `funraise-sync/test/env.d.ts`**
 
-```typescript
-import type { Env } from '../src/types';
+The installed `@cloudflare/vitest-plugin` (verified in `node_modules/@cloudflare/vitest-plugin/types/cloudflare-test.d.ts`) types the `env` export of `cloudflare:test`/`cloudflare:workers` against the global `Cloudflare.Env` namespace that `@cloudflare/workers-types` declares — not a `ProvidedEnv` interface. This file must be a plain ambient script (no top-level `import`/`export`) so `declare namespace Cloudflare` merges into that global namespace rather than creating a local one:
 
-declare module 'cloudflare:test' {
-  interface ProvidedEnv extends Env {
+```typescript
+declare namespace Cloudflare {
+  interface Env {
+    DB: D1Database;
+    WRITE_QUEUE: Queue<{ eventId: string }>;
+    MONDAY_API_TOKEN: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
   }
 }
 ```
+
+These fields are duplicated from `src/types.ts`'s `Env` interface rather than imported from it — importing anything would give this file a top-level `import` statement, turning it into a module and breaking the global-namespace merge. Keep the two in sync by hand if `Env` in `src/types.ts` changes.
 
 - [ ] **Step 10: Write the failing test — `funraise-sync/src/index.test.ts`**
 
