@@ -39,4 +39,12 @@ describe('validateConfig', () => {
   it('throws when stages is empty', () => {
     expect(() => validateConfig({ ...validConfig, stages: [] })).toThrow(/stages/);
   });
+
+  it('throws when monday is null', () => {
+    expect(() => validateConfig({ ...validConfig, monday: null })).toThrow(/monday/);
+  });
+
+  it('throws when monday is not an object', () => {
+    expect(() => validateConfig({ ...validConfig, monday: 'invalid' })).toThrow(/monday/);
+  });
 });

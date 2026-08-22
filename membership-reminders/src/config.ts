@@ -29,6 +29,10 @@ export function validateConfig(raw: unknown): Config {
     }
   }
 
+  if (typeof cfg.monday !== 'object' || cfg.monday === null) {
+    throw new Error('config: missing required key "monday"');
+  }
+
   const monday = cfg.monday as Record<string, unknown>;
   const columns = monday.columns as Record<string, unknown> | undefined;
   if (!columns) {
