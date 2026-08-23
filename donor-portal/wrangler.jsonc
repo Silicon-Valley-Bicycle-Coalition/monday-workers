@@ -13,10 +13,6 @@
   ],
   "ratelimits": [
     {
-      // Verify this binding's config shape (key name, "simple" vs another rule type) against
-      // Cloudflare's current Rate Limiting for Workers docs before deploy. Wrapped behind the
-      // IpRateLimiter interface (src/ratelimit.ts) specifically so that verification is isolated
-      // to one small area and never touches test code.
       "name": "LOGIN_RATE_LIMITER",
       "namespace_id": "1001",
       "simple": { "limit": 10, "period": 60 }
