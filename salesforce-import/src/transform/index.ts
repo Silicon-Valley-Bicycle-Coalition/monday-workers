@@ -1,8 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
 import { dataPath, readNdjson, writeJson, writeNdjson } from '../artifacts.js';
 import { GeoCache } from '../geocode/cache.js';
+import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
+import type { EnrichmentRow } from '../enrich/index.js';
 import { normalizeAddress } from '../geocode/normalize.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
@@ -40,6 +42,18 @@ export async function runTransform(args: string[]): Promise<number> {
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
   const geoCache = new GeoCache();
   await geoCache.load();
+
+  // Places enrichment (optional artifact): exact matches plus human-approved sfIds
+  // fill blank org Website/Address; enriched addresses also resolve geo.
+  let enrichment = new Map<string, MergeableEnrichment>();
+  const enrichPath = dataPath('enrich', 'organizations.ndjson');
+  if (existsSync(enrichPath)) {
+    const approvedPath = dataPath('enrich', 'approved.txt');
+    const approved = new Set<string>(existsSync(approvedPath)
+      ? readFileSync(approvedPath, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean)
+      : []);
+    enrichment = mergeableEnrichment(await readNdjson<EnrichmentRow>(enrichPath), approved);
+  }
 
   // Eras from all dated donation rows.
   const eras: Era[] = computeEras([
@@ -115,10 +129,17 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(r ? applyRollups(p, r) : p);
   }
   for (const a of accounts) {
-    const geoKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
+    const enriched = enrichment.get(a['Id'] as string);
+    const billingKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
       state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
+    const enrichedKey = enriched?.parts ? normalizeAddress(enriched.parts) : null;
+    const geoKey = billingKey ?? enrichedKey;
     const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined);
     if (!p) continue;
+    if (enriched) {
+      if (!p.columns['Website'] && enriched.website) p.columns['Website'] = enriched.website;
+      if (!p.columns['Address'] && enriched.address) p.columns['Address'] = enriched.address;
+    }
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
