@@ -109,12 +109,3 @@ export function taskToPayload(t: Record<string, unknown>): ItemPayload {
     links: t['WhoId'] ? [{ column: 'Person', targetSfIds: [t['WhoId'] as string] }] : [],
   };
 }
-
-export function emailToPayload(e: Record<string, unknown>): ItemPayload {
-  return {
-    board: 'activities', sfId: e['Id'] as string, name: (e['Subject'] as string) ?? '(email)',
-    columns: { 'SF ID': e['Id'], 'Activity Type': { label: 'Email' },
-      'Date': dateCol(e['MessageDate'] as string),
-      'From': (e['FromAddress'] ?? '') as string, 'To': (e['ToAddress'] ?? '') as string },
-  };
-}

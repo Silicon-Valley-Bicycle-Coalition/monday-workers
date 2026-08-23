@@ -11,8 +11,7 @@ import { computeEras, type Era } from './eras.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
-  registrationToPayload, campaignToPayload, volunteerHoursToPayload, taskToPayload,
-  emailToPayload } from './boards.js';
+  registrationToPayload, campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
 
 type Row = Record<string, unknown>;
 const load = (name: string) => readNdjson<Row>(dataPath('extract', `${name}.ndjson`));
@@ -31,11 +30,11 @@ export async function runTransform(args: string[]): Promise<number> {
     '--no-consent (empty consent map, every contact will show "Not in Mailchimp")');
 
   const [contacts, accounts, opportunities, memberships, affiliations, subscriptions, pledges,
-    events, registrations, campaigns, cnp, volunteerHours, tasksRecent, emailsRecent, consentRows] =
+    events, registrations, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
     await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('memberships'),
       load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
       load('registrations'), load('campaigns'), load('clickpledge_transactions'),
-      load('volunteer_hours'), load('tasks_recent'), load('emails_recent'),
+      load('volunteer_hours'), load('tasks_recent'),
       consentExists ? load('consent') : Promise.resolve([])]);
 
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
@@ -51,7 +50,7 @@ export async function runTransform(args: string[]): Promise<number> {
   // Membership derivations + assertions.
   const terms = memberships as unknown as MembershipRow[];
   const memberSummaries = deriveMembers(terms, cfg.cutoverDateISO);
-  const { columns: termCols, violations: membershipViolations } = termColumnsByOpportunity(terms);
+  const { columns: termCols, ambiguous: termAmbiguous } = termColumnsByOpportunity(terms);
 
   // Click & Pledge dedup against Opportunities, computed FIRST — the deduped C&P set feeds both
   // the People inclusion sets below (a C&P-only donor must still become a Person) and the donor
@@ -133,8 +132,15 @@ export async function runTransform(args: string[]): Promise<number> {
   for (const r of registrations) payloads.push(registrationToPayload(r));
   for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));
-  for (const t of tasksRecent) payloads.push(taskToPayload(t));
-  for (const e of emailsRecent) payloads.push(emailToPayload(e));
+  // Activities: person-linked Tasks only, newest-first, capped under the board ceiling
+  // (decided 2026-08-22 after the real slice measured 53k). EmailMessages carry no contact
+  // link and stay backup-only.
+  const linkedTasks = tasksRecent
+    .filter((t) => includedContactIds.has(t['WhoId'] as string))
+    .sort((a, b) => String(b['ActivityDate'] ?? '').localeCompare(String(a['ActivityDate'] ?? '')));
+  const fittedTasks = linkedTasks.slice(0, cfg.eraMaxItems);
+  const activityCutoff = fittedTasks.at(-1)?.['ActivityDate'] ?? null;
+  for (const t of fittedTasks) payloads.push(taskToPayload(t));
 
   // Per-board counts + ceiling assertion.
   const payloadCounts: Record<string, number> = {};
@@ -143,15 +149,23 @@ export async function runTransform(args: string[]): Promise<number> {
     .filter(([, n]) => n > 10_000)
     .map(([board, n]) => `${board} projected at ${n} items (> 10,000)`);
 
+  const warnings: string[] = [];
+  if (rollups.overlap > 0) {
+    warnings.push(`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`);
+  }
+  if (termAmbiguous.length > 0) {
+    warnings.push(`membership term columns skipped for ${termAmbiguous.length} opportunities with ` +
+      `disagreeing terms (joint memberships with matching terms ARE written; first: ${termAmbiguous[0]})`);
+  }
+  warnings.push(`activities: ${fittedTasks.length} of ${linkedTasks.length} person-linked tasks ` +
+    `(cutoff ${activityCutoff ?? 'n/a'}); ${tasksRecent.length - linkedTasks.length} unlinked tasks and all ` +
+    `emails are backup-only`);
   const report: TransformReport = {
     payloadCounts,
     assertions: [
-      { name: 'membership-opportunity-1to1', violations: membershipViolations },
       { name: 'board-ceiling', violations: ceilingViolations },
     ],
-    warnings: rollups.overlap > 0
-      ? [`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`]
-      : [],
+    warnings,
   };
 
   await writeNdjson(dataPath('transform', 'payloads.ndjson'), payloads);

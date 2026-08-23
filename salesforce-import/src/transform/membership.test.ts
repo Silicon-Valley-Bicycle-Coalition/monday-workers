@@ -35,14 +35,24 @@ describe('deriveMembers', () => {
 
 describe('termColumnsByOpportunity', () => {
   it('emits term columns keyed by opportunity', () => {
-    const { columns, violations } = termColumnsByOpportunity([t({})]);
-    expect(violations).toEqual([]);
+    const { columns, ambiguous } = termColumnsByOpportunity([t({})]);
+    expect(ambiguous).toEqual([]);
     expect(columns.get('o1')).toEqual({
       'Term Start': { date: '2024-01-01' }, 'Term End': { date: '2025-01-01' }, 'Membership Type': 'New',
     });
   });
-  it('reports 1:1 violations instead of taking first match', () => {
-    const { violations } = termColumnsByOpportunity([t({ Id: 'm1' }), t({ Id: 'm2' })]);
-    expect(violations).toEqual(['Opportunity o1 has 2 membership terms']);
+  it('writes term columns for agreeing multi-term links (joint memberships)', () => {
+    const { columns, ambiguous } = termColumnsByOpportunity([
+      t({ Id: 'm1', Contact__c: 'c1' }), t({ Id: 'm2', Contact__c: 'c2' })]);
+    expect(ambiguous).toEqual([]);
+    expect(columns.get('o1')).toEqual({
+      'Term Start': { date: '2024-01-01' }, 'Term End': { date: '2025-01-01' }, 'Membership Type': 'New',
+    });
+  });
+  it('skips and reports disagreeing multi-term links instead of picking sides', () => {
+    const { columns, ambiguous } = termColumnsByOpportunity([
+      t({ Id: 'm1' }), t({ Id: 'm2', Start_Date__c: '2020-01-01', Type__c: 'Historical' })]);
+    expect(columns.has('o1')).toBe(false);
+    expect(ambiguous).toEqual(['Opportunity o1 has 2 disagreeing membership terms']);
   });
 });

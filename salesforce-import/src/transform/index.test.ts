@@ -75,14 +75,30 @@ describe('runTransform', () => {
     expect(report.assertions.every((a) => a.violations.length === 0)).toBe(true);
   });
 
-  it('fails on a membership 1:1 violation', async () => {
+  it('skips term columns and warns on disagreeing multi-term memberships (no hard failure)', async () => {
     await writeNdjson(dataPath('extract', 'memberships.ndjson'), [
       { Id: 'm1', Contact__c: 'c1', Opportunity__c: 'o1', Type__c: 'Renewal',
         Start_Date__c: '2026-01-15', WEC_End_Date_Manual__c: '2027-01-15' },
       { Id: 'm2', Contact__c: 'c1', Opportunity__c: 'o1', Type__c: 'New',
         Start_Date__c: '2025-01-15', WEC_End_Date_Manual__c: '2026-01-15' },
     ]);
-    expect(await runTransform([])).toBe(1);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const o1 = payloads.find((p) => p.sfId === 'o1')!;
+    expect(o1.columns['Term Start']).toBeUndefined();
+    const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.warnings.some((w) => w.includes('membership term columns skipped for 1'))).toBe(true);
+  });
+
+  it('caps activities to person-linked tasks under the ceiling', async () => {
+    await writeNdjson(dataPath('extract', 'tasks_recent.ndjson'), [
+      { Id: 'tk1', WhoId: 'c1', Subject: 'Linked call', ActivityDate: '2026-03-01', Status: 'Completed' },
+      { Id: 'tk2', WhoId: 'c2', Subject: 'Unlinked (excluded contact)', ActivityDate: '2026-03-02', Status: 'Completed' },
+    ]);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const acts = payloads.filter((p) => p.board === 'activities');
+    expect(acts.map((p) => p.sfId)).toEqual(['tk1']); // c2 is the excluded email-only contact
   });
 
   it('fails with a named remediation when consent.ndjson is missing and --no-consent is not passed', async () => {

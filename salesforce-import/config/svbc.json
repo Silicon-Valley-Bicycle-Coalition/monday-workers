@@ -8,8 +8,8 @@
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": "",
     "boards": {
-      "donations:live": 8845443596,
-      "activities": 8845443637,
+      "donations:live": null,
+      "activities": null,
       "people-live": null,
       "people-historical": null,
       "organizations": null,
@@ -32,8 +32,8 @@
     "funraiseOpportunities": 3648,
     "funraiseTotalAmountCents": 28622824,
     "paymentsOnFunraiseOpps": 3466,
-    "activeSubscriptions": 537,
-    "subscriptionsAll": 601,
+    "activeSubscriptions": 540,
+    "subscriptionsAll": 604,
     "eventRegistrations": 616,
     "funraiseContacts": 1993,
     "organizations": 2090

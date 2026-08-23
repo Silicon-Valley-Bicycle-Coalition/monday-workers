@@ -71,13 +71,14 @@ decouples all three — see "Migration Method" in the plan for the full reasonin
 
 ## Blocking preconditions
 
-**Fix the 157 live Funraise→Salesforce sync errors before running any export.** Root cause: a
-case-sensitive unique-index collision on `Contact.Primary_Email__c`. ~11 supporters and their
-donations are currently missing from Salesforce entirely and will silently be missing from the
-import too if this isn't reconciled first. Full detail:
-`docs/01-funraise-pipeline-current-state.md` §5 (private planning repo).
-This is listed first in the plan's Decisions Needed for a reason — treat it as a hard gate on
-starting the import build, not a parallel task.
+~~**Fix the 157 live Funraise→Salesforce sync errors before running any export.**~~
+**Resolved 2026-08-22** — the error log is cleared to 0: the supporter sync had self-healed in
+late July, and the lasting damage (27 donor-less donations back to 2023, 3 missing yearly
+subscriptions) was repaired directly in Salesforce. The extract gate this script enforces now
+passes; any new `funraise__Error__c` row is a fresh failure worth immediate attention. Full
+detail: `docs/12-funraise-sync-error-fix.md` (private planning repo). Note the original
+case-sensitivity root-cause theory was corrected — collisions were exact-value inserts of new
+supporter records for existing Contacts.
 
 **New, from the org-customization audit — also gate the build on these before finalizing scope
 (status as of 2026-08-21 — two of three resolved):**

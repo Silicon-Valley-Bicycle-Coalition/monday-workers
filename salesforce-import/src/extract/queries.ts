@@ -1,14 +1,14 @@
 import type { Config } from '../config.js';
 
-export function buildExtracts(cfg: Config): { name: string; soql: string; backupOnly?: boolean }[] {
+export function buildExtracts(cfg: Config): { name: string; soql: string; backupOnly?: boolean; paginate?: boolean }[] {
   return [
-    { name: 'contacts', soql: `SELECT Id, FirstName, LastName, AccountId, Phone, MobilePhone,
+    { name: 'contacts', paginate: true, soql: `SELECT Id, FirstName, LastName, AccountId, Phone, MobilePhone,
         MailingStreet, MailingCity, MailingState, MailingPostalCode,
         Email, Primary_Email__c, Secondary_Email__c, Email_3__c, Email_4__c,
         npe01__HomeEmail__c, npe01__WorkEmail__c, npe01__AlternateEmail__c, npe01__Preferred_Email__c,
         Account.Do_Not_Solicit__c, Account.Do_Not_Solicit_What__c, dtd__company__c, funraise__fr_ID__c,
         CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Contact` },
-    { name: 'accounts', soql: `SELECT Id, Name, npe01__SYSTEM_AccountType__c, Type, Type_2__c, Industry,
+    { name: 'accounts', paginate: true, soql: `SELECT Id, Name, npe01__SYSTEM_AccountType__c, Type, Type_2__c, Industry,
         BillingStreet, BillingCity, BillingState, BillingPostalCode, Website, Phone,
         Do_Not_Solicit__c, Do_Not_Solicit_What__c,
         CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Account` },
@@ -53,12 +53,10 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         FROM GW_Volunteers__Volunteer_Hours__c` },
     { name: 'tasks_recent', soql: `SELECT Id, WhoId, Subject, ActivityDate, Status, Owner.Name,
         CreatedDate FROM Task WHERE ActivityDate >= ${cfg.activitySliceSinceISO}` },
-    { name: 'emails_recent', soql: `SELECT Id, Subject, MessageDate, FromAddress, ToAddress
-        FROM EmailMessage WHERE MessageDate >= ${cfg.activitySliceSinceISO}T00:00:00Z` },
     // backup-only artifacts (CSV-equivalent NDJSON in data/backup/)
-    { name: 'contact_history', backupOnly: true, soql: `SELECT ContactId, Field, OldValue, NewValue,
+    { name: 'contact_history', backupOnly: true, paginate: true, soql: `SELECT Id, ContactId, Field, OldValue, NewValue,
         CreatedById, CreatedDate FROM ContactHistory` },
-    { name: 'campaign_members', backupOnly: true, soql: `SELECT Id, CampaignId, ContactId, Status,
+    { name: 'campaign_members', backupOnly: true, paginate: true, soql: `SELECT Id, CampaignId, ContactId, Status,
         CreatedDate FROM CampaignMember` },
     { name: 'leads', backupOnly: true, soql: `SELECT Id, Name, Email, Status, IsConverted,
         Volunteer_How_Heard__c, Volunteer_Local_Team__c, CreatedDate FROM Lead` },
