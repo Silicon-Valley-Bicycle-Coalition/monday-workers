@@ -20,5 +20,8 @@
         "dead_letter_queue": "quickbooks-sync-writes-dlq"
       }
     ]
+  },
+  "observability": {
+    "enabled": true
   }
 }
