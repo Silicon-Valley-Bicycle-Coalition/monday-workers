@@ -10,6 +10,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "routes": [
+    {
+      "pattern": "committees.bikesiliconvalley.org",
+      "custom_domain": true
+    }
+  ],
   "triggers": {
     // Daily at 13:00 UTC (5am/6am Pacific depending on DST) — adjust if a different time is preferred.
     "crons": ["0 13 * * *"]
