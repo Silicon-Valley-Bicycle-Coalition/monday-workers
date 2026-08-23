@@ -2407,6 +2407,33 @@ describe('full login flow', () => {
   });
 });
 
+describe('GET /auth/callback error handling', () => {
+  it('shows the recovery error page, not a raw 500, when session creation throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const tokenStore = inMemoryTokenStore();
+    const sessionStore: SessionStore = {
+      createSession: vi.fn().mockRejectedValue(new Error('D1 write failed')),
+      getSession: vi.fn(),
+      deleteSession: vi.fn(),
+    };
+    const app = createApp(makeDeps({ monday, emailSender, tokenStore, sessionStore }));
+
+    await app.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0][0].loginUrl;
+    const token = extractToken(loginUrl);
+
+    const res = await app.request(`/auth/callback?token=${token}`);
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('expired or was already used');
+  });
+});
+
 describe('GET /portal without a session', () => {
   it('redirects to /login', async () => {
     const app = createApp(makeDeps());
@@ -2539,12 +2566,20 @@ export function createApp(deps: AppDeps) {
       return c.html(errorView('This link is invalid. Please request a new one.'));
     }
 
-    const sessionToken = await verifyLogin(token, {
-      tokenStore: deps.tokenStore,
-      sessionStore: deps.sessionStore,
-      sessionTtlHours: deps.config.auth.sessionTtlHours,
-      now: deps.now,
-    });
+    let sessionToken: string | null;
+    try {
+      sessionToken = await verifyLogin(token, {
+        tokenStore: deps.tokenStore,
+        sessionStore: deps.sessionStore,
+        sessionTtlHours: deps.config.auth.sessionTtlHours,
+        now: deps.now,
+      });
+    } catch (err) {
+      // e.g. the magic-link token was validly consumed but the follow-up session write failed
+      // (D1 error) — show the same "request a new one" recovery path rather than a raw 500.
+      console.error(`donor-portal login verification failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(errorView('This link has expired or was already used. Please request a new one.'));
+    }
 
     if (sessionToken === null) {
       return c.html(errorView('This link has expired or was already used. Please request a new one.'));
@@ -2592,7 +2627,7 @@ export function createApp(deps: AppDeps) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- routes.test.ts`
-Expected: PASS, all 7 tests.
+Expected: PASS, all 8 tests.
 
 - [ ] **Step 5: Commit**
 
