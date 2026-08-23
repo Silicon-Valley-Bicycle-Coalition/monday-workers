@@ -6,7 +6,7 @@ import type { MondayClient } from './monday.js';
 export const COLUMN_TYPES: Record<string, string> = {
   'SF ID': 'text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
-  'Local News': 'link', 'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
+  'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
   'Email Consent': 'status', 'Membership Status': 'status', 'Membership Tier': 'status',
   'Member Since': 'date', 'Member Until': 'date',
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',

@@ -44,7 +44,7 @@ describe('contactToPayload', () => {
         LastModifiedDate: '2026-01-01T00:00:00Z', LastModifiedBy: { Name: 'Bob' } },
       'people-live',
       { consent: new Map([['ada@x.co', 'subscribed']]), member,
-        geo: { lat: 37.3, lng: -121.9, city: 'San Jose', zip: '95112', source: 'census' }, news });
+        geo: { lat: 37.3, lng: -121.9, city: 'San Jose', zip: '95112', source: 'census' } });
     expect(p.board).toBe('people-live');
     expect(p.name).toBe('Ada Lovelace');
     expect(p.columns['Email']).toEqual({ email: 'ada@x.co', text: 'ada@x.co' });
@@ -52,7 +52,7 @@ describe('contactToPayload', () => {
     expect(p.columns['Membership Status']).toEqual({ label: 'Active' });
     expect(p.columns['Membership Tier']).toEqual({ label: 'Lifetime' });
     expect(p.columns['Member Until']).toBeNull();          // Lifetime: blank, never fires lapse automation
-    expect(p.columns['Local News']).toEqual({ url: 'https://sanjosespotlight.com/', text: 'San Jose Spotlight' });
+    expect(p.columns['Local News']).toBeUndefined(); // removed 2026-08-23 — not useful yet
     expect(p.columns['Do Not Solicit']).toEqual({ checked: 'true' });
     expect(p.columns['Do Not Solicit Reason']).toBe('mail');
     expect(p.columns['Employer Name']).toBe('Acme Corp');
@@ -74,5 +74,19 @@ describe('accountToPayload', () => {
     expect(p.columns['Partner Type']).toBe('Sponsor');
     expect(p.columns['Do Not Solicit']).toEqual({ checked: 'true' });
     expect(p.columns['Do Not Solicit Reason']).toBe('phone');
+  });
+  it('attaches geocoded City/Zip/Lat/Lng when geo is provided', () => {
+    const p = accountToPayload({ Id: 'a3', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,
+      BillingStreet: '1 Main St', BillingCity: 'San Jose', BillingState: 'CA', BillingPostalCode: '95112' },
+      { lat: 37.3, lng: -121.9, city: 'San Jose', zip: '95112', source: 'census' })!;
+    expect(p.columns['City']).toBe('San Jose');
+    expect(p.columns['Zip']).toBe('95112');
+    expect(p.columns['Lat']).toBe('37.3');
+    expect(p.columns['Lng']).toBe('-121.9');
+  });
+  it('leaves geo columns empty when no geocode result exists', () => {
+    const p = accountToPayload({ Id: 'a4', Name: 'NoAddr', npe01__SYSTEM_AccountType__c: null })!;
+    expect(p.columns['Lat']).toBe('');
+    expect(p.columns['City']).toBe('');
   });
 });

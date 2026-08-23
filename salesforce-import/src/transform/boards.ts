@@ -1,6 +1,5 @@
-import type { Config } from '../config.js';
 import type { ItemPayload } from './types.js';
-import { dateCol, localNewsUrl, provenanceColumns } from './fields.js';
+import { dateCol, provenanceColumns } from './fields.js';
 
 const ANNUAL: Record<string, number> = { Yearly: 1, Quarterly: 4, Monthly: 12 };
 
@@ -40,15 +39,12 @@ export function pledgeColumnsBySubscription(pledges: Record<string, unknown>[]):
 
 const TEST_EVENTS = new Set(['Test', 'Test Event']);
 
-// Local News applies to Events as well as Donors (doc 05 §3 / doc 11 §3).
-export function eventToPayload(e: Record<string, unknown>, news: Config['localNews']): ItemPayload | null {
+export function eventToPayload(e: Record<string, unknown>): ItemPayload | null {
   if (TEST_EVENTS.has(e['Name'] as string)) return null;
-  const url = localNewsUrl(null, news);
   return {
     board: 'events', sfId: e['Id'] as string, name: (e['Name'] as string) ?? '(event)',
     columns: { 'SF ID': e['Id'], 'Date': dateCol(e['funraise__Start_Date__c'] as string),
-      'City': '',
-      'Local News': { url, text: url }, ...provenanceColumns(e) },
+      'City': '', ...provenanceColumns(e) },
   };
 }
 

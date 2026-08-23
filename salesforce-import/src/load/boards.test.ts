@@ -75,7 +75,7 @@ describe('ensureBoards', () => {
   it('every transform column title has a declared type', () => {
     // Guard: a new transform column without a COLUMN_TYPES entry must fail loudly here,
     // not silently at load time.
-    for (const title of ['SF ID', 'Email Consent', 'Term Start', 'Lifetime Giving', 'Local News',
+    for (const title of ['SF ID', 'Email Consent', 'Term Start', 'Lifetime Giving',
       'Salesforce Created Date', 'Salesforce Modified By', 'Annualized Value', 'Historical']) {
       expect(COLUMN_TYPES[title], title).toBeDefined();
     }

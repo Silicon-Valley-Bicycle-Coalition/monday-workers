@@ -100,7 +100,7 @@ export async function runTransform(args: string[]): Promise<number> {
     const geoKey = normalizeAddress({ street: c['MailingStreet'] as string, city: c['MailingCity'] as string,
       state: c['MailingState'] as string, zip: c['MailingPostalCode'] as string });
     let p = contactToPayload(c, board, { consent, member: memberSummaries.get(c['Id'] as string),
-      geo: geoKey ? geoCache.get(geoKey) : undefined, news: cfg.localNews });
+      geo: geoKey ? geoCache.get(geoKey) : undefined });
     // Organization link = the Contact's own org Account (if any) ∪ its Affiliation orgs (doc 05 §1b:
     // all 6,349 Affiliations migrate onto this connect column — one Person, many Organizations).
     const affilOrgs = affiliationOrgsByContact.get(c['Id'] as string) ?? [];
@@ -115,7 +115,9 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(r ? applyRollups(p, r) : p);
   }
   for (const a of accounts) {
-    const p = accountToPayload(a);
+    const geoKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
+      state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
+    const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined);
     if (!p) continue;
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
@@ -128,7 +130,7 @@ export async function runTransform(args: string[]): Promise<number> {
     const p = subscriptionToPayload(s);
     if (p) payloads.push({ ...p, columns: { ...p.columns, ...(pledgeCols.get(p.sfId) ?? {}) } });
   }
-  for (const e of events) { const p = eventToPayload(e, cfg.localNews); if (p) payloads.push(p); }
+  for (const e of events) { const p = eventToPayload(e); if (p) payloads.push(p); }
   for (const r of registrations) payloads.push(registrationToPayload(r));
   for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));
