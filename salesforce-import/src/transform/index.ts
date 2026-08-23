@@ -6,6 +6,8 @@ import { GeoCache } from '../geocode/cache.js';
 import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
 import type { EnrichmentRow } from '../enrich/index.js';
 import { normalizeAddress } from '../geocode/normalize.js';
+import { setStaffMatcher } from './fields.js';
+import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
@@ -42,6 +44,14 @@ export async function runTransform(args: string[]): Promise<number> {
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
   const geoCache = new GeoCache();
   await geoCache.load();
+
+  // Current-staff annotation (optional artifact): Monday's user export lets the
+  // Salesforce Debug column tag audit names that are still on staff with their
+  // Monday email; former staff stay verbatim.
+  const staffPath = dataPath('enrich', 'monday-users.csv');
+  setStaffMatcher(existsSync(staffPath)
+    ? staffMatcher(parseMondayUsers(readFileSync(staffPath, 'utf8')))
+    : null);
 
   // Places enrichment (optional artifact): exact matches plus human-approved sfIds
   // fill blank org Website/Address; enriched addresses also resolve geo.

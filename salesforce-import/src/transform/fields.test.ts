@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
+import { salesforceDebug, setStaffMatcher, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -71,5 +71,22 @@ describe('dateCol', () => {
     expect(dateCol('2122-01-01')).toEqual({ date: '2122-01-01' });
     expect(dateCol('2019-05-01T12:00:00.000+0000')).toEqual({ date: '2019-05-01' });
     expect(dateCol(null)).toBeNull();
+  });
+});
+
+describe('salesforceDebug staff annotation', () => {
+  it('appends the Monday email for names matching current staff, leaves others bare', () => {
+    setStaffMatcher((name) => (name === 'Deanna Chevas' ? 'deanna@bikesiliconvalley.org' : null));
+    try {
+      expect(salesforceDebug({
+        Id: '0031', CreatedDate: '2015-01-01T00:00:00Z', CreatedBy: { Name: 'Seth Goddard' },
+        LastModifiedDate: '2020-01-02T00:00:00Z', LastModifiedBy: { Name: 'Deanna Chevas' },
+      })).toEqual({
+        'Salesforce Debug': { text:
+          'SF ID: 0031 | Created: 2015-01-01 by Seth Goddard | Modified: 2020-01-02 by Deanna Chevas (deanna@bikesiliconvalley.org)' },
+      });
+    } finally {
+      setStaffMatcher(null);
+    }
   });
 });

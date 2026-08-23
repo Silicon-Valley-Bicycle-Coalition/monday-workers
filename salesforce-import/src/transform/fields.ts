@@ -9,8 +9,20 @@ export function dateCol(iso: string | null | undefined): unknown {
 // never updated after the migration, and slated for a single-column delete once
 // staff no longer need it. Names stay verbatim text (many are former employees
 // with no Monday account to map to).
+// Set once by runTransform when data/enrich/monday-users.csv is present; maps a
+// Salesforce user name to a current staff member's Monday email, or null.
+let staffMatch: ((sfName: string) => string | null) | null = null;
+export function setStaffMatcher(matcher: ((sfName: string) => string | null) | null): void {
+  staffMatch = matcher;
+}
+
 export function salesforceDebug(row: Record<string, unknown>): Record<string, unknown> {
-  const by = (v: unknown) => (v as { Name?: string } | null)?.Name ?? '';
+  const by = (v: unknown) => {
+    const name = (v as { Name?: string } | null)?.Name ?? '';
+    if (!name) return '';
+    const email = staffMatch?.(name);
+    return email ? `${name} (${email})` : name;
+  };
   const day = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 10) : '');
   const stamp = (label: string, date: string, name: string) =>
     date ? `${label}: ${date}${name ? ` by ${name}` : ''}` : '';
