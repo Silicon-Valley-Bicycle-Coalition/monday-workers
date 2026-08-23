@@ -7,13 +7,13 @@ describe('sendFailureAlert', () => {
   });
 
   it('POSTs a JSON message to the webhook URL with the source and error details', async () => {
-    const fetchMock = vi.fn(async () => new Response('ok', { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response('ok', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await sendFailureAlert('https://hooks.slack.example/T000/B000/xyz', 'bart', 'BART', 3, 'fetch failed: 500');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://hooks.slack.example/T000/B000/xyz');
     expect(init.method).toBe('POST');
     const body = JSON.parse(init.body as string);

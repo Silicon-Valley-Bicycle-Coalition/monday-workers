@@ -96,7 +96,7 @@ describe('syncAllSources', () => {
     await eventStore.recordSourceFailure('a', 'first');
     await eventStore.recordSourceFailure('a', 'second');
 
-    const fetchMock = vi.fn(async () => new Response('ok', { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string) => new Response('ok', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
     const fetchSourceEvents = vi.fn(async (source) => {
@@ -109,7 +109,7 @@ describe('syncAllSources', () => {
     await syncAllSources({ eventStore, config: CONFIG, slackWebhookUrl: 'https://hooks.example', now: NOW, fetchSourceEvents });
 
     expect(fetchMock).toHaveBeenCalledTimes(1); // the Slack webhook POST
-    const [url] = fetchMock.mock.calls[0] as [string];
+    const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://hooks.example');
 
     vi.unstubAllGlobals();
