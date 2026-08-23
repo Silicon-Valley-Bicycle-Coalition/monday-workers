@@ -20,6 +20,12 @@ const config: FunraiseSyncConfig = {
       recurringGift: 'description',
       registration: 'eventName',
     },
+    entityIdField: {
+      transaction: 'id',
+      recurringGift: 'id',
+      registration: 'id',
+    },
+    rawPayloadRetentionDays: 90,
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',
@@ -36,8 +42,9 @@ function eventRow(overrides: Partial<EventRow> = {}): EventRow {
   return {
     eventId: 'evt-1',
     entityType: 'transaction',
-    rawPayload: JSON.stringify({ amount: 100 }),
-    matchedDonorItemId: '1',
+    entityId: 'txn-1',
+    rawPayload: JSON.stringify({ amount: 100, donor: { contactId: 'fr-1', email: 'a@b.org', name: 'Ada' } }),
+    matchedDonorItemId: null,
     mondayItemId: null,
     status: 'queued',
     error: null,
@@ -47,32 +54,41 @@ function eventRow(overrides: Partial<EventRow> = {}): EventRow {
   };
 }
 
-function fakeMessage(eventId: string): QueueMessageLike<FunraiseQueueMessage> & { ack: any; retry: any } {
-  return { body: { eventId }, ack: vi.fn(), retry: vi.fn() };
+function fakeStore(row: EventRow | null): EventStore {
+  return {
+    upsertEvent: vi.fn(),
+    updateStatusByEntity: vi.fn().mockResolvedValue(undefined),
+    getEventByEntity: vi.fn().mockResolvedValue(row),
+    purgeWrittenPayloads: vi.fn(),
+  };
+}
+
+function fakeMessage(
+  entityType: FunraiseQueueMessage['entityType'] = 'transaction',
+  entityId = 'txn-1'
+): QueueMessageLike<FunraiseQueueMessage> & { ack: any; retry: any } {
+  return { body: { entityType, entityId }, ack: vi.fn(), retry: vi.fn() };
 }
 
 describe('processFunraiseQueueBatch', () => {
-  it('writes a matched event to Monday, links the donor, and marks it written', async () => {
-    const eventStore: EventStore = {
-      insertEvent: vi.fn(),
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      getEvent: vi.fn().mockResolvedValue(eventRow()),
-    };
+  it('matches the donor in the consumer, records the match, creates the item, and marks written', async () => {
+    const eventStore = fakeStore(eventRow());
     const createItem = vi.fn().mockResolvedValue({ id: 'item-1' });
-    const mondayClient: MondayClient = {
-      findItemByColumnValue: vi.fn(),
-      createItem,
-      changeColumnValues: vi.fn(),
-    };
-    const message = fakeMessage('evt-1');
+    const findItemByColumnValue = vi.fn().mockResolvedValue({ id: '55' });
+    const mondayClient: MondayClient = { findItemByColumnValue, createItem, changeColumnValues: vi.fn() };
+    const message = fakeMessage();
 
     await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
 
+    expect(findItemByColumnValue).toHaveBeenCalledWith(42, 'funraise_id_col', 'fr-1');
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'matched', {
+      matchedDonorItemId: '55',
+    });
     expect(createItem).toHaveBeenCalledWith(111, 'Funraise transaction', {
       numeric_col: 100,
-      connect_col: { item_ids: [1] },
+      connect_col: { item_ids: [55] },
     });
-    expect(eventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'written', {
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'written', {
       mondayItemId: 'item-1',
       writtenAt: expect.any(String),
     });
@@ -80,85 +96,109 @@ describe('processFunraiseQueueBatch', () => {
     expect(message.retry).not.toHaveBeenCalled();
   });
 
-  it('uses the description field as the item name when present', async () => {
-    const eventStore: EventStore = {
-      insertEvent: vi.fn(),
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      getEvent: vi.fn().mockResolvedValue(
-        eventRow({ rawPayload: JSON.stringify({ amount: 50, description: 'Monthly gift' }) })
-      ),
-    };
+  it('skips donor matching when the event already has a matched donor', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const findItemByColumnValue = vi.fn();
     const createItem = vi.fn().mockResolvedValue({ id: 'item-2' });
-    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues: vi.fn() };
+    const mondayClient: MondayClient = { findItemByColumnValue, createItem, changeColumnValues: vi.fn() };
 
-    await processFunraiseQueueBatch([fakeMessage('evt-1')], { eventStore, mondayClient, config });
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
 
-    expect(createItem).toHaveBeenCalledWith(111, 'Monthly gift', expect.any(Object));
+    expect(findItemByColumnValue).not.toHaveBeenCalled();
+    expect(createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({
+      connect_col: { item_ids: [7] },
+    }));
   });
 
-  it('routes subscription and pledge to the recurring-gifts board', async () => {
-    const eventStore: EventStore = {
-      insertEvent: vi.fn(),
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      getEvent: vi.fn().mockResolvedValue(eventRow({ entityType: 'pledge' })),
+  it('updates the existing Monday item instead of creating when the event already has one', async () => {
+    const eventStore = fakeStore(
+      eventRow({ matchedDonorItemId: '7', mondayItemId: 'item-existing', rawPayload: JSON.stringify({ amount: 50 }) })
+    );
+    const createItem = vi.fn();
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues };
+    const message = fakeMessage();
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
+
+    expect(createItem).not.toHaveBeenCalled();
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', {
+      numeric_col: 50,
+      connect_col: { item_ids: [7] },
+    });
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'written', {
+      writtenAt: expect.any(String),
+    });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('marks the event failed and retries the message on a donor-match failure', async () => {
+    const eventStore = fakeStore(eventRow());
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockRejectedValue(new Error('monday API: HTTP 429')),
+      createItem: vi.fn(),
+      changeColumnValues: vi.fn(),
     };
-    const createItem = vi.fn().mockResolvedValue({ id: 'item-3' });
-    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues: vi.fn() };
+    const message = fakeMessage();
 
-    await processFunraiseQueueBatch([fakeMessage('evt-1')], { eventStore, mondayClient, config });
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
 
-    expect(createItem).toHaveBeenCalledWith(222, expect.any(String), expect.any(Object));
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'failed', {
+      error: 'monday API: HTTP 429',
+    });
+    expect(message.retry).toHaveBeenCalled();
+    expect(message.ack).not.toHaveBeenCalled();
   });
 
   it('marks the event failed and retries the message on a Monday write failure', async () => {
-    const eventStore: EventStore = {
-      insertEvent: vi.fn(),
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      getEvent: vi.fn().mockResolvedValue(eventRow()),
-    };
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
     const mondayClient: MondayClient = {
       findItemByColumnValue: vi.fn(),
       createItem: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')),
       changeColumnValues: vi.fn(),
     };
-    const message = fakeMessage('evt-1');
+    const message = fakeMessage();
 
     await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
 
-    expect(eventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: 'monday API: HTTP 500' });
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'failed', {
+      error: 'monday API: HTTP 500',
+    });
     expect(message.retry).toHaveBeenCalled();
-    expect(message.ack).not.toHaveBeenCalled();
   });
 
-  it('acks without re-creating a Monday item when the event is already written (idempotency guard)', async () => {
-    const eventStore: EventStore = {
-      insertEvent: vi.fn(),
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      getEvent: vi.fn().mockResolvedValue(eventRow({ status: 'written', mondayItemId: 'item-already-written' })),
-    };
-    const createItem = vi.fn().mockResolvedValue({ id: 'item-should-not-happen' });
+  it('routes subscription and pledge to the recurring-gifts board', async () => {
+    const eventStore = fakeStore(eventRow({ entityType: 'pledge', entityId: 'sub-1', matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-3' });
     const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues: vi.fn() };
-    const message = fakeMessage('evt-1');
 
-    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
+    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], { eventStore, mondayClient, config });
 
-    expect(message.ack).toHaveBeenCalled();
-    expect(message.retry).not.toHaveBeenCalled();
-    expect(createItem).not.toHaveBeenCalled();
+    expect(createItem).toHaveBeenCalledWith(222, expect.any(String), expect.any(Object));
+  });
+
+  it('uses the description field as the item name when present', async () => {
+    const eventStore = fakeStore(
+      eventRow({ matchedDonorItemId: '7', rawPayload: JSON.stringify({ amount: 50, description: 'Monthly gift' }) })
+    );
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-4' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues: vi.fn() };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
+
+    expect(createItem).toHaveBeenCalledWith(111, 'Monthly gift', expect.any(Object));
   });
 
   it('fails and retries when the D1 row is missing', async () => {
-    const eventStore: EventStore = {
-      insertEvent: vi.fn(),
-      updateStatus: vi.fn().mockResolvedValue(undefined),
-      getEvent: vi.fn().mockResolvedValue(null),
-    };
+    const eventStore = fakeStore(null);
     const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem: vi.fn(), changeColumnValues: vi.fn() };
-    const message = fakeMessage('missing-evt');
+    const message = fakeMessage('transaction', 'missing-txn');
 
     await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
 
     expect(message.retry).toHaveBeenCalled();
-    expect(eventStore.updateStatus).toHaveBeenCalledWith('missing-evt', 'failed', { error: expect.any(String) });
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'missing-txn', 'failed', {
+      error: expect.any(String),
+    });
   });
 });

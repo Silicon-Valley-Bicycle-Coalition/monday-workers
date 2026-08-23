@@ -10,6 +10,12 @@ const config: FunraiseSyncConfig = {
   },
   funraiseSync: {
     columnMap: { transaction: {}, recurringGift: {}, registration: {} },
+    entityIdField: {
+      transaction: 'id',
+      recurringGift: 'id',
+      registration: 'id',
+    },
+    rawPayloadRetentionDays: 90,
     itemNameField: {
       transaction: 'description',
       recurringGift: 'description',

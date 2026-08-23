@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateEnvelope, isEntityType } from './validate';
+import { validateEnvelope, isEntityType, extractEntityId } from './validate';
 
 describe('isEntityType', () => {
   it('accepts the four known entity types', () => {
@@ -38,5 +38,33 @@ describe('validateEnvelope', () => {
 
   it('throws when id is an empty string', () => {
     expect(() => validateEnvelope('transaction', { id: '' })).toThrow(/missing a non-empty "id"/);
+  });
+});
+
+describe('extractEntityId', () => {
+  const config = {
+    funraiseSync: {
+      entityIdField: { transaction: 'transactionId', recurringGift: 'subscriptionId', registration: 'id' },
+    },
+  } as unknown as import('../types').FunraiseSyncConfig;
+
+  it('reads the configured per-entity path from the payload', () => {
+    const envelope = { eventId: 'evt-1', entityType: 'transaction' as const, raw: { id: 'evt-1', transactionId: 'txn-9' } };
+    expect(extractEntityId(envelope, config)).toBe('txn-9');
+  });
+
+  it('resolves subscription and pledge through the recurringGift mapping', () => {
+    const envelope = { eventId: 'evt-1', entityType: 'pledge' as const, raw: { id: 'evt-1', subscriptionId: 'sub-3' } };
+    expect(extractEntityId(envelope, config)).toBe('sub-3');
+  });
+
+  it('stringifies a numeric entity id', () => {
+    const envelope = { eventId: 'evt-1', entityType: 'transaction' as const, raw: { id: 'evt-1', transactionId: 42 } };
+    expect(extractEntityId(envelope, config)).toBe('42');
+  });
+
+  it('falls back to the event id when the configured field is absent', () => {
+    const envelope = { eventId: 'evt-7', entityType: 'transaction' as const, raw: { id: 'evt-7' } };
+    expect(extractEntityId(envelope, config)).toBe('evt-7');
   });
 });

@@ -12,10 +12,9 @@ export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const app = createApp({
       eventStore: new D1EventStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
       queue: {
-        send: (message: { eventId: string }) => env.WRITE_QUEUE.send(message).then(() => undefined),
+        send: (message: FunraiseQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
       },
     });
     return app.fetch(request, env, ctx);
@@ -27,5 +26,17 @@ export default {
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
     });
+  },
+
+  // Daily PII retention pass: raw Funraise payloads are only kept for replay and
+  // debugging, so they are emptied once the write has been in Monday long enough.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const cutoff = new Date(
+      Date.now() - config.funraiseSync.rawPayloadRetentionDays * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const purged = await new D1EventStore(env.DB).purgeWrittenPayloads(cutoff);
+    if (purged > 0) {
+      console.log(`funraise-sync scheduled: purged raw_payload from ${purged} written events older than ${cutoff}`);
+    }
   },
 };

@@ -18,12 +18,14 @@ Double the Donation/360MatchPro and Streamlabs Charity are explicitly out of sco
 
 Four components, matching the standard shape the root README establishes for every webhook-driven Worker in this plan:
 
-1. **Webhook handler** (Hono route) — receives all four event types, one route per entity type (`POST /webhooks/funraise/:entityType`), since Funraise webhook subscriptions are configured per event type with their own target URL and the payload's own type discriminator field isn't confirmed yet (this is why entity type comes from the URL path, not the body — see "Real Funraise payload field names..." in Global Constraints). Each of the four URLs is a credential in the same sense the design's webhook-auth section describes and must be provisioned and kept secret individually. Handles the one-time `x-hook-secret` handshake, validates payload shape per entity type, writes the raw event to D1's `events` table (insert-or-ignore on Funraise's event id — this is the dedup mechanism), performs donor matching, then enqueues a message referencing the D1 row onto a Cloudflare Queue.
+1. **Webhook handler** (Hono route) — receives all four event types, one route per entity type (`POST /webhooks/funraise/:entityType`), since Funraise webhook subscriptions are configured per event type with their own target URL and the payload's own type discriminator field isn't confirmed yet (this is why entity type comes from the URL path, not the body — see "Real Funraise payload field names..." in Global Constraints). Each of the four URLs is a credential in the same sense the design's webhook-auth section describes and must be provisioned and kept secret individually. Handles the one-time `x-hook-secret` handshake, validates payload shape per entity type, strips the do-not-migrate PII fields, and upserts the event into D1's `events` table keyed on the *entity* (`entity_type` + the entity's own id from the payload body, per `funraiseSync.entityIdField`) — a later event for a known entity replaces its stored payload and re-enqueues instead of being dropped as a duplicate; only an exact redelivery of the same `event_id` short-circuits. Then enqueues a message referencing the entity onto a Cloudflare Queue.
 2. **D1 database** — the `events` table (schema below).
-3. **Cloudflare Queue** — decouples "matched, ready to write" from "written to Monday." Automatic retry (3x default, configurable) on failure; once exhausted, routes to a Dead Letter Queue instead of the write silently disappearing.
-4. **Queue consumer** (same Worker, separate handler) — reads the queued message, performs the actual Monday GraphQL write (create/update the appropriate item type), marks the D1 row `written`.
+3. **Cloudflare Queue** — decouples "ingested" from "written to Monday." Automatic retry (3x default, configurable) on failure; once exhausted, routes to a Dead Letter Queue instead of the match or write silently disappearing.
+4. **Queue consumer** (same Worker, separate handler) — reads the queued message, performs donor matching (persisting the matched Donors-item id so retries don't re-match), then the Monday GraphQL write: `create_item` the first time, `change_multiple_column_values` on the existing item for later events for the same entity. Marks the D1 row `written`.
 
-**Why matching happens in the webhook handler, not the consumer:** matching only needs Donors-board state at ingest time. Doing it in the consumer would mean re-matching on every Queue retry — wasted API calls, and a source of drift if the board changes between retries. A failed *write* retries without redoing the match.
+**Why matching happens in the queue consumer, not the webhook handler (decided 2026-08-22, reversing the original design):** in the handler, a transient Monday failure during matching had no retry path — the request still returned 200, so Funraise never redelivered, and the event died as a `failed` D1 row nobody saw. In the consumer, both matching and the write inherit the Queue's retries and DLQ. The original concern (re-matching on every write retry) is answered by persisting `matched_donor_item_id` on first success — retries skip matching.
+
+**A daily cron** (`scheduled()` handler) empties `raw_payload` for events written more than `funraiseSync.rawPayloadRetentionDays` (default 90) days ago; combined with the ingest-time strip of `doNotMigrateFields`, denylisted PII never lands in D1 at rest and the rest of the payload has a bounded lifetime. Failed events keep their payload until resolved.
 
 ## Data flow
 
@@ -34,15 +36,19 @@ Funraise (SaaS)
 Webhook handler (Hono)
   │  1. handshake: echo x-hook-secret on subscription setup
   │  2. validate payload shape per entity type
-  │  3. insert-or-ignore into D1 events (PK = Funraise event id)
-  │  4. donor match: external-ID column → email fallback → auto-create new Donor item
-  │  5. enqueue message referencing the D1 row
+  │  3. strip doNotMigrateFields, upsert into D1 events (unique on entity_type + entity_id;
+  │     a new delivery for a known entity replaces the payload, an exact event_id
+  │     redelivery is a no-op)
+  │  4. enqueue message referencing the entity (5xx on enqueue failure so Funraise
+  │     can redeliver — the upsert makes redelivery safe)
   ▼
 Cloudflare Queue → consumer
-  │  Monday GraphQL write (create/update Donations, Recurring Gifts, or Registration item)
-  │  on failure: automatic retry (3x default) → Dead Letter Queue on exhaustion
+  │  1. donor match: external-ID column → email fallback → auto-create new Donor item
+  │     (skipped when matched_donor_item_id is already set)
+  │  2. Monday GraphQL write: create_item on first sight, change_multiple_column_values after
+  │  on failure at either step: automatic retry (3x default) → Dead Letter Queue on exhaustion
   ▼
-Donations board (8845443596) / Recurring Gifts board / Registration board (TBD)
+Donations board / Recurring Gifts board / Registration board (ids in config/svbc.json)
 ```
 
 ## Donor matching
@@ -55,13 +61,14 @@ The exact Funraise payload field name(s) for donor email/contact aren't confirme
 
 ## D1 schema: `events`
 
-One row per Funraise event; `event_id` as primary key is the dedup mechanism (insert-or-ignore makes a re-delivery a no-op if already processed, and safely retriable if it wasn't).
+One row per Funraise *entity*; the unique index on (`entity_type`, `entity_id`) is the dedup mechanism (decided 2026-08-22 — an exact `event_id` redelivery is a no-op, while a new delivery for a known entity replaces the row's payload and flows through as an update to the existing Monday item).
 
 | column | purpose |
 |---|---|
-| `event_id` (PK) | Funraise's event id |
+| `event_id` (PK) | the latest delivery's Funraise event id |
 | `entity_type` | `transaction` \| `subscription` \| `pledge` \| `registration` |
-| `raw_payload` | full JSON as received, for replay/debugging |
+| `entity_id` | the entity's own id from the payload (`funraiseSync.entityIdField`); unique with `entity_type` |
+| `raw_payload` | JSON as received minus `doNotMigrateFields`, for replay/debugging; emptied by the daily retention cron once written > `rawPayloadRetentionDays` ago |
 | `matched_donor_item_id` | Monday Donors-board item id, set after matching |
 | `monday_item_id` | Donations/Recurring-Gifts/Registration item id, set after write |
 | `status` | `received` → `matched` → `queued` → `written`, or `failed` |
@@ -118,10 +125,10 @@ This is a known, documented limitation — not a silent gap. Revisit if Funraise
 
 - `Registration`'s target Monday board is unnamed — config placeholder until decided.
 - Real field mapping (`docs/03-monday-migration-mapping.md`) and exact Funraise payload field names — config placeholders until the private doc is available.
-- Blocking precondition from the worker README (157 sync errors, ~11 supporters missing from Salesforce due to the `Contact.Primary_Email__c` case-sensitivity bug) doesn't block *building* this Worker, only trusting historical data its donor-matching logic is tested against — noted here for continuity, not a v1 build task.
+- Blocking precondition from the worker README (157 sync errors) — **resolved 2026-08-22**, reconciled directly against Funraise; see `docs/12-funraise-sync-error-fix.md` (private planning repo). The originally suspected case-sensitivity root cause was wrong.
 
-**Found during the final whole-branch review (2026-08-22), pending a product/ops decision — blocking deploy, not blocking this branch's merge:**
+**Found during the final whole-branch review (2026-08-22) — all three decided and implemented 2026-08-22:**
 
-- **Whether Funraise's payload `id` (the dedup primary key) is per-delivery or per-entity is unconfirmed.** If it's per-entity, every update-after-the-first to the same Transaction/Subscription/Pledge/Registration is currently classified `'duplicate'` at ingest and silently dropped — dedup-by-id and update-support are in direct tension until this is answered from a real Funraise sandbox payload. `MondayClient.changeColumnValues` exists but has no production caller yet, reserved for whichever answer this turns out to be.
-- **Donor-match failures (in the webhook handler) have no retry and, before this review, no visibility.** A transient Monday API failure during matching returns `failed` status, the request still returns 200 (so Funraise never redelivers), and the event was invisible until someone queried D1 directly. `console.error` logging plus `wrangler.jsonc` observability were added as a stopgap; the real question — whether matching should happen in the handler at all, given it has no retry path the way the write side does — needs a decision, not just logging.
-- **`events.raw_payload` stores the full Funraise payload verbatim and indefinitely**, including PII the `doNotMigrateFields` denylist exists specifically to keep out of Monday — it's just kept in D1 instead. Needs an explicit retention/redaction decision (strip denylisted paths before insert, and/or a scheduled purge), not left implicit.
+- **Dedup vs. update semantics** — decided: dedup is keyed on the *entity* (`entity_type` + `entity_id` from the payload body, per `funraiseSync.entityIdField`), not the delivery id. The first event creates the Monday item; later events for the same entity update it via `changeColumnValues`. This is correct whether Funraise's envelope `id` turns out to be per-delivery or per-entity, so the unconfirmed question no longer blocks deploy. When the field carrying the entity id is absent, dedup degrades to per-delivery (the envelope id) rather than dropping the event. Confirming the real payload field names from a sandbox remains a config task, not a code change.
+- **Donor-match retry path** — decided: matching moved from the webhook handler into the queue consumer, where it inherits the Queue's 3 retries and DLQ. The handler is now validate → ingest → enqueue, and returns 5xx on an enqueue failure instead of falsely acknowledging the delivery. `matched_donor_item_id` persists on first success so write retries don't re-match.
+- **`raw_payload` retention** — decided: both halves. `doNotMigrateFields` paths are stripped before the D1 insert (denylisted PII never lands at rest), and a daily `scheduled()` cron empties `raw_payload` for events written more than `funraiseSync.rawPayloadRetentionDays` (90) days ago. Failed events keep their payload until resolved.

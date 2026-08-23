@@ -1,7 +1,8 @@
 import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
-import type { EntityType, FunraiseSyncConfig } from '../types';
+import type { EntityType, EventRow, FunraiseSyncConfig } from '../types';
 import { mapToMondayColumns, ENTITY_MAP_KEY } from '../mapping/fieldMap';
+import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
 import { errorMessage } from '../util/errorMessage';
 
@@ -12,7 +13,8 @@ export interface QueueMessageLike<T> {
 }
 
 export interface FunraiseQueueMessage {
-  eventId: string;
+  entityType: EntityType;
+  entityId: string;
 }
 
 export interface ProcessBatchDeps {
@@ -35,13 +37,14 @@ export async function processFunraiseQueueBatch(
   deps: ProcessBatchDeps
 ): Promise<void> {
   for (const message of messages) {
+    const { entityType, entityId } = message.body;
     try {
-      await processOne(message.body.eventId, deps);
+      await processOne(entityType, entityId, deps);
       message.ack();
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`funraise-sync consumer: failed to process event "${message.body.eventId}": ${errMsg}`);
-      await deps.eventStore.updateStatus(message.body.eventId, 'failed', {
+      console.error(`funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}`);
+      await deps.eventStore.updateStatusByEntity(entityType, entityId, 'failed', {
         error: errMsg,
       });
       message.retry();
@@ -49,16 +52,10 @@ export async function processFunraiseQueueBatch(
   }
 }
 
-async function processOne(eventId: string, deps: ProcessBatchDeps): Promise<void> {
-  const event = await deps.eventStore.getEvent(eventId);
+async function processOne(entityType: EntityType, entityId: string, deps: ProcessBatchDeps): Promise<void> {
+  const event = await deps.eventStore.getEventByEntity(entityType, entityId);
   if (event === null) {
-    throw new Error(`funraise-sync consumer: no event row for "${eventId}"`);
-  }
-
-  // Idempotency guard: at-least-once delivery means a redelivery after a successful
-  // Monday write (but a failed subsequent D1 status update) must not create a duplicate item.
-  if (event.mondayItemId !== null) {
-    return;
+    throw new Error(`funraise-sync consumer: no event row for ${entityType} "${entityId}"`);
   }
 
   const boardKey = BOARD_FOR_ENTITY[event.entityType];
@@ -68,11 +65,34 @@ async function processOne(eventId: string, deps: ProcessBatchDeps): Promise<void
   }
 
   const rawPayload = JSON.parse(event.rawPayload) as Record<string, unknown>;
+
+  // Matching runs here, not in the webhook handler, so a transient Monday failure
+  // gets the queue's retries and lands in the DLQ instead of dying silently.
+  let donorItemId = event.matchedDonorItemId;
+  if (donorItemId === null) {
+    const match = await matchDonor(deps.mondayClient, deps.config, rawPayload);
+    donorItemId = match.donorItemId;
+    await deps.eventStore.updateStatusByEntity(entityType, entityId, 'matched', {
+      matchedDonorItemId: donorItemId,
+    });
+  }
+
   const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
-  if (event.matchedDonorItemId) {
+  if (donorItemId) {
     columnValues[deps.config.funraiseSync.donorLinkColumn] = {
-      item_ids: [Number(event.matchedDonorItemId)],
+      item_ids: [Number(donorItemId)],
     };
+  }
+
+  // At-least-once delivery: an event that already has a Monday item (an earlier
+  // write whose status update was lost, or a genuine update to the entity) is
+  // written as an idempotent column update, never a second item.
+  if (event.mondayItemId !== null) {
+    await deps.mondayClient.changeColumnValues(boardId, event.mondayItemId, columnValues);
+    await deps.eventStore.updateStatusByEntity(entityType, entityId, 'written', {
+      writtenAt: new Date().toISOString(),
+    });
+    return;
   }
 
   const item = await deps.mondayClient.createItem(
@@ -81,7 +101,7 @@ async function processOne(eventId: string, deps: ProcessBatchDeps): Promise<void
     columnValues
   );
 
-  await deps.eventStore.updateStatus(eventId, 'written', {
+  await deps.eventStore.updateStatusByEntity(entityType, entityId, 'written', {
     mondayItemId: item.id,
     writtenAt: new Date().toISOString(),
   });

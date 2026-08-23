@@ -6,6 +6,7 @@ export type EventStatus = 'received' | 'matched' | 'queued' | 'written' | 'faile
 export interface EventRow {
   eventId: string;
   entityType: EntityType;
+  entityId: string;
   rawPayload: string;
   matchedDonorItemId: string | null;
   mondayItemId: string | null;
@@ -16,7 +17,7 @@ export interface EventRow {
 }
 
 export interface MondayBoards {
-  'donations:live': number;
+  'donations:live': number | null;
   'recurring-gifts': number | null;
   'event-registrations': number | null;
   'people-live': number | null;
@@ -38,6 +39,12 @@ export interface FunraiseSyncConfig {
       recurringGift: string;
       registration: string;
     };
+    entityIdField: {
+      transaction: string;
+      recurringGift: string;
+      registration: string;
+    };
+    rawPayloadRetentionDays: number;
     donorExternalIdField: string;
     donorExternalIdColumn: string;
     donorEmailColumn: string;

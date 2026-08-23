@@ -21,6 +21,10 @@
       }
     ]
   },
+  "triggers": {
+    // Daily raw_payload retention purge — window set by funraiseSync.rawPayloadRetentionDays in config/svbc.json.
+    "crons": ["0 9 * * *"]
+  },
   "observability": {
     "enabled": true
   }

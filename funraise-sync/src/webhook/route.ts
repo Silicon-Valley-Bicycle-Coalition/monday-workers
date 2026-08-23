@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
 import type { EventStore } from '../db/events';
-import type { MondayClient } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
-import { validateEnvelope } from './validate';
-import { matchDonor } from '../matching/donors';
+import { validateEnvelope, extractEntityId } from './validate';
+import { stripDenylistedFields } from '../util/stripFields';
 import { errorMessage } from '../util/errorMessage';
 import type { FunraiseQueueMessage } from '../consumer/processBatch';
 
@@ -13,11 +12,13 @@ export interface QueueLike {
 
 export interface AppDeps {
   eventStore: EventStore;
-  mondayClient: MondayClient;
   config: FunraiseSyncConfig;
   queue: QueueLike;
 }
 
+// The handler only validates, ingests, and enqueues. Donor matching and the
+// Monday write both live in the queue consumer, where failures get retries
+// and a dead-letter queue instead of dying inside a webhook request.
 export function createApp(deps: AppDeps) {
   const app = new Hono();
 
@@ -39,30 +40,33 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: false, error: errorMessage(err) }, 200);
     }
 
-    const insertResult = await deps.eventStore.insertEvent({
+    const entityId = extractEntityId(envelope, deps.config);
+    const stripped = stripDenylistedFields(envelope.raw, deps.config.funraiseSync.doNotMigrateFields);
+
+    const upsertResult = await deps.eventStore.upsertEvent({
       eventId: envelope.eventId,
       entityType: envelope.entityType,
-      rawPayload: JSON.stringify(envelope.raw),
+      entityId,
+      rawPayload: JSON.stringify(stripped),
       receivedAt: new Date().toISOString(),
     });
 
-    if (insertResult === 'duplicate') {
+    if (upsertResult === 'duplicate') {
       return c.json({ ok: true, duplicate: true }, 200);
     }
 
     try {
-      const match = await matchDonor(deps.mondayClient, deps.config, envelope.raw);
-      await deps.eventStore.updateStatus(envelope.eventId, 'matched', {
-        matchedDonorItemId: match.donorItemId,
-      });
-      await deps.queue.send({ eventId: envelope.eventId });
-      await deps.eventStore.updateStatus(envelope.eventId, 'queued');
+      await deps.queue.send({ entityType: envelope.entityType, entityId });
+      await deps.eventStore.updateStatusByEntity(envelope.entityType, entityId, 'queued');
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`funraise-sync webhook: donor match/enqueue failed for event "${envelope.eventId}": ${errMsg}`);
-      await deps.eventStore.updateStatus(envelope.eventId, 'failed', {
+      console.error(`funraise-sync webhook: enqueue failed for ${envelope.entityType} "${entityId}": ${errMsg}`);
+      await deps.eventStore.updateStatusByEntity(envelope.entityType, entityId, 'failed', {
         error: errMsg,
       });
+      // A 5xx gives Funraise the chance to redeliver; the entity-keyed upsert
+      // makes a redelivery safe either way.
+      return c.json({ ok: false }, 500);
     }
 
     return c.json({ ok: true }, 200);

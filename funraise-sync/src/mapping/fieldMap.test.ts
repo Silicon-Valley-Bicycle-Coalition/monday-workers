@@ -13,6 +13,12 @@ const config: FunraiseSyncConfig = {
       recurringGift: { amount: 'numeric_col' },
       registration: { eventName: 'text_col' },
     },
+    entityIdField: {
+      transaction: 'id',
+      recurringGift: 'id',
+      registration: 'id',
+    },
+    rawPayloadRetentionDays: 90,
     itemNameField: {
       transaction: 'description',
       recurringGift: 'description',

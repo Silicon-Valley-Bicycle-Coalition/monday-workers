@@ -22,6 +22,12 @@ const validConfig = {
       recurringGift: 'description',
       registration: 'eventName',
     },
+    entityIdField: {
+      transaction: 'id',
+      recurringGift: 'id',
+      registration: 'id',
+    },
+    rawPayloadRetentionDays: 90,
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise__fr_id__c',
     donorEmailColumn: 'email',
@@ -74,5 +80,17 @@ describe('validateConfig', () => {
       funraiseSync: { ...validConfig.funraiseSync, columnMap },
     };
     expect(() => validateConfig(broken)).toThrow(/columnMap.transaction/);
+  });
+});
+
+describe('validateConfig new keys', () => {
+  it('throws when entityIdField is missing', () => {
+    const { entityIdField, ...funraiseSync } = validConfig.funraiseSync;
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/entityIdField/);
+  });
+
+  it('throws when rawPayloadRetentionDays is not a positive number', () => {
+    const funraiseSync = { ...validConfig.funraiseSync, rawPayloadRetentionDays: 0 };
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/rawPayloadRetentionDays/);
   });
 });

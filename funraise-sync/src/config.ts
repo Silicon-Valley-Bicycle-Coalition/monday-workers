@@ -4,6 +4,7 @@ const REQUIRED_BOARD_KEYS = ['donations:live', 'recurring-gifts', 'event-registr
 
 const REQUIRED_FUNRAISE_SYNC_KEYS = [
   'itemNameField',
+  'entityIdField',
   'donorExternalIdField',
   'donorExternalIdColumn',
   'donorEmailColumn',
@@ -61,6 +62,18 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     if (!(key in columnMap)) {
       throw new Error(`config: missing required key "funraiseSync.columnMap.${key}"`);
     }
+  }
+
+  const entityIdField = funraiseSync.entityIdField as Record<string, unknown>;
+  for (const key of REQUIRED_COLUMN_MAP_KEYS) {
+    if (typeof entityIdField[key] !== 'string' || entityIdField[key] === '') {
+      throw new Error(`config: missing required key "funraiseSync.entityIdField.${key}"`);
+    }
+  }
+
+  const retentionDays = funraiseSync.rawPayloadRetentionDays;
+  if (typeof retentionDays !== 'number' || retentionDays <= 0) {
+    throw new Error('config: "funraiseSync.rawPayloadRetentionDays" must be a positive number of days');
   }
 
   return cfg as unknown as FunraiseSyncConfig;
