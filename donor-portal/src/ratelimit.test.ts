@@ -46,12 +46,23 @@ describe('checkLoginRateLimit', () => {
     expect(allowed).toBe(false);
   });
 
-  it('always records the attempt, even when the request is denied', async () => {
+  it('still records the attempt when denied by the email ceiling (IP limiter passed)', async () => {
     const attemptStore = fakeAttemptStore(5);
     const ipLimiter = fakeIpLimiter(true);
 
     await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
 
     expect(attemptStore.recordAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not touch D1 at all when the IP limiter denies the request', async () => {
+    const attemptStore = fakeAttemptStore(0);
+    const ipLimiter = fakeIpLimiter(false);
+
+    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
+
+    expect(allowed).toBe(false);
+    expect(attemptStore.countRecentAttempts).not.toHaveBeenCalled();
+    expect(attemptStore.recordAttempt).not.toHaveBeenCalled();
   });
 });

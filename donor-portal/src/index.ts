@@ -8,10 +8,15 @@ import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
 import type { Env } from './types';
 
-const config = validateConfig(rawConfig);
-
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // Validated lazily, per request, rather than at module scope: config/svbc.json ships with
+    // placeholder board ids and column ids until an operator fills in the real ones (see
+    // validateConfig's placeholder check in ./config), so a throwing validation call can't sit at
+    // import time without also breaking every test file the Workers test runtime loads this
+    // module for. Deferring it here keeps the "fail loudly on bad config" behavior (any request
+    // throws immediately) without that side effect at import.
+    const config = validateConfig(rawConfig);
     if (config.monday.donorsBoardId === null || config.monday.donationsBoardId === null || config.monday.organizationsBoardId === null) {
       throw new Error('config: monday board ids must be set before this Worker can serve requests');
     }

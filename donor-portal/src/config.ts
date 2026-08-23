@@ -15,6 +15,8 @@ const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'discountActive',
 ];
 
+const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
+
 const REQUIRED_RESEND_KEYS = ['fromAddress', 'fromName'] as const;
 const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'sessionTtlHours', 'portalBaseUrl'] as const;
 const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as const;
@@ -35,6 +37,17 @@ function requireKeys(obj: Record<string, unknown>, prefix: string, keys: readonl
   }
 }
 
+function requireNoPlaceholderColumns(columns: Record<string, unknown>): void {
+  for (const key of REQUIRED_COLUMNS) {
+    if (columns[key] === PLACEHOLDER_COLUMN_VALUE) {
+      throw new Error(
+        `config: monday.columns.${key} is still set to the placeholder value "${PLACEHOLDER_COLUMN_VALUE}" — ` +
+          'replace it with the real Monday column id before deploying'
+      );
+    }
+  }
+}
+
 export function validateConfig(raw: unknown): Config {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -50,6 +63,7 @@ export function validateConfig(raw: unknown): Config {
   const monday = requireObject(cfg, 'monday');
   const columns = requireObject(monday, 'columns');
   requireKeys(columns, 'monday.columns', REQUIRED_COLUMNS);
+  requireNoPlaceholderColumns(columns);
 
   const resend = requireObject(cfg, 'resend');
   requireKeys(resend, 'resend', REQUIRED_RESEND_KEYS);

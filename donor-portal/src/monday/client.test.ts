@@ -46,6 +46,22 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
 
     expect(await client.findDonorsByEmail('nobody@example.org')).toEqual([]);
   });
+
+  it('passes a GraphQL-breaking email through as data, not interpolated into the query string', async () => {
+    const fetchMock = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const maliciousEmail = 'x" ], rules: [{ column_id: "y", compare_value: ["z';
+
+    await client.findDonorsByEmail(maliciousEmail);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
+
+    // The value must travel as a variable, not get spliced into the query text.
+    expect(body.variables.email).toBe(maliciousEmail);
+    expect(body.query).not.toContain(maliciousEmail);
+    expect(body.query).toContain('$email');
+  });
 });
 
 describe('HttpMondayClient.getDonorPortalData', () => {

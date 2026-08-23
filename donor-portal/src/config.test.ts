@@ -62,4 +62,15 @@ describe('validateConfig', () => {
   it('throws when monday is null', () => {
     expect(() => validateConfig({ ...validConfig, monday: null })).toThrow(/monday/);
   });
+
+  it('throws when a column is still set to the placeholder value', () => {
+    const broken = {
+      ...validConfig,
+      monday: {
+        ...validConfig.monday,
+        columns: { ...validConfig.monday.columns, donorEmail: 'REPLACE_WITH_COLUMN_ID' },
+      },
+    };
+    expect(() => validateConfig(broken)).toThrow(/donorEmail/);
+  });
 });

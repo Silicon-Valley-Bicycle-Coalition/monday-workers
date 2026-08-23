@@ -52,13 +52,20 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async findDonorsByEmail(email: string): Promise<DonorMatch[]> {
+    // NOTE: `email` is attacker-controlled (it comes straight from the POST /login body), so it
+    // must never be interpolated into the query string — it's passed as a proper GraphQL
+    // variable ($email) instead, with only `compare_value: [$email]` referencing it. This
+    // variable-inside-query_params shape is written from current Monday API v2 knowledge but not
+    // verified against a live account — verify before deploy (same caveat as the two NOTE
+    // comments below on query_params.rules shapes). column_id stays interpolated because it's a
+    // trusted config value, never attacker input.
     const query = `
-      query ($boardId: ID!) {
+      query ($boardId: ID!, $email: String!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 25,
             query_params: {
-              rules: [{ column_id: "${this.columns.donorEmail}", compare_value: ["${email}"], operator: any_of }]
+              rules: [{ column_id: "${this.columns.donorEmail}", compare_value: [$email], operator: any_of }]
             }
           ) {
             items { id name }
@@ -68,6 +75,7 @@ export class HttpMondayClient implements MondayClient {
     `;
     const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
       boardId: this.donorsBoardId,
+      email,
     });
     const items = data.boards[0]?.items_page.items ?? [];
     return items.map((item) => ({ id: item.id, name: item.name }));
@@ -109,14 +117,17 @@ export class HttpMondayClient implements MondayClient {
     // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
     // id (donationDonorLink here) is written from current Monday API v2 knowledge but not
     // verified against a live account — verify against a real Donations board before deploy
-    // (same caveat already flagged in membership-reminders/src/monday.ts).
+    // (same caveat already flagged in membership-reminders/src/monday.ts). donorItemId isn't
+    // attacker-reachable today (it's derived from the session, never client-supplied), but it's
+    // passed as a $donorItemId GraphQL variable rather than interpolated, as defense-in-depth
+    // and for consistency with findDonorsByEmail above.
     const firstPageQuery = `
-      query ($boardId: ID!) {
+      query ($boardId: ID!, $donorItemId: String!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 500,
             query_params: {
-              rules: [{ column_id: "${this.columns.donationDonorLink}", compare_value: ["${donorItemId}"], operator: any_of }]
+              rules: [{ column_id: "${this.columns.donationDonorLink}", compare_value: [$donorItemId], operator: any_of }]
             }
           ) {
             cursor
@@ -136,7 +147,7 @@ export class HttpMondayClient implements MondayClient {
 
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
-    }>(firstPageQuery, { boardId: this.donationsBoardId });
+    }>(firstPageQuery, { boardId: this.donationsBoardId, donorItemId });
     const firstPage = firstData.boards[0]?.items_page;
     const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
     let cursor = firstPage?.cursor ?? null;

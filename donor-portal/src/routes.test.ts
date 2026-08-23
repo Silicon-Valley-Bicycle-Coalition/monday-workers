@@ -207,6 +207,86 @@ describe('POST /login rate limiting', () => {
   });
 });
 
+describe('POST /login email validation', () => {
+  it('rejects a malformed email the same way as a well-formed non-matching one, without calling Monday', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const appMalformed = createApp(makeDeps({ monday }));
+    const appNonMatching = createApp(makeDeps({ monday: fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }) }));
+
+    const malformedRes = await appMalformed.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'weird"email@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const nonMatchingRes = await appNonMatching.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'nobody@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    expect(malformedRes.status).toBe(nonMatchingRes.status);
+    expect(await malformedRes.text()).toBe(await nonMatchingRes.text());
+    expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
+  });
+
+  it('rejects an email longer than the RFC 5321 max the same way, without calling Monday', async () => {
+    const monday = fakeMonday({});
+    const app = createApp(makeDeps({ monday }));
+    const tooLong = `${'a'.repeat(250)}@x.co`; // > 254 chars
+
+    const res = await app.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: tooLong }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('check your email');
+    expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /portal error handling', () => {
+  it('shows a friendly error page, not a raw 500, when getSession throws', async () => {
+    const sessionStore: SessionStore = {
+      createSession: vi.fn().mockResolvedValue(undefined),
+      getSession: vi.fn().mockRejectedValue(new Error('D1 read failed')),
+      deleteSession: vi.fn(),
+    };
+    const app = createApp(makeDeps({ sessionStore }));
+
+    const res = await app.request('/portal', { headers: { cookie: 'session=some-token' } });
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('Something went wrong');
+  });
+
+  it('shows a friendly error page, not a raw 500, when the Monday lookup throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+
+    // Log in for real so we get a valid session cookie.
+    await app.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
+    const token = extractToken(loginUrl);
+    const callbackRes = await app.request(`/auth/callback?token=${token}`);
+    const sessionCookie = (callbackRes.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+
+    // Now make the portal data lookup fail on the otherwise-valid session.
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+
+    const res = await app.request('/portal', { headers: { cookie: sessionCookie } });
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('Something went wrong');
+  });
+});
+
 describe('POST /login error handling', () => {
   it('still returns the identical generic response when requestLogin throws', async () => {
     const monday: MondayClient = {

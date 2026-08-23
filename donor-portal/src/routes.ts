@@ -27,8 +27,24 @@ export interface AppDeps {
 
 const SESSION_COOKIE = 'session';
 
+// Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
+// characters that would let a value break out of a GraphQL string literal), and requires an
+// "@" plus at least one "." in the domain part. This is intentionally not full RFC 5322
+// validation — it only needs to be strict enough to keep attacker input inert downstream.
+const EMAIL_PATTERN = /^[^\s@"'\\]+@[^\s@"'\\]+\.[^\s@"'\\]+$/;
+const MAX_EMAIL_LENGTH = 254; // RFC 5321 max mailbox length
+
+function isPlausibleEmail(email: string): boolean {
+  return email.length > 0 && email.length <= MAX_EMAIL_LENGTH && EMAIL_PATTERN.test(email);
+}
+
 export function createApp(deps: AppDeps) {
   const app = new Hono();
+
+  app.onError((err, c) => {
+    console.error(`donor-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+    return c.html(errorView('Something went wrong. Please try logging in again.'), 500);
+  });
 
   app.get('/health', (c) => c.json({ ok: true }));
 
@@ -36,7 +52,11 @@ export function createApp(deps: AppDeps) {
 
   app.post('/login', async (c) => {
     const body = await c.req.parseBody();
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    // A malformed email (fails the plausibility check) is treated exactly like an empty one —
+    // skip rate-limiting and requestLogin entirely — so this branch produces the same generic
+    // response as a well-formed but non-matching email, preserving the enumeration guard.
+    const email = isPlausibleEmail(rawEmail) ? rawEmail : '';
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
 
     if (email.length > 0) {
@@ -48,19 +68,36 @@ export function createApp(deps: AppDeps) {
           deps.now()
         );
         if (allowed) {
-          await requestLogin(email, {
+          // requestLogin does a D1 write plus a full Resend HTTP round-trip; awaiting it inline
+          // would make the matching-email case measurably slower than the non-matching/denied
+          // cases even though the response body is identical, letting an attacker distinguish
+          // "matched" from "didn't match" by response latency alone. Defer it instead so the
+          // response returns immediately regardless of match state.
+          const work = requestLogin(email, {
             monday: deps.monday,
             tokenStore: deps.tokenStore,
             emailSender: deps.emailSender,
             portalBaseUrl: deps.config.auth.portalBaseUrl,
             magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
             now: deps.now,
+          }).catch((err) => {
+            // Same enumeration-guard rule as below: a failure here must never surface as a
+            // different response than the generic one — log and swallow.
+            console.error(`donor-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
           });
+
+          try {
+            c.executionCtx.waitUntil(work);
+          } catch {
+            // c.executionCtx is unavailable outside a real Worker request (e.g. in app.request()
+            // test helper) — fall back to awaiting inline so tests stay deterministic.
+            await work;
+          }
         }
       } catch (err) {
-        // A failure here (Monday API down, Resend down, D1 error) must never surface as a
-        // different response than the enumeration-safe path below — otherwise "did this email
-        // exist" leaks through error-vs-success response variance. Log and fall through.
+        // A failure here (e.g. checkLoginRateLimit's D1 read) must never surface as a different
+        // response than the enumeration-safe path below — otherwise "did this email exist" leaks
+        // through error-vs-success response variance. Log and fall through.
         console.error(`donor-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
