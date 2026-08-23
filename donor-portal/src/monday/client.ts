@@ -1,0 +1,189 @@
+import type { Config, DiscountOrganization, DonationRecord, DonorMatch, DonorPortalData, MondayColumns } from '../types';
+
+interface MondayColumnValue {
+  id: string;
+  text: string | null;
+}
+
+interface MondayItem {
+  id: string;
+  name: string;
+  column_values: MondayColumnValue[];
+}
+
+function columnText(item: MondayItem, columnId: string): string {
+  return item.column_values.find((c) => c.id === columnId)?.text ?? '';
+}
+
+export interface MondayClient {
+  findDonorsByEmail(email: string): Promise<DonorMatch[]>;
+  getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
+  getDiscountOrganizations(): Promise<DiscountOrganization[]>;
+}
+
+export class HttpMondayClient implements MondayClient {
+  constructor(
+    private apiUrl: string,
+    private apiToken: string,
+    private columns: MondayColumns,
+    private donorsBoardId: number,
+    private donationsBoardId: number,
+    private organizationsBoardId: number,
+    private fetchFn: typeof fetch = fetch
+  ) {}
+
+  private async request<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+    const response = await this.fetchFn(this.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: this.apiToken,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (!response.ok) {
+      throw new Error(`monday: HTTP ${response.status}`);
+    }
+    const json = (await response.json()) as { data?: T; errors?: { message: string }[] };
+    if (json.errors?.length) {
+      throw new Error(`monday: ${json.errors.map((e) => e.message).join('; ')}`);
+    }
+    return json.data as T;
+  }
+
+  async findDonorsByEmail(email: string): Promise<DonorMatch[]> {
+    const query = `
+      query ($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 25,
+            query_params: {
+              rules: [{ column_id: "${this.columns.donorEmail}", compare_value: ["${email}"], operator: any_of }]
+            }
+          ) {
+            items { id name }
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
+      boardId: this.donorsBoardId,
+    });
+    const items = data.boards[0]?.items_page.items ?? [];
+    return items.map((item) => ({ id: item.id, name: item.name }));
+  }
+
+  async getDonorPortalData(donorItemId: string): Promise<DonorPortalData> {
+    const donorQuery = `
+      query ($itemId: ID!) {
+        items(ids: [$itemId]) {
+          id
+          name
+          column_values(ids: ["${this.columns.membershipStatus}", "${this.columns.membershipTier}", "${this.columns.dollarDonated}"]) {
+            id
+            text
+          }
+        }
+      }
+    `;
+    const donorData = await this.request<{ items: MondayItem[] }>(donorQuery, { itemId: donorItemId });
+    const donorItem = donorData.items[0];
+    if (!donorItem) {
+      throw new Error(`monday: donor item "${donorItemId}" not found`);
+    }
+
+    const donations = await this.getDonationsForDonor(donorItemId);
+
+    return {
+      id: donorItem.id,
+      name: donorItem.name,
+      membershipStatus: columnText(donorItem, this.columns.membershipStatus),
+      membershipTier: columnText(donorItem, this.columns.membershipTier),
+      totalDonated: columnText(donorItem, this.columns.dollarDonated),
+      donations,
+    };
+  }
+
+  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
+    const columnIds = JSON.stringify([this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription]);
+    // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
+    // id (donationDonorLink here) is written from current Monday API v2 knowledge but not
+    // verified against a live account — verify against a real Donations board before deploy
+    // (same caveat already flagged in membership-reminders/src/monday.ts).
+    const firstPageQuery = `
+      query ($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${this.columns.donationDonorLink}", compare_value: ["${donorItemId}"], operator: any_of }]
+            }
+          ) {
+            cursor
+            items { id column_values(ids: ${columnIds}) { id text } }
+          }
+        }
+      }
+    `;
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          items { id column_values(ids: ${columnIds}) { id text } }
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId: this.donationsBoardId });
+    const firstPage = firstData.boards[0]?.items_page;
+    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      allItems.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    return allItems.map((item) => ({
+      amount: columnText(item, this.columns.donationAmount),
+      date: columnText(item, this.columns.donationDate),
+      description: columnText(item, this.columns.donationDescription),
+    }));
+  }
+
+  async getDiscountOrganizations(): Promise<DiscountOrganization[]> {
+    // NOTE: the query_params.rules shape for filtering by a checkbox column's boolean value
+    // (discountActive here) is written from current Monday API v2 knowledge but not verified
+    // against a live account — verify against a real Organizations board before deploy (same
+    // caveat already flagged in membership-reminders/src/monday.ts).
+    const query = `
+      query ($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${this.columns.discountActive}", compare_value: ["true"], operator: any_of }]
+            }
+          ) {
+            cursor
+            items { id name column_values(ids: ["${this.columns.discountOffered}"]) { id text } }
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ boards: { items_page: { cursor: string | null; items: MondayItem[] } }[] }>(
+      query,
+      { boardId: this.organizationsBoardId }
+    );
+    const items = data.boards[0]?.items_page.items ?? [];
+    return items.map((item) => ({
+      name: item.name,
+      discountOffered: columnText(item, this.columns.discountOffered),
+    }));
+  }
+}
