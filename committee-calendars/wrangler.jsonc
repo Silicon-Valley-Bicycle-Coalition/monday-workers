@@ -6,9 +6,14 @@
     {
       "binding": "DB",
       "database_name": "svbc-committee-calendars",
-      // Replace after running: wrangler d1 create svbc-committee-calendars
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "bdadb7de-19b2-4fa8-b74b-cf311093acd9",
       "migrations_dir": "migrations"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "committees.bikesiliconvalley.org",
+      "custom_domain": true
     }
   ],
   "triggers": {
