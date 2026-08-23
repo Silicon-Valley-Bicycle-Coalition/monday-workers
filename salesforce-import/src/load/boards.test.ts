@@ -83,6 +83,8 @@ describe('ensureBoards', () => {
 });
 
 describe('ensureBoards workspace targeting', () => {
+  beforeEach(() => { process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-'))); });
+
   it('creates boards inside monday.workspaceId when configured', async () => {
     let captured: Record<string, unknown> | undefined;
     const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -105,5 +107,29 @@ describe('ensureBoards workspace targeting', () => {
 
     expect(map['organizations']!.boardId).toBe(950);
     expect(captured?.workspaceId).toBe('10001654');
+  });
+});
+
+describe('ensureBoards column ordering', () => {
+  beforeEach(() => { process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-'))); });
+
+  it('creates debug columns (SF ID) last so they sit at the far right of the board', async () => {
+    const createdTitles: string[] = [];
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '960' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        createdTitles.push(variables.title as string);
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    await ensureBoards(client, loadConfig(), ['organizations'],
+      new Map([['organizations', new Set(['SF ID', 'Partner Type', 'Website'])]]));
+
+    expect(createdTitles).toEqual(['Partner Type', 'Website', 'SF ID']);
   });
 });

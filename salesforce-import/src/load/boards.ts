@@ -28,6 +28,9 @@ export const COLUMN_TYPES: Record<string, string> = {
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
+// Needed for debugging/reconciliation during the migration, deleted afterward — created
+// last so they sit at the far right of every board instead of next to the item name.
+export const DEBUG_COLUMNS = new Set(['SF ID']);
 
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
 // with the target board ids — without this, board_relation columns have no connected boards
@@ -102,7 +105,11 @@ export async function ensureBoards(
       { ids: [String(entry.boardId)] });
     for (const col of res.boards[0]?.columns ?? []) entry.columns[col.title] = col.id;
 
-    for (const title of neededColumns.get(key) ?? []) {
+    // Debug columns go last so they land at the far right of the board — staff-facing
+    // columns stay prominent, and SF ID is slated for deletion after the migration.
+    const ordered = [...(neededColumns.get(key) ?? [])]
+      .sort((a, b) => Number(DEBUG_COLUMNS.has(a)) - Number(DEBUG_COLUMNS.has(b)));
+    for (const title of ordered) {
       if (entry.columns[title]) continue;
       const isConnect = CONNECT_COLUMNS.has(title);
       const type = isConnect ? 'board_relation' : COLUMN_TYPES[title];
