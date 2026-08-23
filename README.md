@@ -34,7 +34,7 @@ use. Never ship a staff member's personal token into a Worker secret.
 | Worker | Status | Priority | Owner |
 |---|---|---|---|
 | [`salesforce-import`](salesforce-import/README.md) | Built (merged) — extract → geocode → transform exercised on real data; **load and validate not yet run**, so no production Monday boards exist yet | **Blocking.** Central migration deliverable | Unassigned — needs owner + time budget for the load/validate/cutover runs |
-| [`funraise-sync`](funraise-sync/README.md) | Code-complete on `feat/funraise-sync` — pending three recorded ops decisions (event-id dedup semantics, donor-match failure path, raw-payload PII retention), rebase onto main, and merge | Blocking (feeds the import) | Unassigned |
+| [`funraise-sync`](funraise-sync/README.md) | Built (merged) — the three review findings decided and closed 2026-08-22 (entity-keyed upsert, matching in the queue consumer, PII strip + retention purge); not deployed, needs D1 provisioning, real board/column ids, and Funraise webhook subscriptions | Blocking (feeds the import) | Unassigned |
 | [`quickbooks-sync`](quickbooks-sync/README.md) | Built (merged) — not deployed; needs D1 provisioning, real board ids, and the Intuit app-review question resolved | Post-migration, non-blocking | Unassigned |
 | [`squarespace-forms`](squarespace-forms/README.md) | Decided — no Worker needed (resolved 2026-08-22) | N/A | dwk |
 | [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
