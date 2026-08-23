@@ -40,7 +40,7 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
 | [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
-| [`committee-calendars`](committee-calendars/README.md) | **Live** — deployed, serving `https://committees.bikesiliconvalley.org/committees.ics` | Post-migration, non-blocking | Unassigned |
+| [`committee-calendars`](committee-calendars/README.md) | **Live** (deployed 2026-08-23) — serving `https://committees.bikesiliconvalley.org/committees.ics` | Post-migration, non-blocking | Unassigned |
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
 | [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
 | [`membership-reminders`](membership-reminders/README.md) | Built (merged) — not deployed; hard-blocked on the Donors board id and column ids, which exist only after `salesforce-import`'s load stage runs | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
