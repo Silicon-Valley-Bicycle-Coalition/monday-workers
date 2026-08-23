@@ -81,3 +81,29 @@ describe('ensureBoards', () => {
     }
   });
 });
+
+describe('ensureBoards workspace targeting', () => {
+  it('creates boards inside monday.workspaceId when configured', async () => {
+    let captured: Record<string, unknown> | undefined;
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) {
+        captured = variables;
+        if (!/workspace_id/.test(query)) throw new Error('create_board mutation missing workspace_id');
+        return Response.json({ data: { create_board: { id: '950' } } });
+      }
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) return Response.json({ data: { create_column: { id: 'col_x' } } });
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    const cfg = loadConfig();
+    cfg.monday.workspaceId = 10001654;
+    const map = await ensureBoards(client, cfg, ['organizations'],
+      new Map([['organizations', new Set(['SF ID'])]]));
+
+    expect(map['organizations']!.boardId).toBe(950);
+    expect(captured?.workspaceId).toBe('10001654');
+  });
+});

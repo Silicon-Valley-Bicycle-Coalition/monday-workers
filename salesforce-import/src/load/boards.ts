@@ -70,9 +70,16 @@ export async function ensureBoards(
     if (known) boardId = known;
     else {
       const label = (BOARD_LABELS[key] ?? eraLabels[key] ?? key) + cfg.monday.boardSuffix;
-      const res = await client.gql<{ create_board: { id: string } }>(
-        `mutation ($name: String!) { create_board (board_name: $name, board_kind: public) { id } }`,
-        { name: label });
+      // Without workspace_id, create_board targets the account's Main workspace, which
+      // SVBC restricts (403 even for admins) — boards must be created in a named workspace.
+      const workspaceId = cfg.monday.workspaceId ?? null;
+      const res = workspaceId
+        ? await client.gql<{ create_board: { id: string } }>(
+            `mutation ($name: String!, $workspaceId: ID!) { create_board (board_name: $name, board_kind: public, workspace_id: $workspaceId) { id } }`,
+            { name: label, workspaceId: String(workspaceId) })
+        : await client.gql<{ create_board: { id: string } }>(
+            `mutation ($name: String!) { create_board (board_name: $name, board_kind: public) { id } }`,
+            { name: label });
       boardId = Number(res.create_board.id);
     }
     map[key] = { boardId, columns: {} };
