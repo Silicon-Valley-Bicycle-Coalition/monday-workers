@@ -1,6 +1,6 @@
 # committee-calendars
 
-**Status:** Decided — build (scoped 2026-08-22). See
+**Status:** Live (deployed 2026-08-23). See
 [implementation design](../docs/superpowers/specs/2026-08-22-committee-calendars-design.md) for
 the resolved adapter list and build-level decisions.
 **Priority:** Post-migration, non-blocking.
@@ -64,12 +64,16 @@ for the full adapter/data-model/error-handling decisions built on this confirmat
   ▼
 Normalize + replace each source's future events in D1 (a failing source keeps its last-known events)
   ▼
-Serve from a stable Worker route, e.g. calendar.bikesiliconvalley.org/committees.ics
+Serve from a stable Worker route: committees.bikesiliconvalley.org/committees.ics
   — ICS serialized from D1 on each request, cached at the edge; supports webcal:// subscription
 ```
 
 A visitor subscribes once in Google/Apple Calendar and gets every committee's meetings from then
 on, no re-checking required.
+
+**Live:** https://committees.bikesiliconvalley.org/committees.ics — deployed 2026-08-23. Note this
+isn't `calendar.bikesiliconvalley.org` (the plan's original placeholder) because that subdomain
+was already in use as SVBC's Google Workspace hosted-calendar redirect.
 
 ## Not a data source for this Worker
 
