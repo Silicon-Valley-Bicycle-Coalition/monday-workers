@@ -2433,6 +2433,26 @@ describe('POST /login rate limiting', () => {
     expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /login error handling', () => {
+  it('still returns the identical generic response when requestLogin throws', async () => {
+    const monday: MondayClient = {
+      findDonorsByEmail: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')),
+      getDonorPortalData: vi.fn(),
+      getDiscountOrganizations: vi.fn(),
+    };
+    const app = createApp(makeDeps({ monday }));
+
+    const res = await app.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('check your email');
+  });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -2485,21 +2505,28 @@ export function createApp(deps: AppDeps) {
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
 
     if (email.length > 0) {
-      const allowed = await checkLoginRateLimit(
-        ip,
-        email,
-        { ipLimiter: deps.ipLimiter, attemptStore: deps.attemptStore, config: deps.config.rateLimit },
-        deps.now()
-      );
-      if (allowed) {
-        await requestLogin(email, {
-          monday: deps.monday,
-          tokenStore: deps.tokenStore,
-          emailSender: deps.emailSender,
-          portalBaseUrl: deps.config.auth.portalBaseUrl,
-          magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
-          now: deps.now,
-        });
+      try {
+        const allowed = await checkLoginRateLimit(
+          ip,
+          email,
+          { ipLimiter: deps.ipLimiter, attemptStore: deps.attemptStore, config: deps.config.rateLimit },
+          deps.now()
+        );
+        if (allowed) {
+          await requestLogin(email, {
+            monday: deps.monday,
+            tokenStore: deps.tokenStore,
+            emailSender: deps.emailSender,
+            portalBaseUrl: deps.config.auth.portalBaseUrl,
+            magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
+            now: deps.now,
+          });
+        }
+      } catch (err) {
+        // A failure here (Monday API down, Resend down, D1 error) must never surface as a
+        // different response than the enumeration-safe path below — otherwise "did this email
+        // exist" leaks through error-vs-success response variance. Log and fall through.
+        console.error(`donor-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -2565,7 +2592,7 @@ export function createApp(deps: AppDeps) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- routes.test.ts`
-Expected: PASS, all 6 tests.
+Expected: PASS, all 7 tests.
 
 - [ ] **Step 5: Commit**
 
