@@ -125,6 +125,9 @@ describe('full login flow', () => {
     const portalRes = await app.request('/portal', { headers: { cookie: sessionCookie } });
     const portalHtml = await portalRes.text();
     expect(portalHtml).toContain('Donor donor-1');
+    // Donor PII must never be servable from browser cache/bfcache after logout — POST /logout
+    // only clears the server-side session, it can't evict an already-cached rendering of this page.
+    expect(portalRes.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
   it('rejects a second use of the same magic-link token', async () => {

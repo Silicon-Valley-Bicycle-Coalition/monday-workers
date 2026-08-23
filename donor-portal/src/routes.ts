@@ -116,6 +116,10 @@ export function createApp(deps: AppDeps) {
     }
 
     const data = await loadPortalData(donorItemIds, deps.monday);
+    // Donor PII (name, membership tier, full donation history) must never be servable from
+    // browser cache/bfcache/history after logout on a shared machine — the server-side session
+    // deletion in POST /logout doesn't evict a previously cached rendering of this page.
+    c.header('Cache-Control', 'private, no-store, max-age=0');
     return c.html(portalView(data));
   });
 
