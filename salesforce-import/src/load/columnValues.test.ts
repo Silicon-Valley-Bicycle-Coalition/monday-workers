@@ -43,3 +43,10 @@ describe('formatColumnValue passthrough of pre-formatted objects', () => {
     expect(formatColumnValue('phone', phone)).toBe(phone);
   });
 });
+
+describe('formatColumnValue phone extension edge cases', () => {
+  it('strips a spelled-out "extension" with hyphenated digits', () => {
+    expect(formatColumnValue('phone', '(408) 555-0133 extension 258-0103'))
+      .toEqual({ phone: '4085550133', countryShortName: 'US' });
+  });
+});

@@ -17,7 +17,7 @@ export function formatColumnValue(type: string, value: unknown): unknown {
   if (type === 'phone') {
     // Drop trailing extensions ("ext.22", "x5") before stripping punctuation, or the
     // extension digits would fuse onto the number.
-    const withoutExt = String(value).replace(/\s*(?:ext|x)\.?\s*\d+\s*$/i, '');
+    const withoutExt = String(value).replace(/\s*(?:ext(?:ension)?|x)\.?\s*[\d-]+\s*$/i, '');
     const digits = withoutExt.replace(/\D/g, '');
     if (digits.length === 0) return null;
     // SVBC's contacts are US-local; countryShortName only affects display formatting.
