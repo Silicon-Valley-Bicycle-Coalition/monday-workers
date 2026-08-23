@@ -1,0 +1,28 @@
+{
+  "name": "svbc-donor-portal",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-donor-portal",
+      // Replace after running: wrangler d1 create svbc-donor-portal
+      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    {
+      // Verify this binding's config shape (key name, "simple" vs another rule type) against
+      // Cloudflare's current Rate Limiting for Workers docs before deploy. Wrapped behind the
+      // IpRateLimiter interface (src/ratelimit.ts) specifically so that verification is isolated
+      // to one small area and never touches test code.
+      "name": "LOGIN_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

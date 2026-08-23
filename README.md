@@ -41,9 +41,8 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
 | [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
 | [`committee-calendars`](committee-calendars/README.md) | Decided — build (scoped 2026-08-22) | Post-migration, non-blocking | Unassigned |
-| [`gemini-reports`](gemini-reports/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
-| [`donor-portal`](donor-portal/README.md) | Decided — build | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
+| [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
 | [`membership-reminders`](membership-reminders/README.md) | Decided — build | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
