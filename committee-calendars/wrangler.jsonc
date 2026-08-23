@@ -1,0 +1,21 @@
+{
+  "name": "svbc-committee-calendars",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-committee-calendars",
+      // Replace after running: wrangler d1 create svbc-committee-calendars
+      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    // Daily at 13:00 UTC (5am/6am Pacific depending on DST) — adjust if a different time is preferred.
+    "crons": ["0 13 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
