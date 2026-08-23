@@ -5,6 +5,10 @@
  * nothing usable (caller skips the column).
  */
 export function formatColumnValue(type: string, value: unknown): unknown {
+  // Transform is inconsistent by column type: emails arrive already wrapped in
+  // {email, text}, links/phones arrive as bare strings. Anything already an object
+  // is in Monday's shape — wrapping it again stringifies to "[object Object]".
+  if (typeof value === 'object' && value !== null) return value;
   if (type === 'link') {
     const text = String(value);
     const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`;

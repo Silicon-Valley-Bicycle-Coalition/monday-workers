@@ -29,3 +29,17 @@ describe('formatColumnValue', () => {
     expect(formatColumnValue('checkbox', { checked: true })).toEqual({ checked: true });
   });
 });
+
+describe('formatColumnValue passthrough of pre-formatted objects', () => {
+  it('passes through email values transform already wrapped in {email, text}', () => {
+    const v = { email: 'ada@svbc.org', text: 'ada@svbc.org' };
+    expect(formatColumnValue('email', v)).toBe(v);
+  });
+
+  it('passes through pre-wrapped link and phone objects unchanged', () => {
+    const link = { url: 'https://svbc.org', text: 'svbc.org' };
+    const phone = { phone: '4085550150', countryShortName: 'US' };
+    expect(formatColumnValue('link', link)).toBe(link);
+    expect(formatColumnValue('phone', phone)).toBe(phone);
+  });
+});
