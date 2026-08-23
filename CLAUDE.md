@@ -15,10 +15,11 @@ shape, open questions) and is meant to be buildable standalone. References there
 `migration-plan.md` or `docs/*` point at the private planning repo (`monday-migration`, checked
 out alongside this one) — not published, not required to build the Worker.
 
-**This repo currently has no root-level code** — `main` holds only each Worker's requirements
-README. Real implementations are built one Worker per feature branch (see the sibling worktree
-directories in the parent folder) and merged in once ready. The patterns below reflect what's
-established in those in-progress builds.
+**There is no root-level code** — each Worker is self-contained in its own subdirectory. Workers
+are built one per feature branch (see the sibling worktree directories in the parent folder) and
+merged to `main` once ready; most are now merged with full implementations, while a Worker whose
+subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
+"Status at a glance" table for what's built, deployed, or pending.
 
 ## Commands
 

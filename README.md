@@ -33,17 +33,17 @@ use. Never ship a staff member's personal token into a Worker secret.
 
 | Worker | Status | Priority | Owner |
 |---|---|---|---|
-| [`salesforce-import`](salesforce-import/README.md) | Decided — build | **Blocking.** Central migration deliverable | Unassigned — needs owner + time budget |
-| [`funraise-sync`](funraise-sync/README.md) | Decided (Option B) — build | Blocking (feeds the import) | Unassigned |
-| [`quickbooks-sync`](quickbooks-sync/README.md) | Decided — build | Post-migration, non-blocking | Unassigned |
+| [`salesforce-import`](salesforce-import/README.md) | Built (merged) — extract → geocode → transform exercised on real data; **load and validate not yet run**, so no production Monday boards exist yet | **Blocking.** Central migration deliverable | Unassigned — needs owner + time budget for the load/validate/cutover runs |
+| [`funraise-sync`](funraise-sync/README.md) | Code-complete on `feat/funraise-sync` — pending three recorded ops decisions (event-id dedup semantics, donor-match failure path, raw-payload PII retention), rebase onto main, and merge | Blocking (feeds the import) | Unassigned |
+| [`quickbooks-sync`](quickbooks-sync/README.md) | Built (merged) — not deployed; needs D1 provisioning, real board ids, and the Intuit app-review question resolved | Post-migration, non-blocking | Unassigned |
 | [`squarespace-forms`](squarespace-forms/README.md) | Decided — no Worker needed (resolved 2026-08-22) | N/A | dwk |
 | [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
 | [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
-| [`committee-calendars`](committee-calendars/README.md) | Decided — build (scoped 2026-08-22) | Post-migration, non-blocking | Unassigned |
+| [`committee-calendars`](committee-calendars/README.md) | **Live** — deployed, serving `https://committees.bikesiliconvalley.org/committees.ics` | Post-migration, non-blocking | Unassigned |
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
 | [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
-| [`membership-reminders`](membership-reminders/README.md) | Decided — build | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
+| [`membership-reminders`](membership-reminders/README.md) | Built (merged) — not deployed; hard-blocked on the Donors board id and column ids, which exist only after `salesforce-import`'s load stage runs | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
 plan for both:
