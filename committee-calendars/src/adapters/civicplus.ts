@@ -1,5 +1,6 @@
 import type { CivicPlusSourceConfig, NormalizedEvent } from '../types';
 import { parseIcsEvents } from '../util/parseIcs';
+import { toValidUrl } from '../util/toValidUrl';
 
 export async function fetchCivicPlusEvents(source: CivicPlusSourceConfig): Promise<NormalizedEvent[]> {
   const url = `https://${source.domain}/common/modules/iCalendar/iCalendar.aspx?catID=${source.catId}&feed=calendar`;
@@ -17,6 +18,6 @@ export async function fetchCivicPlusEvents(source: CivicPlusSourceConfig): Promi
     startUtc: parsed.startUtc,
     endUtc: parsed.endUtc,
     location: parsed.location,
-    url: parsed.url,
+    url: toValidUrl(parsed.url),
   }));
 }

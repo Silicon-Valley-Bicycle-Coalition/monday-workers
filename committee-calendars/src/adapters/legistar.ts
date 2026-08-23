@@ -1,5 +1,6 @@
 import type { LegistarSourceConfig, NormalizedEvent } from '../types';
 import { zonedTimeToUtc } from '../util/zonedTime';
+import { toValidUrl } from '../util/toValidUrl';
 
 interface LegistarEventRecord {
   EventId: number;
@@ -12,7 +13,10 @@ interface LegistarEventRecord {
 const TIME_PATTERN = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
 
-function parseEventTime(eventTime: string): { hour: number; minute: number } {
+function parseEventTime(eventTime: string | null | undefined): { hour: number; minute: number } {
+  if (!eventTime || typeof eventTime !== 'string') {
+    return { hour: 0, minute: 0 };
+  }
   const match = TIME_PATTERN.exec(eventTime.trim());
   if (!match) {
     return { hour: 0, minute: 0 };
@@ -57,7 +61,7 @@ export async function fetchLegistarEvents(source: LegistarSourceConfig, now: Dat
       startUtc: startUtc.toISOString(),
       endUtc: null,
       location: record.EventLocation,
-      url: record.EventInSiteURL,
+      url: toValidUrl(record.EventInSiteURL),
     };
   });
 }

@@ -27,4 +27,21 @@ describe('sendFailureAlert', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('bad request', { status: 400 })));
     await expect(sendFailureAlert('https://hooks.slack.example/T000/B000/xyz', 'bart', 'BART', 3, 'boom')).resolves.toBeUndefined();
   });
+
+  it('does not throw/reject when fetch itself throws (network failure, DNS, etc.)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      })
+    );
+    await expect(sendFailureAlert('https://hooks.slack.example/T000/B000/xyz', 'bart', 'BART', 3, 'boom')).resolves.toBeUndefined();
+  });
+
+  it('skips calling fetch entirely when webhookUrl is empty', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(sendFailureAlert('', 'bart', 'BART', 3, 'boom')).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

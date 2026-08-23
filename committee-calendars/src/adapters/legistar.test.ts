@@ -81,4 +81,34 @@ describe('fetchLegistarEvents', () => {
       'legistar: cupertino events fetch failed: 500 Internal Server Error'
     );
   });
+
+  it('defaults to midnight instead of throwing when EventTime is null, without affecting other records in the batch', async () => {
+    const nullTimeRecord = { ...CUPERTINO_FIXTURE[0]!, EventId: 6001, EventTime: null };
+    const otherRecord = { ...CUPERTINO_FIXTURE[0]!, EventId: 6002 };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([nullTimeRecord, otherRecord]), { status: 200 }))
+    );
+
+    const events = await fetchLegistarEvents(SOURCE, new Date('2026-01-01T00:00:00.000Z'));
+
+    expect(events).toHaveLength(2);
+    const nullTimeEvent = events.find((e) => e.externalId === '6001')!;
+    expect(nullTimeEvent.startUtc).toBe('2026-01-29T08:00:00.000Z'); // midnight PST on 2026-01-29 -> UTC
+    const otherEvent = events.find((e) => e.externalId === '6002')!;
+    expect(otherEvent.startUtc).toBe('2026-01-30T03:00:00.000Z'); // unaffected, same as original fixture
+  });
+
+  it('normalizes a malformed EventInSiteURL to null instead of throwing', async () => {
+    const malformedRecord = { ...CUPERTINO_FIXTURE[0]!, EventInSiteURL: 'not a valid url' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([malformedRecord]), { status: 200 }))
+    );
+
+    const events = await fetchLegistarEvents(SOURCE, new Date('2026-01-01T00:00:00.000Z'));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.url).toBeNull();
+  });
 });

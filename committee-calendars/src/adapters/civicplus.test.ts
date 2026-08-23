@@ -81,4 +81,17 @@ describe('fetchCivicPlusEvents', () => {
       'civicplus: www.campbellca.gov catID=32 fetch failed: 404 Not Found'
     );
   });
+
+  it('normalizes a malformed URL: property (hand-typed by city staff) to null instead of throwing', async () => {
+    const malformedFixture = CAMPBELL_FIXTURE.replace(
+      'URL:https://www.campbellca.gov/calendar.aspx?EID=1234',
+      'URL:calendar.aspx?EID=1234'
+    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(malformedFixture, { status: 200 })));
+
+    const events = await fetchCivicPlusEvents(SOURCE);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.url).toBeNull();
+  });
 });

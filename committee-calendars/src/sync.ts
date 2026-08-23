@@ -20,6 +20,9 @@ export async function syncAllSources(deps: SyncDeps): Promise<void> {
   for (const source of deps.config.sources) {
     try {
       const events = await deps.fetchSourceEvents(source, deps.now);
+      if (events.length === 0) {
+        console.warn(`committee-calendars sync: source "${source.id}" returned zero events`);
+      }
       await deps.eventStore.replaceSourceEvents(source.id, events, todayUtc);
       await deps.eventStore.recordSourceSuccess(source.id, todayUtc);
     } catch (err) {

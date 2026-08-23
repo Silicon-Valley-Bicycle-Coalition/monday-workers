@@ -115,6 +115,54 @@ describe('syncAllSources', () => {
     vi.unstubAllGlobals();
   });
 
+  it('logs a warning naming the source when fetchSourceEvents resolves to zero events', async () => {
+    const eventStore = fakeEventStore();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSourceEvents = vi.fn(async () => []);
+
+    await syncAllSources({ eventStore, config: CONFIG, slackWebhookUrl: 'https://hooks.example', now: NOW, fetchSourceEvents });
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"a"'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"b"'));
+    // Zero events is still a success, not a failure -- no alert should fire for it.
+    expect(eventStore.successes).toEqual(['a', 'b']);
+    expect(eventStore.failures).toEqual([]);
+
+    warnSpy.mockRestore();
+  });
+
+  it('continues syncing sources after the alerting source when the Slack fetch itself throws', async () => {
+    const eventStore = fakeEventStore();
+    // Fail 'a' twice already before this run starts, so this run's failure is the 3rd (alert threshold).
+    await eventStore.recordSourceFailure('a', 'first');
+    await eventStore.recordSourceFailure('a', 'second');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      })
+    );
+
+    const fetchSourceEvents = vi.fn(async (source) => {
+      if (source.id === 'a') {
+        throw new Error('third failure');
+      }
+      return [];
+    });
+
+    await expect(
+      syncAllSources({ eventStore, config: CONFIG, slackWebhookUrl: 'https://hooks.example', now: NOW, fetchSourceEvents })
+    ).resolves.toBeUndefined();
+
+    // Source 'b' comes after 'a' in CONFIG.sources -- it must still be synced even though
+    // sending the Slack alert for 'a' threw.
+    expect(eventStore.successes).toEqual(['b']);
+    expect(eventStore.replaced).toEqual([{ sourceId: 'b', count: 0, todayUtc: NOW.toISOString() }]);
+
+    vi.unstubAllGlobals();
+  });
+
   it('does not re-alert on a 4th consecutive failure', async () => {
     const eventStore = fakeEventStore();
     await eventStore.recordSourceFailure('a', 'first');

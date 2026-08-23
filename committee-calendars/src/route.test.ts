@@ -50,4 +50,29 @@ describe('GET /committees.ics', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
   });
+
+  it('still returns 200 with a valid empty calendar when a stored event has a malformed url that would make createEvents throw', async () => {
+    const events: NormalizedEvent[] = [
+      {
+        sourceId: 'campbell',
+        externalId: '1',
+        title: 'BPAC Meeting',
+        committeeName: 'BPAC',
+        startUtc: '2026-09-01T00:00:00.000Z',
+        endUtc: null,
+        location: null,
+        // Not a well-formed absolute URL -- the ics package's schema validator rejects this
+        // and buildMergedCalendar throws. This should never propagate to a 500.
+        url: 'not a valid url',
+      },
+    ];
+    const app = createApp({ eventStore: fakeEventStore(events), now: () => new Date('2026-08-22T00:00:00.000Z') });
+
+    const response = await app.request('/committees.ics');
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('BEGIN:VCALENDAR');
+    expect(body).toContain('END:VCALENDAR');
+  });
 });
