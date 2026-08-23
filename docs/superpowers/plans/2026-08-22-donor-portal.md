@@ -2627,7 +2627,7 @@ export function createApp(deps: AppDeps) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- routes.test.ts`
-Expected: PASS, all 8 tests.
+Expected: PASS, all 7 tests.
 
 - [ ] **Step 5: Commit**
 
