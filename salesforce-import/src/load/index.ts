@@ -5,7 +5,8 @@ import type { ItemPayload } from '../transform/types.js';
 import type { Era } from '../transform/eras.js';
 import { MondayClient } from './monday.js';
 import { Ledger } from './ledger.js';
-import { ensureBoards } from './boards.js';
+import { ensureBoards, COLUMN_TYPES } from './boards.js';
+import { formatColumnValue } from './columnValues.js';
 
 const ORDER = ['organizations', 'people-live', 'people-historical', 'campaigns',
   'recurring-gifts', 'events', 'event-registrations', 'volunteers', 'activities'];
@@ -74,7 +75,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         if (value === null || value === undefined || value === '') continue;
         const id = board.columns[title];
         if (!id) throw new Error(`load: board ${key} has no column id for "${title}"`);
-        colValues[id] = value;
+        const formatted = formatColumnValue(COLUMN_TYPES[title] ?? 'text', value);
+        if (formatted === null) continue;
+        colValues[id] = formatted;
       }
       try {
         const res = await client.gql<{ create_item: { id: string } }>(
