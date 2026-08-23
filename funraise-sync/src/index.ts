@@ -31,12 +31,18 @@ export default {
   // Daily PII retention pass: raw Funraise payloads are only kept for replay and
   // debugging, so they are emptied once the write has been in Monday long enough.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    const cutoff = new Date(
-      Date.now() - config.funraiseSync.rawPayloadRetentionDays * 24 * 60 * 60 * 1000
+    const dayMs = 24 * 60 * 60 * 1000;
+    const store = new D1EventStore(env.DB);
+    const writtenCutoff = new Date(Date.now() - config.funraiseSync.rawPayloadRetentionDays * dayMs).toISOString();
+    const unresolvedCutoff = new Date(
+      Date.now() - config.funraiseSync.unresolvedPayloadRetentionDays * dayMs
     ).toISOString();
-    const purged = await new D1EventStore(env.DB).purgeWrittenPayloads(cutoff);
-    if (purged > 0) {
-      console.log(`funraise-sync scheduled: purged raw_payload from ${purged} written events older than ${cutoff}`);
+    const purgedWritten = await store.purgeWrittenPayloads(writtenCutoff);
+    const purgedUnresolved = await store.purgeUnresolvedPayloads(unresolvedCutoff);
+    if (purgedWritten > 0 || purgedUnresolved > 0) {
+      console.log(
+        `funraise-sync scheduled: purged raw_payload from ${purgedWritten} written (older than ${writtenCutoff}) and ${purgedUnresolved} unresolved (older than ${unresolvedCutoff}) events`
+      );
     }
   },
 };

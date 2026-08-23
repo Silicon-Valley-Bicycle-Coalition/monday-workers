@@ -13,6 +13,9 @@ const MONDAY_API_VERSION = '2026-01';
 interface GraphQLResponse<T> {
   data?: T;
   errors?: { message: string }[];
+  // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
+  error_message?: string;
+  status_code?: number;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -38,7 +41,16 @@ export class HttpMondayClient implements MondayClient {
     if (json.errors && json.errors.length > 0) {
       throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
     }
-    return json.data as T;
+    if (!json.data) {
+      // Without this, `json.data` is undefined and the caller fails downstream with something
+      // like "Cannot read properties of undefined" instead of the server's actual message.
+      const detail =
+        typeof json.error_message === 'string'
+          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
+          : JSON.stringify(json);
+      throw new Error(`monday API: response contained no data — ${detail}`);
+    }
+    return json.data;
   }
 
   async findItemByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem | null> {

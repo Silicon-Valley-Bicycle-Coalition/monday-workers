@@ -27,7 +27,9 @@ const validConfig = {
       recurringGift: 'id',
       registration: 'id',
     },
+    entityIdColumn: null,
     rawPayloadRetentionDays: 90,
+    unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise__fr_id__c',
     donorEmailColumn: 'email',
@@ -92,5 +94,36 @@ describe('validateConfig new keys', () => {
   it('throws when rawPayloadRetentionDays is not a positive number', () => {
     const funraiseSync = { ...validConfig.funraiseSync, rawPayloadRetentionDays: 0 };
     expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/rawPayloadRetentionDays/);
+  });
+});
+
+describe('validateConfig deep checks', () => {
+  function withFunraiseSync(patch: Record<string, unknown>) {
+    return { ...validConfig, funraiseSync: { ...validConfig.funraiseSync, ...patch } };
+  }
+
+  it('throws when itemNameField is missing an entity key', () => {
+    expect(() => validateConfig(withFunraiseSync({ itemNameField: {} }))).toThrow(/itemNameField.transaction/);
+  });
+
+  it('throws when a columnMap entry maps to a non-string column id', () => {
+    const columnMap = { ...validConfig.funraiseSync.columnMap, transaction: { amount: 42 } };
+    expect(() => validateConfig(withFunraiseSync({ columnMap }))).toThrow(/columnMap.transaction.amount/);
+  });
+
+  it('throws when emailFieldPrecedence is empty', () => {
+    expect(() => validateConfig(withFunraiseSync({ emailFieldPrecedence: [] }))).toThrow(/emailFieldPrecedence/);
+  });
+
+  it('throws when statusValueMap has a non-string value', () => {
+    expect(() => validateConfig(withFunraiseSync({ statusValueMap: { Posted: 1 } }))).toThrow(/statusValueMap/);
+  });
+
+  it('throws when doNotMigrateFields is not an array of strings', () => {
+    expect(() => validateConfig(withFunraiseSync({ doNotMigrateFields: 'paymentMethod' }))).toThrow(/doNotMigrateFields/);
+  });
+
+  it('throws when a donor field key is an empty string', () => {
+    expect(() => validateConfig(withFunraiseSync({ donorLinkColumn: '' }))).toThrow(/donorLinkColumn/);
   });
 });

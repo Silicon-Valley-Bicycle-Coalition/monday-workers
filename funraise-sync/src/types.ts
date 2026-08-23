@@ -44,7 +44,11 @@ export interface FunraiseSyncConfig {
       recurringGift: string;
       registration: string;
     };
+    // Monday text column on every target board holding the Funraise entity id;
+    // enables the consumer's orphan-recovery lookup before create. null disables it.
+    entityIdColumn: string | null;
     rawPayloadRetentionDays: number;
+    unresolvedPayloadRetentionDays: number;
     donorExternalIdField: string;
     donorExternalIdColumn: string;
     donorEmailColumn: string;

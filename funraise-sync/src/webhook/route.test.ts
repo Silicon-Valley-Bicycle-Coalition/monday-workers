@@ -20,7 +20,9 @@ const config: FunraiseSyncConfig = {
       recurringGift: 'id',
       registration: 'id',
     },
+    entityIdColumn: null,
     rawPayloadRetentionDays: 90,
+    unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',
@@ -39,6 +41,7 @@ function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore {
     updateStatusByEntity: vi.fn().mockResolvedValue(undefined),
     getEventByEntity: vi.fn().mockResolvedValue(null),
     purgeWrittenPayloads: vi.fn().mockResolvedValue(0),
+    purgeUnresolvedPayloads: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }
@@ -146,5 +149,65 @@ describe('createApp', () => {
     expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-3', 'failed', {
       error: 'queue unavailable',
     });
+  });
+});
+
+describe('validation-failure observability', () => {
+  it('logs a validation failure so a payload-shape change is visible in observability', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() } });
+
+      const res = await postEvent(app, { amount: 100 }); // missing "id"
+
+      expect(res.status).toBe(200);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('missing a non-empty "id"'));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe('redelivery of a stranded event', () => {
+  it('re-enqueues a duplicate delivery whose row never reached the queue (failed)', async () => {
+    const eventStore = fakeEventStore({
+      upsertEvent: vi.fn().mockResolvedValue('duplicate'),
+      getEventByEntity: vi.fn().mockResolvedValue({ status: 'failed' }),
+    });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({ eventStore, config, queue: { send } });
+
+    const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+
+    expect(res.status).toBe(200);
+    expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-9', 'queued');
+  });
+
+  it('re-enqueues a duplicate delivery stuck at received (inserted but never enqueued)', async () => {
+    const eventStore = fakeEventStore({
+      upsertEvent: vi.fn().mockResolvedValue('duplicate'),
+      getEventByEntity: vi.fn().mockResolvedValue({ status: 'received' }),
+    });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({ eventStore, config, queue: { send } });
+
+    await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+
+    expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
+  });
+
+  it('still short-circuits a duplicate delivery that is already queued or written', async () => {
+    const eventStore = fakeEventStore({
+      upsertEvent: vi.fn().mockResolvedValue('duplicate'),
+      getEventByEntity: vi.fn().mockResolvedValue({ status: 'written' }),
+    });
+    const send = vi.fn();
+    const app = createApp({ eventStore, config, queue: { send } });
+
+    const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+
+    expect(await res.json()).toEqual({ ok: true, duplicate: true });
+    expect(send).not.toHaveBeenCalled();
   });
 });

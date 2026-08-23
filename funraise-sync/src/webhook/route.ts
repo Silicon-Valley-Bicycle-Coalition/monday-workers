@@ -37,7 +37,11 @@ export function createApp(deps: AppDeps) {
       const body = await c.req.json();
       envelope = validateEnvelope(entityTypeParam, body);
     } catch (err) {
-      return c.json({ ok: false, error: errorMessage(err) }, 200);
+      // Funraise ignores the response body, so this log line is the only place a
+      // payload-shape change (renamed id field, new entity type) becomes visible.
+      const errMsg = errorMessage(err);
+      console.error(`funraise-sync webhook: rejected ${entityTypeParam} delivery: ${errMsg}`);
+      return c.json({ ok: false, error: errMsg }, 200);
     }
 
     const entityId = extractEntityId(envelope, deps.config);
@@ -52,7 +56,14 @@ export function createApp(deps: AppDeps) {
     });
 
     if (upsertResult === 'duplicate') {
-      return c.json({ ok: true, duplicate: true }, 200);
+      // An exact redelivery is only a no-op if the original delivery actually made it
+      // into the queue. A row stuck at 'failed' (enqueue threw, we returned 5xx) or
+      // 'received' (crashed between insert and send) is stranded — this redelivery is
+      // its recovery path, so fall through and enqueue it.
+      const existing = await deps.eventStore.getEventByEntity(envelope.entityType, entityId);
+      if (existing === null || (existing.status !== 'failed' && existing.status !== 'received')) {
+        return c.json({ ok: true, duplicate: true }, 200);
+      }
     }
 
     try {
