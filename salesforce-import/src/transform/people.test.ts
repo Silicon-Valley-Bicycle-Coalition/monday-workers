@@ -57,8 +57,7 @@ describe('contactToPayload', () => {
     expect(p.columns['Do Not Solicit Reason']).toBe('mail');
     expect(p.columns['Employer Name']).toBe('Acme Corp');
     expect(p.columns['Email Consent']).toEqual({ label: 'Subscribed' });
-    expect(p.columns['SF ID']).toBe('c1');
-    expect(p.columns['Salesforce Created Date']).toEqual({ date: '2012-01-01' });
+    expect(p.columns['Salesforce Debug']).toEqual({ text: expect.stringContaining('SF ID: c1') });
   });
 });
 

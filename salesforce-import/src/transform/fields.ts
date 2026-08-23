@@ -5,14 +5,21 @@ export function dateCol(iso: string | null | undefined): unknown {
   return { date: iso.slice(0, 10) };
 }
 
-export function provenanceColumns(row: Record<string, unknown>): Record<string, unknown> {
+// One consolidated long-text column instead of five separate provenance columns —
+// never updated after the migration, and slated for a single-column delete once
+// staff no longer need it. Names stay verbatim text (many are former employees
+// with no Monday account to map to).
+export function salesforceDebug(row: Record<string, unknown>): Record<string, unknown> {
   const by = (v: unknown) => (v as { Name?: string } | null)?.Name ?? '';
-  return {
-    'Salesforce Created Date': dateCol(row['CreatedDate'] as string),
-    'Salesforce Created By': by(row['CreatedBy']),
-    'Salesforce Modified Date': dateCol(row['LastModifiedDate'] as string),
-    'Salesforce Modified By': by(row['LastModifiedBy']),
-  };
+  const day = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 10) : '');
+  const stamp = (label: string, date: string, name: string) =>
+    date ? `${label}: ${date}${name ? ` by ${name}` : ''}` : '';
+  const parts = [
+    row['Id'] ? `SF ID: ${row['Id']}` : '',
+    stamp('Created', day(row['CreatedDate']), by(row['CreatedBy'])),
+    stamp('Modified', day(row['LastModifiedDate']), by(row['LastModifiedBy'])),
+  ].filter(Boolean);
+  return { 'Salesforce Debug': { text: parts.join(' | ') } };
 }
 
 const PREFERRED_FIELD: Record<string, string> = {

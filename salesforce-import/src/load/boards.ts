@@ -4,7 +4,7 @@ import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
 
 export const COLUMN_TYPES: Record<string, string> = {
-  'SF ID': 'text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
+  'Salesforce Debug': 'long_text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
   'Email Consent': 'status', 'Membership Status': 'status', 'Membership Tier': 'status',
@@ -23,14 +23,12 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
   'Employer Name': 'text',
-  'Salesforce Created Date': 'date', 'Salesforce Created By': 'text',
-  'Salesforce Modified Date': 'date', 'Salesforce Modified By': 'text',
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
 // Needed for debugging/reconciliation during the migration, deleted afterward — created
 // last so they sit at the far right of every board instead of next to the item name.
-export const DEBUG_COLUMNS = new Set(['SF ID']);
+export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
 
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
 // with the target board ids — without this, board_relation columns have no connected boards
@@ -106,7 +104,7 @@ export async function ensureBoards(
     for (const col of res.boards[0]?.columns ?? []) entry.columns[col.title] = col.id;
 
     // Debug columns go last so they land at the far right of the board — staff-facing
-    // columns stay prominent, and SF ID is slated for deletion after the migration.
+    // columns stay prominent, and Salesforce Debug is slated for deletion after the migration.
     const ordered = [...(neededColumns.get(key) ?? [])]
       .sort((a, b) => Number(DEBUG_COLUMNS.has(a)) - Number(DEBUG_COLUMNS.has(b)));
     for (const title of ordered) {

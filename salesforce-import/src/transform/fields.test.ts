@@ -1,17 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { provenanceColumns, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
+import { salesforceDebug, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
 
-describe('provenanceColumns', () => {
-  it('maps SF audit fields to labeled columns', () => {
-    expect(provenanceColumns({
-      CreatedDate: '2019-05-01T12:00:00.000+0000', CreatedBy: { Name: 'Ann' },
+describe('salesforceDebug', () => {
+  it('folds SF ID and audit fields into one long-text column', () => {
+    expect(salesforceDebug({
+      Id: '0031234', CreatedDate: '2019-05-01T12:00:00.000+0000', CreatedBy: { Name: 'Ann' },
       LastModifiedDate: '2026-01-02T00:00:00.000+0000', LastModifiedBy: { Name: 'Bob' },
     })).toEqual({
-      'Salesforce Created Date': { date: '2019-05-01' },
-      'Salesforce Created By': 'Ann',
-      'Salesforce Modified Date': { date: '2026-01-02' },
-      'Salesforce Modified By': 'Bob',
+      'Salesforce Debug': { text: 'SF ID: 0031234 | Created: 2019-05-01 by Ann | Modified: 2026-01-02 by Bob' },
     });
+  });
+  it('omits missing pieces instead of printing blanks', () => {
+    expect(salesforceDebug({ Id: '0039999' }))
+      .toEqual({ 'Salesforce Debug': { text: 'SF ID: 0039999' } });
   });
 });
 

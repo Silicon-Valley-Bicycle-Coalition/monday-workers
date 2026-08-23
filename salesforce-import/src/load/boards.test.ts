@@ -27,9 +27,9 @@ describe('ensureBoards', () => {
     ]);
     const cfg = loadConfig();
     const map = await ensureBoards(client, cfg, ['organizations'],
-      new Map([['organizations', new Set(['SF ID', 'Partner Type'])]]));
+      new Map([['organizations', new Set(['Salesforce Debug', 'Partner Type'])]]));
     expect(map['organizations']!.boardId).toBe(900);
-    expect(map['organizations']!.columns['SF ID']).toBe('col_x');
+    expect(map['organizations']!.columns['Salesforce Debug']).toBe('col_x');
   });
 
   it('board_relation columns are created with defaults pointing at target board ids', async () => {
@@ -55,7 +55,7 @@ describe('ensureBoards', () => {
 
     const cfg = loadConfig();
     const map = await ensureBoards(client, cfg, ['organizations', 'people-live'], new Map([
-      ['organizations', new Set(['SF ID'])],
+      ['organizations', new Set(['Salesforce Debug'])],
       ['people-live', new Set(['Organization'])],
     ]));
 
@@ -75,8 +75,8 @@ describe('ensureBoards', () => {
   it('every transform column title has a declared type', () => {
     // Guard: a new transform column without a COLUMN_TYPES entry must fail loudly here,
     // not silently at load time.
-    for (const title of ['SF ID', 'Email Consent', 'Term Start', 'Lifetime Giving',
-      'Salesforce Created Date', 'Salesforce Modified By', 'Annualized Value', 'Historical']) {
+    for (const title of ['Salesforce Debug', 'Email Consent', 'Term Start', 'Lifetime Giving',
+      'Annualized Value', 'Historical']) {
       expect(COLUMN_TYPES[title], title).toBeDefined();
     }
   });
@@ -103,7 +103,7 @@ describe('ensureBoards workspace targeting', () => {
     const cfg = loadConfig();
     cfg.monday.workspaceId = 10001654;
     const map = await ensureBoards(client, cfg, ['organizations'],
-      new Map([['organizations', new Set(['SF ID'])]]));
+      new Map([['organizations', new Set(['Salesforce Debug'])]]));
 
     expect(map['organizations']!.boardId).toBe(950);
     expect(captured?.workspaceId).toBe('10001654');
@@ -113,7 +113,7 @@ describe('ensureBoards workspace targeting', () => {
 describe('ensureBoards column ordering', () => {
   beforeEach(() => { process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-'))); });
 
-  it('creates debug columns (SF ID) last so they sit at the far right of the board', async () => {
+  it('creates the Salesforce Debug column last so it sits at the far right of the board', async () => {
     const createdTitles: string[] = [];
     const fetchFn = (async (_u: unknown, init: unknown) => {
       const { query, variables } = JSON.parse((init as { body: string }).body);
@@ -128,8 +128,8 @@ describe('ensureBoards column ordering', () => {
     const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
 
     await ensureBoards(client, loadConfig(), ['organizations'],
-      new Map([['organizations', new Set(['SF ID', 'Partner Type', 'Website'])]]));
+      new Map([['organizations', new Set(['Salesforce Debug', 'Partner Type', 'Website'])]]));
 
-    expect(createdTitles).toEqual(['Partner Type', 'Website', 'SF ID']);
+    expect(createdTitles).toEqual(['Partner Type', 'Website', 'Salesforce Debug']);
   });
 });
