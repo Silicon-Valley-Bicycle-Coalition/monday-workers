@@ -18,7 +18,9 @@ const config: FunraiseSyncConfig = {
       recurringGift: 'id',
       registration: 'id',
     },
+    entityIdColumn: null,
     rawPayloadRetentionDays: 90,
+    unresolvedPayloadRetentionDays: 365,
     itemNameField: {
       transaction: 'description',
       recurringGift: 'description',

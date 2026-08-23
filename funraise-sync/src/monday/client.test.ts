@@ -76,3 +76,21 @@ describe('HttpMondayClient', () => {
     await expect(client.findItemByColumnValue(1, 'x', 'y')).rejects.toThrow(/Board not found/);
   });
 });
+
+describe('HttpMondayClient dataless responses', () => {
+  it("surfaces the server's error_message when a 200 response carries no data (rate limit shape)", async () => {
+    mockFetchOnce({ error_message: 'Rate limit exceeded', status_code: 429 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+
+    await expect(client.findItemByColumnValue(999, 'email', 'a@example.com')).rejects.toThrow(
+      /Rate limit exceeded.*429/
+    );
+  });
+
+  it('throws with the raw body when a 200 response has neither data nor error_message', async () => {
+    mockFetchOnce({ unexpected: true });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+
+    await expect(client.createItem(1, 'x', {})).rejects.toThrow(/no data.*unexpected/);
+  });
+});

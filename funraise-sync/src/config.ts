@@ -64,16 +64,72 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     }
   }
 
-  const entityIdField = funraiseSync.entityIdField as Record<string, unknown>;
-  for (const key of REQUIRED_COLUMN_MAP_KEYS) {
-    if (typeof entityIdField[key] !== 'string' || entityIdField[key] === '') {
-      throw new Error(`config: missing required key "funraiseSync.entityIdField.${key}"`);
+  for (const mapName of ['entityIdField', 'itemNameField'] as const) {
+    const fieldMap = funraiseSync[mapName] as Record<string, unknown>;
+    for (const key of REQUIRED_COLUMN_MAP_KEYS) {
+      if (typeof fieldMap[key] !== 'string' || fieldMap[key] === '') {
+        throw new Error(`config: missing required key "funraiseSync.${mapName}.${key}"`);
+      }
     }
   }
 
-  const retentionDays = funraiseSync.rawPayloadRetentionDays;
-  if (typeof retentionDays !== 'number' || retentionDays <= 0) {
-    throw new Error('config: "funraiseSync.rawPayloadRetentionDays" must be a positive number of days');
+  for (const key of REQUIRED_COLUMN_MAP_KEYS) {
+    const fields = columnMap[key] as Record<string, unknown>;
+    for (const [funraiseField, columnId] of Object.entries(fields)) {
+      if (typeof columnId !== 'string' || columnId === '') {
+        throw new Error(`config: "funraiseSync.columnMap.${key}.${funraiseField}" must be a Monday column id string`);
+      }
+    }
+  }
+
+  for (const key of [
+    'donorExternalIdField',
+    'donorExternalIdColumn',
+    'donorEmailColumn',
+    'donorNameField',
+    'donorLinkColumn',
+    'statusField',
+  ] as const) {
+    if (typeof funraiseSync[key] !== 'string' || funraiseSync[key] === '') {
+      throw new Error(`config: "funraiseSync.${key}" must be a non-empty string`);
+    }
+  }
+
+  const emailFieldPrecedence = funraiseSync.emailFieldPrecedence;
+  if (
+    !Array.isArray(emailFieldPrecedence) ||
+    emailFieldPrecedence.length === 0 ||
+    emailFieldPrecedence.some((f) => typeof f !== 'string' || f === '')
+  ) {
+    throw new Error('config: "funraiseSync.emailFieldPrecedence" must be a non-empty array of field paths');
+  }
+
+  const statusValueMap = funraiseSync.statusValueMap;
+  if (
+    typeof statusValueMap !== 'object' ||
+    statusValueMap === null ||
+    Object.values(statusValueMap).some((v) => typeof v !== 'string')
+  ) {
+    throw new Error('config: "funraiseSync.statusValueMap" must map status strings to status strings');
+  }
+
+  const doNotMigrateFields = funraiseSync.doNotMigrateFields;
+  if (!Array.isArray(doNotMigrateFields) || doNotMigrateFields.some((f) => typeof f !== 'string')) {
+    throw new Error('config: "funraiseSync.doNotMigrateFields" must be an array of field paths');
+  }
+
+  if (
+    !('entityIdColumn' in funraiseSync) ||
+    (funraiseSync.entityIdColumn !== null &&
+      (typeof funraiseSync.entityIdColumn !== 'string' || funraiseSync.entityIdColumn === ''))
+  ) {
+    throw new Error('config: "funraiseSync.entityIdColumn" must be a Monday column id string, or null to disable orphan recovery');
+  }
+
+  for (const key of ['rawPayloadRetentionDays', 'unresolvedPayloadRetentionDays'] as const) {
+    if (typeof funraiseSync[key] !== 'number' || (funraiseSync[key] as number) <= 0) {
+      throw new Error(`config: "funraiseSync.${key}" must be a positive number of days`);
+    }
   }
 
   return cfg as unknown as FunraiseSyncConfig;

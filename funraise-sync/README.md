@@ -50,8 +50,11 @@ Ingestion, matching, and the Monday write are separate, independently testable s
 runs in the queue consumer — not the webhook handler — so a transient Monday API failure during
 *matching or writing* gets the Queue's retries and DLQ instead of dying inside the webhook
 request. A daily cron empties `raw_payload` for events written more than
-`funraiseSync.rawPayloadRetentionDays` (default 90) days ago, so raw donor PII doesn't accumulate
-in D1 indefinitely. See `../README.md`'s Reliability section for why the Queue shape is standard
+`funraiseSync.rawPayloadRetentionDays` (default 90) days ago, and for events that never completed
+their write once they're older than `unresolvedPayloadRetentionDays` (default 365), so raw donor
+PII doesn't accumulate in D1 indefinitely on either path. Created items are stamped with the
+Funraise entity id (`funraiseSync.entityIdColumn`), which the consumer checks before every create
+so a retry after a lost status update adopts the existing item instead of duplicating it. See `../README.md`'s Reliability section for why the Queue shape is standard
 across every webhook-driven Worker in this plan.
 
 ## APIs & auth

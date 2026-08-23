@@ -123,3 +123,34 @@ describe('D1EventStore', () => {
     });
   });
 });
+
+describe('purgeUnresolvedPayloads', () => {
+  it('empties raw_payload for non-written events received before the cutoff, keeping recent ones', async () => {
+    const store = new D1EventStore(env.DB);
+    await store.upsertEvent(newEvent({
+      eventId: 'evt-10', entityId: 'txn-stale-failed', rawPayload: '{"pii":"stale"}',
+      receivedAt: '2025-01-01T00:00:00.000Z',
+    }));
+    await store.updateStatusByEntity('transaction', 'txn-stale-failed', 'failed', { error: 'boom' });
+    await store.upsertEvent(newEvent({
+      eventId: 'evt-11', entityId: 'txn-fresh-failed', rawPayload: '{"pii":"fresh"}',
+      receivedAt: '2026-08-01T00:00:00.000Z',
+    }));
+    await store.updateStatusByEntity('transaction', 'txn-fresh-failed', 'failed', { error: 'boom' });
+    await store.upsertEvent(newEvent({
+      eventId: 'evt-12', entityId: 'txn-stale-written', rawPayload: '{"pii":"w"}',
+      receivedAt: '2025-01-01T00:00:00.000Z',
+    }));
+    await store.updateStatusByEntity('transaction', 'txn-stale-written', 'written', {
+      mondayItemId: 'item-12', writtenAt: '2025-01-02T00:00:00.000Z',
+    });
+
+    const purged = await store.purgeUnresolvedPayloads('2026-01-01T00:00:00.000Z');
+    expect(purged).toBe(1);
+
+    expect((await store.getEventByEntity('transaction', 'txn-stale-failed'))?.rawPayload).toBe('{}');
+    expect((await store.getEventByEntity('transaction', 'txn-fresh-failed'))?.rawPayload).toBe('{"pii":"fresh"}');
+    // written rows belong to purgeWrittenPayloads' shorter window, not this one
+    expect((await store.getEventByEntity('transaction', 'txn-stale-written'))?.rawPayload).toBe('{"pii":"w"}');
+  });
+});

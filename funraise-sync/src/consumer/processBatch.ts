@@ -77,11 +77,15 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     });
   }
 
+  const { donorLinkColumn, entityIdColumn } = deps.config.funraiseSync;
   const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
   if (donorItemId) {
-    columnValues[deps.config.funraiseSync.donorLinkColumn] = {
+    columnValues[donorLinkColumn] = {
       item_ids: [Number(donorItemId)],
     };
+  }
+  if (entityIdColumn) {
+    columnValues[entityIdColumn] = entityId;
   }
 
   // At-least-once delivery: an event that already has a Monday item (an earlier
@@ -93,6 +97,21 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
       writtenAt: new Date().toISOString(),
     });
     return;
+  }
+
+  // The D1 update recording mondayItemId can fail after a successful create, leaving
+  // an orphaned item the retry would duplicate — the entity-id column stamped on every
+  // created item lets the retry find and adopt it instead.
+  if (entityIdColumn) {
+    const orphan = await deps.mondayClient.findItemByColumnValue(boardId, entityIdColumn, entityId);
+    if (orphan) {
+      await deps.mondayClient.changeColumnValues(boardId, orphan.id, columnValues);
+      await deps.eventStore.updateStatusByEntity(entityType, entityId, 'written', {
+        mondayItemId: orphan.id,
+        writtenAt: new Date().toISOString(),
+      });
+      return;
+    }
   }
 
   const item = await deps.mondayClient.createItem(

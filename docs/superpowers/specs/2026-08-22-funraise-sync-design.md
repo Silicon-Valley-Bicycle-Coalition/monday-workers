@@ -25,7 +25,7 @@ Four components, matching the standard shape the root README establishes for eve
 
 **Why matching happens in the queue consumer, not the webhook handler (decided 2026-08-22, reversing the original design):** in the handler, a transient Monday failure during matching had no retry path — the request still returned 200, so Funraise never redelivered, and the event died as a `failed` D1 row nobody saw. In the consumer, both matching and the write inherit the Queue's retries and DLQ. The original concern (re-matching on every write retry) is answered by persisting `matched_donor_item_id` on first success — retries skip matching.
 
-**A daily cron** (`scheduled()` handler) empties `raw_payload` for events written more than `funraiseSync.rawPayloadRetentionDays` (default 90) days ago; combined with the ingest-time strip of `doNotMigrateFields`, denylisted PII never lands in D1 at rest and the rest of the payload has a bounded lifetime. Failed events keep their payload until resolved.
+**A daily cron** (`scheduled()` handler) empties `raw_payload` for events written more than `funraiseSync.rawPayloadRetentionDays` (default 90) days ago; combined with the ingest-time strip of `doNotMigrateFields`, denylisted PII never lands in D1 at rest and the rest of the payload has a bounded lifetime. Failed and otherwise-unresolved events keep theirs for replay up to `unresolvedPayloadRetentionDays` (365) from receipt, then they are purged too — the outer PII bound (added after the 2026-08-22 post-merge review).
 
 ## Data flow
 
@@ -38,7 +38,7 @@ Webhook handler (Hono)
   │  2. validate payload shape per entity type
   │  3. strip doNotMigrateFields, upsert into D1 events (unique on entity_type + entity_id;
   │     a new delivery for a known entity replaces the payload, an exact event_id
-  │     redelivery is a no-op)
+  │     redelivery is a no-op unless the row is stranded pre-queue — then it re-enqueues)
   │  4. enqueue message referencing the entity (5xx on enqueue failure so Funraise
   │     can redeliver — the upsert makes redelivery safe)
   ▼
@@ -61,7 +61,7 @@ The exact Funraise payload field name(s) for donor email/contact aren't confirme
 
 ## D1 schema: `events`
 
-One row per Funraise *entity*; the unique index on (`entity_type`, `entity_id`) is the dedup mechanism (decided 2026-08-22 — an exact `event_id` redelivery is a no-op, while a new delivery for a known entity replaces the row's payload and flows through as an update to the existing Monday item).
+One row per Funraise *entity*; the unique index on (`entity_type`, `entity_id`) is the dedup mechanism (decided 2026-08-22 — an exact `event_id` redelivery is a no-op (unless the row is stranded at `failed`/`received`, which re-enqueues it), while a new delivery for a known entity replaces the row's payload and flows through as an update to the existing Monday item).
 
 | column | purpose |
 |---|---|
@@ -131,4 +131,17 @@ This is a known, documented limitation — not a silent gap. Revisit if Funraise
 
 - **Dedup vs. update semantics** — decided: dedup is keyed on the *entity* (`entity_type` + `entity_id` from the payload body, per `funraiseSync.entityIdField`), not the delivery id. The first event creates the Monday item; later events for the same entity update it via `changeColumnValues`. This is correct whether Funraise's envelope `id` turns out to be per-delivery or per-entity, so the unconfirmed question no longer blocks deploy. When the field carrying the entity id is absent, dedup degrades to per-delivery (the envelope id) rather than dropping the event. Confirming the real payload field names from a sandbox remains a config task, not a code change.
 - **Donor-match retry path** — decided: matching moved from the webhook handler into the queue consumer, where it inherits the Queue's 3 retries and DLQ. The handler is now validate → ingest → enqueue, and returns 5xx on an enqueue failure instead of falsely acknowledging the delivery. `matched_donor_item_id` persists on first success so write retries don't re-match.
-- **`raw_payload` retention** — decided: both halves. `doNotMigrateFields` paths are stripped before the D1 insert (denylisted PII never lands at rest), and a daily `scheduled()` cron empties `raw_payload` for events written more than `funraiseSync.rawPayloadRetentionDays` (90) days ago. Failed events keep their payload until resolved.
+- **`raw_payload` retention** — decided: both halves. `doNotMigrateFields` paths are stripped before the D1 insert (denylisted PII never lands at rest), and a daily `scheduled()` cron empties `raw_payload` for events written more than `funraiseSync.rawPayloadRetentionDays` (90) days ago. Failed and otherwise-unresolved events keep theirs for replay up to `unresolvedPayloadRetentionDays` (365) from receipt, then they are purged too — the outer PII bound (added after the 2026-08-22 post-merge review).
+
+## Post-merge review fixes (2026-08-22)
+
+An independent code review of the merged Worker confirmed 10 findings; the six mechanical ones were fixed on `fix/funraise-sync-review-findings` with tests:
+
+- Redelivery of a stranded delivery (row at `failed`/`received`) now re-enqueues instead of short-circuiting as a duplicate — the 5xx-then-redeliver recovery path actually works.
+- Created items are stamped with the Funraise entity id in `funraiseSync.entityIdColumn` (a text column required on every target board; `null` disables), and the consumer looks that column up before every create so a retry after a lost `monday_item_id` status update adopts the orphaned item instead of duplicating it.
+- `unresolvedPayloadRetentionDays` (365) bounds PII retention for events that never complete their write.
+- The Monday client guards dataless 200 responses (rate limit/auth shape), surfacing `error_message` instead of an undefined-property TypeError.
+- Webhook validation failures are logged via `console.error` so a payload-shape change is visible in observability rather than silently 200-acknowledged.
+- `validateConfig` deep-validates every `funraiseSync` key (column-id types, non-empty field paths, status map values) so a malformed fork config fails at deploy, not as a consumer poison-pill.
+
+Still open from that review, needing the Funraise docs/sandbox session: webhook delivery authentication (findings ranked it most severe), real `entityIdField` payload names (shipped default `"id"` collapses to per-delivery dedup), a value-transform layer for Monday date columns, and pledge↔subscription identity canonicalization.

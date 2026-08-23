@@ -27,6 +27,7 @@ export interface EventStore {
   ): Promise<void>;
   getEventByEntity(entityType: EntityType, entityId: string): Promise<EventRow | null>;
   purgeWrittenPayloads(writtenBefore: string): Promise<number>;
+  purgeUnresolvedPayloads(receivedBefore: string): Promise<number>;
 }
 
 interface D1EventRecord {
@@ -134,6 +135,19 @@ export class D1EventStore implements EventStore {
          WHERE status = 'written' AND written_at < ?1 AND raw_payload != '{}'`
       )
       .bind(writtenBefore)
+      .run();
+    return result.meta.changes;
+  }
+
+  // Outer PII bound: events that never completed their Monday write (failed enqueue,
+  // DLQ-exhausted, unconfigured board) keep their payload for replay only this long.
+  async purgeUnresolvedPayloads(receivedBefore: string): Promise<number> {
+    const result = await this.db
+      .prepare(
+        `UPDATE events SET raw_payload = '{}'
+         WHERE status != 'written' AND received_at < ?1 AND raw_payload != '{}'`
+      )
+      .bind(receivedBefore)
       .run();
     return result.meta.changes;
   }
