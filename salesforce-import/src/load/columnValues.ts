@@ -18,8 +18,11 @@ export function formatColumnValue(type: string, value: unknown): unknown {
     // Drop trailing extensions ("ext.22", "x5") before stripping punctuation, or the
     // extension digits would fuse onto the number.
     const withoutExt = String(value).replace(/\s*(?:ext(?:ension)?|x)\.?\s*[\d-]+\s*$/i, '');
-    const digits = withoutExt.replace(/\D/g, '');
+    let digits = withoutExt.replace(/\D/g, '');
     if (digits.length === 0) return null;
+    // Fields holding two numbers ("... or ...") or unstripped extensions fuse into an
+    // over-long string Monday rejects — keep just the first US-length number.
+    if (digits.length > 11) digits = digits.slice(0, digits.startsWith('1') ? 11 : 10);
     // SVBC's contacts are US-local; countryShortName only affects display formatting.
     return { phone: digits, countryShortName: 'US' };
   }

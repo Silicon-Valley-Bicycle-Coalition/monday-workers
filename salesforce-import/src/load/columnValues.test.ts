@@ -50,3 +50,15 @@ describe('formatColumnValue phone extension edge cases', () => {
       .toEqual({ phone: '4085550133', countryShortName: 'US' });
   });
 });
+
+describe('formatColumnValue multi-number phone fields', () => {
+  it('keeps only the first number when the field holds two', () => {
+    expect(formatColumnValue('phone', '(650) 555-0113 or (650)555-0110'))
+      .toEqual({ phone: '6505550113', countryShortName: 'US' });
+  });
+
+  it('keeps the leading 1 when the first number has a country prefix', () => {
+    expect(formatColumnValue('phone', '1-650-555-0113 / 650-555-0110'))
+      .toEqual({ phone: '16505550113', countryShortName: 'US' });
+  });
+});
