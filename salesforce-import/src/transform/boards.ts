@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, salesforceDebug } from './fields.js';
+import { dateCol, funraiseTransactionLink, salesforceDebug } from './fields.js';
 
 const ANNUAL: Record<string, number> = { Yearly: 1, Quarterly: 4, Monthly: 12 };
 
@@ -10,7 +10,7 @@ export function subscriptionToPayload(s: Record<string, unknown>): ItemPayload |
   return {
     board: 'recurring-gifts', sfId: s['Id'] as string, name: (s['Name'] as string) ?? '(subscription)',
     columns: {
-      'Funraise ID': (s['funraise__fr_ID__c'] ?? '') as string,
+      'Funraise ID': funraiseTransactionLink(s['funraise__fr_ID__c']),
       'Installment Amount': String(amount), 'Annualized Value': String(amount * mult),
       'Frequency': { label: (s['funraise__Frequency__c'] ?? 'Unknown') as string },
       'Status': { label: (s['funraise__Status__c'] ?? 'Unknown') as string },

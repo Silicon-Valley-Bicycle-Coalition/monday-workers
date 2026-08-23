@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, setStaffMatcher, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -88,5 +88,22 @@ describe('salesforceDebug staff annotation', () => {
     } finally {
       setStaffMatcher(null);
     }
+  });
+});
+
+describe('funraise links', () => {
+  it('builds a transaction link column value from a Funraise id', () => {
+    expect(funraiseTransactionLink('12345')).toEqual({
+      url: 'https://platform.funraise.io/transaction/12345', text: '12345',
+    });
+  });
+  it('builds a supporter profile link', () => {
+    expect(funraiseSupporterLink('777')).toEqual({
+      url: 'https://platform.funraise.io/supporter/777', text: '777',
+    });
+  });
+  it('returns null for a blank id', () => {
+    expect(funraiseTransactionLink('')).toBeNull();
+    expect(funraiseSupporterLink(undefined)).toBeNull();
   });
 });

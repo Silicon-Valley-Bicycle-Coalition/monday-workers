@@ -1,7 +1,7 @@
 import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
-import { collapseEmail, consentColumns, dateCol, salesforceDebug } from './fields.js';
+import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, salesforceDebug } from './fields.js';
 
 export interface InclusionInput {
   donorIds: Set<string>; recentDonorIds: Set<string>;
@@ -41,6 +41,7 @@ export function contactToPayload(
     'Phone': (c['Phone'] ?? c['MobilePhone'] ?? '') as string,
     'Address': [c['MailingStreet'], c['MailingCity'], c['MailingState'], c['MailingPostalCode']]
       .filter(Boolean).join(', '),
+    'Funraise Profile': funraiseSupporterLink(c['funraise__fr_ID__c']),
     'City': deps.geo?.city ?? '', 'Zip': deps.geo?.zip ?? '',
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
     'Do Not Solicit': account?.Do_Not_Solicit__c ? { checked: 'true' } : null,

@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, salesforceDebug } from './fields.js';
+import { dateCol, funraiseTransactionLink, salesforceDebug } from './fields.js';
 import { eraFor, type Era } from './eras.js';
 
 const STATUS: Record<string, string> = {
@@ -24,7 +24,7 @@ export function opportunityToPayload(
       'Date': dateCol(o['CloseDate'] as string),
       'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
       'Gift Type': ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,
-      'Funraise ID': (o['funraise__fr_ID__c'] ?? '') as string,
+      'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId ? null : { checked: 'true' },
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
       ...salesforceDebug(o),

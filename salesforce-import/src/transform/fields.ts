@@ -66,3 +66,17 @@ export function localNewsName(city: string | null, cfg: Config['localNews']): st
   for (const rule of cfg.rules) if (rule.cities.includes(c)) return rule.name;
   return cfg.defaultName;
 }
+
+// Funraise's platform URLs are global (no org slug); recurring subscriptions
+// surface as recurring *transactions* in Funraise's UI, so Recurring Gifts use
+// the transaction link too (confirmed with SVBC 2026-08-23).
+const FUNRAISE_TRANSACTION_URL = 'https://platform.funraise.io/transaction/';
+const FUNRAISE_SUPPORTER_URL = 'https://platform.funraise.io/supporter/';
+
+const funraiseLink = (base: string, id: unknown) => {
+  const text = typeof id === 'string' || typeof id === 'number' ? String(id) : '';
+  return text ? { url: `${base}${text}`, text } : null;
+};
+
+export const funraiseTransactionLink = (id: unknown) => funraiseLink(FUNRAISE_TRANSACTION_URL, id);
+export const funraiseSupporterLink = (id: unknown) => funraiseLink(FUNRAISE_SUPPORTER_URL, id);
