@@ -1,0 +1,76 @@
+import { Hono } from 'hono';
+import type { MapStore } from '../../db/map';
+import type { MondayEventStore } from '../../db/mondayEvents';
+import type { QuickbooksSyncConfig } from '../../types';
+import { hasReachedQueue, type QueueLike } from '../../quickbooks/webhook/route';
+import { isChallengeRequest, validateMondayEvent } from './validate';
+
+export interface MondayWebhookDeps {
+  mondayEventStore: MondayEventStore;
+  mapStore: MapStore;
+  queue: QueueLike;
+  config: QuickbooksSyncConfig;
+}
+
+export function createMondayWebhookApp(deps: MondayWebhookDeps) {
+  const app = new Hono();
+
+  app.post('/webhooks/monday', async (c) => {
+    // Read the body as text and parse it ourselves so a malformed payload — something that will
+    // never parse no matter how often it's redelivered — returns a recorded error at HTTP 200
+    // rather than crashing the request with an unhandled 500.
+    const rawBody = await c.req.text();
+
+    let event;
+    try {
+      const body = JSON.parse(rawBody);
+      if (isChallengeRequest(body)) {
+        return c.json({ challenge: body.challenge }, 200);
+      }
+      event = validateMondayEvent(body);
+    } catch (err) {
+      return c.json({ ok: false, error: (err as Error).message }, 200);
+    }
+
+    if (event.boardId !== deps.config.monday.boards.customers) {
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+
+    const existing = await deps.mapStore.getByMondayItemId('customer', event.mondayItemId);
+    if (existing !== null) {
+      return c.json({ ok: true, alreadyLinked: true }, 200);
+    }
+
+    const insertResult = await deps.mondayEventStore.insertEvent({
+      eventId: event.mondayItemId,
+      mondayItemId: event.mondayItemId,
+      rawPayload: JSON.stringify(event.columnValues),
+      receivedAt: new Date().toISOString(),
+    });
+
+    // "A row already exists" is not the same as "this was already processed" — see
+    // hasReachedQueue. Only skip when the existing row genuinely reached the queue, otherwise
+    // resume it (there's no fetch step on the Monday side, so that just means enqueueing).
+    let resumed = false;
+    if (insertResult === 'duplicate') {
+      const existing = await deps.mondayEventStore.getEvent(event.mondayItemId);
+      if (existing === null || hasReachedQueue(existing.status)) {
+        return c.json({ ok: true, duplicate: true }, 200);
+      }
+      resumed = true;
+    }
+
+    try {
+      await deps.queue.send({ direction: 'monday-to-qb', eventId: event.mondayItemId });
+      await deps.mondayEventStore.updateStatus(event.mondayItemId, 'queued');
+    } catch (err) {
+      await deps.mondayEventStore.updateStatus(event.mondayItemId, 'failed', {
+        error: (err as Error).message,
+      });
+    }
+
+    return c.json({ ok: true, resumed }, 200);
+  });
+
+  return app;
+}
