@@ -2166,7 +2166,7 @@ export function loginFormView(): string {
 export function checkEmailView(): string {
   return `
     <h1>Check your email</h1>
-    <p>If that address is on file, a login link is on its way. It expires soon and can only be used once.</p>
+    <p>Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.</p>
   `;
 }
 
@@ -2228,7 +2228,7 @@ export function portalView(data: PortalView): string {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- views.test.ts`
-Expected: PASS, all 6 tests.
+Expected: PASS, all 5 tests.
 
 - [ ] **Step 5: Commit**
 
