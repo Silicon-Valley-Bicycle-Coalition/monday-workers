@@ -36,7 +36,7 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`salesforce-import`](salesforce-import/README.md) | Decided — build | **Blocking.** Central migration deliverable | Unassigned — needs owner + time budget |
 | [`funraise-sync`](funraise-sync/README.md) | Decided (Option B) — build | Blocking (feeds the import) | Unassigned |
 | [`quickbooks-sync`](quickbooks-sync/README.md) | Decided — build | Post-migration, non-blocking | Unassigned |
-| [`squarespace-forms`](squarespace-forms/README.md) | Decided — build | Post-migration, non-blocking | dwk |
+| [`squarespace-forms`](squarespace-forms/README.md) | Decided — no Worker needed (resolved 2026-08-22) | N/A | dwk |
 | [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
 | [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
 | [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
@@ -84,13 +84,14 @@ that ceiling; this is a genuine build-over-subscription fit, not a paid upgrade.
 `bluesky-interactions` — every Worker driven by a webhook or firehose with no natural retry of its
 own. Each Worker's own README notes this in its Data Flow section.
 
-**Lower risk, but not risk-free: the Cron-polled Workers** (`squarespace-forms`,
-`committee-calendars`, `buffer-content-calendar`) self-heal on the next scheduled run if one poll
-fails — no Queue needed there. But each one's D1 "last processed" cursor must only advance **after**
-a confirmed Monday write, never before — otherwise a failed run silently skips whatever it was
-supposed to process that cycle, with nothing to retry it and nothing telling anyone it happened.
-Worth a Slack-automation ping (native, no build) on repeated failure, not just silent retry-next-
-cycle.
+**Lower risk, but not risk-free: the Cron-polled Workers** (`committee-calendars`,
+`buffer-content-calendar`) self-heal on the next scheduled run if one poll fails — no Queue needed
+there. But each one's D1 "last processed" cursor must only advance **after** a confirmed Monday
+write, never before — otherwise a failed run silently skips whatever it was supposed to process
+that cycle, with nothing to retry it and nothing telling anyone it happened. Worth a
+Slack-automation ping (native, no build) on repeated failure, not just silent retry-next-cycle.
+(`squarespace-forms` was originally planned as a third cron-polled Worker here — see its own
+README for why that turned out to be unnecessary.)
 
 **`salesforce-import` is different — a one-time batch job, not an ongoing sync.** A Queue is the
 wrong tool for a run that happens once and is already validated by repeated sandbox dry-runs (see
