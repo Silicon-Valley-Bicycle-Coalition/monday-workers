@@ -16,15 +16,13 @@ Monday.com connector. Once Salesforce retires, something has to replace it as th
 Full survey of the existing Salesforce-side pipeline:
 `docs/01-funraise-pipeline-current-state.md` (private planning repo).
 
-## Blocking precondition
+## Blocking precondition — resolved 2026-08-22
 
-**The live pipeline is currently, partially broken** — 157 sync errors (2026-04-06 → 2026-08-05),
-root-caused to `Contact.Primary_Email__c` being a case-sensitive unique index. ~11 supporters and
-their donations are missing from Salesforce entirely, retrying and re-failing every cycle. This
-has to be fixed (reconciled directly against Funraise) before `salesforce-import` runs its export
-— see that Worker's README and the plan's Decisions Needed. It doesn't block *building* this
-Worker, but it blocks trusting any historical data this Worker's donor-matching logic is tested
-against.
+The live pipeline's 157 sync errors (2026-04-06 → 2026-08-05) were reconciled directly against
+Funraise and the error log cleared — see `docs/12-funraise-sync-error-fix.md` (private planning
+repo). The originally suspected `Contact.Primary_Email__c` case-sensitivity root cause turned out
+to be wrong. Historical data this Worker's donor-matching logic is tested against can now be
+trusted; a handful of individual records still need human follow-up, tracked in that doc.
 
 ## Data flow
 
@@ -33,22 +31,31 @@ Funraise (SaaS)
   │  webhook, on new/updated Transaction/Subscription/Pledge/Registration
   ▼
 Cloudflare Worker (webhook handler)
-  │  1. verify webhook, write raw event to D1 `events` table (deduped on event id)
-  │  2. resolve donor → Donors-board item (matching step)
-  │  3. enqueue a Cloudflare Queue message referencing the matched event
+  │  1. verify webhook, strip do-not-migrate PII fields, upsert into D1 `events`
+  │     (keyed on the *entity* — a later event for a known Transaction/Subscription/
+  │     Pledge/Registration replaces its payload instead of being dropped as a duplicate)
+  │  2. enqueue a Cloudflare Queue message referencing the entity
   ▼
 Cloudflare Queue → consumer Worker
-  │  writes to Monday via GraphQL API; on failure, Queues retries automatically and, once
-  │  exhausted, routes to a Dead Letter Queue instead of the write silently disappearing
+  │  1. resolve donor → Donors-board item (matching step)
+  │  2. write to Monday via GraphQL: create the item on first sight, update it in place
+  │     on later events for the same entity
+  │  on failure at either step, Queues retries automatically and, once exhausted, routes
+  │  to a Dead Letter Queue instead of the match or write silently disappearing
   ▼
-Donations board (https://bikesiliconvalley.monday.com/boards/8845443596)
+Donations board / Recurring Gifts board / Registration board (ids in config/svbc.json)
 ```
 
-Ingestion, matching, and the Monday write are three separate steps — each testable independently,
-and the Queue between matching and the write is what makes a transient Monday API failure (rate
-limit, network blip) *retry* instead of *vanish*. See `../README.md`'s Reliability section for why
-this shape is now standard across every webhook-driven Worker in this plan, not specific to
-Funraise.
+Ingestion, matching, and the Monday write are separate, independently testable steps. Matching
+runs in the queue consumer — not the webhook handler — so a transient Monday API failure during
+*matching or writing* gets the Queue's retries and DLQ instead of dying inside the webhook
+request. A daily cron empties `raw_payload` for events written more than
+`funraiseSync.rawPayloadRetentionDays` (default 90) days ago, and for events that never completed
+their write once they're older than `unresolvedPayloadRetentionDays` (default 365), so raw donor
+PII doesn't accumulate in D1 indefinitely on either path. Created items are stamped with the
+Funraise entity id (`funraiseSync.entityIdColumn`), which the consumer checks before every create
+so a retry after a lost status update adopts the existing item instead of duplicating it. See `../README.md`'s Reliability section for why the Queue shape is standard
+across every webhook-driven Worker in this plan.
 
 ## APIs & auth
 

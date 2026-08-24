@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureBoards, COLUMN_TYPES, CONNECT_TARGETS } from './boards.js';
+import { ensureBoards, COLUMN_TYPES, CONNECT_TARGETS, CURRENCY_COLUMNS } from './boards.js';
 import { MondayClient } from './monday.js';
 import { loadConfig } from '../config.js';
 
@@ -32,12 +32,39 @@ describe('ensureBoards', () => {
     expect(map['organizations']!.columns['Salesforce Debug']).toBe('col_x');
   });
 
+  it('deletes the placeholder item monday.com seeds on every new board', async () => {
+    const deletedIds: string[] = [];
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) {
+        return Response.json({
+          data: { create_board: { id: '900', items_page: { items: [{ id: 'seed_1' }] } } },
+        });
+      }
+      if (/delete_item/.test(query)) {
+        deletedIds.push(variables.id as string);
+        return Response.json({ data: { delete_item: { id: variables.id } } });
+      }
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    const cfg = loadConfig();
+    await ensureBoards(client, cfg, ['organizations'], new Map([['organizations', new Set()]]));
+
+    expect(deletedIds).toEqual(['seed_1']);
+  });
+
   it('board_relation columns are created with defaults pointing at target board ids', async () => {
     // Two boards provisioned in the same run: organizations first (in boardKeys order),
     // then people-live, which needs an 'Organization' connect column pointing back at
     // organizations. Board ids are distinguished by the create_board mutation's $name
     // variable since the generic scriptedClient() helper only dispatches on query text.
-    const boardIdByName: Record<string, string> = { Organizations: '901', People: '902' };
+    const cfg = loadConfig();
+    const boardIdByName: Record<string, string> = {
+      [`Organizations${cfg.monday.boardSuffix}`]: '901', [`People${cfg.monday.boardSuffix}`]: '902',
+    };
     let orgColumnDefaults: string | undefined;
     const fetchFn = (async (_u: unknown, init: unknown) => {
       const { query, variables } = JSON.parse((init as { body: string }).body);
@@ -52,8 +79,6 @@ describe('ensureBoards', () => {
       throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
     }) as typeof fetch;
     const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
-
-    const cfg = loadConfig();
     const map = await ensureBoards(client, cfg, ['organizations', 'people-live'], new Map([
       ['organizations', new Set(['Salesforce Debug'])],
       ['people-live', new Set(['Organization'])],
@@ -63,6 +88,30 @@ describe('ensureBoards', () => {
     expect(map['people-live']!.boardId).toBe(902);
     expect(orgColumnDefaults).toBeDefined();
     expect(JSON.parse(orgColumnDefaults!).boardIds).toEqual([901]);
+  });
+
+  it('currency columns are created with $ unit formatting, not plain numbers', async () => {
+    const columnDefaultsByTitle: Record<string, string | undefined> = {};
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '903' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        columnDefaultsByTitle[variables.title as string] = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    const cfg = loadConfig();
+    await ensureBoards(client, cfg, ['recurring-gifts'],
+      new Map([['recurring-gifts', new Set(['Amount', 'Gift Count'])]]));
+
+    expect(JSON.parse(columnDefaultsByTitle['Amount']!)).toEqual({
+      unit: { symbol: '$', direction: 'left', precision: 2 },
+    });
+    expect(columnDefaultsByTitle['Gift Count']).toBeUndefined();
   });
 
   it('CONNECT_TARGETS declares a target for every connect column', () => {

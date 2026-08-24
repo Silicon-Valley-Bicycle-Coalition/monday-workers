@@ -1,0 +1,26 @@
+{
+  "name": "svbc-committee-calendars",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-committee-calendars",
+      "database_id": "bdadb7de-19b2-4fa8-b74b-cf311093acd9",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "committees.bikesiliconvalley.org",
+      "custom_domain": true
+    }
+  ],
+  "triggers": {
+    // Daily at 13:00 UTC (5am/6am Pacific depending on DST) — adjust if a different time is preferred.
+    "crons": ["0 13 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

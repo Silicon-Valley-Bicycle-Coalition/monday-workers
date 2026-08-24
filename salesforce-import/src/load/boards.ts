@@ -30,6 +30,12 @@ export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift
 // last so they sit at the far right of every board instead of next to the item name.
 export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
 
+// Dollar-amount 'numbers' columns — created with currency (not plain float) formatting.
+// 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
+export const CURRENCY_COLUMNS = new Set(['Lifetime Giving', 'Amount', 'Installment Amount',
+  'Annualized Value', 'Pledge Amount', 'Received Amount', 'Ticket Amount', 'Deductible Amount']);
+const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
+
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
 // with the target board ids — without this, board_relation columns have no connected boards
 // configured on the real API and are useless.
@@ -75,13 +81,27 @@ export async function ensureBoards(
       // SVBC restricts (403 even for admins) — boards must be created in a named workspace.
       const workspaceId = cfg.monday.workspaceId ?? null;
       const res = workspaceId
-        ? await client.gql<{ create_board: { id: string } }>(
-            `mutation ($name: String!, $workspaceId: ID!) { create_board (board_name: $name, board_kind: public, workspace_id: $workspaceId) { id } }`,
+        ? await client.gql<{ create_board: { id: string; items_page: { items: { id: string }[] } } }>(
+            `mutation ($name: String!, $workspaceId: ID!) {
+               create_board (board_name: $name, board_kind: public, workspace_id: $workspaceId) {
+                 id
+                 items_page (limit: 25) { items { id } }
+               } }`,
             { name: label, workspaceId: String(workspaceId) })
-        : await client.gql<{ create_board: { id: string } }>(
-            `mutation ($name: String!) { create_board (board_name: $name, board_kind: public) { id } }`,
+        : await client.gql<{ create_board: { id: string; items_page: { items: { id: string }[] } } }>(
+            `mutation ($name: String!) {
+               create_board (board_name: $name, board_kind: public) {
+                 id
+                 items_page (limit: 25) { items { id } }
+               } }`,
             { name: label });
       boardId = Number(res.create_board.id);
+
+      // monday.com seeds every new board with a placeholder item ("Task 1") in its default
+      // group. Delete it immediately, before any real data lands, so it never lingers.
+      for (const item of res.create_board.items_page?.items ?? []) {
+        await client.gql(`mutation ($id: ID!) { delete_item (item_id: $id) { id } }`, { id: item.id });
+      }
     }
     map[key] = { boardId, columns: {} };
   }
@@ -119,6 +139,8 @@ export async function ensureBoards(
         if (boardIds.length > 0) defaults = JSON.stringify({ boardIds });
         else console.warn(`boards: connect column "${title}" on ${key} has no resolvable ` +
           `target boards this run — creating without defaults`);
+      } else if (CURRENCY_COLUMNS.has(title)) {
+        defaults = CURRENCY_DEFAULTS;
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(

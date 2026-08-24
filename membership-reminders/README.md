@@ -60,3 +60,16 @@ rather than code.
 * The **Reminders Sent** column this Worker stamps — add it during sandbox-week board build-out.
 * The native automation "When Member Until arrives → set Membership Status to Lapsed" — Monday
   configuration, not this Worker.
+
+## Local development
+
+- `npm install` — install dependencies
+- `npm test` — run the Vitest suite
+- `npm run typecheck` — type-check with no emit
+- `npm run dev` — run the Worker locally with `wrangler dev`
+- `npm run deploy` — deploy with `wrangler deploy`
+- `wrangler secret put MONDAY_API_TOKEN` — set the Monday API token (never commit it)
+
+`config/svbc.json`'s `monday.donorsBoardId` and column IDs are placeholders until the sandbox Donors
+board exists (see the design spec). Fill them in before the first real `wrangler dev` / `deploy` run
+against Monday — until then, `npm test` covers all logic against mocked dependencies.
