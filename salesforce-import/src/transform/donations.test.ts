@@ -21,11 +21,17 @@ describe('opportunityToPayload', () => {
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
   });
 
+  it('computes Fiscal Year from CloseDate independent of the era split', () => {
+    const p = opportunityToPayload({ ...base, CloseDate: '2025-12-31' }, { eras, termCols: new Map() });
+    expect(p.columns['Fiscal Year']).toBe('2026');
+  });
+
   it('routes old gifts to the historical era and maps Closed Lost→Failed', () => {
     const p = opportunityToPayload({ ...base, CloseDate: '2015-03-01', StageName: 'Closed Lost' },
       { eras, termCols: new Map() });
     expect(p.board).toBe('donations:pre-2024');
     expect(p.columns['Status']).toEqual({ label: 'Failed' });
+    expect(p.columns['Fiscal Year']).toBe('2015');
   });
 
   it('merges membership term columns and marks donor-less gifts anonymous', () => {
@@ -55,6 +61,7 @@ describe('click & pledge', () => {
     expect(p.board).toBe('donations:pre-2024');
     expect(p.columns['Gift Type']).toBe('Click & Pledge (historical)');
     expect(p.columns['Status']).toEqual({ label: 'Received' });
+    expect(p.columns['Fiscal Year']).toBe('2016');
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c9'] });
   });
 });

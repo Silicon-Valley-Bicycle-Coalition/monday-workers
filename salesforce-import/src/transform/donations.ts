@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, funraiseTransactionLink, salesforceDebug } from './fields.js';
+import { dateCol, fiscalYear, funraiseTransactionLink, salesforceDebug } from './fields.js';
 import { eraFor, type Era } from './eras.js';
 
 const STATUS: Record<string, string> = {
@@ -22,6 +22,7 @@ export function opportunityToPayload(
     columns: {
       'Amount': o['Amount'] != null ? String(o['Amount']) : '',
       'Date': dateCol(o['CloseDate'] as string),
+      'Fiscal Year': fiscalYear(o['CloseDate'] as string | null),
       'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
       'Gift Type': ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
@@ -55,6 +56,7 @@ export function cnpToPayload(tx: Record<string, unknown>, deps: { eras: Era[] })
     columns: {
       'Amount': tx['CnP_PaaS__TotalCharged__c'] != null ? String(tx['CnP_PaaS__TotalCharged__c']) : '',
       'Date': dateCol(tx['CnP_PaaS__TransactionDate__c'] as string),
+      'Fiscal Year': fiscalYear(tx['CnP_PaaS__TransactionDate__c'] as string | null),
       'Status': { label: 'Received' },
       'Gift Type': 'Click & Pledge (historical)',
       ...salesforceDebug(tx),
