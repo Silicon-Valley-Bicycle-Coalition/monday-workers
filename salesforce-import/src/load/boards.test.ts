@@ -171,7 +171,7 @@ describe('ensureBoards', () => {
 
     expect(defaultsByBoardAndTitle['971:Status']).toBeUndefined();
     expect(JSON.parse(defaultsByBoardAndTitle['972:Status']!).labels).toEqual(
-      { 0: 'Received', 1: 'Failed', 2: 'Pending' });
+      { 0: 'Received', 1: 'Received (Historical)', 2: 'Failed', 3: 'Pending' });
   });
 
   it('Activity Type gets its closed vocabulary', async () => {
