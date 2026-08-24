@@ -1,11 +1,11 @@
 # donor-portal
 
-**Status:** Decided — build. Unblocked 2026-08-21: the minimal Status/Tier Membership slice is
-confirmed stable to build against, ahead of the full Membership board design.
+**Status:** Live — v1 deployed (login + read-only donation history and member discounts). v2 in
+development.
 **Priority:** Post-migration, non-blocking on the October cutover.
 **Owner:** Unassigned.
-**Stack:** Hono + TypeScript, D1 (tokens/sessions only — Monday stays the system of record, this
-Worker doesn't duplicate donor data into its own database).
+**Stack:** Hono + TypeScript, D1 (tokens/sessions and queued change requests — Monday stays the
+system of record for donor data).
 
 ## The ask
 
@@ -141,6 +141,37 @@ email and worth setting up regardless of provider.
 * No permanent duplicate of donation records in D1 — read live from Monday (or cache with a short
   TTL, e.g. a few minutes, purely for rate-limit headroom against Monday's API), so Monday stays
   the single place donation data actually lives.
+
+## v2 — Year-end tax letters and change requests
+
+Design: `docs/superpowers/specs/2026-08-24-donor-portal-v2-design.md`. Two independent,
+config-gated features:
+
+* **Tax letters** (`GET /portal/letters`, `GET /portal/letters/:donorItemId/:year`): a
+  consolidated per-year giving letter rendered live from the Donations board as HTML with print
+  CSS — the browser's Print → Save as PDF is the delivery mechanism; nothing is generated or
+  stored server-side. Only completed calendar years with at least one donation get a letter.
+  **Gated on `taxLetter` config:** every string in it ships as `REPLACE_AFTER_SIGNOFF` and the
+  feature shows a friendly "not available yet" state until SVBC signs off on the IRS
+  acknowledgment language (both the plain no-goods-or-services statement and the
+  benefit/quid-pro-quo variant used for tiers listed in `taxLetter.benefitTiers`) and an
+  operator fills in the real wording.
+* **Change requests** (`GET`/`POST /portal/change-request`): a donor submits a new address,
+  email, or phone; the Worker records it in D1 (dedupe window:
+  `changeRequests.dedupeWindowHours`) and a queue consumer creates an item on a staff-owned
+  Change Requests board (donor link, field, old value, new value, submitted-at). Staff apply
+  approved changes to the Donors board by hand — the portal never writes donor records.
+  **Gated on `changeRequests.boardId`** plus its column ids and the `donorAddress`/`donorPhone`
+  Donors-board column ids in config.
+
+Operator setup for v2, in addition to the v1 steps: create the Change Requests board (five
+columns: connect-boards to Donors, three text, one date) and fill in
+`changeRequests.boardId`/`columns`; fill in `monday.columns.donorAddress` and
+`monday.columns.donorPhone`; grant the portal's integration user **write access to the Change
+Requests board only**; create the `donor-portal-change-requests` queue and its
+`donor-portal-change-requests-dlq` dead-letter queue before deploying; apply D1 migration
+`0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
+`REPLACE_AFTER_SIGNOFF` in `taxLetter`.
 
 ## Sources
 
