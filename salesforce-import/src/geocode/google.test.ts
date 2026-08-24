@@ -24,3 +24,15 @@ describe('googleGeocode', () => {
     expect(await googleGeocode('gibberish', 'KEY', { fetchFn })).toBeNull();
   });
 });
+
+describe('googleGeocode error handling', () => {
+  it('returns null on a 4xx (bad address) instead of crashing the stage', async () => {
+    const fetchFn = (async () => ({ ok: false, status: 400, json: async () => ({}) })) as unknown as typeof fetch;
+    expect(await googleGeocode('garbage address', 'k', { fetchFn })).toBeNull();
+  });
+
+  it('still throws on server errors so transient failures stay visible', async () => {
+    const fetchFn = (async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch;
+    await expect(googleGeocode('1 Main St', 'k', { fetchFn })).rejects.toThrow(/HTTP 500/);
+  });
+});
