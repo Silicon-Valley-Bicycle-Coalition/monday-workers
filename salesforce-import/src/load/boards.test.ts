@@ -147,6 +147,52 @@ describe('ensureBoards', () => {
       { 0: 'Lifetime', 1: 'Member' });
   });
 
+  it('donations "Status" gets its closed vocabulary, but the same title on other boards does not', async () => {
+    const defaultsByBoardAndTitle: Record<string, string | undefined> = {};
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) {
+        const id = (variables.name as string).startsWith('Recurring Gifts') ? '971' : '972';
+        return Response.json({ data: { create_board: { id } } });
+      }
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        defaultsByBoardAndTitle[`${variables.board}:${variables.title}`] = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    await ensureBoards(client, loadConfig(), ['recurring-gifts', 'donations:2012-2015'], new Map([
+      ['recurring-gifts', new Set(['Status'])],
+      ['donations:2012-2015', new Set(['Status'])],
+    ]));
+
+    expect(defaultsByBoardAndTitle['971:Status']).toBeUndefined();
+    expect(JSON.parse(defaultsByBoardAndTitle['972:Status']!).labels).toEqual(
+      { 0: 'Received', 1: 'Failed', 2: 'Pending' });
+  });
+
+  it('Activity Type gets its closed vocabulary', async () => {
+    const defaultsByTitle: Record<string, string | undefined> = {};
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '973' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        defaultsByTitle[variables.title as string] = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    await ensureBoards(client, loadConfig(), ['activities'], new Map([['activities', new Set(['Activity Type'])]]));
+
+    expect(JSON.parse(defaultsByTitle['Activity Type']!).labels).toEqual({ 0: 'Task' });
+  });
+
   it('every transform column title has a declared type', () => {
     // Guard: a new transform column without a COLUMN_TYPES entry must fail loudly here,
     // not silently at load time.

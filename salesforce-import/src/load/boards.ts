@@ -34,7 +34,20 @@ export const STATUS_LABELS: Record<string, string[]> = {
   'Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
+  'Activity Type': ['Task'],
 };
+// "Status" isn't in STATUS_LABELS above because the title is reused across boards with
+// unrelated vocabularies: Recurring Gifts and Volunteers/Activities pass raw values through
+// from Funraise/the Volunteers app/Salesforce Task, which aren't closed sets known to this
+// code. Only the donations era boards compute "Status" themselves (StageName mapped to
+// exactly Received/Failed/Pending in transform/donations.ts), so that one is closed and
+// scoped by board key rather than title alone.
+const DONATION_STATUS_LABELS = ['Received', 'Failed', 'Pending'];
+
+function statusLabelsFor(key: string, title: string): string[] | undefined {
+  if (title === 'Status' && key.startsWith('donations:')) return DONATION_STATUS_LABELS;
+  return STATUS_LABELS[title];
+}
 // Needed for debugging/reconciliation during the migration, deleted afterward — created
 // last so they sit at the far right of every board instead of next to the item name.
 export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
@@ -150,10 +163,9 @@ export async function ensureBoards(
           `target boards this run — creating without defaults`);
       } else if (CURRENCY_COLUMNS.has(title)) {
         defaults = CURRENCY_DEFAULTS;
-      } else if (STATUS_LABELS[title]) {
-        defaults = JSON.stringify({
-          labels: Object.fromEntries(STATUS_LABELS[title].map((label, i) => [i, label])),
-        });
+      } else {
+        const labels = statusLabelsFor(key, title);
+        if (labels) defaults = JSON.stringify({ labels: Object.fromEntries(labels.map((label, i) => [i, label])) });
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(

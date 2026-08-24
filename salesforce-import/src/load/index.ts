@@ -94,9 +94,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     console.log(`load: ${key} phase-1 complete`);
   }
 
-  // Phase 2: connect-board links.
+  // Phase 2: connect-board links. Sequential linking measured ~40h for the real dataset's
+  // 94k links, so a small worker pool runs LINK_CONCURRENCY mutations in flight; each link
+  // still ledgers individually and per-call retry/backoff lives in the client.
+  const LINK_CONCURRENCY = 6;
   let skippedLinks = 0;
   let partialLinks = 0;
+  interface LinkTask { boardId: number; itemId: string; colId: string; targetIds: number[]; sfId: string; column: string }
+  const linkTasks: LinkTask[] = [];
   for (const key of keys) {
     const board = boards[key]!;
     for (const p of byBoard.get(key)!) {
@@ -109,23 +114,31 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           .filter((id): id is string => id !== undefined);
         if (resolved.length === 0) { skippedLinks++; continue; }
         if (resolved.length < link.targetSfIds.length) partialLinks++;
-        const targetIds = resolved.map(Number);
         const colId = board.columns[link.column];
         if (!colId) throw new Error(`load: board ${key} missing connect column "${link.column}"`);
-        try {
-          await client.gql(
-            `mutation ($boardId: ID!, $itemId: ID!, $cols: JSON!, $create: Boolean!) {
-               change_multiple_column_values (board_id: $boardId, item_id: $itemId, column_values: $cols,
-                 create_labels_if_missing: $create) { id } }`,
-            { boardId: String(board.boardId), itemId,
-              cols: JSON.stringify({ [colId]: { item_ids: targetIds } }), create: true });
-          await ledger.recordLink(p.sfId, link.column);
-        } catch (err) {
-          await ledger.recordLinkFailure({ sfId: p.sfId, column: link.column, error: String(err) });
-        }
+        linkTasks.push({ boardId: board.boardId, itemId, colId,
+          targetIds: resolved.map(Number), sfId: p.sfId, column: link.column });
       }
     }
   }
+  let nextTask = 0;
+  const linkWorker = async (): Promise<void> => {
+    while (nextTask < linkTasks.length) {
+      const t = linkTasks[nextTask++]!;
+      try {
+        await client.gql(
+          `mutation ($boardId: ID!, $itemId: ID!, $cols: JSON!, $create: Boolean!) {
+             change_multiple_column_values (board_id: $boardId, item_id: $itemId, column_values: $cols,
+               create_labels_if_missing: $create) { id } }`,
+          { boardId: String(t.boardId), itemId: t.itemId,
+            cols: JSON.stringify({ [t.colId]: { item_ids: t.targetIds } }), create: true });
+        await ledger.recordLink(t.sfId, t.column);
+      } catch (err) {
+        await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err) });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: LINK_CONCURRENCY }, () => linkWorker()));
   if (skippedLinks > 0) console.warn(`load: ${skippedLinks} links skipped (target not migrated)`);
   if (partialLinks > 0) console.warn(`load: ${partialLinks} links wrote a partial set of targets ` +
     `(some target items not yet migrated)`);
