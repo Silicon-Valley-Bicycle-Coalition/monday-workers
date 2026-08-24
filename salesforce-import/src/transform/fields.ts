@@ -28,13 +28,22 @@ export function setStaffMatcher(matcher: ((sfName: string) => string | null) | n
   staffMatch = matcher;
 }
 
+// "Name (email)" when the Salesforce user matches a current Monday staff member,
+// bare "Name" otherwise — covers former staff *and* non-human accounts (integration
+// users, guest logins) the same way, since neither matches a current staff export.
+// See monday-migration docs/07 gotcha #3 / docs/05 §9: 25 "active" Salesforce users
+// includes 14 that aren't real staff, which is exactly what this degrades gracefully
+// for by matching against Monday's current user list instead of Salesforce's
+// IsActive flag.
+export function ownerAttribution(v: unknown): string {
+  const name = (v as { Name?: string } | null)?.Name ?? '';
+  if (!name) return '';
+  const email = staffMatch?.(name);
+  return email ? `${name} (${email})` : name;
+}
+
 export function salesforceDebug(row: Record<string, unknown>): Record<string, unknown> {
-  const by = (v: unknown) => {
-    const name = (v as { Name?: string } | null)?.Name ?? '';
-    if (!name) return '';
-    const email = staffMatch?.(name);
-    return email ? `${name} (${email})` : name;
-  };
+  const by = ownerAttribution;
   const day = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 10) : '');
   const stamp = (label: string, date: string, name: string) =>
     date ? `${label}: ${date}${name ? ` by ${name}` : ''}` : '';

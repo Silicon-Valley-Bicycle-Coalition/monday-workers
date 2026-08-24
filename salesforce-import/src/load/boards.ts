@@ -22,7 +22,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Type': 'text', 'Start': 'date', 'End': 'date', 'Active': 'checkbox',
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
-  'Employer Name': 'text',
+  'Employer Name': 'text', 'Salesforce Owner': 'text',
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);

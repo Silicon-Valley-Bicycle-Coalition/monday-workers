@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
+import { setStaffMatcher } from './fields.js';
 
 const emptyInc = (): InclusionInput => ({
   donorIds: new Set(), recentDonorIds: new Set(), memberSummaries: new Map(),
@@ -59,6 +60,27 @@ describe('contactToPayload', () => {
     expect(p.columns['Email Consent']).toEqual({ label: 'Subscribed' });
     expect(p.columns['Salesforce Debug']).toEqual({ text: expect.stringContaining('SF ID: c1') });
   });
+
+  it('takes Salesforce Owner from the one-to-one Account, not a Contact-level field', () => {
+    setStaffMatcher((name) => (name === 'Felicia Ward' ? 'felicia@bikesiliconvalley.org' : null));
+    try {
+      const matched = contactToPayload(
+        { Id: 'c2', FirstName: 'A', LastName: 'B', Account: { Owner: { Name: 'Felicia Ward' } } },
+        'people-live', { consent: new Map() });
+      expect(matched.columns['Salesforce Owner']).toBe('Felicia Ward (felicia@bikesiliconvalley.org)');
+
+      const unmatched = contactToPayload(
+        { Id: 'c3', FirstName: 'A', LastName: 'B', Account: { Owner: { Name: 'SVBC Integration' } } },
+        'people-live', { consent: new Map() });
+      expect(unmatched.columns['Salesforce Owner']).toBe('SVBC Integration');
+
+      const missing = contactToPayload(
+        { Id: 'c4', FirstName: 'A', LastName: 'B' }, 'people-live', { consent: new Map() });
+      expect(missing.columns['Salesforce Owner']).toBe('');
+    } finally {
+      setStaffMatcher(null);
+    }
+  });
 });
 
 describe('accountToPayload', () => {
@@ -73,6 +95,11 @@ describe('accountToPayload', () => {
     expect(p.columns['Partner Type']).toBe('Sponsor');
     expect(p.columns['Do Not Solicit']).toEqual({ checked: 'true' });
     expect(p.columns['Do Not Solicit Reason']).toBe('phone');
+  });
+  it('takes Salesforce Owner directly from the Account (true organizations, not one-to-one)', () => {
+    const p = accountToPayload({ Id: 'a9', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,
+      Owner: { Name: 'Zachary Kearsley' } })!;
+    expect(p.columns['Salesforce Owner']).toBe('Zachary Kearsley');
   });
   it('attaches geocoded City/Zip/Lat/Lng when geo is provided', () => {
     const p = accountToPayload({ Id: 'a3', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,
