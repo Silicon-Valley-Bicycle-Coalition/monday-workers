@@ -12,6 +12,7 @@ const row: ChangeRequestRow = {
   oldValue: '1 Old St',
   newValue: '2 New Ave',
   status: 'queued',
+  createdAt: '2026-08-24T09:00:00.000Z',
 };
 
 // Full valid test Config shape, copied from the Task 1 fixture in routes.test.ts — only
@@ -46,6 +47,7 @@ function fakeStore(getResult: ChangeRequestRow | null): ChangeRequestStore {
   return {
     createRequest: vi.fn(),
     hasRecentDuplicate: vi.fn(),
+    findRecentByDedupeHash: vi.fn(),
     getRequest: vi.fn().mockResolvedValue(getResult),
     markWritten: vi.fn().mockResolvedValue(undefined),
   };
@@ -71,6 +73,10 @@ describe('processChangeQueueBatch', () => {
         fieldLabel: 'Address',
         oldValue: '1 Old St',
         newValue: '2 New Ave',
+        // Finding 2: the consumer must stamp the row's original submission time, not the
+        // time the consumer happens to process it — otherwise a retry or DLQ replay hours
+        // later would report the wrong submittedAt.
+        submittedAtISO: row.createdAt,
       })
     );
     expect(store.markWritten).toHaveBeenCalledWith(42, expect.any(String));

@@ -59,7 +59,9 @@ async function processOne(requestId: number, deps: ProcessChangeBatchDeps): Prom
     fieldLabel,
     oldValue: row.oldValue,
     newValue: row.newValue,
-    submittedAtISO: new Date().toISOString(),
+    // Use the row's own submission time, not "now" — this consumer may be processing a retry
+    // or a DLQ replay well after the donor actually submitted (see Finding 2).
+    submittedAtISO: row.createdAt,
   });
   await deps.store.markWritten(row.id, new Date().toISOString());
 }
