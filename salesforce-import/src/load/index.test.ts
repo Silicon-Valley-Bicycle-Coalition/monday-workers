@@ -108,3 +108,44 @@ describe('runLoad', () => {
     expect(l2.linkDone('o1', 'Donor')).toBe(true);
   });
 });
+
+describe('runLoad phase-2 concurrency', () => {
+  beforeEach(async () => {
+    process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-')));
+    process.env['MONDAY_API_TOKEN'] = 'test-token';
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
+      { board: 'organizations', sfId: 'org-target', name: 'Hub', columns: {} },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        board: 'people-live', sfId: `p${i}`, name: `P${i}`, columns: {},
+        links: [{ column: 'Organization', targetSfIds: ['org-target'] }],
+      })),
+    ]);
+    await writeJson(dataPath('transform', 'eras.json'), []);
+  });
+
+  it('runs link mutations concurrently while ledgering every link', async () => {
+    let inFlight = 0, maxInFlight = 0, itemCount = 0;
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '900' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) return Response.json({ data: { create_column: { id: `c_${Math.random().toString(36).slice(2, 8)}` } } });
+      if (/create_item/.test(query)) return Response.json({ data: { create_item: { id: String(++itemCount) } } });
+      if (/change_multiple_column_values/.test(query)) {
+        inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight--;
+        return Response.json({ data: { change_multiple_column_values: { id: variables.itemId } } });
+      }
+      throw new Error(`unexpected query: ${query.slice(0, 60)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    expect(await runLoad([], { client })).toBe(0);
+
+    expect(maxInFlight).toBeGreaterThanOrEqual(2);
+    const ledger = new Ledger();
+    await ledger.load();
+    for (let i = 0; i < 12; i++) expect(ledger.linkDone(`p${i}`, 'Organization')).toBe(true);
+  });
+});
