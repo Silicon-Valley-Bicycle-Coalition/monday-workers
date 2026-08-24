@@ -30,12 +30,12 @@ describe('eventToPayload', () => {
   const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' }],
     defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
   it('drops test events', () => {
-    expect(eventToPayload({ Id: 'e1', Name: 'Test Event', ...prov }, news)).toBeNull();
+    expect(eventToPayload({ Id: 'e1', Name: 'Test Event', ...prov })).toBeNull();
   });
-  it('carries the Local News link from the default outlet when no city field exists', () => {
+  it('emits no Local News column (removed 2026-08-23 — not useful yet)', () => {
     const p = eventToPayload({ Id: 'e2', Name: 'Gala', funraise__Start_Date__c: '2025-05-01',
-      ...prov }, news)!;
-    expect(p.columns['Local News']).toMatchObject({ url: 'https://localnewsmatters.org/' });
+      ...prov })!;
+    expect(p.columns['Local News']).toBeUndefined();
   });
 });
 

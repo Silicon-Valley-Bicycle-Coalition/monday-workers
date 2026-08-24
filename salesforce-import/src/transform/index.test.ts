@@ -75,6 +75,23 @@ describe('runTransform', () => {
     expect(report.assertions.every((a) => a.violations.length === 0)).toBe(true);
   });
 
+  it('merges exact-confidence enrichment into blank org website/address and geocodes it', async () => {
+    await writeNdjson(dataPath('enrich', 'organizations.ndjson'), [
+      { sfId: 'a-org', name: 'Acme', matchedName: 'Acme', website: 'https://acme.example/',
+        address: '5 Bike Way, San Jose, CA 95112, USA', confidence: 'exact' },
+      { sfId: 'a-org2', name: 'Beta Org', matchedName: 'Beta Group', website: 'https://beta.example/',
+        address: '7 Chain St, San Mateo, CA 94401, USA', confidence: 'close' }, // not approved → not merged
+    ]);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+    const acme = bySf.get('a-org')!;
+    expect(acme.columns['Website']).toBe('https://acme.example/');
+    expect(acme.columns['Address']).toBe('5 Bike Way, San Jose, CA 95112, USA');
+    const beta = bySf.get('a-org2')!;
+    expect(beta.columns['Website']).toBe('');
+  });
+
   it('skips term columns and warns on disagreeing multi-term memberships (no hard failure)', async () => {
     await writeNdjson(dataPath('extract', 'memberships.ndjson'), [
       { Id: 'm1', Contact__c: 'c1', Opportunity__c: 'o1', Type__c: 'Renewal',

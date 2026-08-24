@@ -39,10 +39,10 @@ function fakeClient(failFor: Set<string> = new Set(), failLinksFor: Set<string> 
 
 async function seed() {
   await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
-    { board: 'organizations', sfId: 'a1', name: 'Acme', columns: { 'SF ID': 'a1' } },
-    { board: 'people-live', sfId: 'c1', name: 'Ada', columns: { 'SF ID': 'c1' },
+    { board: 'organizations', sfId: 'a1', name: 'Acme', columns: { 'Salesforce Debug': { text: 'SF ID: a1' } } },
+    { board: 'people-live', sfId: 'c1', name: 'Ada', columns: { 'Salesforce Debug': { text: 'SF ID: c1' } },
       links: [{ column: 'Organization', targetSfIds: ['a1'] }] },
-    { board: 'donations:live', sfId: 'o1', name: 'Gift', columns: { 'SF ID': 'o1' },
+    { board: 'donations:live', sfId: 'o1', name: 'Gift', columns: { 'Salesforce Debug': { text: 'SF ID: o1' } },
       links: [{ column: 'Donor', targetSfIds: ['c1'] }] },
   ]);
   await writeJson(dataPath('transform', 'eras.json'),

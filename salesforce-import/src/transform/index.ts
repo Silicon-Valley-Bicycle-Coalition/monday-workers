@@ -1,9 +1,13 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
 import { dataPath, readNdjson, writeJson, writeNdjson } from '../artifacts.js';
 import { GeoCache } from '../geocode/cache.js';
+import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
+import type { EnrichmentRow } from '../enrich/index.js';
 import { normalizeAddress } from '../geocode/normalize.js';
+import { setStaffMatcher } from './fields.js';
+import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
@@ -40,6 +44,26 @@ export async function runTransform(args: string[]): Promise<number> {
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
   const geoCache = new GeoCache();
   await geoCache.load();
+
+  // Current-staff annotation (optional artifact): Monday's user export lets the
+  // Salesforce Debug column tag audit names that are still on staff with their
+  // Monday email; former staff stay verbatim.
+  const staffPath = dataPath('enrich', 'monday-users.csv');
+  setStaffMatcher(existsSync(staffPath)
+    ? staffMatcher(parseMondayUsers(readFileSync(staffPath, 'utf8')))
+    : null);
+
+  // Places enrichment (optional artifact): exact matches plus human-approved sfIds
+  // fill blank org Website/Address; enriched addresses also resolve geo.
+  let enrichment = new Map<string, MergeableEnrichment>();
+  const enrichPath = dataPath('enrich', 'organizations.ndjson');
+  if (existsSync(enrichPath)) {
+    const approvedPath = dataPath('enrich', 'approved.txt');
+    const approved = new Set<string>(existsSync(approvedPath)
+      ? readFileSync(approvedPath, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean)
+      : []);
+    enrichment = mergeableEnrichment(await readNdjson<EnrichmentRow>(enrichPath), approved);
+  }
 
   // Eras from all dated donation rows.
   const eras: Era[] = computeEras([
@@ -100,7 +124,7 @@ export async function runTransform(args: string[]): Promise<number> {
     const geoKey = normalizeAddress({ street: c['MailingStreet'] as string, city: c['MailingCity'] as string,
       state: c['MailingState'] as string, zip: c['MailingPostalCode'] as string });
     let p = contactToPayload(c, board, { consent, member: memberSummaries.get(c['Id'] as string),
-      geo: geoKey ? geoCache.get(geoKey) : undefined, news: cfg.localNews });
+      geo: geoKey ? geoCache.get(geoKey) : undefined });
     // Organization link = the Contact's own org Account (if any) ∪ its Affiliation orgs (doc 05 §1b:
     // all 6,349 Affiliations migrate onto this connect column — one Person, many Organizations).
     const affilOrgs = affiliationOrgsByContact.get(c['Id'] as string) ?? [];
@@ -115,8 +139,17 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(r ? applyRollups(p, r) : p);
   }
   for (const a of accounts) {
-    const p = accountToPayload(a);
+    const enriched = enrichment.get(a['Id'] as string);
+    const billingKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
+      state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
+    const enrichedKey = enriched?.parts ? normalizeAddress(enriched.parts) : null;
+    const geoKey = billingKey ?? enrichedKey;
+    const p = accountToPayload(a, geoKey ? geoCache.get(geoKey) : undefined);
     if (!p) continue;
+    if (enriched) {
+      if (!p.columns['Website'] && enriched.website) p.columns['Website'] = enriched.website;
+      if (!p.columns['Address'] && enriched.address) p.columns['Address'] = enriched.address;
+    }
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
@@ -128,7 +161,7 @@ export async function runTransform(args: string[]): Promise<number> {
     const p = subscriptionToPayload(s);
     if (p) payloads.push({ ...p, columns: { ...p.columns, ...(pledgeCols.get(p.sfId) ?? {}) } });
   }
-  for (const e of events) { const p = eventToPayload(e, cfg.localNews); if (p) payloads.push(p); }
+  for (const e of events) { const p = eventToPayload(e); if (p) payloads.push(p); }
   for (const r of registrations) payloads.push(registrationToPayload(r));
   for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));

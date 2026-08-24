@@ -1,8 +1,7 @@
-import type { Config } from '../config.js';
 import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
-import { collapseEmail, consentColumns, dateCol, localNewsName, localNewsUrl, provenanceColumns } from './fields.js';
+import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, salesforceDebug } from './fields.js';
 
 export interface InclusionInput {
   donorIds: Set<string>; recentDonorIds: Set<string>;
@@ -31,29 +30,25 @@ const emailCol = (e: string | null) => (e ? { email: e, text: e } : null);
 
 export function contactToPayload(
   c: Record<string, unknown>, board: 'people-live' | 'people-historical',
-  deps: { consent: Map<string, string>; member?: MemberSummary; geo?: GeoResult; news: Config['localNews'] },
+  deps: { consent: Map<string, string>; member?: MemberSummary; geo?: GeoResult },
 ): ItemPayload {
   const email = collapseEmail(c);
-  const newsCity = deps.geo?.city ?? (c['MailingCity'] as string | null);
-  const newsUrl = localNewsUrl(newsCity, deps.news);
-  const newsName = localNewsName(newsCity, deps.news);
   const secondary = (c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null;
   const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string } | null;
   const columns: Record<string, unknown> = {
-    'SF ID': c['Id'],
     'Email': emailCol(email),
     'Secondary Email': emailCol(secondary),
     'Phone': (c['Phone'] ?? c['MobilePhone'] ?? '') as string,
     'Address': [c['MailingStreet'], c['MailingCity'], c['MailingState'], c['MailingPostalCode']]
       .filter(Boolean).join(', '),
+    'Funraise Profile': funraiseSupporterLink(c['funraise__fr_ID__c']),
     'City': deps.geo?.city ?? '', 'Zip': deps.geo?.zip ?? '',
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
-    'Local News': { url: newsUrl, text: newsName },
     'Do Not Solicit': account?.Do_Not_Solicit__c ? { checked: 'true' } : null,
     'Do Not Solicit Reason': (account?.Do_Not_Solicit_What__c ?? '') as string,
     'Employer Name': (c['dtd__company__c'] ?? '') as string,
     ...consentColumns(email, deps.consent),
-    ...provenanceColumns(c),
+    ...salesforceDebug(c),
   };
   if (deps.member) {
     columns['Membership Status'] = { label: deps.member.status };
@@ -69,20 +64,21 @@ export function contactToPayload(
   };
 }
 
-export function accountToPayload(a: Record<string, unknown>): ItemPayload | null {
+export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): ItemPayload | null {
   if (a['npe01__SYSTEM_AccountType__c'] === 'One-to-One Individual') return null;
   return {
     board: 'organizations', sfId: a['Id'] as string, name: (a['Name'] as string) ?? '(no name)',
     columns: {
-      'SF ID': a['Id'],
       'Partner Type': (a['Type'] ?? a['Type_2__c'] ?? a['Industry'] ?? '') as string,
       'Website': (a['Website'] ?? '') as string,
       'Phone': (a['Phone'] ?? '') as string,
       'Address': [a['BillingStreet'], a['BillingCity'], a['BillingState'], a['BillingPostalCode']]
         .filter(Boolean).join(', '),
+      'City': geo?.city ?? '', 'Zip': geo?.zip ?? '',
+      'Lat': geo ? String(geo.lat) : '', 'Lng': geo ? String(geo.lng) : '',
       'Do Not Solicit': a['Do_Not_Solicit__c'] ? { checked: 'true' } : null,
       'Do Not Solicit Reason': (a['Do_Not_Solicit_What__c'] ?? '') as string,
-      ...provenanceColumns(a),
+      ...salesforceDebug(a),
     },
   };
 }

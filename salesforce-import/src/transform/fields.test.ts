@@ -1,17 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { provenanceColumns, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
 
-describe('provenanceColumns', () => {
-  it('maps SF audit fields to labeled columns', () => {
-    expect(provenanceColumns({
-      CreatedDate: '2019-05-01T12:00:00.000+0000', CreatedBy: { Name: 'Ann' },
+describe('salesforceDebug', () => {
+  it('folds SF ID and audit fields into one long-text column', () => {
+    expect(salesforceDebug({
+      Id: '0031234', CreatedDate: '2019-05-01T12:00:00.000+0000', CreatedBy: { Name: 'Ann' },
       LastModifiedDate: '2026-01-02T00:00:00.000+0000', LastModifiedBy: { Name: 'Bob' },
     })).toEqual({
-      'Salesforce Created Date': { date: '2019-05-01' },
-      'Salesforce Created By': 'Ann',
-      'Salesforce Modified Date': { date: '2026-01-02' },
-      'Salesforce Modified By': 'Bob',
+      'Salesforce Debug': { text: 'SF ID: 0031234 | Created: 2019-05-01 by Ann | Modified: 2026-01-02 by Bob' },
     });
+  });
+  it('omits missing pieces instead of printing blanks', () => {
+    expect(salesforceDebug({ Id: '0039999' }))
+      .toEqual({ 'Salesforce Debug': { text: 'SF ID: 0039999' } });
   });
 });
 
@@ -70,5 +71,39 @@ describe('dateCol', () => {
     expect(dateCol('2122-01-01')).toEqual({ date: '2122-01-01' });
     expect(dateCol('2019-05-01T12:00:00.000+0000')).toEqual({ date: '2019-05-01' });
     expect(dateCol(null)).toBeNull();
+  });
+});
+
+describe('salesforceDebug staff annotation', () => {
+  it('appends the Monday email for names matching current staff, leaves others bare', () => {
+    setStaffMatcher((name) => (name === 'Deanna Chevas' ? 'deanna@bikesiliconvalley.org' : null));
+    try {
+      expect(salesforceDebug({
+        Id: '0031', CreatedDate: '2015-01-01T00:00:00Z', CreatedBy: { Name: 'Seth Goddard' },
+        LastModifiedDate: '2020-01-02T00:00:00Z', LastModifiedBy: { Name: 'Deanna Chevas' },
+      })).toEqual({
+        'Salesforce Debug': { text:
+          'SF ID: 0031 | Created: 2015-01-01 by Seth Goddard | Modified: 2020-01-02 by Deanna Chevas (deanna@bikesiliconvalley.org)' },
+      });
+    } finally {
+      setStaffMatcher(null);
+    }
+  });
+});
+
+describe('funraise links', () => {
+  it('builds a transaction link column value from a Funraise id', () => {
+    expect(funraiseTransactionLink('12345')).toEqual({
+      url: 'https://platform.funraise.io/transaction/12345', text: '12345',
+    });
+  });
+  it('builds a supporter profile link', () => {
+    expect(funraiseSupporterLink('777')).toEqual({
+      url: 'https://platform.funraise.io/supporter/777', text: '777',
+    });
+  });
+  it('returns null for a blank id', () => {
+    expect(funraiseTransactionLink('')).toBeNull();
+    expect(funraiseSupporterLink(undefined)).toBeNull();
   });
 });

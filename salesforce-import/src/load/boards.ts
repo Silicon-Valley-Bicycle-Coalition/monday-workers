@@ -4,14 +4,14 @@ import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
 
 export const COLUMN_TYPES: Record<string, string> = {
-  'SF ID': 'text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
+  'Salesforce Debug': 'long_text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
-  'Local News': 'link', 'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
+  'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
   'Email Consent': 'status', 'Membership Status': 'status', 'Membership Tier': 'status',
   'Member Since': 'date', 'Member Until': 'date',
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
   'Amount': 'numbers', 'Date': 'date', 'Status': 'status', 'Gift Type': 'text',
-  'Funraise ID': 'text', 'Anonymous Donor': 'checkbox',
+  'Funraise ID': 'link', 'Funraise Profile': 'link', 'Anonymous Donor': 'checkbox',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
   'Partner Type': 'text', 'Website': 'link',
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',
@@ -23,11 +23,21 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
   'Employer Name': 'text',
-  'Salesforce Created Date': 'date', 'Salesforce Created By': 'text',
-  'Salesforce Modified Date': 'date', 'Salesforce Modified By': 'text',
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
+// Closed-vocabulary status columns: passed as create_column `defaults` so Monday seeds the
+// column with exactly these labels. Without this, a new status column gets Monday's stock
+// "Working on it / Done / Stuck" set, which nothing ever clears — it just sits in the
+// dropdown forever alongside the real values written later.
+export const STATUS_LABELS: Record<string, string[]> = {
+  'Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Membership Status': ['Active', 'Lapsed'],
+  'Membership Tier': ['Lifetime', 'Member'],
+};
+// Needed for debugging/reconciliation during the migration, deleted afterward — created
+// last so they sit at the far right of every board instead of next to the item name.
+export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
 
 // Dollar-amount 'numbers' columns — created with currency (not plain float) formatting.
 // 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
@@ -76,13 +86,24 @@ export async function ensureBoards(
     if (known) boardId = known;
     else {
       const label = (BOARD_LABELS[key] ?? eraLabels[key] ?? key) + cfg.monday.boardSuffix;
-      const res = await client.gql<{ create_board: { id: string; items_page: { items: { id: string }[] } } }>(
-        `mutation ($name: String!) {
-           create_board (board_name: $name, board_kind: public) {
-             id
-             items_page (limit: 25) { items { id } }
-           } }`,
-        { name: label });
+      // Without workspace_id, create_board targets the account's Main workspace, which
+      // SVBC restricts (403 even for admins) — boards must be created in a named workspace.
+      const workspaceId = cfg.monday.workspaceId ?? null;
+      const res = workspaceId
+        ? await client.gql<{ create_board: { id: string; items_page: { items: { id: string }[] } } }>(
+            `mutation ($name: String!, $workspaceId: ID!) {
+               create_board (board_name: $name, board_kind: public, workspace_id: $workspaceId) {
+                 id
+                 items_page (limit: 25) { items { id } }
+               } }`,
+            { name: label, workspaceId: String(workspaceId) })
+        : await client.gql<{ create_board: { id: string; items_page: { items: { id: string }[] } } }>(
+            `mutation ($name: String!) {
+               create_board (board_name: $name, board_kind: public) {
+                 id
+                 items_page (limit: 25) { items { id } }
+               } }`,
+            { name: label });
       boardId = Number(res.create_board.id);
 
       // monday.com seeds every new board with a placeholder item ("Task 1") in its default
@@ -111,7 +132,11 @@ export async function ensureBoards(
       { ids: [String(entry.boardId)] });
     for (const col of res.boards[0]?.columns ?? []) entry.columns[col.title] = col.id;
 
-    for (const title of neededColumns.get(key) ?? []) {
+    // Debug columns go last so they land at the far right of the board — staff-facing
+    // columns stay prominent, and Salesforce Debug is slated for deletion after the migration.
+    const ordered = [...(neededColumns.get(key) ?? [])]
+      .sort((a, b) => Number(DEBUG_COLUMNS.has(a)) - Number(DEBUG_COLUMNS.has(b)));
+    for (const title of ordered) {
       if (entry.columns[title]) continue;
       const isConnect = CONNECT_COLUMNS.has(title);
       const type = isConnect ? 'board_relation' : COLUMN_TYPES[title];
@@ -125,6 +150,10 @@ export async function ensureBoards(
           `target boards this run — creating without defaults`);
       } else if (CURRENCY_COLUMNS.has(title)) {
         defaults = CURRENCY_DEFAULTS;
+      } else if (STATUS_LABELS[title]) {
+        defaults = JSON.stringify({
+          labels: Object.fromEntries(STATUS_LABELS[title].map((label, i) => [i, label])),
+        });
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(

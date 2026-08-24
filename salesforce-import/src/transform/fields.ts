@@ -5,14 +5,33 @@ export function dateCol(iso: string | null | undefined): unknown {
   return { date: iso.slice(0, 10) };
 }
 
-export function provenanceColumns(row: Record<string, unknown>): Record<string, unknown> {
-  const by = (v: unknown) => (v as { Name?: string } | null)?.Name ?? '';
-  return {
-    'Salesforce Created Date': dateCol(row['CreatedDate'] as string),
-    'Salesforce Created By': by(row['CreatedBy']),
-    'Salesforce Modified Date': dateCol(row['LastModifiedDate'] as string),
-    'Salesforce Modified By': by(row['LastModifiedBy']),
+// One consolidated long-text column instead of five separate provenance columns —
+// never updated after the migration, and slated for a single-column delete once
+// staff no longer need it. Names stay verbatim text (many are former employees
+// with no Monday account to map to).
+// Set once by runTransform when data/enrich/monday-users.csv is present; maps a
+// Salesforce user name to a current staff member's Monday email, or null.
+let staffMatch: ((sfName: string) => string | null) | null = null;
+export function setStaffMatcher(matcher: ((sfName: string) => string | null) | null): void {
+  staffMatch = matcher;
+}
+
+export function salesforceDebug(row: Record<string, unknown>): Record<string, unknown> {
+  const by = (v: unknown) => {
+    const name = (v as { Name?: string } | null)?.Name ?? '';
+    if (!name) return '';
+    const email = staffMatch?.(name);
+    return email ? `${name} (${email})` : name;
   };
+  const day = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 10) : '');
+  const stamp = (label: string, date: string, name: string) =>
+    date ? `${label}: ${date}${name ? ` by ${name}` : ''}` : '';
+  const parts = [
+    row['Id'] ? `SF ID: ${row['Id']}` : '',
+    stamp('Created', day(row['CreatedDate']), by(row['CreatedBy'])),
+    stamp('Modified', day(row['LastModifiedDate']), by(row['LastModifiedBy'])),
+  ].filter(Boolean);
+  return { 'Salesforce Debug': { text: parts.join(' | ') } };
 }
 
 const PREFERRED_FIELD: Record<string, string> = {
@@ -47,3 +66,17 @@ export function localNewsName(city: string | null, cfg: Config['localNews']): st
   for (const rule of cfg.rules) if (rule.cities.includes(c)) return rule.name;
   return cfg.defaultName;
 }
+
+// Funraise's platform URLs are global (no org slug); recurring subscriptions
+// surface as recurring *transactions* in Funraise's UI, so Recurring Gifts use
+// the transaction link too (confirmed with SVBC 2026-08-23).
+const FUNRAISE_TRANSACTION_URL = 'https://platform.funraise.io/transaction/';
+const FUNRAISE_SUPPORTER_URL = 'https://platform.funraise.io/supporter/';
+
+const funraiseLink = (base: string, id: unknown) => {
+  const text = typeof id === 'string' || typeof id === 'number' ? String(id) : '';
+  return text ? { url: `${base}${text}`, text } : null;
+};
+
+export const funraiseTransactionLink = (id: unknown) => funraiseLink(FUNRAISE_TRANSACTION_URL, id);
+export const funraiseSupporterLink = (id: unknown) => funraiseLink(FUNRAISE_SUPPORTER_URL, id);

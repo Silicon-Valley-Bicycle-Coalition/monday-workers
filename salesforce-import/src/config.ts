@@ -8,7 +8,7 @@ export interface Config {
   peopleActiveSinceISO: string;
   activitySliceSinceISO: string;
   eraMaxItems: number;
-  monday: { apiUrl: string; boardSuffix: string; boards: Record<string, number | null> };
+  monday: { apiUrl: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
   localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;
 }

@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, provenanceColumns } from './fields.js';
+import { dateCol, funraiseTransactionLink, salesforceDebug } from './fields.js';
 import { eraFor, type Era } from './eras.js';
 
 const STATUS: Record<string, string> = {
@@ -20,15 +20,14 @@ export function opportunityToPayload(
     sfId: o['Id'] as string,
     name: (o['Name'] as string) ?? '(no name)',
     columns: {
-      'SF ID': o['Id'],
       'Amount': o['Amount'] != null ? String(o['Amount']) : '',
       'Date': dateCol(o['CloseDate'] as string),
       'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
       'Gift Type': ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,
-      'Funraise ID': (o['funraise__fr_ID__c'] ?? '') as string,
+      'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId ? null : { checked: 'true' },
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
-      ...provenanceColumns(o),
+      ...salesforceDebug(o),
     },
     links,
   };
@@ -54,12 +53,11 @@ export function cnpToPayload(tx: Record<string, unknown>, deps: { eras: Era[] })
     sfId: tx['Id'] as string,
     name: (tx['Name'] as string) ?? '(C&P transaction)',
     columns: {
-      'SF ID': tx['Id'],
       'Amount': tx['CnP_PaaS__TotalCharged__c'] != null ? String(tx['CnP_PaaS__TotalCharged__c']) : '',
       'Date': dateCol(tx['CnP_PaaS__TransactionDate__c'] as string),
       'Status': { label: 'Received' },
       'Gift Type': 'Click & Pledge (historical)',
-      ...provenanceColumns(tx),
+      ...salesforceDebug(tx),
     },
     links: donorId ? [{ column: 'Donor', targetSfIds: [donorId] }] : [],
   };
