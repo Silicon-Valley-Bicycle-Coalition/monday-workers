@@ -64,8 +64,10 @@ export type QueueMessage =
   | { direction: 'qb-to-monday'; eventId: string }
   | { direction: 'monday-to-qb'; eventId: string };
 
-export interface Env {
-  DB: D1Database;
+// Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
+// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// only secrets and narrowed queue message types are declared here.
+export interface Env extends Cloudflare.Env {
   SYNC_QUEUE: Queue<QueueMessage>;
   MONDAY_API_TOKEN: string;
   QB_CLIENT_ID: string;

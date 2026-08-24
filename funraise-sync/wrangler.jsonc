@@ -1,7 +1,9 @@
 {
   "name": "svbc-funraise-sync",
   "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
   "d1_databases": [
     {
       "binding": "DB",
@@ -17,6 +19,9 @@
       {
         "queue": "funraise-sync-writes",
         "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain.
+        "max_concurrency": 1,
         "dead_letter_queue": "funraise-sync-writes-dlq"
       }
     ]

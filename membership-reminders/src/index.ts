@@ -5,7 +5,7 @@ import { MondayClient } from './monday';
 import { sendReminderEmail } from './email';
 import { runReminders } from './reminders';
 
-export interface Env {
+export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
 }
 

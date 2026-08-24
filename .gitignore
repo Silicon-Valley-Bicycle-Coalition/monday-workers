@@ -3,3 +3,6 @@ node_modules/
 .wrangler/
 .dev.vars
 .env
+
+# generated per-machine by `wrangler types` (can absorb local .env vars) — regenerate, don't commit
+worker-configuration.d.ts
