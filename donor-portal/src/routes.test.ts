@@ -50,6 +50,10 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       Promise.resolve({ id, name: `Donor ${id}`, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '0', donations: [] })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+    getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
+      Promise.resolve({ id, name: `Donor ${id}`, email: 'donor@example.org', address: '1 Old St', phone: '555-0100' })
+    ),
+    createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -71,6 +75,10 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+    getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
+      Promise.resolve({ id, name: `Donor ${id}`, email: 'donor@example.org', address: '1 Old St', phone: '555-0100' })
+    ),
+    createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -329,6 +337,8 @@ describe('POST /login error handling', () => {
       findDonorsByEmail: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')),
       getDonorPortalData: vi.fn(),
       getDiscountOrganizations: vi.fn(),
+      getDonorContactInfo: vi.fn(),
+      createChangeRequestItem: vi.fn(),
     };
     const app = createApp(makeDeps({ monday }));
 

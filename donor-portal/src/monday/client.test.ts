@@ -25,6 +25,22 @@ function fetchReturning(body: unknown, ok = true) {
   });
 }
 
+function makeClient(payload: unknown): HttpMondayClient {
+  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchReturning(payload));
+}
+
+function makeCapturingClient(onBody: (body: { query: string; variables: Record<string, unknown> }) => void): HttpMondayClient {
+  const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+    onBody(JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { create_item: { id: '1' } } }),
+    };
+  });
+  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+}
+
 describe('HttpMondayClient.findDonorsByEmail', () => {
   it('returns every matching donor item', async () => {
     const fetchMock = fetchReturning({
@@ -165,5 +181,71 @@ describe('HttpMondayClient error handling', () => {
     const fetchMock = fetchReturning({ errors: [{ message: 'Board not found' }] });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/Board not found/);
+  });
+});
+
+describe('HttpMondayClient.getDonorContactInfo', () => {
+  it('reads name, email, address, and phone off the donor item', async () => {
+    const client = makeClient({
+      data: {
+        items: [
+          {
+            id: 'donor-1',
+            name: 'Jane Example',
+            column_values: [
+              { id: 'email_col', text: 'jane@example.org' },
+              { id: 'addr_col', text: '1 Old St' },
+              { id: 'phone_col', text: '555-0100' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const info = await client.getDonorContactInfo('donor-1');
+
+    expect(info).toEqual({
+      id: 'donor-1',
+      name: 'Jane Example',
+      email: 'jane@example.org',
+      address: '1 Old St',
+      phone: '555-0100',
+    });
+  });
+
+  it('throws when the donor item does not exist', async () => {
+    const client = makeClient({ data: { items: [] } });
+    await expect(client.getDonorContactInfo('missing')).rejects.toThrow('not found');
+  });
+});
+
+describe('HttpMondayClient.createChangeRequestItem', () => {
+  it('sends a create_item mutation with JSON column values and no interpolated user input', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const client = makeCapturingClient((body) => {
+      captured = body;
+    });
+
+    await client.createChangeRequestItem({
+      boardId: 123,
+      columns: { donorLink: 'connect_1', field: 'text_1', oldValue: 'text_2', newValue: 'text_3', submittedAt: 'date_1' },
+      itemName: 'Address change — Jane Example',
+      donorItemId: '4567',
+      fieldLabel: 'Address',
+      oldValue: '1 Old St',
+      newValue: '2 New "Ave"',
+      submittedAtISO: '2026-08-24T10:15:30.000Z',
+    });
+
+    expect(captured).not.toBeNull();
+    // User-sourced strings travel as variables, never inside the query text:
+    expect(captured!.query).not.toContain('2 New');
+    expect(captured!.variables.itemName).toBe('Address change — Jane Example');
+    const columnValues = JSON.parse(captured!.variables.columnValues as string) as Record<string, unknown>;
+    expect(columnValues.connect_1).toEqual({ item_ids: [4567] });
+    expect(columnValues.text_1).toBe('Address');
+    expect(columnValues.text_2).toBe('1 Old St');
+    expect(columnValues.text_3).toBe('2 New "Ave"');
+    expect(columnValues.date_1).toEqual({ date: '2026-08-24', time: '10:15:30' });
   });
 });

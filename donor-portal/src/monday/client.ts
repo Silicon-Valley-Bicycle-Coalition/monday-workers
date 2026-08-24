@@ -1,4 +1,12 @@
-import type { Config, DiscountOrganization, DonationRecord, DonorMatch, DonorPortalData, MondayColumns } from '../types';
+import type {
+  ChangeRequestColumns,
+  DiscountOrganization,
+  DonationRecord,
+  DonorContactInfo,
+  DonorMatch,
+  DonorPortalData,
+  MondayColumns,
+} from '../types';
 
 interface MondayColumnValue {
   id: string;
@@ -19,6 +27,17 @@ export interface MondayClient {
   findDonorsByEmail(email: string): Promise<DonorMatch[]>;
   getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
+  getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
+  createChangeRequestItem(params: {
+    boardId: number;
+    columns: ChangeRequestColumns;
+    itemName: string;
+    donorItemId: string;
+    fieldLabel: string;
+    oldValue: string;
+    newValue: string;
+    submittedAtISO: string;
+  }): Promise<void>;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -196,5 +215,70 @@ export class HttpMondayClient implements MondayClient {
       name: item.name,
       discountOffered: columnText(item, this.columns.discountOffered),
     }));
+  }
+
+  async getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo> {
+    const query = `
+      query ($itemId: ID!) {
+        items(ids: [$itemId]) {
+          id
+          name
+          column_values(ids: ["${this.columns.donorEmail}", "${this.columns.donorAddress}", "${this.columns.donorPhone}"]) {
+            id
+            text
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemId: donorItemId });
+    const item = data.items[0];
+    if (!item) {
+      throw new Error(`monday: donor item "${donorItemId}" not found`);
+    }
+    return {
+      id: item.id,
+      name: item.name,
+      email: columnText(item, this.columns.donorEmail),
+      address: columnText(item, this.columns.donorAddress),
+      phone: columnText(item, this.columns.donorPhone),
+    };
+  }
+
+  async createChangeRequestItem(params: {
+    boardId: number;
+    columns: ChangeRequestColumns;
+    itemName: string;
+    donorItemId: string;
+    fieldLabel: string;
+    oldValue: string;
+    newValue: string;
+    submittedAtISO: string;
+  }): Promise<void> {
+    // NOTE: the column_values shapes below (connect-boards { item_ids }, date { date, time })
+    // are written from current Monday API v2 knowledge but not verified against a live account —
+    // verify against the real Change Requests board before deploy (same caveat as the read-side
+    // NOTEs above). All user-sourced values travel as GraphQL variables.
+    const mutation = `
+      mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) {
+          id
+        }
+      }
+    `;
+    const columnValues: Record<string, unknown> = {
+      [params.columns.donorLink]: { item_ids: [Number(params.donorItemId)] },
+      [params.columns.field]: params.fieldLabel,
+      [params.columns.oldValue]: params.oldValue,
+      [params.columns.newValue]: params.newValue,
+      [params.columns.submittedAt]: {
+        date: params.submittedAtISO.slice(0, 10),
+        time: params.submittedAtISO.slice(11, 19),
+      },
+    };
+    await this.request<{ create_item: { id: string } }>(mutation, {
+      boardId: params.boardId,
+      itemName: params.itemName,
+      columnValues: JSON.stringify(columnValues),
+    });
   }
 }

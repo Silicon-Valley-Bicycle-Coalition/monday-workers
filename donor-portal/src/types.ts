@@ -88,6 +88,14 @@ export interface DiscountOrganization {
   discountOffered: string;
 }
 
+export interface DonorContactInfo {
+  id: string;
+  name: string;
+  email: string;
+  address: string;
+  phone: string;
+}
+
 export interface PortalView {
   donors: DonorPortalData[];
   discounts: DiscountOrganization[];
