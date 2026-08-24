@@ -1,6 +1,6 @@
 import type { Config, MondayColumns } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'resend', 'auth', 'rateLimit'] as const;
+const REQUIRED_TOP_LEVEL = ['monday', 'resend', 'auth', 'rateLimit', 'taxLetter', 'changeRequests'] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donorEmail',
@@ -15,16 +15,34 @@ const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'discountActive',
 ];
 
+// V2_DONOR_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: these two columns only
+// matter to the change-request feature, which is gated (changeRequestsEnabled), not
+// deploy-blocking. They're checked for *presence* only, not placeholder-freedom.
+const V2_DONOR_COLUMNS: (keyof MondayColumns)[] = ['donorAddress', 'donorPhone'];
+
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
+const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
 const REQUIRED_RESEND_KEYS = ['fromAddress', 'fromName'] as const;
 const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'sessionTtlHours', 'portalBaseUrl'] as const;
 const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as const;
+const REQUIRED_TAX_LETTER_KEYS = [
+  'orgLegalName',
+  'ein',
+  'orgAddress',
+  'signatureName',
+  'signatureTitle',
+  'plainStatement',
+  'benefitStatement',
+  'benefitTiers',
+] as const;
+const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours'] as const;
+const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 
-function requireObject(cfg: Record<string, unknown>, key: string): Record<string, unknown> {
+function requireObject(cfg: Record<string, unknown>, key: string, errorKey: string = key): Record<string, unknown> {
   const value = cfg[key];
   if (typeof value !== 'object' || value === null) {
-    throw new Error(`config: missing required key "${key}"`);
+    throw new Error(`config: missing required key "${errorKey}"`);
   }
   return value as Record<string, unknown>;
 }
@@ -64,6 +82,7 @@ export function validateConfig(raw: unknown): Config {
   const columns = requireObject(monday, 'columns');
   requireKeys(columns, 'monday.columns', REQUIRED_COLUMNS);
   requireNoPlaceholderColumns(columns);
+  requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
 
   const resend = requireObject(cfg, 'resend');
   requireKeys(resend, 'resend', REQUIRED_RESEND_KEYS);
@@ -74,5 +93,35 @@ export function validateConfig(raw: unknown): Config {
   const rateLimit = requireObject(cfg, 'rateLimit');
   requireKeys(rateLimit, 'rateLimit', REQUIRED_RATE_LIMIT_KEYS);
 
+  const taxLetter = requireObject(cfg, 'taxLetter');
+  requireKeys(taxLetter, 'taxLetter', REQUIRED_TAX_LETTER_KEYS);
+
+  const changeRequests = requireObject(cfg, 'changeRequests');
+  requireKeys(changeRequests, 'changeRequests', REQUIRED_CHANGE_REQUEST_KEYS);
+  const crColumns = requireObject(changeRequests, 'columns', 'changeRequests.columns');
+  requireKeys(crColumns, 'changeRequests.columns', REQUIRED_CHANGE_REQUEST_COLUMNS);
+
   return cfg as unknown as Config;
+}
+
+export function lettersEnabled(config: Config): boolean {
+  const t = config.taxLetter;
+  const strings = [
+    t.orgLegalName,
+    t.ein,
+    t.orgAddress,
+    t.signatureName,
+    t.signatureTitle,
+    t.plainStatement,
+    t.benefitStatement,
+  ];
+  return strings.every((s) => s !== SIGNOFF_PLACEHOLDER && s.length > 0);
+}
+
+export function changeRequestsEnabled(config: Config): boolean {
+  const cr = config.changeRequests;
+  if (cr.boardId === null) return false;
+  const crCols = [cr.columns.donorLink, cr.columns.field, cr.columns.oldValue, cr.columns.newValue, cr.columns.submittedAt];
+  const donorCols = [config.monday.columns.donorAddress, config.monday.columns.donorPhone];
+  return [...crCols, ...donorCols].every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
 }

@@ -13,6 +13,8 @@ const columns: MondayColumns = {
   donationDescription: 'desc_col',
   discountOffered: 'offer_col',
   discountActive: 'active_col',
+  donorAddress: 'addr_col',
+  donorPhone: 'phone_col',
 };
 
 function fetchReturning(body: unknown, ok = true) {

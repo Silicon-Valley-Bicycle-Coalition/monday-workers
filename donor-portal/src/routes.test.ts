@@ -58,6 +58,21 @@ const config: Config = {
   resend: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
+  taxLetter: {
+    orgLegalName: 'SVBC',
+    ein: '00-0000000',
+    orgAddress: 'addr',
+    signatureName: 'Alex',
+    signatureTitle: 'ED',
+    plainStatement: 'plain',
+    benefitStatement: 'benefit',
+    benefitTiers: ['Champion'],
+  },
+  changeRequests: {
+    boardId: 99,
+    columns: { donorLink: 'c1', field: 'c2', oldValue: 'c3', newValue: 'c4', submittedAt: 'c5' },
+    dedupeWindowHours: 72,
+  },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {

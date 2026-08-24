@@ -9,6 +9,33 @@ export interface MondayColumns {
   donationDescription: string;
   discountOffered: string;
   discountActive: string;
+  donorAddress: string;
+  donorPhone: string;
+}
+
+export interface TaxLetterConfig {
+  orgLegalName: string;
+  ein: string;
+  orgAddress: string;
+  signatureName: string;
+  signatureTitle: string;
+  plainStatement: string;
+  benefitStatement: string;
+  benefitTiers: string[];
+}
+
+export interface ChangeRequestColumns {
+  donorLink: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  submittedAt: string;
+}
+
+export interface ChangeRequestsConfig {
+  boardId: number | null;
+  columns: ChangeRequestColumns;
+  dedupeWindowHours: number;
 }
 
 export interface Config {
@@ -32,6 +59,8 @@ export interface Config {
     emailWindowSeconds: number;
     emailMaxAttempts: number;
   };
+  taxLetter: TaxLetterConfig;
+  changeRequests: ChangeRequestsConfig;
 }
 
 export interface DonorMatch {
