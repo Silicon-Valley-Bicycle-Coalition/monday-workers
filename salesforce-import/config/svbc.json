@@ -6,7 +6,8 @@
   "eraMaxItems": 9000,
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "boardSuffix": "",
+    "boardSuffix": " (sandbox)",
+    "workspaceId": 17141226,
     "boards": {
       "donations:live": null,
       "activities": null,
