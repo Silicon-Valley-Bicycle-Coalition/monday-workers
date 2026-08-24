@@ -28,7 +28,7 @@ export interface SubmitDeps {
 }
 
 function isChangeRequestField(value: string): value is ChangeRequestField {
-  return value in FIELD_LABELS;
+  return Object.prototype.hasOwnProperty.call(FIELD_LABELS, value);
 }
 
 export async function submitChangeRequest(
@@ -56,7 +56,10 @@ export async function submitChangeRequest(
   }
 
   const contact = await deps.monday.getDonorContactInfo(input.donorItemId);
-  const oldValue = { address: contact.address, email: contact.email, phone: contact.phone }[input.field];
+  const oldValue =
+    input.field === 'address' ? contact.address :
+    input.field === 'email' ? contact.email :
+    contact.phone;
 
   const requestId = await deps.store.createRequest({
     donorItemId: input.donorItemId,

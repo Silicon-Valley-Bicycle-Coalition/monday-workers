@@ -86,4 +86,14 @@ describe('submitChangeRequest', () => {
     const sinceISO = (store.hasRecentDuplicate as ReturnType<typeof vi.fn>).mock.calls[0]![1] as string;
     expect(sinceISO).toBe('2026-08-21T10:00:00.000Z'); // now − 72h
   });
+
+  it('rejects inherited property names like toString', async () => {
+    const store = fakeStore();
+    const deps = makeDeps(store);
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'toString', newValue: 'x' }, deps);
+    expect(result.kind).toBe('invalid');
+    expect(store.createRequest).not.toHaveBeenCalled();
+    expect((deps.monday.getDonorContactInfo as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(deps.queue.send).not.toHaveBeenCalled();
+  });
 });
