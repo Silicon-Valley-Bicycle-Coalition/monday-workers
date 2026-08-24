@@ -121,6 +121,32 @@ describe('ensureBoards', () => {
     }
   });
 
+  it('closed-vocabulary status columns are created with explicit labels, not Monday\'s stock set', async () => {
+    const defaultsByTitle: Record<string, string | undefined> = {};
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '970' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        defaultsByTitle[variables.title as string] = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    await ensureBoards(client, loadConfig(), ['people-live'], new Map([
+      ['people-live', new Set(['Email Consent', 'Membership Status', 'Membership Tier'])],
+    ]));
+
+    expect(JSON.parse(defaultsByTitle['Email Consent']!).labels).toEqual(
+      { 0: 'Subscribed', 1: 'Unsubscribed', 2: 'Cleaned', 3: 'Not in Mailchimp' });
+    expect(JSON.parse(defaultsByTitle['Membership Status']!).labels).toEqual(
+      { 0: 'Active', 1: 'Lapsed' });
+    expect(JSON.parse(defaultsByTitle['Membership Tier']!).labels).toEqual(
+      { 0: 'Lifetime', 1: 'Member' });
+  });
+
   it('every transform column title has a declared type', () => {
     // Guard: a new transform column without a COLUMN_TYPES entry must fail loudly here,
     // not silently at load time.

@@ -26,6 +26,15 @@ export const COLUMN_TYPES: Record<string, string> = {
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
+// Closed-vocabulary status columns: passed as create_column `defaults` so Monday seeds the
+// column with exactly these labels. Without this, a new status column gets Monday's stock
+// "Working on it / Done / Stuck" set, which nothing ever clears — it just sits in the
+// dropdown forever alongside the real values written later.
+export const STATUS_LABELS: Record<string, string[]> = {
+  'Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Membership Status': ['Active', 'Lapsed'],
+  'Membership Tier': ['Lifetime', 'Member'],
+};
 // Needed for debugging/reconciliation during the migration, deleted afterward — created
 // last so they sit at the far right of every board instead of next to the item name.
 export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
@@ -141,6 +150,10 @@ export async function ensureBoards(
           `target boards this run — creating without defaults`);
       } else if (CURRENCY_COLUMNS.has(title)) {
         defaults = CURRENCY_DEFAULTS;
+      } else if (STATUS_LABELS[title]) {
+        defaults = JSON.stringify({
+          labels: Object.fromEntries(STATUS_LABELS[title].map((label, i) => [i, label])),
+        });
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(
