@@ -414,6 +414,21 @@ describe('GET /portal/letters', () => {
     const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
     expect(await res.text()).toContain('not available yet');
   });
+
+  // Minor fold-in: a Monday read failure here previously fell through to the global onError,
+  // whose "please try logging in again" copy is wrong for a data-fetch problem, not an auth one.
+  it('shows a friendly, letters-specific error page when the Monday lookup throws', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+
+    const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your letters right now');
+  });
 });
 
 describe('GET /portal/letters/:donorItemId/:year', () => {
@@ -458,6 +473,19 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
     const res = await app.request('/portal/letters/donor-1/not-a-year', { headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
+  });
+
+  it('shows a friendly, letter-specific error page when the Monday lookup throws', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+
+    const res = await app.request('/portal/letters/donor-1/2025', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your letter right now');
   });
 });
 

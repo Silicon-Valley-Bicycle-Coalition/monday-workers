@@ -182,7 +182,15 @@ export function createApp(deps: AppDeps) {
     if (!lettersEnabled(deps.config)) {
       return c.html(lettersUnavailableView());
     }
-    const listings = await listLetterYears(donorItemIds, deps.monday, deps.now());
+    let listings;
+    try {
+      listings = await listLetterYears(donorItemIds, deps.monday, deps.now());
+    } catch (err) {
+      // A Monday read failure here would otherwise fall through to the global onError, whose
+      // generic "please try logging in again" copy is misleading — this isn't an auth problem.
+      console.error(`donor-portal letters list failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(errorView('We could not load your letters right now. Please try again in a few minutes.'), 500);
+    }
     return c.html(lettersListView(listings));
   });
 
@@ -203,7 +211,15 @@ export function createApp(deps: AppDeps) {
       return c.html(errorView('That letter does not exist.'), 404);
     }
 
-    const data = await loadLetterData(donorItemId, year, deps.monday, deps.config.taxLetter, deps.now());
+    let data;
+    try {
+      data = await loadLetterData(donorItemId, year, deps.monday, deps.config.taxLetter, deps.now());
+    } catch (err) {
+      // Same reasoning as the letters-list route above: a Monday read failure isn't an auth
+      // problem, so it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`donor-portal letter load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(errorView('We could not load your letter right now. Please try again in a few minutes.'), 500);
+    }
     if (data === null) {
       return c.html(errorView('That letter does not exist.'), 404);
     }

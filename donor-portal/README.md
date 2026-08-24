@@ -144,7 +144,7 @@ email and worth setting up regardless of provider.
 
 ## v2 — Year-end tax letters and change requests
 
-Design: `docs/superpowers/specs/2026-08-24-donor-portal-v2-design.md`. Two independent,
+Design: `../docs/superpowers/specs/2026-08-24-donor-portal-v2-design.md`. Two independent,
 config-gated features:
 
 * **Tax letters** (`GET /portal/letters`, `GET /portal/letters/:donorItemId/:year`): a
