@@ -77,6 +77,7 @@ export function portalView(data: PortalView): string {
         ${data.discounts.map(discountRow).join('')}
       </ul>
     </section>
+    <p><a href="/portal/letters">Tax documents</a></p>
     <form action="/logout" method="post"><button type="submit">Log out</button></form>
   `;
 }

@@ -53,6 +53,27 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
   };
 }
 
+// Like fakeMonday, but the single donor it knows about ("donor-1", matched to
+// donor@example.org) has a 2025 gift on record, so completed-year letters exist for the
+// tests that exercise GET /portal/letters and GET /portal/letters/:donorItemId/:year.
+function fakeMondayWithDonations(): MondayClient {
+  const matchesByEmail = { 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] };
+  return {
+    findDonorsByEmail: vi.fn().mockImplementation((email: string) => Promise.resolve(matchesByEmail[email as keyof typeof matchesByEmail] ?? [])),
+    getDonorPortalData: vi.fn().mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        name: `Donor ${id}`,
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '$40.00',
+        donations: [{ date: '2025-03-14', amount: '$40.00', description: 'gift' }],
+      })
+    ),
+    getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+  };
+}
+
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
   resend: { fromAddress: 'a@example.org', fromName: 'Test' },
@@ -319,5 +340,97 @@ describe('POST /login error handling', () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('check your email');
+  });
+});
+
+async function loginAndGetCookie(
+  app: ReturnType<typeof createApp>,
+  emailSender: { sendLoginEmail: ReturnType<typeof vi.fn> },
+  email: string
+): Promise<string> {
+  await app.request('/login', {
+    method: 'POST',
+    body: new URLSearchParams({ email }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const loginUrl = emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl;
+  const callbackRes = await app.request(`/auth/callback?token=${extractToken(loginUrl)}`);
+  return (callbackRes.headers.get('set-cookie') as string).split(';')[0]!;
+}
+
+describe('GET /portal/letters', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/portal/letters');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('lists a completed year for the logged-in donor with no-store caching', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('/portal/letters/donor-1/2025');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
+  it('shows the unavailable state while letter language is placeholder', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.taxLetter.plainStatement = 'REPLACE_AFTER_SIGNOFF';
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('not available yet');
+  });
+});
+
+describe('GET /portal/letters/:donorItemId/:year', () => {
+  it('renders the letter for the session donor and a completed year', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/letters/donor-1/2025', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Total contributions for 2025');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
+  it("404s for a donor item id that is not the session's own", async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/letters/other-donor/2025', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
+  });
+
+  it('404s for the current (incomplete) year', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/letters/donor-1/2026', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
+  });
+
+  it('404s for a non-numeric year', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/letters/donor-1/not-a-year', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
   });
 });

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
@@ -13,6 +14,9 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
+import { lettersEnabled } from './config';
+import { listLetterYears, loadLetterData } from './letters/loadLetterData';
+import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -36,6 +40,19 @@ const MAX_EMAIL_LENGTH = 254; // RFC 5321 max mailbox length
 
 function isPlausibleEmail(email: string): boolean {
   return email.length > 0 && email.length <= MAX_EMAIL_LENGTH && EMAIL_PATTERN.test(email);
+}
+
+// Donor PII must never be servable from browser cache/bfcache/history after logout on a
+// shared machine — the server-side session deletion in POST /logout doesn't evict a
+// previously cached rendering of a page. Every authenticated, PII-bearing route sets this.
+const NO_STORE = 'private, no-store, max-age=0';
+
+// Shared by every authenticated route: resolves the session cookie to the donor item ids it
+// grants access to, or null if there is no valid session. Callers redirect to /login on null.
+async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] | null> {
+  const sessionToken = getCookie(c, SESSION_COOKIE);
+  if (!sessionToken) return null;
+  return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
 }
 
 export function createApp(deps: AppDeps) {
@@ -141,23 +158,57 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get('/portal', async (c) => {
-    const sessionToken = getCookie(c, SESSION_COOKIE);
-    if (!sessionToken) {
-      return c.redirect('/login');
-    }
-
-    const sessionHash = await sha256Hex(sessionToken);
-    const donorItemIds = await deps.sessionStore.getSession(sessionHash, deps.now().toISOString());
+    const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) {
       return c.redirect('/login');
     }
 
     const data = await loadPortalData(donorItemIds, deps.monday);
-    // Donor PII (name, membership tier, full donation history) must never be servable from
-    // browser cache/bfcache/history after logout on a shared machine — the server-side session
-    // deletion in POST /logout doesn't evict a previously cached rendering of this page.
-    c.header('Cache-Control', 'private, no-store, max-age=0');
+    c.header('Cache-Control', NO_STORE);
     return c.html(portalView(data));
+  });
+
+  app.get('/portal/letters', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!lettersEnabled(deps.config)) {
+      return c.html(lettersUnavailableView());
+    }
+    const listings = await listLetterYears(donorItemIds, deps.monday, deps.now());
+    return c.html(lettersListView(listings));
+  });
+
+  app.get('/portal/letters/:donorItemId/:year', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!lettersEnabled(deps.config)) {
+      return c.html(lettersUnavailableView());
+    }
+
+    // The path param selects among the session's own donor items — never widens them.
+    const donorItemId = c.req.param('donorItemId');
+    const yearParam = c.req.param('year');
+    const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
+    if (!donorItemIds.includes(donorItemId) || year === null) {
+      return c.html(errorView('That letter does not exist.'), 404);
+    }
+
+    const data = await loadLetterData(donorItemId, year, deps.monday, deps.config.taxLetter, deps.now());
+    if (data === null) {
+      return c.html(errorView('That letter does not exist.'), 404);
+    }
+
+    const generatedOn = deps.now().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    return c.html(letterView(data, deps.config.taxLetter, generatedOn));
   });
 
   app.post('/logout', async (c) => {
