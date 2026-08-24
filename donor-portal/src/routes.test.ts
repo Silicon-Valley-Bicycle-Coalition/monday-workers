@@ -529,4 +529,24 @@ describe('POST /portal/change-request', () => {
     const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
     expect(res.status).toBe(429);
   });
+
+  // Finding 3: the spec mandates rate-limiting per session as well as per IP (e.g. many donors
+  // behind one office/NAT IP shouldn't all get throttled together, but a single compromised or
+  // scripted session should still be capped). Deny only the session-keyed limiter call to prove
+  // it's actually consulted, not just the per-IP one.
+  it('denies when the per-session rate limiter says no, even though the IP limiter allows it', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const permissive = makeDeps({ monday, emailSender });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+
+    const ipLimiter = {
+      limit: vi.fn().mockImplementation((key: string) => Promise.resolve({ success: !key.startsWith('change:s:') })),
+    };
+    const limitedApp = createApp({ ...permissive, ipLimiter });
+
+    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    expect(res.status).toBe(429);
+  });
 });

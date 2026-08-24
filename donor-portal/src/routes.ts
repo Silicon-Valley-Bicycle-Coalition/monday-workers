@@ -247,6 +247,16 @@ export function createApp(deps: AppDeps) {
       return c.html(errorView('Too many requests — please try again in a minute.'), 429);
     }
 
+    // Spec also requires a per-session budget: an IP-only limit lets many donors sharing one
+    // office/NAT IP throttle each other, and doesn't cap a single scripted/compromised session
+    // hammering the endpoint from a rotating IP. The cookie was already validated by
+    // getSessionDonorIds above, so it's guaranteed present here.
+    const sessionToken = getCookie(c, SESSION_COOKIE) as string;
+    const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
+    if (!sessionResult.success) {
+      return c.html(errorView('Too many requests — please try again in a minute.'), 429);
+    }
+
     const body = await c.req.parseBody();
     const input = {
       donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
