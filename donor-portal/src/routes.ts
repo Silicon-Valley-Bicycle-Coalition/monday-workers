@@ -8,15 +8,19 @@ import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/resend';
 import type { IpRateLimiter } from './ratelimit';
 import type { Config } from './types';
+import type { ChangeRequestStore } from './db/changeRequests';
+import type { ChangeQueueMessage } from './changeRequests/submitChangeRequest';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { lettersEnabled } from './config';
+import { changeRequestsEnabled, lettersEnabled } from './config';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
+import { submitChangeRequest } from './changeRequests/submitChangeRequest';
+import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView } from './changeRequests/changeRequestViews';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -27,6 +31,8 @@ export interface AppDeps {
   ipLimiter: IpRateLimiter;
   config: Config;
   now: () => Date;
+  changeStore: ChangeRequestStore;
+  changeQueue: { send(message: ChangeQueueMessage): Promise<void> };
 }
 
 const SESSION_COOKIE = 'session';
@@ -209,6 +215,53 @@ export function createApp(deps: AppDeps) {
       timeZone: 'UTC',
     });
     return c.html(letterView(data, deps.config.taxLetter, generatedOn));
+  });
+
+  app.get('/portal/change-request', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!changeRequestsEnabled(deps.config)) {
+      return c.html(changeRequestsUnavailableView());
+    }
+    const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
+    return c.html(changeRequestFormView(donors));
+  });
+
+  app.post('/portal/change-request', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!changeRequestsEnabled(deps.config)) {
+      return c.html(changeRequestsUnavailableView());
+    }
+
+    // Same limiter binding as login, but a distinct key prefix so the two budgets don't
+    // interfere. No enumeration concern here (the caller is already authenticated), so a plain
+    // 429 is fine.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
+    if (!ipResult.success) {
+      return c.html(errorView('Too many requests — please try again in a minute.'), 429);
+    }
+
+    const body = await c.req.parseBody();
+    const input = {
+      donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
+      field: typeof body.field === 'string' ? body.field : '',
+      newValue: typeof body.newValue === 'string' ? body.newValue : '',
+    };
+
+    const result = await submitChangeRequest(donorItemIds, input, {
+      monday: deps.monday,
+      store: deps.changeStore,
+      queue: deps.changeQueue,
+      dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
+      now: deps.now,
+    });
+    return c.html(changeRequestResultView(result));
   });
 
   app.post('/logout', async (c) => {

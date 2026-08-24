@@ -78,6 +78,7 @@ export function portalView(data: PortalView): string {
       </ul>
     </section>
     <p><a href="/portal/letters">Tax documents</a></p>
+    <p><a href="/portal/change-request">Request a change to your details</a></p>
     <form action="/logout" method="post"><button type="submit">Log out</button></form>
   `;
 }

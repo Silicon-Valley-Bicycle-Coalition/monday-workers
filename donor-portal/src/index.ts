@@ -4,6 +4,7 @@ import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
 import { D1LoginAttemptStore } from './db/loginAttempts';
+import { D1ChangeRequestStore } from './db/changeRequests';
 import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
 import type { Env } from './types';
@@ -37,6 +38,8 @@ export default {
       ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
       config,
       now: () => new Date(),
+      changeStore: new D1ChangeRequestStore(env.DB),
+      changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
     });
     return app.fetch(request, env, ctx);
   },

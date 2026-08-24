@@ -1,10 +1,11 @@
 import type { MondayClient } from '../monday/client';
 import type { ChangeRequestField, ChangeRequestStore } from '../db/changeRequests';
+import type { ChangeQueueMessage } from '../types';
 import { sha256Hex } from '../crypto/hash';
 
-export interface ChangeQueueMessage {
-  requestId: number;
-}
+// Re-exported so existing importers of `./submitChangeRequest` keep working — the type itself
+// now lives in ../types to avoid an import cycle (see the comment there).
+export type { ChangeQueueMessage };
 
 export type SubmitResult =
   | { kind: 'submitted' }

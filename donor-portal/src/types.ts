@@ -101,9 +101,17 @@ export interface PortalView {
   discounts: DiscountOrganization[];
 }
 
+// Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for
+// that module's own callers) to avoid an import cycle: submitChangeRequest.ts imports
+// MondayClient from monday/client.ts, which itself imports from this file.
+export interface ChangeQueueMessage {
+  requestId: number;
+}
+
 export interface Env {
   DB: D1Database;
   MONDAY_API_TOKEN: string;
   RESEND_API_KEY: string;
   LOGIN_RATE_LIMITER: RateLimit;
+  CHANGE_QUEUE: Queue<ChangeQueueMessage>;
 }

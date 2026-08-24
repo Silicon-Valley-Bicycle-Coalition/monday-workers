@@ -7,6 +7,7 @@ import type { SessionStore } from './db/sessions';
 import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/resend';
 import type { Config } from './types';
+import type { ChangeRequestStore } from './db/changeRequests';
 
 function inMemoryTokenStore(): MagicLinkTokenStore {
   const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; usedAt: string | null }>();
@@ -41,6 +42,18 @@ function inMemorySessionStore(): SessionStore {
 
 function inMemoryAttemptStore(): LoginAttemptStore {
   return { recordAttempt: vi.fn().mockResolvedValue(undefined), countRecentAttempts: vi.fn().mockResolvedValue(0) };
+}
+
+// Mirrors Task 7's fakeStore in submitChangeRequest.test.ts: mock-based, not a real in-memory
+// Map, since none of these route tests need duplicate detection across calls.
+function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeRequestStore {
+  return {
+    createRequest: vi.fn().mockResolvedValue(42),
+    hasRecentDuplicate: vi.fn().mockResolvedValue(false),
+    getRequest: vi.fn().mockResolvedValue(null),
+    markWritten: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
 }
 
 function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[]>): MondayClient {
@@ -114,6 +127,8 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     ipLimiter: { limit: vi.fn().mockResolvedValue({ success: true }) },
     config,
     now: () => new Date('2026-08-22T00:00:00.000Z'),
+    changeStore: fakeChangeStore(),
+    changeQueue: { send: vi.fn().mockResolvedValue(undefined) },
     ...overrides,
   };
 }
@@ -442,5 +457,75 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
     const res = await app.request('/portal/letters/donor-1/not-a-year', { headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /portal/change-request', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/portal/change-request');
+    expect(res.status).toBe(302);
+  });
+
+  it('renders the form with current values for the logged-in donor', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/change-request', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('1 Old St');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
+  it('shows the unavailable state when the board is not configured', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.changeRequests.boardId = null;
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/change-request', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('not available yet');
+  });
+});
+
+describe('POST /portal/change-request', () => {
+  function postForm(app: ReturnType<typeof createApp>, cookie: string, fields: Record<string, string>) {
+    return app.request('/portal/change-request', {
+      method: 'POST',
+      body: new URLSearchParams(fields),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    });
+  }
+
+  it('submits a valid request and confirms', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postForm(app, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('review');
+    expect(changeQueue.send).toHaveBeenCalledOnce();
+  });
+
+  it('denies when the IP rate limiter says no', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const app = createApp(makeDeps({ monday, emailSender, ipLimiter }));
+    // login also consults ipLimiter — mock success:false AFTER login, or build the cookie first
+    // with a permissive limiter and swap deps. Simplest: two apps sharing sessionStore:
+    const permissive = makeDeps({ monday, emailSender });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+    const limitedApp = createApp({ ...permissive, ipLimiter });
+
+    const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    expect(res.status).toBe(429);
   });
 });
