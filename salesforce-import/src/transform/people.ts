@@ -1,7 +1,7 @@
 import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
-import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, salesforceDebug } from './fields.js';
+import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAttribution, salesforceDebug } from './fields.js';
 
 export interface InclusionInput {
   donorIds: Set<string>; recentDonorIds: Set<string>;
@@ -34,7 +34,8 @@ export function contactToPayload(
 ): ItemPayload {
   const email = collapseEmail(c);
   const secondary = (c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null;
-  const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string } | null;
+  const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string;
+    Owner?: { Name?: string } } | null;
   const columns: Record<string, unknown> = {
     'Email': emailCol(email),
     'Secondary Email': emailCol(secondary),
@@ -46,6 +47,9 @@ export function contactToPayload(
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
     'Do Not Solicit': account?.Do_Not_Solicit__c ? { checked: 'true' } : null,
     'Do Not Solicit Reason': (account?.Do_Not_Solicit_What__c ?? '') as string,
+    // The one-to-one Account's owner, not a Contact-level owner field — matches how
+    // monday-migration docs/05 §9 verified this (Account.OwnerId, not Contact.OwnerId).
+    'Salesforce Owner': ownerAttribution(account?.Owner),
     'Employer Name': (c['dtd__company__c'] ?? '') as string,
     ...consentColumns(email, deps.consent),
     ...salesforceDebug(c),
@@ -78,6 +82,7 @@ export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): I
       'Lat': geo ? String(geo.lat) : '', 'Lng': geo ? String(geo.lng) : '',
       'Do Not Solicit': a['Do_Not_Solicit__c'] ? { checked: 'true' } : null,
       'Do Not Solicit Reason': (a['Do_Not_Solicit_What__c'] ?? '') as string,
+      'Salesforce Owner': ownerAttribution(a['Owner']),
       ...salesforceDebug(a),
     },
   };

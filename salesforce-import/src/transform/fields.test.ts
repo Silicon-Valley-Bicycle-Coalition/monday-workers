@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -91,6 +91,23 @@ describe('fiscalYear', () => {
     expect(fiscalYear(null)).toBe('');
     expect(fiscalYear(undefined)).toBe('');
     expect(fiscalYear('')).toBe('');
+  });
+});
+
+describe('ownerAttribution', () => {
+  it('appends the Monday email for a current staff match, leaves former staff and non-human accounts bare', () => {
+    setStaffMatcher((name) => (name === 'Deanna Chevas' ? 'deanna@bikesiliconvalley.org' : null));
+    try {
+      expect(ownerAttribution({ Name: 'Deanna Chevas' })).toBe('Deanna Chevas (deanna@bikesiliconvalley.org)');
+      expect(ownerAttribution({ Name: 'Tim Oey' })).toBe('Tim Oey'); // former staff, no match
+      expect(ownerAttribution({ Name: 'SVBC Integration' })).toBe('SVBC Integration'); // non-human account
+    } finally {
+      setStaffMatcher(null);
+    }
+  });
+  it('returns empty string for a null/missing owner', () => {
+    expect(ownerAttribution(null)).toBe('');
+    expect(ownerAttribution({})).toBe('');
   });
 });
 

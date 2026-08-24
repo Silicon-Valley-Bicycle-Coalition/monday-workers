@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, fiscalYear, funraiseTransactionLink, salesforceDebug } from './fields.js';
+import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
 import { eraFor, type Era } from './eras.js';
 
 const STATUS: Record<string, string> = {
@@ -23,6 +23,7 @@ export function opportunityToPayload(
       'Amount': o['Amount'] != null ? String(o['Amount']) : '',
       'Date': dateCol(o['CloseDate'] as string),
       'Fiscal Year': fiscalYear(o['CloseDate'] as string | null),
+      'Salesforce Owner': ownerAttribution(o['Owner']),
       'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
       'Gift Type': ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),

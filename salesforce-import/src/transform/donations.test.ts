@@ -26,6 +26,11 @@ describe('opportunityToPayload', () => {
     expect(p.columns['Fiscal Year']).toBe('2026');
   });
 
+  it('sets Salesforce Owner from Opportunity.Owner, bare when unmatched', () => {
+    const p = opportunityToPayload({ ...base, Owner: { Name: 'Gavin Powell' } }, { eras, termCols: new Map() });
+    expect(p.columns['Salesforce Owner']).toBe('Gavin Powell');
+  });
+
   it('routes old gifts to the historical era and maps Closed Lost→Failed', () => {
     const p = opportunityToPayload({ ...base, CloseDate: '2015-03-01', StageName: 'Closed Lost' },
       { eras, termCols: new Map() });
