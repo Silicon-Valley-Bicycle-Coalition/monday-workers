@@ -49,6 +49,8 @@ export class D1ChangeRequestStore implements ChangeRequestStore {
     return result.meta.last_row_id;
   }
 
+  // Note: The created_at > ?2 comparison is lexicographic and only correct because callers pass
+  // fixed-width UTC ISO-8601 strings (e.g., from new Date().toISOString()).
   async hasRecentDuplicate(dedupeHash: string, sinceISO: string): Promise<boolean> {
     const row = await this.db
       .prepare(`SELECT 1 AS found FROM change_requests WHERE dedupe_hash = ?1 AND created_at > ?2 LIMIT 1`)
