@@ -5,6 +5,18 @@ export function dateCol(iso: string | null | undefined): unknown {
   return { date: iso.slice(0, 10) };
 }
 
+// SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes
+// into the fiscal year ending the following June once its month is July or later. Integer
+// parsing, not Date-object arithmetic — no timezone conversion needed since CloseDate/
+// TransactionDate are already plain dates by the time they reach this column (see
+// docs/07-migration-gotchas.md §7 in monday-migration for why that's safe).
+export function fiscalYear(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const [y, m] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m) return '';
+  return String(m >= 7 ? y + 1 : y);
+}
+
 // One consolidated long-text column instead of five separate provenance columns —
 // never updated after the migration, and slated for a single-column delete once
 // staff no longer need it. Names stay verbatim text (many are former employees

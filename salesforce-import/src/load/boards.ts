@@ -10,7 +10,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Email Consent': 'status', 'Membership Status': 'status', 'Membership Tier': 'status',
   'Member Since': 'date', 'Member Until': 'date',
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
-  'Amount': 'numbers', 'Date': 'date', 'Status': 'status', 'Gift Type': 'text',
+  'Amount': 'numbers', 'Date': 'date', 'Fiscal Year': 'numbers', 'Status': 'status', 'Gift Type': 'text',
   'Funraise ID': 'link', 'Funraise Profile': 'link', 'Anonymous Donor': 'checkbox',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
   'Partner Type': 'text', 'Website': 'link',
