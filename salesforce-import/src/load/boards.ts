@@ -29,6 +29,12 @@ export const COLUMN_TYPES: Record<string, string> = {
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
 
+// Dollar-amount 'numbers' columns — created with currency (not plain float) formatting.
+// 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
+export const CURRENCY_COLUMNS = new Set(['Lifetime Giving', 'Amount', 'Installment Amount',
+  'Annualized Value', 'Pledge Amount', 'Received Amount', 'Ticket Amount', 'Deductible Amount']);
+const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
+
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
 // with the target board ids — without this, board_relation columns have no connected boards
 // configured on the real API and are useless.
@@ -107,6 +113,8 @@ export async function ensureBoards(
         if (boardIds.length > 0) defaults = JSON.stringify({ boardIds });
         else console.warn(`boards: connect column "${title}" on ${key} has no resolvable ` +
           `target boards this run — creating without defaults`);
+      } else if (CURRENCY_COLUMNS.has(title)) {
+        defaults = CURRENCY_DEFAULTS;
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(
