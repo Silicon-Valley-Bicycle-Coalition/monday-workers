@@ -18,6 +18,16 @@
       "simple": { "limit": 10, "period": 60 }
     }
   ],
+  "queues": {
+    "producers": [{ "queue": "donor-portal-change-requests", "binding": "CHANGE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "donor-portal-change-requests",
+        "max_retries": 3,
+        "dead_letter_queue": "donor-portal-change-requests-dlq"
+      }
+    ]
+  },
   "observability": {
     "enabled": true
   }

@@ -7,7 +7,8 @@ import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
-import type { Env } from './types';
+import { processChangeQueueBatch } from './changeRequests/processBatch';
+import type { Env, ChangeQueueMessage } from './types';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -42,5 +43,23 @@ export default {
       changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
     });
     return app.fetch(request, env, ctx);
+  },
+
+  async queue(batch: MessageBatch<ChangeQueueMessage>, env: Env): Promise<void> {
+    // Same lazy-validation rationale as fetch() above: config/svbc.json ships with placeholder
+    // board/column ids until an operator fills them in, so validation can't happen at import time.
+    const config = validateConfig(rawConfig);
+    await processChangeQueueBatch([...batch.messages], {
+      store: new D1ChangeRequestStore(env.DB),
+      monday: new HttpMondayClient(
+        config.monday.apiUrl,
+        env.MONDAY_API_TOKEN,
+        config.monday.columns,
+        config.monday.donorsBoardId ?? 0,
+        config.monday.donationsBoardId ?? 0,
+        config.monday.organizationsBoardId ?? 0
+      ),
+      config,
+    });
   },
 };
