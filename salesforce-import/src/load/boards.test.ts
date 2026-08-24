@@ -32,6 +32,30 @@ describe('ensureBoards', () => {
     expect(map['organizations']!.columns['SF ID']).toBe('col_x');
   });
 
+  it('deletes the placeholder item monday.com seeds on every new board', async () => {
+    const deletedIds: string[] = [];
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) {
+        return Response.json({
+          data: { create_board: { id: '900', items_page: { items: [{ id: 'seed_1' }] } } },
+        });
+      }
+      if (/delete_item/.test(query)) {
+        deletedIds.push(variables.id as string);
+        return Response.json({ data: { delete_item: { id: variables.id } } });
+      }
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    const cfg = loadConfig();
+    await ensureBoards(client, cfg, ['organizations'], new Map([['organizations', new Set()]]));
+
+    expect(deletedIds).toEqual(['seed_1']);
+  });
+
   it('board_relation columns are created with defaults pointing at target board ids', async () => {
     // Two boards provisioned in the same run: organizations first (in boardKeys order),
     // then people-live, which needs an 'Organization' connect column pointing back at

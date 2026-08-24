@@ -76,10 +76,20 @@ export async function ensureBoards(
     if (known) boardId = known;
     else {
       const label = (BOARD_LABELS[key] ?? eraLabels[key] ?? key) + cfg.monday.boardSuffix;
-      const res = await client.gql<{ create_board: { id: string } }>(
-        `mutation ($name: String!) { create_board (board_name: $name, board_kind: public) { id } }`,
+      const res = await client.gql<{ create_board: { id: string; items_page: { items: { id: string }[] } } }>(
+        `mutation ($name: String!) {
+           create_board (board_name: $name, board_kind: public) {
+             id
+             items_page (limit: 25) { items { id } }
+           } }`,
         { name: label });
       boardId = Number(res.create_board.id);
+
+      // monday.com seeds every new board with a placeholder item ("Task 1") in its default
+      // group. Delete it immediately, before any real data lands, so it never lingers.
+      for (const item of res.create_board.items_page?.items ?? []) {
+        await client.gql(`mutation ($id: ID!) { delete_item (item_id: $id) { id } }`, { id: item.id });
+      }
     }
     map[key] = { boardId, columns: {} };
   }
