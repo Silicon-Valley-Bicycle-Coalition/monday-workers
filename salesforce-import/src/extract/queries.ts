@@ -42,7 +42,7 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         funraise__Transaction__c, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name
         FROM funraise__Fundraising_Event_Registration__c` },
     { name: 'campaigns', soql: `SELECT Id, Name, RecordType.Name, StartDate, EndDate, IsActive,
-        CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Campaign` },
+        Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Campaign` },
     { name: 'clickpledge_transactions', soql: `SELECT Id, Name, CnP_PaaS__Contact__c, CnP_PaaS__Account__c,
         CnP_PaaS__TotalCharged__c, CnP_PaaS__TransactionDate__c,
         CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name
