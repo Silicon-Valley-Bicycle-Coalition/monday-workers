@@ -50,6 +50,7 @@ function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeReq
   return {
     createRequest: vi.fn().mockResolvedValue(42),
     hasRecentDuplicate: vi.fn().mockResolvedValue(false),
+    findRecentByDedupeHash: vi.fn().mockResolvedValue(null),
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
     ...overrides,

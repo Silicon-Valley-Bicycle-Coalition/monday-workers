@@ -52,7 +52,15 @@ export async function submitChangeRequest(
   const now = deps.now();
   const dedupeHash = await sha256Hex(`${input.donorItemId}|${input.field}|${newValue}`);
   const sinceISO = new Date(now.getTime() - deps.dedupeWindowHours * 3600 * 1000).toISOString();
-  if (await deps.store.hasRecentDuplicate(dedupeHash, sinceISO)) {
+  const recentMatch = await deps.store.findRecentByDedupeHash(dedupeHash, sinceISO);
+  if (recentMatch !== null) {
+    // A 'queued' match means an earlier submission's row was written but its queue.send either
+    // never ran or threw — the row is stranded with no message in flight. Re-send it now so the
+    // consumer (idempotent on written status) gets another chance, instead of leaving the donor
+    // stuck being told "already submitted" for a request that will never reach staff.
+    if (recentMatch.status === 'queued') {
+      await deps.queue.send({ requestId: recentMatch.id });
+    }
     return { kind: 'duplicate' };
   }
 

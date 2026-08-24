@@ -7,6 +7,7 @@ function fakeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeRequestSt
   return {
     createRequest: vi.fn().mockResolvedValue(42),
     hasRecentDuplicate: vi.fn().mockResolvedValue(false),
+    findRecentByDedupeHash: vi.fn().mockResolvedValue(null),
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -70,8 +71,8 @@ describe('submitChangeRequest', () => {
     expect((await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'phone', newValue: oversized }, deps)).kind).toBe('invalid');
   });
 
-  it('reports a duplicate inside the dedupe window without inserting or enqueueing', async () => {
-    const store = fakeStore({ hasRecentDuplicate: vi.fn().mockResolvedValue(true) });
+  it('reports a duplicate without inserting when the existing row was already written', async () => {
+    const store = fakeStore({ findRecentByDedupeHash: vi.fn().mockResolvedValue({ id: 7, status: 'written' }) });
     const deps = makeDeps(store);
     const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }, deps);
     expect(result).toEqual({ kind: 'duplicate' });
@@ -79,11 +80,25 @@ describe('submitChangeRequest', () => {
     expect(deps.queue.send).not.toHaveBeenCalled();
   });
 
+  // Finding 1: createRequest runs before queue.send, so if the send throws the row is left
+  // 'queued' with no matching message — every retry inside the dedupe window would otherwise
+  // just tell the donor "already submitted" forever, and the request never reaches staff. On a
+  // dedupe hit against a still-'queued' row, re-send its requestId so the consumer (which is
+  // idempotent on written status) gets another chance to process it.
+  it('re-sends the queue message for a stranded queued row on a duplicate submission', async () => {
+    const store = fakeStore({ findRecentByDedupeHash: vi.fn().mockResolvedValue({ id: 7, status: 'queued' }) });
+    const deps = makeDeps(store);
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }, deps);
+    expect(result).toEqual({ kind: 'duplicate' });
+    expect(store.createRequest).not.toHaveBeenCalled();
+    expect(deps.queue.send).toHaveBeenCalledWith({ requestId: 7 });
+  });
+
   it('computes the dedupe window from config hours', async () => {
     const store = fakeStore();
     const deps = makeDeps(store);
     await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }, deps);
-    const sinceISO = (store.hasRecentDuplicate as ReturnType<typeof vi.fn>).mock.calls[0]![1] as string;
+    const sinceISO = (store.findRecentByDedupeHash as ReturnType<typeof vi.fn>).mock.calls[0]![1] as string;
     expect(sinceISO).toBe('2026-08-21T10:00:00.000Z'); // now − 72h
   });
 

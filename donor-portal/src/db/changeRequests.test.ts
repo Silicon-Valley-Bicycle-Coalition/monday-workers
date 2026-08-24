@@ -28,6 +28,7 @@ describe('D1ChangeRequestStore', () => {
       oldValue: '1 Old St',
       newValue: '2 New Ave',
       status: 'queued',
+      createdAt: '2026-08-24T10:00:00.000Z',
     });
   });
 
@@ -49,5 +50,39 @@ describe('D1ChangeRequestStore', () => {
     const id = await store.createRequest(newRequest({ dedupeHash: 'hash-written' }));
     await store.markWritten(id, '2026-08-24T11:00:00.000Z');
     expect((await store.getRequest(id))!.status).toBe('written');
+  });
+
+  it('finds the newest matching row within the window, with its status', async () => {
+    const store = new D1ChangeRequestStore(env.DB);
+    await store.createRequest(
+      newRequest({ dedupeHash: 'hash-recent', createdAt: '2026-08-24T09:00:00.000Z' })
+    );
+    const newerId = await store.createRequest(
+      newRequest({ dedupeHash: 'hash-recent', createdAt: '2026-08-24T10:00:00.000Z' })
+    );
+
+    expect(await store.findRecentByDedupeHash('hash-recent', '2026-08-24T00:00:00.000Z')).toEqual({
+      id: newerId,
+      status: 'queued',
+    });
+  });
+
+  it('reflects a written status once the row is marked written', async () => {
+    const store = new D1ChangeRequestStore(env.DB);
+    const id = await store.createRequest(newRequest({ dedupeHash: 'hash-written-lookup' }));
+    await store.markWritten(id, '2026-08-24T11:00:00.000Z');
+
+    expect(await store.findRecentByDedupeHash('hash-written-lookup', '2026-08-24T00:00:00.000Z')).toEqual({
+      id,
+      status: 'written',
+    });
+  });
+
+  it('returns null outside the window or for no match', async () => {
+    const store = new D1ChangeRequestStore(env.DB);
+    await store.createRequest(newRequest({ dedupeHash: 'hash-narrow', createdAt: '2026-08-24T10:00:00.000Z' }));
+
+    expect(await store.findRecentByDedupeHash('hash-narrow', '2026-08-25T00:00:00.000Z')).toBeNull();
+    expect(await store.findRecentByDedupeHash('no-such-hash', '2026-08-24T00:00:00.000Z')).toBeNull();
   });
 });

@@ -18,11 +18,21 @@ export interface ChangeRequestRow {
   oldValue: string;
   newValue: string;
   status: 'queued' | 'written';
+  createdAt: string;
+}
+
+export interface RecentDedupeMatch {
+  id: number;
+  status: 'queued' | 'written';
 }
 
 export interface ChangeRequestStore {
   createRequest(params: NewChangeRequest): Promise<number>;
   hasRecentDuplicate(dedupeHash: string, sinceISO: string): Promise<boolean>;
+  // Same window as hasRecentDuplicate, but returns the newest matching row's id and status
+  // instead of a boolean — the caller needs both to decide whether to re-send a stranded
+  // 'queued' row's queue message (see submitChangeRequest's dedupe-hit handling).
+  findRecentByDedupeHash(dedupeHash: string, sinceISO: string): Promise<RecentDedupeMatch | null>;
   getRequest(id: number): Promise<ChangeRequestRow | null>;
   markWritten(id: number, writtenAtISO: string): Promise<void>;
 }
@@ -52,17 +62,24 @@ export class D1ChangeRequestStore implements ChangeRequestStore {
   // Note: The created_at > ?2 comparison is lexicographic and only correct because callers pass
   // fixed-width UTC ISO-8601 strings (e.g., from new Date().toISOString()).
   async hasRecentDuplicate(dedupeHash: string, sinceISO: string): Promise<boolean> {
+    return (await this.findRecentByDedupeHash(dedupeHash, sinceISO)) !== null;
+  }
+
+  async findRecentByDedupeHash(dedupeHash: string, sinceISO: string): Promise<RecentDedupeMatch | null> {
     const row = await this.db
-      .prepare(`SELECT 1 AS found FROM change_requests WHERE dedupe_hash = ?1 AND created_at > ?2 LIMIT 1`)
+      .prepare(
+        `SELECT id, status FROM change_requests WHERE dedupe_hash = ?1 AND created_at > ?2
+         ORDER BY created_at DESC, id DESC LIMIT 1`
+      )
       .bind(dedupeHash, sinceISO)
-      .first<{ found: number }>();
-    return row !== null;
+      .first<{ id: number; status: 'queued' | 'written' }>();
+    return row === null ? null : { id: row.id, status: row.status };
   }
 
   async getRequest(id: number): Promise<ChangeRequestRow | null> {
     const row = await this.db
       .prepare(
-        `SELECT id, donor_item_id, donor_name, field, old_value, new_value, status
+        `SELECT id, donor_item_id, donor_name, field, old_value, new_value, status, created_at
          FROM change_requests WHERE id = ?1`
       )
       .bind(id)
@@ -74,6 +91,7 @@ export class D1ChangeRequestStore implements ChangeRequestStore {
         old_value: string;
         new_value: string;
         status: 'queued' | 'written';
+        created_at: string;
       }>();
     if (row === null) return null;
     return {
@@ -84,6 +102,7 @@ export class D1ChangeRequestStore implements ChangeRequestStore {
       oldValue: row.old_value,
       newValue: row.new_value,
       status: row.status,
+      createdAt: row.created_at,
     };
   }
 
