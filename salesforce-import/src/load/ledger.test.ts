@@ -31,4 +31,23 @@ describe('Ledger', () => {
     const b = new Ledger(); await b.load();
     expect(b.linkDone('c1', 'Organization')).toBe(true);
   });
+
+  it('tracks archives; a retry archive clears an earlier archive failure', async () => {
+    const a = new Ledger(); await a.load();
+    expect(a.archivedDone('o1')).toBe(false);
+    await a.recordArchiveFailure('o1', 'HTTP 500');
+    await a.recordArchive('o1');
+    const b = new Ledger(); await b.load();
+    expect(b.archivedDone('o1')).toBe(true);
+    expect(b.failures()).toEqual([]);
+  });
+
+  it('an archive failure is keyed apart from create and link failures', async () => {
+    const a = new Ledger(); await a.load();
+    await a.recordSuccess({ sfId: 'o1', board: 'donations', itemId: '9' });
+    await a.recordArchiveFailure('o1', 'boom');
+    const b = new Ledger(); await b.load();
+    expect(b.has('o1', 'donations')).toBe(true); // success untouched
+    expect(b.failures().map((f) => f.board)).toEqual(['archive']);
+  });
 });

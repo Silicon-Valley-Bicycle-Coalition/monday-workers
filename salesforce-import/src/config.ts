@@ -1,20 +1,23 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export interface EraRule { key: string; label: string; startYear: number | null; endYear: number | null; boardId?: number }
 export interface Config {
   salesforceOrg: string;
   cutoverDateISO: string;
   peopleActiveSinceISO: string;
   activitySliceSinceISO: string;
-  eraMaxItems: number;
+  boardMaxItems: number;
+  // How many fiscal years of donations stay active (unarchived) on the Donations board;
+  // everything older is archived in place during load. 2 = current + previous FY.
+  donationsActiveFiscalYears: number;
   monday: { apiUrl: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
   localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;
 }
 
 const REQUIRED = ['salesforceOrg', 'cutoverDateISO', 'peopleActiveSinceISO',
-  'activitySliceSinceISO', 'eraMaxItems', 'monday', 'localNews', 'reconciliation'] as const;
+  'activitySliceSinceISO', 'boardMaxItems', 'donationsActiveFiscalYears',
+  'monday', 'localNews', 'reconciliation'] as const;
 
 function defaultConfigPath(): string {
   const cwdPath = resolve(process.cwd(), 'config', 'svbc.json'); // lets tests/forks override per-directory

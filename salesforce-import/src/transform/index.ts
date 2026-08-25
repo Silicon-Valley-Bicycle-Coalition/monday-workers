@@ -11,7 +11,7 @@ import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
-import { computeEras, type Era } from './eras.js';
+import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
@@ -64,12 +64,6 @@ export async function runTransform(args: string[]): Promise<number> {
       : []);
     enrichment = mergeableEnrichment(await readNdjson<EnrichmentRow>(enrichPath), approved);
   }
-
-  // Eras from all dated donation rows.
-  const eras: Era[] = computeEras([
-    ...opportunities.map((o) => o['CloseDate'] as string).filter(Boolean),
-    ...cnp.map((t) => (t['CnP_PaaS__TransactionDate__c'] as string) ?? '').filter(Boolean),
-  ], cfg.eraMaxItems);
 
   // Membership derivations + assertions.
   const terms = memberships as unknown as MembershipRow[];
@@ -153,8 +147,8 @@ export async function runTransform(args: string[]): Promise<number> {
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
-  for (const o of opportunities) payloads.push(opportunityToPayload(o, { eras, termCols }));
-  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, { eras }));
+  for (const o of opportunities) payloads.push(opportunityToPayload(o, { termCols }));
+  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t));
 
   const pledgeCols = pledgeColumnsBySubscription(pledges);
   for (const s of subscriptions) {
@@ -171,16 +165,28 @@ export async function runTransform(args: string[]): Promise<number> {
   const linkedTasks = tasksRecent
     .filter((t) => includedContactIds.has(t['WhoId'] as string))
     .sort((a, b) => String(b['ActivityDate'] ?? '').localeCompare(String(a['ActivityDate'] ?? '')));
-  const fittedTasks = linkedTasks.slice(0, cfg.eraMaxItems);
+  const fittedTasks = linkedTasks.slice(0, cfg.boardMaxItems);
   const activityCutoff = fittedTasks.at(-1)?.['ActivityDate'] ?? null;
   for (const t of fittedTasks) payloads.push(taskToPayload(t));
 
-  // Per-board counts + ceiling assertion.
+  // Donations archive-in-place plan: gifts before the retention window get flagged for load
+  // to archive after their fiscal year's items and links land (docs/20). The board's TOTAL
+  // exceeds the ceiling by design — only the peak ACTIVE count has to stay under it.
+  const donationPayloads = payloads.filter((p) => p.board === 'donations');
+  const plan = donationArchivePlan(donationPayloads, cfg.cutoverDateISO, cfg.donationsActiveFiscalYears);
+  let archiveCount = 0;
+  for (const p of donationPayloads) {
+    if (shouldArchive(p, plan)) { p.archive = true; archiveCount++; }
+  }
+
+  // Per-board counts + ceiling assertion (donations asserts on peak active, not total).
   const payloadCounts: Record<string, number> = {};
   for (const p of payloads) payloadCounts[p.board] = (payloadCounts[p.board] ?? 0) + 1;
   const ceilingViolations = Object.entries(payloadCounts)
-    .filter(([, n]) => n > 10_000)
-    .map(([board, n]) => `${board} projected at ${n} items (> 10,000)`);
+    .filter(([board, n]) => (board === 'donations' ? plan.peakActive : n) > 10_000)
+    .map(([board, n]) => board === 'donations'
+      ? `donations peak active projected at ${plan.peakActive} items (> 10,000)`
+      : `${board} projected at ${n} items (> 10,000)`);
 
   const warnings: string[] = [];
   if (rollups.overlap > 0) {
@@ -193,6 +199,8 @@ export async function runTransform(args: string[]): Promise<number> {
   warnings.push(`activities: ${fittedTasks.length} of ${linkedTasks.length} person-linked tasks ` +
     `(cutoff ${activityCutoff ?? 'n/a'}); ${tasksRecent.length - linkedTasks.length} unlinked tasks and all ` +
     `emails are backup-only`);
+  warnings.push(`donations: ${archiveCount} of ${donationPayloads.length} flagged for archive ` +
+    `(fiscal years before FY${plan.cutoffFY}); peak active ${plan.peakActive}`);
   const report: TransformReport = {
     payloadCounts,
     assertions: [
@@ -202,7 +210,6 @@ export async function runTransform(args: string[]): Promise<number> {
   };
 
   await writeNdjson(dataPath('transform', 'payloads.ndjson'), payloads);
-  await writeJson(dataPath('transform', 'eras.json'), eras);
   await writeJson(dataPath('transform', 'report.json'), report);
 
   console.log(`transform: ${payloads.length} payloads, ${includedContactIds.size} people included`);

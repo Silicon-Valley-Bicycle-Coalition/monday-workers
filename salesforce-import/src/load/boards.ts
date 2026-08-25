@@ -39,13 +39,13 @@ export const STATUS_LABELS: Record<string, string[]> = {
 // "Status" isn't in STATUS_LABELS above because the title is reused across boards with
 // unrelated vocabularies: Recurring Gifts and Volunteers/Activities pass raw values through
 // from Funraise/the Volunteers app/Salesforce Task, which aren't closed sets known to this
-// code. Only the donations era boards compute "Status" themselves (StageName mapped to
-// exactly Received/Failed/Pending in transform/donations.ts), so that one is closed and
-// scoped by board key rather than title alone.
+// code. Only the Donations board computes "Status" itself (StageName mapped to exactly
+// Received/Failed/Pending in transform/donations.ts), so that one is closed and scoped by
+// board key rather than title alone.
 const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
 
 function statusLabelsFor(key: string, title: string): string[] | undefined {
-  if (title === 'Status' && key.startsWith('donations:')) return DONATION_STATUS_LABELS;
+  if (title === 'Status' && key === 'donations') return DONATION_STATUS_LABELS;
   return STATUS_LABELS[title];
 }
 // Needed for debugging/reconciliation during the migration, deleted afterward — created
@@ -61,14 +61,14 @@ const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
 // with the target board ids — without this, board_relation columns have no connected boards
 // configured on the real API and are useless.
-export const CONNECT_TARGETS: Record<string, string[] | 'donation-eras'> = {
+export const CONNECT_TARGETS: Record<string, string[]> = {
   'Donor': ['people-live', 'people-historical', 'organizations'],
   'Organization': ['organizations'],
   'Recurring Gift': ['recurring-gifts'],
   'Campaign': ['campaigns'],
   'Attendee': ['people-live', 'people-historical'],
   'Event': ['events'],
-  'Payment': 'donation-eras',
+  'Payment': ['donations'],
   'Volunteer': ['people-live', 'people-historical'],
   'Person': ['people-live', 'people-historical'],
 };
@@ -76,6 +76,7 @@ export const CONNECT_TARGETS: Record<string, string[] | 'donation-eras'> = {
 export type BoardMap = Record<string, { boardId: number; columns: Record<string, string> }>;
 
 const BOARD_LABELS: Record<string, string> = {
+  'donations': 'Donations',
   'people-live': 'People', 'people-historical': 'People (Historical)',
   'organizations': 'Organizations', 'recurring-gifts': 'Recurring Gifts',
   'events': 'Events', 'event-registrations': 'Event Registrations',
@@ -84,7 +85,7 @@ const BOARD_LABELS: Record<string, string> = {
 
 export async function ensureBoards(
   client: MondayClient, cfg: Config, boardKeys: string[],
-  neededColumns: Map<string, Set<string>>, eraLabels: Record<string, string> = {},
+  neededColumns: Map<string, Set<string>>,
 ): Promise<BoardMap> {
   const path = dataPath('load', 'boards.json');
   const map: BoardMap = existsSync(path) ? await readJson<BoardMap>(path) : {};
@@ -98,7 +99,7 @@ export async function ensureBoards(
     let boardId: number;
     if (known) boardId = known;
     else {
-      const label = (BOARD_LABELS[key] ?? eraLabels[key] ?? key) + cfg.monday.boardSuffix;
+      const label = (BOARD_LABELS[key] ?? key) + cfg.monday.boardSuffix;
       // Without workspace_id, create_board targets the account's Main workspace, which
       // SVBC restricts (403 even for admins) — boards must be created in a named workspace.
       const workspaceId = cfg.monday.workspaceId ?? null;
@@ -129,11 +130,7 @@ export async function ensureBoards(
   }
 
   const resolveTargetBoardIds = (title: string): number[] => {
-    const targets = CONNECT_TARGETS[title];
-    if (!targets) return [];
-    const targetKeys = targets === 'donation-eras'
-      ? boardKeys.filter((k) => k.startsWith('donations:'))
-      : targets.filter((k) => boardKeys.includes(k));
+    const targetKeys = (CONNECT_TARGETS[title] ?? []).filter((k) => boardKeys.includes(k));
     return targetKeys.map((k) => map[k]?.boardId).filter((id): id is number => id !== undefined);
   };
 
