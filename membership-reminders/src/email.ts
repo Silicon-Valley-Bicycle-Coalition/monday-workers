@@ -5,11 +5,15 @@ export interface EmailRecipient {
   name: string;
 }
 
-export async function sendReminderEmail(
-  recipient: EmailRecipient,
-  email: RenderedEmail,
-): Promise<void> {
-  console.log(
-    `[email-stub] would send to ${recipient.email} (${recipient.name}): subject="${email.subject}"`,
-  );
+export type SendReminderEmail = (recipient: EmailRecipient, email: RenderedEmail) => Promise<void>;
+
+export function createEmailSender(emailBinding: SendEmail, fromAddress: string, fromName: string): SendReminderEmail {
+  return async (recipient, email) => {
+    await emailBinding.send({
+      to: recipient.email,
+      from: { email: fromAddress, name: fromName },
+      subject: email.subject,
+      text: email.body,
+    });
+  };
 }

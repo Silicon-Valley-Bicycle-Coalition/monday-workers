@@ -7,7 +7,7 @@ import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
 import { HttpMondayClient } from './monday/client';
-import { ResendEmailSender } from './email/resend';
+import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
 import { D1LetterSendStore } from './db/letterSends';
@@ -17,7 +17,7 @@ import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
-import type { EmailSender } from './email/resend';
+import type { EmailSender } from './email/types';
 import { purgeExpiredCardTokens } from './card/purgeExpiredTokens';
 
 export interface QueueRouterDeps {
@@ -88,7 +88,7 @@ export default {
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),
       attemptStore: new D1LoginAttemptStore(env.DB),
-      emailSender: new ResendEmailSender(env.RESEND_API_KEY, config.resend.fromAddress, config.resend.fromName),
+      emailSender: new CloudflareEmailSender(env.EMAIL, config.email.fromAddress, config.email.fromName),
       ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
       config,
       now: () => new Date(),
@@ -120,7 +120,7 @@ export default {
       letterStore: new D1LetterSendStore(env.DB),
       monday,
       tokenStore: new D1MagicLinkTokenStore(env.DB),
-      emailSender: new ResendEmailSender(env.RESEND_API_KEY, config.resend.fromAddress, config.resend.fromName),
+      emailSender: new CloudflareEmailSender(env.EMAIL, config.email.fromAddress, config.email.fromName),
       config,
       now: () => new Date(),
     });

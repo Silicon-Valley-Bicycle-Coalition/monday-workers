@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { requestLogin } from './requestLogin';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
-import type { EmailSender } from '../email/resend';
+import type { EmailSender } from '../email/types';
 
 function fakeMonday(matches: { id: string; name: string }[]): MondayClient {
   return {

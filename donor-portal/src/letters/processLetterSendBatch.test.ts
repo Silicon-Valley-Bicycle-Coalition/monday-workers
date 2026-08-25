@@ -3,7 +3,7 @@ import { processLetterSendBatch } from './processLetterSendBatch';
 import type { LetterSendStore, LetterSendRow } from '../db/letterSends';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
-import type { EmailSender } from '../email/resend';
+import type { EmailSender } from '../email/types';
 import type { Config } from '../types';
 
 const row: LetterSendRow = {
@@ -17,7 +17,7 @@ const row: LetterSendRow = {
 
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
-  resend: { fromAddress: 'a@example.org', fromName: 'Test' },
+  email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {
@@ -165,7 +165,7 @@ describe('processLetterSendBatch', () => {
   it('retries on an email-send failure without marking sent', async () => {
     const store = fakeStore(row);
     const emailSender = fakeEmailSender();
-    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('resend: HTTP 500'));
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('cloudflare email: send failed'));
     const message = makeMessage(42);
 
     await processLetterSendBatch([message], { store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });

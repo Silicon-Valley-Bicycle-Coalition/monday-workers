@@ -23,7 +23,7 @@ const validConfig = {
       membershipExpiry: 'expiry_col',
     },
   },
-  resend: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
+  email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {
@@ -57,8 +57,8 @@ describe('validateConfig', () => {
   });
 
   it('throws when a top-level key is missing', () => {
-    const { resend, ...missing } = validConfig;
-    expect(() => validateConfig(missing)).toThrow(/resend/);
+    const { email, ...missing } = validConfig;
+    expect(() => validateConfig(missing)).toThrow(/email/);
   });
 
   it('throws when monday.columns is missing a column', () => {
@@ -67,9 +67,9 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/donorEmail/);
   });
 
-  it('throws when resend is missing a key', () => {
-    const { fromName, ...rest } = validConfig.resend;
-    const broken = { ...validConfig, resend: rest };
+  it('throws when email is missing a key', () => {
+    const { fromName, ...rest } = validConfig.email;
+    const broken = { ...validConfig, email: rest };
     expect(() => validateConfig(broken)).toThrow(/fromName/);
   });
 

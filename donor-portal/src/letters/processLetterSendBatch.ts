@@ -1,7 +1,7 @@
 import type { LetterSendStore } from '../db/letterSends';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
-import type { EmailSender } from '../email/resend';
+import type { EmailSender } from '../email/types';
 import type { Config, LetterSendQueueMessage } from '../types';
 import { loadLetterData } from './loadLetterData';
 import { lettersEnabled } from '../config';

@@ -16,8 +16,8 @@ read-only portal (donations, membership, discounts) work as soon as Phase 1–5 
   rebuilt before cutover, and board/column ids do not survive the rebuild)
 - **Cloudflare** access to the SVBC account (`f323cb19…`, already in `wrangler.jsonc`) with
   Workers, D1, and Queues permissions; `wrangler` logged in locally (`wrangler whoami`)
-- **DNS** control for `bikesiliconvalley.org` (it's on Cloudflare, so this is the same login)
-- **Resend** account (free tier is sufficient at expected volume: 3,000 emails/mo, 100/day)
+- **DNS** control for `bikesiliconvalley.org` (it's on Cloudflare, so this is the same login) —
+  no separate email vendor account needed: sending goes through Cloudflare's own Email Service
 
 ## Phase 1 — Monday: boards, columns, integration user
 
@@ -48,7 +48,7 @@ ids in the v1 set, so a bad fill fails loudly at first request, not silently.
   columns and `donorAddress`/`donorPhone`
 - `changeRequests.boardId` + `changeRequests.columns.*` — from Phase 1 step 2 (gates the
   change-request feature)
-- `resend.fromAddress` / `fromName` — e.g. `login@mail.bikesiliconvalley.org` / `SVBC Donor Portal`
+- `email.fromAddress` / `fromName` — e.g. `login@mail.bikesiliconvalley.org` / `SVBC Donor Portal`
 - `auth.portalBaseUrl` — `https://portal.bikesiliconvalley.org`
 - `taxLetter.*` — **leave as `REPLACE_AFTER_SIGNOFF` until the ED/accountant sign-off lands**;
   this is the letters gate, not a deploy blocker
@@ -57,15 +57,21 @@ ids in the v1 set, so a bad fill fails loudly at first request, not silently.
 
 Commit the fill (config is deliberately in-repo; it holds ids, not secrets).
 
-## Phase 3 — Resend + DNS
+## Phase 3 — Cloudflare Email Sending + DNS
 
-1. In Resend, add domain `mail.bikesiliconvalley.org` (dedicated sending subdomain — keeps the
-   org's main mail flow untouched, per the README).
-2. Add the SPF/DKIM records Resend prints to Cloudflare DNS; wait for Resend to show
-   **Verified**.
-3. Create a Resend API key scoped to sending — becomes `RESEND_API_KEY` in Phase 4.
-4. Send a test email via Resend's dashboard to a staff address; confirm it lands in the inbox
-   (not spam) before go-live.
+1. Onboard the dedicated sending subdomain (keeps the org's main mail flow untouched, per the
+   README): `wrangler email sending enable mail.bikesiliconvalley.org`. Since the zone is already
+   on Cloudflare, this auto-adds the SPF and DKIM records — no manual DNS copy-paste.
+2. Verify: `wrangler email sending dns get mail.bikesiliconvalley.org`. DNS usually propagates
+   within 5-15 minutes.
+3. Add a DMARC record for the subdomain if one doesn't already exist (Cloudflare doesn't add this
+   automatically): `v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@bikesiliconvalley.org`.
+4. Send a test email to a staff address and confirm it lands in the inbox (not spam) before
+   go-live:
+   ```sh
+   wrangler email sending send --from "login@mail.bikesiliconvalley.org" \
+     --to "staff@bikesiliconvalley.org" --subject "Donor portal test" --text "Test send."
+   ```
 
 ## Phase 4 — Cloudflare provisioning
 
@@ -77,7 +83,8 @@ wrangler d1 migrations apply svbc-donor-portal --remote   # applies 0001 + 0002
 wrangler queues create donor-portal-change-requests
 wrangler queues create donor-portal-change-requests-dlq
 wrangler secret put MONDAY_API_TOKEN        # paste Phase 1 token
-wrangler secret put RESEND_API_KEY          # paste Phase 3 key
+                                             # (no email secret to set — the send_email binding
+                                             # in wrangler.jsonc needs no API key)
 ```
 
 Then add the custom domain to `wrangler.jsonc` (currently absent — `workers_dev` is already

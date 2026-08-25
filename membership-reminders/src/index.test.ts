@@ -17,7 +17,7 @@ describe('GET /health', () => {
 describe('scheduled', () => {
   it('runs the reminder job and waits for it', async () => {
     const waitUntil = vi.fn();
-    const env = { MONDAY_API_TOKEN: 'test-token' };
+    const env = { MONDAY_API_TOKEN: 'test-token', EMAIL: { send: vi.fn() } };
 
     await worker.scheduled?.({} as ScheduledEvent, env, { waitUntil } as unknown as ExecutionContext);
 
@@ -30,7 +30,7 @@ describe('scheduled', () => {
     vi.mocked(runReminders).mockRejectedValueOnce(new Error('boom'));
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const waitUntil = vi.fn();
-    const env = { MONDAY_API_TOKEN: 'test-token' };
+    const env = { MONDAY_API_TOKEN: 'test-token', EMAIL: { send: vi.fn() } };
 
     await worker.scheduled?.({} as ScheduledEvent, env, { waitUntil } as unknown as ExecutionContext);
 

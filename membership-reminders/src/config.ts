@@ -2,12 +2,15 @@ import type { Config, MondayColumns } from './types';
 
 const REQUIRED_TOP_LEVEL = [
   'monday',
+  'email',
   'stages',
   'renewalUrl',
   'timeZone',
   'lifetimeTierValue',
   'activeStatusValue',
 ] as const;
+
+const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName'] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'membershipStatus',
@@ -41,6 +44,16 @@ export function validateConfig(raw: unknown): Config {
   for (const key of REQUIRED_COLUMNS) {
     if (!(key in columns)) {
       throw new Error(`config: missing required key "monday.columns.${key}"`);
+    }
+  }
+
+  if (typeof cfg.email !== 'object' || cfg.email === null) {
+    throw new Error('config: missing required key "email"');
+  }
+  const email = cfg.email as Record<string, unknown>;
+  for (const key of REQUIRED_EMAIL_KEYS) {
+    if (!(key in email)) {
+      throw new Error(`config: missing required key "email.${key}"`);
     }
   }
 

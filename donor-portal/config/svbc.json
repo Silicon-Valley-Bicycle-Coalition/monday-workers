@@ -20,7 +20,7 @@
       "membershipExpiry": "REPLACE_WITH_COLUMN_ID"
     }
   },
-  "resend": {
+  "email": {
     "fromAddress": "login@mail.bikesiliconvalley.org",
     "fromName": "SVBC Donor Portal"
   },

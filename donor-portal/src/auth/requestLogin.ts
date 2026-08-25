@@ -1,6 +1,6 @@
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
-import type { EmailSender } from '../email/resend';
+import type { EmailSender } from '../email/types';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken } from '../crypto/token';
 

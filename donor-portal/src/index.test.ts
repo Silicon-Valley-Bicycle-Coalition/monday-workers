@@ -5,14 +5,14 @@ import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
-import type { EmailSender } from './email/resend';
+import type { EmailSender } from './email/types';
 import type { ChangeQueueMessage, Config, LetterSendQueueMessage } from './types';
 
 // Full valid test Config shape, same fixture used in routes.test.ts / processBatch.test.ts /
 // processLetterSendBatch.test.ts.
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
-  resend: { fromAddress: 'a@example.org', fromName: 'Test' },
+  email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {

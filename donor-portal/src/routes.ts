@@ -5,7 +5,7 @@ import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { SessionStore } from './db/sessions';
 import type { LoginAttemptStore } from './db/loginAttempts';
-import type { EmailSender } from './email/resend';
+import type { EmailSender } from './email/types';
 import type { IpRateLimiter } from './ratelimit';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
@@ -117,7 +117,7 @@ export function createApp(deps: AppDeps) {
           deps.now()
         );
         if (allowed) {
-          // requestLogin does a D1 write plus a full Resend HTTP round-trip; awaiting it inline
+          // requestLogin does a D1 write plus an email-send round-trip; awaiting it inline
           // would make the matching-email case measurably slower than the non-matching/denied
           // cases even though the response body is identical, letting an attacker distinguish
           // "matched" from "didn't match" by response latency alone. Defer it instead so the
