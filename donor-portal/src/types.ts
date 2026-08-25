@@ -109,6 +109,11 @@ export interface ChangeQueueMessage {
   requestId: number;
 }
 
+// See the comment on ChangeQueueMessage above — same import-cycle avoidance.
+export interface LetterSendQueueMessage {
+  sendId: number;
+}
+
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
 // only secrets and narrowed queue message types are declared here.
@@ -116,4 +121,6 @@ export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
   RESEND_API_KEY: string;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
+  LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;
+  LETTER_WEBHOOK_SECRET: string;
 }
