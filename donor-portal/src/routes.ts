@@ -335,7 +335,13 @@ export function createApp(deps: AppDeps) {
       return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
     }
 
-    let token = await deps.cardTokenStore.getActiveToken(donorItemId);
+    let token: string | null;
+    try {
+      token = await deps.cardTokenStore.getActiveToken(donorItemId);
+    } catch (err) {
+      console.error(`donor-portal card token lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+    }
     if (token === null) {
       token = generateToken();
       try {
@@ -344,12 +350,17 @@ export function createApp(deps: AppDeps) {
         // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
         // concurrent request for the same donor won the race and inserted first. Re-read rather
         // than fail the request — the other request's token is just as valid. A genuine
-        // unrelated D1 outage would simply fail again on this re-read and fall through to the
-        // route's normal error handling below.
+        // unrelated D1 outage would simply fail again on this re-read, and is reported with this
+        // route's own copy below rather than falling through to the generic (and misleading,
+        // login-flavored) app.onError handler.
         console.error(`donor-portal card token insert failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
-        token = await deps.cardTokenStore.getActiveToken(donorItemId);
+        try {
+          token = await deps.cardTokenStore.getActiveToken(donorItemId);
+        } catch {
+          token = null;
+        }
         if (token === null) {
-          throw err;
+          return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
         }
       }
     }
@@ -373,7 +384,12 @@ export function createApp(deps: AppDeps) {
     }
 
     const now = deps.now().toISOString();
-    await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
+    try {
+      await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
+    } catch (err) {
+      console.error(`donor-portal card token revoke failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not regenerate your card right now. Please try again in a few minutes.')), 500);
+    }
     try {
       await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
     } catch (err) {
@@ -382,12 +398,18 @@ export function createApp(deps: AppDeps) {
       // re-inserted first. This request's own token is moot in that case — the concurrent
       // request's token is just as valid, and the redirect below doesn't need to know which
       // token is active, only that one exists. Re-read rather than fail the request. A genuine
-      // unrelated D1 outage would simply fail again on this re-read and fall through to the
-      // route's normal error handling below.
+      // unrelated D1 outage would simply fail again on this re-read, and is reported with this
+      // route's own copy below rather than falling through to the generic (and misleading,
+      // login-flavored) app.onError handler.
       console.error(`donor-portal card token regenerate failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
-      const token = await deps.cardTokenStore.getActiveToken(donorItemId);
+      let token: string | null;
+      try {
+        token = await deps.cardTokenStore.getActiveToken(donorItemId);
+      } catch {
+        token = null;
+      }
       if (token === null) {
-        throw err;
+        return c.html(page(TITLE_ERROR, errorView('We could not regenerate your card right now. Please try again in a few minutes.')), 500);
       }
     }
 

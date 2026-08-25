@@ -29,6 +29,15 @@ export function currentFiscalYear(now: Date): number {
   return month >= 7 ? year + 1 : year;
 }
 
+// Same rule, applied to a plain "YYYY-MM-DD" date rather than "now" — used when a
+// Donations board doesn't have its own Fiscal Year column yet (confirmed missing on
+// every board in the CRM Sandbox as of 2026-08-24) so this Worker isn't hard-blocked
+// on that column existing everywhere before it can compute This/Last Year splits.
+export function fiscalYearFromDate(dateISO: string): number {
+  const [y, m] = dateISO.slice(0, 10).split('-').map(Number);
+  return (m ?? 0) >= 7 ? (y ?? 0) + 1 : (y ?? 0);
+}
+
 // Only rows whose Status is exactly the configured "Received" label count — this
 // excludes "Received (Historical)" (the migrated Closed Won records) by construction,
 // the same distinction transform/donations.ts (salesforce-import) draws for exactly

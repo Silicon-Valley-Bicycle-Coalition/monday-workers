@@ -46,6 +46,7 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
 | [`membership-reminders`](membership-reminders/README.md) | Built (merged) — not deployed; hard-blocked on the Donors board id and column ids, which exist only after `salesforce-import`'s load stage runs | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
 | [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward | Unassigned |
+| [`monday-backup`](monday-backup/README.md) | Recommended — spec written 2026-08-25, not yet built. Cron-triggered snapshot of every board + Doc to Google Drive, built instead of a Rewind subscription | Post-migration, non-blocking, but time-relevant once real donor data lives in Monday with no Salesforce copy to fall back on | Unassigned |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
 plan for both:
@@ -100,6 +101,16 @@ wrong tool for a run that happens once and is already validated by repeated sand
 Migration Method). What it needs instead: retry-with-backoff on individual Monday API writes
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
+
+## Deploys
+
+The live Workers deploy automatically via [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
+a merge to `main` builds and deploys each connected Worker from its subdirectory (root directory
+set per Worker in the Cloudflare dashboard, e.g. `/committee-calendars`, `/events-widgets`), and
+non-production branches upload preview versions. Manual `npm run deploy` still works for
+first-time provisioning or emergencies, but routine changes should ship by merging — this repo
+previously drifted from production for months when a Worker was deployed by hand and its CI
+connection silently broke.
 
 ## License
 
