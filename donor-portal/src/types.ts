@@ -40,6 +40,10 @@ export interface ChangeRequestsConfig {
   retentionDays: number;
 }
 
+export interface CardTokensConfig {
+  retentionDays: number;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -63,6 +67,7 @@ export interface Config {
   };
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
+  cardTokens: CardTokensConfig;
 }
 
 export interface DonorMatch {

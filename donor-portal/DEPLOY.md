@@ -53,7 +53,7 @@ ids in the v1 set, so a bad fill fails loudly at first request, not silently.
 - `taxLetter.*` — **leave as `REPLACE_AFTER_SIGNOFF` until the ED/accountant sign-off lands**;
   this is the letters gate, not a deploy blocker
 - Sanity-check the defaults: `auth` TTLs, `rateLimit`, `changeRequests.dedupeWindowHours` (72),
-  `changeRequests.retentionDays`
+  `changeRequests.retentionDays`, `cardTokens.retentionDays` (30)
 
 Commit the fill (config is deliberately in-repo; it holds ids, not secrets).
 
@@ -125,7 +125,8 @@ npm run deploy
 - **Aftercare:** watch Workers observability for error spikes the first week; check the
   `donor-portal-change-requests-dlq` after any Monday outage (a non-empty DLQ is a replayable
   backlog, not a loss — see the root README's queue conventions); confirm the daily 09:00 UTC
-  cron is purging `change_requests` rows past `retentionDays`.
+  cron is purging `change_requests` rows past `retentionDays` and revoked `card_tokens` rows
+  past `cardTokens.retentionDays`.
 - **When letter sign-off lands:** fill `taxLetter.*`, commit, `npm run deploy` — letters
   appear; verify one letter against a known donor's giving history and run a print preview
   before telling donors.

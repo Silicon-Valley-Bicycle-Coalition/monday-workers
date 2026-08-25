@@ -31,6 +31,9 @@ function inMemoryCardTokenStore(): CardTokenStore {
         byDonor.delete(donorItemId);
       }
     },
+    async purgeRevokedBefore() {
+      return 0;
+    },
   };
 }
 
@@ -152,6 +155,7 @@ const config: Config = {
     dedupeWindowHours: 72,
     retentionDays: 180,
   },
+  cardTokens: { retentionDays: 30 },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -722,6 +726,9 @@ describe('GET /portal/card/:donorItemId', () => {
         throw new Error('D1_ERROR: network connection lost');
       },
       async revokeAllForDonor() {},
+      async purgeRevokedBefore() {
+        return 0;
+      },
     };
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
@@ -757,6 +764,9 @@ describe('GET /portal/card/:donorItemId', () => {
       },
       async revokeAllForDonor() {
         active = null;
+      },
+      async purgeRevokedBefore() {
+        return 0;
       },
     };
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
@@ -864,6 +874,9 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
       async revokeAllForDonor() {
         active = null;
       },
+      async purgeRevokedBefore() {
+        return 0;
+      },
     };
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
@@ -887,6 +900,9 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
       },
       async revokeAllForDonor() {
         throw new Error('D1_ERROR: network connection lost');
+      },
+      async purgeRevokedBefore() {
+        return 0;
       },
     };
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));

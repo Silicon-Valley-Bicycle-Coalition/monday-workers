@@ -10,6 +10,7 @@ import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
+import { purgeExpiredCardTokens } from './card/purgeExpiredTokens';
 import type { Env, ChangeQueueMessage } from './types';
 
 export default {
@@ -67,17 +68,31 @@ export default {
   },
 
   // Retention purge: see purgeExpiredChangeRequests for why 'written' rows are deleted and
-  // 'queued' rows are left alone.
+  // 'queued' rows are left alone; see purgeExpiredCardTokens for why revoked card_tokens rows
+  // are deleted and active ones are left alone.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     // Same lazy-validation rationale as fetch()/queue() above.
     const config = validateConfig(rawConfig);
-    const purged = await purgeExpiredChangeRequests({
+    const purgedChangeRequests = await purgeExpiredChangeRequests({
       store: new D1ChangeRequestStore(env.DB),
       retentionDays: config.changeRequests.retentionDays,
       now: () => new Date(),
     });
-    if (purged > 0) {
-      console.log(`donor-portal scheduled: purged ${purged} written change_requests rows past the ${config.changeRequests.retentionDays}-day retention window`);
+    if (purgedChangeRequests > 0) {
+      console.log(
+        `donor-portal scheduled: purged ${purgedChangeRequests} written change_requests rows past the ${config.changeRequests.retentionDays}-day retention window`
+      );
+    }
+
+    const purgedCardTokens = await purgeExpiredCardTokens({
+      store: new D1CardTokenStore(env.DB),
+      retentionDays: config.cardTokens.retentionDays,
+      now: () => new Date(),
+    });
+    if (purgedCardTokens > 0) {
+      console.log(
+        `donor-portal scheduled: purged ${purgedCardTokens} revoked card_tokens rows past the ${config.cardTokens.retentionDays}-day retention window`
+      );
     }
   },
 };
