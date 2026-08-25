@@ -66,7 +66,7 @@ describe('letterView', () => {
 
   it('chrome (nav/print) is localized but the acknowledgment body stays English', () => {
     const html = letterView(letter, taxLetter, 'August 24, 2026', 'es');
-    expect(html).toContain('Back to tax documents'); // still English: no Spanish translation call for the body/nav in this fixture check — see next assertion for the actual localized text
+    expect(html).toContain('Volver a los documentos fiscales'); // chrome is now real Spanish (es.ts is a complete translation)
     // The letter body itself is a deliberate non-goal for translation (official tax document) and
     // stays English regardless of locale.
     expect(html).toContain('Thank you for supporting');
@@ -75,7 +75,7 @@ describe('letterView', () => {
 
   it('carries an English-only disclaimer note in the requested locale', () => {
     const html = letterView(letter, taxLetter, 'August 24, 2026', 'es');
-    expect(html).toContain('issued in English');
+    expect(html).toContain('se emite en inglés');
   });
 });
 
