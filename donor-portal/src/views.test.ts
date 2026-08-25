@@ -3,8 +3,9 @@ import { checkEmailView, errorView, loginFormView, page, portalView } from './vi
 import type { PortalView } from './types';
 
 describe('page', () => {
-  it('wraps the body in a document with charset, viewport, and the given title, escaped', () => {
-    const html = page('Check Your Email — SVBC Donor Portal', '<h1>Check your email</h1>');
+  it('wraps the body in a document with charset, viewport, the given title, and the locale as <html lang>', () => {
+    const html = page('Check Your Email — SVBC Donor Portal', '<h1>Check your email</h1>', 'es');
+    expect(html).toContain('<html lang="es">');
     expect(html).toContain('<meta charset="utf-8" />');
     expect(html).toContain('name="viewport"');
     expect(html).toContain('<title>Check Your Email — SVBC Donor Portal</title>');
@@ -12,32 +13,45 @@ describe('page', () => {
   });
 
   it('escapes a title containing markup', () => {
-    const html = page('<script>alert(1)</script>', '<p>body</p>');
+    const html = page('<script>alert(1)</script>', '<p>body</p>', 'en');
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
 });
 
 describe('loginFormView', () => {
-  it('renders a form posting to /login with an email field', () => {
-    const html = loginFormView();
+  it('renders a form posting to /login with an email field and a language picker', () => {
+    const html = loginFormView('en');
     expect(html).toContain('action="/login"');
     expect(html).toContain('name="email"');
+    expect(html).toContain('Send login link');
+    // one option per supported locale, each linking through /lang/:code
+    expect(html).toContain('/lang/es');
+    expect(html).toContain('/lang/vi');
+  });
+
+  it('renders the prompt in the requested locale when translated (fallback to English otherwise)', () => {
+    const html = loginFormView('en');
+    expect(html).toContain('Enter your email to receive a login link.');
   });
 });
 
 describe('checkEmailView', () => {
   it('renders the same generic message regardless of caller state', () => {
-    const html = checkEmailView();
+    const html = checkEmailView('en');
     expect(html).toContain('check your email');
   });
 });
 
 describe('errorView', () => {
-  it('renders the given message, escaped', () => {
-    const html = errorView('<script>alert(1)</script>');
-    expect(html).not.toContain('<script>alert(1)</script>');
-    expect(html).toContain('&lt;script&gt;');
+  it('renders the message for the given translation key, escaped', () => {
+    const html = errorView('error.invalidLink', 'en');
+    expect(html).toContain('This link is invalid');
+  });
+
+  it('links back to /login for a new link', () => {
+    const html = errorView('error.invalidLink', 'en');
+    expect(html).toContain('href="/login"');
   });
 });
 

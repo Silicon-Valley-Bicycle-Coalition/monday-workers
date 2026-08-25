@@ -26,8 +26,9 @@ import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailab
 import { buildCardData } from './card/loadCardData';
 import { generateQrSvg } from './card/qr';
 import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
-import { LANG_COOKIE } from './i18n/detectLocale';
+import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
 import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
+import { t } from './i18n/t';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -49,8 +50,6 @@ const SESSION_COOKIE = 'session';
 // copy lives in one place; the tax letter title is the exception, built per-request from the
 // donor's own data (see the /portal/letters/:donorItemId/:year route below).
 const SITE_TITLE = 'SVBC Donor Portal';
-const TITLE_LOGIN = `Log In — ${SITE_TITLE}`;
-const TITLE_CHECK_EMAIL = `Check Your Email — ${SITE_TITLE}`;
 const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
 const TITLE_PORTAL = `Your Donor Portal — ${SITE_TITLE}`;
 const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
@@ -87,7 +86,8 @@ export function createApp(deps: AppDeps) {
 
   app.onError((err, c) => {
     console.error(`donor-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
-    return c.html(page(TITLE_ERROR, errorView('Something went wrong. Please try logging in again.')), 500);
+    const locale = detectLocale(c);
+    return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 500);
   });
 
   app.get('/health', (c) => c.json({ ok: true }));
@@ -103,9 +103,13 @@ export function createApp(deps: AppDeps) {
     return c.redirect(to);
   });
 
-  app.get('/login', (c) => c.html(page(TITLE_LOGIN, loginFormView())));
+  app.get('/login', (c) => {
+    const locale = detectLocale(c);
+    return c.html(page(t(locale, 'title.login') + ' — ' + t(locale, 'site.title'), loginFormView(locale), locale));
+  });
 
   app.post('/login', async (c) => {
+    const locale = detectLocale(c);
     const body = await c.req.parseBody();
     const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     // A malformed email (fails the plausibility check) is treated exactly like an empty one —
@@ -157,13 +161,14 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    return c.html(page(TITLE_CHECK_EMAIL, checkEmailView()));
+    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale), locale));
   });
 
   app.get('/auth/callback', async (c) => {
+    const locale = detectLocale(c);
     const token = c.req.query('token');
     if (!token) {
-      return c.html(page(TITLE_ERROR, errorView('This link is invalid. Please request a new one.')));
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.invalidLink', locale), locale));
     }
 
     let sessionToken: string | null;
@@ -178,11 +183,11 @@ export function createApp(deps: AppDeps) {
       // e.g. the magic-link token was validly consumed but the follow-up session write failed
       // (D1 error) — show the same "request a new one" recovery path rather than a raw 500.
       console.error(`donor-portal login verification failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('This link has expired or was already used. Please request a new one.')));
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.expiredLink', locale), locale));
     }
 
     if (sessionToken === null) {
-      return c.html(page(TITLE_ERROR, errorView('This link has expired or was already used. Please request a new one.')));
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.expiredLink', locale), locale));
     }
 
     setCookie(c, SESSION_COOKIE, sessionToken, {

@@ -1,4 +1,6 @@
 import type { PortalView } from './types';
+import { SUPPORTED_LOCALES, LOCALE_LABELS, type Locale } from './i18n/locales';
+import { t, type TranslationKey } from './i18n/t';
 
 export function escapeHtml(value: string): string {
   return value
@@ -12,9 +14,9 @@ export function escapeHtml(value: string): string {
 // Wraps a view's HTML fragment in a minimal document so the browser has a real <title> and
 // viewport meta — without it, browsers fall back to printing the bare URL in default print
 // headers/footers, which is how the tax letter page used to print (see letterViews.letterView).
-export function page(title: string, body: string): string {
+export function page(title: string, body: string, locale: Locale): string {
   return `<!doctype html>
-<html lang="en">
+<html lang="${locale}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,29 +28,40 @@ export function page(title: string, body: string): string {
 </html>`;
 }
 
-export function loginFormView(): string {
+// Shared by every pre-identity view (login, check-email, error, verify): a plain link per
+// supported locale, each pointing at /lang/:code?to=<current path> so picking one applies
+// immediately and returns the visitor to where they were.
+export function languagePicker(currentPath: string, locale: Locale): string {
+  const options = SUPPORTED_LOCALES.map(
+    (code) => `<a href="/lang/${code}?to=${encodeURIComponent(currentPath)}">${escapeHtml(LOCALE_LABELS[code])}</a>`
+  ).join(' · ');
+  return `<nav aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">${options}</nav>`;
+}
+
+export function loginFormView(locale: Locale): string {
   return `
-    <h1>SVBC Donor Portal</h1>
-    <p>Enter your email to receive a login link.</p>
+    <h1>${escapeHtml(t(locale, 'site.title'))}</h1>
+    ${languagePicker('/login', locale)}
+    <p>${escapeHtml(t(locale, 'login.prompt'))}</p>
     <form action="/login" method="post">
       <input type="email" name="email" required />
-      <button type="submit">Send login link</button>
+      <button type="submit">${escapeHtml(t(locale, 'login.submit'))}</button>
     </form>
   `;
 }
 
-export function checkEmailView(): string {
+export function checkEmailView(locale: Locale): string {
   return `
-    <h1>Check your email</h1>
-    <p>Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.</p>
+    <h1>${escapeHtml(t(locale, 'checkEmail.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>
   `;
 }
 
-export function errorView(message: string): string {
+export function errorView(messageKey: TranslationKey, locale: Locale): string {
   return `
-    <h1>Something went wrong</h1>
-    <p>${escapeHtml(message)}</p>
-    <p><a href="/login">Request a new login link</a></p>
+    <h1>${escapeHtml(t(locale, 'error.heading'))}</h1>
+    <p>${escapeHtml(t(locale, messageKey))}</p>
+    <p><a href="/login">${escapeHtml(t(locale, 'error.requestNewLink'))}</a></p>
   `;
 }
 
