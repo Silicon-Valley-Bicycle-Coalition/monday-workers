@@ -18,6 +18,22 @@ describe('bestAcceptLanguageMatch', () => {
   it('returns null for an absent header', () => {
     expect(bestAcceptLanguageMatch(undefined)).toBeNull();
   });
+
+  // Finding 2: zh-TW/zh-HK/zh-MO (Taiwan/Hong Kong/Macau) read Traditional Chinese; the generic
+  // base-tag fallback used to send all of these to zh-Hans (Simplified) because it's listed first
+  // in SUPPORTED_LOCALES.
+  it('matches zh-TW to Traditional Chinese', () => {
+    expect(bestAcceptLanguageMatch('zh-TW,zh;q=0.9')).toBe('zh-Hant');
+  });
+  it('matches zh-HK to Traditional Chinese', () => {
+    expect(bestAcceptLanguageMatch('zh-HK,zh;q=0.9')).toBe('zh-Hant');
+  });
+  it('matches zh-CN to Simplified Chinese', () => {
+    expect(bestAcceptLanguageMatch('zh-CN,zh;q=0.9')).toBe('zh-Hans');
+  });
+  it('matches a bare zh tag to Simplified Chinese', () => {
+    expect(bestAcceptLanguageMatch('zh')).toBe('zh-Hans');
+  });
 });
 
 describe('detectLocale', () => {

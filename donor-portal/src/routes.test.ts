@@ -10,6 +10,7 @@ import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { CardTokenStore } from './db/cardTokens';
 import { SUPPORTED_LOCALES } from './i18n/locales';
+import { t } from './i18n/t';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -1179,15 +1180,19 @@ describe('GET /verify/:token', () => {
 });
 
 describe('locale sweep', () => {
-  it.each(SUPPORTED_LOCALES)('serves /%s/portal with a matching <html lang>', async (locale) => {
+  it.each(SUPPORTED_LOCALES)('serves /%s/portal with a matching <html lang> and real translated copy', async (locale) => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
     const res = await app.request(`/${locale}/portal`, { headers: { cookie } });
+    const body = await res.text();
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain(`<html lang="${locale}">`);
+    expect(body).toContain(`<html lang="${locale}">`);
+    // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
+    // assert the actual translated heading text renders too (final review finding).
+    expect(body).toContain(t(locale, 'portal.heading'));
   });
 });

@@ -61,6 +61,12 @@ Translations are AI-drafted without a separate human review pass — a deliberat
 tradeoff. The tax letter's own acknowledgment text stays English-only regardless of locale (see
 `letterViews.ts`); only its surrounding page chrome is translated.
 
+**Gated on `monday.columns.preferredLanguage`:** add the Preferred Language column above, then
+fill in its column id in `config/svbc.json` (same treatment as v2's `donorAddress`/`donorPhone`
+and v3's `membershipExpiry`) — until it's set to a real Monday column id, a donor's stored
+preference is never read, and every donor falls back to the pre-login browser/cookie guess
+described above, even after staff pick a value in the dropdown.
+
 ## Data flow
 
 ```
@@ -161,7 +167,7 @@ email and worth setting up regardless of provider.
 Design: `../docs/superpowers/specs/2026-08-24-donor-portal-v2-design.md`. Two independent,
 config-gated features:
 
-* **Tax letters** (`GET /portal/letters`, `GET /portal/letters/:donorItemId/:year`): a
+* **Tax letters** (`GET /:locale/portal/letters`, `GET /:locale/portal/letters/:donorItemId/:year`): a
   consolidated per-year giving letter rendered live from the Donations board as HTML with print
   CSS — the browser's Print → Save as PDF is the delivery mechanism; nothing is generated or
   stored server-side. Only completed calendar years with at least one donation get a letter.
@@ -170,7 +176,7 @@ config-gated features:
   acknowledgment language (both the plain no-goods-or-services statement and the
   benefit/quid-pro-quo variant used for tiers listed in `taxLetter.benefitTiers`) and an
   operator fills in the real wording.
-* **Change requests** (`GET`/`POST /portal/change-request`): a donor submits a new address,
+* **Change requests** (`GET`/`POST /:locale/portal/change-request`): a donor submits a new address,
   email, or phone; the Worker records it in D1 (dedupe window:
   `changeRequests.dedupeWindowHours`) and a queue consumer creates an item on a staff-owned
   Change Requests board (donor link, field, old value, new value, submitted-at). Staff apply
@@ -190,7 +196,7 @@ Requests board only**; create the `donor-portal-change-requests` queue and its
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
-live card (`GET /portal/card/:donorItemId`) — name, member number, tier, status, expiry — with a
+live card (`GET /:locale/portal/card/:donorItemId`) — name, member number, tier, status, expiry — with a
 QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
 current status live from Monday, never from whatever was true when the card was viewed or
 scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"
@@ -208,7 +214,7 @@ verify link with the same care as the card itself.
 **Gated on `monday.columns.membershipExpiry`:** the whole feature shows a "not available yet"
 state until that column is set to a real Monday column id (same treatment as v2's
 `donorAddress`/`donorPhone`). If a card's link ever leaks, the donor can invalidate it and get a
-fresh one any time from `/portal/card/:donorItemId` ("Regenerate card").
+fresh one any time from `/:locale/portal/card/:donorItemId` ("Regenerate card").
 
 Operator setup for v3, in addition to the v1/v2 steps: add a Membership Expiry (date) column to
 the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migration

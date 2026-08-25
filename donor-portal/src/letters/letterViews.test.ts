@@ -77,6 +77,14 @@ describe('letterView', () => {
     const html = letterView(letter, taxLetter, 'August 24, 2026', 'es');
     expect(html).toContain('se emite en inglés');
   });
+
+  // Finding 3 (final review): the letter body is deliberately English-only even when the
+  // surrounding page's <html lang> is non-English (e.g. "ja") — mark the block itself as English
+  // so assistive technology doesn't mispronounce it (WCAG 2.1 SC 3.1.2, Language of Parts).
+  it('marks the letter body itself as English regardless of the page locale', () => {
+    const html = letterView(letter, taxLetter, 'August 24, 2026', 'ja');
+    expect(html).toContain('<article class="letter" lang="en">');
+  });
 });
 
 describe('lettersUnavailableView', () => {

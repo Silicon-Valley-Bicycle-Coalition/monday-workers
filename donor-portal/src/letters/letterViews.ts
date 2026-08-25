@@ -53,7 +53,7 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
       <button type="button" onclick="window.print()">${escapeHtml(t(locale, 'letters.print'))}</button>
     </nav>
     <p class="no-print"><small>${escapeHtml(t(locale, 'letters.englishOnlyNote'))}</small></p>
-    <article class="letter">
+    <article class="letter" lang="en">
       <header>
         <p><strong>${escapeHtml(taxLetter.orgLegalName)}</strong><br>
         ${escapeHtml(taxLetter.orgAddress)}<br>

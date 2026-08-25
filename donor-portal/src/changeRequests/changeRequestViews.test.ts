@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView } from './changeRequestViews';
+import { t } from '../i18n/t';
 
 const sampleDonor = { id: 'donor-1', name: 'Jane <b>Example</b>', email: 'jane@example.org', address: '1 Old St', phone: '555-0100', preferredLanguage: '' };
 const donors = [
@@ -29,6 +30,11 @@ describe('changeRequestFormView', () => {
     expect(html).toContain('value="language"');
   });
 
+  it('renders actual translated copy for the requested locale, not just structure', () => {
+    const html = changeRequestFormView([sampleDonor], 'vi');
+    expect(html).toContain(t('vi', 'changeRequest.formHeading'));
+  });
+
   it('current-details list shows the stored preferred-language label', () => {
     const donor = { ...sampleDonor, preferredLanguage: 'Spanish' };
     const html = changeRequestFormView([donor], 'en');
@@ -51,10 +57,19 @@ describe('changeRequestResultView', () => {
     const submitted = changeRequestResultView({ kind: 'submitted' }, 'ja');
     expect(submitted).toContain('href="/ja/portal"');
   });
+
+  it('renders actual translated copy for the requested locale, not just structure', () => {
+    const submitted = changeRequestResultView({ kind: 'submitted' }, 'ja');
+    expect(submitted).toContain(t('ja', 'changeRequest.submittedHeading'));
+  });
 });
 
 describe('changeRequestsUnavailableView', () => {
   it('says the feature is not available yet', () => {
     expect(changeRequestsUnavailableView('en')).toContain('not available yet');
+  });
+
+  it('renders the unavailable message as real translated copy for a non-English locale', () => {
+    expect(changeRequestsUnavailableView('ja')).toContain(t('ja', 'changeRequest.unavailableBody'));
   });
 });

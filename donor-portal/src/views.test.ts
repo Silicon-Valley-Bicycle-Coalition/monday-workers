@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import type { PortalView } from './types';
+import { t } from './i18n/t';
 
 describe('page', () => {
   it('wraps the body in a document with charset, viewport, the given title, and the locale as <html lang>', () => {
@@ -34,12 +35,22 @@ describe('loginFormView', () => {
     const html = loginFormView('en');
     expect(html).toContain('Enter your email to receive a login link.');
   });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = loginFormView('es');
+    expect(html).toContain(t('es', 'login.prompt'));
+  });
 });
 
 describe('checkEmailView', () => {
   it('renders the same generic message regardless of caller state', () => {
     const html = checkEmailView('en');
     expect(html).toContain('check your email');
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = checkEmailView('es');
+    expect(html).toContain(t('es', 'checkEmail.heading'));
   });
 });
 
@@ -52,6 +63,11 @@ describe('errorView', () => {
   it('links back to /login for a new link', () => {
     const html = errorView('error.invalidLink', 'en');
     expect(html).toContain('href="/login"');
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = errorView('error.invalidLink', 'es');
+    expect(html).toContain(t('es', 'error.invalidLink'));
   });
 });
 
@@ -131,5 +147,10 @@ describe('portalView', () => {
     expect(html).toContain('action="/en/portal/change-request"');
     expect(html).toContain('value="language"');
     expect(html).toContain('value="Spanish"'); // the es option's newValue is the Monday label, not "es"
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = portalView(data, 'es');
+    expect(html).toContain(t('es', 'portal.heading'));
   });
 });
