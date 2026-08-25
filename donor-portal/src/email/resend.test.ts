@@ -56,6 +56,22 @@ describe('ResendEmailSender', () => {
       expect(body.html).toContain('Jane Example');
     });
 
+    it('escapes HTML-significant characters in the donor name', async () => {
+      const fetchFn = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+      const sender = new ResendEmailSender('key-123', 'letters@mail.bikesiliconvalley.org', 'SVBC', fetchFn);
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: '<b>Jane</b> & Co',
+        year: 2025,
+        loginUrl: 'https://portal.example.org/auth/callback?token=abc',
+      });
+
+      const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.html).not.toContain('<b>Jane</b> & Co');
+      expect(body.html).toContain('&lt;b&gt;Jane&lt;/b&gt; &amp; Co');
+    });
+
     it('throws on a non-ok Resend response', async () => {
       const fetchFn = vi.fn().mockResolvedValue(new Response('bad request', { status: 400 }));
       const sender = new ResendEmailSender('key-123', 'a@example.org', 'SVBC', fetchFn);

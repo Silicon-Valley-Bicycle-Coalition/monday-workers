@@ -188,9 +188,15 @@ primitive (`POST /webhooks/monday/letters` → `donor-portal-letter-emails` queu
 Operator setup, in addition to v1/v2 steps:
 
 1. Add a Button column ("Send Giving Letter") to the Donors board.
-2. Subscribe a Monday webhook to that column's value-change event
-   (`create_webhook(board_id, url, event: change_specific_column_value, config: { columnId: "<button column id>" })`),
-   targeting `https://<worker-domain>/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>`.
+2. Create a Monday automation recipe on that board: "When button column changes → Send a webhook
+   to `https://<worker-domain>/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>`". This is
+   the locked-in trigger design (see the design spec's Decisions) — a raw Webhooks-API subscription
+   on the button column's `change_specific_column_value` event does **not** work here, since Button
+   columns are action triggers with no persisted value, so that event likely never fires for a
+   button click. The automation recipe is the supported path for "button clicked → webhook".
+   **Verify the exact automation payload shape against a real delivery before relying on it in
+   production** — this could not be confirmed from a development session without live Monday
+   access.
 3. Set the `LETTER_WEBHOOK_SECRET` Worker secret (`wrangler secret put LETTER_WEBHOOK_SECRET`) —
    must match the `secret` query param used in the webhook URL above.
 4. Create the `donor-portal-letter-emails` queue and its `donor-portal-letter-emails-dlq` dead-letter

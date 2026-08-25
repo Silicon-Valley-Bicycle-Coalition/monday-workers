@@ -1,3 +1,5 @@
+import { escapeHtml } from '../views';
+
 export interface SendLoginEmailParams {
   to: string;
   loginUrl: string;
@@ -54,7 +56,7 @@ export class ResendEmailSender implements EmailSender {
         from: `${this.fromName} <${this.fromAddress}>`,
         to: [params.to],
         subject: `Your ${params.year} SVBC giving letter is ready`,
-        html: `<p>Hi ${params.donorName},</p><p>Your ${params.year} giving letter is ready to view in your donor portal.</p><p><a href="${params.loginUrl}">Log in to view it</a></p><p>This link expires soon and can only be used once.</p>`,
+        html: `<p>Hi ${escapeHtml(params.donorName)},</p><p>Your ${params.year} giving letter is ready to view in your donor portal.</p><p><a href="${params.loginUrl}">Log in to view it</a></p><p>This link expires soon and can only be used once.</p>`,
       }),
     });
     if (!response.ok) {
