@@ -56,6 +56,10 @@
     "dedupeWindowHours": 72,
     "retentionDays": 180
   },
+  "funraise": {
+    "manageRecurringUrl": "REPLACE_WITH_FUNRAISE_URL",
+    "renewMembershipUrl": "REPLACE_WITH_FUNRAISE_URL"
+  },
   "cardTokens": {
     "retentionDays": 30
   }

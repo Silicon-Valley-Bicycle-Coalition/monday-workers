@@ -32,6 +32,10 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  funraise: {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+  },
 };
 
 function makeMessage<T>(body: T) {

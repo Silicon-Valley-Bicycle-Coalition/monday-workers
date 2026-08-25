@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled, funraiseLinks } from './config';
 
 const validConfig = {
   monday: {
@@ -50,6 +50,10 @@ const validConfig = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  funraise: {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+  },
 };
 
 describe('validateConfig', () => {
@@ -257,5 +261,62 @@ describe('cardEnabled', () => {
     const raw = structuredClone(validConfig);
     raw.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     expect(cardEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('funraise section', () => {
+  it('rejects a config missing the funraise section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).funraise;
+    expect(() => validateConfig(cfg)).toThrow('funraise');
+  });
+
+  it('rejects a config missing funraise.renewMembershipUrl', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { funraise: Record<string, unknown> }).funraise.renewMembershipUrl;
+    expect(() => validateConfig(cfg)).toThrow('funraise.renewMembershipUrl');
+  });
+
+  it('accepts the placeholder and the empty string (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.funraise.manageRecurringUrl = 'REPLACE_WITH_FUNRAISE_URL';
+    cfg.funraise.renewMembershipUrl = '';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a set URL that is not https://', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.funraise.renewMembershipUrl = 'http://example.funraise.org/give';
+    expect(() => validateConfig(cfg)).toThrow(/funraise\.renewMembershipUrl.*https/);
+  });
+
+  it('rejects a non-string URL value', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { funraise: { manageRecurringUrl: unknown } }).funraise.manageRecurringUrl = 42;
+    expect(() => validateConfig(cfg)).toThrow(/funraise\.manageRecurringUrl.*string/);
+  });
+});
+
+describe('funraiseLinks', () => {
+  it('returns both URLs when both are configured', () => {
+    const cfg = validateConfig(validConfig);
+    expect(funraiseLinks(cfg)).toEqual({
+      manageRecurringUrl: 'https://example.funraise.org/account',
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+    });
+  });
+
+  it('gates each link independently — placeholder or empty resolves to null', () => {
+    const raw = structuredClone(validConfig);
+    raw.funraise.manageRecurringUrl = 'REPLACE_WITH_FUNRAISE_URL';
+    const cfg = validateConfig(raw);
+    expect(funraiseLinks(cfg)).toEqual({
+      manageRecurringUrl: null,
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+    });
+
+    const rawEmpty = structuredClone(validConfig);
+    rawEmpty.funraise.renewMembershipUrl = '';
+    expect(funraiseLinks(validateConfig(rawEmpty)).renewMembershipUrl).toBeNull();
   });
 });

@@ -45,6 +45,18 @@ export interface CardTokensConfig {
   retentionDays: number;
 }
 
+export interface FunraiseConfig {
+  manageRecurringUrl: string;
+  renewMembershipUrl: string;
+}
+
+// The resolved, per-link view of FunraiseConfig: null means "not configured, don't render the
+// link" (see funraiseLinks() in config.ts).
+export interface FunraiseLinkUrls {
+  manageRecurringUrl: string | null;
+  renewMembershipUrl: string | null;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -69,6 +81,7 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  funraise: FunraiseConfig;
 }
 
 export interface DonorMatch {

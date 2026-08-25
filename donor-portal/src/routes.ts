@@ -21,7 +21,7 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, lettersEnabled, cardEnabled } from './config';
+import { changeRequestsEnabled, lettersEnabled, cardEnabled, funraiseLinks } from './config';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
@@ -231,7 +231,7 @@ export function createApp(deps: AppDeps) {
 
     const data = await loadPortalData(donorItemIds, deps.monday);
     c.header('Cache-Control', NO_STORE);
-    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale), locale));
+    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale, funraiseLinks(deps.config)), locale));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.

@@ -258,6 +258,29 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
 
+## v3.1 — Funraise deep links (recurring gifts & membership renewal)
+
+From the v2 brainstorm's candidate list (IT Requests item "Donor portal: recurring-gift
+management / membership renewal deep links"). The portal's "Manage your giving" section links
+donors out to **Funraise's own donor-account surface** (to change or cancel a recurring gift) and
+to a **Funraise checkout page** (to renew a membership). Deliberately links, not embedded flows:
+every payment interaction happens on Funraise's PCI-scoped pages, so this Worker never touches
+card data — "build" here means two `<a>` tags and nothing more. Changes a donor makes on Funraise
+flow back into Monday via `workers/funraise-sync`, so the portal reflects them on the next visit
+after the sync lands (the section's UI copy says so).
+
+**Gated per link on `funraise.*` config:** each of `funraise.manageRecurringUrl` and
+`funraise.renewMembershipUrl` renders only when set to a real URL — while a value is still the
+`REPLACE_WITH_FUNRAISE_URL` placeholder (or empty), that link is silently omitted, and with
+neither configured the whole section disappears (same gate-not-error treatment as the
+`taxLetter` sign-off fields). A set value must be an `https://` URL or config validation fails at
+startup — a typo'd link should fail a deploy, not a donor.
+
+Operator setup: paste the two URLs into `config/svbc.json` → `funraise` — the donor-account URL
+from Funraise's donor login page, and the membership campaign's giving-form URL (with whatever
+campaign query parameters Funraise's dashboard shows for it). No new Monday access, no new
+secret, no D1 migration.
+
 ## Future candidates
 
 The candidate list from the v2 brainstorm (discussed 2026-08-24) is no longer tracked here —
