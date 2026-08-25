@@ -1,6 +1,15 @@
 import type { Config, MondayColumns } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
+const REQUIRED_TOP_LEVEL = [
+  'monday',
+  'email',
+  'auth',
+  'rateLimit',
+  'taxLetter',
+  'changeRequests',
+  'cardTokens',
+  'eventRegistrations',
+] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donorEmail',
@@ -49,6 +58,10 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+// Presence-checked only, never placeholder-checked: event registrations are gated
+// (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
+const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumnId'] as const;
+const REQUIRED_EVENT_REGISTRATION_COLUMNS = ['attendeeLink', 'eventLink', 'attended'] as const;
 
 function requireObject(cfg: Record<string, unknown>, key: string, errorKey: string = key): Record<string, unknown> {
   const value = cfg[key];
@@ -123,6 +136,11 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
+  const eventRegistrations = requireObject(cfg, 'eventRegistrations');
+  requireKeys(eventRegistrations, 'eventRegistrations', REQUIRED_EVENT_REGISTRATION_KEYS);
+  const erColumns = requireObject(eventRegistrations, 'columns', 'eventRegistrations.columns');
+  requireKeys(erColumns, 'eventRegistrations.columns', REQUIRED_EVENT_REGISTRATION_COLUMNS);
+
   return cfg as unknown as Config;
 }
 
@@ -150,4 +168,11 @@ export function changeRequestsEnabled(config: Config): boolean {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+export function eventsEnabled(config: Config): boolean {
+  const er = config.eventRegistrations;
+  if (er.boardId === null) return false;
+  const ids = [er.columns.attendeeLink, er.columns.eventLink, er.columns.attended, er.eventDateColumnId];
+  return ids.every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
 }

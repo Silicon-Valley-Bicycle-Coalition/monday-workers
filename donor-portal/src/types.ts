@@ -45,6 +45,18 @@ export interface CardTokensConfig {
   retentionDays: number;
 }
 
+export interface EventRegistrationColumns {
+  attendeeLink: string;
+  eventLink: string;
+  attended: string;
+}
+
+export interface EventRegistrationsConfig {
+  boardId: number | null;
+  columns: EventRegistrationColumns;
+  eventDateColumnId: string;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -69,6 +81,7 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  eventRegistrations: EventRegistrationsConfig;
 }
 
 export interface DonorMatch {

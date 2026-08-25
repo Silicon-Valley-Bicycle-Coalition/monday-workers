@@ -58,5 +58,14 @@
   },
   "cardTokens": {
     "retentionDays": 30
+  },
+  "eventRegistrations": {
+    "boardId": null,
+    "columns": {
+      "attendeeLink": "REPLACE_WITH_COLUMN_ID",
+      "eventLink": "REPLACE_WITH_COLUMN_ID",
+      "attended": "REPLACE_WITH_COLUMN_ID"
+    },
+    "eventDateColumnId": "REPLACE_WITH_COLUMN_ID"
   }
 }
