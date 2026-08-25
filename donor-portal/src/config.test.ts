@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled } from './config';
 
 const validConfig = {
   monday: {
@@ -20,6 +20,7 @@ const validConfig = {
       discountActive: 'active_col',
       donorAddress: 'text_addr',
       donorPhone: 'phone_1',
+      membershipExpiry: 'expiry_col',
     },
   },
   resend: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
@@ -47,6 +48,7 @@ const validConfig = {
     dedupeWindowHours: 72,
     retentionDays: 180,
   },
+  cardTokens: { retentionDays: 30 },
 };
 
 describe('validateConfig', () => {
@@ -97,6 +99,12 @@ describe('validateConfig', () => {
     };
     expect(() => validateConfig(broken)).toThrow(/donorEmail/);
   });
+
+  it('throws when monday.columns is missing membershipExpiry', () => {
+    const { membershipExpiry, ...missingExpiry } = validConfig.monday.columns;
+    const broken = { ...validConfig, monday: { ...validConfig.monday, columns: missingExpiry } };
+    expect(() => validateConfig(broken)).toThrow(/membershipExpiry/);
+  });
 });
 
 // Helper: a fully-valid v2 config fragment for these tests. Reuse the file's existing
@@ -125,6 +133,7 @@ const v2Sections = {
     dedupeWindowHours: 72,
     retentionDays: 180,
   },
+  cardTokens: { retentionDays: 30 },
 };
 
 describe('v2 config sections', () => {
@@ -153,6 +162,24 @@ describe('v2 config sections', () => {
     const cfg = structuredClone(validConfig);
     Object.assign(cfg, structuredClone(v2Sections));
     (cfg as { changeRequests: { retentionDays: number } }).changeRequests.retentionDays = 0;
+    expect(() => validateConfig(cfg)).toThrow(/retentionDays/);
+  });
+
+  it('rejects a config missing the cardTokens section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).cardTokens;
+    expect(() => validateConfig(cfg)).toThrow('cardTokens');
+  });
+
+  it('rejects a config missing cardTokens.retentionDays', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { cardTokens: Record<string, unknown> }).cardTokens.retentionDays;
+    expect(() => validateConfig(cfg)).toThrow('cardTokens.retentionDays');
+  });
+
+  it('rejects cardTokens.retentionDays that is not a positive number', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { cardTokens: { retentionDays: number } }).cardTokens.retentionDays = 0;
     expect(() => validateConfig(cfg)).toThrow(/retentionDays/);
   });
 
@@ -199,5 +226,18 @@ describe('changeRequestsEnabled', () => {
     const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
     (raw as { monday: { columns: { donorAddress: string } } }).monday.columns.donorAddress = 'REPLACE_WITH_COLUMN_ID';
     expect(changeRequestsEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('cardEnabled', () => {
+  it('is true when membershipExpiry is a real column id', () => {
+    const cfg = validateConfig(validConfig);
+    expect(cardEnabled(cfg)).toBe(true);
+  });
+
+  it('is false while membershipExpiry is still the placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    expect(cardEnabled(validateConfig(raw))).toBe(false);
   });
 });

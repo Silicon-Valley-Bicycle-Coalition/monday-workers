@@ -26,6 +26,7 @@ const config: FunraiseSyncConfig = {
       registration: 'id',
     },
     entityIdColumn: 'entity_col',
+    thankYouSentColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
@@ -259,5 +260,98 @@ describe('create idempotency via the entity-id column', () => {
 
     expect(findItemByColumnValue).not.toHaveBeenCalled();
     expect(createItem).toHaveBeenCalled();
+  });
+});
+
+describe('Thank You Sent (acknowledgment decision, Option 2)', () => {
+  const thankYouConfig: FunraiseSyncConfig = {
+    ...config,
+    funraiseSync: { ...config.funraiseSync, thankYouSentColumn: 'thank_you_col' },
+  };
+
+  it('sets Thank You Sent true when creating a Donations item', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem,
+      changeColumnValues: vi.fn(),
+    };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: thankYouConfig });
+
+    expect(createItem).toHaveBeenCalledWith(
+      111,
+      expect.any(String),
+      expect.objectContaining({ thank_you_col: { checked: 'true' } })
+    );
+  });
+
+  it('sets Thank You Sent true when adopting an orphaned Donations item', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'item-orphan' }),
+      createItem: vi.fn(),
+      changeColumnValues,
+    };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: thankYouConfig });
+
+    expect(changeColumnValues).toHaveBeenCalledWith(
+      111,
+      'item-orphan',
+      expect.objectContaining({ thank_you_col: { checked: 'true' } })
+    );
+  });
+
+  it('never touches Thank You Sent on a later update to an already-written item', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7', mondayItemId: 'item-existing' }));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem: vi.fn(), changeColumnValues };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: thankYouConfig });
+
+    expect(changeColumnValues).toHaveBeenCalledWith(
+      111,
+      'item-existing',
+      expect.not.objectContaining({ thank_you_col: expect.anything() })
+    );
+  });
+
+  it('never sets Thank You Sent for recurring gifts or registrations', async () => {
+    const eventStore = fakeStore(eventRow({ entityType: 'pledge', entityId: 'sub-1', matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-pledge' });
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem,
+      changeColumnValues: vi.fn(),
+    };
+
+    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], { eventStore, mondayClient, config: thankYouConfig });
+
+    expect(createItem).toHaveBeenCalledWith(
+      222,
+      expect.any(String),
+      expect.not.objectContaining({ thank_you_col: expect.anything() })
+    );
+  });
+
+  it('does nothing when thankYouSentColumn is not configured', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem,
+      changeColumnValues: vi.fn(),
+    };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
+
+    expect(createItem).toHaveBeenCalledWith(
+      111,
+      expect.any(String),
+      expect.not.objectContaining({ thank_you_col: expect.anything() })
+    );
   });
 });

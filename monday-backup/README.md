@@ -68,6 +68,27 @@ Google Drive, one dated snapshot per run, kept indefinitely (see Retention below
   grant tied to one staff member's account — a personal grant breaks the day that person leaves
   or changes their password.
 
+## Cloudflare config (fleet standard)
+
+When this gets built, its `wrangler.jsonc` follows the conventions applied fleet-wide on
+2026-08-24 (see any deployed Worker, e.g. `../committee-calendars/wrangler.jsonc`):
+
+* **Pinned `account_id`** (SVBC) so a deploy can't land on the wrong Cloudflare account,
+  `upload_source_maps: true`, observability enabled, and `Env` generated via `wrangler types`
+  in the `typecheck` script rather than hand-written.
+* **Cron-only, no public surface.** No routes, and `workers_dev`/`preview_urls` stay `false` —
+  nothing about a backup Worker should be reachable from the Internet at all; it only makes
+  outbound calls.
+* **Workers Builds on first ship.** Connect the Worker in the dashboard with root directory
+  `/monday-backup`; after that, routine changes deploy by merging to `main`, and manual
+  `wrangler deploy` is for provisioning or emergencies only (see the root README's Deploys
+  section for why hand-deploys are distrusted here).
+* **Plan limits.** A full-account snapshot in a single cron invocation can brush against
+  Free-plan CPU and subrequest limits. This is moot if the Workers Paid upgrade (already
+  required by `funraise-sync`/`quickbooks-sync` for Queues) has landed by build time;
+  otherwise, budget for paginating the snapshot across invocations rather than assuming one
+  run covers every board.
+
 ## Retention
 
 SVBC has confirmed ample spare Drive storage, so the default is **keep every dated snapshot

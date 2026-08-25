@@ -36,6 +36,7 @@ const config: Config = {
     dedupeWindowHours: 72,
     retentionDays: 180,
   },
+  cardTokens: { retentionDays: 30 },
 };
 
 function makeMessage(sendId: number) {

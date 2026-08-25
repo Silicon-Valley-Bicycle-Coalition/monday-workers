@@ -14,17 +14,22 @@ import type { LetterSendStore } from './db/letterSends';
 import type { LetterSendQueueMessage } from './types';
 import { validateLetterWebhookBody } from './letters/validateLetterWebhook';
 import { triggerLetterSend } from './letters/triggerLetterSend';
+import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, lettersEnabled } from './config';
+import { changeRequestsEnabled, lettersEnabled, cardEnabled } from './config';
+import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
 import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView } from './changeRequests/changeRequestViews';
+import { buildCardData } from './card/loadCardData';
+import { generateQrSvg } from './card/qr';
+import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -40,6 +45,7 @@ export interface AppDeps {
   letterSendStore: LetterSendStore;
   letterQueue: { send(message: LetterSendQueueMessage): Promise<void> };
   letterWebhookSecret: string;
+  cardTokenStore: CardTokenStore;
 }
 
 const SESSION_COOKIE = 'session';
@@ -54,6 +60,8 @@ const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
 const TITLE_PORTAL = `Your Donor Portal — ${SITE_TITLE}`;
 const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
 const TITLE_CHANGE_REQUEST = `Request a Change — ${SITE_TITLE}`;
+const TITLE_CARD = `Your Membership Card — ${SITE_TITLE}`;
+const TITLE_VERIFY = `Membership Verification — ${SITE_TITLE}`;
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
 // characters that would let a value break out of a GraphQL string literal), and requires an
@@ -310,6 +318,153 @@ export function createApp(deps: AppDeps) {
       now: deps.now,
     });
     return c.html(page(TITLE_CHANGE_REQUEST, changeRequestResultView(result)));
+  });
+
+  app.get('/portal/card/:donorItemId', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(TITLE_CARD, cardUnavailableView()));
+    }
+
+    const donorItemId = c.req.param('donorItemId');
+    if (!donorItemIds.includes(donorItemId)) {
+      return c.html(page(TITLE_ERROR, errorView('That card does not exist.')), 404);
+    }
+
+    let donor;
+    try {
+      donor = await deps.monday.getDonorPortalData(donorItemId);
+    } catch (err) {
+      console.error(`donor-portal card load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+    }
+
+    let token: string | null;
+    try {
+      token = await deps.cardTokenStore.getActiveToken(donorItemId);
+    } catch (err) {
+      console.error(`donor-portal card token lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+    }
+    if (token === null) {
+      token = generateToken();
+      try {
+        await deps.cardTokenStore.createToken(donorItemId, token, deps.now().toISOString());
+      } catch (err) {
+        // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
+        // concurrent request for the same donor won the race and inserted first. Re-read rather
+        // than fail the request — the other request's token is just as valid. A genuine
+        // unrelated D1 outage would simply fail again on this re-read, and is reported with this
+        // route's own copy below rather than falling through to the generic (and misleading,
+        // login-flavored) app.onError handler.
+        console.error(`donor-portal card token insert failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
+        try {
+          token = await deps.cardTokenStore.getActiveToken(donorItemId);
+        } catch {
+          token = null;
+        }
+        if (token === null) {
+          return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+        }
+      }
+    }
+
+    const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
+    const qrSvg = generateQrSvg(verifyUrl);
+    return c.html(page(TITLE_CARD, cardView(buildCardData(donor), verifyUrl, qrSvg)));
+  });
+
+  app.post('/portal/card/:donorItemId/regenerate', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(TITLE_CARD, cardUnavailableView()));
+    }
+
+    const donorItemId = c.req.param('donorItemId');
+    if (!donorItemIds.includes(donorItemId)) {
+      return c.html(page(TITLE_ERROR, errorView('That card does not exist.')), 404);
+    }
+
+    const now = deps.now().toISOString();
+    try {
+      await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
+    } catch (err) {
+      console.error(`donor-portal card token revoke failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not regenerate your card right now. Please try again in a few minutes.')), 500);
+    }
+    try {
+      await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
+    } catch (err) {
+      // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
+      // concurrent regenerate for the same donor (double-click, two open tabs) revoked and
+      // re-inserted first. This request's own token is moot in that case — the concurrent
+      // request's token is just as valid, and the redirect below doesn't need to know which
+      // token is active, only that one exists. Re-read rather than fail the request. A genuine
+      // unrelated D1 outage would simply fail again on this re-read, and is reported with this
+      // route's own copy below rather than falling through to the generic (and misleading,
+      // login-flavored) app.onError handler.
+      console.error(`donor-portal card token regenerate failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
+      let token: string | null;
+      try {
+        token = await deps.cardTokenStore.getActiveToken(donorItemId);
+      } catch {
+        token = null;
+      }
+      if (token === null) {
+        return c.html(page(TITLE_ERROR, errorView('We could not regenerate your card right now. Please try again in a few minutes.')), 500);
+      }
+    }
+
+    return c.redirect(`/portal/card/${encodeURIComponent(donorItemId)}`);
+  });
+
+  app.get('/verify/:token', async (c) => {
+    c.header('Cache-Control', NO_STORE);
+
+    // Rate-limit before the kill-switch check below, not after — otherwise disabling the card
+    // feature (config revert, incident response) also disables rate limiting on this endpoint,
+    // turning the exact moment someone flips the kill switch into an unlimited request sink.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(TITLE_VERIFY, errorView('Too many requests — please try again in a minute.')), 429);
+    }
+
+    // If the card feature is ever disabled after tokens have already been issued (config
+    // revert, incident response), every previously-issued verify link must stop serving PII —
+    // this is the kill switch's only enforcement point, since token issuance/regeneration is
+    // already gated. Reuse the generic "not valid" response so this carries no signal
+    // distinguishing "feature off" from "token doesn't exist".
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(TITLE_VERIFY, verifyNotValidView()));
+    }
+
+    const token = c.req.param('token');
+    let donorItemId: string | null;
+    try {
+      donorItemId = await deps.cardTokenStore.findActiveDonorId(token);
+    } catch (err) {
+      console.error(`donor-portal verify lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not verify this card right now. Please try again in a few minutes.')), 500);
+    }
+    if (donorItemId === null) {
+      return c.html(page(TITLE_VERIFY, verifyNotValidView()));
+    }
+
+    let donor;
+    try {
+      donor = await deps.monday.getDonorPortalData(donorItemId);
+    } catch (err) {
+      console.error(`donor-portal verify load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not verify this card right now. Please try again in a few minutes.')), 500);
+    }
+
+    return c.html(page(TITLE_VERIFY, verifyView(buildCardData(donor))));
   });
 
   app.post('/logout', async (c) => {

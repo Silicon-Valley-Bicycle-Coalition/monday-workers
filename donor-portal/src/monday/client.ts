@@ -101,12 +101,22 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getDonorPortalData(donorItemId: string): Promise<DonorPortalData> {
+    // getDonorPortalData backs /portal and /portal/letters, which run for EVERY donor
+    // regardless of whether the (gated, placeholder-tolerant) membership-card feature is
+    // enabled. membershipExpiry only matters to that gated feature, so it's deliberately left
+    // as the placeholder id until an operator fills it in — including it in this always-on
+    // query unconditionally would ship the literal placeholder string to Monday's API on every
+    // portal request. Only request it once it's been configured with a real column id.
+    const donorColumnIds = [this.columns.membershipStatus, this.columns.membershipTier, this.columns.dollarDonated];
+    if (this.columns.membershipExpiry !== 'REPLACE_WITH_COLUMN_ID') {
+      donorColumnIds.push(this.columns.membershipExpiry);
+    }
     const donorQuery = `
       query ($itemId: ID!) {
         items(ids: [$itemId]) {
           id
           name
-          column_values(ids: ["${this.columns.membershipStatus}", "${this.columns.membershipTier}", "${this.columns.dollarDonated}"]) {
+          column_values(ids: ${JSON.stringify(donorColumnIds)}) {
             id
             text
           }
@@ -128,6 +138,7 @@ export class HttpMondayClient implements MondayClient {
       membershipTier: columnText(donorItem, this.columns.membershipTier),
       totalDonated: columnText(donorItem, this.columns.dollarDonated),
       donations,
+      membershipExpiry: columnText(donorItem, this.columns.membershipExpiry),
     };
   }
 

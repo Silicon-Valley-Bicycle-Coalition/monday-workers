@@ -11,6 +11,7 @@ export interface MondayColumns {
   discountActive: string;
   donorAddress: string;
   donorPhone: string;
+  membershipExpiry: string;
 }
 
 export interface TaxLetterConfig {
@@ -39,6 +40,10 @@ export interface ChangeRequestsConfig {
   retentionDays: number;
 }
 
+export interface CardTokensConfig {
+  retentionDays: number;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -62,6 +67,7 @@ export interface Config {
   };
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
+  cardTokens: CardTokensConfig;
 }
 
 export interface DonorMatch {
@@ -82,6 +88,7 @@ export interface DonorPortalData {
   membershipTier: string;
   totalDonated: string;
   donations: DonationRecord[];
+  membershipExpiry: string;
 }
 
 export interface DiscountOrganization {

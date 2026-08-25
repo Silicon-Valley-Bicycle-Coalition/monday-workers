@@ -97,6 +97,20 @@ Render src/letters/letterView.ts → HTML with print CSS. No storage anywhere.
   view reflects Monday. The generation-date line on the letter makes "which version is this"
   answerable.
 
+### Storage and immutability (decided 2026-08-24: none for v2)
+
+* **Letters are renders, not records — no artifact storage.** R2 was considered and rejected:
+  with HTML + print CSS there is no server-side file to store, and persisting rendered letters
+  would widen the portal's PII surface (against Feature 2's retention-purge ethos) without
+  changing what the donor receives.
+* **If immutability-at-issuance ever becomes a real requirement** (an auditor ask, or a dispute
+  over a letter re-rendered after a data correction), the designated fix is to snapshot the
+  letter's *input data* — one JSON blob per (donor item, year) in D1, captured on first render
+  and used for every subsequent render of that letter — not to store rendered artifacts. Same
+  guarantee, no new binding, and it stays consistent with letters-as-renders (a template fix
+  still improves every letter, since only the data is frozen). Deferred until someone actually
+  asks; the generation-date line covers the ordinary case today.
+
 ## Feature 2 — Address/contact change requests
 
 ### Routes

@@ -17,6 +17,7 @@ function donor(overrides: Partial<DonorPortalData>): DonorPortalData {
     id: 'donor-1', name: 'Jane Example', membershipStatus: 'Active', membershipTier: 'Member',
     totalDonated: '0',
     donations: [],
+    membershipExpiry: '',
     ...overrides,
   };
 }
