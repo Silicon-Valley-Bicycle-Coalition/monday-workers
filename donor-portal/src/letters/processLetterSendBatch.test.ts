@@ -37,6 +37,16 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    maxTriggersPerRun: 200,
+  },
+};
+
+const configWithLetterCron: Config = {
+  ...config,
+  letterCron: { ...config.letterCron, boardId: 456 },
 };
 
 function makeMessage(sendId: number) {
@@ -51,6 +61,7 @@ function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
     markSent: vi.fn().mockResolvedValue(undefined),
     markSkipped: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
+    listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
   };
 }
 
@@ -67,6 +78,7 @@ function fakeMonday(): MondayClient {
     getDonorContactInfo: vi.fn().mockResolvedValue({
       id: 'donor-1', name: 'Jane Example', email: 'jane@example.org', address: '1 Old St', phone: '555-0100',
     }),
+    getLetterSettings: vi.fn().mockResolvedValue(null),
   } as unknown as MondayClient;
 }
 
@@ -173,5 +185,66 @@ describe('processLetterSendBatch', () => {
     expect(store.markSent).not.toHaveBeenCalled();
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('fetches the Letter Settings template once per batch and passes it to the email sender', async () => {
+    const monday = fakeMonday();
+    (monday.getLetterSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      autoSend: true,
+      startDate: '2027-01-05',
+      bodyTemplate: 'Hi {{donorName}}',
+    });
+    const secondRow: LetterSendRow = { ...row, id: 43, donorItemId: 'donor-2' };
+    const store = fakeStore(row);
+    (store.getById as ReturnType<typeof vi.fn>).mockImplementation(async (id: number) => (id === 42 ? row : secondRow));
+    const emailSender = fakeEmailSender();
+
+    await processLetterSendBatch([makeMessage(42), makeMessage(43)], {
+      store,
+      monday,
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config: configWithLetterCron,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(monday.getLetterSettings).toHaveBeenCalledTimes(1);
+    expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledTimes(2);
+    for (const call of (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(call[0].bodyTemplate).toBe('Hi {{donorName}}');
+    }
+  });
+
+  it('sends with the built-in copy when fetching the Letter Settings board fails', async () => {
+    const monday = fakeMonday();
+    (monday.getLetterSettings as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+
+    await processLetterSendBatch([message], {
+      store: fakeStore(row),
+      monday,
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config: configWithLetterCron,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledTimes(1);
+    expect((emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].bodyTemplate).toBeUndefined();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('never reads the Letter Settings board while letterCron is unconfigured', async () => {
+    const monday = fakeMonday();
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row),
+      monday,
+      tokenStore: fakeTokenStore(),
+      emailSender: fakeEmailSender(),
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+    expect(monday.getLetterSettings).not.toHaveBeenCalled();
   });
 });

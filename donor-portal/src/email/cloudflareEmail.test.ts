@@ -90,5 +90,60 @@ describe('CloudflareEmailSender', () => {
         sender.sendLetterReadyEmail({ to: 'jane@example.org', donorName: 'Jane', year: 2025, loginUrl: 'https://x/callback' })
       ).rejects.toThrow('E_CONTENT_TOO_LARGE');
     });
+
+    it('uses the staff-edited body template for both parts when one is provided', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Jane Example',
+        year: 2025,
+        loginUrl: 'https://portal.example.org/auth/callback?token=abc',
+        bodyTemplate: 'Dear {{donorName}},\n\nYour {{year}} letter awaits: {{loginUrl}}',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.subject).toBe('Your 2025 SVBC giving letter is ready');
+      expect(message.text).toBe(
+        'Dear Jane Example,\n\nYour 2025 letter awaits: https://portal.example.org/auth/callback?token=abc'
+      );
+      expect(message.html).toBe(
+        '<p>Dear Jane Example,</p><p>Your 2025 letter awaits: <a href="https://portal.example.org/auth/callback?token=abc">https://portal.example.org/auth/callback?token=abc</a></p>'
+      );
+    });
+
+    it('escapes markup pasted into the template rather than sending it as HTML', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Jane',
+        year: 2025,
+        loginUrl: 'https://x/callback',
+        bodyTemplate: 'Hello <img src=x onerror=alert(1)> {{donorName}}',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.html).not.toContain('<img');
+      expect(message.html).toContain('&lt;img');
+    });
+
+    it('falls back to the built-in copy when the template is blank', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Jane',
+        year: 2025,
+        loginUrl: 'https://x/callback',
+        bodyTemplate: '   ',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.html).toContain('giving letter is ready to view');
+    });
   });
 });

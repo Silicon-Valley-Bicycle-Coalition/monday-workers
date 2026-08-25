@@ -11,6 +11,9 @@ export interface SendLetterReadyEmailParams {
   donorName: string;
   year: number;
   loginUrl: string;
+  // Staff-edited plain-text template from the Letter Settings board (see
+  // src/letters/letterEmailBody.ts for the placeholder contract). Blank/absent → built-in copy.
+  bodyTemplate?: string;
 }
 
 export interface EmailSender {

@@ -61,4 +61,15 @@ describe('D1LetterSendStore', () => {
     await store.requeue(id, '2026-08-24T10:10:00.000Z');
     expect(await store.findByDonorYear('donor-6', 2025)).toEqual({ id, status: 'queued' });
   });
+
+  it('lists the donor ids that already have a row for a year, regardless of status', async () => {
+    const store = new D1LetterSendStore(env.DB);
+    await store.createQueued({ donorItemId: 'donor-7', year: 2026, createdAt: '2027-01-02T10:00:00.000Z' });
+    const skippedId = await store.createQueued({ donorItemId: 'donor-8', year: 2026, createdAt: '2027-01-02T10:00:00.000Z' });
+    await store.markSkipped(skippedId, '2027-01-02T10:05:00.000Z');
+    await store.createQueued({ donorItemId: 'donor-9', year: 2025, createdAt: '2026-01-02T10:00:00.000Z' });
+
+    const donorIds = await store.listDonorItemIdsForYear(2026);
+    expect([...donorIds].sort()).toEqual(['donor-7', 'donor-8']);
+  });
 });

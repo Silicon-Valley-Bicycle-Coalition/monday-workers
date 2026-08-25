@@ -5,12 +5,16 @@ import type {
   DonorContactInfo,
   DonorMatch,
   DonorPortalData,
+  LetterCronColumns,
+  LetterSettings,
   MondayColumns,
 } from '../types';
 
 interface MondayColumnValue {
   id: string;
   text: string | null;
+  checked?: boolean; // CheckboxValue fragment
+  linked_item_ids?: string[]; // BoardRelationValue fragment
 }
 
 interface MondayItem {
@@ -38,6 +42,8 @@ export interface MondayClient {
     newValue: string;
     submittedAtISO: string;
   }): Promise<void>;
+  getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null>;
+  listDonorIdsWithDonationsInYear(year: number): Promise<string[]>;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -310,5 +316,102 @@ export class HttpMondayClient implements MondayClient {
       itemName: params.itemName,
       columnValues: JSON.stringify(columnValues),
     });
+  }
+
+  async getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null> {
+    // The Letter Settings board holds a single staff-edited item (see
+    // scripts/create-letter-settings-board.mjs), so only the first item is read. Checkbox state
+    // comes from the CheckboxValue fragment's `checked` field rather than the display text —
+    // Monday renders an unchecked box as null text and a checked one as "v", neither of which is
+    // worth string-matching on.
+    const query = `
+      query ($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          items_page(limit: 1) {
+            items {
+              id
+              name
+              column_values(ids: ${JSON.stringify([params.columns.autoSend, params.columns.startDate, params.columns.bodyTemplate])}) {
+                id
+                text
+                ... on CheckboxValue { checked }
+              }
+            }
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
+      boardId: params.boardId,
+    });
+    const item = data.boards[0]?.items_page.items[0];
+    if (!item) return null;
+    const autoSendValue = (item.column_values ?? []).find((c) => c.id === params.columns.autoSend);
+    return {
+      autoSend: autoSendValue?.checked === true,
+      startDate: columnText(item, params.columns.startDate),
+      bodyTemplate: columnText(item, params.columns.bodyTemplate),
+    };
+  }
+
+  async listDonorIdsWithDonationsInYear(year: number): Promise<string[]> {
+    // Backs the January letter cron: one ids-only sweep of the Donations board bounded to the
+    // target year, instead of a getDonorPortalData call per Donors-board item. NOTE: the
+    // query_params.rules shape for a date-column `between` filter is written from current Monday
+    // API v2 knowledge but not verified against a live account — verify before relying on it in
+    // production (same caveat as the other rules-shape NOTEs in this file). The client-side year
+    // check below is the correctness backstop either way; the server-side rule is an
+    // efficiency measure, so a filter shape Monday ignores degrades to a bigger sweep, not
+    // wrong results.
+    const columnIds = JSON.stringify([this.columns.donationDate, this.columns.donationDonorLink]);
+    const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
+    const firstPageQuery = `
+      query ($boardId: ID!, $from: String!, $to: String!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${this.columns.donationDate}", compare_value: [$from, $to], operator: between }]
+            }
+          ) {
+            cursor
+            ${itemFields}
+          }
+        }
+      }
+    `;
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          ${itemFields}
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId: this.donationsBoardId, from: `${year}-01-01`, to: `${year}-12-31` });
+    const firstPage = firstData.boards[0]?.items_page;
+    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      allItems.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    const donorIds = new Set<string>();
+    for (const item of allItems) {
+      if (!columnText(item, this.columns.donationDate).startsWith(`${year}-`)) continue;
+      const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
+      for (const donorId of link?.linked_item_ids ?? []) {
+        donorIds.add(donorId);
+      }
+    }
+    return [...donorIds];
   }
 }

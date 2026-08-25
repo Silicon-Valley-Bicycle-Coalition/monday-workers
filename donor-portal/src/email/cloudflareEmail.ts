@@ -1,5 +1,6 @@
 import { escapeHtml } from '../views';
 import { t } from '../i18n/t';
+import { renderLetterEmailBody } from '../letters/letterEmailBody';
 import type { EmailSender, SendLoginEmailParams, SendLetterReadyEmailParams } from './types';
 
 export class CloudflareEmailSender implements EmailSender {
@@ -27,13 +28,24 @@ export class CloudflareEmailSender implements EmailSender {
   // letterReady.* keys across all locales and thread a `locale` param through the same way
   // sendLoginEmail does, mirroring requestLogin's Monday-preference resolution.
   async sendLetterReadyEmail(params: SendLetterReadyEmailParams): Promise<void> {
-    const donorName = escapeHtml(params.donorName);
+    const template = params.bodyTemplate?.trim();
+    const body = template
+      ? renderLetterEmailBody(params.bodyTemplate!, { donorName: params.donorName, year: params.year, loginUrl: params.loginUrl })
+      : this.defaultLetterReadyBody(params);
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },
       subject: `Your ${params.year} SVBC giving letter is ready`,
+      html: body.html,
+      text: body.text,
+    });
+  }
+
+  private defaultLetterReadyBody(params: SendLetterReadyEmailParams): { html: string; text: string } {
+    const donorName = escapeHtml(params.donorName);
+    return {
       html: `<p>Hi ${donorName},</p><p>Your ${params.year} giving letter is ready to view in your donor portal.</p><p><a href="${params.loginUrl}">Log in to view it</a></p><p>This link expires soon and can only be used once.</p>`,
       text: `Hi ${params.donorName},\n\nYour ${params.year} giving letter is ready to view in your donor portal. This link expires soon and can only be used once.\n\n${params.loginUrl}`,
-    });
+    };
   }
 }

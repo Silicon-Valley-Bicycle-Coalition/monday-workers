@@ -97,6 +97,7 @@ function fakeLetterSendStore(overrides: Partial<LetterSendStore> = {}): LetterSe
     markSent: vi.fn().mockResolvedValue(undefined),
     markSkipped: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
+    listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
     ...overrides,
   };
 }
@@ -129,6 +130,8 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getLetterSettings: vi.fn().mockResolvedValue(null),
+    listDonorIdsWithDonationsInYear: vi.fn(),
   };
 }
 
@@ -166,6 +169,8 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getLetterSettings: vi.fn().mockResolvedValue(null),
+    listDonorIdsWithDonationsInYear: vi.fn(),
   };
 }
 
@@ -191,6 +196,11 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    maxTriggersPerRun: 200,
+  },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -535,6 +545,8 @@ describe('POST /login error handling', () => {
       getDiscountOrganizations: vi.fn(),
       getDonorContactInfo: vi.fn(),
       createChangeRequestItem: vi.fn(),
+      getLetterSettings: vi.fn().mockResolvedValue(null),
+      listDonorIdsWithDonationsInYear: vi.fn(),
     };
     const app = createApp(makeDeps({ monday }));
 

@@ -4,7 +4,7 @@ import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import type { Config, LetterSendQueueMessage } from '../types';
 import { loadLetterData } from './loadLetterData';
-import { lettersEnabled } from '../config';
+import { lettersEnabled, letterCronConfigured } from '../config';
 import { generateToken } from '../crypto/token';
 import { sha256Hex } from '../crypto/hash';
 
@@ -27,9 +27,10 @@ export async function processLetterSendBatch(
   messages: QueueMessageLike<LetterSendQueueMessage>[],
   deps: ProcessLetterSendBatchDeps
 ): Promise<void> {
+  const bodyTemplate = await loadBodyTemplate(deps);
   for (const message of messages) {
     try {
-      await processOne(message.body.sendId, deps);
+      await processOne(message.body.sendId, deps, bodyTemplate);
       message.ack();
     } catch (err) {
       console.error(
@@ -42,7 +43,28 @@ export async function processLetterSendBatch(
   }
 }
 
-async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps): Promise<void> {
+// The staff-edited email body lives on the Letter Settings board (letterCron config). Fetched
+// once per batch, not per message. An unreachable board falls back to the built-in copy rather
+// than blocking sends — the template is presentation, not correctness, so a Monday hiccup
+// shouldn't park a batch in the retry loop.
+async function loadBodyTemplate(deps: ProcessLetterSendBatchDeps): Promise<string | undefined> {
+  const lc = deps.config.letterCron;
+  if (!letterCronConfigured(deps.config) || lc.boardId === null) return undefined;
+  try {
+    const settings = await deps.monday.getLetterSettings({ boardId: lc.boardId, columns: lc.columns });
+    const template = settings?.bodyTemplate.trim();
+    return template ? template : undefined;
+  } catch (err) {
+    console.error(
+      `donor-portal consumer: failed to read the Letter Settings board — using the built-in email copy: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    return undefined;
+  }
+}
+
+async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, bodyTemplate: string | undefined): Promise<void> {
   const row = await deps.store.getById(sendId);
   if (row === null) {
     // A queued message with no row is a bug worth surfacing — let retries exhaust into the DLQ
@@ -93,6 +115,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps): Pro
     donorName: contact.name,
     year: row.year,
     loginUrl,
+    bodyTemplate,
   });
 
   await deps.store.markSent(row.id, deps.now().toISOString());

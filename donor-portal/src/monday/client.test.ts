@@ -409,3 +409,183 @@ describe('HttpMondayClient.createChangeRequestItem', () => {
     expect(columnValues.date_1).toEqual({ date: '2026-08-24', time: '10:15:30' });
   });
 });
+
+const letterCronColumns = { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' };
+
+describe('HttpMondayClient.getLetterSettings', () => {
+  it('parses the settings item into autoSend/startDate/bodyTemplate', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '11',
+                  name: 'Letter emails',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'Hi {{donorName}}, your {{year}} letter: {{loginUrl}}' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+      autoSend: true,
+      startDate: '2027-01-05',
+      bodyTemplate: 'Hi {{donorName}}, your {{year}} letter: {{loginUrl}}',
+    });
+  });
+
+  it('reports autoSend false when the checkbox is unchecked and blanks for empty columns', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '11',
+                  name: 'Letter emails',
+                  column_values: [
+                    { id: 'checkbox_1', text: null, checked: false },
+                    { id: 'date_2', text: null },
+                    { id: 'long_text_1', text: null },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+      autoSend: false,
+      startDate: '',
+      bodyTemplate: '',
+    });
+  });
+
+  it('returns null when the settings board has no items', async () => {
+    const client = makeClient({ data: { boards: [{ items_page: { items: [] } }] } });
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toBeNull();
+  });
+});
+
+describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
+  it('collects unique donor ids from the year’s donations across pages', async () => {
+    const pages = [
+      {
+        data: {
+          boards: [
+            {
+              items_page: {
+                cursor: 'page2',
+                items: [
+                  {
+                    id: '1',
+                    column_values: [
+                      { id: 'date_col', text: '2026-03-01' },
+                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                    ],
+                  },
+                  {
+                    id: '2',
+                    column_values: [
+                      { id: 'date_col', text: '2026-11-12' },
+                      { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      {
+        data: {
+          next_items_page: {
+            cursor: null,
+            items: [
+              {
+                id: '3',
+                column_values: [
+                  { id: 'date_col', text: '2026-06-30' },
+                  { id: 'link_col', text: 'Sam', linked_item_ids: ['88'] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ];
+    let call = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => pages[call++],
+    }));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+
+    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77', '88']);
+  });
+
+  it('drops donations whose date falls outside the requested year (server filter is advisory)', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              cursor: null,
+              items: [
+                {
+                  id: '1',
+                  column_values: [
+                    { id: 'date_col', text: '2025-12-31' },
+                    { id: 'link_col', text: 'Old', linked_item_ids: ['66'] },
+                  ],
+                },
+                {
+                  id: '2',
+                  column_values: [
+                    { id: 'date_col', text: '2026-01-01' },
+                    { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77']);
+  });
+
+  it('sends the year bounds as variables, not interpolated into the query', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+      };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+
+    await client.listDonorIdsWithDonationsInYear(2026);
+
+    expect(captured).not.toBeNull();
+    expect(captured!.variables.from).toBe('2026-01-01');
+    expect(captured!.variables.to).toBe('2026-12-31');
+    expect(captured!.query).toContain('between');
+  });
+});

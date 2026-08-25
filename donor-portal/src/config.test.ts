@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled, letterCronConfigured } from './config';
 
 const validConfig = {
   monday: {
@@ -50,6 +50,11 @@ const validConfig = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  letterCron: {
+    boardId: 456,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    maxTriggersPerRun: 200,
+  },
 };
 
 describe('validateConfig', () => {
@@ -257,5 +262,49 @@ describe('cardEnabled', () => {
     const raw = structuredClone(validConfig);
     raw.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     expect(cardEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('letterCron config section', () => {
+  it('rejects a config missing the letterCron section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).letterCron;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron/);
+  });
+
+  it('rejects a config missing a letterCron column key', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.letterCron.columns as Record<string, unknown>).bodyTemplate;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.columns\.bodyTemplate/);
+  });
+
+  it('rejects letterCron.maxTriggersPerRun that is not a positive number', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.letterCron.maxTriggersPerRun = 0;
+    expect(() => validateConfig(cfg)).toThrow(/maxTriggersPerRun/);
+  });
+
+  it('accepts letterCron placeholder column ids (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.letterCron.columns.autoSend = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('letterCronConfigured', () => {
+  it('is true when boardId is set and no column is a placeholder', () => {
+    expect(letterCronConfigured(validateConfig(structuredClone(validConfig)))).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw.letterCron as { boardId: number | null }).boardId = null;
+    expect(letterCronConfigured(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a letterCron column id is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.letterCron.columns.startDate = 'REPLACE_WITH_COLUMN_ID';
+    expect(letterCronConfigured(validateConfig(raw))).toBe(false);
   });
 });

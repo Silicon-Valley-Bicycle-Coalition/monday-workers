@@ -39,6 +39,11 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    maxTriggersPerRun: 200,
+  },
 };
 
 function makeMessage(requestId: number) {

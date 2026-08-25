@@ -58,5 +58,14 @@
   },
   "cardTokens": {
     "retentionDays": 30
+  },
+  "letterCron": {
+    "boardId": null,
+    "columns": {
+      "autoSend": "REPLACE_WITH_COLUMN_ID",
+      "startDate": "REPLACE_WITH_COLUMN_ID",
+      "bodyTemplate": "REPLACE_WITH_COLUMN_ID"
+    },
+    "maxTriggersPerRun": 200
   }
 }

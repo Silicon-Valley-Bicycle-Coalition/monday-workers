@@ -45,6 +45,26 @@ export interface CardTokensConfig {
   retentionDays: number;
 }
 
+export interface LetterCronColumns {
+  autoSend: string;
+  startDate: string;
+  bodyTemplate: string;
+}
+
+export interface LetterCronConfig {
+  boardId: number | null;
+  columns: LetterCronColumns;
+  maxTriggersPerRun: number;
+}
+
+// The staff-editable state read from the Letter Settings board at cron time (and, for
+// bodyTemplate, per letter-email batch) — see scripts/create-letter-settings-board.mjs.
+export interface LetterSettings {
+  autoSend: boolean;
+  startDate: string; // 'YYYY-MM-DD', or '' when the date column is empty
+  bodyTemplate: string;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -69,6 +89,7 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  letterCron: LetterCronConfig;
 }
 
 export interface DonorMatch {

@@ -32,6 +32,11 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    maxTriggersPerRun: 200,
+  },
 };
 
 function makeMessage<T>(body: T) {
@@ -71,6 +76,7 @@ function fakeLetterStore(): LetterSendStore {
     markSent: vi.fn(),
     markSkipped: vi.fn(),
     requeue: vi.fn(),
+    listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
   };
 }
 
