@@ -54,5 +54,8 @@
     },
     "dedupeWindowHours": 72,
     "retentionDays": 180
+  },
+  "cardTokens": {
+    "retentionDays": 30
   }
 }
