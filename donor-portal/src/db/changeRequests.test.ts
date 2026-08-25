@@ -85,4 +85,32 @@ describe('D1ChangeRequestStore', () => {
     expect(await store.findRecentByDedupeHash('hash-narrow', '2026-08-25T00:00:00.000Z')).toBeNull();
     expect(await store.findRecentByDedupeHash('no-such-hash', '2026-08-24T00:00:00.000Z')).toBeNull();
   });
+
+  describe('purgeWrittenBefore', () => {
+    it('deletes written rows older than the cutoff, keeping recent writes and all queued rows', async () => {
+      const store = new D1ChangeRequestStore(env.DB);
+
+      const oldWrittenId = await store.createRequest(
+        newRequest({ dedupeHash: 'hash-purge-old', createdAt: '2026-01-01T00:00:00.000Z' })
+      );
+      await store.markWritten(oldWrittenId, '2026-01-01T00:00:00.000Z');
+
+      const recentWrittenId = await store.createRequest(
+        newRequest({ dedupeHash: 'hash-purge-recent', createdAt: '2026-08-20T00:00:00.000Z' })
+      );
+      await store.markWritten(recentWrittenId, '2026-08-20T00:00:00.000Z');
+
+      // Queued rows may still be pending replay, so they're kept regardless of age.
+      const oldQueuedId = await store.createRequest(
+        newRequest({ dedupeHash: 'hash-purge-queued', createdAt: '2026-01-01T00:00:00.000Z' })
+      );
+
+      const purged = await store.purgeWrittenBefore('2026-06-01T00:00:00.000Z');
+
+      expect(purged).toBe(1);
+      expect(await store.getRequest(oldWrittenId)).toBeNull();
+      expect(await store.getRequest(recentWrittenId)).not.toBeNull();
+      expect(await store.getRequest(oldQueuedId)).not.toBeNull();
+    });
+  });
 });

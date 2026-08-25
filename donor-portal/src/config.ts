@@ -36,7 +36,7 @@ const REQUIRED_TAX_LETTER_KEYS = [
   'benefitStatement',
   'benefitTiers',
 ] as const;
-const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours'] as const;
+const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 
 function requireObject(cfg: Record<string, unknown>, key: string, errorKey: string = key): Record<string, unknown> {
@@ -100,6 +100,9 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(changeRequests, 'changeRequests', REQUIRED_CHANGE_REQUEST_KEYS);
   const crColumns = requireObject(changeRequests, 'columns', 'changeRequests.columns');
   requireKeys(crColumns, 'changeRequests.columns', REQUIRED_CHANGE_REQUEST_COLUMNS);
+  if (typeof changeRequests.retentionDays !== 'number' || changeRequests.retentionDays <= 0) {
+    throw new Error('config: "changeRequests.retentionDays" must be a positive number of days');
+  }
 
   return cfg as unknown as Config;
 }

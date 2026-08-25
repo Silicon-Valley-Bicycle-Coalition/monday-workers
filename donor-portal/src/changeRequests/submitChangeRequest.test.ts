@@ -10,6 +10,7 @@ function fakeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeRequestSt
     findRecentByDedupeHash: vi.fn().mockResolvedValue(null),
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
+    purgeWrittenBefore: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }

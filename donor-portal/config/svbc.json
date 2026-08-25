@@ -51,6 +51,7 @@
       "newValue": "REPLACE_WITH_COLUMN_ID",
       "submittedAt": "REPLACE_WITH_COLUMN_ID"
     },
-    "dedupeWindowHours": 72
+    "dedupeWindowHours": 72,
+    "retentionDays": 180
   }
 }

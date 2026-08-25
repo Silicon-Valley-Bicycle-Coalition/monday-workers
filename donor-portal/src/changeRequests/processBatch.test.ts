@@ -36,6 +36,7 @@ const config: Config = {
     boardId: 99,
     columns: { donorLink: 'c1', field: 'c2', oldValue: 'c3', newValue: 'c4', submittedAt: 'c5' },
     dedupeWindowHours: 72,
+    retentionDays: 180,
   },
 };
 
@@ -50,6 +51,7 @@ function fakeStore(getResult: ChangeRequestRow | null): ChangeRequestStore {
     findRecentByDedupeHash: vi.fn(),
     getRequest: vi.fn().mockResolvedValue(getResult),
     markWritten: vi.fn().mockResolvedValue(undefined),
+    purgeWrittenBefore: vi.fn().mockResolvedValue(0),
   };
 }
 

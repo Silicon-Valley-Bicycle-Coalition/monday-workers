@@ -8,6 +8,7 @@ import { D1ChangeRequestStore } from './db/changeRequests';
 import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
+import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
 import type { Env, ChangeQueueMessage } from './types';
 
 export default {
@@ -61,5 +62,20 @@ export default {
       ),
       config,
     });
+  },
+
+  // Retention purge: see purgeExpiredChangeRequests for why 'written' rows are deleted and
+  // 'queued' rows are left alone.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    // Same lazy-validation rationale as fetch()/queue() above.
+    const config = validateConfig(rawConfig);
+    const purged = await purgeExpiredChangeRequests({
+      store: new D1ChangeRequestStore(env.DB),
+      retentionDays: config.changeRequests.retentionDays,
+      now: () => new Date(),
+    });
+    if (purged > 0) {
+      console.log(`donor-portal scheduled: purged ${purged} written change_requests rows past the ${config.changeRequests.retentionDays}-day retention window`);
+    }
   },
 };

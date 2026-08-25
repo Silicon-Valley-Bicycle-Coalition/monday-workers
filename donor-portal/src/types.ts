@@ -36,6 +36,7 @@ export interface ChangeRequestsConfig {
   boardId: number | null;
   columns: ChangeRequestColumns;
   dedupeWindowHours: number;
+  retentionDays: number;
 }
 
 export interface Config {

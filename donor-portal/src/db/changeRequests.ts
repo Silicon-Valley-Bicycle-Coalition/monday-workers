@@ -35,6 +35,11 @@ export interface ChangeRequestStore {
   findRecentByDedupeHash(dedupeHash: string, sinceISO: string): Promise<RecentDedupeMatch | null>;
   getRequest(id: number): Promise<ChangeRequestRow | null>;
   markWritten(id: number, writtenAtISO: string): Promise<void>;
+  // Retention purge: rows carry donor PII (donor_name, old_value, new_value) with no purpose
+  // once written to Monday, so 'written' rows past the retention window are deleted outright
+  // rather than field-scrubbed. 'queued' rows are never touched — they may still be pending
+  // replay. Returns the number of rows deleted.
+  purgeWrittenBefore(cutoffISO: string): Promise<number>;
 }
 
 export class D1ChangeRequestStore implements ChangeRequestStore {
@@ -111,5 +116,13 @@ export class D1ChangeRequestStore implements ChangeRequestStore {
       .prepare(`UPDATE change_requests SET status = 'written', written_at = ?1 WHERE id = ?2`)
       .bind(writtenAtISO, id)
       .run();
+  }
+
+  async purgeWrittenBefore(cutoffISO: string): Promise<number> {
+    const result = await this.db
+      .prepare(`DELETE FROM change_requests WHERE status = 'written' AND written_at < ?1`)
+      .bind(cutoffISO)
+      .run();
+    return result.meta.changes;
   }
 }

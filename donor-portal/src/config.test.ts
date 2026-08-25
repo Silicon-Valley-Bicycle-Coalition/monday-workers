@@ -45,6 +45,7 @@ const validConfig = {
       submittedAt: 'date_1',
     },
     dedupeWindowHours: 72,
+    retentionDays: 180,
   },
 };
 
@@ -122,6 +123,7 @@ const v2Sections = {
       submittedAt: 'date_1',
     },
     dedupeWindowHours: 72,
+    retentionDays: 180,
   },
 };
 
@@ -138,6 +140,20 @@ describe('v2 config sections', () => {
     Object.assign(cfg, structuredClone(v2Sections));
     delete (cfg as { changeRequests: Record<string, unknown> }).changeRequests.dedupeWindowHours;
     expect(() => validateConfig(cfg)).toThrow('changeRequests.dedupeWindowHours');
+  });
+
+  it('rejects a config missing changeRequests.retentionDays', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, structuredClone(v2Sections));
+    delete (cfg as { changeRequests: Record<string, unknown> }).changeRequests.retentionDays;
+    expect(() => validateConfig(cfg)).toThrow('changeRequests.retentionDays');
+  });
+
+  it('rejects changeRequests.retentionDays that is not a positive number', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, structuredClone(v2Sections));
+    (cfg as { changeRequests: { retentionDays: number } }).changeRequests.retentionDays = 0;
+    expect(() => validateConfig(cfg)).toThrow(/retentionDays/);
   });
 
   it('accepts REPLACE_AFTER_SIGNOFF letter language (gate, not error)', () => {
