@@ -156,10 +156,12 @@ before cutover:
   `{"challenge": "..."}` to the webhook URL, which is echoed back verbatim — handled in
   `src/webhook/route.ts`, and is also what a new subscription's secret check has to pass, so a
   wrong secret at subscribe-time fails loudly rather than silently.
-* **Monday.com GraphQL API** — currently reusing `salesforce-import`'s existing token (`.env`,
-  per direct instruction) rather than a token minted specifically for this Worker at
-  least-privilege scope, which is this repo's stated convention for every other Worker. Tracked as
-  open technical debt below, not blocking, since the token only reaches Sandbox boards regardless.
+* **Monday.com GraphQL API** — reusing `salesforce-import`'s existing token for Sandbox testing.
+  **Deliberately deferred, not open debt** (decided 2026-08-24, same reasoning as the donor-portal
+  integration user — see `migration-plan.md`'s Post-Migration Follow-ups in the private planning
+  repo): minting a dedicated least-privilege token against Sandbox board ids would be throwaway
+  work, since the sandbox gets rebuilt before cutover. The dedicated token gets minted against the
+  **production** workspace as part of production cutover instead — see "Not yet done" below.
 
 ## Non-destructive by design
 
@@ -173,9 +175,9 @@ necessarily match) — don't assume sandbox and production share ids just becaus
 
 ## Not yet done
 
-* **Dedicated least-privilege API token.** Mint one scoped to just the Donations era boards plus
-  People/People Historical/Organizations, and swap it in for the reused `salesforce-import` token
-  above.
+* **Dedicated least-privilege API token — scheduled for production cutover, not before** (see
+  "APIs & auth" above). Scope, once minted: read-only on the 9 Donations era boards, read/write on
+  People/People Historical/Organizations.
 * **The sandbox is getting a fresh full load rehearsal separately** (see
   `docs/18-sandbox-load-rehearsal-lessons.md` in the private planning repo) — re-run the bootstrap
   once that settles, since item ids / board contents may have changed since 2026-08-25's run.
