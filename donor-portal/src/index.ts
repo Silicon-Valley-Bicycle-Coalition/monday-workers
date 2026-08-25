@@ -4,9 +4,12 @@ import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
 import { D1LoginAttemptStore } from './db/loginAttempts';
+import { D1ChangeRequestStore } from './db/changeRequests';
 import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
-import type { Env } from './types';
+import { processChangeQueueBatch } from './changeRequests/processBatch';
+import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
+import type { Env, ChangeQueueMessage } from './types';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -37,7 +40,42 @@ export default {
       ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
       config,
       now: () => new Date(),
+      changeStore: new D1ChangeRequestStore(env.DB),
+      changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
     });
     return app.fetch(request, env, ctx);
+  },
+
+  async queue(batch: MessageBatch<ChangeQueueMessage>, env: Env): Promise<void> {
+    // Same lazy-validation rationale as fetch() above: config/svbc.json ships with placeholder
+    // board/column ids until an operator fills them in, so validation can't happen at import time.
+    const config = validateConfig(rawConfig);
+    await processChangeQueueBatch([...batch.messages], {
+      store: new D1ChangeRequestStore(env.DB),
+      monday: new HttpMondayClient(
+        config.monday.apiUrl,
+        env.MONDAY_API_TOKEN,
+        config.monday.columns,
+        config.monday.donorsBoardId ?? 0,
+        config.monday.donationsBoardId ?? 0,
+        config.monday.organizationsBoardId ?? 0
+      ),
+      config,
+    });
+  },
+
+  // Retention purge: see purgeExpiredChangeRequests for why 'written' rows are deleted and
+  // 'queued' rows are left alone.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    // Same lazy-validation rationale as fetch()/queue() above.
+    const config = validateConfig(rawConfig);
+    const purged = await purgeExpiredChangeRequests({
+      store: new D1ChangeRequestStore(env.DB),
+      retentionDays: config.changeRequests.retentionDays,
+      now: () => new Date(),
+    });
+    if (purged > 0) {
+      console.log(`donor-portal scheduled: purged ${purged} written change_requests rows past the ${config.changeRequests.retentionDays}-day retention window`);
+    }
   },
 };

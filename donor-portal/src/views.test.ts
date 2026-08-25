@@ -1,6 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { checkEmailView, errorView, loginFormView, portalView } from './views';
+import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import type { PortalView } from './types';
+
+describe('page', () => {
+  it('wraps the body in a document with charset, viewport, and the given title, escaped', () => {
+    const html = page('Check Your Email — SVBC Donor Portal', '<h1>Check your email</h1>');
+    expect(html).toContain('<meta charset="utf-8" />');
+    expect(html).toContain('name="viewport"');
+    expect(html).toContain('<title>Check Your Email — SVBC Donor Portal</title>');
+    expect(html).toContain('<h1>Check your email</h1>');
+  });
+
+  it('escapes a title containing markup', () => {
+    const html = page('<script>alert(1)</script>', '<p>body</p>');
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
 
 describe('loginFormView', () => {
   it('renders a form posting to /login with an email field', () => {

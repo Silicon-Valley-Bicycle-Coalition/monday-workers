@@ -14,7 +14,9 @@
       "donationDate": "REPLACE_WITH_COLUMN_ID",
       "donationDescription": "REPLACE_WITH_COLUMN_ID",
       "discountOffered": "REPLACE_WITH_COLUMN_ID",
-      "discountActive": "REPLACE_WITH_COLUMN_ID"
+      "discountActive": "REPLACE_WITH_COLUMN_ID",
+      "donorAddress": "REPLACE_WITH_COLUMN_ID",
+      "donorPhone": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "resend": {
@@ -29,5 +31,27 @@
   "rateLimit": {
     "emailWindowSeconds": 900,
     "emailMaxAttempts": 5
+  },
+  "taxLetter": {
+    "orgLegalName": "Silicon Valley Bicycle Coalition",
+    "ein": "REPLACE_AFTER_SIGNOFF",
+    "orgAddress": "REPLACE_AFTER_SIGNOFF",
+    "signatureName": "REPLACE_AFTER_SIGNOFF",
+    "signatureTitle": "REPLACE_AFTER_SIGNOFF",
+    "plainStatement": "REPLACE_AFTER_SIGNOFF",
+    "benefitStatement": "REPLACE_AFTER_SIGNOFF",
+    "benefitTiers": []
+  },
+  "changeRequests": {
+    "boardId": null,
+    "columns": {
+      "donorLink": "REPLACE_WITH_COLUMN_ID",
+      "field": "REPLACE_WITH_COLUMN_ID",
+      "oldValue": "REPLACE_WITH_COLUMN_ID",
+      "newValue": "REPLACE_WITH_COLUMN_ID",
+      "submittedAt": "REPLACE_WITH_COLUMN_ID"
+    },
+    "dedupeWindowHours": 72,
+    "retentionDays": 180
   }
 }

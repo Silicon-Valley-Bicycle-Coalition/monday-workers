@@ -9,6 +9,8 @@ function fakeMonday(matches: { id: string; name: string }[]): MondayClient {
     findDonorsByEmail: vi.fn().mockResolvedValue(matches),
     getDonorPortalData: vi.fn(),
     getDiscountOrganizations: vi.fn(),
+    getDonorContactInfo: vi.fn(),
+    createChangeRequestItem: vi.fn(),
   };
 }
 

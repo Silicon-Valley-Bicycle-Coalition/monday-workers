@@ -9,6 +9,34 @@ export interface MondayColumns {
   donationDescription: string;
   discountOffered: string;
   discountActive: string;
+  donorAddress: string;
+  donorPhone: string;
+}
+
+export interface TaxLetterConfig {
+  orgLegalName: string;
+  ein: string;
+  orgAddress: string;
+  signatureName: string;
+  signatureTitle: string;
+  plainStatement: string;
+  benefitStatement: string;
+  benefitTiers: string[];
+}
+
+export interface ChangeRequestColumns {
+  donorLink: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  submittedAt: string;
+}
+
+export interface ChangeRequestsConfig {
+  boardId: number | null;
+  columns: ChangeRequestColumns;
+  dedupeWindowHours: number;
+  retentionDays: number;
 }
 
 export interface Config {
@@ -32,6 +60,8 @@ export interface Config {
     emailWindowSeconds: number;
     emailMaxAttempts: number;
   };
+  taxLetter: TaxLetterConfig;
+  changeRequests: ChangeRequestsConfig;
 }
 
 export interface DonorMatch {
@@ -59,9 +89,24 @@ export interface DiscountOrganization {
   discountOffered: string;
 }
 
+export interface DonorContactInfo {
+  id: string;
+  name: string;
+  email: string;
+  address: string;
+  phone: string;
+}
+
 export interface PortalView {
   donors: DonorPortalData[];
   discounts: DiscountOrganization[];
+}
+
+// Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for
+// that module's own callers) to avoid an import cycle: submitChangeRequest.ts imports
+// MondayClient from monday/client.ts, which itself imports from this file.
+export interface ChangeQueueMessage {
+  requestId: number;
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
@@ -70,4 +115,5 @@ export interface PortalView {
 export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
   RESEND_API_KEY: string;
+  CHANGE_QUEUE: Queue<ChangeQueueMessage>;
 }

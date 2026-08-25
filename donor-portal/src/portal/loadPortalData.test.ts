@@ -15,6 +15,8 @@ describe('loadPortalData', () => {
         .fn()
         .mockImplementation((id: string) => Promise.resolve(donor(id, id === 'donor-1' ? 'Jane' : 'Jane Also'))),
       getDiscountOrganizations: vi.fn().mockResolvedValue([{ name: 'Local Bikes', discountOffered: '10% off' }]),
+      getDonorContactInfo: vi.fn(),
+      createChangeRequestItem: vi.fn(),
     };
 
     const result = await loadPortalData(['donor-1', 'donor-2'], monday);

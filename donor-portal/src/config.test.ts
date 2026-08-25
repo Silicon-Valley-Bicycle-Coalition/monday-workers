@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled } from './config';
 
 const validConfig = {
   monday: {
@@ -18,11 +18,35 @@ const validConfig = {
       donationDescription: 'desc_col',
       discountOffered: 'offer_col',
       discountActive: 'active_col',
+      donorAddress: 'text_addr',
+      donorPhone: 'phone_1',
     },
   },
   resend: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
+  taxLetter: {
+    orgLegalName: 'Silicon Valley Bicycle Coalition',
+    ein: '00-0000000',
+    orgAddress: '123 Example St, San Jose, CA 95112',
+    signatureName: 'Alex Example',
+    signatureTitle: 'Executive Director',
+    plainStatement: 'No goods or services were provided in exchange for these contributions.',
+    benefitStatement: 'Your membership benefits have an estimated fair-market value of $0.',
+    benefitTiers: ['Champion'],
+  },
+  changeRequests: {
+    boardId: 123,
+    columns: {
+      donorLink: 'connect_1',
+      field: 'text_1',
+      oldValue: 'text_2',
+      newValue: 'text_3',
+      submittedAt: 'date_1',
+    },
+    dedupeWindowHours: 72,
+    retentionDays: 180,
+  },
 };
 
 describe('validateConfig', () => {
@@ -72,5 +96,108 @@ describe('validateConfig', () => {
       },
     };
     expect(() => validateConfig(broken)).toThrow(/donorEmail/);
+  });
+});
+
+// Helper: a fully-valid v2 config fragment for these tests. Reuse the file's existing
+// valid-config fixture (validConfig) and spread these keys in — validConfig already carries
+// matching real values, so this exists mainly for the tests below that mutate a single field.
+const v2Sections = {
+  taxLetter: {
+    orgLegalName: 'Silicon Valley Bicycle Coalition',
+    ein: '00-0000000',
+    orgAddress: '123 Example St, San Jose, CA 95112',
+    signatureName: 'Alex Example',
+    signatureTitle: 'Executive Director',
+    plainStatement: 'No goods or services were provided in exchange for these contributions.',
+    benefitStatement: 'Your membership benefits have an estimated fair-market value of $0.',
+    benefitTiers: ['Champion'],
+  },
+  changeRequests: {
+    boardId: 123,
+    columns: {
+      donorLink: 'connect_1',
+      field: 'text_1',
+      oldValue: 'text_2',
+      newValue: 'text_3',
+      submittedAt: 'date_1',
+    },
+    dedupeWindowHours: 72,
+    retentionDays: 180,
+  },
+};
+
+describe('v2 config sections', () => {
+  it('rejects a config missing the taxLetter section', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, v2Sections);
+    delete (cfg as Record<string, unknown>).taxLetter;
+    expect(() => validateConfig(cfg)).toThrow('taxLetter');
+  });
+
+  it('rejects a config missing changeRequests.dedupeWindowHours', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, structuredClone(v2Sections));
+    delete (cfg as { changeRequests: Record<string, unknown> }).changeRequests.dedupeWindowHours;
+    expect(() => validateConfig(cfg)).toThrow('changeRequests.dedupeWindowHours');
+  });
+
+  it('rejects a config missing changeRequests.retentionDays', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, structuredClone(v2Sections));
+    delete (cfg as { changeRequests: Record<string, unknown> }).changeRequests.retentionDays;
+    expect(() => validateConfig(cfg)).toThrow('changeRequests.retentionDays');
+  });
+
+  it('rejects changeRequests.retentionDays that is not a positive number', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, structuredClone(v2Sections));
+    (cfg as { changeRequests: { retentionDays: number } }).changeRequests.retentionDays = 0;
+    expect(() => validateConfig(cfg)).toThrow(/retentionDays/);
+  });
+
+  it('accepts REPLACE_AFTER_SIGNOFF letter language (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    Object.assign(cfg, structuredClone(v2Sections));
+    (cfg as { taxLetter: { plainStatement: string } }).taxLetter.plainStatement = 'REPLACE_AFTER_SIGNOFF';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('lettersEnabled', () => {
+  it('is true when every taxLetter field is real', () => {
+    const cfg = validateConfig(Object.assign(structuredClone(validConfig), structuredClone(v2Sections)));
+    expect(lettersEnabled(cfg)).toBe(true);
+  });
+
+  it('is false while any taxLetter string is still REPLACE_AFTER_SIGNOFF', () => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
+    (raw as { taxLetter: { ein: string } }).taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
+    expect(lettersEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('changeRequestsEnabled', () => {
+  it('is true when boardId is set and no column is a placeholder', () => {
+    const cfg = validateConfig(Object.assign(structuredClone(validConfig), structuredClone(v2Sections)));
+    expect(changeRequestsEnabled(cfg)).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
+    (raw as { changeRequests: { boardId: number | null } }).changeRequests.boardId = null;
+    expect(changeRequestsEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a Change Requests column id is a placeholder', () => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
+    (raw as { changeRequests: { columns: { field: string } } }).changeRequests.columns.field = 'REPLACE_WITH_COLUMN_ID';
+    expect(changeRequestsEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while donorAddress/donorPhone Donors-board columns are placeholders', () => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
+    (raw as { monday: { columns: { donorAddress: string } } }).monday.columns.donorAddress = 'REPLACE_WITH_COLUMN_ID';
+    expect(changeRequestsEnabled(validateConfig(raw))).toBe(false);
   });
 });

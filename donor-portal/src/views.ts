@@ -1,12 +1,29 @@
 import type { PortalView } from './types';
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Wraps a view's HTML fragment in a minimal document so the browser has a real <title> and
+// viewport meta — without it, browsers fall back to printing the bare URL in default print
+// headers/footers, which is how the tax letter page used to print (see letterViews.letterView).
+export function page(title: string, body: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+  </head>
+  <body>
+    ${body}
+  </body>
+</html>`;
 }
 
 export function loginFormView(): string {
@@ -77,6 +94,8 @@ export function portalView(data: PortalView): string {
         ${data.discounts.map(discountRow).join('')}
       </ul>
     </section>
+    <p><a href="/portal/letters">Tax documents</a></p>
+    <p><a href="/portal/change-request">Request a change to your details</a></p>
     <form action="/logout" method="post"><button type="submit">Log out</button></form>
   `;
 }
