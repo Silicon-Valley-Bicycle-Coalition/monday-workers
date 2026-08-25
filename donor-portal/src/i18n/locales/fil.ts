@@ -28,9 +28,9 @@ export const fil: Record<TranslationKey, string> = {
   'error.requestNewLink': 'Humiling ng bagong login link',
   'error.invalidLink': 'Hindi valid ang link na ito. Pakihiling ng bago.',
   'error.expiredLink': 'Nag-expire na o nagamit na ang link na ito. Pakihiling ng bago.',
-  'error.lettersLoadFailed': 'Hindi namin ma-load ang iyong mga letter sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
-  'error.letterNotFound': 'Wala pong ganitong letter.',
-  'error.letterLoadFailed': 'Hindi namin ma-load ang iyong letter sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
+  'error.lettersLoadFailed': 'Hindi namin ma-load ang iyong mga tax letter sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
+  'error.letterNotFound': 'Wala pong ganitong tax letter.',
+  'error.letterLoadFailed': 'Hindi namin ma-load ang iyong tax letter sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.rateLimited': 'Sobrang dami ng requests — pakisubukan ulit sa loob ng isang minuto.',
   'error.cardNotFound': 'Wala pong ganitong card.',
   'error.cardLoadFailed': 'Hindi namin ma-load ang iyong card sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
@@ -40,9 +40,9 @@ export const fil: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Ang iyong donor portal',
-  'portal.membership': 'Membership: {{status}} ({{tier}})',
+  'portal.membership': 'Katayuan ng membership: {{status}} ({{tier}})',
   'portal.totalDonated': 'Kabuuang na-donate: {{total}}',
-  'portal.membershipCardLink': 'Membership card',
+  'portal.membershipCardLink': 'Kard ng membership',
   'portal.tableDate': 'Petsa',
   'portal.tableAmount': 'Halaga',
   'portal.tableDescription': 'Deskripsyon',
@@ -53,8 +53,8 @@ export const fil: Record<TranslationKey, string> = {
 
   // Letters
   'letters.listHeading': 'Mga dokumento sa buwis',
-  'letters.listIntro': 'Bawat letter ay isang pinagsama-samang kumpirmasyon ng mga donasyon na nakatala sa records namin para sa taong iyon. Buksan ang isang letter at gamitin ang Print option ng iyong browser para i-print ito o i-save bilang PDF.',
-  'letters.noneYet': 'Wala pang available na letter para kay {{name}} — sinasaklaw ng mga letter ang mga natapos nang taon na may kahit isang donasyon.',
+  'letters.listIntro': 'Bawat tax letter ay isang pinagsama-samang kumpirmasyon ng mga donasyon na nakatala sa records namin para sa taong iyon. Buksan ang isang tax letter at gamitin ang Print option ng iyong browser para i-print ito o i-save bilang PDF.',
+  'letters.noneYet': 'Wala pang available na tax letter para kay {{name}} — sinasaklaw ng mga tax letter ang mga natapos nang taon na may kahit isang donasyon.',
   'letters.yearLink': 'Tax letter para sa {{year}}',
   'letters.backToPortal': 'Bumalik sa iyong portal',
   'letters.unavailable': 'Hindi pa available ang year-end tax letters. Pakibalikan ulit sa lalong madaling panahon, o makipag-ugnayan sa amin kung kailangan mo ng giving summary sa ngayon.',
@@ -86,15 +86,15 @@ export const fil: Record<TranslationKey, string> = {
 
   // Membership card + public verify page
   'card.heading': 'Ang iyong membership card',
-  'card.tier': 'Tier: {{tier}}',
-  'card.status': 'Status: {{status}}',
+  'card.tier': 'Antas: {{tier}}',
+  'card.status': 'Katayuan: {{status}}',
   'card.expires': 'Mag-e-expire: {{expiry}}',
   'card.scanHint': 'Ipakita ang card na ito, o hayaang i-scan ng shop ang QR code o buksan ang link sa itaas, para kumpirmahin ang iyong membership.',
   'card.regenerate': 'I-regenerate ang card',
   'card.regenerateHint': 'Agad na mawawalan ng bisa ang lumang QR code at link kapag nag-regenerate — gamitin ito kung sa tingin mo ay na-leak ang link ng iyong card.',
   'card.unavailable': 'Hindi pa available ang digital membership cards. Pakibalikan ulit sa lalong madaling panahon.',
   'verify.heading': 'Pagpapatunay ng membership',
-  'verify.disclaimer': 'Direktang kinukuha ang impormasyong ito mula sa aming records.',
+  'verify.disclaimer': 'Kinukuha nang live ang impormasyong ito mula sa aming records.',
   'verify.notValid': 'Hindi valid ang card na ito. Maaaring na-regenerate na ito o hindi na active.',
 
   // Login email (src/email/resend.ts)
