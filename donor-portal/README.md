@@ -173,6 +173,39 @@ Requests board only**; create the `donor-portal-change-requests` queue and its
 `0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
 `REPLACE_AFTER_SIGNOFF` in `taxLetter`.
 
+## Future candidates (discussed 2026-08-24, not committed)
+
+Ideas from the v2 brainstorm, in rough value order — recorded so they aren't re-derived from
+scratch. None are scheduled; each needs its own scoping pass before build.
+
+1. **Digital membership card** — a rendered card (name, tier, expiry, QR or member number)
+   donors show at partner shops, optionally an Apple/Google Wallet pass. Highest-value because
+   it directly amplifies the bike-shop discount feature, and gives shops an easy validity check.
+2. **January letter email distribution** — portal-only was a deliberate first-cut choice; the
+   letter renderer (`src/letters/`) is an importable module so a future cron can email letters
+   (or links to them) without rework. A staff-triggered per-donor "send letter" button is the
+   discussed middle ground.
+3. **Recurring-gift management / membership renewal** — deliberately *link out* to Funraise's
+   own donor account surface and checkout rather than building anything; keeps this Worker
+   entirely out of PCI scope. "Build" here means adding deep links, nothing more.
+4. **Communication preferences** (email opt-outs, mailing prefs) — natural extension of the
+   existing change-request queue: new form fields, same staff-review write path.
+5. **Impact summary** — "your giving supported X" per year or tier; cheap even as a static
+   annual number.
+6. **Volunteer history** — show hours/shifts alongside donations once volunteer data lives in
+   Monday post-migration.
+7. **Event registrations** — upcoming/past events, dependent on the Eventbrite integration
+   (itself post-migration).
+8. **Pledge tracking / employer matching-gift lookup** — commonly an embedded Double the
+   Donation widget; discussed, not prioritized.
+
+**Considered and ruled out:** peer-to-peer fundraising pages and DAF tooling (Funraise's job;
+heavy build, low value at SVBC's scale), and full self-serve profile editing (the review-queue
+model won for rollback safety and audit trail — revisit direct writes only if the queue proves
+pure overhead). Two standing architecture decisions to preserve: letters render live from
+Monday (no stored PDFs to go stale after a data correction), and Cloudflare Access stays ruled
+out for donor auth (free tier caps at 50 users; magic-link auth is the scope match).
+
 ## Sources
 
 * `migration-plan.md` (private planning repo) — Integrations: Donor self-service portal
