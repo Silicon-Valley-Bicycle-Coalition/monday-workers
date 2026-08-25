@@ -154,27 +154,38 @@ Expected: PASS
 
 ```typescript
 // donor-portal/src/i18n/t.test.ts
-import { describe, it, expect } from 'vitest';
-import { t } from './t';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('t', () => {
-  it('returns the English string for the en locale', () => {
+  it('returns the English string for the en locale', async () => {
+    const { t } = await import('./t');
     expect(t('en', 'checkEmail.heading')).toBe('Check your email');
   });
 
-  it('interpolates {{var}} placeholders', () => {
+  it('interpolates {{var}} placeholders', async () => {
+    const { t } = await import('./t');
     expect(t('en', 'letters.yearLink', { year: '2025' })).toBe('2025 tax letter');
   });
 
-  it('falls back to English when a locale is missing a key', () => {
-    // 'es' exists (Task-15 will populate it) but this test must pass even before that —
-    // simulate a locale with an incomplete table by asking for a locale that only Task 1 knows
-    // about the *shape* of, not full content: 'zh-Hans' has no en.ts-identical key set yet.
-    expect(t('zh-Hans', 'checkEmail.heading')).toBe('Check your email');
-  });
-
-  it('falls back to English for an unrecognized key at the type level (compile-time safety), and never throws at runtime for a known key', () => {
+  it('never throws for a known key', async () => {
+    const { t } = await import('./t');
     expect(() => t('en', 'checkEmail.heading')).not.toThrow();
+  });
+});
+
+// This suite mocks the es locale module to an intentionally-incomplete table, independent of
+// whatever real Spanish content Task 15 ships — that decouples "does the fallback mechanism
+// work" from "is this specific locale file complete right now", which would otherwise silently
+// break the moment a translation task finishes covering every key (fallback becomes untestable
+// through any real, fully-translated locale).
+describe('t — fallback to English on a missing key', () => {
+  it('falls back when the locale table has no entry for the key', async () => {
+    vi.resetModules();
+    vi.doMock('./locales/es', () => ({ es: {} }));
+    const { t } = await import('./t');
+    expect(t('es', 'checkEmail.heading')).toBe('Check your email');
+    vi.doUnmock('./locales/es');
+    vi.resetModules();
   });
 });
 ```
@@ -284,8 +295,11 @@ git commit -m "feat(donor-portal): add i18n locale registry and t() lookup with 
 
 ```typescript
 // append to donor-portal/src/i18n/t.test.ts
+import type { TranslationKey } from './t';
+
 describe('t — full English key set', () => {
-  it('has a string for every key used across the app', () => {
+  it('has a string for every key used across the app', async () => {
+    const { t } = await import('./t');
     const sample: TranslationKey[] = [
       'site.title', 'login.prompt', 'login.submit', 'languagePicker.label',
       'error.invalidLink', 'portal.heading', 'portal.membership', 'letters.listHeading',
@@ -298,7 +312,9 @@ describe('t — full English key set', () => {
 });
 ```
 
-Add `import type { TranslationKey } from './t';` to the test file's existing import line.
+Add the `import type { TranslationKey } from './t';` line shown above alongside this file's other
+top-of-file imports (Task 1 left this file with per-test dynamic `await import('./t')` calls, not
+a static `import { t }` — a type-only import is unaffected by that and can sit at the top normally).
 
 - [ ] **Step 2: Run it, confirm it fails**
 
