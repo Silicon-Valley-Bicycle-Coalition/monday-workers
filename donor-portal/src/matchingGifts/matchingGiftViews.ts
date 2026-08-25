@@ -1,4 +1,4 @@
-import { escapeHtml } from '../views';
+import { backToPortalLink, escapeHtml } from '../views';
 import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
 
@@ -52,6 +52,6 @@ export function matchingGiftsView(options: MatchingGiftsViewOptions, locale: Loc
     <p>${escapeHtml(t(locale, 'matchingGifts.howTo'))}</p>
     ${einLine}
     ${search}
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+    ${backToPortalLink(locale)}
   `;
 }

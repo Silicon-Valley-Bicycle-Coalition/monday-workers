@@ -1,4 +1,4 @@
-import { escapeHtml } from '../views';
+import { backToPortalLink, escapeHtml } from '../views';
 import { t } from '../i18n/t';
 import type { Locale } from '../i18n/locales';
 import type { DonorPledges, PledgeWithProgress } from './loadPledgeData';
@@ -53,7 +53,7 @@ export function pledgesView(sections: DonorPledges[], locale: Locale): string {
     <h1>${escapeHtml(t(locale, 'pledges.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'pledges.intro'))}</p>
     ${sections.map((s) => donorPledgeSection(s, locale)).join('')}
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+    ${backToPortalLink(locale)}
   `;
 }
 
@@ -61,6 +61,6 @@ export function pledgesUnavailableView(locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'pledges.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'pledges.unavailable'))}</p>
-    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
+    ${backToPortalLink(locale)}
   `;
 }

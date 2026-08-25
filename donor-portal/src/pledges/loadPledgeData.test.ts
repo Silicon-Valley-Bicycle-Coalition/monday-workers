@@ -78,9 +78,9 @@ describe('loadPledgeData', () => {
     ]);
   });
 
-  it('renders a blank name rather than dropping a donor whose Monday item vanished', async () => {
+  it('falls back to the item id rather than dropping a donor whose Monday item vanished', async () => {
     const monday = fakeMonday([], { 'donor-1': [] });
     const sections = await loadPledgeData(['donor-1'], monday);
-    expect(sections).toEqual([{ donorItemId: 'donor-1', donorName: '', pledges: [] }]);
+    expect(sections).toEqual([{ donorItemId: 'donor-1', donorName: 'donor-1', pledges: [] }]);
   });
 });

@@ -21,7 +21,7 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, lettersEnabled, cardEnabled, pledgesEnabled, matchingGiftsSearchEnabled } from './config';
+import { changeRequestsEnabled, lettersEnabled, cardEnabled, pledgesEnabled, matchingGiftsSearchEnabled, signedOffEin } from './config';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
 import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
@@ -408,7 +408,20 @@ export function createApp(deps: AppDeps) {
     if (donorItemIds === null) return c.redirect('/login');
 
     c.header('Cache-Control', NO_STORE);
-    const ein = deps.config.taxLetter.ein !== 'REPLACE_AFTER_SIGNOFF' && deps.config.taxLetter.ein.length > 0 ? deps.config.taxLetter.ein : null;
+    // The app's only CSP, on its only page that may run third-party JS. The load-bearing part
+    // is connect-src excluding 'self': the DTD script executes on the authenticated portal
+    // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
+    // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
+    // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
+    // works under this policy alongside the embed-snippet check (matchingGiftViews.ts NOTE)
+    // before provisioning a key.
+    c.header(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
+        "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
+        "connect-src https://doublethedonation.com; frame-ancestors 'none'"
+    );
+    const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
     return c.html(
       page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein }, locale), locale)

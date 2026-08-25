@@ -1445,6 +1445,10 @@ describe('GET /:locale/portal/matching-gifts', () => {
     expect(html).toContain('"dtd-public-key"');
     expect(html).toContain('00-0000000');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
+    const csp = res.headers.get('content-security-policy');
+    expect(csp).toContain("connect-src https://doublethedonation.com");
+    expect(csp).not.toContain("connect-src 'self'");
   });
 
   it('still renders the guidance page, without the widget or EIN, when neither is configured', async () => {

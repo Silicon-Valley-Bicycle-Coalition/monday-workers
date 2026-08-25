@@ -109,6 +109,9 @@ export default {
     // Same lazy-validation rationale as fetch() above: config/svbc.json ships with placeholder
     // board/column ids until an operator fills them in, so validation can't happen at import time.
     const config = validateConfig(rawConfig);
+    // No pledges config passed (7th arg defaults to null): no queue consumer reads pledges, so
+    // getPledgesForDonor throws on this client by design. If a future consumer needs pledges,
+    // wire the config here the way fetch() does — don't debug the throw first.
     const monday = new HttpMondayClient(
       config.monday.apiUrl,
       env.MONDAY_API_TOKEN,

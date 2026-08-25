@@ -33,5 +33,8 @@ const TABLES: Record<Locale, Table> = {
 export function t(locale: Locale, key: TranslationKey, vars?: Record<string, string>): string {
   const raw = TABLES[locale][key] ?? en[key];
   if (!vars) return raw;
-  return Object.entries(vars).reduce((acc, [name, value]) => acc.replaceAll(`{{${name}}}`, value), raw);
+  // The replacement is a function, not a string: a string replacement makes replaceAll interpret
+  // $-patterns ($$ collapses to $, $& re-inserts the matched {{placeholder}}), which mangles
+  // Monday-sourced values like a donor named "Smith $$ Sons". A function's return is literal.
+  return Object.entries(vars).reduce((acc, [name, value]) => acc.replaceAll(`{{${name}}}`, () => value), raw);
 }

@@ -280,11 +280,20 @@ features, both read-only — no new D1 tables, queues, secrets, or Monday write 
   employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
   SVBC buys a DTD subscription, which it currently has not — the board item notes this was
   "discussed, not prioritized"). This is the only portal page that may load third-party
-  JavaScript, so it deliberately renders **zero donor PII** — keep it that way; the embed shape
-  also carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
-  it couldn't be checked against a live DTD account. No Subresource Integrity hash on the DTD
-  script by their design (mutable unversioned URL); the PII-free page is the compensating
-  control.
+  JavaScript, so it deliberately renders **zero donor PII** and ships the app's only
+  Content-Security-Policy — the load-bearing directive is `connect-src` excluding `'self'`, so
+  a compromised widget script can't fetch sibling `/portal` pages (which carry the session
+  cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
+  shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
+  it couldn't be checked against a live DTD account — verify the widget under the CSP at the
+  same time. No Subresource Integrity hash on the DTD script by their design (mutable
+  unversioned URL); the PII-free page plus the CSP are the compensating controls.
+
+**Upgrading an existing deployment (forks included):** config validation requires the
+`pledges` and `matchingGifts` stanzas to *exist* before v4 code will serve any request — a
+config predating v4 fails validation on every request, queue batch, and cron run, not just on
+the new pages. Copy both stanzas from this repo's `config/svbc.json` (placeholder/null values
+are fine; both features then ship gated off) before deploying v4 code over an older config.
 
 Operator setup for v4, in addition to the v1 steps — each feature independently optional:
 

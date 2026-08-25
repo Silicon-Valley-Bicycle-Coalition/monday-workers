@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled, pledgesEnabled, matchingGiftsSearchEnabled } from './config';
+import {
+  validateConfig,
+  lettersEnabled,
+  changeRequestsEnabled,
+  cardEnabled,
+  pledgesEnabled,
+  matchingGiftsSearchEnabled,
+  signedOffEin,
+} from './config';
 
 const validConfig = {
   monday: {
@@ -314,6 +322,17 @@ describe('pledgesEnabled', () => {
     const raw = structuredClone(validConfig);
     raw.pledges.columns.pledgedAmount = 'REPLACE_WITH_COLUMN_ID';
     expect(pledgesEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('signedOffEin', () => {
+  it('returns the EIN once real, null while placeholder or empty', () => {
+    expect(signedOffEin(validateConfig(validConfig))).toBe('00-0000000');
+    const raw = structuredClone(validConfig);
+    raw.taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
+    expect(signedOffEin(validateConfig(raw))).toBeNull();
+    raw.taxLetter.ein = '';
+    expect(signedOffEin(validateConfig(raw))).toBeNull();
   });
 });
 

@@ -38,6 +38,12 @@ export function languagePicker(currentPath: string, locale: Locale): string {
   return `<nav aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">${options}</nav>`;
 }
 
+// Shared by the authenticated sub-pages (pledges, matching gifts; older views predate it and
+// still inline the same markup — fold them in when next touched).
+export function backToPortalLink(locale: Locale): string {
+  return `<p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>`;
+}
+
 export function loginFormView(locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'site.title'))}</h1>

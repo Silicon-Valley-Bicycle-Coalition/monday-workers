@@ -178,8 +178,17 @@ export function cardEnabled(config: Config): boolean {
 export function pledgesEnabled(config: Config): boolean {
   const p = config.pledges;
   if (p.boardId === null) return false;
-  const cols = [p.columns.donorLink, p.columns.pledgedAmount, p.columns.fulfilledAmount, p.columns.status, p.columns.dueDate];
-  return cols.every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
+  // Derived from REQUIRED_PLEDGE_COLUMNS rather than a second hand-maintained list, so adding
+  // a column later can't accidentally enable the feature with that column still a placeholder.
+  return REQUIRED_PLEDGE_COLUMNS.every((key) => p.columns[key] !== PLACEHOLDER_COLUMN_VALUE);
+}
+
+// The EIN once sign-off has replaced its placeholder, else null — the matching-gifts page
+// shows it to donors filling in employer matching forms. Lives here beside the other gates so
+// the SIGNOFF_PLACEHOLDER sentinel never leaks into route code as a second string literal.
+export function signedOffEin(config: Config): string | null {
+  const ein = config.taxLetter.ein;
+  return ein !== SIGNOFF_PLACEHOLDER && ein.length > 0 ? ein : null;
 }
 
 // Gates only the embedded employer-search widget — the matching-gifts page itself always
