@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { submitChangeRequest, MAX_NEW_VALUE_LENGTH } from './submitChangeRequest';
+import { submitChangeRequest, FIELD_LABELS, MAX_NEW_VALUE_LENGTH } from './submitChangeRequest';
 import type { ChangeRequestStore } from '../db/changeRequests';
 import type { MondayClient } from '../monday/client';
 
@@ -18,7 +18,12 @@ function fakeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeRequestSt
 function fakeMonday(): MondayClient {
   return {
     getDonorContactInfo: vi.fn().mockResolvedValue({
-      id: 'donor-1', name: 'Jane Example', email: 'jane@example.org', address: '1 Old St', phone: '555-0100',
+      id: 'donor-1',
+      name: 'Jane Example',
+      email: 'jane@example.org',
+      address: '1 Old St',
+      phone: '555-0100',
+      preferredLanguage: 'English',
     }),
   } as unknown as MondayClient;
 }
@@ -32,6 +37,12 @@ function makeDeps(store = fakeStore()) {
     now: () => new Date('2026-08-24T10:00:00.000Z'),
   };
 }
+
+describe('FIELD_LABELS', () => {
+  it('has a staff-facing label for the language field', () => {
+    expect(FIELD_LABELS.language).toBe('Preferred Language');
+  });
+});
 
 describe('submitChangeRequest', () => {
   it('records the request with the current Monday value as old_value and enqueues it', async () => {
@@ -51,6 +62,36 @@ describe('submitChangeRequest', () => {
       })
     );
     expect(deps.queue.send).toHaveBeenCalledWith({ requestId: 42 });
+  });
+
+  it('records the current preferred language as old_value for a language change', async () => {
+    const store = fakeStore();
+    const deps = makeDeps(store);
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'language', newValue: 'Vietnamese' }, deps);
+
+    expect(result).toEqual({ kind: 'submitted' });
+    expect(store.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        field: 'language',
+        oldValue: 'English',
+        newValue: 'Vietnamese',
+      })
+    );
+  });
+
+  it('accepts a Monday label as the newValue for a language change (not a locale code)', async () => {
+    const store = fakeStore();
+    const deps = makeDeps(store);
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'language', newValue: 'Spanish' }, deps);
+
+    expect(result).toEqual({ kind: 'submitted' });
+    expect(store.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        donorItemId: 'donor-1',
+        field: 'language',
+        newValue: 'Spanish',
+      })
+    );
   });
 
   it('rejects a donor item id outside the session', async () => {

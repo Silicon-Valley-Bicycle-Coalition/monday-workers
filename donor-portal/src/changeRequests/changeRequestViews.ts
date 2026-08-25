@@ -1,80 +1,80 @@
 import { escapeHtml } from '../views';
 import type { DonorContactInfo } from '../types';
 import type { SubmitResult } from './submitChangeRequest';
+import { t } from '../i18n/t';
+import type { Locale } from '../i18n/locales';
 
 function donorOption(donor: DonorContactInfo): string {
   return `<option value="${escapeHtml(donor.id)}">${escapeHtml(donor.name)}</option>`;
 }
 
-function donorCurrentValues(donor: DonorContactInfo): string {
+function donorCurrentValues(donor: DonorContactInfo, locale: Locale): string {
   return `
     <section>
-      <h3>${escapeHtml(donor.name)} — current details</h3>
+      <h3>${escapeHtml(t(locale, 'changeRequest.currentDetailsHeading', { name: donor.name }))}</h3>
       <dl>
-        <dt>Address</dt><dd>${escapeHtml(donor.address)}</dd>
-        <dt>Email</dt><dd>${escapeHtml(donor.email)}</dd>
-        <dt>Phone</dt><dd>${escapeHtml(donor.phone)}</dd>
+        <dt>${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</dt><dd>${escapeHtml(donor.address)}</dd>
+        <dt>${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</dt><dd>${escapeHtml(donor.email)}</dd>
+        <dt>${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</dt><dd>${escapeHtml(donor.phone)}</dd>
+        <dt>${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</dt><dd>${escapeHtml(donor.preferredLanguage)}</dd>
       </dl>
     </section>
   `;
 }
 
-export function changeRequestFormView(donors: DonorContactInfo[]): string {
+export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale): string {
   return `
-    <h1>Request a change to your details</h1>
-    <p>Submit the new value below. SVBC staff review every request before it's applied — you'll
-    see the update once they've processed it.</p>
-    ${donors.map(donorCurrentValues).join('')}
-    <form action="/portal/change-request" method="post">
-      <label>Whose record
+    <h1>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
+    ${donors.map((d) => donorCurrentValues(d, locale)).join('')}
+    <form action="/${locale}/portal/change-request" method="post">
+      <label>${escapeHtml(t(locale, 'changeRequest.whoseRecord'))}
         <select name="donorItemId" required>${donors.map(donorOption).join('')}</select>
       </label>
-      <label>What to change
+      <label>${escapeHtml(t(locale, 'changeRequest.whatToChange'))}
         <select name="field" required>
-          <option value="address">Address</option>
-          <option value="email">Email</option>
-          <option value="phone">Phone</option>
+          <option value="address">${escapeHtml(t(locale, 'changeRequest.fieldAddress'))}</option>
+          <option value="email">${escapeHtml(t(locale, 'changeRequest.fieldEmail'))}</option>
+          <option value="phone">${escapeHtml(t(locale, 'changeRequest.fieldPhone'))}</option>
+          <option value="language">${escapeHtml(t(locale, 'changeRequest.fieldLanguage'))}</option>
         </select>
       </label>
-      <label>New value
+      <label>${escapeHtml(t(locale, 'changeRequest.newValue'))}
         <input type="text" name="newValue" maxlength="500" required />
       </label>
-      <button type="submit">Submit for review</button>
+      <button type="submit">${escapeHtml(t(locale, 'changeRequest.submit'))}</button>
     </form>
-    <p>Note: an email change takes effect for portal login once staff apply it.</p>
-    <p><a href="/portal">Back to your portal</a></p>
+    <p>${escapeHtml(t(locale, 'changeRequest.emailNote'))}</p>
+    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
 }
 
-export function changeRequestResultView(result: SubmitResult): string {
+export function changeRequestResultView(result: SubmitResult, locale: Locale): string {
   if (result.kind === 'submitted') {
     return `
-      <h1>Request received</h1>
-      <p>Thanks — SVBC staff will review your request and apply the change. This usually takes a
-      few business days.</p>
-      <p><a href="/portal">Back to your portal</a></p>
+      <h1>${escapeHtml(t(locale, 'changeRequest.submittedHeading'))}</h1>
+      <p>${escapeHtml(t(locale, 'changeRequest.submittedBody'))}</p>
+      <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
     `;
   }
   if (result.kind === 'duplicate') {
     return `
-      <h1>Already submitted</h1>
-      <p>We already have this exact request on file — staff will get to it soon. No need to
-      submit it again.</p>
-      <p><a href="/portal">Back to your portal</a></p>
+      <h1>${escapeHtml(t(locale, 'changeRequest.duplicateHeading'))}</h1>
+      <p>${escapeHtml(t(locale, 'changeRequest.duplicateBody'))}</p>
+      <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
     `;
   }
   return `
-    <h1>Something needs fixing</h1>
+    <h1>${escapeHtml(t(locale, 'changeRequest.invalidHeading'))}</h1>
     <p>${escapeHtml(result.message)}</p>
-    <p><a href="/portal/change-request">Back to the form</a></p>
+    <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'changeRequest.backToForm'))}</a></p>
   `;
 }
 
-export function changeRequestsUnavailableView(): string {
+export function changeRequestsUnavailableView(locale: Locale): string {
   return `
-    <h1>Request a change</h1>
-    <p>Self-service change requests are not available yet. Please contact SVBC and we'll update
-    your details for you.</p>
-    <p><a href="/portal">Back to your portal</a></p>
+    <h1>${escapeHtml(t(locale, 'changeRequest.unavailableHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'changeRequest.unavailableBody'))}</p>
+    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
 }

@@ -21,6 +21,7 @@ const validConfig = {
       donorAddress: 'text_addr',
       donorPhone: 'phone_1',
       membershipExpiry: 'expiry_col',
+      preferredLanguage: 'lang_col',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
@@ -104,6 +105,23 @@ describe('validateConfig', () => {
     const { membershipExpiry, ...missingExpiry } = validConfig.monday.columns;
     const broken = { ...validConfig, monday: { ...validConfig.monday, columns: missingExpiry } };
     expect(() => validateConfig(broken)).toThrow(/membershipExpiry/);
+  });
+
+  it('accepts config with preferredLanguage present (even as the placeholder), same as membershipExpiry', () => {
+    const cfg = {
+      ...validConfig,
+      monday: {
+        ...validConfig.monday,
+        columns: { ...validConfig.monday.columns, preferredLanguage: 'REPLACE_WITH_COLUMN_ID' },
+      },
+    };
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects config missing preferredLanguage entirely', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday.columns as Record<string, unknown>).preferredLanguage;
+    expect(() => validateConfig(cfg)).toThrow(/monday\.columns\.preferredLanguage/);
   });
 });
 

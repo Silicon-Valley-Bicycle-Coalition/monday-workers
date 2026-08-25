@@ -16,6 +16,7 @@ export const FIELD_LABELS: Record<ChangeRequestField, string> = {
   address: 'Address',
   email: 'Email',
   phone: 'Phone',
+  language: 'Preferred Language',
 };
 
 export const MAX_NEW_VALUE_LENGTH = 500;
@@ -68,7 +69,8 @@ export async function submitChangeRequest(
   const oldValue =
     input.field === 'address' ? contact.address :
     input.field === 'email' ? contact.email :
-    contact.phone;
+    input.field === 'phone' ? contact.phone :
+    contact.preferredLanguage;
 
   const requestId = await deps.store.createRequest({
     donorItemId: input.donorItemId,

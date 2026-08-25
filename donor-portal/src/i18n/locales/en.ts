@@ -1,0 +1,102 @@
+export const en = {
+  // Site-wide
+  'site.title': 'SVBC Donor Portal',
+  'languagePicker.label': 'Language',
+
+  // Page <title> suffixes (rendered as "{title.x} — {site.title}")
+  'title.login': 'Log In',
+  'title.checkEmail': 'Check Your Email',
+  'title.error': 'Something Went Wrong',
+  'title.portal': 'Your Donor Portal',
+  'title.lettersList': 'Tax Documents',
+  'title.changeRequest': 'Request a Change',
+  'title.card': 'Your Membership Card',
+  'title.verify': 'Membership Verification',
+
+  // Login
+  'login.prompt': 'Enter your email to receive a login link.',
+  'login.submit': 'Send login link',
+
+  // Check email
+  'checkEmail.heading': 'Check your email',
+  'checkEmail.body': 'Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.',
+
+  // Error page + route-level error messages
+  'error.heading': 'Something went wrong',
+  'error.requestNewLink': 'Request a new login link',
+  'error.invalidLink': 'This link is invalid. Please request a new one.',
+  'error.expiredLink': 'This link has expired or was already used. Please request a new one.',
+  'error.lettersLoadFailed': 'We could not load your letters right now. Please try again in a few minutes.',
+  'error.letterNotFound': 'That letter does not exist.',
+  'error.letterLoadFailed': 'We could not load your letter right now. Please try again in a few minutes.',
+  'error.rateLimited': 'Too many requests — please try again in a minute.',
+  'error.cardNotFound': 'That card does not exist.',
+  'error.cardLoadFailed': 'We could not load your card right now. Please try again in a few minutes.',
+  'error.cardRegenerateFailed': 'We could not regenerate your card right now. Please try again in a few minutes.',
+  'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
+  'error.generic': 'Something went wrong. Please try logging in again.',
+
+  // Portal
+  'portal.heading': 'Your donor portal',
+  'portal.membership': 'Membership: {{status}} ({{tier}})',
+  'portal.totalDonated': 'Total donated: {{total}}',
+  'portal.membershipCardLink': 'Membership card',
+  'portal.tableDate': 'Date',
+  'portal.tableAmount': 'Amount',
+  'portal.tableDescription': 'Description',
+  'portal.discountsHeading': 'Bike shop discounts',
+  'portal.taxDocumentsLink': 'Tax documents',
+  'portal.changeRequestLink': 'Request a change to your details',
+  'portal.logout': 'Log out',
+
+  // Letters
+  'letters.listHeading': 'Tax documents',
+  'letters.listIntro': "Each letter is a consolidated acknowledgment of the donations our records show for that calendar year. Open a letter and use your browser's Print option to print it or save it as a PDF.",
+  'letters.noneYet': 'No letters are available yet for {{name}} — letters cover completed calendar years with at least one donation.',
+  'letters.yearLink': '{{year}} tax letter',
+  'letters.backToPortal': 'Back to your portal',
+  'letters.unavailable': 'Year-end tax letters are not available yet. Please check back soon, or contact us if you need a giving summary in the meantime.',
+  'letters.backToLetters': 'Back to tax documents',
+  'letters.print': 'Print or save as PDF',
+  'letters.englishOnlyNote': 'This official document is issued in English.',
+
+  // Change request
+  'changeRequest.formHeading': 'Request a change to your details',
+  'changeRequest.formIntro': "Submit the new value below. SVBC staff review every request before it's applied — you'll see the update once they've processed it.",
+  'changeRequest.currentDetailsHeading': '{{name}} — current details',
+  'changeRequest.fieldAddress': 'Address',
+  'changeRequest.fieldEmail': 'Email',
+  'changeRequest.fieldPhone': 'Phone',
+  'changeRequest.fieldLanguage': 'Preferred Language',
+  'changeRequest.whoseRecord': 'Whose record',
+  'changeRequest.whatToChange': 'What to change',
+  'changeRequest.newValue': 'New value',
+  'changeRequest.submit': 'Submit for review',
+  'changeRequest.emailNote': 'An email change takes effect for portal login once staff apply it.',
+  'changeRequest.submittedHeading': 'Request received',
+  'changeRequest.submittedBody': 'Thanks — SVBC staff will review your request and apply the change. This usually takes a few business days.',
+  'changeRequest.duplicateHeading': 'Already submitted',
+  'changeRequest.duplicateBody': 'We already have this exact request on file — staff will get to it soon. No need to submit it again.',
+  'changeRequest.invalidHeading': 'Something needs fixing',
+  'changeRequest.backToForm': 'Back to the form',
+  'changeRequest.unavailableHeading': 'Request a change',
+  'changeRequest.unavailableBody': "Self-service change requests are not available yet. Please contact SVBC and we'll update your details for you.",
+
+  // Membership card + public verify page
+  'card.heading': 'Your membership card',
+  'card.tier': 'Tier: {{tier}}',
+  'card.status': 'Status: {{status}}',
+  'card.expires': 'Expires: {{expiry}}',
+  'card.scanHint': 'Show this card, or let a shop scan the QR code or open the link above, to confirm your membership.',
+  'card.regenerate': 'Regenerate card',
+  'card.regenerateHint': 'Regenerating invalidates the old QR code and link immediately — use this if you think your card link has leaked.',
+  'card.unavailable': 'Digital membership cards are not available yet. Please check back soon.',
+  'verify.heading': 'Membership verification',
+  'verify.disclaimer': 'This information is fetched live from our records.',
+  'verify.notValid': 'This card is not valid. It may have been regenerated or is no longer active.',
+
+  // Login email (src/email/resend.ts)
+  'email.subject': 'Your SVBC donor portal login link',
+  'email.bodyIntro': 'Click below to log in to the donor portal. This link expires soon and can only be used once.',
+  'email.loginButton': 'Log in',
+} as const;

@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import type { PortalView } from './types';
+import { t } from './i18n/t';
 
 describe('page', () => {
-  it('wraps the body in a document with charset, viewport, and the given title, escaped', () => {
-    const html = page('Check Your Email — SVBC Donor Portal', '<h1>Check your email</h1>');
+  it('wraps the body in a document with charset, viewport, the given title, and the locale as <html lang>', () => {
+    const html = page('Check Your Email — SVBC Donor Portal', '<h1>Check your email</h1>', 'es');
+    expect(html).toContain('<html lang="es">');
     expect(html).toContain('<meta charset="utf-8" />');
     expect(html).toContain('name="viewport"');
     expect(html).toContain('<title>Check Your Email — SVBC Donor Portal</title>');
@@ -12,32 +14,60 @@ describe('page', () => {
   });
 
   it('escapes a title containing markup', () => {
-    const html = page('<script>alert(1)</script>', '<p>body</p>');
+    const html = page('<script>alert(1)</script>', '<p>body</p>', 'en');
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
 });
 
 describe('loginFormView', () => {
-  it('renders a form posting to /login with an email field', () => {
-    const html = loginFormView();
+  it('renders a form posting to /login with an email field and a language picker', () => {
+    const html = loginFormView('en');
     expect(html).toContain('action="/login"');
     expect(html).toContain('name="email"');
+    expect(html).toContain('Send login link');
+    // one option per supported locale, each linking through /lang/:code
+    expect(html).toContain('/lang/es');
+    expect(html).toContain('/lang/vi');
+  });
+
+  it('renders the prompt in the requested locale when translated (fallback to English otherwise)', () => {
+    const html = loginFormView('en');
+    expect(html).toContain('Enter your email to receive a login link.');
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = loginFormView('es');
+    expect(html).toContain(t('es', 'login.prompt'));
   });
 });
 
 describe('checkEmailView', () => {
   it('renders the same generic message regardless of caller state', () => {
-    const html = checkEmailView();
+    const html = checkEmailView('en');
     expect(html).toContain('check your email');
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = checkEmailView('es');
+    expect(html).toContain(t('es', 'checkEmail.heading'));
   });
 });
 
 describe('errorView', () => {
-  it('renders the given message, escaped', () => {
-    const html = errorView('<script>alert(1)</script>');
-    expect(html).not.toContain('<script>alert(1)</script>');
-    expect(html).toContain('&lt;script&gt;');
+  it('renders the message for the given translation key, escaped', () => {
+    const html = errorView('error.invalidLink', 'en');
+    expect(html).toContain('This link is invalid');
+  });
+
+  it('links back to /login for a new link', () => {
+    const html = errorView('error.invalidLink', 'en');
+    expect(html).toContain('href="/login"');
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = errorView('error.invalidLink', 'es');
+    expect(html).toContain(t('es', 'error.invalidLink'));
   });
 });
 
@@ -67,7 +97,7 @@ describe('portalView', () => {
   };
 
   it('renders each donor under its own name header, never a single merged view', () => {
-    const html = portalView(data);
+    const html = portalView(data, 'en');
     expect(html).toContain('Jane Donor');
     expect(html).toContain('Jane Also');
     expect(html).toContain('Annual gift');
@@ -89,14 +119,38 @@ describe('portalView', () => {
       ],
       discounts: [],
     };
-    const html = portalView(maliciousData);
+    const html = portalView(maliciousData, 'en');
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
     expect(html).toContain('&lt;img');
   });
 
-  it('links each donor to their own membership card', () => {
-    const html = portalView(data);
-    expect(html).toContain('/portal/card/donor-1');
-    expect(html).toContain('/portal/card/donor-2');
+  it('links each donor to their own membership card, locale-prefixed', () => {
+    const html = portalView(data, 'es');
+    expect(html).toContain('/es/portal/card/donor-1');
+    expect(html).toContain('/es/portal/card/donor-2');
+  });
+
+  it('links tax documents and change-request under the same locale prefix', () => {
+    const html = portalView(data, 'vi');
+    expect(html).toContain('href="/vi/portal/letters"');
+    expect(html).toContain('href="/vi/portal/change-request"');
+  });
+
+  it('includes a language switcher offering every supported locale', () => {
+    const html = portalView(data, 'en');
+    expect(html).toContain('/lang/es?to=%2Fen%2Fportal');
+    expect(html).toContain('/lang/vi?to=%2Fen%2Fportal');
+  });
+
+  it('includes a per-language "make this my language" form posting field=language to the change-request endpoint', () => {
+    const html = portalView(data, 'en');
+    expect(html).toContain('action="/en/portal/change-request"');
+    expect(html).toContain('value="language"');
+    expect(html).toContain('value="Spanish"'); // the es option's newValue is the Monday label, not "es"
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = portalView(data, 'es');
+    expect(html).toContain(t('es', 'portal.heading'));
   });
 });

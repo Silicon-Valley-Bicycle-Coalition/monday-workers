@@ -1,6 +1,9 @@
+import type { Locale } from '../i18n/locales';
+
 export interface SendLoginEmailParams {
   to: string;
   loginUrl: string;
+  locale: Locale;
 }
 
 export interface SendLetterReadyEmailParams {

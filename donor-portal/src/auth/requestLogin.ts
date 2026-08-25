@@ -3,6 +3,7 @@ import type { MagicLinkTokenStore } from '../db/tokens';
 import type { EmailSender } from '../email/types';
 import { sha256Hex } from '../crypto/hash';
 import { generateToken } from '../crypto/token';
+import { localeFromMondayLabel, type Locale } from '../i18n/locales';
 
 export interface RequestLoginDeps {
   monday: MondayClient;
@@ -13,11 +14,17 @@ export interface RequestLoginDeps {
   now: () => Date;
 }
 
-export async function requestLogin(email: string, deps: RequestLoginDeps): Promise<void> {
+export async function requestLogin(email: string, localeHint: Locale, deps: RequestLoginDeps): Promise<void> {
   const matches = await deps.monday.findDonorsByEmail(email);
   if (matches.length === 0) {
     return;
   }
+
+  // First match's stored preference wins when a shared email matches multiple donor records with
+  // different languages on file — a documented default (spec), not expected to come up often.
+  // localeFromMondayLabel returns null for '' (unset) and for any value that isn't one of the
+  // Monday dropdown's own options, so both cases fall through to localeHint identically.
+  const locale: Locale = localeFromMondayLabel(matches[0]!.preferredLanguage) ?? localeHint;
 
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
@@ -30,6 +37,6 @@ export async function requestLogin(email: string, deps: RequestLoginDeps): Promi
     expiresAt,
   });
 
-  const loginUrl = `${deps.portalBaseUrl}/auth/callback?token=${rawToken}`;
-  await deps.emailSender.sendLoginEmail({ to: email, loginUrl });
+  const loginUrl = `${deps.portalBaseUrl}/auth/callback?token=${rawToken}&lang=${locale}`;
+  await deps.emailSender.sendLoginEmail({ to: email, loginUrl, locale });
 }

@@ -1,17 +1,19 @@
 import { escapeHtml } from '../views';
 import type { TaxLetterConfig } from '../types';
 import type { LetterData, LetterYearListing } from './loadLetterData';
+import { t } from '../i18n/t';
+import type { Locale } from '../i18n/locales';
 
-export function lettersListView(listings: LetterYearListing[]): string {
+export function lettersListView(listings: LetterYearListing[], locale: Locale): string {
   const sections = listings
     .map((listing) => {
       const items =
         listing.years.length === 0
-          ? `<p>No letters are available yet for ${escapeHtml(listing.donorName)} — letters cover completed calendar years with at least one donation.</p>`
+          ? `<p>${escapeHtml(t(locale, 'letters.noneYet', { name: listing.donorName }))}</p>`
           : `<ul>${listing.years
               .map(
                 (year) =>
-                  `<li><a href="/portal/letters/${encodeURIComponent(listing.donorId)}/${year}">${year} tax letter</a></li>`
+                  `<li><a href="/${locale}/portal/letters/${encodeURIComponent(listing.donorId)}/${year}">${escapeHtml(t(locale, 'letters.yearLink', { year: String(year) }))}</a></li>`
               )
               .join('')}</ul>`;
       return `<section><h2>${escapeHtml(listing.donorName)}</h2>${items}</section>`;
@@ -19,16 +21,17 @@ export function lettersListView(listings: LetterYearListing[]): string {
     .join('');
 
   return `
-    <h1>Tax documents</h1>
-    <p>Each letter is a consolidated acknowledgment of the donations our records show for that
-    calendar year. Open a letter and use your browser's Print option to print it or save it as
-    a PDF.</p>
+    <h1>${escapeHtml(t(locale, 'letters.listHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'letters.listIntro'))}</p>
     ${sections}
-    <p><a href="/portal">Back to your portal</a></p>
+    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
 }
 
-export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generatedOn: string): string {
+// The letter's own body — greeting, gift table, acknowledgment statement, signature — stays
+// English (spec non-goal: it's an official document a donor may keep for tax purposes). Only the
+// surrounding chrome (nav links, print button) and a new disclaimer note are translated.
+export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generatedOn: string, locale: Locale): string {
   const rows = data.gifts
     .map((gift) => `<tr><td>${escapeHtml(gift.date)}</td><td>${escapeHtml(gift.amount)}</td></tr>`)
     .join('');
@@ -46,10 +49,11 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
       }
     </style>
     <nav class="no-print">
-      <a href="/portal/letters">Back to tax documents</a>
-      <button type="button" onclick="window.print()">Print or save as PDF</button>
+      <a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'letters.backToLetters'))}</a>
+      <button type="button" onclick="window.print()">${escapeHtml(t(locale, 'letters.print'))}</button>
     </nav>
-    <article class="letter">
+    <p class="no-print"><small>${escapeHtml(t(locale, 'letters.englishOnlyNote'))}</small></p>
+    <article class="letter" lang="en">
       <header>
         <p><strong>${escapeHtml(taxLetter.orgLegalName)}</strong><br>
         ${escapeHtml(taxLetter.orgAddress)}<br>
@@ -75,11 +79,10 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
   `;
 }
 
-export function lettersUnavailableView(): string {
+export function lettersUnavailableView(locale: Locale): string {
   return `
-    <h1>Tax documents</h1>
-    <p>Year-end tax letters are not available yet. Please check back soon, or contact us if you
-    need a giving summary in the meantime.</p>
-    <p><a href="/portal">Back to your portal</a></p>
+    <h1>${escapeHtml(t(locale, 'letters.listHeading'))}</h1>
+    <p>${escapeHtml(t(locale, 'letters.unavailable'))}</p>
+    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
 }
