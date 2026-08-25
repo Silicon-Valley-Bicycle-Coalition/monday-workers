@@ -27,7 +27,7 @@ export class D1CardTokenStore implements CardTokenStore {
     const row = await this.db
       .prepare(
         `SELECT token FROM card_tokens WHERE donor_item_id = ?1 AND revoked_at IS NULL
-         ORDER BY created_at DESC LIMIT 1`
+         ORDER BY created_at DESC, id DESC LIMIT 1`
       )
       .bind(donorItemId)
       .first<{ token: string }>();

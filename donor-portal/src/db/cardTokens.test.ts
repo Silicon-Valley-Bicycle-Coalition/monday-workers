@@ -43,4 +43,15 @@ describe('D1CardTokenStore', () => {
     expect(await store.findActiveDonorId('token-old')).toBeNull();
     expect(await store.findActiveDonorId('token-new')).toBe('donor-4');
   });
+
+  it('rejects a second active token for the same donor (one-active-token-per-donor DB constraint)', async () => {
+    const store = new D1CardTokenStore(env.DB);
+    await store.createToken('donor-5', 'token-first', '2026-08-24T10:00:00.000Z');
+
+    await expect(store.createToken('donor-5', 'token-second', '2026-08-24T10:00:01.000Z')).rejects.toThrow();
+
+    // The first token is still the one and only active token — the rejected insert didn't
+    // leave a partial/second row behind.
+    expect(await store.getActiveToken('donor-5')).toBe('token-first');
+  });
 });

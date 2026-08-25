@@ -338,7 +338,20 @@ export function createApp(deps: AppDeps) {
     let token = await deps.cardTokenStore.getActiveToken(donorItemId);
     if (token === null) {
       token = generateToken();
-      await deps.cardTokenStore.createToken(donorItemId, token, deps.now().toISOString());
+      try {
+        await deps.cardTokenStore.createToken(donorItemId, token, deps.now().toISOString());
+      } catch (err) {
+        // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
+        // concurrent request for the same donor won the race and inserted first. Re-read rather
+        // than fail the request — the other request's token is just as valid. A genuine
+        // unrelated D1 outage would simply fail again on this re-read and fall through to the
+        // route's normal error handling below.
+        console.error(`donor-portal card token insert failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
+        token = await deps.cardTokenStore.getActiveToken(donorItemId);
+        if (token === null) {
+          throw err;
+        }
+      }
     }
 
     const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
@@ -349,6 +362,10 @@ export function createApp(deps: AppDeps) {
   app.post('/portal/card/:donorItemId/regenerate', async (c) => {
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
+
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(TITLE_CARD, cardUnavailableView()));
+    }
 
     const donorItemId = c.req.param('donorItemId');
     if (!donorItemIds.includes(donorItemId)) {
@@ -364,6 +381,15 @@ export function createApp(deps: AppDeps) {
 
   app.get('/verify/:token', async (c) => {
     c.header('Cache-Control', NO_STORE);
+
+    // If the card feature is ever disabled after tokens have already been issued (config
+    // revert, incident response), every previously-issued verify link must stop serving PII —
+    // this is the kill switch's only enforcement point, since token issuance/regeneration is
+    // already gated. Reuse the generic "not valid" response so this carries no signal
+    // distinguishing "feature off" from "token doesn't exist".
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(TITLE_VERIFY, verifyNotValidView()));
+    }
 
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);

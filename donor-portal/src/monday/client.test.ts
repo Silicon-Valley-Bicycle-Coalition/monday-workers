@@ -147,6 +147,49 @@ describe('HttpMondayClient.getDonorPortalData', () => {
       membershipExpiry: '2026-12-31',
     });
   });
+
+  it('omits the placeholder membershipExpiry column id from the outgoing query', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async (_url: string, init: RequestInit) => {
+        captured = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: {
+              items: [
+                {
+                  id: 'donor-1',
+                  name: 'Jane Donor',
+                  column_values: [
+                    { id: 'status_col', text: 'Active' },
+                    { id: 'tier_col', text: 'Member' },
+                    { id: 'donated_col', text: '500' },
+                  ],
+                },
+              ],
+            },
+          }),
+        };
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+      });
+    const placeholderColumns: MondayColumns = { ...columns, membershipExpiry: 'REPLACE_WITH_COLUMN_ID' };
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, fetchMock);
+
+    const data = await client.getDonorPortalData('donor-1');
+
+    expect(captured).not.toBeNull();
+    expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    // No downstream change needed: columnText() already returns '' for a column not present in
+    // the response, matching the existing "no expiry" convention.
+    expect(data.membershipExpiry).toBe('');
+  });
 });
 
 describe('HttpMondayClient.getDiscountOrganizations', () => {

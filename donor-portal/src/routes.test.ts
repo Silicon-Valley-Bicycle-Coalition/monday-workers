@@ -709,6 +709,43 @@ describe('GET /portal/card/:donorItemId', () => {
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not load your card right now');
   });
+
+  it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
+    // Simulates the migrations/0003 one-active-token-per-donor DB constraint tripping because a
+    // concurrent request for the same donor won the race and inserted first: this request's
+    // getActiveToken sees null, but its own createToken then throws, and the route must
+    // re-read and use the winner's token rather than failing the request.
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    let active: string | null = null;
+    let createCalls = 0;
+    const cardTokenStore: CardTokenStore = {
+      async createToken(_donorItemId, token) {
+        createCalls++;
+        if (createCalls === 1) {
+          active = 'concurrent-winner-token';
+          throw new Error('UNIQUE constraint failed: card_tokens.donor_item_id');
+        }
+        active = token;
+      },
+      async findActiveDonorId(token) {
+        return token === active ? 'donor-1' : null;
+      },
+      async getActiveToken() {
+        return active;
+      },
+      async revokeAllForDonor() {
+        active = null;
+      },
+    };
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('/verify/concurrent-winner-token');
+  });
 });
 
 describe('POST /portal/card/:donorItemId/regenerate', () => {
@@ -726,6 +763,34 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
 
     const res = await app.request('/portal/card/other-donor/regenerate', { method: 'POST', headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
+  });
+
+  it('shows the unavailable state when cardEnabled is false, and does not touch the existing token', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore = inMemoryCardTokenStore();
+    const enabledDeps = makeDeps({ monday, emailSender, cardTokenStore });
+    const app = createApp(enabledDeps);
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    // Mint an active token via the enabled app first, so there's something a regenerate could
+    // wrongly revoke/replace.
+    const before = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const existingVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
+
+    // Same deps (including the session, so the existing cookie still authenticates) but the
+    // card feature is now gated off — as if an operator reverted config after tokens were
+    // already issued.
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const gatedApp = createApp({ ...enabledDeps, config: gatedConfig });
+
+    const regenRes = await gatedApp.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    expect(await regenRes.text()).toContain('not available yet');
+
+    // The pre-existing token must still work — regenerate did not revoke or mint anything.
+    const stillWorksRes = await app.request(existingVerifyPath);
+    expect(await stillWorksRes.text()).not.toContain('not valid');
   });
 
   it('invalidates the previous verify link and issues a new one', async () => {
@@ -775,6 +840,22 @@ describe('GET /verify/:token', () => {
   it('shows the not-valid state for an unknown token', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/verify/no-such-token');
+    expect(await res.text()).toContain('not valid');
+  });
+
+  it('shows the not-valid state when cardEnabled is false, even for an otherwise-valid token', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(app, cookie);
+
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const gatedApp = createApp(makeDeps({ monday, emailSender, cardTokenStore, config: gatedConfig }));
+
+    const res = await gatedApp.request(verifyPath);
     expect(await res.text()).toContain('not valid');
   });
 
