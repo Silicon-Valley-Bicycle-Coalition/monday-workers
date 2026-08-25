@@ -153,8 +153,8 @@ kept separate from the main domain's mail flow, is standard practice for transac
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
-  boards this portal reads (Donors, Donations, Membership, Organizations, and — once v4 is
-  configured — Volunteers) — never a staff member's
+  boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
+  v4/v5 features are configured — Pledges and Volunteers) — never a staff member's
   personal token, which would make this public-facing Worker a door to the whole workspace. See
   `../README.md`'s least-privilege-token note.
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
@@ -226,6 +226,40 @@ Operator setup, in addition to v1/v2 steps:
    `wrangler queues create donor-portal-letter-emails-dlq`).
 5. Apply D1 migration `0004_create_letter_sends.sql`.
 
+## v2.2 — Communication preferences
+
+From [IT Requests #12893526579](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893526579).
+A "Communication preferences" section on the existing change-request page lets a donor set three
+preferences — **Email Opt-Out**, **SMS Opt-Out**, and **Do Not Mail** — flowing through the same
+staff-review write path as the free-text change requests (the portal still never writes donor
+records; staff apply approved changes by hand). The form shows the current state read live from
+the Donors board and submits a diff: only preferences that actually changed become change
+requests, with fixed staff-facing values ("Opted out of email" / "Subscribed to email", "Opted
+out of SMS" / "Subscribed to SMS", "Do not mail" / "OK to mail") rather than free text.
+
+Two compliance notes baked into the design:
+
+* **The staff-review path is deliberate, not a shortcut.** Mailchimp is SVBC's real system of
+  record for email consent (see the private planning repo's Mailchimp reconciliation item), so
+  the portal must not flip opt-out flags directly; a queued request staff reconcile by hand is
+  also comfortably within CAN-SPAM's 10-business-day window for honoring opt-outs.
+* **Email Opt-Out maps to the compliance-critical `HasOptedOutOfEmail` migration column**
+  (`docs/03-monday-migration-mapping.md`, private planning repo). Do Not Mail maps to Salesforce's
+  `Do_Not_Mail__c`. SMS Opt-Out is net-new — Salesforce has no per-contact SMS consent field — so
+  its column starts empty for every donor.
+
+**Gated per column on `monday.columns.donorEmailOptOut` / `donorSmsOptOut` / `donorDoNotMail`:**
+each preference appears on the form only once its Donors-board **checkbox** column id is filled in
+(same treatment as `preferredLanguage`), so staff can roll out one preference at a time. With none
+configured, the section is absent entirely. The change-request board/queue prerequisites are the
+v2 setup above — no new board, queue, migration, or secret.
+
+Operator setup, in addition to the v2 steps: add up to three checkbox columns (Email Opt-Out,
+SMS Opt-Out, Do Not Mail) to the Donors board and fill in their ids in `config/svbc.json`. At
+migration cutover, Email Opt-Out and Do Not Mail carry over from Salesforce per the mapping doc;
+verify consent state against Mailchimp before trusting migrated opt-out flags (compliance item in
+`docs/09-integrations-and-addons.md`).
+
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
@@ -259,7 +293,53 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
 
-## v4 — Volunteer history
+## v4 — Pledge tracking + employer matching gifts
+
+Scoped from the [IT Requests board item](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527597)
+("Donor portal: pledge tracking / employer matching-gift lookup"). Two independent, config-gated
+features, both read-only — no new D1 tables, queues, secrets, or Monday write access.
+
+* **Pledge tracking** (`GET /:locale/portal/pledges`): a per-donor list of pledges rendered live
+  from a Pledges board — pledge name, pledged amount, fulfilled amount, computed percent
+  complete (shown as a dash when either amount doesn't parse as a number; overpayment caps at
+  100%), status, and due date. Scoped to the session's own donor item ids like every other
+  portal read. **Gated on `pledges.boardId` + its five column ids** — no Pledges board exists in
+  the migration design yet (same situation the Change Requests board was in before v2), so the
+  page shows a "not available yet" state until staff design one and an operator fills in the
+  config. The board needs: a connect-boards column to Donors, two number/formula columns
+  (pledged and fulfilled amounts — a mirror of linked payments works, anything whose text
+  renders a number), a status column, and a date column.
+* **Employer matching-gift lookup** (`GET /:locale/portal/matching-gifts`): always renders —
+  generic "ask your HR team whether gifts are matched" guidance is useful with no vendor at
+  all, plus SVBC's EIN once `taxLetter.ein` is signed off. **The embedded Double the Donation
+  employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
+  SVBC buys a DTD subscription, which it currently has not — the board item notes this was
+  "discussed, not prioritized"). This is the only portal page that may load third-party
+  JavaScript, so it deliberately renders **zero donor PII** and ships the app's only
+  Content-Security-Policy — the load-bearing directive is `connect-src` excluding `'self'`, so
+  a compromised widget script can't fetch sibling `/portal` pages (which carry the session
+  cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
+  shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
+  it couldn't be checked against a live DTD account — verify the widget under the CSP at the
+  same time. No Subresource Integrity hash on the DTD script by their design (mutable
+  unversioned URL); the PII-free page plus the CSP are the compensating controls.
+
+**Upgrading an existing deployment (forks included):** config validation requires the
+`pledges` and `matchingGifts` stanzas to *exist* before v4 code will serve any request — a
+config predating v4 fails validation on every request, queue batch, and cron run, not just on
+the new pages. Copy both stanzas from this repo's `config/svbc.json` (placeholder/null values
+are fine; both features then ship gated off) before deploying v4 code over an older config.
+
+Operator setup for v4, in addition to the v1 steps — each feature independently optional:
+
+1. Pledges: create the Pledges board, grant the portal's integration user **read** access to
+   it, and fill in `pledges.boardId` and all five `pledges.columns` ids in `config/svbc.json`.
+2. Matching gifts: obtain a Double the Donation subscription, then set
+   `matchingGifts.doubleTheDonationPublicKey` to the **public** plugin key (never a private API
+   key — this value is served to every logged-in browser), after verifying the embed snippet
+   against DTD's current docs.
+
+## v5 — Volunteer history
 
 From the IT Requests board Feature Request "Donor portal: volunteer history" (filed from the
 2026-08-24 v2 brainstorm): show volunteer hours/shifts alongside donations. Each donor's portal
@@ -278,11 +358,18 @@ what `../salesforce-import` loads from GW Volunteers: a connect-boards link to t
 board (`volunteerDonorLink`), Hours number (`volunteerHours`), Date (`volunteerDate`), Job text
 (`volunteerJob`), and Status (`volunteerStatus`).
 
-Operator setup for v4, in addition to the v1 steps: after the Volunteers board exists
+Operator setup for v5, in addition to the v1 steps: after the Volunteers board exists
 post-migration, fill in `monday.volunteersBoardId` and the five `volunteer*` column ids in
 `config/svbc.json`; confirm `volunteerHistory.completedStatuses` matches the board's actual
 "worked this shift" status label(s); and grant the portal's integration user **read access to the
 Volunteers board**. No new D1 migration, no new queue, no new secret, no Monday write access.
+
+**Upgrading an existing deployment (forks included):** same rule as v4's stanzas — config
+validation requires the `volunteerHistory` stanza and `monday.volunteersBoardId` key to *exist*
+before v5 code will serve any request. Copy them from this repo's `config/svbc.json` (null/
+placeholder values are fine; the feature then ships gated off) before deploying v5 code over an
+older config.
+
 
 ## Future candidates
 

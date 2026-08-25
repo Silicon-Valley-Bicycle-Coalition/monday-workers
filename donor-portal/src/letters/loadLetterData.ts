@@ -1,5 +1,6 @@
 import type { MondayClient } from '../monday/client';
 import type { DonationRecord, TaxLetterConfig } from '../types';
+import { parseAmount as parseAmountOrNull } from '../amounts';
 
 export interface LetterGift {
   date: string;
@@ -23,9 +24,10 @@ export interface LetterYearListing {
 
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
+// Thin wrapper over the shared parser: a letter total sums amounts, so unparseable text
+// contributes 0 rather than poisoning the sum with null.
 export function parseAmount(text: string): number {
-  const n = Number(text.replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
+  return parseAmountOrNull(text) ?? 0;
 }
 
 export function giftYear(date: string): number | null {

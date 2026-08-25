@@ -17,6 +17,8 @@ function fakeMonday(shiftsByDonor: Record<string, VolunteerShift[]> = {}): Monda
     getVolunteerShiftsForDonor: vi.fn().mockImplementation((id: string) => Promise.resolve(shiftsByDonor[id] ?? [])),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getPledgesForDonor: vi.fn().mockResolvedValue([]),
   };
 }
 

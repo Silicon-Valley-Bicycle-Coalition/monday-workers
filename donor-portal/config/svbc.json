@@ -20,6 +20,9 @@
       "donorPhone": "REPLACE_WITH_COLUMN_ID",
       "membershipExpiry": "REPLACE_WITH_COLUMN_ID",
       "preferredLanguage": "REPLACE_WITH_COLUMN_ID",
+      "donorEmailOptOut": "REPLACE_WITH_COLUMN_ID",
+      "donorSmsOptOut": "REPLACE_WITH_COLUMN_ID",
+      "donorDoNotMail": "REPLACE_WITH_COLUMN_ID",
       "volunteerDonorLink": "REPLACE_WITH_COLUMN_ID",
       "volunteerHours": "REPLACE_WITH_COLUMN_ID",
       "volunteerDate": "REPLACE_WITH_COLUMN_ID",
@@ -67,5 +70,18 @@
   },
   "volunteerHistory": {
     "completedStatuses": ["Completed"]
+  },
+  "pledges": {
+    "boardId": null,
+    "columns": {
+      "donorLink": "REPLACE_WITH_COLUMN_ID",
+      "pledgedAmount": "REPLACE_WITH_COLUMN_ID",
+      "fulfilledAmount": "REPLACE_WITH_COLUMN_ID",
+      "status": "REPLACE_WITH_COLUMN_ID",
+      "dueDate": "REPLACE_WITH_COLUMN_ID"
+    }
+  },
+  "matchingGifts": {
+    "doubleTheDonationPublicKey": null
   }
 }

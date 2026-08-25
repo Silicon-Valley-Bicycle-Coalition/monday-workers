@@ -38,6 +38,17 @@ const config: Config = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  pledges: {
+    boardId: null,
+    columns: {
+      donorLink: 'REPLACE_WITH_COLUMN_ID',
+      pledgedAmount: 'REPLACE_WITH_COLUMN_ID',
+      fulfilledAmount: 'REPLACE_WITH_COLUMN_ID',
+      status: 'REPLACE_WITH_COLUMN_ID',
+      dueDate: 'REPLACE_WITH_COLUMN_ID',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: null },
 };
 
 function makeMessage(sendId: number) {
