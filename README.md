@@ -102,6 +102,16 @@ Migration Method). What it needs instead: retry-with-backoff on individual Monda
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
 
+## Deploys
+
+The live Workers deploy automatically via [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
+a merge to `main` builds and deploys each connected Worker from its subdirectory (root directory
+set per Worker in the Cloudflare dashboard, e.g. `/committee-calendars`, `/events-widgets`), and
+non-production branches upload preview versions. Manual `npm run deploy` still works for
+first-time provisioning or emergencies, but routine changes should ship by merging — this repo
+previously drifted from production for months when a Worker was deployed by hand and its CI
+connection silently broke.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). Chosen specifically so other nonprofits can fork, adapt, and
