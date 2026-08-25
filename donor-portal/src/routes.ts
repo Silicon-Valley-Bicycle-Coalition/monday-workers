@@ -325,7 +325,7 @@ export function createApp(deps: AppDeps) {
   // used elsewhere in this repo (donation-rollups) is a shared secret in the webhook URL itself,
   // set when subscribing and checked here.
   app.post('/webhooks/monday/letters', async (c) => {
-    if (c.req.query('secret') !== deps.letterWebhookSecret) {
+    if (!deps.letterWebhookSecret || c.req.query('secret') !== deps.letterWebhookSecret) {
       return c.json({ ok: false }, 401);
     }
 
@@ -351,12 +351,23 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
-    const result = await triggerLetterSend(event.donorItemId, {
-      monday: deps.monday,
-      store: deps.letterSendStore,
-      queue: deps.letterQueue,
-      now: deps.now,
-    });
+    let result;
+    try {
+      result = await triggerLetterSend(event.donorItemId, {
+        monday: deps.monday,
+        store: deps.letterSendStore,
+        queue: deps.letterQueue,
+        now: deps.now,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`donor-portal webhook: letter-send trigger failed for donor "${event.donorItemId}": ${errMsg}`);
+      return c.json({ ok: false }, 500);
+    }
+
+    if (result.kind !== 'queued') {
+      console.log(`donor-portal webhook: letter-send for donor "${event.donorItemId}" resulted in "${result.kind}"`);
+    }
     return c.json({ ok: true, result: result.kind }, 200);
   });
 

@@ -66,6 +66,7 @@ function fakeLetterSendStore(overrides: Partial<LetterSendStore> = {}): LetterSe
     getById: vi.fn().mockResolvedValue(null),
     markSent: vi.fn().mockResolvedValue(undefined),
     markSkipped: vi.fn().mockResolvedValue(undefined),
+    requeue: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -696,6 +697,14 @@ describe('POST /webhooks/monday/letters', () => {
     expect(res.status).toBe(401);
   });
 
+  it('rejects every request, even with no secret query param, when no webhook secret is configured (fail closed)', async () => {
+    const letterQueue = { send: vi.fn() };
+    const app = createApp(makeDeps({ letterWebhookSecret: '', letterQueue }));
+    const res = await post(app, { event: { pulseId: 1 } });
+    expect(res.status).toBe(401);
+    expect(letterQueue.send).not.toHaveBeenCalled();
+  });
+
   it('echoes the challenge verbatim during webhook-subscription verification', async () => {
     const app = createApp(makeDeps());
     const res = await post(app, { challenge: 'abc123' }, '?secret=shh');
@@ -728,5 +737,16 @@ describe('POST /webhooks/monday/letters', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: false });
     expect(letterQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 with { ok: false } when triggerLetterSend throws, instead of falling through to the generic HTML error page', async () => {
+    const monday = fakeMonday({});
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Monday API unavailable'));
+    const app = createApp(makeDeps({ monday }));
+
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, boardId: 1 } }, '?secret=shh');
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ ok: false });
   });
 });
