@@ -44,6 +44,7 @@ use. Never ship a staff member's personal token into a Worker secret.
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
 | [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
 | [`membership-reminders`](membership-reminders/README.md) | Built (merged) — not deployed; hard-blocked on the Donors board id and column ids, which exist only after `salesforce-import`'s load stage runs | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
+| [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward | Unassigned |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
 plan for both:
