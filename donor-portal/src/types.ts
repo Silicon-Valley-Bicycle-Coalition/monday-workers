@@ -64,6 +64,18 @@ export interface EventRegistrationsConfig {
   eventDateColumnId: string;
 }
 
+export interface FunraiseConfig {
+  manageRecurringUrl: string;
+  renewMembershipUrl: string;
+}
+
+// The resolved, per-link view of FunraiseConfig: null means "not configured, don't render the
+// link" (see funraiseLinks() in config.ts).
+export interface FunraiseLinkUrls {
+  manageRecurringUrl: string | null;
+  renewMembershipUrl: string | null;
+}
+
 export interface PledgeColumns {
   donorLink: string;
   pledgedAmount: string;
@@ -108,6 +120,7 @@ export interface Config {
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
   eventRegistrations: EventRegistrationsConfig;
+  funraise: FunraiseConfig;
   pledges: PledgesConfig;
   matchingGifts: MatchingGiftsConfig;
 }

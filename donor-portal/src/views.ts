@@ -1,4 +1,4 @@
-import type { PortalView } from './types';
+import type { FunraiseLinkUrls, PortalView } from './types';
 import { SUPPORTED_LOCALES, LOCALE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 
@@ -100,6 +100,30 @@ function donorSection(donor: PortalView['donors'][number], locale: Locale): stri
   `;
 }
 
+// Deep links out to Funraise's own donor-account and checkout surfaces — deliberately links,
+// not embedded flows, so recurring-gift changes and renewal payments happen entirely on
+// Funraise's PCI-scoped pages, never in this Worker (IT Requests item 12893519422). Each link
+// renders only when its URL is configured (see funraiseLinks() in config.ts); with neither
+// configured the whole section disappears.
+function funraiseSection(links: FunraiseLinkUrls, locale: Locale): string {
+  const rows = [
+    links.manageRecurringUrl !== null
+      ? `<li><a href="${escapeHtml(links.manageRecurringUrl)}" rel="noopener noreferrer">${escapeHtml(t(locale, 'portal.manageRecurringLink'))}</a></li>`
+      : '',
+    links.renewMembershipUrl !== null
+      ? `<li><a href="${escapeHtml(links.renewMembershipUrl)}" rel="noopener noreferrer">${escapeHtml(t(locale, 'portal.renewMembershipLink'))}</a></li>`
+      : '',
+  ].join('');
+  if (rows === '') return '';
+  return `
+    <section>
+      <h2>${escapeHtml(t(locale, 'portal.givingLinksHeading'))}</h2>
+      <ul>${rows}</ul>
+      <p>${escapeHtml(t(locale, 'portal.givingLinksNote'))}</p>
+    </section>
+  `;
+}
+
 function discountRow(discount: PortalView['discounts'][number]): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
@@ -131,11 +155,12 @@ function portalLanguageSwitcher(locale: Locale, donorItemId: string): string {
   return `<section><h2>${escapeHtml(t(locale, 'languagePicker.label'))}</h2><ul>${rows}</ul></section>`;
 }
 
-export function portalView(data: PortalView, locale: Locale): string {
+export function portalView(data: PortalView, locale: Locale, funraise: FunraiseLinkUrls): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
     ${data.donors.length > 0 ? portalLanguageSwitcher(locale, data.donors[0]!.id) : ''}
     ${data.donors.map((donor) => donorSection(donor, locale)).join('')}
+    ${funraiseSection(funraise, locale)}
     <section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>
