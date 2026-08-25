@@ -279,13 +279,17 @@ startup — a typo'd link should fail a deploy, not a donor.
 Operator setup: `funraise.manageRecurringUrl` ships pre-filled with
 `https://give.funraise.org/login` — Funraise's donor portal is a shared surface, not
 org-specific, and donors sign in there with the same email they donated with (the address they
-already used for this portal's magic link). `funraise.renewMembershipUrl` still needs the
-membership form's hosted Giving Page link, which lives only in the Funraise form editor —
-**Giving Forms → open the membership form → Publish tab → Page** — not in the dashboard
-(confirm which form is membership first; the site embeds forms 33777 and 35786). Optionally
-append prefill parameters, e.g. `?x_frequency=y&x_amount=35` for an annual $35 membership; use
-the full Page link, not the Bitly Short URL, which drops query parameters. No new Monday access,
-no new secret, no D1 migration.
+already used for this portal's magic link). `funraise.renewMembershipUrl` needs a hosted
+Giving Page link, format `https://funraise.org/give/Silicon-Valley-Bicycle-Coalition/:id`
+(copy it from the Funraise form editor: **Giving Forms → open form → Publish tab → Page** — it's
+not in the dashboard). **Blocked as of 2026-08-25: no active membership giving form exists** —
+other drives are active, but the two forms embedded on bikesiliconvalley.org (33777, 35786) have
+no published giving page (both 404 at that URL), so which form renewal should point at is a
+staff decision, tracked on the IT Requests item. Until it's made, the placeholder stays and the
+renewal link simply doesn't render. When a URL does land, prefill parameters can be appended,
+e.g. `?x_frequency=y&x_amount=35` for an annual $35 membership; use the full Page link, not the
+Bitly Short URL, which drops query parameters. No new Monday access, no new secret, no D1
+migration.
 
 ## Future candidates
 
