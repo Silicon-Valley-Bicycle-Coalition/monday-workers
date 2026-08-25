@@ -153,7 +153,9 @@ kept separate from the main domain's mail flow, is standard practice for transac
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
-  boards this portal reads (Donors, Donations, Membership, Organizations) — never a staff member's
+  boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
+  v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never
+  a staff member's
   personal token, which would make this public-facing Worker a door to the whole workspace. See
   `../README.md`'s least-privilege-token note.
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
@@ -203,7 +205,7 @@ gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 tab
 `taxLetter` is signed off, same as the portal-facing letters.
 
 This ships the send primitive (`POST /webhooks/monday/letters` → `donor-portal-letter-emails`
-queue → `processLetterSendBatch`) that the automatic January cron (v2.2 below) reuses without
+queue → `processLetterSendBatch`) that the automatic January cron (v2.3 below) reuses without
 rework.
 
 Operator setup, in addition to v1/v2 steps:
@@ -225,7 +227,40 @@ Operator setup, in addition to v1/v2 steps:
    `wrangler queues create donor-portal-letter-emails-dlq`).
 5. Apply D1 migration `0004_create_letter_sends.sql`.
 
-## v2.2 — Automatic January letter emails, staff-controlled from a Monday board
+## v2.2 — Communication preferences
+
+From [IT Requests #12893526579](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893526579).
+A "Communication preferences" section on the existing change-request page lets a donor set three
+preferences — **Email Opt-Out**, **SMS Opt-Out**, and **Do Not Mail** — flowing through the same
+staff-review write path as the free-text change requests (the portal still never writes donor
+records; staff apply approved changes by hand). The form shows the current state read live from
+the Donors board and submits a diff: only preferences that actually changed become change
+requests, with fixed staff-facing values ("Opted out of email" / "Subscribed to email", "Opted
+out of SMS" / "Subscribed to SMS", "Do not mail" / "OK to mail") rather than free text.
+
+Two compliance notes baked into the design:
+
+* **The staff-review path is deliberate, not a shortcut.** Mailchimp is SVBC's real system of
+  record for email consent (see the private planning repo's Mailchimp reconciliation item), so
+  the portal must not flip opt-out flags directly; a queued request staff reconcile by hand is
+  also comfortably within CAN-SPAM's 10-business-day window for honoring opt-outs.
+* **Email Opt-Out maps to the compliance-critical `HasOptedOutOfEmail` migration column**
+  (`docs/03-monday-migration-mapping.md`, private planning repo). Do Not Mail maps to Salesforce's
+  `Do_Not_Mail__c`. SMS Opt-Out is net-new — Salesforce has no per-contact SMS consent field — so
+  its column starts empty for every donor.
+
+**Gated per column on `monday.columns.donorEmailOptOut` / `donorSmsOptOut` / `donorDoNotMail`:**
+each preference appears on the form only once its Donors-board **checkbox** column id is filled in
+(same treatment as `preferredLanguage`), so staff can roll out one preference at a time. With none
+configured, the section is absent entirely. The change-request board/queue prerequisites are the
+v2 setup above — no new board, queue, migration, or secret.
+
+Operator setup, in addition to the v2 steps: add up to three checkbox columns (Email Opt-Out,
+SMS Opt-Out, Do Not Mail) to the Donors board and fill in their ids in `config/svbc.json`. At
+migration cutover, Email Opt-Out and Do Not Mail carry over from Salesforce per the mapping doc;
+verify consent state against Mailchimp before trusting migrated opt-out flags (compliance item in
+`docs/09-integrations-and-addons.md`).
+## v2.3 — Automatic January letter emails, staff-controlled from a Monday board
 
 The scheduled follow-on to v2.1 (IT Requests item 12893503099): once a year, every donor with
 gifts in the just-completed calendar year gets the same letter-ready email the staff button
@@ -316,6 +351,156 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 `cardTokens.retentionDays` once `revoked_at` is set — a revoked token is a dead bearer credential
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
+
+## v3.1 — Funraise deep links (recurring gifts & membership renewal)
+
+From the v2 brainstorm's candidate list (IT Requests item "Donor portal: recurring-gift
+management / membership renewal deep links"). The portal's "Manage your giving" section links
+donors out to **Funraise's own donor-account surface** (to change or cancel a recurring gift) and
+to a **Funraise checkout page** (to renew a membership). Deliberately links, not embedded flows:
+every payment interaction happens on Funraise's PCI-scoped pages, so this Worker never touches
+card data — "build" here means two `<a>` tags and nothing more. Changes a donor makes on Funraise
+flow back into Monday via `workers/funraise-sync`, so the portal reflects them on the next visit
+after the sync lands (the section's UI copy says so).
+
+**Gated per link on `funraise.*` config:** each of `funraise.manageRecurringUrl` and
+`funraise.renewMembershipUrl` renders only when set to a real URL — while a value is still the
+`REPLACE_WITH_FUNRAISE_URL` placeholder (or empty), that link is silently omitted, and with
+neither configured the whole section disappears (same gate-not-error treatment as the
+`taxLetter` sign-off fields). A set value must be an `https://` URL or config validation fails at
+startup — a typo'd link should fail a deploy, not a donor.
+
+Operator setup: `funraise.manageRecurringUrl` ships pre-filled with
+`https://give.funraise.org/login` — Funraise's donor portal is a shared surface, not
+org-specific, and donors sign in there with the same email they donated with (the address they
+already used for this portal's magic link). `funraise.renewMembershipUrl` needs a hosted
+Giving Page link, format `https://funraise.org/give/Silicon-Valley-Bicycle-Coalition/:id`
+(copy it from the Funraise form editor: **Giving Forms → open form → Publish tab → Page** — it's
+not in the dashboard). **Blocked as of 2026-08-25: no active membership giving form exists** —
+other drives are active, but the two forms embedded on bikesiliconvalley.org (33777, 35786) have
+no published giving page (both 404 at that URL), so which form renewal should point at is a
+staff decision, tracked on the IT Requests item. Until it's made, the placeholder stays and the
+renewal link simply doesn't render. When a URL does land, prefill parameters can be appended,
+e.g. `?x_frequency=y&x_amount=35` for an annual $35 membership; use the full Page link, not the
+Bitly Short URL, which drops query parameters. No new Monday access, no new secret, no D1
+migration.
+
+## v4 — Pledge tracking + employer matching gifts
+
+Scoped from the [IT Requests board item](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527597)
+("Donor portal: pledge tracking / employer matching-gift lookup"). Two independent, config-gated
+features, both read-only — no new D1 tables, queues, secrets, or Monday write access.
+
+* **Pledge tracking** (`GET /:locale/portal/pledges`): a per-donor list of pledges rendered live
+  from a Pledges board — pledge name, pledged amount, fulfilled amount, computed percent
+  complete (shown as a dash when either amount doesn't parse as a number; overpayment caps at
+  100%), status, and due date. Scoped to the session's own donor item ids like every other
+  portal read. **Gated on `pledges.boardId` + its five column ids** — no Pledges board exists in
+  the migration design yet (same situation the Change Requests board was in before v2), so the
+  page shows a "not available yet" state until staff design one and an operator fills in the
+  config. The board needs: a connect-boards column to Donors, two number/formula columns
+  (pledged and fulfilled amounts — a mirror of linked payments works, anything whose text
+  renders a number), a status column, and a date column.
+* **Employer matching-gift lookup** (`GET /:locale/portal/matching-gifts`): always renders —
+  generic "ask your HR team whether gifts are matched" guidance is useful with no vendor at
+  all, plus SVBC's EIN once `taxLetter.ein` is signed off. **The embedded Double the Donation
+  employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
+  SVBC buys a DTD subscription, which it currently has not — the board item notes this was
+  "discussed, not prioritized"). This is the only portal page that may load third-party
+  JavaScript, so it deliberately renders **zero donor PII** and ships the app's only
+  Content-Security-Policy — the load-bearing directive is `connect-src` excluding `'self'`, so
+  a compromised widget script can't fetch sibling `/portal` pages (which carry the session
+  cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
+  shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
+  it couldn't be checked against a live DTD account — verify the widget under the CSP at the
+  same time. No Subresource Integrity hash on the DTD script by their design (mutable
+  unversioned URL); the PII-free page plus the CSP are the compensating controls.
+
+**Upgrading an existing deployment (forks included):** config validation requires the
+`pledges` and `matchingGifts` stanzas to *exist* before v4 code will serve any request — a
+config predating v4 fails validation on every request, queue batch, and cron run, not just on
+the new pages. Copy both stanzas from this repo's `config/svbc.json` (placeholder/null values
+are fine; both features then ship gated off) before deploying v4 code over an older config.
+
+Operator setup for v4, in addition to the v1 steps — each feature independently optional:
+
+1. Pledges: create the Pledges board, grant the portal's integration user **read** access to
+   it, and fill in `pledges.boardId` and all five `pledges.columns` ids in `config/svbc.json`.
+2. Matching gifts: obtain a Double the Donation subscription, then set
+   `matchingGifts.doubleTheDonationPublicKey` to the **public** plugin key (never a private API
+   key — this value is served to every logged-in browser), after verifying the embed snippet
+   against DTD's current docs.
+## v5 — Event registrations
+
+From the IT Requests board (["Donor portal: event
+registrations"](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527106),
+scoped 2026-08-25). A read-only page (`GET /:locale/portal/events`, linked from the portal home)
+listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
+later, soonest first) and **Past** (latest first; past rows show Attended/Registered from the
+board's checkbox, and undated registrations sort last). Same multi-donor-household rule as the
+rest of the portal: one explicitly labeled section per matched donor item. No D1 tables, no
+queues, no writes — reads live from Monday like everything else here.
+
+**Data source:** the **Event Registrations** board — the post-migration rename of today's
+hand-maintained Event Participation board, rebuilt at cutover to match the CRM Sandbox rehearsal
+(`salesforce-import`'s `Fundraising_Event_Registration` output: Attendee board-relation → People,
+Event board-relation → Events board, Attended checkbox). The event's name and date come from the
+linked Events-board item, resolved in a second query. Registrations whose Attendee relation was
+never matched to a People item (name/email captured only as fallback text) can't be tied to a
+logged-in donor and simply don't appear. The Eventbrite repoint (see the migration plan) is what
+will keep this board current for *future* events — it isn't a precondition for showing the
+migrated history, which is why this shipped ahead of it.
+
+**Deliberately excluded: ticket and deductible amounts.** Both columns exist on the board, but
+surfacing dollar figures here would blur the portal's carefully-drawn "this is not a tax
+document" line — the deductible-portion story belongs to the tax-letter feature and its
+signed-off IRS language, not an event list.
+
+**Gated on `eventRegistrations` config** (same placeholder-tolerant treatment as
+`changeRequests`): the page shows a "not available yet" state until an operator fills in real
+ids. Operator setup, in addition to the v1 steps, once the post-cutover board exists:
+
+1. Fill in `eventRegistrations.boardId` (Event Registrations board) and its `columns` —
+   `attendeeLink` (Attendee board-relation), `eventLink` (Event board-relation), `attended`
+   (Attended checkbox).
+2. Fill in `eventRegistrations.eventDateColumnId` — the **Events board's** Date column id (the
+   registration board has no date of its own; dates live on the linked event item).
+3. Grant the portal's integration user **read access to the Event Registrations and Events
+   boards** (it stays read-only everywhere except Change Requests).
+
+No new secrets, queues, or D1 migrations.
+
+## v6 — Volunteer history
+
+From the IT Requests board Feature Request "Donor portal: volunteer history" (filed from the
+2026-08-24 v2 brainstorm): show volunteer hours/shifts alongside donations. Each donor's portal
+section gains a "Volunteer history" block — total hours plus a date/activity/hours table — read
+live from the Volunteers board, filtered to shifts whose status is in
+`volunteerHistory.completedStatuses` (default `["Completed"]`, so no-shows and un-worked signups
+don't inflate a donor's hours; set it to `[]` to include every status). The block renders only
+for donors with at least one qualifying shift — donors who never volunteered see no change.
+
+**Gated on `monday.volunteersBoardId` + the `volunteer*` column ids:** the ticket's blocker
+("volunteer data doesn't live in Monday until post-migration") is handled by shipping dark — the
+feature is invisible, and the Volunteers board is never queried, until an operator fills in the
+board id and all five `monday.columns.volunteer*` ids (same treatment as v2's
+`donorAddress`/`donorPhone` and v3's `membershipExpiry`). The expected board shape is exactly
+what `../salesforce-import` loads from GW Volunteers: a connect-boards link to the Donors/People
+board (`volunteerDonorLink`), Hours number (`volunteerHours`), Date (`volunteerDate`), Job text
+(`volunteerJob`), and Status (`volunteerStatus`).
+
+Operator setup for v6, in addition to the v1 steps: after the Volunteers board exists
+post-migration, fill in `monday.volunteersBoardId` and the five `volunteer*` column ids in
+`config/svbc.json`; confirm `volunteerHistory.completedStatuses` matches the board's actual
+"worked this shift" status label(s); and grant the portal's integration user **read access to the
+Volunteers board**. No new D1 migration, no new queue, no new secret, no Monday write access.
+
+**Upgrading an existing deployment (forks included):** same rule as v4's stanzas — config
+validation requires the `volunteerHistory` stanza and `monday.volunteersBoardId` key to *exist*
+before v6 code will serve any request. Copy them from this repo's `config/svbc.json` (null/
+placeholder values are fine; the feature then ships gated off) before deploying v6 code over an
+older config.
+
 
 ## Future candidates
 

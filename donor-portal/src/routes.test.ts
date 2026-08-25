@@ -119,6 +119,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+    getVolunteerShiftsForDonor: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
       Promise.resolve({
         id,
@@ -130,6 +131,9 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
+    getPledgesForDonor: vi.fn().mockResolvedValue([]),
     getLetterSettings: vi.fn().mockResolvedValue(null),
     listDonorIdsWithDonationsInYear: vi.fn(),
   };
@@ -158,6 +162,7 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+    getVolunteerShiftsForDonor: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
       Promise.resolve({
         id,
@@ -169,13 +174,16 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
+    getPledgesForDonor: vi.fn().mockResolvedValue([]),
     getLetterSettings: vi.fn().mockResolvedValue(null),
     listDonorIdsWithDonationsInYear: vi.fn(),
   };
 }
 
 const config: Config = {
-  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
+  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
@@ -196,6 +204,27 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
+  eventRegistrations: {
+    boardId: null,
+    columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+    eventDateColumnId: 'ev_date_col',
+  },
+  funraise: {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+  },
+  pledges: {
+    boardId: 777,
+    columns: {
+      donorLink: 'pl1',
+      pledgedAmount: 'pl2',
+      fulfilledAmount: 'pl3',
+      status: 'pl4',
+      dueDate: 'pl5',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
@@ -543,8 +572,12 @@ describe('POST /login error handling', () => {
       findDonorsByEmail: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')),
       getDonorPortalData: vi.fn(),
       getDiscountOrganizations: vi.fn(),
+      getVolunteerShiftsForDonor: vi.fn(),
       getDonorContactInfo: vi.fn(),
       createChangeRequestItem: vi.fn(),
+      getDonorNames: vi.fn().mockResolvedValue([]),
+      getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
+      getPledgesForDonor: vi.fn().mockResolvedValue([]),
       getLetterSettings: vi.fn().mockResolvedValue(null),
       listDonorIdsWithDonationsInYear: vi.fn(),
     };
@@ -1357,6 +1390,122 @@ describe('GET /verify/:token', () => {
   });
 });
 
+describe('GET /:locale/portal/pledges', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/pledges');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('renders the logged-in donor pledges with progress and no-store caching', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
+    (monday.getPledgesForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: '2026 Annual Pledge', pledged: '$1,000.00', fulfilled: '$400.00', status: 'Active', dueDate: '2026-12-31' },
+    ]);
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/pledges', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('2026 Annual Pledge');
+    expect(html).toContain('40%');
+    expect(html).toContain('<title>Your Pledges — SVBC Donor Portal</title>');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // Scoped to the session's donor ids only:
+    expect(monday.getPledgesForDonor).toHaveBeenCalledTimes(1);
+    expect(monday.getPledgesForDonor).toHaveBeenCalledWith('donor-1');
+  });
+
+  it('shows the unavailable state while the pledges board is unconfigured, without calling Monday', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.pledges.boardId = null;
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/pledges', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('Pledge tracking is not available yet');
+    expect(monday.getPledgesForDonor).not.toHaveBeenCalled();
+  });
+
+  it('shows a pledges-specific error page when the Monday lookup throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/pledges', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your pledges right now');
+  });
+});
+
+describe('GET /portal/pledges (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const res = await createApp(makeDeps()).request('/portal/pledges', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/pledges');
+  });
+});
+
+describe('GET /:locale/portal/matching-gifts', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/matching-gifts');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('renders the DTD widget when a public key is configured, with the signed-off EIN', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('id="dd-company-name-search"');
+    expect(html).toContain('"dtd-public-key"');
+    expect(html).toContain('00-0000000');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
+    const csp = res.headers.get('content-security-policy');
+    expect(csp).toContain("connect-src https://doublethedonation.com");
+    expect(csp).not.toContain("connect-src 'self'");
+  });
+
+  it('still renders the guidance page, without the widget or EIN, when neither is configured', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.matchingGifts.doubleTheDonationPublicKey = null;
+    gatedConfig.taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Employer matching gifts');
+    expect(html).not.toContain('doublethedonation.com');
+    expect(html).not.toContain('REPLACE_AFTER_SIGNOFF');
+    expect(html).not.toContain('tax ID (EIN)');
+  });
+});
+
+describe('GET /portal/matching-gifts (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const res = await createApp(makeDeps()).request('/portal/matching-gifts', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/matching-gifts');
+  });
+});
+
 describe('locale sweep', () => {
   it.each(SUPPORTED_LOCALES)('serves /%s/portal with a matching <html lang> and real translated copy', async (locale) => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
@@ -1372,5 +1521,313 @@ describe('locale sweep', () => {
     // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
     // assert the actual translated heading text renders too (final review finding).
     expect(body).toContain(t(locale, 'portal.heading'));
+  });
+});
+
+describe('GET /:locale/portal volunteer history gate', () => {
+  function mondayWithShifts(): MondayClient {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getVolunteerShiftsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { date: '2026-03-05', hours: '3.5', job: 'Bike Valet', status: 'Completed' },
+      { date: '2026-02-01', hours: '4', job: 'Ride Marshal', status: 'No-Show' },
+    ]);
+    return monday;
+  }
+
+  it('never queries the Volunteers board while volunteersBoardId is unset', async () => {
+    const monday = mondayWithShifts();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    // The shared config fixture ships volunteersBoardId: null — the feature's disabled state.
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).not.toContain(t('en', 'portal.volunteerHeading'));
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+  });
+
+  it('renders the status-filtered volunteer history once volunteersBoardId is configured', async () => {
+    const monday = mondayWithShifts();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    // Realistic column ids, not the shared fixture's empty-object columns: the gate's column
+    // half must pass because the ids are configured, not because they're absent.
+    const volunteerColumns = {
+      volunteerDonorLink: 'vol_link_col',
+      volunteerHours: 'vol_hours_col',
+      volunteerDate: 'vol_date_col',
+      volunteerJob: 'vol_job_col',
+      volunteerStatus: 'vol_status_col',
+    } as never;
+    const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4, columns: volunteerColumns } };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain(t('en', 'portal.volunteerHeading'));
+    expect(body).toContain('Bike Valet');
+    expect(body).toContain('Total volunteer hours: 3.5');
+    // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
+    expect(body).not.toContain('Ride Marshal');
+  });
+});
+
+describe('GET /:locale/portal/events', () => {
+  function enabledEventsConfig(): Config {
+    const cfg = structuredClone(config);
+    cfg.eventRegistrations.boardId = 555;
+    return cfg;
+  }
+
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/events');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('shows the unavailable state while the eventRegistrations board is unconfigured', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('not available yet');
+    // The gate must not leak whether any Monday data exists.
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+  });
+
+  it('renders the logged-in donor registrations with no-store caching when enabled', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
+    ]);
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Fall Gala');
+    expect(html).toContain('<title>Your Event Registrations — SVBC Donor Portal</title>');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // The query is scoped to the session's donor item, never a client-supplied id.
+    expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(
+      expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 })
+    );
+  });
+
+  it('shows an events-specific error page when the Monday lookup throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+
+    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your event registrations');
+  });
+});
+
+describe('GET /portal/events (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal/events', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/events');
+  });
+});
+
+describe('portal home events link', () => {
+  it('links to the locale-prefixed events page', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('/en/portal/events');
+  });
+});
+
+// Communication preferences: a fakeMonday whose single donor has known preference states
+// (email: subscribed, SMS: subscribed, postal mail: do-not-mail) and a config with the three
+// Donors-board checkbox columns configured.
+function fakeMondayWithPrefs(): MondayClient {
+  const monday = fakeMondayWithDonations();
+  (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+    Promise.resolve({
+      id,
+      name: `Donor ${id}`,
+      email: 'donor@example.org',
+      address: '1 Old St',
+      phone: '555-0100',
+      preferredLanguage: '',
+      emailOptOut: false,
+      smsOptOut: false,
+      doNotMail: true,
+    })
+  );
+  return monday;
+}
+
+function prefsConfig(): Config {
+  const cfg = structuredClone(config);
+  cfg.monday.columns = {
+    donorEmailOptOut: 'check_email_opt',
+    donorSmsOptOut: 'check_sms_opt',
+    donorDoNotMail: 'check_no_mail',
+  } as never;
+  return cfg;
+}
+
+function prefsEmailSender() {
+  return {
+    sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe('GET /:locale/portal/change-request — communication preferences section', () => {
+  it('renders the preferences forms with current state when the columns are configured', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const app = createApp(makeDeps({ monday, emailSender, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const html = await res.text();
+    expect(html).toContain('action="/en/portal/change-request/preferences"');
+    expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
+    expect(html).toMatch(/name="doNotMail" value="yes"[^>]* checked/);
+  });
+
+  it('omits the preferences section while the columns are unconfigured', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = prefsEmailSender();
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    expect(await res.text()).not.toContain('change-request/preferences');
+  });
+});
+
+describe('POST /:locale/portal/change-request/preferences', () => {
+  function postPrefs(app: ReturnType<typeof createApp>, cookie: string, fields: Record<string, string>) {
+    return app.request('/en/portal/change-request/preferences', {
+      method: 'POST',
+      body: new URLSearchParams(fields),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    });
+  }
+
+  it('submits only the changed preferences and confirms', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const changeStore = fakeChangeStore();
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, changeStore, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, {
+      donorItemId: 'donor-1',
+      emailOptOut: 'yes',
+      smsOptOut: 'no',
+      doNotMail: 'yes',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('review');
+    expect(changeQueue.send).toHaveBeenCalledOnce();
+    expect(changeStore.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ field: 'emailOptOut', newValue: 'Opted out of email' })
+    );
+  });
+
+  it('reports no changes when the submitted state matches Monday', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, {
+      donorItemId: 'donor-1',
+      emailOptOut: 'no',
+      smsOptOut: 'no',
+      doNotMail: 'yes',
+    });
+
+    expect(await res.text()).toContain('already match');
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('ignores fields whose columns are unconfigured, even if present in the body', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const cfg = prefsConfig();
+    (cfg.monday.columns as unknown as Record<string, string>).donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, config: cfg }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, { donorItemId: 'donor-1', emailOptOut: 'no', smsOptOut: 'yes', doNotMail: 'yes' });
+
+    expect(await res.text()).toContain('already match');
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('redirects to /login without a session', async () => {
+    const app = createApp(makeDeps({ config: prefsConfig() }));
+    const res = await app.request('/en/portal/change-request/preferences', { method: 'POST' });
+    expect(res.status).toBe(302);
+  });
+
+  it('shows the unavailable state when the Change Requests board is not configured', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const cfg = prefsConfig();
+    cfg.changeRequests.boardId = null;
+    const app = createApp(makeDeps({ monday, emailSender, config: cfg }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, { donorItemId: 'donor-1', emailOptOut: 'yes' });
+    expect(await res.text()).toContain('not available yet');
+  });
+
+  it('denies when the IP rate limiter says no', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const permissive = makeDeps({ monday, emailSender, config: prefsConfig() });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const limitedApp = createApp({ ...permissive, ipLimiter });
+
+    const res = await postPrefs(limitedApp, cookie, { donorItemId: 'donor-1', emailOptOut: 'yes' });
+    expect(res.status).toBe(429);
   });
 });

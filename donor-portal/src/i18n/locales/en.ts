@@ -12,6 +12,9 @@ export const en = {
   'title.changeRequest': 'Request a Change',
   'title.card': 'Your Membership Card',
   'title.verify': 'Membership Verification',
+  'title.events': 'Your Event Registrations',
+  'title.pledges': 'Your Pledges',
+  'title.matchingGifts': 'Matching Gifts',
 
   // Login
   'login.prompt': 'Enter your email to receive a login link.',
@@ -34,6 +37,8 @@ export const en = {
   'error.cardLoadFailed': 'We could not load your card right now. Please try again in a few minutes.',
   'error.cardRegenerateFailed': 'We could not regenerate your card right now. Please try again in a few minutes.',
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
+  'error.eventsLoadFailed': 'We could not load your event registrations right now. Please try again in a few minutes.',
+  'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
 
   // Portal
@@ -44,9 +49,20 @@ export const en = {
   'portal.tableDate': 'Date',
   'portal.tableAmount': 'Amount',
   'portal.tableDescription': 'Description',
+  'portal.volunteerHeading': 'Volunteer history',
+  'portal.volunteerTotalHours': 'Total volunteer hours: {{hours}}',
+  'portal.volunteerTableActivity': 'Activity',
+  'portal.volunteerTableHours': 'Hours',
+  'portal.givingLinksHeading': 'Manage your giving',
+  'portal.manageRecurringLink': 'Manage your recurring gift',
+  'portal.renewMembershipLink': 'Renew your membership',
+  'portal.givingLinksNote': 'These links open Funraise, our secure payment processor. Changes you make there appear in this portal after our records update.',
   'portal.discountsHeading': 'Bike shop discounts',
   'portal.taxDocumentsLink': 'Tax documents',
+  'portal.eventsLink': 'Event registrations',
   'portal.changeRequestLink': 'Request a change to your details',
+  'portal.pledgesLink': 'Your pledges',
+  'portal.matchingGiftsLink': 'Employer matching gifts',
   'portal.logout': 'Log out',
 
   // Letters
@@ -59,6 +75,19 @@ export const en = {
   'letters.backToLetters': 'Back to tax documents',
   'letters.print': 'Print or save as PDF',
   'letters.englishOnlyNote': 'This official document is issued in English.',
+
+  // Event registrations
+  'events.listHeading': 'Your event registrations',
+  'events.upcomingHeading': 'Upcoming',
+  'events.pastHeading': 'Past',
+  'events.noneYet': 'No event registrations on file yet for {{name}}.',
+  'events.tableEvent': 'Event',
+  'events.tableDate': 'Date',
+  'events.tableStatus': 'Status',
+  'events.statusAttended': 'Attended',
+  'events.statusRegistered': 'Registered',
+  'events.backToPortal': 'Back to your portal',
+  'events.unavailable': 'Event registrations are not available yet in the portal. Please check back soon.',
 
   // Change request
   'changeRequest.formHeading': 'Request a change to your details',
@@ -79,6 +108,18 @@ export const en = {
   'changeRequest.duplicateBody': 'We already have this exact request on file — staff will get to it soon. No need to submit it again.',
   'changeRequest.invalidHeading': 'Something needs fixing',
   'changeRequest.backToForm': 'Back to the form',
+  'changeRequest.prefsHeading': '{{name}} — communication preferences',
+  'changeRequest.prefsIntro': 'Choose how SVBC may contact you. Changes are reviewed by staff before they take effect.',
+  'changeRequest.prefEmailOptOut': 'Email from SVBC',
+  'changeRequest.prefSmsOptOut': 'Text messages (SMS) from SVBC',
+  'changeRequest.prefDoNotMail': 'Postal mail from SVBC',
+  'changeRequest.prefOptOutYes': 'Opted out',
+  'changeRequest.prefOptOutNo': 'Subscribed',
+  'changeRequest.prefMailYes': 'Do not send postal mail',
+  'changeRequest.prefMailNo': 'OK to send postal mail',
+  'changeRequest.prefsSubmit': 'Update preferences',
+  'changeRequest.prefsNoChangesHeading': 'No changes to submit',
+  'changeRequest.prefsNoChangesBody': 'Your preferences already match what we have on file.',
   'changeRequest.unavailableHeading': 'Request a change',
   'changeRequest.unavailableBody': "Self-service change requests are not available yet. Please contact SVBC and we'll update your details for you.",
 
@@ -94,6 +135,26 @@ export const en = {
   'verify.heading': 'Membership verification',
   'verify.disclaimer': 'This information is fetched live from our records.',
   'verify.notValid': 'This card is not valid. It may have been regenerated or is no longer active.',
+
+  // Pledges
+  'pledges.heading': 'Your pledges',
+  'pledges.intro': 'These are the pledges our records show, with progress toward each. Contact SVBC if anything looks off.',
+  'pledges.noneYet': 'No pledges are on file for {{name}}.',
+  'pledges.tablePledge': 'Pledge',
+  'pledges.tablePledged': 'Pledged',
+  'pledges.tableFulfilled': 'Fulfilled',
+  'pledges.tableProgress': 'Progress',
+  'pledges.tableStatus': 'Status',
+  'pledges.tableDue': 'Due',
+  'pledges.unavailable': 'Pledge tracking is not available yet. Please check back soon, or contact SVBC if you have a question about a pledge.',
+
+  // Employer matching gifts
+  'matchingGifts.heading': 'Employer matching gifts',
+  'matchingGifts.intro': 'Many employers match charitable donations made by their employees — often doubling your gift to SVBC at no extra cost to you.',
+  'matchingGifts.howTo': 'Ask your HR or payroll team whether your employer offers a matching-gift program, then submit your SVBC donation through their process.',
+  'matchingGifts.einLine': 'You may need our tax ID (EIN) for the matching form: {{ein}}',
+  'matchingGifts.searchHint': 'Search for your employer below to check their matching-gift policy and find submission instructions.',
+  'matchingGifts.searchUnavailable': 'An employer search will appear here once it is set up. In the meantime, your HR or payroll team can tell you whether your gifts are matched.',
 
   // Login email (src/email/cloudflareEmail.ts)
   'email.subject': 'Your SVBC donor portal login link',

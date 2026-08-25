@@ -26,8 +26,10 @@ token carries the full permissions of the user who minted it, so a compromise of
 exposes everything that user can see — the whole workspace, if it's a staff member's own token.
 Mint tokens from dedicated integration users, scoped per exposure class: at minimum, the
 public-facing `donor-portal` gets its own user with access to only the boards it reads (Donors,
-Donations, Membership, Organizations), kept separate from the token(s) the staff-facing Workers
-use. Never ship a staff member's personal token into a Worker secret.
+Donations, Membership, Organizations — plus Event Registrations, Events, and Volunteers once
+the gated event-registrations and volunteer-history features are configured), kept separate
+from the token(s) the staff-facing Workers use. Never ship a staff member's personal token into
+a Worker secret.
 
 ## Status at a glance
 

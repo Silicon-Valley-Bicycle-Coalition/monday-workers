@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled, letterCronConfigured } from './config';
+import {
+  validateConfig,
+  lettersEnabled,
+  changeRequestsEnabled,
+  cardEnabled,
+  funraiseLinks,
+  pledgesEnabled,
+  matchingGiftsSearchEnabled,
+  signedOffEin,
+  configuredPrefFields,
+  volunteerHistoryEnabled,
+  eventsEnabled,
+  letterCronConfigured,
+} from './config';
 
 const validConfig = {
   monday: {
@@ -7,6 +20,7 @@ const validConfig = {
     donorsBoardId: null,
     donationsBoardId: null,
     organizationsBoardId: null,
+    volunteersBoardId: 456,
     columns: {
       donorEmail: 'email_col',
       membershipStatus: 'status_col',
@@ -22,6 +36,14 @@ const validConfig = {
       donorPhone: 'phone_1',
       membershipExpiry: 'expiry_col',
       preferredLanguage: 'lang_col',
+      donorEmailOptOut: 'check_email_opt',
+      donorSmsOptOut: 'check_sms_opt',
+      donorDoNotMail: 'check_no_mail',
+      volunteerDonorLink: 'vol_link_col',
+      volunteerHours: 'vol_hours_col',
+      volunteerDate: 'vol_date_col',
+      volunteerJob: 'vol_job_col',
+      volunteerStatus: 'vol_status_col',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
@@ -50,6 +72,31 @@ const validConfig = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
+  eventRegistrations: {
+    boardId: 456,
+    columns: {
+      attendeeLink: 'connect_2',
+      eventLink: 'connect_3',
+      attended: 'check_1',
+    },
+    eventDateColumnId: 'date_2',
+  },
+  funraise: {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+  },
+  pledges: {
+    boardId: 456,
+    columns: {
+      donorLink: 'connect_2',
+      pledgedAmount: 'numbers_1',
+      fulfilledAmount: 'numbers_2',
+      status: 'status_2',
+      dueDate: 'date_2',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
   letterCron: {
     boardId: 456,
     columns: {
@@ -257,6 +304,133 @@ describe('changeRequestsEnabled', () => {
   });
 });
 
+describe('volunteerHistory config section', () => {
+  it('rejects a config missing the volunteerHistory section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).volunteerHistory;
+    expect(() => validateConfig(cfg)).toThrow('volunteerHistory');
+  });
+
+  it('rejects a config missing volunteerHistory.completedStatuses', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { volunteerHistory: Record<string, unknown> }).volunteerHistory.completedStatuses;
+    expect(() => validateConfig(cfg)).toThrow('volunteerHistory.completedStatuses');
+  });
+
+  it('rejects completedStatuses that is not an array of strings', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { volunteerHistory: { completedStatuses: unknown } }).volunteerHistory.completedStatuses = [1, 2];
+    expect(() => validateConfig(cfg)).toThrow(/completedStatuses/);
+  });
+
+  it('accepts an empty completedStatuses array (meaning: include every status)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.volunteerHistory.completedStatuses = [];
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a config missing monday.volunteersBoardId entirely (undefined must not read as enabled)', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday as Record<string, unknown>).volunteersBoardId;
+    expect(() => validateConfig(cfg)).toThrow(/volunteersBoardId/);
+  });
+
+  it('rejects a volunteersBoardId that is neither a number nor null', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.monday as { volunteersBoardId: unknown }).volunteersBoardId = '456';
+    expect(() => validateConfig(cfg)).toThrow(/volunteersBoardId/);
+  });
+
+  it('rejects a config missing a volunteer column entirely', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday.columns as Record<string, unknown>).volunteerHours;
+    expect(() => validateConfig(cfg)).toThrow(/monday\.columns\.volunteerHours/);
+  });
+
+  it('accepts volunteer columns left as placeholders (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.volunteerDonorLink = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('eventRegistrations config section', () => {
+  it('rejects a config missing the eventRegistrations section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).eventRegistrations;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations');
+  });
+
+  it('rejects a config missing eventRegistrations.boardId', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { eventRegistrations: Record<string, unknown> }).eventRegistrations.boardId;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations.boardId');
+  });
+
+  it('rejects a config missing an eventRegistrations column key', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { eventRegistrations: { columns: Record<string, unknown> } }).eventRegistrations.columns.attendeeLink;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations.columns.attendeeLink');
+  });
+
+  it('rejects a config missing eventRegistrations.eventDateColumnId', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { eventRegistrations: Record<string, unknown> }).eventRegistrations.eventDateColumnId;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations.eventDateColumnId');
+  });
+
+  it('accepts placeholder column ids (gate, not error) — same treatment as changeRequests', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.eventRegistrations.boardId = null as unknown as number;
+    cfg.eventRegistrations.columns.attendeeLink = 'REPLACE_WITH_COLUMN_ID';
+    cfg.eventRegistrations.eventDateColumnId = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('volunteerHistoryEnabled', () => {
+  it('is true when volunteersBoardId is set and no volunteer column is a placeholder', () => {
+    expect(volunteerHistoryEnabled(validateConfig(validConfig))).toBe(true);
+  });
+
+  it('is false when volunteersBoardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw.monday as { volunteersBoardId: number | null }).volunteersBoardId = null;
+    expect(volunteerHistoryEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while any volunteer column is still the placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.monday.columns.volunteerStatus = 'REPLACE_WITH_COLUMN_ID';
+    expect(volunteerHistoryEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('eventsEnabled', () => {
+  it('is true when boardId is set and no column is a placeholder', () => {
+    const cfg = validateConfig(structuredClone(validConfig));
+    expect(eventsEnabled(cfg)).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw as { eventRegistrations: { boardId: number | null } }).eventRegistrations.boardId = null;
+    expect(eventsEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a registrations column id is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.eventRegistrations.columns.attended = 'REPLACE_WITH_COLUMN_ID';
+    expect(eventsEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while eventDateColumnId is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.eventRegistrations.eventDateColumnId = 'REPLACE_WITH_COLUMN_ID';
+    expect(eventsEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
 describe('cardEnabled', () => {
   it('is true when membershipExpiry is a real column id', () => {
     const cfg = validateConfig(validConfig);
@@ -267,6 +441,91 @@ describe('cardEnabled', () => {
     const raw = structuredClone(validConfig);
     raw.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     expect(cardEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('funraise section', () => {
+  it('rejects a config missing the funraise section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).funraise;
+    expect(() => validateConfig(cfg)).toThrow('funraise');
+  });
+
+  it('rejects a config missing funraise.renewMembershipUrl', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { funraise: Record<string, unknown> }).funraise.renewMembershipUrl;
+    expect(() => validateConfig(cfg)).toThrow('funraise.renewMembershipUrl');
+  });
+
+  it('accepts the placeholder and the empty string (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.funraise.manageRecurringUrl = 'REPLACE_WITH_FUNRAISE_URL';
+    cfg.funraise.renewMembershipUrl = '';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a set URL that is not https://', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.funraise.renewMembershipUrl = 'http://example.funraise.org/give';
+    expect(() => validateConfig(cfg)).toThrow(/funraise\.renewMembershipUrl.*https/);
+  });
+
+  it('rejects a non-string URL value', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { funraise: { manageRecurringUrl: unknown } }).funraise.manageRecurringUrl = 42;
+    expect(() => validateConfig(cfg)).toThrow(/funraise\.manageRecurringUrl.*string/);
+  });
+});
+
+describe('funraiseLinks', () => {
+  it('returns both URLs when both are configured', () => {
+    const cfg = validateConfig(validConfig);
+    expect(funraiseLinks(cfg)).toEqual({
+      manageRecurringUrl: 'https://example.funraise.org/account',
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+    });
+  });
+
+  it('gates each link independently — placeholder or empty resolves to null', () => {
+    const raw = structuredClone(validConfig);
+    raw.funraise.manageRecurringUrl = 'REPLACE_WITH_FUNRAISE_URL';
+    const cfg = validateConfig(raw);
+    expect(funraiseLinks(cfg)).toEqual({
+      manageRecurringUrl: null,
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+    });
+
+    const rawEmpty = structuredClone(validConfig);
+    rawEmpty.funraise.renewMembershipUrl = '';
+    expect(funraiseLinks(validateConfig(rawEmpty)).renewMembershipUrl).toBeNull();
+  });
+});
+
+describe('pledges + matchingGifts config sections', () => {
+  it('rejects a config missing the pledges section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).pledges;
+    expect(() => validateConfig(cfg)).toThrow('pledges');
+  });
+
+  it('rejects a config missing a pledges column key', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.pledges.columns as Record<string, unknown>).fulfilledAmount;
+    expect(() => validateConfig(cfg)).toThrow('pledges.columns.fulfilledAmount');
+  });
+
+  it('rejects a config missing the matchingGifts section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).matchingGifts;
+    expect(() => validateConfig(cfg)).toThrow('matchingGifts');
+  });
+
+  it('accepts placeholder pledge columns and a null DTD key (gates, not errors)', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.pledges as { boardId: number | null }).boardId = null;
+    cfg.pledges.columns.donorLink = 'REPLACE_WITH_COLUMN_ID';
+    (cfg.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = null;
+    expect(() => validateConfig(cfg)).not.toThrow();
   });
 });
 
@@ -311,6 +570,93 @@ describe('letterCron config section', () => {
     const cfg = structuredClone(validConfig);
     (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale = {};
     expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('communication preference columns', () => {
+  const PREF_COLUMNS = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'] as const;
+
+  for (const column of PREF_COLUMNS) {
+    it(`rejects config missing ${column} entirely`, () => {
+      const cfg = structuredClone(validConfig);
+      delete (cfg.monday.columns as Record<string, unknown>)[column];
+      expect(() => validateConfig(cfg)).toThrow(new RegExp(`monday\\.columns\\.${column}`));
+    });
+  }
+
+  it('accepts the preference columns as placeholders (gated, not deploy-blocking)', () => {
+    const cfg = structuredClone(validConfig);
+    for (const column of PREF_COLUMNS) {
+      (cfg.monday.columns as Record<string, unknown>)[column] = 'REPLACE_WITH_COLUMN_ID';
+    }
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('pledgesEnabled', () => {
+  it('is true when boardId is set and no pledge column is a placeholder', () => {
+    expect(pledgesEnabled(validateConfig(validConfig))).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw.pledges as { boardId: number | null }).boardId = null;
+    expect(pledgesEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a pledge column id is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.pledges.columns.pledgedAmount = 'REPLACE_WITH_COLUMN_ID';
+    expect(pledgesEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('signedOffEin', () => {
+  it('returns the EIN once real, null while placeholder or empty', () => {
+    expect(signedOffEin(validateConfig(validConfig))).toBe('00-0000000');
+    const raw = structuredClone(validConfig);
+    raw.taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
+    expect(signedOffEin(validateConfig(raw))).toBeNull();
+    raw.taxLetter.ein = '';
+    expect(signedOffEin(validateConfig(raw))).toBeNull();
+  });
+});
+
+describe('matchingGiftsSearchEnabled', () => {
+  it('is true when a public key is configured', () => {
+    expect(matchingGiftsSearchEnabled(validateConfig(validConfig))).toBe(true);
+  });
+
+  it('is false when the key is null or empty', () => {
+    const raw = structuredClone(validConfig);
+    (raw.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = null;
+    expect(matchingGiftsSearchEnabled(validateConfig(raw))).toBe(false);
+    (raw.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = '';
+    expect(matchingGiftsSearchEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('configuredPrefFields', () => {
+  it('returns every preference field when all three columns are configured', () => {
+    expect(configuredPrefFields(validateConfig(structuredClone(validConfig)))).toEqual([
+      'emailOptOut',
+      'smsOptOut',
+      'doNotMail',
+    ]);
+  });
+
+  it('returns [] while every preference column is a placeholder', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.donorEmailOptOut = 'REPLACE_WITH_COLUMN_ID';
+    cfg.monday.columns.donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
+    cfg.monday.columns.donorDoNotMail = 'REPLACE_WITH_COLUMN_ID';
+    expect(configuredPrefFields(validateConfig(cfg))).toEqual([]);
+  });
+
+  it('returns only the fields whose columns are configured (independent gating)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
+    expect(configuredPrefFields(validateConfig(cfg))).toEqual(['emailOptOut', 'doNotMail']);
   });
 });
 

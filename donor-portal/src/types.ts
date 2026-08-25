@@ -15,7 +15,19 @@ export interface MondayColumns {
   donorPhone: string;
   membershipExpiry: string;
   preferredLanguage: string;
+  donorEmailOptOut: string;
+  donorSmsOptOut: string;
+  donorDoNotMail: string;
+  volunteerDonorLink: string;
+  volunteerHours: string;
+  volunteerDate: string;
+  volunteerJob: string;
+  volunteerStatus: string;
 }
+
+// The three donor-facing communication preferences. Each maps to its own gated checkbox column
+// on the Donors board (see PREF_FIELD_COLUMNS in config.ts) and doubles as a ChangeRequestField.
+export type PrefField = 'emailOptOut' | 'smsOptOut' | 'doNotMail';
 
 export interface TaxLetterConfig {
   orgLegalName: string;
@@ -75,12 +87,63 @@ export interface LetterSettings {
   bodyTemplatesByLocale: Partial<Record<Locale, string>>;
 }
 
+export interface VolunteerHistoryConfig {
+  // Shift statuses that count toward the portal's volunteer history (both the listed shifts and
+  // the total-hours sum). An empty array means "include every status" — for orgs whose
+  // Volunteers board has no status column semantics worth filtering on.
+  completedStatuses: string[];
+}
+
+export interface EventRegistrationColumns {
+  attendeeLink: string;
+  eventLink: string;
+  attended: string;
+}
+
+export interface EventRegistrationsConfig {
+  boardId: number | null;
+  columns: EventRegistrationColumns;
+  eventDateColumnId: string;
+}
+
+export interface FunraiseConfig {
+  manageRecurringUrl: string;
+  renewMembershipUrl: string;
+}
+
+// The resolved, per-link view of FunraiseConfig: null means "not configured, don't render the
+// link" (see funraiseLinks() in config.ts).
+export interface FunraiseLinkUrls {
+  manageRecurringUrl: string | null;
+  renewMembershipUrl: string | null;
+}
+
+export interface PledgeColumns {
+  donorLink: string;
+  pledgedAmount: string;
+  fulfilledAmount: string;
+  status: string;
+  dueDate: string;
+}
+
+export interface PledgesConfig {
+  boardId: number | null;
+  columns: PledgeColumns;
+}
+
+export interface MatchingGiftsConfig {
+  // Double the Donation *public* plugin key — safe to render into HTML by design (it's what
+  // their embed snippet ships to every visitor's browser). Never put a private DTD key here.
+  doubleTheDonationPublicKey: string | null;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
     donorsBoardId: number | null;
     donationsBoardId: number | null;
     organizationsBoardId: number | null;
+    volunteersBoardId: number | null;
     columns: MondayColumns;
   };
   email: {
@@ -100,6 +163,11 @@ export interface Config {
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
   letterCron: LetterCronConfig;
+  volunteerHistory: VolunteerHistoryConfig;
+  eventRegistrations: EventRegistrationsConfig;
+  funraise: FunraiseConfig;
+  pledges: PledgesConfig;
+  matchingGifts: MatchingGiftsConfig;
 }
 
 export interface DonorMatch {
@@ -124,6 +192,24 @@ export interface DonorPortalData {
   membershipExpiry: string;
 }
 
+export interface EventRegistrationRecord {
+  registrationName: string;
+  eventName: string;
+  eventDate: string;
+  attended: boolean;
+}
+
+// All five fields are Monday column text passed through verbatim (same convention as
+// DonationRecord) — amounts stay display strings; any numeric interpretation happens in
+// pledges/loadPledgeData, not here.
+export interface PledgeRecord {
+  name: string;
+  pledged: string;
+  fulfilled: string;
+  status: string;
+  dueDate: string;
+}
+
 export interface DiscountOrganization {
   name: string;
   discountOffered: string;
@@ -136,11 +222,32 @@ export interface DonorContactInfo {
   address: string;
   phone: string;
   preferredLanguage: string;
+  // null = that preference's Donors-board checkbox column isn't configured yet (still the
+  // placeholder id), so the current state is unknowable — distinct from false (unchecked).
+  emailOptOut: boolean | null;
+  smsOptOut: boolean | null;
+  doNotMail: boolean | null;
+}
+
+export interface VolunteerShift {
+  date: string;
+  hours: string;
+  job: string;
+  status: string;
+}
+
+export interface DonorVolunteerHistory {
+  shifts: VolunteerShift[];
+  totalHours: number;
 }
 
 export interface PortalView {
   donors: DonorPortalData[];
   discounts: DiscountOrganization[];
+  // Keyed by donor item id; null when the volunteer-history feature is disabled (unset
+  // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
+  // section for null, a missing key, and an empty shift list alike.
+  volunteerHistory: Record<string, DonorVolunteerHistory> | null;
 }
 
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for

@@ -16,7 +16,7 @@ const row: LetterSendRow = {
 };
 
 const config: Config = {
-  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
+  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
@@ -37,6 +37,27 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
+  eventRegistrations: {
+    boardId: null,
+    columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+    eventDateColumnId: 'ev_date_col',
+  },
+  funraise: {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+  },
+  pledges: {
+    boardId: null,
+    columns: {
+      donorLink: 'REPLACE_WITH_COLUMN_ID',
+      pledgedAmount: 'REPLACE_WITH_COLUMN_ID',
+      fulfilledAmount: 'REPLACE_WITH_COLUMN_ID',
+      status: 'REPLACE_WITH_COLUMN_ID',
+      dueDate: 'REPLACE_WITH_COLUMN_ID',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: null },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },

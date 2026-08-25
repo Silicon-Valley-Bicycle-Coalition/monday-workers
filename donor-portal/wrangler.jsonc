@@ -52,7 +52,7 @@
   "triggers": {
     // Daily run: change_requests/card_tokens retention purges, plus the automatic January
     // letter-email check (runLetterCron — a no-op unless the Letter Settings board arms it;
-    // see README v2.2).
+    // see README v2.3).
     "crons": ["0 9 * * *"]
   },
   "observability": {

@@ -1,5 +1,5 @@
 import rawConfig from '../config/svbc.json';
-import { validateConfig } from './config';
+import { validateConfig, pledgesEnabled } from './config';
 import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
@@ -84,7 +84,13 @@ export default {
         config.monday.columns,
         config.monday.donorsBoardId,
         config.monday.donationsBoardId,
-        config.monday.organizationsBoardId
+        config.monday.organizationsBoardId,
+        // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
+        // non-null assertion below can't fire on a placeholder config.
+        pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
+        // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
+        // null board id rather than querying a sentinel.
+        config.monday.volunteersBoardId
       ),
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),
@@ -107,13 +113,20 @@ export default {
     // Same lazy-validation rationale as fetch() above: config/svbc.json ships with placeholder
     // board/column ids until an operator fills them in, so validation can't happen at import time.
     const config = validateConfig(rawConfig);
+    // No pledges config passed (7th arg defaults to null): no queue consumer reads pledges, so
+    // getPledgesForDonor throws on this client by design. If a future consumer needs pledges,
+    // wire the config here the way fetch() does — don't debug the throw first.
     const monday = new HttpMondayClient(
       config.monday.apiUrl,
       env.MONDAY_API_TOKEN,
       config.monday.columns,
       config.monday.donorsBoardId ?? 0,
       config.monday.donationsBoardId ?? 0,
-      config.monday.organizationsBoardId ?? 0
+      config.monday.organizationsBoardId ?? 0,
+      null,
+      // Same treatment as pledges above: no queue consumer reads volunteer history, and
+      // getVolunteerShiftsForDonor throws its own config error on a null board id.
+      config.monday.volunteersBoardId
     );
 
     await routeQueueBatch(batch, {

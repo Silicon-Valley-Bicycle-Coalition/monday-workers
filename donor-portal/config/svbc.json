@@ -4,6 +4,7 @@
     "donorsBoardId": null,
     "donationsBoardId": null,
     "organizationsBoardId": null,
+    "volunteersBoardId": null,
     "columns": {
       "donorEmail": "REPLACE_WITH_COLUMN_ID",
       "membershipStatus": "REPLACE_WITH_COLUMN_ID",
@@ -18,7 +19,15 @@
       "donorAddress": "REPLACE_WITH_COLUMN_ID",
       "donorPhone": "REPLACE_WITH_COLUMN_ID",
       "membershipExpiry": "REPLACE_WITH_COLUMN_ID",
-      "preferredLanguage": "REPLACE_WITH_COLUMN_ID"
+      "preferredLanguage": "REPLACE_WITH_COLUMN_ID",
+      "donorEmailOptOut": "REPLACE_WITH_COLUMN_ID",
+      "donorSmsOptOut": "REPLACE_WITH_COLUMN_ID",
+      "donorDoNotMail": "REPLACE_WITH_COLUMN_ID",
+      "volunteerDonorLink": "REPLACE_WITH_COLUMN_ID",
+      "volunteerHours": "REPLACE_WITH_COLUMN_ID",
+      "volunteerDate": "REPLACE_WITH_COLUMN_ID",
+      "volunteerJob": "REPLACE_WITH_COLUMN_ID",
+      "volunteerStatus": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {
@@ -56,6 +65,10 @@
     "dedupeWindowHours": 72,
     "retentionDays": 180
   },
+  "funraise": {
+    "manageRecurringUrl": "https://give.funraise.org/login",
+    "renewMembershipUrl": "REPLACE_WITH_FUNRAISE_URL"
+  },
   "cardTokens": {
     "retentionDays": 30
   },
@@ -68,5 +81,30 @@
       "bodyTemplatesByLocale": {}
     },
     "maxTriggersPerRun": 200
+  },
+  "volunteerHistory": {
+    "completedStatuses": ["Completed"]
+  },
+  "eventRegistrations": {
+    "boardId": null,
+    "columns": {
+      "attendeeLink": "REPLACE_WITH_COLUMN_ID",
+      "eventLink": "REPLACE_WITH_COLUMN_ID",
+      "attended": "REPLACE_WITH_COLUMN_ID"
+    },
+    "eventDateColumnId": "REPLACE_WITH_COLUMN_ID"
+  },
+  "pledges": {
+    "boardId": null,
+    "columns": {
+      "donorLink": "REPLACE_WITH_COLUMN_ID",
+      "pledgedAmount": "REPLACE_WITH_COLUMN_ID",
+      "fulfilledAmount": "REPLACE_WITH_COLUMN_ID",
+      "status": "REPLACE_WITH_COLUMN_ID",
+      "dueDate": "REPLACE_WITH_COLUMN_ID"
+    }
+  },
+  "matchingGifts": {
+    "doubleTheDonationPublicKey": null
   }
 }
