@@ -93,12 +93,12 @@ New table (migration `0003_create_card_tokens.sql`):
 CREATE TABLE card_tokens (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   donor_item_id TEXT NOT NULL,
-  token_hash TEXT NOT NULL,
+  token TEXT NOT NULL,
   created_at TEXT NOT NULL,
   revoked_at TEXT
 );
 
-CREATE INDEX idx_card_tokens_hash ON card_tokens (token_hash);
+CREATE INDEX idx_card_tokens_token ON card_tokens (token);
 CREATE INDEX idx_card_tokens_donor ON card_tokens (donor_item_id);
 ```
 
@@ -106,17 +106,23 @@ CREATE INDEX idx_card_tokens_donor ON card_tokens (donor_item_id);
 
 ```ts
 export interface CardTokenStore {
-  createToken(donorItemId: string, tokenHash: string, createdAtISO: string): Promise<void>;
-  findActiveDonorId(tokenHash: string): Promise<string | null>; // null: unknown or revoked
-  getActiveToken(donorItemId: string): Promise<{ tokenHash: string } | null>;
+  createToken(donorItemId: string, token: string, createdAtISO: string): Promise<void>;
+  findActiveDonorId(token: string): Promise<string | null>; // null: unknown or revoked
+  getActiveToken(donorItemId: string): Promise<string | null>;
   revokeAllForDonor(donorItemId: string, revokedAtISO: string): Promise<void>;
 }
 ```
 
-Tokens are generated with the existing `generateToken()` (`src/crypto/token.ts`) and stored
-hashed via the existing `sha256Hex()` (`src/crypto/hash.ts`) — same pattern as sessions and
-magic-links, so a D1 read alone doesn't yield a usable credential. Unlike those, `findActiveDonorId`
-does not consume the token on lookup — a card token is looked up on every scan.
+**Correction from the first draft of this spec:** tokens are stored **in plaintext**, not
+hashed. The session/magic-link pattern (`sha256Hex` before storage) doesn't transfer here: those
+tokens are bearer credentials that must stay secret from everyone but their owner, so a D1 read
+alone must not yield a usable one. A card token is the opposite by design — the donor's whole
+point in generating it is to hand it to a shop via the QR, and `GET /portal/card/:donorItemId`
+must be able to redisplay the *same* QR on a repeat visit (`getActiveToken`), which is only
+possible if the raw value is recoverable, not just its hash. The token's unguessability (32-byte
+random, same `generateToken()` used for sessions/magic-links) and revocability are what carry the
+security weight here, not storage secrecy. `findActiveDonorId` does not consume the token on
+lookup — a card token is looked up on every scan, not once.
 
 **Invariant: at most one active (non-revoked) token per donor at a time.** `GET
 /portal/card/:donorItemId` only calls `createToken` when `getActiveToken` returns null; `POST
@@ -144,7 +150,7 @@ existing active token.
 
 * **`GET /verify/:token`** — public, unauthenticated, mounted at the app root (not under
   `/portal`, since it must work without a session — a shop staff member's phone has no donor
-  session). `findActiveDonorId(await sha256Hex(token))`; unknown or revoked → the same generic
+  session). `findActiveDonorId(token)`; unknown or revoked → the same generic
   "This card is not valid" message either way, mirroring the login flow's email-enumeration guard
   (don't let the response distinguish "never existed" from "revoked"). On a hit, fetches **fresh**
   donor data live from Monday (`getDonorPortalData`) — never trusts anything cached from scan
@@ -168,7 +174,7 @@ Render src/card/cardView.ts → HTML card + inline SVG QR → /verify/:token
 
 Shop scans QR:
 GET /verify/:token
-  │  findActiveDonorId(hash(token)) → 404-equivalent "not valid" if none
+  │  findActiveDonorId(token) → 404-equivalent "not valid" if none
   ▼
 getDonorPortalData(donorItemId)   (fresh Monday read, every scan)
   ▼
