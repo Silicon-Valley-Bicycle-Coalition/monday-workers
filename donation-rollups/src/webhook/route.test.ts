@@ -11,13 +11,42 @@ function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
   };
 }
 
-function post(app: ReturnType<typeof createApp>, body: unknown) {
-  return app.request('/webhooks/monday/donations', {
+function post(app: ReturnType<typeof createApp>, body: unknown, query = '') {
+  return app.request(`/webhooks/monday/donations${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
+
+describe('webhook secret', () => {
+  it('rejects a request missing the configured secret with 401, before touching the body', async () => {
+    const send = vi.fn();
+    const app = createApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: 'shh' });
+    const res = await post(app, { event: { type: 'create_pulse', pulseId: 1, boardId: 1 } });
+    expect(res.status).toBe(401);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('rejects the wrong secret too', async () => {
+    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: 'shh' });
+    const res = await post(app, { challenge: 'abc' }, '?secret=wrong');
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts the correct secret, including for the challenge handshake', async () => {
+    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: 'shh' });
+    const res = await post(app, { challenge: 'abc' }, '?secret=shh');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc' });
+  });
+
+  it('is skipped entirely when no secret is configured (e.g. local dev)', async () => {
+    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() } });
+    const res = await post(app, { challenge: 'abc' });
+    expect(res.status).toBe(200);
+  });
+});
 
 describe('POST /webhooks/monday/donations', () => {
   it('echoes the challenge verbatim during webhook-subscription verification', async () => {

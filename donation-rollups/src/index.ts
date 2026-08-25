@@ -16,6 +16,7 @@ export default {
       queue: {
         send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined),
       },
+      webhookSecret: env.MONDAY_WEBHOOK_SECRET,
     });
     return app.fetch(request, env, ctx);
   },

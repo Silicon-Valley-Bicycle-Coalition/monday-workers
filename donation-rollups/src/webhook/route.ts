@@ -10,6 +10,11 @@ export interface QueueLike {
 export interface AppDeps {
   pendingStore: PendingStore;
   queue: QueueLike;
+  // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard
+  // mitigation is a shared secret embedded in the webhook URL itself, set when
+  // subscribing (e.g. .../webhooks/monday/donations?secret=...) and checked here.
+  // undefined/empty disables the check — never do that outside local dev.
+  webhookSecret?: string;
 }
 
 // Ingest-and-enqueue only, same division of labor as every other webhook-driven
@@ -22,6 +27,10 @@ export function createApp(deps: AppDeps) {
   app.get('/health', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/monday/donations', async (c) => {
+    if (deps.webhookSecret && c.req.query('secret') !== deps.webhookSecret) {
+      return c.json({ ok: false }, 401);
+    }
+
     let body: unknown;
     try {
       body = await c.req.json();
