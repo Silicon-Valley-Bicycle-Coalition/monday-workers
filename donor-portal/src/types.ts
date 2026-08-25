@@ -137,8 +137,8 @@ export interface PortalView {
   donors: DonorPortalData[];
   discounts: DiscountOrganization[];
   // Keyed by donor item id; null when the volunteer-history feature is disabled (unset
-  // volunteersBoardId / placeholder column ids), so views can distinguish "feature off" from
-  // "no shifts on record".
+  // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
+  // section for null, a missing key, and an empty shift list alike.
   volunteerHistory: Record<string, DonorVolunteerHistory> | null;
 }
 

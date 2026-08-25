@@ -50,7 +50,7 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
-    private volunteersBoardId: number,
+    private volunteersBoardId: number | null,
     private fetchFn: typeof fetch = fetch
   ) {}
 
@@ -156,22 +156,25 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
-  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
-    const columnIds = JSON.stringify([this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription]);
-    // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
-    // id (donationDonorLink here) is written from current Monday API v2 knowledge but not
-    // verified against a live account — verify against a real Donations board before deploy
-    // (same caveat already flagged in membership-reminders/src/monday.ts). donorItemId isn't
-    // attacker-reachable today (it's derived from the session, never client-supplied), but it's
-    // passed as a $donorItemId GraphQL variable rather than interpolated, as defense-in-depth
-    // and for consistency with findDonorsByEmail above.
+  // Shared by getDonationsForDonor and getVolunteerShiftsForDonor: fetch every item on
+  // `boardId` whose connect-board column `linkColumnId` links to `donorItemId`, following the
+  // pagination cursor.
+  // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
+  // id is written from current Monday API v2 knowledge but not verified against a live account —
+  // verify against a real board before deploy (same caveat already flagged in
+  // membership-reminders/src/monday.ts). donorItemId isn't attacker-reachable today (it's
+  // derived from the session, never client-supplied), but it's passed as a $donorItemId GraphQL
+  // variable rather than interpolated, as defense-in-depth and for consistency with
+  // findDonorsByEmail above.
+  private async fetchLinkedItems(boardId: number, linkColumnId: string, donorItemId: string, columnIdList: string[]): Promise<MondayItem[]> {
+    const columnIds = JSON.stringify(columnIdList);
     const firstPageQuery = `
       query ($boardId: ID!, $donorItemId: String!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 500,
             query_params: {
-              rules: [{ column_id: "${this.columns.donationDonorLink}", compare_value: [$donorItemId], operator: any_of }]
+              rules: [{ column_id: "${linkColumnId}", compare_value: [$donorItemId], operator: any_of }]
             }
           ) {
             cursor
@@ -191,20 +194,33 @@ export class HttpMondayClient implements MondayClient {
 
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
-    }>(firstPageQuery, { boardId: this.donationsBoardId, donorItemId });
+    }>(firstPageQuery, { boardId, donorItemId });
     const firstPage = firstData.boards[0]?.items_page;
     const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
     let cursor = firstPage?.cursor ?? null;
 
     while (cursor) {
       const nextData = await this.request<{
-        next_items_page: { cursor: string | null; items: MondayItem[] };
+        next_items_page: { cursor: string | null; items: MondayItem[] } | null;
       }>(nextPageQuery, { cursor });
-      allItems.push(...nextData.next_items_page.items);
-      cursor = nextData.next_items_page.cursor;
+      // A null next_items_page (expired/invalid cursor) ends pagination with what we have
+      // rather than throwing mid-page and failing the whole read.
+      const nextPage = nextData.next_items_page;
+      if (!nextPage) break;
+      allItems.push(...nextPage.items);
+      cursor = nextPage.cursor;
     }
 
-    return allItems.map((item) => ({
+    return allItems;
+  }
+
+  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
+    const items = await this.fetchLinkedItems(this.donationsBoardId, this.columns.donationDonorLink, donorItemId, [
+      this.columns.donationAmount,
+      this.columns.donationDate,
+      this.columns.donationDescription,
+    ]);
+    return items.map((item) => ({
       amount: columnText(item, this.columns.donationAmount),
       date: columnText(item, this.columns.donationDate),
       description: columnText(item, this.columns.donationDescription),
@@ -212,57 +228,30 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
-    // Same items_page/next_items_page pagination and connect-board filter shape as
-    // getDonationsForDonor above — including its NOTE about the query_params.rules shape being
-    // unverified against a live account, and donorItemId traveling as a GraphQL variable as
-    // defense-in-depth. Only called when volunteerHistoryEnabled(config) is true, so
-    // volunteersBoardId and the volunteer column ids are real (non-placeholder) here.
-    const columnIds = JSON.stringify([
+    // In-client defense mirroring the placeholder guards in findDonorsByEmail and
+    // getDonorPortalData: routes.ts's volunteerHistoryEnabled gate is the intended entry
+    // condition, but a future caller that misses it must fail loudly here rather than ship the
+    // literal placeholder string (or a sentinel board id) to Monday's API.
+    const volunteerColumns = [
+      this.columns.volunteerDonorLink,
+      this.columns.volunteerHours,
+      this.columns.volunteerDate,
+      this.columns.volunteerJob,
+      this.columns.volunteerStatus,
+    ];
+    if (this.volunteersBoardId === null || volunteerColumns.some((id) => id === 'REPLACE_WITH_COLUMN_ID')) {
+      throw new Error(
+        'monday: volunteer history is not configured (monday.volunteersBoardId and every monday.columns.volunteer* id must be set) — gate calls with volunteerHistoryEnabled(config)'
+      );
+    }
+
+    const items = await this.fetchLinkedItems(this.volunteersBoardId, this.columns.volunteerDonorLink, donorItemId, [
       this.columns.volunteerHours,
       this.columns.volunteerDate,
       this.columns.volunteerJob,
       this.columns.volunteerStatus,
     ]);
-    const firstPageQuery = `
-      query ($boardId: ID!, $donorItemId: String!) {
-        boards(ids: [$boardId]) {
-          items_page(
-            limit: 500,
-            query_params: {
-              rules: [{ column_id: "${this.columns.volunteerDonorLink}", compare_value: [$donorItemId], operator: any_of }]
-            }
-          ) {
-            cursor
-            items { id column_values(ids: ${columnIds}) { id text } }
-          }
-        }
-      }
-    `;
-    const nextPageQuery = `
-      query ($cursor: String!) {
-        next_items_page(cursor: $cursor, limit: 500) {
-          cursor
-          items { id column_values(ids: ${columnIds}) { id text } }
-        }
-      }
-    `;
-
-    const firstData = await this.request<{
-      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
-    }>(firstPageQuery, { boardId: this.volunteersBoardId, donorItemId });
-    const firstPage = firstData.boards[0]?.items_page;
-    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
-    let cursor = firstPage?.cursor ?? null;
-
-    while (cursor) {
-      const nextData = await this.request<{
-        next_items_page: { cursor: string | null; items: MondayItem[] };
-      }>(nextPageQuery, { cursor });
-      allItems.push(...nextData.next_items_page.items);
-      cursor = nextData.next_items_page.cursor;
-    }
-
-    return allItems.map((item) => ({
+    return items.map((item) => ({
       hours: columnText(item, this.columns.volunteerHours),
       date: columnText(item, this.columns.volunteerDate),
       job: columnText(item, this.columns.volunteerJob),

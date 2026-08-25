@@ -1395,7 +1395,16 @@ describe('GET /:locale/portal volunteer history gate', () => {
   it('renders the status-filtered volunteer history once volunteersBoardId is configured', async () => {
     const monday = mondayWithShifts();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4 } };
+    // Realistic column ids, not the shared fixture's empty-object columns: the gate's column
+    // half must pass because the ids are configured, not because they're absent.
+    const volunteerColumns = {
+      volunteerDonorLink: 'vol_link_col',
+      volunteerHours: 'vol_hours_col',
+      volunteerDate: 'vol_date_col',
+      volunteerJob: 'vol_job_col',
+      volunteerStatus: 'vol_status_col',
+    } as never;
+    const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4, columns: volunteerColumns } };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 

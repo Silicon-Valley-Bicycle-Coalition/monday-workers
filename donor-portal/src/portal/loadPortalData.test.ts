@@ -45,6 +45,17 @@ describe('loadPortalData', () => {
     expect(result.volunteerHistory).toBeNull();
   });
 
+  it('degrades to volunteerHistory null (rest of the page intact) when the Volunteers read fails', async () => {
+    const monday = fakeMonday();
+    (monday.getVolunteerShiftsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 403'));
+
+    const result = await loadPortalData(['donor-1'], monday, { enabled: true, completedStatuses: ['Completed'] });
+
+    expect(result.volunteerHistory).toBeNull();
+    expect(result.donors).toHaveLength(1);
+    expect(result.discounts).toEqual([{ name: 'Local Bikes', discountOffered: '10% off' }]);
+  });
+
   it('builds a per-donor volunteer history when enabled', async () => {
     const monday = fakeMonday({
       'donor-1': [

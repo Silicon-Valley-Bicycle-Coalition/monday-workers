@@ -112,6 +112,12 @@ export function validateConfig(raw: unknown): Config {
   }
 
   const monday = requireObject(cfg, 'monday');
+  // volunteersBoardId must exist as an explicit number-or-null: volunteerHistoryEnabled gates
+  // on it, and a missing key (undefined) or a string id would otherwise slip past a `=== null`
+  // check and send Monday a query against board 0.
+  if (!('volunteersBoardId' in monday) || (monday.volunteersBoardId !== null && typeof monday.volunteersBoardId !== 'number')) {
+    throw new Error('config: "monday.volunteersBoardId" must be a number or null');
+  }
   const columns = requireObject(monday, 'columns');
   requireKeys(columns, 'monday.columns', REQUIRED_COLUMNS);
   requireNoPlaceholderColumns(columns);
@@ -183,6 +189,8 @@ export function cardEnabled(config: Config): boolean {
 }
 
 export function volunteerHistoryEnabled(config: Config): boolean {
-  if (config.monday.volunteersBoardId === null) return false;
+  // typeof check (not === null) so a missing/undefined or mistyped board id counts as disabled
+  // rather than enabled-against-board-0.
+  if (typeof config.monday.volunteersBoardId !== 'number') return false;
   return VOLUNTEER_COLUMNS.every((key) => config.monday.columns[key] !== PLACEHOLDER_COLUMN_VALUE);
 }

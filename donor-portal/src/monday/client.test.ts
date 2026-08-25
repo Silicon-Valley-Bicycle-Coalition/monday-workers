@@ -327,6 +327,61 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('throws a config error (before any fetch) when the board id is null', async () => {
+    const fetchMock = fetchReturning({ data: {} });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, fetchMock);
+
+    await expect(client.getVolunteerShiftsForDonor('donor-1')).rejects.toThrow(/not configured/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('throws a config error (before any fetch) when a volunteer column is still the placeholder', async () => {
+    const fetchMock = fetchReturning({ data: {} });
+    const placeholderColumns: MondayColumns = { ...columns, volunteerStatus: 'REPLACE_WITH_COLUMN_ID' };
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, 3, fetchMock);
+
+    await expect(client.getVolunteerShiftsForDonor('donor-1')).rejects.toThrow(/not configured/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('ends pagination gracefully when next_items_page comes back null (expired cursor)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: 'stale-cursor',
+                  items: [
+                    {
+                      id: 'shift-1',
+                      column_values: [
+                        { id: 'vol_hours_col', text: '2' },
+                        { id: 'vol_date_col', text: '2026-01-10' },
+                        { id: 'vol_job_col', text: 'Tabling' },
+                        { id: 'vol_status_col', text: 'Completed' },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
+
+    const shifts = await client.getVolunteerShiftsForDonor('donor-1');
+
+    expect(shifts).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('passes the donor item id as a GraphQL variable, not interpolated into the query', async () => {
     let captured: { query: string; variables: Record<string, unknown> } | null = null;
     const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {

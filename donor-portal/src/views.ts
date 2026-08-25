@@ -78,19 +78,19 @@ function donationRow(donation: PortalView['donors'][number]['donations'][number]
 // Rendered only when the feature is enabled AND this donor has at least one qualifying shift —
 // a donor who never volunteered shouldn't see an empty "Volunteer history" table, and while the
 // feature is config-gated off (volunteerHistory null) the portal looks exactly as it did before.
-function volunteerHistorySection(history: DonorVolunteerHistory | undefined, locale: Locale): string {
-  if (!history || history.shifts.length === 0) return '';
-  const rows = history.shifts
-    .map(
-      (shift) => `
+function volunteerShiftRow(shift: DonorVolunteerHistory['shifts'][number]): string {
+  return `
     <tr>
       <td>${escapeHtml(shift.date)}</td>
       <td>${escapeHtml(shift.job)}</td>
       <td>${escapeHtml(shift.hours)}</td>
     </tr>
-  `
-    )
-    .join('');
+  `;
+}
+
+function volunteerHistorySection(history: DonorVolunteerHistory | undefined, locale: Locale): string {
+  if (!history || history.shifts.length === 0) return '';
+  const rows = history.shifts.map(volunteerShiftRow).join('');
   return `
       <h3>${escapeHtml(t(locale, 'portal.volunteerHeading'))}</h3>
       <p>${escapeHtml(t(locale, 'portal.volunteerTotalHours', { hours: String(history.totalHours) }))}</p>

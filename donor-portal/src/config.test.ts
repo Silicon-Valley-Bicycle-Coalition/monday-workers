@@ -279,6 +279,18 @@ describe('volunteerHistory config section', () => {
     expect(() => validateConfig(cfg)).not.toThrow();
   });
 
+  it('rejects a config missing monday.volunteersBoardId entirely (undefined must not read as enabled)', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday as Record<string, unknown>).volunteersBoardId;
+    expect(() => validateConfig(cfg)).toThrow(/volunteersBoardId/);
+  });
+
+  it('rejects a volunteersBoardId that is neither a number nor null', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.monday as { volunteersBoardId: unknown }).volunteersBoardId = '456';
+    expect(() => validateConfig(cfg)).toThrow(/volunteersBoardId/);
+  });
+
   it('rejects a config missing a volunteer column entirely', () => {
     const cfg = structuredClone(validConfig);
     delete (cfg.monday.columns as Record<string, unknown>).volunteerHours;

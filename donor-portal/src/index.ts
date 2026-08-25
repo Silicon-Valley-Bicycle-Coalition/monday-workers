@@ -84,9 +84,9 @@ export default {
         config.monday.donorsBoardId,
         config.monday.donationsBoardId,
         config.monday.organizationsBoardId,
-        // Safe as 0 while unset: getVolunteerShiftsForDonor is only reachable when
-        // volunteerHistoryEnabled(config) is true, which requires a real volunteersBoardId.
-        config.monday.volunteersBoardId ?? 0
+        // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
+        // null board id rather than querying a sentinel.
+        config.monday.volunteersBoardId
       ),
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),
@@ -116,7 +116,7 @@ export default {
       config.monday.donorsBoardId ?? 0,
       config.monday.donationsBoardId ?? 0,
       config.monday.organizationsBoardId ?? 0,
-      config.monday.volunteersBoardId ?? 0
+      config.monday.volunteersBoardId
     );
 
     await routeQueueBatch(batch, {
