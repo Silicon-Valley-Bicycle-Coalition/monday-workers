@@ -12,6 +12,7 @@ export interface MondayColumns {
   donorAddress: string;
   donorPhone: string;
   membershipExpiry: string;
+  preferredLanguage: string;
 }
 
 export interface TaxLetterConfig {
@@ -68,6 +69,7 @@ export interface Config {
 export interface DonorMatch {
   id: string;
   name: string;
+  preferredLanguage: string;
 }
 
 export interface DonationRecord {
@@ -97,6 +99,7 @@ export interface DonorContactInfo {
   email: string;
   address: string;
   phone: string;
+  preferredLanguage: string;
 }
 
 export interface PortalView {

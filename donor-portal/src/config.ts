@@ -25,6 +25,11 @@ const V2_DONOR_COLUMNS: (keyof MondayColumns)[] = ['donorAddress', 'donorPhone']
 // *presence* only, not placeholder-freedom — same treatment as V2_DONOR_COLUMNS.
 const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 
+// PREFERRED_LANGUAGE_COLUMN deliberately isn't merged into REQUIRED_COLUMNS: this column only
+// matters to the i18n feature, which is gated, not deploy-blocking. Checked for *presence* only,
+// not placeholder-freedom — same treatment as CARD_COLUMNS.
+const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage'];
+
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
@@ -89,6 +94,7 @@ export function validateConfig(raw: unknown): Config {
   requireNoPlaceholderColumns(columns);
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
+  requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
 
   const resend = requireObject(cfg, 'resend');
   requireKeys(resend, 'resend', REQUIRED_RESEND_KEYS);

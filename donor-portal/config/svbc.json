@@ -17,7 +17,8 @@
       "discountActive": "REPLACE_WITH_COLUMN_ID",
       "donorAddress": "REPLACE_WITH_COLUMN_ID",
       "donorPhone": "REPLACE_WITH_COLUMN_ID",
-      "membershipExpiry": "REPLACE_WITH_COLUMN_ID"
+      "membershipExpiry": "REPLACE_WITH_COLUMN_ID",
+      "preferredLanguage": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "resend": {
