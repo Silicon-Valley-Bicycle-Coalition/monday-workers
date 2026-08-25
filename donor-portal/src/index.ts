@@ -9,7 +9,9 @@ import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
-import type { Env, ChangeQueueMessage } from './types';
+import { D1LetterSendStore } from './db/letterSends';
+import { processLetterSendBatch } from './letters/processLetterSendBatch';
+import type { Env, ChangeQueueMessage, LetterSendQueueMessage } from './types';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -42,26 +44,48 @@ export default {
       now: () => new Date(),
       changeStore: new D1ChangeRequestStore(env.DB),
       changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
+      letterSendStore: new D1LetterSendStore(env.DB),
+      letterQueue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
+      letterWebhookSecret: env.LETTER_WEBHOOK_SECRET,
     });
     return app.fetch(request, env, ctx);
   },
 
-  async queue(batch: MessageBatch<ChangeQueueMessage>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<ChangeQueueMessage> | MessageBatch<LetterSendQueueMessage>, env: Env): Promise<void> {
     // Same lazy-validation rationale as fetch() above: config/svbc.json ships with placeholder
     // board/column ids until an operator fills them in, so validation can't happen at import time.
     const config = validateConfig(rawConfig);
-    await processChangeQueueBatch([...batch.messages], {
-      store: new D1ChangeRequestStore(env.DB),
-      monday: new HttpMondayClient(
-        config.monday.apiUrl,
-        env.MONDAY_API_TOKEN,
-        config.monday.columns,
-        config.monday.donorsBoardId ?? 0,
-        config.monday.donationsBoardId ?? 0,
-        config.monday.organizationsBoardId ?? 0
-      ),
-      config,
-    });
+    const monday = new HttpMondayClient(
+      config.monday.apiUrl,
+      env.MONDAY_API_TOKEN,
+      config.monday.columns,
+      config.monday.donorsBoardId ?? 0,
+      config.monday.donationsBoardId ?? 0,
+      config.monday.organizationsBoardId ?? 0
+    );
+
+    if (batch.queue === 'donor-portal-change-requests') {
+      await processChangeQueueBatch([...(batch as MessageBatch<ChangeQueueMessage>).messages], {
+        store: new D1ChangeRequestStore(env.DB),
+        monday,
+        config,
+      });
+      return;
+    }
+
+    if (batch.queue === 'donor-portal-letter-emails') {
+      await processLetterSendBatch([...(batch as MessageBatch<LetterSendQueueMessage>).messages], {
+        store: new D1LetterSendStore(env.DB),
+        monday,
+        tokenStore: new D1MagicLinkTokenStore(env.DB),
+        emailSender: new ResendEmailSender(env.RESEND_API_KEY, config.resend.fromAddress, config.resend.fromName),
+        config,
+        now: () => new Date(),
+      });
+      return;
+    }
+
+    throw new Error(`donor-portal queue: unrecognized queue "${batch.queue}"`);
   },
 
   // Retention purge: see purgeExpiredChangeRequests for why 'written' rows are deleted and
