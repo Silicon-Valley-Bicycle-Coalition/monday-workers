@@ -60,6 +60,11 @@ const config: Config = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: null },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
+    maxTriggersPerRun: 200,
+  },
 };
 
 function makeMessage(requestId: number) {

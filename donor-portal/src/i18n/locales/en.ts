@@ -156,8 +156,16 @@ export const en = {
   'matchingGifts.searchHint': 'Search for your employer below to check their matching-gift policy and find submission instructions.',
   'matchingGifts.searchUnavailable': 'An employer search will appear here once it is set up. In the meantime, your HR or payroll team can tell you whether your gifts are matched.',
 
-  // Login email (src/email/resend.ts)
+  // Login email (src/email/cloudflareEmail.ts)
   'email.subject': 'Your SVBC donor portal login link',
   'email.bodyIntro': 'Click below to log in to the donor portal. This link expires soon and can only be used once.',
   'email.loginButton': 'Log in',
+
+  // Letter-ready email (src/email/cloudflareEmail.ts) — the built-in copy used when the Letter
+  // Settings board has no template for the donor's locale.
+  'letterReady.subject': 'Your {{year}} SVBC giving letter is ready',
+  'letterReady.greeting': 'Hi {{donorName}},',
+  'letterReady.body': 'Your {{year}} giving letter is ready to view in your donor portal.',
+  'letterReady.loginLink': 'Log in to view it',
+  'letterReady.expiry': 'This link expires soon and can only be used once.',
 } as const;

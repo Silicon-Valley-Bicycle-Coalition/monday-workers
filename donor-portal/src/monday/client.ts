@@ -7,16 +7,20 @@ import type {
   DonorPortalData,
   EventRegistrationColumns,
   EventRegistrationRecord,
+  LetterCronColumns,
+  LetterSettings,
   MondayColumns,
   PledgeColumns,
   PledgeRecord,
   VolunteerShift,
 } from '../types';
+import type { Locale } from '../i18n/locales';
 
 interface MondayColumnValue {
   id: string;
   text: string | null;
-  linked_item_ids?: string[];
+  checked?: boolean; // CheckboxValue fragment
+  linked_item_ids?: string[]; // BoardRelationValue fragment
 }
 
 interface MondayItem {
@@ -62,6 +66,8 @@ export interface MondayClient {
     columns: EventRegistrationColumns;
     eventDateColumnId: string;
   }): Promise<EventRegistrationRecord[]>;
+  getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null>;
+  listDonorIdsWithDonationsInYear(year: number): Promise<string[]>;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -498,5 +504,124 @@ export class HttpMondayClient implements MondayClient {
       itemName: params.itemName,
       columnValues: JSON.stringify(columnValues),
     });
+  }
+
+  async getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null> {
+    // The Letter Settings board holds a single staff-edited item, "Letter emails" (see
+    // scripts/create-letter-settings-board.mjs). Prefer that item by name and only fall back to
+    // the board's first item — Monday's board-creation template seeds default items ("Task 1")
+    // that sort ahead of the real settings item, a failure observed live on the sandbox board.
+    // Checkbox state comes from the CheckboxValue fragment's `checked` field rather than the
+    // display text — Monday renders an unchecked box as null text and a checked one as "v",
+    // neither of which is worth string-matching on.
+    const localeColumnEntries = Object.entries(params.columns.bodyTemplatesByLocale) as [Locale, string][];
+    const columnIds = [
+      params.columns.autoSend,
+      params.columns.startDate,
+      params.columns.bodyTemplate,
+      ...localeColumnEntries.map(([, columnId]) => columnId),
+    ];
+    const query = `
+      query ($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          items_page(limit: 25) {
+            items {
+              id
+              name
+              column_values(ids: ${JSON.stringify(columnIds)}) {
+                id
+                text
+                ... on CheckboxValue { checked }
+              }
+            }
+          }
+        }
+      }
+    `;
+    const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
+      boardId: params.boardId,
+    });
+    const items = data.boards[0]?.items_page.items ?? [];
+    const named = items.find((i) => i.name === 'Letter emails');
+    if (!named && items.length > 0) {
+      console.warn(
+        `monday: Letter Settings board ${params.boardId} has no item named "Letter emails" — falling back to its first item ("${items[0]!.name}")`
+      );
+    }
+    const item = named ?? items[0];
+    if (!item) return null;
+    const autoSendValue = (item.column_values ?? []).find((c) => c.id === params.columns.autoSend);
+    const bodyTemplatesByLocale: Partial<Record<Locale, string>> = {};
+    for (const [locale, columnId] of localeColumnEntries) {
+      const text = columnText(item, columnId);
+      if (text.trim().length > 0) {
+        bodyTemplatesByLocale[locale] = text;
+      }
+    }
+    return {
+      autoSend: autoSendValue?.checked === true,
+      startDate: columnText(item, params.columns.startDate),
+      bodyTemplate: columnText(item, params.columns.bodyTemplate),
+      bodyTemplatesByLocale,
+    };
+  }
+
+  async listDonorIdsWithDonationsInYear(year: number): Promise<string[]> {
+    // Backs the January letter cron: one ids-only sweep of the Donations board bounded to the
+    // target year, instead of a getDonorPortalData call per Donors-board item. The date-column
+    // `between` rules shape (with the CheckboxValue/BoardRelationValue fragments this file
+    // uses) was verified live on 2026-08-25 against the sandbox Donations board (18427756119) —
+    // unlike the other rules-shape NOTEs in this file, this one is confirmed working. The
+    // client-side year check below stays as a correctness backstop regardless.
+    const columnIds = JSON.stringify([this.columns.donationDate, this.columns.donationDonorLink]);
+    const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
+    const firstPageQuery = `
+      query ($boardId: ID!, $from: String!, $to: String!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${this.columns.donationDate}", compare_value: [$from, $to], operator: between }]
+            }
+          ) {
+            cursor
+            ${itemFields}
+          }
+        }
+      }
+    `;
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          ${itemFields}
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId: this.donationsBoardId, from: `${year}-01-01`, to: `${year}-12-31` });
+    const firstPage = firstData.boards[0]?.items_page;
+    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      allItems.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    const donorIds = new Set<string>();
+    for (const item of allItems) {
+      if (!columnText(item, this.columns.donationDate).startsWith(`${year}-`)) continue;
+      const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
+      for (const donorId of link?.linked_item_ids ?? []) {
+        donorIds.add(donorId);
+      }
+    }
+    return [...donorIds];
   }
 }

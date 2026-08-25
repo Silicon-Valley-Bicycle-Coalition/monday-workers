@@ -1,3 +1,5 @@
+import type { Locale } from './i18n/locales';
+
 export interface MondayColumns {
   donorEmail: string;
   membershipStatus: string;
@@ -55,6 +57,34 @@ export interface ChangeRequestsConfig {
 
 export interface CardTokensConfig {
   retentionDays: number;
+}
+
+export interface LetterCronColumns {
+  autoSend: string;
+  startDate: string;
+  // The default/fallback template column, used for any locale without its own entry below.
+  bodyTemplate: string;
+  // Optional per-locale template columns (created by scripts/create-letter-settings-board.mjs
+  // --add-locale-columns). A locale absent here, or whose column is blank, falls back to
+  // bodyTemplate, then to the localized built-in copy.
+  bodyTemplatesByLocale: Partial<Record<Locale, string>>;
+}
+
+export interface LetterCronConfig {
+  boardId: number | null;
+  columns: LetterCronColumns;
+  maxTriggersPerRun: number;
+}
+
+// The staff-editable state read from the Letter Settings board at cron time (and, for the
+// templates, per letter-email batch) — see scripts/create-letter-settings-board.mjs.
+export interface LetterSettings {
+  autoSend: boolean;
+  startDate: string; // 'YYYY-MM-DD', or '' when the date column is empty
+  bodyTemplate: string;
+  // Only locales whose column holds text appear here — blank columns are omitted so callers
+  // fall through to bodyTemplate.
+  bodyTemplatesByLocale: Partial<Record<Locale, string>>;
 }
 
 export interface VolunteerHistoryConfig {
@@ -132,6 +162,7 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  letterCron: LetterCronConfig;
   volunteerHistory: VolunteerHistoryConfig;
   eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;

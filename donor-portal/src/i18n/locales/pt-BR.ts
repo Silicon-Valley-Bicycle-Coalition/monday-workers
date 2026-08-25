@@ -160,4 +160,9 @@ export const ptBR: Record<TranslationKey, string> = {
   'matchingGifts.einLine': 'Você pode precisar do nosso número de identificação fiscal (EIN) para o formulário: {{ein}}',
   'matchingGifts.searchHint': 'Pesquise seu empregador abaixo para conferir a política de doações correspondentes e as instruções de envio.',
   'matchingGifts.searchUnavailable': 'Uma busca de empregadores aparecerá aqui quando estiver configurada. Enquanto isso, sua equipe de RH ou folha de pagamento pode dizer se suas doações são igualadas.',
+  'letterReady.subject': 'Sua carta de doações {{year}} da SVBC está pronta',
+  'letterReady.greeting': 'Olá, {{donorName}},',
+  'letterReady.body': 'Sua carta de doações de {{year}} já está disponível no portal do doador.',
+  'letterReady.loginLink': 'Entre para vê-la',
+  'letterReady.expiry': 'Este link expira em breve e só pode ser usado uma vez.',
 } satisfies Record<TranslationKey, string>;

@@ -160,4 +160,9 @@ export const hi: Record<TranslationKey, string> = {
   'matchingGifts.einLine': 'फ़ॉर्म के लिए आपको हमारा टैक्स ID (EIN) चाहिए हो सकता है: {{ein}}',
   'matchingGifts.searchHint': 'अपने नियोक्ता की मैचिंग-गिफ़्ट नीति और जमा करने के निर्देश देखने के लिए नीचे खोजें।',
   'matchingGifts.searchUnavailable': 'नियोक्ता खोज सुविधा सेट होते ही यहाँ दिखेगी। तब तक, आपकी HR या पेरोल टीम बता सकती है कि आपके दान मैच होते हैं या नहीं।',
+  'letterReady.subject': 'आपका {{year}} SVBC दान पत्र तैयार है',
+  'letterReady.greeting': 'नमस्ते {{donorName}},',
+  'letterReady.body': 'आपका {{year}} का दान पत्र अब डोनर पोर्टल में देखने के लिए तैयार है।',
+  'letterReady.loginLink': 'देखने के लिए लॉग इन करें',
+  'letterReady.expiry': 'यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
 } satisfies Record<TranslationKey, string>;

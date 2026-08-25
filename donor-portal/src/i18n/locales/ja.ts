@@ -160,4 +160,9 @@ export const ja: Record<TranslationKey, string> = {
   'matchingGifts.einLine': '申請フォームには当団体の税務番号(EIN)が必要な場合があります: {{ein}}',
   'matchingGifts.searchHint': '下の検索で勤務先のマッチングギフト制度と申請方法をご確認ください。',
   'matchingGifts.searchUnavailable': '勤務先検索は設定が完了次第ここに表示されます。それまでは、人事・給与担当部署に寄付がマッチング対象かどうかをご確認ください。',
+  'letterReady.subject': '{{year}}年のSVBC寄付証明レターの準備ができました',
+  'letterReady.greeting': '{{donorName}}様',
+  'letterReady.body': '{{year}}年の寄付証明レターを寄付者ポータルでご覧いただけます。',
+  'letterReady.loginLink': 'ログインして確認する',
+  'letterReady.expiry': 'このリンクは有効期限が短く、1回のみご利用いただけます。',
 } satisfies Record<TranslationKey, string>;

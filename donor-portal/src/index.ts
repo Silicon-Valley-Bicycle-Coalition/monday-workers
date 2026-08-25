@@ -12,6 +12,7 @@ import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
 import { D1LetterSendStore } from './db/letterSends';
 import { processLetterSendBatch } from './letters/processLetterSendBatch';
+import { runLetterCron } from './letters/runLetterCron';
 import type { Env, ChangeQueueMessage, LetterSendQueueMessage, Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
@@ -164,6 +165,32 @@ export default {
     if (purgedCardTokens > 0) {
       console.log(
         `donor-portal scheduled: purged ${purgedCardTokens} revoked card_tokens rows past the ${config.cardTokens.retentionDays}-day retention window`
+      );
+    }
+
+    // Automatic January letter emails — gated entirely inside runLetterCron (letterCron config
+    // filled in, taxLetter signed off, and the Letter Settings board's Auto-send checkbox +
+    // start date), so on most days this is one cheap settings read and a no-op.
+    const cronResult = await runLetterCron({
+      monday: new HttpMondayClient(
+        config.monday.apiUrl,
+        env.MONDAY_API_TOKEN,
+        config.monday.columns,
+        config.monday.donorsBoardId ?? 0,
+        config.monday.donationsBoardId ?? 0,
+        config.monday.organizationsBoardId ?? 0
+      ),
+      letterStore: new D1LetterSendStore(env.DB),
+      queue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
+      config,
+      now: () => new Date(),
+    });
+    // 'skipped' is the everyday quiet path; 'error' already logged inside runLetterCron.
+    if (cronResult.kind === 'ran') {
+      console.log(
+        `donor-portal letter cron: year ${cronResult.year} — ${cronResult.eligible} eligible, ` +
+          `${cronResult.alreadyHandled} already handled, ${cronResult.triggered} queued, ` +
+          `${cronResult.failed} failed, ${cronResult.deferred} deferred to tomorrow's run`
       );
     }
   },

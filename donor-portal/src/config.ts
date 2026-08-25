@@ -1,4 +1,5 @@
 import type { Config, FunraiseLinkUrls, MondayColumns, PrefField } from './types';
+import { isLocale } from './i18n/locales';
 
 const REQUIRED_TOP_LEVEL = [
   'monday',
@@ -13,6 +14,7 @@ const REQUIRED_TOP_LEVEL = [
   'funraise',
   'pledges',
   'matchingGifts',
+  'letterCron',
 ] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
@@ -88,6 +90,8 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+const REQUIRED_LETTER_CRON_KEYS = ['boardId', 'columns', 'maxTriggersPerRun'] as const;
+const REQUIRED_LETTER_CRON_COLUMNS = ['autoSend', 'startDate', 'bodyTemplate'] as const;
 const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
 // Presence-checked only, never placeholder-checked: event registrations are gated
 // (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
@@ -180,6 +184,19 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
+  const letterCron = requireObject(cfg, 'letterCron');
+  requireKeys(letterCron, 'letterCron', REQUIRED_LETTER_CRON_KEYS);
+  const letterCronColumns = requireObject(letterCron, 'columns', 'letterCron.columns');
+  requireKeys(letterCronColumns, 'letterCron.columns', REQUIRED_LETTER_CRON_COLUMNS);
+  const byLocale = requireObject(letterCronColumns, 'bodyTemplatesByLocale', 'letterCron.columns.bodyTemplatesByLocale');
+  for (const key of Object.keys(byLocale)) {
+    if (!isLocale(key)) {
+      throw new Error(`config: "letterCron.columns.bodyTemplatesByLocale" has unsupported locale key "${key}"`);
+    }
+  }
+  if (typeof letterCron.maxTriggersPerRun !== 'number' || letterCron.maxTriggersPerRun <= 0) {
+    throw new Error('config: "letterCron.maxTriggersPerRun" must be a positive number');
+  }
   const volunteerHistory = requireObject(cfg, 'volunteerHistory');
   requireKeys(volunteerHistory, 'volunteerHistory', REQUIRED_VOLUNTEER_HISTORY_KEYS);
   const completedStatuses = volunteerHistory.completedStatuses;
@@ -253,6 +270,17 @@ export function configuredPrefFields(config: Config): PrefField[] {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+// True once an operator has created the Letter Settings board (scripts/
+// create-letter-settings-board.mjs) and filled in its ids. Distinct from lettersEnabled: that
+// gate is the IRS-language signoff, this one is board plumbing — the January cron needs both.
+export function letterCronConfigured(config: Config): boolean {
+  const lc = config.letterCron;
+  if (lc.boardId === null) return false;
+  return [lc.columns.autoSend, lc.columns.startDate, lc.columns.bodyTemplate].every(
+    (c) => c !== PLACEHOLDER_COLUMN_VALUE
+  );
 }
 
 export function volunteerHistoryEnabled(config: Config): boolean {

@@ -160,4 +160,9 @@ export const fil: Record<TranslationKey, string> = {
   'matchingGifts.einLine': 'Maaaring kailanganin mo ang aming tax ID (EIN) para sa form: {{ein}}',
   'matchingGifts.searchHint': 'Hanapin ang iyong employer sa ibaba para tingnan ang kanilang matching-gift policy at makita ang mga tagubilin sa pagsusumite.',
   'matchingGifts.searchUnavailable': 'Lalabas dito ang paghahanap ng employer kapag naisaayos na ito. Pansamantala, masasabi ng iyong HR o payroll team kung tinutugma ang iyong mga donasyon.',
+  'letterReady.subject': 'Handa na ang iyong {{year}} SVBC giving letter',
+  'letterReady.greeting': 'Hi {{donorName}},',
+  'letterReady.body': 'Handa nang tingnan ang iyong {{year}} giving letter sa donor portal.',
+  'letterReady.loginLink': 'Mag-log in para tingnan ito',
+  'letterReady.expiry': 'Malapit na mag-expire ang link na ito at isang beses lang magagamit.',
 } satisfies Record<TranslationKey, string>;

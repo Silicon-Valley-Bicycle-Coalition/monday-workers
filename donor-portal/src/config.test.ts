@@ -11,6 +11,7 @@ import {
   configuredPrefFields,
   volunteerHistoryEnabled,
   eventsEnabled,
+  letterCronConfigured,
 } from './config';
 
 const validConfig = {
@@ -96,6 +97,16 @@ const validConfig = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
+  letterCron: {
+    boardId: 456,
+    columns: {
+      autoSend: 'checkbox_1',
+      startDate: 'date_2',
+      bodyTemplate: 'long_text_1',
+      bodyTemplatesByLocale: { es: 'long_text_es' },
+    },
+    maxTriggersPerRun: 200,
+  },
 };
 
 describe('validateConfig', () => {
@@ -518,6 +529,50 @@ describe('pledges + matchingGifts config sections', () => {
   });
 });
 
+describe('letterCron config section', () => {
+  it('rejects a config missing the letterCron section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).letterCron;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron/);
+  });
+
+  it('rejects a config missing a letterCron column key', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.letterCron.columns as Record<string, unknown>).bodyTemplate;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.columns\.bodyTemplate/);
+  });
+
+  it('rejects letterCron.maxTriggersPerRun that is not a positive number', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.letterCron.maxTriggersPerRun = 0;
+    expect(() => validateConfig(cfg)).toThrow(/maxTriggersPerRun/);
+  });
+
+  it('accepts letterCron placeholder column ids (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.letterCron.columns.autoSend = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a config missing letterCron.columns.bodyTemplatesByLocale', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.columns\.bodyTemplatesByLocale/);
+  });
+
+  it('rejects a bodyTemplatesByLocale key that is not a supported locale', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron.columns.bodyTemplatesByLocale as Record<string, string>)['xx'] = 'long_text_xx';
+    expect(() => validateConfig(cfg)).toThrow(/xx/);
+  });
+
+  it('accepts an empty bodyTemplatesByLocale (every locale falls back)', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale = {};
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
 describe('communication preference columns', () => {
   const PREF_COLUMNS = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'] as const;
 
@@ -602,5 +657,23 @@ describe('configuredPrefFields', () => {
     const cfg = structuredClone(validConfig);
     cfg.monday.columns.donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
     expect(configuredPrefFields(validateConfig(cfg))).toEqual(['emailOptOut', 'doNotMail']);
+  });
+});
+
+describe('letterCronConfigured', () => {
+  it('is true when boardId is set and no column is a placeholder', () => {
+    expect(letterCronConfigured(validateConfig(structuredClone(validConfig)))).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw.letterCron as { boardId: number | null }).boardId = null;
+    expect(letterCronConfigured(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a letterCron column id is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.letterCron.columns.startDate = 'REPLACE_WITH_COLUMN_ID';
+    expect(letterCronConfigured(validateConfig(raw))).toBe(false);
   });
 });

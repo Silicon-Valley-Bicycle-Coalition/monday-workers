@@ -137,3 +137,14 @@ npm run deploy
 - **When letter sign-off lands:** fill `taxLetter.*`, commit, `npm run deploy` — letters
   appear; verify one letter against a known donor's giving history and run a print preview
   before telling donors.
+- **When the automatic January send should go live:** run
+  `scripts/create-letter-settings-board.mjs` against the production workspace (as an admin
+  user), grant the integration user read access to the board, paste the printed `letterCron`
+  block into `config/svbc.json`, deploy — then staff arm it from the board itself (Auto-send
+  checkbox + start date; see README v2.3). The date-`between` items_page filter in
+  `listDonorIdsWithDonationsInYear` was verified live against the sandbox Donations board
+  (2026-08-25), unlike the Phase 5 NOTE-flagged shapes. Subrequest budget: each triggered donor
+  costs roughly one Monday fetch, a few D1 calls, and a queue send, so the default
+  `letterCron.maxTriggersPerRun` of 200 lands around 800–900 subrequests per invocation against
+  the paid plan's 1,000/invocation limit — lower it before raising anything else that runs in
+  the same scheduled invocation.

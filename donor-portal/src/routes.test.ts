@@ -97,6 +97,7 @@ function fakeLetterSendStore(overrides: Partial<LetterSendStore> = {}): LetterSe
     markSent: vi.fn().mockResolvedValue(undefined),
     markSkipped: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
+    listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
     ...overrides,
   };
 }
@@ -133,6 +134,8 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
     getPledgesForDonor: vi.fn().mockResolvedValue([]),
+    getLetterSettings: vi.fn().mockResolvedValue(null),
+    listDonorIdsWithDonationsInYear: vi.fn(),
   };
 }
 
@@ -174,6 +177,8 @@ function fakeMondayWithDonations(): MondayClient {
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
     getPledgesForDonor: vi.fn().mockResolvedValue([]),
+    getLetterSettings: vi.fn().mockResolvedValue(null),
+    listDonorIdsWithDonationsInYear: vi.fn(),
   };
 }
 
@@ -220,6 +225,11 @@ const config: Config = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
+    maxTriggersPerRun: 200,
+  },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -568,6 +578,8 @@ describe('POST /login error handling', () => {
       getDonorNames: vi.fn().mockResolvedValue([]),
       getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
       getPledgesForDonor: vi.fn().mockResolvedValue([]),
+      getLetterSettings: vi.fn().mockResolvedValue(null),
+      listDonorIdsWithDonationsInYear: vi.fn(),
     };
     const app = createApp(makeDeps({ monday }));
 

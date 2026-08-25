@@ -53,6 +53,11 @@ const config: Config = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: null },
+  letterCron: {
+    boardId: null,
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
+    maxTriggersPerRun: 200,
+  },
 };
 
 function makeMessage<T>(body: T) {
@@ -92,6 +97,7 @@ function fakeLetterStore(): LetterSendStore {
     markSent: vi.fn(),
     markSkipped: vi.fn(),
     requeue: vi.fn(),
+    listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
   };
 }
 

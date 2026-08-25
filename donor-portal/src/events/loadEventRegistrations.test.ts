@@ -30,6 +30,8 @@ function fakeMonday(registrationsByDonor: Record<string, EventRegistrationRecord
     getEventRegistrationsForDonor: vi
       .fn()
       .mockImplementation(async ({ donorItemId }: { donorItemId: string }) => registrationsByDonor[donorItemId] ?? []),
+    getLetterSettings: vi.fn(),
+    listDonorIdsWithDonationsInYear: vi.fn(),
   };
 }
 

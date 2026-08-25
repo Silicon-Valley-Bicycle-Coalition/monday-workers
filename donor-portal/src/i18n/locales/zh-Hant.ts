@@ -160,4 +160,9 @@ export const zhHant: Record<TranslationKey, string> = {
   'matchingGifts.einLine': '填寫配捐表格時,您可能需要我們的稅號(EIN):{{ein}}',
   'matchingGifts.searchHint': '在下方搜尋您的雇主,查看其配捐政策及提交說明。',
   'matchingGifts.searchUnavailable': '雇主搜尋功能設定完成後將顯示於此。在此之前,您的人力資源或薪資部門可以告訴您捐款是否可獲配捐。',
+  'letterReady.subject': '您的 {{year}} 年 SVBC 捐款信函已準備就緒',
+  'letterReady.greeting': '{{donorName}}，您好：',
+  'letterReady.body': '您的 {{year}} 年捐款信函現在可以在捐款者入口網站中查看。',
+  'letterReady.loginLink': '登入查看',
+  'letterReady.expiry': '此連結將於短時間內失效，且只能使用一次。',
 } satisfies Record<TranslationKey, string>;

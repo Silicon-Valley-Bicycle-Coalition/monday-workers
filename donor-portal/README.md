@@ -204,9 +204,9 @@ the portal home, not the letter content itself. Always sends the most recently c
 gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 table). Inert until
 `taxLetter` is signed off, same as the portal-facing letters.
 
-**The automatic January cron this eventually enables is not built yet** — this ships the send
-primitive (`POST /webhooks/monday/letters` → `donor-portal-letter-emails` queue →
-`processLetterSendBatch`) that a scheduled trigger can reuse later without rework.
+This ships the send primitive (`POST /webhooks/monday/letters` → `donor-portal-letter-emails`
+queue → `processLetterSendBatch`) that the automatic January cron (v2.3 below) reuses without
+rework.
 
 Operator setup, in addition to v1/v2 steps:
 
@@ -260,6 +260,64 @@ SMS Opt-Out, Do Not Mail) to the Donors board and fill in their ids in `config/s
 migration cutover, Email Opt-Out and Do Not Mail carry over from Salesforce per the mapping doc;
 verify consent state against Mailchimp before trusting migrated opt-out flags (compliance item in
 `docs/09-integrations-and-addons.md`).
+## v2.3 — Automatic January letter emails, staff-controlled from a Monday board
+
+The scheduled follow-on to v2.1 (IT Requests item 12893503099): once a year, every donor with
+gifts in the just-completed calendar year gets the same letter-ready email the staff button
+sends — no button-clicking through the whole Donors board. Staff control it entirely from a
+**Letter Settings board** in Monday, so arming, pausing, and timing never need a deploy:
+
+* **Auto-send** (checkbox) — the master switch. While unchecked, the cron never sends.
+* **Auto-send start date** (date) — the cron only sends on or after this date. It re-arms each
+  January for the newly completed year (the date is a floor, not a one-shot), so staff move the
+  date forward — or uncheck Auto-send — to delay or sit out a season.
+* **Email body template** (long text) — the letter-ready email body, plain text with
+  `{{donorName}}`, `{{year}}`, `{{loginUrl}}` placeholders. Applies to **all** letter-ready
+  emails, button-triggered and cron alike; blank falls back to the built-in copy. Pasted markup
+  is escaped, never rendered, so the board can't become an HTML-injection vector into donor
+  email.
+* **Per-locale templates** — one optional "Email body template (Spanish)"-style column per
+  supported non-English locale (`letterCron.columns.bodyTemplatesByLocale`). Each donor's email
+  resolves their Monday Preferred Language, then picks their locale's template → the default
+  template → the built-in copy *in their language* (`letterReady.*` keys exist across all ten
+  locales). The subject line always follows the donor's language, and the magic link carries
+  `&lang=<locale>` so the portal opens localized — same resolution as the login email.
+
+How it runs (`src/letters/runLetterCron.ts`, called from the existing daily `scheduled()`
+handler — no separate cron trigger): every day the Worker reads the settings board (one cheap
+query; on most days that's the whole run). Once armed and past the start date, it sweeps the
+Donations board for donors with gifts dated in the prior year
+(`listDonorIdsWithDonationsInYear` — one ids-only paginated query, so lapsed donors never get
+old-year letters), drops donors already in `letter_sends` for that year (one D1 read, zero
+Monday cost per handled donor), and calls the same `triggerLetterSend` primitive as the button
+for the remainder — sequentially, capped at `letterCron.maxTriggersPerRun` per run to respect
+Monday's complexity budget. Daily reruns through January make the job self-healing: transient
+failures retry the next day, late-entered gifts still get letters, and the donor+year dedupe
+makes completed donors free. One deliberate limit: a donor the queue consumer marked
+**`skipped`** (no email on file, or gifts vanished before sending) is not retried by the cron —
+the dedupe treats any existing row as handled. Once the underlying data is fixed, the staff
+button is the retry path (it requeues skipped rows).
+
+Gates, all required before a single email goes out: `letterCron` config filled in,
+`taxLetter` signed off (`lettersEnabled`), Auto-send checked, start date reached.
+
+Operator setup, in addition to v1/v2/v2.1 steps:
+
+1. Create the Letter Settings board:
+   `MONDAY_API_TOKEN=... node scripts/create-letter-settings-board.mjs --workspace <id>` (run as
+   an admin user — board creation needs more permission than the portal's integration user
+   holds). The script creates the checkbox/date/long-text columns, seeds the single
+   "Letter emails" settings item with the built-in template, deletes Monday's board-template
+   default items, and prints the `letterCron` config block to paste into `config/svbc.json`.
+   A fresh board also gets the nine per-locale template columns. Already run against the CRM
+   Sandbox: board `18428114991` ("Donor Portal Letter Settings (sandbox)", locale columns added
+   via `--add-locale-columns 18428114991` — the idempotent upgrade mode for boards created
+   before those columns existed); re-run the same command against the production workspace at
+   rollout.
+2. Grant the portal's integration user **read** access to the new board (it never writes to it).
+3. Paste the printed `letterCron` block into `config/svbc.json`, commit, deploy.
+4. When SVBC wants the January send armed: check Auto-send and set the start date on the board.
+   Nothing sends before `taxLetter` sign-off regardless.
 
 ## v3 — Digital membership card
 
