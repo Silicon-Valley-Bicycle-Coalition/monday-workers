@@ -871,7 +871,8 @@ describe('GET /verify/:token', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Donor donor-1');
-    expect(html).toContain('Member');
+    expect(html).toContain('Tier: Member');
+    expect(html).toContain('Status: Active');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
