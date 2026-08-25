@@ -5,7 +5,7 @@ import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { SessionStore } from './db/sessions';
 import type { LoginAttemptStore } from './db/loginAttempts';
-import type { EmailSender } from './email/resend';
+import type { EmailSender } from './email/types';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
@@ -149,7 +149,7 @@ function fakeMondayWithDonations(): MondayClient {
 
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
-  resend: { fromAddress: 'a@example.org', fromName: 'Test' },
+  email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {

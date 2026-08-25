@@ -52,7 +52,7 @@ export interface Config {
     organizationsBoardId: number | null;
     columns: MondayColumns;
   };
-  resend: {
+  email: {
     fromAddress: string;
     fromName: string;
   };
@@ -126,7 +126,7 @@ export interface LetterSendQueueMessage {
 // only secrets and narrowed queue message types are declared here.
 export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
-  RESEND_API_KEY: string;
+  EMAIL: SendEmail;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
   LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;
   LETTER_WEBHOOK_SECRET: string;

@@ -1,6 +1,6 @@
 import type { Config, MondayColumns } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'resend', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
+const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donorEmail',
@@ -28,7 +28,7 @@ const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
-const REQUIRED_RESEND_KEYS = ['fromAddress', 'fromName'] as const;
+const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName'] as const;
 const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'sessionTtlHours', 'portalBaseUrl'] as const;
 const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
@@ -91,8 +91,8 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
 
-  const resend = requireObject(cfg, 'resend');
-  requireKeys(resend, 'resend', REQUIRED_RESEND_KEYS);
+  const email = requireObject(cfg, 'email');
+  requireKeys(email, 'email', REQUIRED_EMAIL_KEYS);
 
   const auth = requireObject(cfg, 'auth');
   requireKeys(auth, 'auth', REQUIRED_AUTH_KEYS);
