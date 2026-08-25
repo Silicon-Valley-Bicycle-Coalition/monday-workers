@@ -814,6 +814,44 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
     const newVerifyPath = /\/verify\/[^"<\s]+/.exec(after)?.[0] as string;
     expect(newVerifyPath).not.toBe(oldVerifyPath);
   });
+
+  it('redirects successfully when createToken loses the concurrent-regenerate race', async () => {
+    // Simulates two concurrent regenerate requests for the same donor: both revoke (this
+    // request's revoke is a no-op since the concurrent request already revoked), the concurrent
+    // request's createToken wins the migrations/0003 one-active-token-per-donor race and inserts
+    // first, and this request's own createToken then throws. The route must re-read the winner's
+    // now-active token and still redirect, rather than falling through to a 500.
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    let active: string | null = null;
+    let createCalls = 0;
+    const cardTokenStore: CardTokenStore = {
+      async createToken(_donorItemId, token) {
+        createCalls++;
+        if (createCalls === 1) {
+          active = 'concurrent-winner-token';
+          throw new Error('UNIQUE constraint failed: card_tokens.donor_item_id');
+        }
+        active = token;
+      },
+      async findActiveDonorId(token) {
+        return token === active ? 'donor-1' : null;
+      },
+      async getActiveToken() {
+        return active;
+      },
+      async revokeAllForDonor() {
+        active = null;
+      },
+    };
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/portal/card/donor-1');
+  });
 });
 
 describe('GET /verify/:token', () => {

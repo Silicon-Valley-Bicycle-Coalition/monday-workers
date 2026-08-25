@@ -374,7 +374,22 @@ export function createApp(deps: AppDeps) {
 
     const now = deps.now().toISOString();
     await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
-    await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
+    try {
+      await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
+    } catch (err) {
+      // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
+      // concurrent regenerate for the same donor (double-click, two open tabs) revoked and
+      // re-inserted first. This request's own token is moot in that case — the concurrent
+      // request's token is just as valid, and the redirect below doesn't need to know which
+      // token is active, only that one exists. Re-read rather than fail the request. A genuine
+      // unrelated D1 outage would simply fail again on this re-read and fall through to the
+      // route's normal error handling below.
+      console.error(`donor-portal card token regenerate failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
+      const token = await deps.cardTokenStore.getActiveToken(donorItemId);
+      if (token === null) {
+        throw err;
+      }
+    }
 
     return c.redirect(`/portal/card/${encodeURIComponent(donorItemId)}`);
   });
