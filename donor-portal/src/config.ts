@@ -166,9 +166,10 @@ export function changeRequestsEnabled(config: Config): boolean {
 // Unlike the all-or-nothing changeRequestsEnabled gate, preferences gate per column: an operator
 // can configure just the Email Opt-Out checkbox and ship that alone.
 export function configuredPrefFields(config: Config): PrefField[] {
-  return (Object.keys(PREF_FIELD_COLUMNS) as PrefField[]).filter(
-    (field) => config.monday.columns[PREF_FIELD_COLUMNS[field]] !== PLACEHOLDER_COLUMN_VALUE
-  );
+  return (Object.keys(PREF_FIELD_COLUMNS) as PrefField[]).filter((field) => {
+    const columnId = config.monday.columns[PREF_FIELD_COLUMNS[field]];
+    return typeof columnId === 'string' && columnId !== PLACEHOLDER_COLUMN_VALUE;
+  });
 }
 
 export function cardEnabled(config: Config): boolean {
