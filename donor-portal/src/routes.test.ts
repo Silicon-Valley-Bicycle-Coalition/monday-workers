@@ -710,6 +710,27 @@ describe('GET /portal/card/:donorItemId', () => {
     expect(await res.text()).toContain('We could not load your card right now');
   });
 
+  it('shows a friendly error page when getActiveToken throws (D1 failure, not the insert race)', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore: CardTokenStore = {
+      async createToken() {},
+      async findActiveDonorId() {
+        return null;
+      },
+      async getActiveToken() {
+        throw new Error('D1_ERROR: network connection lost');
+      },
+      async revokeAllForDonor() {},
+    };
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your card right now');
+  });
+
   it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
     // Simulates the migrations/0003 one-active-token-per-donor DB constraint tripping because a
     // concurrent request for the same donor won the race and inserted first: this request's
@@ -851,6 +872,29 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/portal/card/donor-1');
+  });
+
+  it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore: CardTokenStore = {
+      async createToken() {},
+      async findActiveDonorId() {
+        return null;
+      },
+      async getActiveToken() {
+        return null;
+      },
+      async revokeAllForDonor() {
+        throw new Error('D1_ERROR: network connection lost');
+      },
+    };
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not regenerate your card right now');
   });
 });
 
