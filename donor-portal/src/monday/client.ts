@@ -25,6 +25,13 @@ function columnText(item: MondayItem, columnId: string): string {
   return (item.column_values ?? []).find((c) => c.id === columnId)?.text ?? '';
 }
 
+// Monday checkbox columns render as text "v" when checked and "" (or an absent column_value)
+// when not. An unconfigured column can't be read at all, so it maps to null, not false.
+function checkboxState(item: MondayItem, columnId: string): boolean | null {
+  if (columnId === 'REPLACE_WITH_COLUMN_ID') return null;
+  return columnText(item, columnId) !== '';
+}
+
 export interface MondayClient {
   findDonorsByEmail(email: string): Promise<DonorMatch[]>;
   getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
@@ -312,6 +319,12 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
       columnIds.push(this.columns.preferredLanguage);
     }
+    const prefColumnIds = [this.columns.donorEmailOptOut, this.columns.donorSmsOptOut, this.columns.donorDoNotMail];
+    for (const prefColumnId of prefColumnIds) {
+      if (prefColumnId !== 'REPLACE_WITH_COLUMN_ID') {
+        columnIds.push(prefColumnId);
+      }
+    }
     const query = `
       query ($itemId: ID!) {
         items(ids: [$itemId]) {
@@ -336,6 +349,9 @@ export class HttpMondayClient implements MondayClient {
       address: columnText(item, this.columns.donorAddress),
       phone: columnText(item, this.columns.donorPhone),
       preferredLanguage: columnText(item, this.columns.preferredLanguage),
+      emailOptOut: checkboxState(item, this.columns.donorEmailOptOut),
+      smsOptOut: checkboxState(item, this.columns.donorSmsOptOut),
+      doNotMail: checkboxState(item, this.columns.donorDoNotMail),
     };
   }
 

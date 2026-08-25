@@ -7,6 +7,7 @@ import {
   pledgesEnabled,
   matchingGiftsSearchEnabled,
   signedOffEin,
+  configuredPrefFields,
 } from './config';
 
 const validConfig = {
@@ -30,6 +31,9 @@ const validConfig = {
       donorPhone: 'phone_1',
       membershipExpiry: 'expiry_col',
       preferredLanguage: 'lang_col',
+      donorEmailOptOut: 'check_email_opt',
+      donorSmsOptOut: 'check_sms_opt',
+      donorDoNotMail: 'check_no_mail',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
@@ -307,6 +311,26 @@ describe('pledges + matchingGifts config sections', () => {
   });
 });
 
+describe('communication preference columns', () => {
+  const PREF_COLUMNS = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'] as const;
+
+  for (const column of PREF_COLUMNS) {
+    it(`rejects config missing ${column} entirely`, () => {
+      const cfg = structuredClone(validConfig);
+      delete (cfg.monday.columns as Record<string, unknown>)[column];
+      expect(() => validateConfig(cfg)).toThrow(new RegExp(`monday\\.columns\\.${column}`));
+    });
+  }
+
+  it('accepts the preference columns as placeholders (gated, not deploy-blocking)', () => {
+    const cfg = structuredClone(validConfig);
+    for (const column of PREF_COLUMNS) {
+      (cfg.monday.columns as Record<string, unknown>)[column] = 'REPLACE_WITH_COLUMN_ID';
+    }
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
 describe('pledgesEnabled', () => {
   it('is true when boardId is set and no pledge column is a placeholder', () => {
     expect(pledgesEnabled(validateConfig(validConfig))).toBe(true);
@@ -347,5 +371,29 @@ describe('matchingGiftsSearchEnabled', () => {
     expect(matchingGiftsSearchEnabled(validateConfig(raw))).toBe(false);
     (raw.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = '';
     expect(matchingGiftsSearchEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('configuredPrefFields', () => {
+  it('returns every preference field when all three columns are configured', () => {
+    expect(configuredPrefFields(validateConfig(structuredClone(validConfig)))).toEqual([
+      'emailOptOut',
+      'smsOptOut',
+      'doNotMail',
+    ]);
+  });
+
+  it('returns [] while every preference column is a placeholder', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.donorEmailOptOut = 'REPLACE_WITH_COLUMN_ID';
+    cfg.monday.columns.donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
+    cfg.monday.columns.donorDoNotMail = 'REPLACE_WITH_COLUMN_ID';
+    expect(configuredPrefFields(validateConfig(cfg))).toEqual([]);
+  });
+
+  it('returns only the fields whose columns are configured (independent gating)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
+    expect(configuredPrefFields(validateConfig(cfg))).toEqual(['emailOptOut', 'doNotMail']);
   });
 });

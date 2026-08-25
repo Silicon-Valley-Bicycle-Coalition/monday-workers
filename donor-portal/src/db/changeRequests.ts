@@ -1,4 +1,6 @@
-export type ChangeRequestField = 'address' | 'email' | 'phone' | 'language';
+import type { PrefField } from '../types';
+
+export type ChangeRequestField = 'address' | 'email' | 'phone' | 'language' | PrefField;
 
 export interface NewChangeRequest {
   donorItemId: string;
