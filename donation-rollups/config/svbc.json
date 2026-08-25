@@ -1,0 +1,50 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boards": {
+      "donations": null,
+      "donors": null,
+      "organizations": null
+    }
+  },
+  "donationRollups": {
+    "donationColumns": {
+      "donorLink": "REPLACE_WITH_COLUMN_ID",
+      "amount": "REPLACE_WITH_COLUMN_ID",
+      "date": "REPLACE_WITH_COLUMN_ID",
+      "fiscalYear": "REPLACE_WITH_COLUMN_ID",
+      "status": "REPLACE_WITH_COLUMN_ID"
+    },
+    "receivedStatusLabel": "Received",
+    "ownerColumnsByBoard": {
+      "donors": {
+        "lifetimeGiving": "REPLACE_WITH_COLUMN_ID",
+        "giftCount": "REPLACE_WITH_COLUMN_ID",
+        "firstGift": "REPLACE_WITH_COLUMN_ID",
+        "thisYearAmount": "REPLACE_WITH_COLUMN_ID",
+        "thisYearCount": "REPLACE_WITH_COLUMN_ID",
+        "lastYearAmount": "REPLACE_WITH_COLUMN_ID",
+        "lastYearCount": "REPLACE_WITH_COLUMN_ID",
+        "largestGift": "REPLACE_WITH_COLUMN_ID",
+        "smallestGift": "REPLACE_WITH_COLUMN_ID",
+        "averageGift": "REPLACE_WITH_COLUMN_ID",
+        "lastGiftDate": "REPLACE_WITH_COLUMN_ID",
+        "lastGiftAmount": "REPLACE_WITH_COLUMN_ID"
+      },
+      "organizations": {
+        "lifetimeGiving": "REPLACE_WITH_COLUMN_ID",
+        "giftCount": "REPLACE_WITH_COLUMN_ID",
+        "firstGift": "REPLACE_WITH_COLUMN_ID",
+        "thisYearAmount": "REPLACE_WITH_COLUMN_ID",
+        "thisYearCount": "REPLACE_WITH_COLUMN_ID",
+        "lastYearAmount": "REPLACE_WITH_COLUMN_ID",
+        "lastYearCount": "REPLACE_WITH_COLUMN_ID",
+        "largestGift": "REPLACE_WITH_COLUMN_ID",
+        "smallestGift": "REPLACE_WITH_COLUMN_ID",
+        "averageGift": "REPLACE_WITH_COLUMN_ID",
+        "lastGiftDate": "REPLACE_WITH_COLUMN_ID",
+        "lastGiftAmount": "REPLACE_WITH_COLUMN_ID"
+      }
+    }
+  }
+}
