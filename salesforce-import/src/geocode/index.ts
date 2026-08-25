@@ -39,7 +39,9 @@ function collect(rows: Record<string, unknown>[], prefix: 'Mailing' | 'Billing')
   return out;
 }
 
-export async function runGeocode(_args: string[], deps: { fetchFn?: typeof fetch } = {}): Promise<number> {
+export async function runGeocode(
+  _args: string[], deps: { fetchFn?: typeof fetch; sleepFn?: (ms: number) => Promise<void> } = {},
+): Promise<number> {
   const contacts = await readNdjson<Record<string, unknown>>(dataPath('extract', 'contacts.ndjson'));
   const accounts = await readNdjson<Record<string, unknown>>(dataPath('extract', 'accounts.ndjson'));
   const all = [...collect(contacts, 'Mailing'), ...collect(accounts, 'Billing'), ...(await collectEnriched())];
@@ -57,9 +59,19 @@ export async function runGeocode(_args: string[], deps: { fetchFn?: typeof fetch
     const apiKey = process.env['GOOGLE_MAPS_API_KEY'];
     const unmatched = pending.filter((a) => !matched.has(a.key));
     if (apiKey) {
+      let attempted = 0, failed = 0;
       for (const a of unmatched) {
-        const r = await googleGeocode(`${a.street}, ${a.city}, ${a.state} ${a.zip}`, apiKey, deps);
-        if (r) { await cache.set(a.key, r); google++; }
+        try {
+          const r = await googleGeocode(`${a.street}, ${a.city}, ${a.state} ${a.zip}`, apiKey, deps);
+          if (r) { await cache.set(a.key, r); google++; }
+        } catch (err) {
+          // Exhausted retries on one address — leave it unresolved, keep the run alive.
+          failed++;
+          console.warn(`geocode: google failed for key ${a.key} (${String(err)}) — leaving unresolved`);
+        }
+        if (++attempted % 1000 === 0) {
+          console.log(`geocode progress: google ${attempted}/${unmatched.length} (resolved ${google}, failed ${failed})`);
+        }
       }
     } else if (unmatched.length > 0) {
       console.warn(`geocode: ${unmatched.length} unmatched and GOOGLE_MAPS_API_KEY unset — leaving unresolved`);

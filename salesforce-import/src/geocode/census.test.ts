@@ -18,10 +18,10 @@ describe('censusBatch', () => {
     expect(out.has('K2')).toBe(false);
   });
 
-  it('chunks batches into 10,000 row requests', async () => {
+  it('chunks batches into 2,000 row requests', async () => {
     let calls = 0;
     const fetchFn = (async () => { calls++; return new Response(''); }) as typeof fetch;
-    const addresses = Array.from({ length: 10_001 }, (_, i) => ({
+    const addresses = Array.from({ length: 2_001 }, (_, i) => ({
       key: `K${i}`,
       street: '123 Main St',
       city: 'San Jose',
@@ -29,6 +29,38 @@ describe('censusBatch', () => {
       zip: '95112',
     }));
     await censusBatch(addresses, { fetchFn });
-    expect(calls).toBe(2); // 10,000 + 1 = 2 chunks
+    expect(calls).toBe(2); // 2,000 + 1 = 2 chunks
+  });
+
+  it('retries a transient chunk failure with backoff and still parses the retry response', async () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls++;
+      if (calls === 1) throw new TypeError('fetch failed'); // undici headers timeout shape
+      return new Response(responseCsv);
+    }) as typeof fetch;
+    const out = await censusBatch(
+      [{ key: 'K1', street: '123 Main St', city: 'San Jose', state: 'CA', zip: '95112' }],
+      { fetchFn, sleepFn: async () => {} });
+    expect(calls).toBe(2);
+    expect(out.get('K1')?.source).toBe('census');
+  });
+
+  it('a chunk that fails every retry is dropped, not fatal — later chunks still run', async () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls++;
+      if (calls <= 4) throw new TypeError('fetch failed'); // first chunk: all 4 attempts fail
+      return new Response(responseCsv); // second chunk succeeds
+    }) as typeof fetch;
+    const addresses = [
+      ...Array.from({ length: 2_000 }, (_, i) => ({
+        key: `A${i}`, street: '1 First St', city: 'San Jose', state: 'CA', zip: '95112' })),
+      { key: 'K1', street: '123 Main St', city: 'San Jose', state: 'CA', zip: '95112' },
+    ];
+    const out = await censusBatch(addresses, { fetchFn, sleepFn: async () => {} });
+    expect(calls).toBe(5);
+    expect(out.get('K1')?.source).toBe('census'); // second chunk's match survives
+    expect(out.has('A0')).toBe(false); // failed chunk's addresses fall through unmatched
   });
 });
