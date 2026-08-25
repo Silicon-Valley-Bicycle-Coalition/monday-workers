@@ -2,7 +2,7 @@ import type { TranslationKey } from '../t';
 
 export const ja: Record<TranslationKey, string> = {
   // Site-wide
-  'site.title': 'SVBC 寄付者ポータル',
+  'site.title': 'SVBC寄付者ポータル',
   'languagePicker.label': '言語',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
@@ -53,11 +53,11 @@ export const ja: Record<TranslationKey, string> = {
 
   // Letters
   'letters.listHeading': '税務書類',
-  'letters.listIntro': '各レターは、その暦年に記録されている寄付をまとめた証明書です。レターを開き、ブラウザの印刷機能を使って印刷するか、PDFとして保存してください。',
+  'letters.listIntro': '各書類は、その暦年に記録されている寄付をまとめた証明書です。書類を開き、ブラウザの印刷機能を使って印刷するか、PDFとして保存してください。',
   'letters.noneYet': '{{name}} 様がご利用いただける書類はまだありません。書類は、少なくとも1件の寄付があった完了済みの暦年を対象としています。',
-  'letters.yearLink': '{{year}}年 税務レター',
+  'letters.yearLink': '{{year}}年分の税務書類',
   'letters.backToPortal': 'ポータルに戻る',
-  'letters.unavailable': '年末税務レターはまだご利用いただけません。しばらくしてから再度ご確認いただくか、それまでに寄付の概要が必要な場合はお問い合わせください。',
+  'letters.unavailable': '年末の税務書類はまだご利用いただけません。しばらくしてから再度ご確認いただくか、それまでに寄付の概要が必要な場合はお問い合わせください。',
   'letters.backToLetters': '税務書類に戻る',
   'letters.print': '印刷またはPDFとして保存',
   'letters.englishOnlyNote': 'この公式書類は英語で発行されます。',
