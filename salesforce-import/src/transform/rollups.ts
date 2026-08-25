@@ -1,7 +1,12 @@
 import type { ItemPayload } from './types.js';
 import { dateCol } from './fields.js';
 
-const RECEIVED = new Set(['Posted', 'Closed Won']);
+// Posted only, not Closed Won — matches Salesforce's own IsWon flag (Posted: true,
+// Closed Won: false, per monday-migration docs/07 gotcha #10), which is what its legacy
+// NPSP rollups filter on. Including Closed Won here would make Monday's Lifetime Giving
+// diverge from SVBC's own historical/audited totals by the 438 stale-stage records
+// (~$40,659.59) gotcha #4 found — the reconciliation gotcha #1 exists to protect.
+const RECEIVED = new Set(['Posted']);
 
 export interface DonorRollup { lifetimeGiving: number; firstGiftISO: string | null; giftCount: number }
 

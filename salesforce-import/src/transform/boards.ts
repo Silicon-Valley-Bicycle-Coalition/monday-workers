@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, funraiseTransactionLink, salesforceDebug } from './fields.js';
+import { dateCol, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
 
 const ANNUAL: Record<string, number> = { Yearly: 1, Quarterly: 4, Monthly: 12 };
 
@@ -74,7 +74,8 @@ export function campaignToPayload(c: Record<string, unknown>, keepSinceISO: stri
     board: 'campaigns', sfId: c['Id'] as string, name: (c['Name'] as string) ?? '(campaign)',
     columns: { 'Type': ((c['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,
       'Start': dateCol(c['StartDate'] as string), 'End': dateCol(c['EndDate'] as string),
-      'Active': c['IsActive'] ? { checked: 'true' } : null, ...salesforceDebug(c) },
+      'Active': c['IsActive'] ? { checked: 'true' } : null,
+      'Salesforce Owner': ownerAttribution(c['Owner']), ...salesforceDebug(c) },
   };
 }
 
@@ -98,7 +99,7 @@ export function taskToPayload(t: Record<string, unknown>): ItemPayload {
     columns: { 'Activity Type': { label: 'Task' },
       'Date': dateCol(t['ActivityDate'] as string),
       'Status': { label: (t['Status'] ?? 'Unknown') as string },
-      'Owner': ((t['Owner'] as { Name?: string } | null)?.Name ?? '') as string },
+      'Owner': ownerAttribution(t['Owner']) },
     links: t['WhoId'] ? [{ column: 'Person', targetSfIds: [t['WhoId'] as string] }] : [],
   };
 }

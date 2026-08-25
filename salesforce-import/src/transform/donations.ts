@@ -2,8 +2,14 @@ import type { ItemPayload } from './types.js';
 import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
 import { eraFor, type Era } from './eras.js';
 
+// Closed Won is a distinct label, not plain "Received", on purpose: it's the same
+// 438 stale-stage records docs/07 gotcha #4 found (IsWon = false, unlike Posted — see
+// gotcha #10). Staff still see the gift succeeded, but donation-rollups (monday-workers)
+// filters on Status === 'Received' exactly, so a shared label would silently pull these
+// back into ongoing Lifetime Giving totals every time it recomputes, undoing the fix in
+// transform/rollups.ts. See docs/17 for the full picklist audit.
 const STATUS: Record<string, string> = {
-  Posted: 'Received', 'Closed Won': 'Received', 'Closed Lost': 'Failed',
+  Posted: 'Received', 'Closed Won': 'Received (Historical)', 'Closed Lost': 'Failed',
 };
 
 export function opportunityToPayload(

@@ -42,7 +42,7 @@ export const STATUS_LABELS: Record<string, string[]> = {
 // code. Only the donations era boards compute "Status" themselves (StageName mapped to
 // exactly Received/Failed/Pending in transform/donations.ts), so that one is closed and
 // scoped by board key rather than title alone.
-const DONATION_STATUS_LABELS = ['Received', 'Failed', 'Pending'];
+const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
 
 function statusLabelsFor(key: string, title: string): string[] | undefined {
   if (title === 'Status' && key.startsWith('donations:')) return DONATION_STATUS_LABELS;

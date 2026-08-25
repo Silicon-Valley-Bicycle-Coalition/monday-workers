@@ -6,6 +6,12 @@ export async function googleGeocode(
   const fetchFn = deps.fetchFn ?? fetch;
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(oneLine)}&key=${apiKey}`;
   const res = await fetchFn(url);
+  if (res.status >= 400 && res.status < 500) {
+    // A 4xx is this address's problem (malformed beyond repair), not the run's —
+    // log it and leave the address unresolved instead of crashing the stage.
+    console.warn(`google geocode: HTTP ${res.status} for "${oneLine}" — skipping`);
+    return null;
+  }
   if (!res.ok) throw new Error(`google geocode: HTTP ${res.status}`);
   const body = await res.json() as {
     status: string;
