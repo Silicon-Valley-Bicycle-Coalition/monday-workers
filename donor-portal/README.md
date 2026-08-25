@@ -258,6 +258,46 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
 
+## v4 — Event registrations
+
+From the IT Requests board (["Donor portal: event
+registrations"](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527106),
+scoped 2026-08-25). A read-only page (`GET /:locale/portal/events`, linked from the portal home)
+listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
+later, soonest first) and **Past** (latest first; past rows show Attended/Registered from the
+board's checkbox, and undated registrations sort last). Same multi-donor-household rule as the
+rest of the portal: one explicitly labeled section per matched donor item. No D1 tables, no
+queues, no writes — reads live from Monday like everything else here.
+
+**Data source:** the **Event Registrations** board — the post-migration rename of today's
+hand-maintained Event Participation board, rebuilt at cutover to match the CRM Sandbox rehearsal
+(`salesforce-import`'s `Fundraising_Event_Registration` output: Attendee board-relation → People,
+Event board-relation → Events board, Attended checkbox). The event's name and date come from the
+linked Events-board item, resolved in a second query. Registrations whose Attendee relation was
+never matched to a People item (name/email captured only as fallback text) can't be tied to a
+logged-in donor and simply don't appear. The Eventbrite repoint (see the migration plan) is what
+will keep this board current for *future* events — it isn't a precondition for showing the
+migrated history, which is why this shipped ahead of it.
+
+**Deliberately excluded: ticket and deductible amounts.** Both columns exist on the board, but
+surfacing dollar figures here would blur the portal's carefully-drawn "this is not a tax
+document" line — the deductible-portion story belongs to the tax-letter feature and its
+signed-off IRS language, not an event list.
+
+**Gated on `eventRegistrations` config** (same placeholder-tolerant treatment as
+`changeRequests`): the page shows a "not available yet" state until an operator fills in real
+ids. Operator setup, in addition to the v1 steps, once the post-cutover board exists:
+
+1. Fill in `eventRegistrations.boardId` (Event Registrations board) and its `columns` —
+   `attendeeLink` (Attendee board-relation), `eventLink` (Event board-relation), `attended`
+   (Attended checkbox).
+2. Fill in `eventRegistrations.eventDateColumnId` — the **Events board's** Date column id (the
+   registration board has no date of its own; dates live on the linked event item).
+3. Grant the portal's integration user **read access to the Event Registrations and Events
+   boards** (it stays read-only everywhere except Change Requests).
+
+No new secrets, queues, or D1 migrations.
+
 ## Future candidates
 
 The candidate list from the v2 brainstorm (discussed 2026-08-24) is no longer tracked here —
