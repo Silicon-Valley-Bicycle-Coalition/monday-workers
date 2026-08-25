@@ -516,6 +516,161 @@ describe('HttpMondayClient.createChangeRequestItem', () => {
   });
 });
 
+const eventParams = {
+  boardId: 555,
+  columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+  eventDateColumnId: 'ev_date_col',
+};
+
+function jsonResponse(body: unknown) {
+  return { ok: true, status: 200, json: async () => body };
+}
+
+describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
+  it('joins registrations with their linked event name and date', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: null,
+                  items: [
+                    {
+                      id: 'reg-1',
+                      name: 'Bike Summit registration',
+                      column_values: [
+                        { id: 'check_att', text: 'v' },
+                        { id: 'connect_ev', text: 'Bike Summit 2026', linked_item_ids: ['ev-1'] },
+                      ],
+                    },
+                    {
+                      id: 'reg-2',
+                      name: 'Gala registration',
+                      column_values: [
+                        { id: 'check_att', text: '' },
+                        { id: 'connect_ev', text: 'Fall Gala', linked_item_ids: ['ev-2'] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            items: [
+              { id: 'ev-1', name: 'Bike Summit 2026', column_values: [{ id: 'ev_date_col', text: '2026-04-12' }] },
+              { id: 'ev-2', name: 'Fall Gala', column_values: [{ id: 'ev_date_col', text: '2026-10-03' }] },
+            ],
+          },
+        })
+      );
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, fetchMock);
+
+    const records = await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams });
+
+    expect(records).toEqual([
+      { registrationName: 'Bike Summit registration', eventName: 'Bike Summit 2026', eventDate: '2026-04-12', attended: true },
+      { registrationName: 'Gala registration', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
+    ]);
+  });
+
+  it('passes the donor item id as a GraphQL variable, never interpolated', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
+      return jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } });
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, fetchMock);
+
+    await client.getEventRegistrationsForDonor({ donorItemId: 'donor-9', ...eventParams });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.variables.donorItemId).toBe('donor-9');
+    expect(captured!.query).not.toContain('donor-9');
+  });
+
+  it('skips the events lookup entirely when the donor has no registrations', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, fetchMock);
+
+    expect(await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams })).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a registration whose event link is empty, with blank event name and date', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          boards: [
+            {
+              items_page: {
+                cursor: null,
+                items: [
+                  {
+                    id: 'reg-1',
+                    name: 'Unlinked registration',
+                    column_values: [
+                      { id: 'check_att', text: '' },
+                      { id: 'connect_ev', text: '', linked_item_ids: [] },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      })
+    );
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, fetchMock);
+
+    const records = await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams });
+
+    expect(records).toEqual([{ registrationName: 'Unlinked registration', eventName: '', eventDate: '', attended: false }]);
+    // No linked event ids means no second query to the Events board.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows the registrations cursor across pages', async () => {
+    const regItem = (id: string, eventId: string) => ({
+      id,
+      name: `reg ${id}`,
+      column_values: [
+        { id: 'check_att', text: 'v' },
+        { id: 'connect_ev', text: 'Event', linked_item_ids: [eventId] },
+      ],
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { boards: [{ items_page: { cursor: 'page-2', items: [regItem('reg-1', 'ev-1')] } }] } })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { next_items_page: { cursor: null, items: [regItem('reg-2', 'ev-1')] } } })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: { items: [{ id: 'ev-1', name: 'Big Ride', column_values: [{ id: 'ev_date_col', text: '2027-05-01' }] }] },
+        })
+      );
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, fetchMock);
+
+    const records = await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams });
+
+    expect(records).toHaveLength(2);
+    expect(records.every((r) => r.eventName === 'Big Ride' && r.eventDate === '2027-05-01')).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe('HttpMondayClient.getDonorNames', () => {
   it('returns id+name pairs from one query and skips the request entirely for no ids', async () => {
     const fetchMock = fetchReturning({ data: { items: [{ id: '1', name: 'Jane' }, { id: '2', name: 'Sam' }] } });

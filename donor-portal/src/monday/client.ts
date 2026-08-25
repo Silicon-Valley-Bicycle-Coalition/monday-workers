@@ -5,6 +5,8 @@ import type {
   DonorContactInfo,
   DonorMatch,
   DonorPortalData,
+  EventRegistrationColumns,
+  EventRegistrationRecord,
   MondayColumns,
   PledgeColumns,
   PledgeRecord,
@@ -13,6 +15,7 @@ import type {
 interface MondayColumnValue {
   id: string;
   text: string | null;
+  linked_item_ids?: string[];
 }
 
 interface MondayItem {
@@ -51,6 +54,12 @@ export interface MondayClient {
     newValue: string;
     submittedAtISO: string;
   }): Promise<void>;
+  getEventRegistrationsForDonor(params: {
+    donorItemId: string;
+    boardId: number;
+    columns: EventRegistrationColumns;
+    eventDateColumnId: string;
+  }): Promise<EventRegistrationRecord[]>;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -183,9 +192,14 @@ export class HttpMondayClient implements MondayClient {
     linkColumnId: string,
     donorItemId: string,
     columnIds: string[],
-    includeName: boolean
+    includeName: boolean,
+    // NOTE: reading a board_relation column's linked_item_ids via the `... on BoardRelationValue`
+    // fragment is written from current Monday API v2 knowledge but not verified against a live
+    // account — same verify-before-deploy caveat as the rules shape above.
+    includeLinkedItemIds = false
   ): Promise<MondayItem[]> {
-    const itemFields = `id ${includeName ? 'name ' : ''}column_values(ids: ${JSON.stringify(columnIds)}) { id text }`;
+    const valueFields = includeLinkedItemIds ? '{ id text ... on BoardRelationValue { linked_item_ids } }' : '{ id text }';
+    const itemFields = `id ${includeName ? 'name ' : ''}column_values(ids: ${JSON.stringify(columnIds)}) ${valueFields}`;
     const firstPageQuery = `
       query ($boardId: ID!, $donorItemId: String!) {
         boards(ids: [$boardId]) {
@@ -353,6 +367,57 @@ export class HttpMondayClient implements MondayClient {
       smsOptOut: checkboxState(item, this.columns.donorSmsOptOut),
       doNotMail: checkboxState(item, this.columns.donorDoNotMail),
     };
+  }
+
+  async getEventRegistrationsForDonor(params: {
+    donorItemId: string;
+    boardId: number;
+    columns: EventRegistrationColumns;
+    eventDateColumnId: string;
+  }): Promise<EventRegistrationRecord[]> {
+    const { donorItemId, boardId, columns } = params;
+    const registrations = await this.fetchItemsLinkedToDonor(
+      boardId,
+      columns.attendeeLink,
+      donorItemId,
+      [columns.attended, columns.eventLink],
+      true,
+      true
+    );
+
+    const linkedEventId = (item: MondayItem): string | null =>
+      (item.column_values ?? []).find((c) => c.id === columns.eventLink)?.linked_item_ids?.[0] ?? null;
+
+    const eventIds = [...new Set(registrations.map(linkedEventId).filter((id): id is string => id !== null))];
+    const events = new Map<string, { name: string; date: string }>();
+    if (eventIds.length > 0) {
+      const eventsQuery = `
+        query ($itemIds: [ID!]) {
+          items(ids: $itemIds) {
+            id
+            name
+            column_values(ids: ["${params.eventDateColumnId}"]) { id text }
+          }
+        }
+      `;
+      const eventsData = await this.request<{ items: MondayItem[] }>(eventsQuery, { itemIds: eventIds });
+      for (const item of eventsData.items) {
+        events.set(item.id, { name: item.name, date: columnText(item, params.eventDateColumnId) });
+      }
+    }
+
+    return registrations.map((item) => {
+      const event = events.get(linkedEventId(item) ?? '');
+      return {
+        registrationName: item.name,
+        // NOTE: checkbox `text` is expected to be "v" when checked and ""/null when not — any
+        // non-empty text counts as attended. Unverified against a live account, same caveat as
+        // the query shapes above.
+        eventName: event?.name ?? '',
+        eventDate: event?.date ?? '',
+        attended: columnText(item, columns.attended) !== '',
+      };
+    });
   }
 
   async createChangeRequestItem(params: {

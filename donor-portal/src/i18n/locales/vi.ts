@@ -14,6 +14,7 @@ export const vi: Record<TranslationKey, string> = {
   'title.changeRequest': 'Yêu cầu thay đổi',
   'title.card': 'Thẻ thành viên của bạn',
   'title.verify': 'Xác minh tư cách thành viên',
+  'title.events': 'Đăng ký sự kiện của bạn',
 
   // Login
   'login.prompt': 'Nhập email của bạn để nhận liên kết đăng nhập.',
@@ -36,6 +37,7 @@ export const vi: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'Hiện chúng tôi không thể tải thẻ của bạn. Vui lòng thử lại sau vài phút.',
   'error.cardRegenerateFailed': 'Hiện chúng tôi không thể tạo lại thẻ của bạn. Vui lòng thử lại sau vài phút.',
   'error.verifyLoadFailed': 'Hiện chúng tôi không thể xác minh thẻ này. Vui lòng thử lại sau vài phút.',
+  'error.eventsLoadFailed': 'Hiện không thể tải các đăng ký sự kiện của bạn. Vui lòng thử lại sau vài phút.',
   'error.generic': 'Đã xảy ra lỗi. Vui lòng thử đăng nhập lại.',
 
   // Portal
@@ -52,6 +54,7 @@ export const vi: Record<TranslationKey, string> = {
   'portal.givingLinksNote': 'Các liên kết này sẽ mở Funraise, đơn vị xử lý thanh toán an toàn của chúng tôi. Những thay đổi bạn thực hiện ở đó sẽ hiển thị trong cổng thông tin này sau khi hồ sơ của chúng tôi được cập nhật.',
   'portal.discountsHeading': 'Ưu đãi tại cửa hàng xe đạp',
   'portal.taxDocumentsLink': 'Tài liệu thuế',
+  'portal.eventsLink': 'Đăng ký sự kiện',
   'portal.changeRequestLink': 'Yêu cầu thay đổi thông tin của bạn',
   'portal.logout': 'Đăng xuất',
 
@@ -65,6 +68,19 @@ export const vi: Record<TranslationKey, string> = {
   'letters.backToLetters': 'Quay lại tài liệu thuế',
   'letters.print': 'In hoặc lưu dưới dạng PDF',
   'letters.englishOnlyNote': 'Tài liệu chính thức này được phát hành bằng tiếng Anh.',
+
+  // Event registrations
+  'events.listHeading': 'Đăng ký sự kiện của bạn',
+  'events.upcomingHeading': 'Sắp diễn ra',
+  'events.pastHeading': 'Đã diễn ra',
+  'events.noneYet': 'Chưa có đăng ký sự kiện nào được ghi nhận cho {{name}}.',
+  'events.tableEvent': 'Sự kiện',
+  'events.tableDate': 'Ngày',
+  'events.tableStatus': 'Trạng thái',
+  'events.statusAttended': 'Đã tham dự',
+  'events.statusRegistered': 'Đã đăng ký',
+  'events.backToPortal': 'Quay lại cổng thông tin của bạn',
+  'events.unavailable': 'Tính năng đăng ký sự kiện chưa khả dụng trên cổng thông tin. Vui lòng quay lại sau.',
 
   // Change request
   'changeRequest.formHeading': 'Yêu cầu thay đổi thông tin của bạn',

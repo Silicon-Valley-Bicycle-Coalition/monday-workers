@@ -18,6 +18,7 @@ describe('loadPortalData', () => {
       getDonorContactInfo: vi.fn(),
       createChangeRequestItem: vi.fn(),
       getDonorNames: vi.fn().mockResolvedValue([]),
+      getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
       getPledgesForDonor: vi.fn().mockResolvedValue([]),
     };
 

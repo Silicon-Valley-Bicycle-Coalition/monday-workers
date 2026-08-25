@@ -8,6 +8,7 @@ const REQUIRED_TOP_LEVEL = [
   'taxLetter',
   'changeRequests',
   'cardTokens',
+  'eventRegistrations',
   'funraise',
   'pledges',
   'matchingGifts',
@@ -74,6 +75,10 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+// Presence-checked only, never placeholder-checked: event registrations are gated
+// (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
+const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumnId'] as const;
+const REQUIRED_EVENT_REGISTRATION_COLUMNS = ['attendeeLink', 'eventLink', 'attended'] as const;
 const REQUIRED_FUNRAISE_KEYS = ['manageRecurringUrl', 'renewMembershipUrl'] as const;
 const FUNRAISE_URL_PLACEHOLDER = 'REPLACE_WITH_FUNRAISE_URL';
 const REQUIRED_PLEDGES_KEYS = ['boardId', 'columns'] as const;
@@ -154,6 +159,11 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
+  const eventRegistrations = requireObject(cfg, 'eventRegistrations');
+  requireKeys(eventRegistrations, 'eventRegistrations', REQUIRED_EVENT_REGISTRATION_KEYS);
+  const erColumns = requireObject(eventRegistrations, 'columns', 'eventRegistrations.columns');
+  requireKeys(erColumns, 'eventRegistrations.columns', REQUIRED_EVENT_REGISTRATION_COLUMNS);
+
   // The placeholder (or an empty string) is a gate, not an error — same treatment as the
   // taxLetter sign-off fields. But a *set* URL must be https: these links are rendered to
   // donors inside the authenticated portal, so a typo'd or http: URL should fail at deploy,
@@ -216,6 +226,13 @@ export function configuredPrefFields(config: Config): PrefField[] {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+export function eventsEnabled(config: Config): boolean {
+  const er = config.eventRegistrations;
+  if (er.boardId === null) return false;
+  const ids = [er.columns.attendeeLink, er.columns.eventLink, er.columns.attended, er.eventDateColumnId];
+  return ids.every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
 }
 
 // Each Funraise deep link is gated independently — SVBC may have the donor-account URL before
