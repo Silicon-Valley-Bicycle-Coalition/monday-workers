@@ -219,7 +219,7 @@ describe('full login flow', () => {
     expect(setCookie).toContain('session=');
 
     const sessionCookie = setCookie.split(';')[0] ?? '';
-    const portalRes = await app.request('/portal', { headers: { cookie: sessionCookie } });
+    const portalRes = await app.request('/en/portal', { headers: { cookie: sessionCookie } });
     const portalHtml = await portalRes.text();
     expect(portalHtml).toContain('Donor donor-1');
     expect(portalHtml).toContain('<title>Your Donor Portal — SVBC Donor Portal</title>');
@@ -278,12 +278,47 @@ describe('GET /auth/callback error handling', () => {
   });
 });
 
-describe('GET /portal without a session', () => {
+describe('GET /:locale/portal without a session', () => {
   it('redirects to /login', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/portal');
+    const res = await app.request('/en/portal');
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/login');
+  });
+});
+
+describe('GET /portal (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+});
+
+describe('GET /:locale/portal locale handling', () => {
+  it('renders the portal in that locale and sets <html lang>', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/es/portal', { headers: { cookie } });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<html lang="es">');
+  });
+
+  it('an unrecognized :locale falls back to en instead of 404ing', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/xx/portal', { headers: { cookie } });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<html lang="en">');
   });
 });
 
@@ -355,7 +390,7 @@ describe('POST /login email validation', () => {
   });
 });
 
-describe('GET /portal error handling', () => {
+describe('GET /:locale/portal error handling', () => {
   it('shows a friendly error page, not a raw 500, when getSession throws', async () => {
     const sessionStore: SessionStore = {
       createSession: vi.fn().mockResolvedValue(undefined),
@@ -364,7 +399,7 @@ describe('GET /portal error handling', () => {
     };
     const app = createApp(makeDeps({ sessionStore }));
 
-    const res = await app.request('/portal', { headers: { cookie: 'session=some-token' } });
+    const res = await app.request('/en/portal', { headers: { cookie: 'session=some-token' } });
 
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('Something went wrong');
@@ -389,7 +424,7 @@ describe('GET /portal error handling', () => {
     // Now make the portal data lookup fail on the otherwise-valid session.
     (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
 
-    const res = await app.request('/portal', { headers: { cookie: sessionCookie } });
+    const res = await app.request('/en/portal', { headers: { cookie: sessionCookie } });
 
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('Something went wrong');

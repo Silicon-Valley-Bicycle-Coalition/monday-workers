@@ -65,7 +65,7 @@ export function errorView(messageKey: TranslationKey, locale: Locale): string {
   `;
 }
 
-function donationRow(donation: PortalView['donors'][number]['donations'][number]): string {
+function donationRow(donation: PortalView['donors'][number]['donations'][number], locale: Locale): string {
   return `
     <tr>
       <td>${escapeHtml(donation.date)}</td>
@@ -75,19 +75,19 @@ function donationRow(donation: PortalView['donors'][number]['donations'][number]
   `;
 }
 
-function donorSection(donor: PortalView['donors'][number]): string {
+function donorSection(donor: PortalView['donors'][number], locale: Locale): string {
   return `
     <section>
       <h2>${escapeHtml(donor.name)}</h2>
-      <p>Membership: ${escapeHtml(donor.membershipStatus)} (${escapeHtml(donor.membershipTier)})</p>
-      <p>Total donated: ${escapeHtml(donor.totalDonated)}</p>
-      <p><a href="/portal/card/${encodeURIComponent(donor.id)}">Membership card</a></p>
+      <p>${escapeHtml(t(locale, 'portal.membership', { status: donor.membershipStatus, tier: donor.membershipTier }))}</p>
+      <p>${escapeHtml(t(locale, 'portal.totalDonated', { total: donor.totalDonated }))}</p>
+      <p><a href="/${locale}/portal/card/${encodeURIComponent(donor.id)}">${escapeHtml(t(locale, 'portal.membershipCardLink'))}</a></p>
       <table>
         <thead>
-          <tr><th>Date</th><th>Amount</th><th>Description</th></tr>
+          <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th>${escapeHtml(t(locale, 'portal.tableAmount'))}</th><th>${escapeHtml(t(locale, 'portal.tableDescription'))}</th></tr>
         </thead>
         <tbody>
-          ${donor.donations.map(donationRow).join('')}
+          ${donor.donations.map((d) => donationRow(d, locale)).join('')}
         </tbody>
       </table>
     </section>
@@ -98,18 +98,18 @@ function discountRow(discount: PortalView['discounts'][number]): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
-export function portalView(data: PortalView): string {
+export function portalView(data: PortalView, locale: Locale): string {
   return `
-    <h1>Your donor portal</h1>
-    ${data.donors.map(donorSection).join('')}
+    <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
+    ${data.donors.map((donor) => donorSection(donor, locale)).join('')}
     <section>
-      <h2>Bike shop discounts</h2>
+      <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>
         ${data.discounts.map(discountRow).join('')}
       </ul>
     </section>
-    <p><a href="/portal/letters">Tax documents</a></p>
-    <p><a href="/portal/change-request">Request a change to your details</a></p>
-    <form action="/logout" method="post"><button type="submit">Log out</button></form>
+    <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
+    <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>
+    <form action="/logout" method="post"><button type="submit">${escapeHtml(t(locale, 'portal.logout'))}</button></form>
   `;
 }

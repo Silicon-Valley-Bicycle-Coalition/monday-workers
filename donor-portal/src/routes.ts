@@ -28,6 +28,7 @@ import { generateQrSvg } from './card/qr';
 import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
 import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
+import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 
 export interface AppDeps {
@@ -51,7 +52,6 @@ const SESSION_COOKIE = 'session';
 // donor's own data (see the /portal/letters/:donorItemId/:year route below).
 const SITE_TITLE = 'SVBC Donor Portal';
 const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
-const TITLE_PORTAL = `Your Donor Portal — ${SITE_TITLE}`;
 const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
 const TITLE_CHANGE_REQUEST = `Request a Change — ${SITE_TITLE}`;
 const TITLE_CARD = `Your Membership Card — ${SITE_TITLE}`;
@@ -79,6 +79,14 @@ async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] |
   const sessionToken = getCookie(c, SESSION_COOKIE);
   if (!sessionToken) return null;
   return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
+}
+
+// Shared by every authenticated route from this task on: the authenticated zone's locale comes
+// from the `:locale` path param (not cookie/header sniffing like detectLocale), falling back to
+// the default rather than 404ing on an unrecognized code.
+function resolvePathLocale(c: Context): Locale {
+  const raw = c.req.param('locale');
+  return raw !== undefined && isLocale(raw) ? raw : DEFAULT_LOCALE;
 }
 
 export function createApp(deps: AppDeps) {
@@ -200,7 +208,13 @@ export function createApp(deps: AppDeps) {
     return c.redirect('/portal');
   });
 
-  app.get('/portal', async (c) => {
+  // Back-compat: anything still linking to the old unprefixed /portal (a stale bookmark, an
+  // email sent before locale-prefixed routes existed) lands on the default-locale equivalent
+  // instead of 404ing.
+  app.get('/portal', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
+
+  app.get('/:locale/portal', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) {
       return c.redirect('/login');
@@ -208,7 +222,7 @@ export function createApp(deps: AppDeps) {
 
     const data = await loadPortalData(donorItemIds, deps.monday);
     c.header('Cache-Control', NO_STORE);
-    return c.html(page(TITLE_PORTAL, portalView(data)));
+    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale), locale));
   });
 
   app.get('/portal/letters', async (c) => {

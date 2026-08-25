@@ -81,7 +81,7 @@ describe('portalView', () => {
   };
 
   it('renders each donor under its own name header, never a single merged view', () => {
-    const html = portalView(data);
+    const html = portalView(data, 'en');
     expect(html).toContain('Jane Donor');
     expect(html).toContain('Jane Also');
     expect(html).toContain('Annual gift');
@@ -103,14 +103,20 @@ describe('portalView', () => {
       ],
       discounts: [],
     };
-    const html = portalView(maliciousData);
+    const html = portalView(maliciousData, 'en');
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
     expect(html).toContain('&lt;img');
   });
 
-  it('links each donor to their own membership card', () => {
-    const html = portalView(data);
-    expect(html).toContain('/portal/card/donor-1');
-    expect(html).toContain('/portal/card/donor-2');
+  it('links each donor to their own membership card, locale-prefixed', () => {
+    const html = portalView(data, 'es');
+    expect(html).toContain('/es/portal/card/donor-1');
+    expect(html).toContain('/es/portal/card/donor-2');
+  });
+
+  it('links tax documents and change-request under the same locale prefix', () => {
+    const html = portalView(data, 'vi');
+    expect(html).toContain('href="/vi/portal/letters"');
+    expect(html).toContain('href="/vi/portal/change-request"');
   });
 });
