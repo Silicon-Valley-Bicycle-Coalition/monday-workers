@@ -14,6 +14,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'title.changeRequest': '申请变更',
   'title.card': '您的会员卡',
   'title.verify': '会员验证',
+  'title.events': '您的活动报名',
 
   // Login
   'login.prompt': '请输入您的电子邮箱以接收登录链接。',
@@ -36,6 +37,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '我们暂时无法加载您的会员卡，请几分钟后再试。',
   'error.cardRegenerateFailed': '我们暂时无法重新生成您的会员卡，请几分钟后再试。',
   'error.verifyLoadFailed': '我们暂时无法验证此卡片，请几分钟后再试。',
+  'error.eventsLoadFailed': '目前无法加载您的活动报名记录。请几分钟后再试。',
   'error.generic': '出现问题，请重新登录。',
 
   // Portal
@@ -48,6 +50,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'portal.tableDescription': '说明',
   'portal.discountsHeading': '自行车店折扣',
   'portal.taxDocumentsLink': '税务文件',
+  'portal.eventsLink': '活动报名',
   'portal.changeRequestLink': '申请变更您的信息',
   'portal.logout': '退出登录',
 
@@ -61,6 +64,19 @@ export const zhHans: Record<TranslationKey, string> = {
   'letters.backToLetters': '返回税务文件',
   'letters.print': '打印或保存为 PDF',
   'letters.englishOnlyNote': '此正式文件以英文出具。',
+
+  // Event registrations
+  'events.listHeading': '您的活动报名',
+  'events.upcomingHeading': '即将举行',
+  'events.pastHeading': '往期',
+  'events.noneYet': '{{name}} 目前还没有活动报名记录。',
+  'events.tableEvent': '活动',
+  'events.tableDate': '日期',
+  'events.tableStatus': '状态',
+  'events.statusAttended': '已出席',
+  'events.statusRegistered': '已报名',
+  'events.backToPortal': '返回您的门户',
+  'events.unavailable': '门户中的活动报名功能尚未开放。请稍后再来查看。',
 
   // Change request
   'changeRequest.formHeading': '申请变更您的信息',

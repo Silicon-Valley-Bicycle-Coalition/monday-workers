@@ -14,6 +14,7 @@ export const fil: Record<TranslationKey, string> = {
   'title.changeRequest': 'Humiling ng Pagbabago',
   'title.card': 'Ang Iyong Membership Card',
   'title.verify': 'Pagpapatunay ng Membership',
+  'title.events': 'Ang Iyong mga Pagpaparehistro sa Event',
 
   // Login
   'login.prompt': 'Ilagay ang iyong email para makatanggap ng login link.',
@@ -36,6 +37,7 @@ export const fil: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'Hindi namin ma-load ang iyong card sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.cardRegenerateFailed': 'Hindi namin ma-regenerate ang iyong card sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.verifyLoadFailed': 'Hindi namin ma-verify ang card na ito sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
+  'error.eventsLoadFailed': 'Hindi namin ma-load ang iyong mga pagpaparehistro sa event ngayon. Pakisubukang muli pagkalipas ng ilang minuto.',
   'error.generic': 'May naganap na problema. Pakisubukan mag-log in ulit.',
 
   // Portal
@@ -48,6 +50,7 @@ export const fil: Record<TranslationKey, string> = {
   'portal.tableDescription': 'Deskripsyon',
   'portal.discountsHeading': 'Mga diskwento sa bike shop',
   'portal.taxDocumentsLink': 'Mga dokumento sa buwis',
+  'portal.eventsLink': 'Mga pagpaparehistro sa event',
   'portal.changeRequestLink': 'Humiling ng pagbabago sa iyong impormasyon',
   'portal.logout': 'Mag-log out',
 
@@ -61,6 +64,19 @@ export const fil: Record<TranslationKey, string> = {
   'letters.backToLetters': 'Bumalik sa mga dokumento sa buwis',
   'letters.print': 'I-print o i-save bilang PDF',
   'letters.englishOnlyNote': 'Ang opisyal na dokumentong ito ay inilalabas sa Ingles.',
+
+  // Event registrations
+  'events.listHeading': 'Ang iyong mga pagpaparehistro sa event',
+  'events.upcomingHeading': 'Paparating',
+  'events.pastHeading': 'Nakaraan',
+  'events.noneYet': 'Wala pang nakatalang pagpaparehistro sa event para kay {{name}}.',
+  'events.tableEvent': 'Event',
+  'events.tableDate': 'Petsa',
+  'events.tableStatus': 'Katayuan',
+  'events.statusAttended': 'Dumalo',
+  'events.statusRegistered': 'Nakarehistro',
+  'events.backToPortal': 'Bumalik sa iyong portal',
+  'events.unavailable': 'Hindi pa available ang mga pagpaparehistro sa event sa portal. Pakibalikan sa lalong madaling panahon.',
 
   // Change request
   'changeRequest.formHeading': 'Humiling ng pagbabago sa iyong impormasyon',

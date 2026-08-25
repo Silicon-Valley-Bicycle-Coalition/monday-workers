@@ -14,6 +14,7 @@ export const ko: Record<TranslationKey, string> = {
   'title.changeRequest': '변경 요청',
   'title.card': '회원 카드',
   'title.verify': '회원 자격 확인',
+  'title.events': '이벤트 참가 신청 내역',
 
   // Login
   'login.prompt': '로그인 링크를 받으시려면 이메일 주소를 입력해 주세요.',
@@ -36,6 +37,7 @@ export const ko: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '지금은 카드를 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.',
   'error.cardRegenerateFailed': '지금은 카드를 재발급할 수 없습니다. 잠시 후 다시 시도해 주세요.',
   'error.verifyLoadFailed': '지금은 이 카드를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+  'error.eventsLoadFailed': '지금은 이벤트 참가 신청 내역을 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'error.generic': '문제가 발생했습니다. 다시 로그인해 주세요.',
 
   // Portal
@@ -48,6 +50,7 @@ export const ko: Record<TranslationKey, string> = {
   'portal.tableDescription': '설명',
   'portal.discountsHeading': '자전거 매장 할인',
   'portal.taxDocumentsLink': '세금 서류',
+  'portal.eventsLink': '이벤트 참가 신청',
   'portal.changeRequestLink': '정보 변경 요청',
   'portal.logout': '로그아웃',
 
@@ -61,6 +64,19 @@ export const ko: Record<TranslationKey, string> = {
   'letters.backToLetters': '세금 서류로 돌아가기',
   'letters.print': '인쇄 또는 PDF로 저장',
   'letters.englishOnlyNote': '이 공식 문서는 영어로 발급됩니다.',
+
+  // Event registrations
+  'events.listHeading': '이벤트 참가 신청 내역',
+  'events.upcomingHeading': '예정',
+  'events.pastHeading': '지난 이벤트',
+  'events.noneYet': '{{name}}님의 이벤트 참가 신청 기록이 아직 없습니다.',
+  'events.tableEvent': '이벤트',
+  'events.tableDate': '날짜',
+  'events.tableStatus': '상태',
+  'events.statusAttended': '참석함',
+  'events.statusRegistered': '신청됨',
+  'events.backToPortal': '포털로 돌아가기',
+  'events.unavailable': '포털에서 이벤트 참가 신청 내역은 아직 제공되지 않습니다. 곧 다시 확인해 주세요.',
 
   // Change request
   'changeRequest.formHeading': '정보 변경 요청',

@@ -12,6 +12,7 @@ export const en = {
   'title.changeRequest': 'Request a Change',
   'title.card': 'Your Membership Card',
   'title.verify': 'Membership Verification',
+  'title.events': 'Your Event Registrations',
 
   // Login
   'login.prompt': 'Enter your email to receive a login link.',
@@ -34,6 +35,7 @@ export const en = {
   'error.cardLoadFailed': 'We could not load your card right now. Please try again in a few minutes.',
   'error.cardRegenerateFailed': 'We could not regenerate your card right now. Please try again in a few minutes.',
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
+  'error.eventsLoadFailed': 'We could not load your event registrations right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
 
   // Portal
@@ -46,6 +48,7 @@ export const en = {
   'portal.tableDescription': 'Description',
   'portal.discountsHeading': 'Bike shop discounts',
   'portal.taxDocumentsLink': 'Tax documents',
+  'portal.eventsLink': 'Event registrations',
   'portal.changeRequestLink': 'Request a change to your details',
   'portal.logout': 'Log out',
 
@@ -59,6 +62,19 @@ export const en = {
   'letters.backToLetters': 'Back to tax documents',
   'letters.print': 'Print or save as PDF',
   'letters.englishOnlyNote': 'This official document is issued in English.',
+
+  // Event registrations
+  'events.listHeading': 'Your event registrations',
+  'events.upcomingHeading': 'Upcoming',
+  'events.pastHeading': 'Past',
+  'events.noneYet': 'No event registrations on file yet for {{name}}.',
+  'events.tableEvent': 'Event',
+  'events.tableDate': 'Date',
+  'events.tableStatus': 'Status',
+  'events.statusAttended': 'Attended',
+  'events.statusRegistered': 'Registered',
+  'events.backToPortal': 'Back to your portal',
+  'events.unavailable': 'Event registrations are not available yet in the portal. Please check back soon.',
 
   // Change request
   'changeRequest.formHeading': 'Request a change to your details',

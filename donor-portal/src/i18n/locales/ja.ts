@@ -14,6 +14,7 @@ export const ja: Record<TranslationKey, string> = {
   'title.changeRequest': '変更のリクエスト',
   'title.card': '会員証',
   'title.verify': '会員資格の確認',
+  'title.events': 'イベント参加登録',
 
   // Login
   'login.prompt': 'ログインリンクを受け取るには、メールアドレスを入力してください。',
@@ -36,6 +37,7 @@ export const ja: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '現在、お客様の会員証を読み込めませんでした。数分後に再度お試しください。',
   'error.cardRegenerateFailed': '現在、会員証を再発行できませんでした。数分後に再度お試しください。',
   'error.verifyLoadFailed': '現在、この会員証を確認できませんでした。数分後に再度お試しください。',
+  'error.eventsLoadFailed': '現在、イベント参加登録を読み込めません。数分後にもう一度お試しください。',
   'error.generic': 'エラーが発生しました。もう一度ログインしてください。',
 
   // Portal
@@ -48,6 +50,7 @@ export const ja: Record<TranslationKey, string> = {
   'portal.tableDescription': '内容',
   'portal.discountsHeading': '自転車店の割引',
   'portal.taxDocumentsLink': '税務書類',
+  'portal.eventsLink': 'イベント参加登録',
   'portal.changeRequestLink': '登録情報の変更をリクエスト',
   'portal.logout': 'ログアウト',
 
@@ -61,6 +64,19 @@ export const ja: Record<TranslationKey, string> = {
   'letters.backToLetters': '税務書類に戻る',
   'letters.print': '印刷またはPDFとして保存',
   'letters.englishOnlyNote': 'この公式書類は英語で発行されます。',
+
+  // Event registrations
+  'events.listHeading': 'イベント参加登録',
+  'events.upcomingHeading': '今後の予定',
+  'events.pastHeading': '過去',
+  'events.noneYet': '{{name}}さんのイベント参加登録はまだありません。',
+  'events.tableEvent': 'イベント',
+  'events.tableDate': '日付',
+  'events.tableStatus': 'ステータス',
+  'events.statusAttended': '参加済み',
+  'events.statusRegistered': '登録済み',
+  'events.backToPortal': 'ポータルに戻る',
+  'events.unavailable': 'ポータルでのイベント参加登録の表示はまだご利用いただけません。後日改めてご確認ください。',
 
   // Change request
   'changeRequest.formHeading': '登録情報の変更をリクエスト',

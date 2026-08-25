@@ -14,6 +14,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'title.changeRequest': 'Solicitar uma Alteração',
   'title.card': 'Sua Carteirinha de Associado',
   'title.verify': 'Verificação de Associação',
+  'title.events': 'Suas Inscrições em Eventos',
 
   // Login
   'login.prompt': 'Digite seu e-mail para receber um link de acesso.',
@@ -36,6 +37,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'Não foi possível carregar sua carteirinha no momento. Tente novamente em alguns minutos.',
   'error.cardRegenerateFailed': 'Não foi possível gerar uma nova carteirinha no momento. Tente novamente em alguns minutos.',
   'error.verifyLoadFailed': 'Não foi possível verificar esta carteirinha no momento. Tente novamente em alguns minutos.',
+  'error.eventsLoadFailed': 'Não foi possível carregar suas inscrições em eventos agora. Tente novamente em alguns minutos.',
   'error.generic': 'Algo deu errado. Tente entrar novamente.',
 
   // Portal
@@ -48,6 +50,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'portal.tableDescription': 'Descrição',
   'portal.discountsHeading': 'Descontos em lojas de bicicletas',
   'portal.taxDocumentsLink': 'Documentos fiscais',
+  'portal.eventsLink': 'Inscrições em eventos',
   'portal.changeRequestLink': 'Solicitar uma alteração em seus dados',
   'portal.logout': 'Sair',
 
@@ -61,6 +64,19 @@ export const ptBR: Record<TranslationKey, string> = {
   'letters.backToLetters': 'Voltar aos documentos fiscais',
   'letters.print': 'Imprimir ou salvar como PDF',
   'letters.englishOnlyNote': 'Este documento oficial é emitido em inglês.',
+
+  // Event registrations
+  'events.listHeading': 'Suas inscrições em eventos',
+  'events.upcomingHeading': 'Próximos',
+  'events.pastHeading': 'Anteriores',
+  'events.noneYet': 'Ainda não há inscrições em eventos registradas para {{name}}.',
+  'events.tableEvent': 'Evento',
+  'events.tableDate': 'Data',
+  'events.tableStatus': 'Status',
+  'events.statusAttended': 'Compareceu',
+  'events.statusRegistered': 'Inscrito',
+  'events.backToPortal': 'Voltar ao seu portal',
+  'events.unavailable': 'As inscrições em eventos ainda não estão disponíveis no portal. Volte em breve.',
 
   // Change request
   'changeRequest.formHeading': 'Solicitar uma alteração em seus dados',
