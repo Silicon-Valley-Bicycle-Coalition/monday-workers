@@ -36,18 +36,77 @@ describe('page', () => {
     expect(html).toContain('action="/logout"');
     expect(html).toContain(t('en', 'portal.logout'));
   });
+
+  it('links the header logo to the org website, opening in a new tab', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain('class="site-header-logo-link" href="https://bikesiliconvalley.org" target="_blank"');
+  });
+
+  it('shows a gold Donate button in the header linking to the ways-to-give page', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain('class="site-header-donate" href="https://bikesiliconvalley.org/ways-to-give"');
+    expect(html).toContain(t('en', 'nav.donate'));
+  });
+
+  it('renders a footer with basic org contact information, on every page', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain('class="site-footer"');
+    expect(html).toContain('Silicon Valley Bicycle Coalition');
+    expect(html).toContain('95 S Market St, Suite 648, San José, CA 95113');
+    expect(html).toContain('href="https://bikesiliconvalley.org"');
+  });
+
+  it('renders the org\'s nonprofit status, EIN, and mailing address in the footer', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain(t('en', 'footer.nonprofit'));
+    expect(html).toContain('77-0338658');
+    expect(html).toContain(t('en', 'footer.mailingAddress'));
+    expect(html).toContain('PO Box 1927, San José, CA 95109');
+  });
+
+  it('links to the privacy policy in the footer, opening in a new tab', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain(
+      'href="https://siliconvalleybicyclecoaliti.app.box.com/s/1diyqeoe5dcsfsg0qx2yk7oa539toz35" target="_blank"'
+    );
+    expect(html).toContain(t('en', 'footer.privacyPolicy'));
+  });
+
+  it('renders a footer language switcher offering every supported locale, auto-submitting on change', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain('class="site-footer-lang" action="/lang" method="get"');
+    expect(html).toContain('<option value="es">');
+    expect(html).toContain('<option value="vi">');
+    expect(html).toContain('<option value="en" selected>');
+    // Auto-submits on select, filling `to` with the browser's actual current path so switching
+    // language returns the visitor to wherever they were, without page() needing to know it.
+    expect(html).toContain(`onchange="this.form.to.value = location.pathname; this.form.submit()"`);
+  });
+
+  // Distinct from LOCALE_LABELS (the English names round-tripped through Monday's Preferred
+  // Language column) — this picker shows each language's own name, so a visitor recognizes
+  // theirs even while the page is rendered in a language they don't read.
+  it('labels each language option in its own language, not English', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain('<option value="es">Español</option>');
+    expect(html).toContain('<option value="ja">日本語</option>');
+    expect(html).toContain('<option value="vi">Tiếng Việt</option>');
+    expect(html).not.toContain('>Spanish<');
+    expect(html).not.toContain('>Japanese<');
+  });
 });
 
 describe('loginFormView', () => {
-  it('renders a form posting to /login with an email field and a language picker', () => {
+  it('renders an H1 with just "Donor Portal", not the full SVBC-prefixed site title', () => {
     const html = loginFormView('en');
-    expect(html).toContain('action="/login"');
+    expect(html).toContain('<h1>Donor Portal</h1>');
+  });
+
+  it('renders a form posting to / with an email field', () => {
+    const html = loginFormView('en');
+    expect(html).toContain('action="/"');
     expect(html).toContain('name="email"');
     expect(html).toContain('Send login link');
-    // a <select> submitting to GET /lang, with one <option> per supported locale
-    expect(html).toContain('action="/lang"');
-    expect(html).toContain('<option value="es">');
-    expect(html).toContain('<option value="vi">');
   });
 
   it('renders the prompt in the requested locale when translated (fallback to English otherwise)', () => {
@@ -79,9 +138,9 @@ describe('errorView', () => {
     expect(html).toContain('This link is invalid');
   });
 
-  it('links back to /login for a new link', () => {
+  it('links back to / for a new link', () => {
     const html = errorView('error.invalidLink', 'en');
-    expect(html).toContain('href="/login"');
+    expect(html).toContain('href="/"');
   });
 
   it('renders actual translated copy for a non-English locale, not just structure', () => {
@@ -232,15 +291,6 @@ describe('portalView', () => {
     const html = portalView(data, 'vi', {}, noFunraise);
     expect(html).toContain('href="/vi/portal/letters"');
     expect(html).toContain('href="/vi/portal/change-request"');
-  });
-
-  it('includes a language switcher offering every supported locale, submitting to /lang', () => {
-    const html = portalView(data, 'en', {}, noFunraise);
-    expect(html).toContain('action="/lang"');
-    expect(html).toContain('name="to" value="/en/portal"');
-    expect(html).toContain('<option value="es">');
-    expect(html).toContain('<option value="vi">');
-    expect(html).toContain('<option value="en" selected>');
   });
 
   it('does not offer a per-language change-request button (superseded by the general "Request a change" form\'s Language field)', () => {

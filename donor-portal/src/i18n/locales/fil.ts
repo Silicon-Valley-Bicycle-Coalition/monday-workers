@@ -4,7 +4,13 @@ export const fil: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC Donor Portal',
   'languagePicker.label': 'Wika',
-  'languagePicker.switch': 'Lumipat',
+  'nav.donate': 'Mag-donate',
+
+  // Site footer
+  'footer.nonprofit': '501(c)(3) na non-profit na organisasyon',
+  'footer.ein': 'EIN: {{ein}}',
+  'footer.mailingAddress': 'Mailing Address:',
+  'footer.privacyPolicy': 'Patakaran sa Privacy',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Mag-log In',
@@ -17,6 +23,7 @@ export const fil: Record<TranslationKey, string> = {
   'title.events': 'Ang Iyong mga Pagpaparehistro sa Event',
 
   // Login
+  'login.heading': 'Donor Portal',
   'login.prompt': 'Ilagay ang iyong email para makatanggap ng login link.',
   'login.submit': 'Ipadala ang login link',
 

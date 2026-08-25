@@ -1,16 +1,35 @@
-// SVBC wordmark (black badge, gold bicycle/speech-bubble mark, white text), inlined here rather
-// than served as a separate file — it's ~20KB of static vector markup that renders on every page,
-// so inlining avoids a second request without needing a Workers Assets binding.
+// SVBC wordmark (gold bicycle/speech-bubble mark, white text), inlined here rather than served
+// as a separate file — it's ~20KB of static vector markup that renders on every page, so
+// inlining avoids a second request without needing a Workers Assets binding.
 //
 // The source file's declared viewBox (0 0 288 288) is a stale square left over from a PDF/EPS
 // export — it doesn't match the actual artwork, a horizontal wordmark sitting in the canvas's
-// upper portion. Cropped here to the artwork's real bounding box (computed from the path data),
-// with matching width/height attributes so browsers derive the correct intrinsic aspect ratio
-// when only a CSS height is set (an <svg>'s own width/height attributes, not its viewBox, are
-// what determines that — a mismatch there is why the first cropped attempt rendered squashed).
-export const SVBC_LOGO_SVG = `<svg class="site-logo" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="264pt" height="185pt" viewBox="0 98 264 185" version="1.1">
+// upper portion. A first crop attempt (viewBox="0 98 264 185") narrowed it to roughly the
+// artwork's row but still left ~96 units of pure empty canvas below the badge (the declared
+// height of 185 vs. the badge's real ~96-unit height) — every consumer that sets only a CSS
+// height was therefore rendering the *box*, including that dead space, at the requested size,
+// so the visible badge itself came out at under half the intended size and off-center within it
+// (hence the `top` nudges once needed at each call site to re-center it visually).
+//
+// The original export also had its own solid dark rounded-rect background baked in behind the
+// wordmark (a "black-box" path, since removed) — every place this asset is actually placed
+// (the header, the membership card) already renders it against its own dark surface, so that
+// baked-in box just added a second, slightly different shade of dark showing through as a visible
+// seam around the logo. Dropping it lets the wordmark sit directly on whatever background it's
+// placed on. The white text/lines and the speech-bubble's white outline stay visible on both of
+// this asset's actual dark backgrounds; this SVG is not intended for use on a light background.
+//
+// This viewBox is the remaining artwork's actual bounding box — computed from every M/L/C
+// coordinate across all paths (control points included, so curves are guaranteed to stay inside
+// it), plus a ~2-unit margin on each side. width/height attributes mirror it (unitless — a "pt"
+// suffix here, as the original export had, makes at least one browser tested treat it as an
+// absolute CSS length instead of an SVG user-unit ratio hint, applying the pt→px 4/3 factor to
+// the *rendered* width even after a CSS height override, silently reintroducing rendered-box
+// padding around the artwork the crop above was meant to eliminate) so browsers derive the
+// correct intrinsic aspect ratio when only a CSS height is set (an <svg>'s own width/height
+// attributes, not its viewBox, are what determines that).
+export const SVBC_LOGO_SVG = `<svg class="site-logo" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="235" height="90" viewBox="27 99 235 90" version="1.1">
 <g id="surface1">
-<path id="black-box" style=" stroke:none;fill-rule:nonzero;fill:rgb(13.299561%,11.799622%,12.199402%);fill-opacity:1;" d="M 272.015625 171.472656 C 272.015625 175.199219 268.992188 178.222656 265.265625 178.222656 L 23.214844 178.222656 C 19.488281 178.222656 16.464844 175.199219 16.464844 171.472656 L 16.464844 97.226563 C 16.464844 93.496094 19.488281 90.476563 23.214844 90.476563 L 265.265625 90.476563 C 268.992188 90.476563 272.015625 93.496094 272.015625 97.226563 "/>
 <g id="logo-text">
 <path style=" stroke:none;fill-rule:nonzero;fill:rgb(100%,100%,100%);fill-opacity:1;" d="M 32.402344 112.523438 C 31.183594 112.523438 30.09375 112.230469 29.265625 111.789063 L 29.496094 110.230469 C 30.257813 110.734375 31.3125 111.1875 32.433594 111.1875 C 33.601563 111.1875 34.433594 110.574219 34.433594 109.484375 C 34.433594 108.460938 33.976563 108.039063 32.289063 107.273438 C 30.175781 106.316406 29.378906 105.621094 29.378906 104.011719 C 29.378906 102.210938 30.757813 101.054688 32.789063 101.054688 C 33.878906 101.054688 34.691406 101.3125 35.339844 101.6875 L 35.097656 103.214844 C 34.480469 102.746094 33.636719 102.386719 32.742188 102.386719 C 31.457031 102.386719 30.886719 103.070313 30.886719 103.898438 C 30.886719 104.757813 31.3125 105.164063 33.019531 105.941406 C 35.195313 106.933594 35.941406 107.683594 35.941406 109.371094 C 35.941406 111.304688 34.496094 112.523438 32.402344 112.523438 "/>
 <path style=" stroke:none;fill-rule:nonzero;fill:rgb(100%,100%,100%);fill-opacity:1;" d="M 38.003906 112.394531 L 39.53125 112.394531 L 39.53125 101.183594 L 38.003906 101.183594 Z M 38.003906 112.394531 "/>

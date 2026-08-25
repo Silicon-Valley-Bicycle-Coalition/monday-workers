@@ -259,18 +259,18 @@ function extractToken(loginUrl: string): string {
   return new URL(loginUrl).searchParams.get('token') as string;
 }
 
-describe('POST /login', () => {
+describe('POST /', () => {
   it('returns the identical response for a matching and a non-matching email', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const appMatching = createApp(makeDeps({ monday }));
     const appNonMatching = createApp(makeDeps({ monday }));
 
-    const matchingRes = await appMatching.request('/login', {
+    const matchingRes = await appMatching.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-    const nonMatchingRes = await appNonMatching.request('/login', {
+    const nonMatchingRes = await appNonMatching.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'nobody@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -291,7 +291,7 @@ describe('full login flow', () => {
     const deps = makeDeps({ monday, emailSender });
     const app = createApp(deps);
 
-    await app.request('/login', {
+    await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -324,7 +324,7 @@ describe('full login flow', () => {
     const deps = makeDeps({ monday, emailSender });
     const app = createApp(deps);
 
-    await app.request('/login', {
+    await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -356,7 +356,7 @@ describe('GET /auth/callback error handling', () => {
     };
     const app = createApp(makeDeps({ monday, emailSender, tokenStore, sessionStore }));
 
-    await app.request('/login', {
+    await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -377,7 +377,7 @@ describe('GET /auth/callback locale handling', () => {
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
 
-    await app.request('/login', {
+    await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -394,7 +394,7 @@ describe('GET /auth/callback locale handling', () => {
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
 
-    await app.request('/login', {
+    await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -408,11 +408,11 @@ describe('GET /auth/callback locale handling', () => {
 });
 
 describe('GET /:locale/portal without a session', () => {
-  it('redirects to /login', async () => {
+  it('redirects to /', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/en/portal');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 });
 
@@ -462,10 +462,19 @@ describe('GET /:locale/portal locale handling', () => {
   });
 });
 
-describe('GET /login', () => {
+describe('GET /login (back-compat)', () => {
+  it('redirects to the new root login path', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/login', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/');
+  });
+});
+
+describe('GET /', () => {
   it('renders a full document with a title, charset, and viewport meta', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/login');
+    const res = await app.request('/');
     const html = await res.text();
     expect(html).toContain('<title>Log In — SVBC Donor Portal</title>');
     expect(html).toContain('<meta charset="utf-8" />');
@@ -474,7 +483,7 @@ describe('GET /login', () => {
 
   it('does not show a logout button before the donor is signed in', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/login');
+    const res = await app.request('/');
     expect(await res.text()).not.toContain('action="/logout"');
   });
 });
@@ -492,7 +501,7 @@ describe('GET /favicon.png', () => {
   });
 });
 
-describe('POST /login rate limiting', () => {
+describe('POST / rate limiting', () => {
   it('still returns the generic response when the IP limiter denies the request', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = {
@@ -502,7 +511,7 @@ describe('POST /login rate limiting', () => {
     const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
     const app = createApp(makeDeps({ monday, emailSender, ipLimiter }));
 
-    const res = await app.request('/login', {
+    const res = await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -513,18 +522,18 @@ describe('POST /login rate limiting', () => {
   });
 });
 
-describe('POST /login email validation', () => {
+describe('POST / email validation', () => {
   it('rejects a malformed email the same way as a well-formed non-matching one, without calling Monday', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const appMalformed = createApp(makeDeps({ monday }));
     const appNonMatching = createApp(makeDeps({ monday: fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] }) }));
 
-    const malformedRes = await appMalformed.request('/login', {
+    const malformedRes = await appMalformed.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'weird"email@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
-    const nonMatchingRes = await appNonMatching.request('/login', {
+    const nonMatchingRes = await appNonMatching.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'nobody@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -540,7 +549,7 @@ describe('POST /login email validation', () => {
     const app = createApp(makeDeps({ monday }));
     const tooLong = `${'a'.repeat(250)}@x.co`; // > 254 chars
 
-    const res = await app.request('/login', {
+    const res = await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: tooLong }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -576,7 +585,7 @@ describe('GET /:locale/portal error handling', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
 
     // Log in for real so we get a valid session cookie.
-    await app.request('/login', {
+    await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -596,7 +605,7 @@ describe('GET /:locale/portal error handling', () => {
   });
 });
 
-describe('POST /login error handling', () => {
+describe('POST / error handling', () => {
   it('still returns the identical generic response when requestLogin throws', async () => {
     const monday: MondayClient = {
       findDonorsByEmail: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')),
@@ -613,7 +622,7 @@ describe('POST /login error handling', () => {
     };
     const app = createApp(makeDeps({ monday }));
 
-    const res = await app.request('/login', {
+    const res = await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -629,7 +638,7 @@ async function loginAndGetCookie(
   emailSender: { sendLoginEmail: ReturnType<typeof vi.fn> },
   email: string
 ): Promise<string> {
-  await app.request('/login', {
+  await app.request('/', {
     method: 'POST',
     body: new URLSearchParams({ email }),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -640,10 +649,10 @@ async function loginAndGetCookie(
 }
 
 describe('GET /:locale/portal/letters', () => {
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/letters');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
   it('lists a completed year for the logged-in donor with no-store caching', async () => {
@@ -793,7 +802,7 @@ describe('GET /portal/letters/:donorItemId/:year (bare, no locale)', () => {
 });
 
 describe('GET /:locale/portal/change-request', () => {
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/change-request');
     expect(res.status).toBe(302);
   });
@@ -991,10 +1000,10 @@ describe('POST /webhooks/monday/letters', () => {
 // injected cardTokenStore instead of screen-scraping the dashboard HTML for a URL that, by design,
 // is no longer there.
 describe('GET /:locale/portal — dashboard membership card widget', () => {
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
   it('renders the card widget inline with a QR and issues a verify token, with no-store caching', async () => {
@@ -1141,10 +1150,10 @@ describe('GET /portal/card/:donorItemId (old standalone card page)', () => {
 });
 
 describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/card/donor-1/regenerate', { method: 'POST' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
   it("404s for a donor item id that is not the session's own", async () => {
@@ -1278,34 +1287,60 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 describe('GET /lang/:code', () => {
   it('sets the lang cookie and redirects to an allowlisted path', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/lang/es?to=%2Flogin', { redirect: 'manual' });
+    const res = await app.request('/lang/es?to=%2F', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
     expect(res.headers.get('set-cookie')).toContain('lang=es');
   });
 
   it('falls back to en for an unsupported code', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/lang/xx?to=%2Flogin', { redirect: 'manual' });
+    const res = await app.request('/lang/xx?to=%2F', { redirect: 'manual' });
     expect(res.headers.get('set-cookie')).toContain('lang=en');
   });
 
-  it('ignores a non-allowlisted "to" and redirects to /login', async () => {
+  it('ignores a non-allowlisted "to" and redirects to /', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/lang/es?to=https%3A%2F%2Fevil.example', { redirect: 'manual' });
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
-  it('redirects back to a locale-prefixed portal path, as used by the in-portal language switcher', async () => {
+  // The portal tree reads its locale from the :locale path segment (see resolvePathLocale), not
+  // the lang cookie, so redirecting back to the literal `to` path would silently re-render the
+  // *old* locale — the segment must be rewritten to the newly-selected code.
+  it('rewrites the :locale segment of a portal "to" path to the newly-selected locale', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/lang/es?to=%2Fen%2Fportal', { redirect: 'manual' });
-    expect(res.headers.get('location')).toBe('/en/portal');
+    expect(res.headers.get('location')).toBe('/es/portal');
   });
 
-  it('rejects a locale-prefixed path with an unsupported locale segment', async () => {
+  it('rewrites the :locale segment of a deeper portal sub-path (e.g. letters) too', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=%2Fen%2Fportal%2Fletters', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/es/portal/letters');
+  });
+
+  // The site footer's language switcher (see views.ts's siteFooter) submits the browser's actual
+  // location.pathname as `to`, which can be any real route in the app — so the allowlist accepts
+  // any same-origin relative path rather than hand-maintaining an exact list of route shapes. An
+  // unrecognized (pre-rewrite) locale segment is harmless either way, since it's about to be
+  // overwritten with the newly-selected, already-validated locale.
+  it('overwrites even an unrecognized locale segment with the newly-selected locale', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/lang/es?to=%2Fxx%2Fportal', { redirect: 'manual' });
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/es/portal');
+  });
+
+  it('ignores a protocol-relative "to" and redirects to /', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=%2F%2Fevil.example', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/');
+  });
+
+  it('ignores a backslash-prefixed "to" (a protocol-relative URL in some browsers) and redirects to /', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=%2F%5Cevil.example', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/');
   });
 });
 
@@ -1315,28 +1350,28 @@ describe('GET /lang', () => {
   // arrives as a query param instead of a path param.
   it('sets the lang cookie and redirects to an allowlisted path', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/lang?code=es&to=%2Flogin', { redirect: 'manual' });
+    const res = await app.request('/lang?code=es&to=%2F', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
     expect(res.headers.get('set-cookie')).toContain('lang=es');
   });
 
   it('falls back to en when no code is given', async () => {
     const app = createApp(makeDeps());
-    const res = await app.request('/lang?to=%2Flogin', { redirect: 'manual' });
+    const res = await app.request('/lang?to=%2F', { redirect: 'manual' });
     expect(res.headers.get('set-cookie')).toContain('lang=en');
   });
 
-  it('ignores a non-allowlisted "to" and redirects to /login', async () => {
+  it('ignores a non-allowlisted "to" and redirects to /', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/lang?code=es&to=https%3A%2F%2Fevil.example', { redirect: 'manual' });
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
-  it('redirects back to a locale-prefixed portal path, as used by the in-portal language switcher', async () => {
+  it('rewrites the :locale segment of a portal "to" path to the newly-selected locale', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/lang?code=es&to=%2Fen%2Fportal', { redirect: 'manual' });
-    expect(res.headers.get('location')).toBe('/en/portal');
+    expect(res.headers.get('location')).toBe('/es/portal');
   });
 });
 
@@ -1377,7 +1412,7 @@ describe('GET /verify/:token', () => {
 
   // The distinguishing design decision for this route: unlike every other authenticated page,
   // /verify is public and its viewer (a shop clerk) is never the donor, so it detects locale the
-  // same way the pre-identity /login page does — via the lang cookie/Accept-Language, never a
+  // same way the pre-identity login page (/) does — via the lang cookie/Accept-Language, never a
   // :locale path segment and never the donor's own Monday-stored language preference.
   it("detects locale from the viewer's own lang cookie, not a path segment or the donor's preference", async () => {
     const monday = fakeMondayWithDonations();
@@ -1469,10 +1504,10 @@ describe('GET /verify/:token', () => {
 });
 
 describe('GET /:locale/portal/pledges', () => {
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/pledges');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
   it('renders the logged-in donor pledges with progress and no-store caching', async () => {
@@ -1532,10 +1567,10 @@ describe('GET /portal/pledges (bare, no locale)', () => {
 });
 
 describe('GET /:locale/portal/matching-gifts', () => {
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/matching-gifts');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
   it('renders the DTD widget when a public key is configured, with the signed-off EIN', async () => {
@@ -1662,10 +1697,10 @@ describe('GET /:locale/portal/events', () => {
     return cfg;
   }
 
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const res = await createApp(makeDeps()).request('/en/portal/events');
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('location')).toBe('/');
   });
 
   it('shows the unavailable state while the eventRegistrations board is unconfigured', async () => {
@@ -1878,7 +1913,7 @@ describe('POST /:locale/portal/change-request/preferences', () => {
     expect(changeQueue.send).not.toHaveBeenCalled();
   });
 
-  it('redirects to /login without a session', async () => {
+  it('redirects to / without a session', async () => {
     const app = createApp(makeDeps({ config: prefsConfig() }));
     const res = await app.request('/en/portal/change-request/preferences', { method: 'POST' });
     expect(res.status).toBe(302);

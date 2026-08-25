@@ -1,10 +1,22 @@
 import type { DonorVolunteerHistory, FunraiseLinkUrls, PortalView } from './types';
-import { SUPPORTED_LOCALES, LOCALE_LABELS, type Locale } from './i18n/locales';
+import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 import { SVBC_LOGO_SVG } from './assets/logo';
 import { formatUsdText } from './money';
 import { formatShortDate } from './dates';
 import type { PortalCard } from './card/loadCardData';
+
+// Brand chrome constants — same values as config/svbc.json's taxLetter.orgLegalName /
+// officeAddress / mailingAddress / ein, duplicated here (rather than threaded through every
+// page() call site) because this is footer branding copy, not operational config. Keep in sync
+// if the org's legal name, addresses, EIN, or these URLs change.
+const ORG_NAME = 'Silicon Valley Bicycle Coalition';
+const ORG_ADDRESS = '95 S Market St, Suite 648, San José, CA 95113';
+const ORG_MAILING_ADDRESS = 'PO Box 1927, San José, CA 95109';
+const ORG_EIN = '77-0338658';
+const ORG_WEBSITE_URL = 'https://bikesiliconvalley.org';
+const ORG_DONATE_URL = 'https://bikesiliconvalley.org/ways-to-give';
+const ORG_PRIVACY_POLICY_URL = 'https://siliconvalleybicyclecoaliti.app.box.com/s/1diyqeoe5dcsfsg0qx2yk7oa539toz35';
 
 export function escapeHtml(value: string): string {
   return value
@@ -26,33 +38,86 @@ const STYLE = `
     --svbc-white: #FFFFFF;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  /* Classic flexbox sticky footer: body is a min-viewport-height column, main grows to fill
+     whatever space the (short) page content doesn't use, so the footer sits at the bottom of
+     the viewport instead of floating right under a short page — but still gets pushed down and
+     scrolls normally once real content is taller than the viewport. */
   body {
     margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     color: var(--svbc-black);
     background: var(--svbc-white);
   }
   a { color: var(--svbc-black); }
+  /* The header/footer bars are full-bleed edge-to-edge, like bikesiliconvalley.org's own nav —
+     matching its visual weight matters more here than lining up with <main>'s narrower 720px
+     reading column underneath, which stays capped for form/table readability. Same fixed side
+     padding on both bars, so they at least align with *each other*. */
   .site-header {
-    background: var(--svbc-black);
-    padding: 14px 20px;
+    background: rgb(48, 48, 48);
+  }
+  .site-header-inner {
+    padding: 14px 40px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
   }
-  /* The wordmark's speech-bubble tail extends into the crop's bottom margin, so its geometric
-     bounding box centers lower than the visible badge — top:16px (~25% of the 64px height)
-     nudges it down to optically align with the button. See src/assets/logo.ts. */
+  .site-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  /* width:auto below is load-bearing, not a default-value no-op: an <svg>'s width/height
+     presentation attributes act as its UA-stylesheet width/height, so without an explicit
+     author width:auto here, the browser treats width as independently specified (260px, from
+     the attribute) rather than "unset", and never derives it from the height override plus the
+     intrinsic ratio — the logo renders at a fixed 260px wide at every height, non-proportional
+     at any height that isn't ~101px (e.g. the mobile override below). */
   .site-header .site-logo {
-    height: 64px;
-    position: relative;
-    top: 16px;
+    height: 100px;
+    width: auto;
     display: block;
+  }
+  .site-header-logo-link {
+    display: block;
+    line-height: 0;
+  }
+  .site-header-donate {
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+    background: var(--svbc-gold);
+    color: var(--svbc-black);
+    border: 1px solid var(--svbc-gold);
+    padding: 0 26px;
+    font-size: 15px;
+    font-weight: bold;
+    line-height: 1;
+    border-radius: 22px;
+    text-decoration: none;
   }
   main {
     max-width: 720px;
+    width: 100%;
     margin: 0 auto;
     padding: 20px;
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    /* Vertically centers the page's content as a group within the header/footer gap (align-items
+       stays the stretch default, so each child still spans main's full centered width exactly as
+       before — only the vertical position of the stack changes). "safe" falls back to top-aligned
+       start position once content is taller than the available space, instead of centering an
+       overflow and clipping the top off-screen. */
+    justify-content: safe center;
   }
   button {
     font-family: inherit;
@@ -145,7 +210,11 @@ const STYLE = `
     pointer-events: none;
   }
   .member-card-top { display: flex; align-items: flex-start; justify-content: space-between; }
-  .member-card-logo svg { display: block; height: 96px; width: auto; }
+  /* height:53px (not the header's 100px) keeps the badge's rendered footprint the same as
+     before the logo.ts crop fix (SVBC_LOGO_SVG's viewBox is shared across both contexts, so a
+     given CSS height now renders roughly 2x larger than it used to) — the card is a fixed
+     340px-wide wallet layout with the QR code sharing this row, and doesn't have room to spare. */
+  .member-card-logo svg { display: block; height: 53px; width: auto; }
   .member-card-qr {
     flex-shrink: 0;
     background: #171415;
@@ -174,11 +243,44 @@ const STYLE = `
     cursor: pointer; padding: 4px 0; font-weight: normal;
   }
 
+  .site-footer {
+    background: rgb(48, 48, 48);
+    color: #cfcfcf;
+    margin-top: 40px;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .site-footer-inner {
+    padding: 20px 40px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .site-footer p { margin: 0 0 4px; }
+  .site-footer a { color: var(--svbc-gold); }
+  .site-footer-lang {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .site-footer-lang select {
+    font-size: 13px;
+    padding: 4px 6px;
+  }
+
   @media (max-width: 480px) {
-    .site-header .site-logo { height: 48px; top: 12px; }
+    .site-header-inner, .site-footer-inner { padding-left: 20px; padding-right: 20px; }
+    /* flex-wrap as a defensive fallback (logo + logout + donate wrap to a second row rather than
+       overflowing off-screen) below the width this specific logo/button sizing was tuned to fit
+       on one line down to a ~375px viewport. */
+    .site-header-inner { flex-wrap: wrap; row-gap: 10px; }
+    .site-header .site-logo { height: 56px; }
+    .site-header-donate { height: 36px; padding: 0 16px; font-size: 13px; border-radius: 18px; }
   }
   @media print {
-    .site-header { display: none; }
+    .site-header, .site-footer { display: none; }
   }
 `;
 
@@ -186,7 +288,48 @@ function siteHeader(locale: Locale, authenticated: boolean): string {
   const logoutForm = authenticated
     ? `<form class="logout-form" action="/logout" method="post"><button type="submit">${escapeHtml(t(locale, 'portal.logout'))}</button></form>`
     : '';
-  return `<header class="site-header">${SVBC_LOGO_SVG}${logoutForm}</header>`;
+  return `<header class="site-header">
+    <div class="site-header-inner">
+      <a class="site-header-logo-link" href="${ORG_WEBSITE_URL}" target="_blank" rel="noopener noreferrer">${SVBC_LOGO_SVG}</a>
+      <div class="site-header-right">
+        ${logoutForm}
+        <a class="site-header-donate" href="${ORG_DONATE_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t(locale, 'nav.donate'))}</a>
+      </div>
+    </div>
+  </header>`;
+}
+
+// Shared by every page (pre-identity and authenticated alike): basic org contact info plus a
+// language <select> that auto-submits on change — it fills the hidden `to` field with the
+// browser's actual current location.pathname right before submitting, so switching language
+// returns the visitor to wherever they were without this needing to be threaded through every
+// page() call site. No visible submit button: a no-JS visitor can't change the value via this
+// <select> in the first place, so there's nothing for a fallback button to submit either.
+function siteFooter(locale: Locale): string {
+  const options = SUPPORTED_LOCALES.map(
+    (code) => `<option value="${code}"${code === locale ? ' selected' : ''}>${escapeHtml(LOCALE_NATIVE_LABELS[code])}</option>`
+  ).join('');
+  return `
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <div class="site-footer-contact">
+          <p>${escapeHtml(ORG_NAME)}</p>
+          <p>${escapeHtml(ORG_ADDRESS)}</p>
+          <p>${escapeHtml(t(locale, 'footer.nonprofit'))} &middot; ${escapeHtml(t(locale, 'footer.ein', { ein: ORG_EIN }))}</p>
+          <p>${escapeHtml(t(locale, 'footer.mailingAddress'))} ${escapeHtml(ORG_MAILING_ADDRESS)}</p>
+          <p>
+            <a href="${ORG_WEBSITE_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(ORG_WEBSITE_URL.replace('https://', ''))}</a>
+            &middot;
+            <a href="${ORG_PRIVACY_POLICY_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t(locale, 'footer.privacyPolicy'))}</a>
+          </p>
+        </div>
+        <form class="site-footer-lang" action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
+          <input type="hidden" name="to" value="" />
+          <select name="code" onchange="this.form.to.value = location.pathname; this.form.submit()">${options}</select>
+        </form>
+      </div>
+    </footer>
+  `;
 }
 
 // Wraps a view's HTML fragment in a minimal document so the browser has a real <title> and
@@ -207,24 +350,9 @@ export function page(title: string, body: string, locale: Locale, options: { aut
   <body>
     ${siteHeader(locale, options.authenticated ?? false)}
     <main>${body}</main>
+    ${siteFooter(locale)}
   </body>
 </html>`;
-}
-
-// Shared by every pre-identity view (login, check-email, error, verify): a <select> of every
-// supported locale, submitting to GET /lang?code=&to=<current path> so picking one and hitting
-// the button applies immediately and returns the visitor to where they were.
-export function languagePicker(currentPath: string, locale: Locale): string {
-  const options = SUPPORTED_LOCALES.map(
-    (code) => `<option value="${code}"${code === locale ? ' selected' : ''}>${escapeHtml(LOCALE_LABELS[code])}</option>`
-  ).join('');
-  return `
-    <form action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
-      <input type="hidden" name="to" value="${escapeHtml(currentPath)}" />
-      <select name="code">${options}</select>
-      <button type="submit">${escapeHtml(t(locale, 'languagePicker.switch'))}</button>
-    </form>
-  `;
 }
 
 // Shared by the authenticated sub-pages (pledges, matching gifts; older views predate it and
@@ -235,10 +363,9 @@ export function backToPortalLink(locale: Locale): string {
 
 export function loginFormView(locale: Locale): string {
   return `
-    <h1>${escapeHtml(t(locale, 'site.title'))}</h1>
-    ${languagePicker('/login', locale)}
+    <h1>${escapeHtml(t(locale, 'login.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'login.prompt'))}</p>
-    <form action="/login" method="post">
+    <form action="/" method="post">
       <input type="email" name="email" required />
       <button type="submit">${escapeHtml(t(locale, 'login.submit'))}</button>
     </form>
@@ -256,7 +383,7 @@ export function errorView(messageKey: TranslationKey, locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'error.heading'))}</h1>
     <p>${escapeHtml(t(locale, messageKey))}</p>
-    <p><a href="/login">${escapeHtml(t(locale, 'error.requestNewLink'))}</a></p>
+    <p><a href="/">${escapeHtml(t(locale, 'error.requestNewLink'))}</a></p>
   `;
 }
 
@@ -385,34 +512,9 @@ function discountRow(discount: PortalView['discounts'][number]): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
-// Distinct from languagePicker() (Task 4): this one is for the *authenticated* portal, but is
-// otherwise the same <select>-to-/lang pattern — it only switches this visit's browsing locale.
-// It used to also offer a per-language "make this my on-file preference" change-request button,
-// but that was redundant with the general "Request a change" form's own Language field (see
-// changeRequestFormView) and didn't collapse cleanly into a single <select> (switching languages
-// and requesting a permanent preference change are different actions with different targets/
-// methods) — dropped in favor of directing donors to that existing form instead.
-function portalLanguageSwitcher(locale: Locale): string {
-  const currentPath = `/${locale}/portal`;
-  const options = SUPPORTED_LOCALES.map(
-    (code) => `<option value="${code}"${code === locale ? ' selected' : ''}>${escapeHtml(LOCALE_LABELS[code])}</option>`
-  ).join('');
-  return `
-    <section>
-      <h2>${escapeHtml(t(locale, 'languagePicker.label'))}</h2>
-      <form action="/lang" method="get">
-        <input type="hidden" name="to" value="${escapeHtml(currentPath)}" />
-        <select name="code">${options}</select>
-        <button type="submit">${escapeHtml(t(locale, 'languagePicker.switch'))}</button>
-      </form>
-    </section>
-  `;
-}
-
 export function portalView(data: PortalView, locale: Locale, cards: Record<string, PortalCard>, funraise: FunraiseLinkUrls): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
-    ${portalLanguageSwitcher(locale)}
     ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id])).join('')}
     ${funraiseSection(funraise, locale)}
     <section>

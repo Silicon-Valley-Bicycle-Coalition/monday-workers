@@ -4,7 +4,13 @@ export const ptBR: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Portal do Doador da SVBC',
   'languagePicker.label': 'Idioma',
-  'languagePicker.switch': 'Trocar',
+  'nav.donate': 'Doar',
+
+  // Site footer
+  'footer.nonprofit': 'Organização sem fins lucrativos 501(c)(3)',
+  'footer.ein': 'EIN: {{ein}}',
+  'footer.mailingAddress': 'Endereço postal:',
+  'footer.privacyPolicy': 'Política de Privacidade',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Entrar',
@@ -17,6 +23,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'title.events': 'Suas Inscrições em Eventos',
 
   // Login
+  'login.heading': 'Portal do Doador',
   'login.prompt': 'Digite seu e-mail para receber um link de acesso.',
   'login.submit': 'Enviar link de acesso',
 

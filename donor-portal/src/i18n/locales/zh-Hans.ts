@@ -4,7 +4,13 @@ export const zhHans: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 捐赠者门户',
   'languagePicker.label': '语言',
-  'languagePicker.switch': '切换',
+  'nav.donate': '捐赠',
+
+  // Site footer
+  'footer.nonprofit': '501(c)(3) 非营利组织',
+  'footer.ein': 'EIN：{{ein}}',
+  'footer.mailingAddress': '邮寄地址：',
+  'footer.privacyPolicy': '隐私政策',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '登录',
@@ -17,6 +23,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'title.events': '您的活动报名',
 
   // Login
+  'login.heading': '捐赠者门户',
   'login.prompt': '请输入您的电子邮箱以接收登录链接。',
   'login.submit': '发送登录链接',
 

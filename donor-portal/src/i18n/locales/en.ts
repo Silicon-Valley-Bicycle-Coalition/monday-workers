@@ -2,7 +2,13 @@ export const en = {
   // Site-wide
   'site.title': 'SVBC Donor Portal',
   'languagePicker.label': 'Language',
-  'languagePicker.switch': 'Switch',
+  'nav.donate': 'Donate',
+
+  // Site footer
+  'footer.nonprofit': '501(c)(3) non-profit organization',
+  'footer.ein': 'EIN: {{ein}}',
+  'footer.mailingAddress': 'Mailing Address:',
+  'footer.privacyPolicy': 'Privacy Policy',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Log In',
@@ -17,6 +23,7 @@ export const en = {
   'title.matchingGifts': 'Matching Gifts',
 
   // Login
+  'login.heading': 'Donor Portal',
   'login.prompt': 'Enter your email to receive a login link.',
   'login.submit': 'Send login link',
 

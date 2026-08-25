@@ -47,8 +47,8 @@
   "taxLetter": {
     "orgLegalName": "Silicon Valley Bicycle Coalition",
     "ein": "00-0000000",
-    "officeAddress": "123 Bike Lane, San Jose, CA 95112",
-    "mailingAddress": "PO Box 123, San Jose, CA 95112",
+    "officeAddress": "123 Bike Lane, San José, CA 95112",
+    "mailingAddress": "PO Box 123, San José, CA 95112",
     "signatureName": "Dev Preview",
     "signatureTitle": "Executive Director",
     "plainStatement": "No goods or services were provided in exchange for this contribution.",

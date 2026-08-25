@@ -23,6 +23,23 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   vi: 'Vietnamese',
 };
 
+// Distinct from LOCALE_LABELS above: this is for the donor-facing language <select> (each name
+// written in its own language, so a visitor recognizes their language even if the UI is
+// currently rendered in one they don't read) — never fed through localeFromMondayLabel, which
+// must keep matching the English names staff actually pick on the Donors board.
+export const LOCALE_NATIVE_LABELS: Record<Locale, string> = {
+  en: 'English',
+  es: 'Español',
+  'zh-Hans': '简体中文',
+  'zh-Hant': '繁體中文',
+  fil: 'Filipino',
+  hi: 'हिन्दी',
+  ja: '日本語',
+  ko: '한국어',
+  'pt-BR': 'Português (Brasil)',
+  vi: 'Tiếng Việt',
+};
+
 const LABEL_TO_LOCALE: Record<string, Locale> = Object.fromEntries(
   SUPPORTED_LOCALES.map((locale) => [LOCALE_LABELS[locale], locale])
 ) as Record<string, Locale>;

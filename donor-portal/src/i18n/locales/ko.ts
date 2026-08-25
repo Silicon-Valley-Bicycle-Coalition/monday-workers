@@ -4,7 +4,13 @@ export const ko: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 기부자 포털',
   'languagePicker.label': '언어',
-  'languagePicker.switch': '전환',
+  'nav.donate': '기부하기',
+
+  // Site footer
+  'footer.nonprofit': '501(c)(3) 비영리 단체',
+  'footer.ein': 'EIN: {{ein}}',
+  'footer.mailingAddress': '우편 주소:',
+  'footer.privacyPolicy': '개인정보 보호정책',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '로그인',
@@ -17,6 +23,7 @@ export const ko: Record<TranslationKey, string> = {
   'title.events': '이벤트 참가 신청 내역',
 
   // Login
+  'login.heading': '기부자 포털',
   'login.prompt': '로그인 링크를 받으시려면 이메일 주소를 입력해 주세요.',
   'login.submit': '로그인 링크 보내기',
 

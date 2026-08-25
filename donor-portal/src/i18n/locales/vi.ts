@@ -4,7 +4,13 @@ export const vi: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Cổng thông tin Nhà tài trợ SVBC',
   'languagePicker.label': 'Ngôn ngữ',
-  'languagePicker.switch': 'Chuyển',
+  'nav.donate': 'Quyên góp',
+
+  // Site footer
+  'footer.nonprofit': 'Tổ chức phi lợi nhuận 501(c)(3)',
+  'footer.ein': 'Mã số thuế (EIN): {{ein}}',
+  'footer.mailingAddress': 'Địa chỉ gửi thư:',
+  'footer.privacyPolicy': 'Chính sách quyền riêng tư',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Đăng nhập',
@@ -17,6 +23,7 @@ export const vi: Record<TranslationKey, string> = {
   'title.events': 'Đăng ký sự kiện của bạn',
 
   // Login
+  'login.heading': 'Cổng thông tin Nhà tài trợ',
   'login.prompt': 'Nhập email của bạn để nhận liên kết đăng nhập.',
   'login.submit': 'Gửi liên kết đăng nhập',
 
