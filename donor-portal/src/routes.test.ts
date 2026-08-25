@@ -1373,3 +1373,98 @@ describe('locale sweep', () => {
     expect(body).toContain(t(locale, 'portal.heading'));
   });
 });
+
+describe('GET /:locale/portal/events', () => {
+  function enabledEventsConfig(): Config {
+    const cfg = structuredClone(config);
+    cfg.eventRegistrations.boardId = 555;
+    return cfg;
+  }
+
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/events');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('shows the unavailable state while the eventRegistrations board is unconfigured', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('not available yet');
+    // The gate must not leak whether any Monday data exists.
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+  });
+
+  it('renders the logged-in donor registrations with no-store caching when enabled', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
+    ]);
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Fall Gala');
+    expect(html).toContain('<title>Your Event Registrations — SVBC Donor Portal</title>');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // The query is scoped to the session's donor item, never a client-supplied id.
+    expect(monday.getEventRegistrationsForDonor).toHaveBeenCalledWith(
+      expect.objectContaining({ donorItemId: 'donor-1', boardId: 555 })
+    );
+  });
+
+  it('shows an events-specific error page when the Monday lookup throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+
+    const res = await app.request('/en/portal/events', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your event registrations');
+  });
+});
+
+describe('GET /portal/events (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal/events', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/events');
+  });
+});
+
+describe('portal home events link', () => {
+  it('links to the locale-prefixed events page', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('/en/portal/events');
+  });
+});
