@@ -19,7 +19,7 @@
   "vars": {
     "EVENTBRITE_ORG_ID": "9974694499",
     "CACHE_TTL": "900", // seconds (15 min). Tune higher if you like.
-    "CACHE_VERSION": "4" // Bump to bust the edge cache on deploy.
+    "CACHE_VERSION": "5" // Bump to bust the edge cache on deploy.
   },
   "observability": {
     "enabled": true
