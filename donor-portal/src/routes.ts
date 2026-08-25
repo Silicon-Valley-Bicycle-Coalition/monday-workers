@@ -21,7 +21,18 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, configuredPrefFields, lettersEnabled, cardEnabled } from './config';
+import {
+  changeRequestsEnabled,
+  configuredPrefFields,
+  lettersEnabled,
+  cardEnabled,
+  pledgesEnabled,
+  matchingGiftsSearchEnabled,
+  signedOffEin,
+} from './config';
+import { loadPledgeData } from './pledges/loadPledgeData';
+import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
+import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
@@ -421,6 +432,64 @@ export function createApp(deps: AppDeps) {
       now: deps.now,
     });
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), preferencesResultView(result, locale), locale));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/pledges', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/pledges`));
+
+  app.get('/:locale/portal/pledges', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!pledgesEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesUnavailableView(locale), locale));
+    }
+
+    let sections;
+    try {
+      sections = await loadPledgeData(donorItemIds, deps.monday);
+    } catch (err) {
+      // Same reasoning as the letters routes: a Monday read failure isn't an auth problem, so
+      // it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`donor-portal pledges load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.pledgesLoadFailed', locale), locale), 500);
+    }
+    return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesView(sections, locale), locale));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/matching-gifts', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/matching-gifts`));
+
+  // Authenticated (it lives in the portal nav) but deliberately PII-free — see the note in
+  // matchingGiftViews.ts about third-party JS. Reads nothing from Monday or D1, so there's no
+  // load-failure branch; the only gate is whether the embedded search is configured, and the
+  // page itself always renders.
+  app.get('/:locale/portal/matching-gifts', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    // The app's only CSP, on its only page that may run third-party JS. The load-bearing part
+    // is connect-src excluding 'self': the DTD script executes on the authenticated portal
+    // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
+    // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
+    // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
+    // works under this policy alongside the embed-snippet check (matchingGiftViews.ts NOTE)
+    // before provisioning a key.
+    c.header(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
+        "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
+        "connect-src https://doublethedonation.com; frame-ancestors 'none'"
+    );
+    const ein = signedOffEin(deps.config);
+    const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
+    return c.html(
+      page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein }, locale), locale)
+    );
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.

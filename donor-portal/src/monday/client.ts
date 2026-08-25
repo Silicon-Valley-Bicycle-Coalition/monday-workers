@@ -6,6 +6,8 @@ import type {
   DonorMatch,
   DonorPortalData,
   MondayColumns,
+  PledgeColumns,
+  PledgeRecord,
 } from '../types';
 
 interface MondayColumnValue {
@@ -35,6 +37,10 @@ export interface MondayClient {
   getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
   getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
+  // Lightweight id+name lookup (one query for all ids) — exists so the pledges page can label
+  // per-donor sections without getDonorPortalData's full donation-history fetch per donor.
+  getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]>;
+  getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]>;
   createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -55,6 +61,9 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
+    // null until an operator configures pledges.boardId + columns (the feature is gated on
+    // pledgesEnabled, so routes never call getPledgesForDonor while this is null).
+    private pledges: { boardId: number; columns: PledgeColumns } | null = null,
     private fetchFn: typeof fetch = fetch
   ) {}
 
@@ -160,26 +169,34 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
-  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
-    const columnIds = JSON.stringify([this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription]);
-    // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
-    // id (donationDonorLink here) is written from current Monday API v2 knowledge but not
-    // verified against a live account — verify against a real Donations board before deploy
-    // (same caveat already flagged in membership-reminders/src/monday.ts). donorItemId isn't
-    // attacker-reachable today (it's derived from the session, never client-supplied), but it's
-    // passed as a $donorItemId GraphQL variable rather than interpolated, as defense-in-depth
-    // and for consistency with findDonorsByEmail above.
+  // Shared by getDonationsForDonor and getPledgesForDonor: every item on a board whose
+  // connect-board column links to donorItemId, following the cursor across pages.
+  // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
+  // id is written from current Monday API v2 knowledge but not verified against a live
+  // account — verify against a real board before deploy (same caveat already flagged in
+  // membership-reminders/src/monday.ts); a shape fix here covers both callers. donorItemId
+  // isn't attacker-reachable today (it's derived from the session, never client-supplied),
+  // but it's passed as a $donorItemId GraphQL variable rather than interpolated, as
+  // defense-in-depth and for consistency with findDonorsByEmail above.
+  private async fetchItemsLinkedToDonor(
+    boardId: number,
+    linkColumnId: string,
+    donorItemId: string,
+    columnIds: string[],
+    includeName: boolean
+  ): Promise<MondayItem[]> {
+    const itemFields = `id ${includeName ? 'name ' : ''}column_values(ids: ${JSON.stringify(columnIds)}) { id text }`;
     const firstPageQuery = `
       query ($boardId: ID!, $donorItemId: String!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 500,
             query_params: {
-              rules: [{ column_id: "${this.columns.donationDonorLink}", compare_value: [$donorItemId], operator: any_of }]
+              rules: [{ column_id: "${linkColumnId}", compare_value: [$donorItemId], operator: any_of }]
             }
           ) {
             cursor
-            items { id column_values(ids: ${columnIds}) { id text } }
+            items { ${itemFields} }
           }
         }
       }
@@ -188,14 +205,14 @@ export class HttpMondayClient implements MondayClient {
       query ($cursor: String!) {
         next_items_page(cursor: $cursor, limit: 500) {
           cursor
-          items { id column_values(ids: ${columnIds}) { id text } }
+          items { ${itemFields} }
         }
       }
     `;
 
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
-    }>(firstPageQuery, { boardId: this.donationsBoardId, donorItemId });
+    }>(firstPageQuery, { boardId, donorItemId });
     const firstPage = firstData.boards[0]?.items_page;
     const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
     let cursor = firstPage?.cursor ?? null;
@@ -208,10 +225,58 @@ export class HttpMondayClient implements MondayClient {
       cursor = nextData.next_items_page.cursor;
     }
 
-    return allItems.map((item) => ({
+    return allItems;
+  }
+
+  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
+    const items = await this.fetchItemsLinkedToDonor(
+      this.donationsBoardId,
+      this.columns.donationDonorLink,
+      donorItemId,
+      [this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription],
+      false
+    );
+    return items.map((item) => ({
       amount: columnText(item, this.columns.donationAmount),
       date: columnText(item, this.columns.donationDate),
       description: columnText(item, this.columns.donationDescription),
+    }));
+  }
+
+  async getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]> {
+    if (donorItemIds.length === 0) return [];
+    const query = `
+      query ($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          name
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemIds: donorItemIds });
+    return (data.items ?? []).map((item) => ({ id: item.id, name: item.name }));
+  }
+
+  async getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]> {
+    // Routes gate on pledgesEnabled before calling, so this only throws on a wiring bug —
+    // loudly, rather than silently returning [] and rendering a misleading "no pledges" page.
+    if (this.pledges === null) {
+      throw new Error('monday: pledges board is not configured');
+    }
+    const { boardId, columns } = this.pledges;
+    const items = await this.fetchItemsLinkedToDonor(
+      boardId,
+      columns.donorLink,
+      donorItemId,
+      [columns.pledgedAmount, columns.fulfilledAmount, columns.status, columns.dueDate],
+      true
+    );
+    return items.map((item) => ({
+      name: item.name,
+      pledged: columnText(item, columns.pledgedAmount),
+      fulfilled: columnText(item, columns.fulfilledAmount),
+      status: columnText(item, columns.status),
+      dueDate: columnText(item, columns.dueDate),
     }));
   }
 

@@ -52,6 +52,25 @@ export interface CardTokensConfig {
   retentionDays: number;
 }
 
+export interface PledgeColumns {
+  donorLink: string;
+  pledgedAmount: string;
+  fulfilledAmount: string;
+  status: string;
+  dueDate: string;
+}
+
+export interface PledgesConfig {
+  boardId: number | null;
+  columns: PledgeColumns;
+}
+
+export interface MatchingGiftsConfig {
+  // Double the Donation *public* plugin key — safe to render into HTML by design (it's what
+  // their embed snippet ships to every visitor's browser). Never put a private DTD key here.
+  doubleTheDonationPublicKey: string | null;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -76,6 +95,8 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  pledges: PledgesConfig;
+  matchingGifts: MatchingGiftsConfig;
 }
 
 export interface DonorMatch {
@@ -98,6 +119,17 @@ export interface DonorPortalData {
   totalDonated: string;
   donations: DonationRecord[];
   membershipExpiry: string;
+}
+
+// All five fields are Monday column text passed through verbatim (same convention as
+// DonationRecord) — amounts stay display strings; any numeric interpretation happens in
+// pledges/loadPledgeData, not here.
+export interface PledgeRecord {
+  name: string;
+  pledged: string;
+  fulfilled: string;
+  status: string;
+  dueDate: string;
 }
 
 export interface DiscountOrganization {

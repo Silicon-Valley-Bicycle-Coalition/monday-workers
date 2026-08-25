@@ -12,6 +12,8 @@ export const en = {
   'title.changeRequest': 'Request a Change',
   'title.card': 'Your Membership Card',
   'title.verify': 'Membership Verification',
+  'title.pledges': 'Your Pledges',
+  'title.matchingGifts': 'Matching Gifts',
 
   // Login
   'login.prompt': 'Enter your email to receive a login link.',
@@ -34,6 +36,7 @@ export const en = {
   'error.cardLoadFailed': 'We could not load your card right now. Please try again in a few minutes.',
   'error.cardRegenerateFailed': 'We could not regenerate your card right now. Please try again in a few minutes.',
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
+  'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
 
   // Portal
@@ -47,6 +50,8 @@ export const en = {
   'portal.discountsHeading': 'Bike shop discounts',
   'portal.taxDocumentsLink': 'Tax documents',
   'portal.changeRequestLink': 'Request a change to your details',
+  'portal.pledgesLink': 'Your pledges',
+  'portal.matchingGiftsLink': 'Employer matching gifts',
   'portal.logout': 'Log out',
 
   // Letters
@@ -106,6 +111,26 @@ export const en = {
   'verify.heading': 'Membership verification',
   'verify.disclaimer': 'This information is fetched live from our records.',
   'verify.notValid': 'This card is not valid. It may have been regenerated or is no longer active.',
+
+  // Pledges
+  'pledges.heading': 'Your pledges',
+  'pledges.intro': 'These are the pledges our records show, with progress toward each. Contact SVBC if anything looks off.',
+  'pledges.noneYet': 'No pledges are on file for {{name}}.',
+  'pledges.tablePledge': 'Pledge',
+  'pledges.tablePledged': 'Pledged',
+  'pledges.tableFulfilled': 'Fulfilled',
+  'pledges.tableProgress': 'Progress',
+  'pledges.tableStatus': 'Status',
+  'pledges.tableDue': 'Due',
+  'pledges.unavailable': 'Pledge tracking is not available yet. Please check back soon, or contact SVBC if you have a question about a pledge.',
+
+  // Employer matching gifts
+  'matchingGifts.heading': 'Employer matching gifts',
+  'matchingGifts.intro': 'Many employers match charitable donations made by their employees — often doubling your gift to SVBC at no extra cost to you.',
+  'matchingGifts.howTo': 'Ask your HR or payroll team whether your employer offers a matching-gift program, then submit your SVBC donation through their process.',
+  'matchingGifts.einLine': 'You may need our tax ID (EIN) for the matching form: {{ein}}',
+  'matchingGifts.searchHint': 'Search for your employer below to check their matching-gift policy and find submission instructions.',
+  'matchingGifts.searchUnavailable': 'An employer search will appear here once it is set up. In the meantime, your HR or payroll team can tell you whether your gifts are matched.',
 
   // Login email (src/email/resend.ts)
   'email.subject': 'Your SVBC donor portal login link',

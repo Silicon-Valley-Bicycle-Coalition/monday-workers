@@ -16,6 +16,13 @@ describe('t', () => {
     const { t } = await import('./t');
     expect(() => t('en', 'checkEmail.heading')).not.toThrow();
   });
+
+  it('interpolates $-patterns in Monday-sourced values literally, not as replacement patterns', async () => {
+    const { t } = await import('./t');
+    // "$$" must not collapse to "$", and "$&" must not re-insert the matched "{{name}}".
+    expect(t('en', 'pledges.noneYet', { name: 'Smith $$ Sons' })).toBe('No pledges are on file for Smith $$ Sons.');
+    expect(t('en', 'pledges.noneYet', { name: 'A $& B' })).toBe('No pledges are on file for A $& B.');
+  });
 });
 
 // This suite mocks the es locale module to an intentionally-incomplete table, independent of

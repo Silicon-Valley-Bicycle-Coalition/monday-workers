@@ -129,6 +129,8 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getPledgesForDonor: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -166,6 +168,8 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getPledgesForDonor: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -191,6 +195,17 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  pledges: {
+    boardId: 777,
+    columns: {
+      donorLink: 'pl1',
+      pledgedAmount: 'pl2',
+      fulfilledAmount: 'pl3',
+      status: 'pl4',
+      dueDate: 'pl5',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -535,6 +550,8 @@ describe('POST /login error handling', () => {
       getDiscountOrganizations: vi.fn(),
       getDonorContactInfo: vi.fn(),
       createChangeRequestItem: vi.fn(),
+      getDonorNames: vi.fn().mockResolvedValue([]),
+      getPledgesForDonor: vi.fn().mockResolvedValue([]),
     };
     const app = createApp(makeDeps({ monday }));
 
@@ -1342,6 +1359,122 @@ describe('GET /verify/:token', () => {
 
     const res = await gatedLimitedApp.request(verifyPath);
     expect(res.status).toBe(429);
+  });
+});
+
+describe('GET /:locale/portal/pledges', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/pledges');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('renders the logged-in donor pledges with progress and no-store caching', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
+    (monday.getPledgesForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: '2026 Annual Pledge', pledged: '$1,000.00', fulfilled: '$400.00', status: 'Active', dueDate: '2026-12-31' },
+    ]);
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/pledges', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('2026 Annual Pledge');
+    expect(html).toContain('40%');
+    expect(html).toContain('<title>Your Pledges — SVBC Donor Portal</title>');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // Scoped to the session's donor ids only:
+    expect(monday.getPledgesForDonor).toHaveBeenCalledTimes(1);
+    expect(monday.getPledgesForDonor).toHaveBeenCalledWith('donor-1');
+  });
+
+  it('shows the unavailable state while the pledges board is unconfigured, without calling Monday', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.pledges.boardId = null;
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/pledges', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('Pledge tracking is not available yet');
+    expect(monday.getPledgesForDonor).not.toHaveBeenCalled();
+  });
+
+  it('shows a pledges-specific error page when the Monday lookup throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/pledges', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your pledges right now');
+  });
+});
+
+describe('GET /portal/pledges (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const res = await createApp(makeDeps()).request('/portal/pledges', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/pledges');
+  });
+});
+
+describe('GET /:locale/portal/matching-gifts', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/en/portal/matching-gifts');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('renders the DTD widget when a public key is configured, with the signed-off EIN', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('id="dd-company-name-search"');
+    expect(html).toContain('"dtd-public-key"');
+    expect(html).toContain('00-0000000');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
+    const csp = res.headers.get('content-security-policy');
+    expect(csp).toContain("connect-src https://doublethedonation.com");
+    expect(csp).not.toContain("connect-src 'self'");
+  });
+
+  it('still renders the guidance page, without the widget or EIN, when neither is configured', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.matchingGifts.doubleTheDonationPublicKey = null;
+    gatedConfig.taxLetter.ein = 'REPLACE_AFTER_SIGNOFF';
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Employer matching gifts');
+    expect(html).not.toContain('doublethedonation.com');
+    expect(html).not.toContain('REPLACE_AFTER_SIGNOFF');
+    expect(html).not.toContain('tax ID (EIN)');
+  });
+});
+
+describe('GET /portal/matching-gifts (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const res = await createApp(makeDeps()).request('/portal/matching-gifts', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/matching-gifts');
   });
 });
 
