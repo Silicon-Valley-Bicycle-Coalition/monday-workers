@@ -9,6 +9,10 @@ export type RunLetterCronResult =
       kind: 'skipped';
       reason: 'unconfigured' | 'letters-not-signed-off' | 'no-settings' | 'auto-send-off' | 'before-start-date';
     }
+  // A top-level Monday failure (settings read or donations sweep). Reported, never thrown — the
+  // daily scheduled() invocation must not reject over a transient outage, and tomorrow's run is
+  // the retry.
+  | { kind: 'error'; message: string }
   | {
       kind: 'ran';
       year: number;
@@ -35,8 +39,20 @@ export interface RunLetterCronDeps {
 // makes completed donors free, so each run only advances the not-yet-handled remainder
 // (self-healing for transient failures and for gifts entered after the first run).
 export async function runLetterCron(deps: RunLetterCronDeps): Promise<RunLetterCronResult> {
+  try {
+    return await runLetterCronInner(deps);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`donor-portal letter cron: run failed (retried tomorrow): ${message}`);
+    return { kind: 'error', message };
+  }
+}
+
+async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCronResult> {
   const { config } = deps;
-  if (!letterCronConfigured(config) || config.letterCron.boardId === null) {
+  // donationsBoardId backs the eligibility sweep, so treat it as part of "configured" — without
+  // the check, a filled-in letterCron over an unset board id would sweep board 0.
+  if (!letterCronConfigured(config) || config.letterCron.boardId === null || config.monday.donationsBoardId === null) {
     return { kind: 'skipped', reason: 'unconfigured' };
   }
   if (!lettersEnabled(config)) {

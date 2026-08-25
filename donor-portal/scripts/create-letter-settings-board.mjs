@@ -66,6 +66,22 @@ This link expires soon and can only be used once.`;
 
 const ITEM_NAME = 'Letter emails';
 
+// Pre-flight: refuse to create a duplicate. An accidental second run against the same
+// workspace would otherwise mint a second settings board and a config-pointing footgun.
+const existing = await graphql(
+  `query ($workspaceId: ID!) {
+    boards(workspace_ids: [$workspaceId], limit: 200) { id name }
+  }`,
+  { workspaceId }
+);
+const clash = (existing.boards ?? []).find((b) => b.name === boardName);
+if (clash) {
+  console.error(
+    `create-letter-settings-board: a board named "${boardName}" already exists in workspace ${workspaceId} (board ${clash.id}) — refusing to create a duplicate. Use --name for a genuinely new board.`
+  );
+  process.exit(1);
+}
+
 const boardData = await graphql(
   `mutation ($name: String!, $workspaceId: ID!) {
     create_board(board_name: $name, board_kind: public, workspace_id: $workspaceId) { id }

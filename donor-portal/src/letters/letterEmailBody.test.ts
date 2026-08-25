@@ -48,4 +48,18 @@ describe('renderLetterEmailBody', () => {
     expect(text).toBe('Hello {{mystery}}');
     expect(html).toContain('{{mystery}}');
   });
+
+  it('never re-substitutes placeholder syntax arriving inside a value', () => {
+    const { text, html } = renderLetterEmailBody('Hi {{donorName}}', {
+      ...params,
+      donorName: 'Jane {{loginUrl}}',
+    });
+    expect(text).toBe('Hi Jane {{loginUrl}}');
+    expect(html).not.toContain('<a');
+  });
+
+  it('treats CRLF line endings like LF for paragraph splitting', () => {
+    const { html } = renderLetterEmailBody('First\r\nsecond\r\n\r\nNext', params);
+    expect(html).toBe('<p>First<br>second</p><p>Next</p>');
+  });
 });

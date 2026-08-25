@@ -172,6 +172,7 @@ export default {
       config,
       now: () => new Date(),
     });
+    // 'skipped' is the everyday quiet path; 'error' already logged inside runLetterCron.
     if (cronResult.kind === 'ran') {
       console.log(
         `donor-portal letter cron: year ${cronResult.year} — ${cronResult.eligible} eligible, ` +

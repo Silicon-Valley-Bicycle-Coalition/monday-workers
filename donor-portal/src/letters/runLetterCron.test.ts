@@ -182,6 +182,34 @@ describe('runLetterCron', () => {
     expect(queue.send).toHaveBeenCalledTimes(1);
   });
 
+  it('skips while monday.donationsBoardId is unset, even with letterCron filled in', async () => {
+    const monday = fakeMonday();
+    const noBoard: Config = { ...config, monday: { ...config.monday, donationsBoardId: null } };
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: noBoard, now });
+
+    expect(result).toEqual({ kind: 'skipped', reason: 'unconfigured' });
+    expect(monday.getLetterSettings).not.toHaveBeenCalled();
+  });
+
+  it('returns an error result instead of throwing when the settings read fails', async () => {
+    const monday = fakeMonday({ getLetterSettings: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')) });
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+
+    expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 500' });
+  });
+
+  it('returns an error result instead of throwing when the donations sweep fails', async () => {
+    const monday = fakeMonday({
+      listDonorIdsWithDonationsInYear: vi.fn().mockRejectedValue(new Error('monday: HTTP 429')),
+    });
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+
+    expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 429' });
+  });
+
   it('counts a donor whose gifts vanished since the sweep as triggered work, not a failure', async () => {
     // listLetterYears sees no completed prior year → triggerLetterSend returns 'no-eligible-year'.
     const monday = fakeMonday({

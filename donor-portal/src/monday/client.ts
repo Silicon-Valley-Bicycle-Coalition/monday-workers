@@ -347,7 +347,13 @@ export class HttpMondayClient implements MondayClient {
       boardId: params.boardId,
     });
     const items = data.boards[0]?.items_page.items ?? [];
-    const item = items.find((i) => i.name === 'Letter emails') ?? items[0];
+    const named = items.find((i) => i.name === 'Letter emails');
+    if (!named && items.length > 0) {
+      console.warn(
+        `monday: Letter Settings board ${params.boardId} has no item named "Letter emails" — falling back to its first item ("${items[0]!.name}")`
+      );
+    }
+    const item = named ?? items[0];
     if (!item) return null;
     const autoSendValue = (item.column_values ?? []).find((c) => c.id === params.columns.autoSend);
     return {
@@ -359,13 +365,11 @@ export class HttpMondayClient implements MondayClient {
 
   async listDonorIdsWithDonationsInYear(year: number): Promise<string[]> {
     // Backs the January letter cron: one ids-only sweep of the Donations board bounded to the
-    // target year, instead of a getDonorPortalData call per Donors-board item. NOTE: the
-    // query_params.rules shape for a date-column `between` filter is written from current Monday
-    // API v2 knowledge but not verified against a live account — verify before relying on it in
-    // production (same caveat as the other rules-shape NOTEs in this file). The client-side year
-    // check below is the correctness backstop either way; the server-side rule is an
-    // efficiency measure, so a filter shape Monday ignores degrades to a bigger sweep, not
-    // wrong results.
+    // target year, instead of a getDonorPortalData call per Donors-board item. The date-column
+    // `between` rules shape (with the CheckboxValue/BoardRelationValue fragments this file
+    // uses) was verified live on 2026-08-25 against the sandbox Donations board (18427756119) —
+    // unlike the other rules-shape NOTEs in this file, this one is confirmed working. The
+    // client-side year check below stays as a correctness backstop regardless.
     const columnIds = JSON.stringify([this.columns.donationDate, this.columns.donationDonorLink]);
     const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
     const firstPageQuery = `

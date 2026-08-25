@@ -252,7 +252,10 @@ Monday cost per handled donor), and calls the same `triggerLetterSend` primitive
 for the remainder — sequentially, capped at `letterCron.maxTriggersPerRun` per run to respect
 Monday's complexity budget. Daily reruns through January make the job self-healing: transient
 failures retry the next day, late-entered gifts still get letters, and the donor+year dedupe
-makes completed donors free.
+makes completed donors free. One deliberate limit: a donor the queue consumer marked
+**`skipped`** (no email on file, or gifts vanished before sending) is not retried by the cron —
+the dedupe treats any existing row as handled. Once the underlying data is fixed, the staff
+button is the retry path (it requeues skipped rows).
 
 Gates, all required before a single email goes out: `letterCron` config filled in,
 `taxLetter` signed off (`lettersEnabled`), Auto-send checked, start date reached.

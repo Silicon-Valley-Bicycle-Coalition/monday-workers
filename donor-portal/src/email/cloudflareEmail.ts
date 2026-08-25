@@ -30,7 +30,7 @@ export class CloudflareEmailSender implements EmailSender {
   async sendLetterReadyEmail(params: SendLetterReadyEmailParams): Promise<void> {
     const template = params.bodyTemplate?.trim();
     const body = template
-      ? renderLetterEmailBody(params.bodyTemplate!, { donorName: params.donorName, year: params.year, loginUrl: params.loginUrl })
+      ? renderLetterEmailBody(template, { donorName: params.donorName, year: params.year, loginUrl: params.loginUrl })
       : this.defaultLetterReadyBody(params);
     await this.emailBinding.send({
       to: params.to,

@@ -145,5 +145,21 @@ describe('CloudflareEmailSender', () => {
       const message = binding.send.mock.calls[0]![0];
       expect(message.html).toContain('giving letter is ready to view');
     });
+
+    it('trims surrounding blank lines off the template instead of rendering empty paragraphs', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Jane',
+        year: 2025,
+        loginUrl: 'https://x/callback',
+        bodyTemplate: '\n\nHi {{donorName}}\n\n',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.html).toBe('<p>Hi Jane</p>');
+    });
   });
 });
