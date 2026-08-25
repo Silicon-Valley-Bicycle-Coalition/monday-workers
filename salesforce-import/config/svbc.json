@@ -3,13 +3,14 @@
   "cutoverDateISO": "2026-10-01",
   "peopleActiveSinceISO": "2019-01-01",
   "activitySliceSinceISO": "2024-08-01",
-  "eraMaxItems": 9000,
+  "boardMaxItems": 9000,
+  "donationsActiveFiscalYears": 2,
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": " (sandbox)",
     "workspaceId": 17141226,
     "boards": {
-      "donations:live": null,
+      "donations": null,
       "activities": null,
       "people-live": null,
       "people-historical": null,

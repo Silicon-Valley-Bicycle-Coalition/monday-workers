@@ -28,7 +28,7 @@ function sample<T>(rows: T[], n: number, rand: () => number): T[] {
 const CATEGORY = (board: string): string | null =>
   board === 'organizations' ? 'organizations'
   : board.startsWith('people-') ? 'people'
-  : board.startsWith('donations:') ? 'donations'
+  : board === 'donations' ? 'donations'
   : board === 'event-registrations' ? 'registrations'
   : null;
 
@@ -67,10 +67,20 @@ export async function runValidate(args: string[]): Promise<number> {
     detail: `${linksNotWritten} links not written, ${unresolvableTargets} unresolvable targets ` +
       `(${skippedByDesign} skipped-by-design), ${ledgerFailureCount} ledger failures` });
 
+  // 2b. Archive coverage — every donation flagged for archive-in-place actually archived.
+  // Ledger-based (like everything here): items_page can't see archived items, so Monday-side
+  // counting would under-report by exactly the archived set.
+  const flagged = payloads.filter((p) => p.archive);
+  const unarchived = flagged.filter((p) => !ledger.archivedDone(p.sfId) && ledger.has(p.sfId, p.board));
+  checks.push({ name: 'archive-coverage', ok: unarchived.length === 0,
+    detail: unarchived.length === 0 ? `all ${flagged.length} flagged donations archived`
+      : `${unarchived.length} of ${flagged.length} flagged donations still active ` +
+        `(first: ${unarchived[0]!.sfId})` });
+
   // 3. Reconciliation (doc 03 §7 — figures move while Funraise still syncs; freeze before final run).
   const r = cfg.reconciliation;
   const funraiseDonations = payloads.filter((p) =>
-    p.board.startsWith('donations:') && !!p.columns['Funraise ID']);
+    p.board === 'donations' && !!p.columns['Funraise ID']);
   const cents = funraiseDonations.reduce((n, p) => n + Math.round(Number(p.columns['Amount'] ?? 0) * 100), 0);
   const recCheck = (name: string, actual: number, expected: number | undefined) => {
     if (expected === undefined) return;
