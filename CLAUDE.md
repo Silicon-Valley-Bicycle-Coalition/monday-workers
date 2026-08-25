@@ -21,6 +21,25 @@ merged to `main` once ready; most are now merged with full implementations, whil
 subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
 "Status at a glance" table for what's built, deployed, or pending.
 
+## Concurrency — default to a worktree
+
+Workers are built one per feature branch, each in its own sibling worktree directory (e.g.
+`monday-workers-si` for `feat/salesforce-import`, `monday-workers-donor-portal-v2` for
+`feat/donor-portal-v2` — see the parent workspace's `CLAUDE.md`). When starting work on a new
+Worker, or a change of any real size to an existing one, create a new worktree rather than editing
+the primary `monday-workers` checkout directly:
+
+```sh
+git worktree add ../monday-workers-<short-topic> -b feat/<topic>
+```
+
+(Claude Code sessions: use the `EnterWorktree` tool rather than the raw command above.)
+
+Before starting, `git worktree list` to see what's already checked out. Work in the worktree,
+commit there, and open the MR from that branch. Once the MR merges to `main`, remove the worktree
+and delete the local branch — see the parent workspace `CLAUDE.md`'s "Worktree cleanup" section
+for the exact commands.
+
 ## Commands
 
 There's no root `package.json` — every command runs from inside a Worker's own subdirectory
