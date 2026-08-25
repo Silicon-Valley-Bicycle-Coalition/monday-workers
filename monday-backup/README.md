@@ -1,6 +1,12 @@
 # monday-backup
 
-**Status:** Recommended — spec written 2026-08-25, not yet built.
+**Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
+`wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
+(`MONDAY_API_TOKEN`), a Google service account with access to the destination Drive folder
+(`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`), and
+`config/backup.json`'s `destinationParentFolderId` filled in with that folder's real id. The
+`Doc.blocks` GraphQL query in `src/monday/client.ts` hasn't been exercised against a live
+account — confirm its shape against Monday's API Explorer before the first real run.
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
 runs: from that point on, Monday is holding real donor/donation data with no Salesforce copy to
 fall back on if something goes wrong.
