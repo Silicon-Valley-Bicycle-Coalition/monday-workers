@@ -17,6 +17,10 @@ export interface Config {
     donorsBoardId: number | null;
     columns: MondayColumns;
   };
+  email: {
+    fromAddress: string;
+    fromName: string;
+  };
   stages: StageConfig[];
   renewalUrl: string;
   timeZone: string;
