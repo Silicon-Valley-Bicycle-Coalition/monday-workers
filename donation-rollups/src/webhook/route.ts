@@ -46,12 +46,13 @@ export function createApp(deps: AppDeps) {
 
     await deps.pendingStore.upsertPending({
       donationItemId: donationEvent.donationItemId,
+      donationBoardId: donationEvent.boardId,
       eventId: donationEvent.eventId,
       receivedAt: new Date().toISOString(),
     });
 
     try {
-      await deps.queue.send({ donationItemId: donationEvent.donationItemId });
+      await deps.queue.send({ donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId });
       await deps.pendingStore.updateStatus(donationEvent.donationItemId, 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

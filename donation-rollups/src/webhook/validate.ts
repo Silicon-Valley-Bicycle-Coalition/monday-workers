@@ -1,5 +1,6 @@
 export interface DonationEvent {
   donationItemId: string;
+  boardId: string;
   eventId: string;
 }
 
@@ -22,9 +23,14 @@ export function validateWebhookBody(body: unknown): DonationEvent {
   if (typeof pulseId !== 'number' && typeof pulseId !== 'string') {
     throw new Error('webhook event has no pulseId');
   }
+  const boardId = e.boardId;
+  if (typeof boardId !== 'number' && typeof boardId !== 'string') {
+    throw new Error('webhook event has no boardId');
+  }
   const type = typeof e.type === 'string' ? e.type : 'unknown';
   return {
     donationItemId: String(pulseId),
+    boardId: String(boardId),
     eventId: `${pulseId}:${type}:${Date.now()}`,
   };
 }

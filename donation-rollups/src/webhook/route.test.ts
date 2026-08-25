@@ -32,13 +32,13 @@ describe('POST /webhooks/monday/donations', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ pendingStore, queue: { send } });
 
-    const res = await post(app, { event: { type: 'create_pulse', pulseId: 555, boardId: 1 } });
+    const res = await post(app, { event: { type: 'create_pulse', pulseId: 555, boardId: 18427756119 } });
 
     expect(res.status).toBe(200);
     expect(pendingStore.upsertPending).toHaveBeenCalledWith(
-      expect.objectContaining({ donationItemId: '555' }),
+      expect.objectContaining({ donationItemId: '555', donationBoardId: '18427756119' }),
     );
-    expect(send).toHaveBeenCalledWith({ donationItemId: '555' });
+    expect(send).toHaveBeenCalledWith({ donationItemId: '555', donationBoardId: '18427756119' });
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('555', 'queued');
   });
 

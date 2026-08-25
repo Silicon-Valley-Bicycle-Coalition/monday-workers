@@ -5,9 +5,9 @@ import { D1PendingStore } from './pending';
 describe('D1PendingStore', () => {
   it('inserts a new row, then upserts on redelivery instead of erroring', async () => {
     const store = new D1PendingStore(env.DB);
-    expect(await store.upsertPending({ donationItemId: 'd1', eventId: 'e1', receivedAt: '2026-01-01T00:00:00Z' }))
+    expect(await store.upsertPending({ donationItemId: 'd1', donationBoardId: 'b1', eventId: 'e1', receivedAt: '2026-01-01T00:00:00Z' }))
       .toBe('inserted');
-    expect(await store.upsertPending({ donationItemId: 'd1', eventId: 'e2', receivedAt: '2026-01-02T00:00:00Z' }))
+    expect(await store.upsertPending({ donationItemId: 'd1', donationBoardId: 'b1', eventId: 'e2', receivedAt: '2026-01-02T00:00:00Z' }))
       .toBe('updated');
 
     const row = await store.getPending('d1');
@@ -17,14 +17,14 @@ describe('D1PendingStore', () => {
 
   it('updates status and patches owner fields, preserving unpatched fields via COALESCE', async () => {
     const store = new D1PendingStore(env.DB);
-    await store.upsertPending({ donationItemId: 'd2', eventId: 'e1', receivedAt: '2026-01-01T00:00:00Z' });
+    await store.upsertPending({ donationItemId: 'd2', donationBoardId: 'b1', eventId: 'e1', receivedAt: '2026-01-01T00:00:00Z' });
     await store.updateStatus('d2', 'queued');
-    await store.updateStatus('d2', 'written', { ownerItemId: 'owner-1', ownerBoard: 'donors', writtenAt: '2026-01-01T01:00:00Z' });
+    await store.updateStatus('d2', 'written', { ownerItemId: 'owner-1', ownerBoard: '18427756096', writtenAt: '2026-01-01T01:00:00Z' });
 
     const row = await store.getPending('d2');
     expect(row).toEqual({
-      donationItemId: 'd2', eventId: 'e1', status: 'written',
-      ownerItemId: 'owner-1', ownerBoard: 'donors', error: null,
+      donationItemId: 'd2', donationBoardId: 'b1', eventId: 'e1', status: 'written',
+      ownerItemId: 'owner-1', ownerBoard: '18427756096', error: null,
       receivedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T01:00:00Z',
     });
   });
