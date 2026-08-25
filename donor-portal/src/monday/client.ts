@@ -16,11 +16,11 @@ interface MondayColumnValue {
 interface MondayItem {
   id: string;
   name: string;
-  column_values: MondayColumnValue[];
+  column_values?: MondayColumnValue[];
 }
 
 function columnText(item: MondayItem, columnId: string): string {
-  return item.column_values.find((c) => c.id === columnId)?.text ?? '';
+  return (item.column_values ?? []).find((c) => c.id === columnId)?.text ?? '';
 }
 
 export interface MondayClient {
@@ -78,6 +78,13 @@ export class HttpMondayClient implements MondayClient {
     // verified against a live account — verify before deploy (same caveat as the two NOTE
     // comments below on query_params.rules shapes). column_id stays interpolated because it's a
     // trusted config value, never attacker input.
+    // preferredLanguage is a gated/optional column, same convention as membershipExpiry in
+    // getDonorPortalData below: only request it once it's been configured with a real column id,
+    // so the literal placeholder never ships to Monday's API.
+    const languageFragment =
+      this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID'
+        ? `column_values(ids: ["${this.columns.preferredLanguage}"]) { id text }`
+        : '';
     const query = `
       query ($boardId: ID!, $email: String!) {
         boards(ids: [$boardId]) {
@@ -87,7 +94,7 @@ export class HttpMondayClient implements MondayClient {
               rules: [{ column_id: "${this.columns.donorEmail}", compare_value: [$email], operator: any_of }]
             }
           ) {
-            items { id name }
+            items { id name ${languageFragment} }
           }
         }
       }
@@ -97,7 +104,11 @@ export class HttpMondayClient implements MondayClient {
       email,
     });
     const items = data.boards[0]?.items_page.items ?? [];
-    return items.map((item) => ({ id: item.id, name: item.name }));
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      preferredLanguage: columnText(item, this.columns.preferredLanguage),
+    }));
   }
 
   async getDonorPortalData(donorItemId: string): Promise<DonorPortalData> {
@@ -229,12 +240,19 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo> {
+    // preferredLanguage is a gated/optional column like membershipExpiry — join it onto the
+    // otherwise-fixed donorEmail/donorAddress/donorPhone list only once configured, rather than
+    // shipping the literal placeholder to Monday's API.
+    const columnIds = [this.columns.donorEmail, this.columns.donorAddress, this.columns.donorPhone];
+    if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
+      columnIds.push(this.columns.preferredLanguage);
+    }
     const query = `
       query ($itemId: ID!) {
         items(ids: [$itemId]) {
           id
           name
-          column_values(ids: ["${this.columns.donorEmail}", "${this.columns.donorAddress}", "${this.columns.donorPhone}"]) {
+          column_values(ids: ${JSON.stringify(columnIds)}) {
             id
             text
           }
@@ -252,6 +270,7 @@ export class HttpMondayClient implements MondayClient {
       email: columnText(item, this.columns.donorEmail),
       address: columnText(item, this.columns.donorAddress),
       phone: columnText(item, this.columns.donorPhone),
+      preferredLanguage: columnText(item, this.columns.preferredLanguage),
     };
   }
 

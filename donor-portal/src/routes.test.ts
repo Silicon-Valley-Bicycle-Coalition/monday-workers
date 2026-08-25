@@ -85,7 +85,9 @@ function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeReq
 
 function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[]>): MondayClient {
   return {
-    findDonorsByEmail: vi.fn().mockImplementation((email: string) => Promise.resolve(matchesByEmail[email] ?? [])),
+    findDonorsByEmail: vi.fn().mockImplementation((email: string) =>
+      Promise.resolve((matchesByEmail[email] ?? []).map((match) => ({ ...match, preferredLanguage: '' })))
+    ),
     getDonorPortalData: vi.fn().mockImplementation((id: string) =>
       Promise.resolve({
         id,
@@ -99,7 +101,14 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
-      Promise.resolve({ id, name: `Donor ${id}`, email: 'donor@example.org', address: '1 Old St', phone: '555-0100' })
+      Promise.resolve({
+        id,
+        name: `Donor ${id}`,
+        email: 'donor@example.org',
+        address: '1 Old St',
+        phone: '555-0100',
+        preferredLanguage: '',
+      })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
   };
@@ -111,7 +120,11 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
 function fakeMondayWithDonations(): MondayClient {
   const matchesByEmail = { 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] };
   return {
-    findDonorsByEmail: vi.fn().mockImplementation((email: string) => Promise.resolve(matchesByEmail[email as keyof typeof matchesByEmail] ?? [])),
+    findDonorsByEmail: vi.fn().mockImplementation((email: string) =>
+      Promise.resolve(
+        (matchesByEmail[email as keyof typeof matchesByEmail] ?? []).map((match) => ({ ...match, preferredLanguage: '' }))
+      )
+    ),
     getDonorPortalData: vi.fn().mockImplementation((id: string) =>
       Promise.resolve({
         id,
@@ -125,7 +138,14 @@ function fakeMondayWithDonations(): MondayClient {
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
-      Promise.resolve({ id, name: `Donor ${id}`, email: 'donor@example.org', address: '1 Old St', phone: '555-0100' })
+      Promise.resolve({
+        id,
+        name: `Donor ${id}`,
+        email: 'donor@example.org',
+        address: '1 Old St',
+        phone: '555-0100',
+        preferredLanguage: '',
+      })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
   };

@@ -6,7 +6,7 @@ import type { EmailSender } from '../email/resend';
 
 function fakeMonday(matches: { id: string; name: string }[]): MondayClient {
   return {
-    findDonorsByEmail: vi.fn().mockResolvedValue(matches),
+    findDonorsByEmail: vi.fn().mockResolvedValue(matches.map((match) => ({ ...match, preferredLanguage: '' }))),
     getDonorPortalData: vi.fn(),
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
