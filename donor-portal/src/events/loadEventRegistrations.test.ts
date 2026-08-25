@@ -22,6 +22,7 @@ function fakeMonday(registrationsByDonor: Record<string, EventRegistrationRecord
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
+    getPledgesForDonor: vi.fn().mockResolvedValue([]),
     getDonorNames: vi
       .fn()
       .mockImplementation(async (ids: string[]) => ids.map((id) => ({ id, name: `Donor ${id}` }))),

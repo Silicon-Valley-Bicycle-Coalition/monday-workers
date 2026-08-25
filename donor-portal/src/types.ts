@@ -13,7 +13,14 @@ export interface MondayColumns {
   donorPhone: string;
   membershipExpiry: string;
   preferredLanguage: string;
+  donorEmailOptOut: string;
+  donorSmsOptOut: string;
+  donorDoNotMail: string;
 }
+
+// The three donor-facing communication preferences. Each maps to its own gated checkbox column
+// on the Donors board (see PREF_FIELD_COLUMNS in config.ts) and doubles as a ChangeRequestField.
+export type PrefField = 'emailOptOut' | 'smsOptOut' | 'doNotMail';
 
 export interface TaxLetterConfig {
   orgLegalName: string;
@@ -57,6 +64,25 @@ export interface EventRegistrationsConfig {
   eventDateColumnId: string;
 }
 
+export interface PledgeColumns {
+  donorLink: string;
+  pledgedAmount: string;
+  fulfilledAmount: string;
+  status: string;
+  dueDate: string;
+}
+
+export interface PledgesConfig {
+  boardId: number | null;
+  columns: PledgeColumns;
+}
+
+export interface MatchingGiftsConfig {
+  // Double the Donation *public* plugin key — safe to render into HTML by design (it's what
+  // their embed snippet ships to every visitor's browser). Never put a private DTD key here.
+  doubleTheDonationPublicKey: string | null;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -82,6 +108,8 @@ export interface Config {
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
   eventRegistrations: EventRegistrationsConfig;
+  pledges: PledgesConfig;
+  matchingGifts: MatchingGiftsConfig;
 }
 
 export interface DonorMatch {
@@ -106,16 +134,22 @@ export interface DonorPortalData {
   membershipExpiry: string;
 }
 
-export interface DonorName {
-  id: string;
-  name: string;
-}
-
 export interface EventRegistrationRecord {
   registrationName: string;
   eventName: string;
   eventDate: string;
   attended: boolean;
+}
+
+// All five fields are Monday column text passed through verbatim (same convention as
+// DonationRecord) — amounts stay display strings; any numeric interpretation happens in
+// pledges/loadPledgeData, not here.
+export interface PledgeRecord {
+  name: string;
+  pledged: string;
+  fulfilled: string;
+  status: string;
+  dueDate: string;
 }
 
 export interface DiscountOrganization {
@@ -130,6 +164,11 @@ export interface DonorContactInfo {
   address: string;
   phone: string;
   preferredLanguage: string;
+  // null = that preference's Donors-board checkbox column isn't configured yet (still the
+  // placeholder id), so the current state is unknowable — distinct from false (unchecked).
+  emailOptOut: boolean | null;
+  smsOptOut: boolean | null;
+  doNotMail: boolean | null;
 }
 
 export interface PortalView {

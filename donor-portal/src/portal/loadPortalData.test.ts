@@ -19,6 +19,7 @@ describe('loadPortalData', () => {
       createChangeRequestItem: vi.fn(),
       getDonorNames: vi.fn().mockResolvedValue([]),
       getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
+      getPledgesForDonor: vi.fn().mockResolvedValue([]),
     };
 
     const result = await loadPortalData(['donor-1', 'donor-2'], monday);

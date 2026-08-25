@@ -42,6 +42,17 @@ const config: Config = {
     columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
     eventDateColumnId: 'ev_date_col',
   },
+  pledges: {
+    boardId: null,
+    columns: {
+      donorLink: 'REPLACE_WITH_COLUMN_ID',
+      pledgedAmount: 'REPLACE_WITH_COLUMN_ID',
+      fulfilledAmount: 'REPLACE_WITH_COLUMN_ID',
+      status: 'REPLACE_WITH_COLUMN_ID',
+      dueDate: 'REPLACE_WITH_COLUMN_ID',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: null },
 };
 
 function makeMessage(sendId: number) {
