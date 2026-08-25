@@ -2,13 +2,14 @@ import type { PendingRow, PendingStatus } from '../types';
 
 export interface NewPending {
   donationItemId: string;
+  donationBoardId: string;
   eventId: string;
   receivedAt: string;
 }
 
 export interface PendingStatusPatch {
   ownerItemId?: string;
-  ownerBoard?: 'donors' | 'organizations';
+  ownerBoard?: string;
   error?: string;
   writtenAt?: string;
 }
@@ -23,10 +24,11 @@ export interface PendingStore {
 
 interface D1PendingRecord {
   donation_item_id: string;
+  donation_board_id: string;
   event_id: string;
   status: PendingStatus;
   owner_item_id: string | null;
-  owner_board: 'donors' | 'organizations' | null;
+  owner_board: string | null;
   error: string | null;
   received_at: string;
   written_at: string | null;
@@ -35,6 +37,7 @@ interface D1PendingRecord {
 function toPendingRow(record: D1PendingRecord): PendingRow {
   return {
     donationItemId: record.donation_item_id,
+    donationBoardId: record.donation_board_id,
     eventId: record.event_id,
     status: record.status,
     ownerItemId: record.owner_item_id,
@@ -60,15 +63,16 @@ export class D1PendingStore implements PendingStore {
 
     const result = await this.db
       .prepare(
-        `INSERT INTO pending_recomputes (donation_item_id, event_id, status, received_at)
-         VALUES (?1, ?2, 'received', ?3)
+        `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at)
+         VALUES (?1, ?2, ?3, 'received', ?4)
          ON CONFLICT (donation_item_id) DO UPDATE SET
+           donation_board_id = excluded.donation_board_id,
            event_id = excluded.event_id,
            status = 'received',
            error = NULL,
            received_at = excluded.received_at`,
       )
-      .bind(row.donationItemId, row.eventId, row.receivedAt)
+      .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt)
       .run();
 
     if (existing !== null && result.meta.changes === 0) return 'duplicate';
@@ -97,7 +101,7 @@ export class D1PendingStore implements PendingStore {
   async getPending(donationItemId: string): Promise<PendingRow | null> {
     const record = await this.db
       .prepare(
-        `SELECT donation_item_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at
+        `SELECT donation_item_id, donation_board_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at
          FROM pending_recomputes WHERE donation_item_id = ?1`,
       )
       .bind(donationItemId)

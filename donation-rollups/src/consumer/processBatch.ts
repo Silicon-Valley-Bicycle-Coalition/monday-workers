@@ -1,4 +1,5 @@
 import type { PendingStore } from '../db/pending';
+import type { DonationLinksStore } from '../db/links';
 import type { DonationRollupsMondayClient } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage } from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
@@ -11,6 +12,7 @@ export interface QueueMessageLike<T> {
 
 export interface ProcessBatchDeps {
   pendingStore: PendingStore;
+  linksStore: DonationLinksStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
   now?: Date; // injectable for tests; defaults to the real current time
@@ -20,9 +22,9 @@ export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
   for (const message of messages) {
-    const { donationItemId } = message.body;
+    const { donationItemId, donationBoardId } = message.body;
     try {
-      await processOne(donationItemId, deps);
+      await processOne(donationItemId, donationBoardId, deps);
       message.ack();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -33,13 +35,16 @@ export async function processRecomputeBatch(
   }
 }
 
-async function processOne(donationItemId: string, deps: ProcessBatchDeps): Promise<void> {
+async function processOne(donationItemId: string, donationBoardId: string, deps: ProcessBatchDeps): Promise<void> {
   const { mondayClient, config } = deps;
-  const { donationColumns, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
-  const { donations: donationsBoardId, donors: donorsBoardId, organizations: orgsBoardId } = config.monday.boards;
-  if (donationsBoardId === null) throw new Error('config: monday.boards.donations is not configured');
+  const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
 
-  const ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, donationColumns.donorLink);
+  const sourceBoard = donationBoards.find((b) => String(b.boardId) === donationBoardId);
+  if (sourceBoard === undefined) {
+    throw new Error(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
+  }
+
+  const ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
   if (ownerItemId === null) {
     // Legitimately nothing to recompute — an unlinked donation isn't a transient
     // failure, so this is a benign skip, not a retry candidate.
@@ -48,26 +53,40 @@ async function processOne(donationItemId: string, deps: ProcessBatchDeps): Promi
   }
 
   const ownerBoardId = await mondayClient.getItemBoardId(ownerItemId);
-  const ownerBoard: 'donors' | 'organizations' =
-    ownerBoardId !== null && orgsBoardId !== null && Number(ownerBoardId) === orgsBoardId
-      ? 'organizations' : 'donors';
-  if (donorsBoardId === null) throw new Error('config: monday.boards.donors is not configured');
-  const targetBoardId = ownerBoard === 'organizations' ? orgsBoardId! : donorsBoardId;
+  if (ownerBoardId === null) {
+    throw new Error(`owner item "${ownerItemId}" has no resolvable board (deleted between link and lookup?)`);
+  }
+  const ownerColumns = ownerColumnsByBoard[ownerBoardId];
+  if (ownerColumns === undefined) {
+    throw new Error(`config: no ownerColumnsByBoard entry for board id "${ownerBoardId}" (this owner's board)`);
+  }
 
-  const donations = await mondayClient.getDonationsForOwner(
-    donationsBoardId, donationColumns.donorLink, ownerItemId,
-    { amount: donationColumns.amount, date: donationColumns.date,
-      fiscalYear: donationColumns.fiscalYear, status: donationColumns.status },
+  // Keep the reverse index current *before* reading it back — this donation's own
+  // link is part of what the recompute below needs to see.
+  await deps.linksStore.upsertLink(
+    { donationItemId, donationBoardId, ownerItemId, ownerBoardId },
+    new Date().toISOString(),
   );
+
+  // Monday has no supported filter for board_relation columns (confirmed 2026-08-24 —
+  // items_page_by_column_values rejects it outright), so "every Donation this owner
+  // has" comes from the D1 reverse index, not a live Monday query. getDonationsByIds
+  // then fetches those specific items directly, grouped by board since column ids
+  // differ per Donations era board.
+  const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
+  const perBoard = await Promise.all(donationBoards
+    .filter((b) => linksByBoard.has(String(b.boardId)))
+    .map((b) => mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns)));
+  const donations = perBoard.flat();
 
   const thisFY = currentFiscalYear(deps.now ?? new Date());
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
-  const columnValues = rollupToColumnValues(rollup, ownerColumnsByBoard[ownerBoard]);
+  const columnValues = rollupToColumnValues(rollup, ownerColumns);
 
-  await mondayClient.changeColumnValues(targetBoardId, ownerItemId, columnValues);
+  await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
 
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
-    ownerItemId, ownerBoard, writtenAt: new Date().toISOString(),
+    ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
   });
 }
 
