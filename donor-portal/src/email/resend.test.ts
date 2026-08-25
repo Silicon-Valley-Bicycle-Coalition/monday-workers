@@ -29,4 +29,56 @@ describe('ResendEmailSender', () => {
       /HTTP 422.*invalid from address/
     );
   });
+
+  describe('sendLetterReadyEmail', () => {
+    it('posts to Resend with the letter-ready subject and a link to the portal', async () => {
+      const fetchFn = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+      const sender = new ResendEmailSender('key-123', 'letters@mail.bikesiliconvalley.org', 'SVBC', fetchFn);
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Jane Example',
+        year: 2025,
+        loginUrl: 'https://portal.example.org/auth/callback?token=abc',
+      });
+
+      expect(fetchFn).toHaveBeenCalledWith(
+        'https://api.resend.com/emails',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ Authorization: 'Bearer key-123' }),
+        })
+      );
+      const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.to).toEqual(['jane@example.org']);
+      expect(body.subject).toBe('Your 2025 SVBC giving letter is ready');
+      expect(body.html).toContain('https://portal.example.org/auth/callback?token=abc');
+      expect(body.html).toContain('Jane Example');
+    });
+
+    it('escapes HTML-significant characters in the donor name', async () => {
+      const fetchFn = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+      const sender = new ResendEmailSender('key-123', 'letters@mail.bikesiliconvalley.org', 'SVBC', fetchFn);
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: '<b>Jane</b> & Co',
+        year: 2025,
+        loginUrl: 'https://portal.example.org/auth/callback?token=abc',
+      });
+
+      const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+      expect(body.html).not.toContain('<b>Jane</b> & Co');
+      expect(body.html).toContain('&lt;b&gt;Jane&lt;/b&gt; &amp; Co');
+    });
+
+    it('throws on a non-ok Resend response', async () => {
+      const fetchFn = vi.fn().mockResolvedValue(new Response('bad request', { status: 400 }));
+      const sender = new ResendEmailSender('key-123', 'a@example.org', 'SVBC', fetchFn);
+
+      await expect(
+        sender.sendLetterReadyEmail({ to: 'jane@example.org', donorName: 'Jane', year: 2025, loginUrl: 'https://x/callback' })
+      ).rejects.toThrow('resend: HTTP 400');
+    });
+  });
 });

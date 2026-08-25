@@ -10,6 +10,10 @@ import type { IpRateLimiter } from './ratelimit';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { ChangeQueueMessage } from './changeRequests/submitChangeRequest';
+import type { LetterSendStore } from './db/letterSends';
+import type { LetterSendQueueMessage } from './types';
+import { validateLetterWebhookBody } from './letters/validateLetterWebhook';
+import { triggerLetterSend } from './letters/triggerLetterSend';
 import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
@@ -38,6 +42,9 @@ export interface AppDeps {
   now: () => Date;
   changeStore: ChangeRequestStore;
   changeQueue: { send(message: ChangeQueueMessage): Promise<void> };
+  letterSendStore: LetterSendStore;
+  letterQueue: { send(message: LetterSendQueueMessage): Promise<void> };
+  letterWebhookSecret: string;
   cardTokenStore: CardTokenStore;
 }
 
@@ -467,6 +474,56 @@ export function createApp(deps: AppDeps) {
     }
     deleteCookie(c, SESSION_COOKIE, { path: '/' });
     return c.redirect('/login');
+  });
+
+  // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard mitigation
+  // used elsewhere in this repo (donation-rollups) is a shared secret in the webhook URL itself,
+  // set when subscribing and checked here.
+  app.post('/webhooks/monday/letters', async (c) => {
+    if (!deps.letterWebhookSecret || c.req.query('secret') !== deps.letterWebhookSecret) {
+      return c.json({ ok: false }, 401);
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: 'invalid JSON body' }, 200);
+    }
+
+    // Monday's webhook-subscription verification handshake: echo the challenge back verbatim,
+    // no other processing. Sent once, at subscription-creation time.
+    if (typeof body === 'object' && body !== null && 'challenge' in body) {
+      return c.json({ challenge: (body as { challenge: unknown }).challenge }, 200);
+    }
+
+    let event;
+    try {
+      event = validateLetterWebhookBody(body);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`donor-portal webhook: rejected letter-send delivery: ${errMsg}`);
+      return c.json({ ok: false, error: errMsg }, 200);
+    }
+
+    let result;
+    try {
+      result = await triggerLetterSend(event.donorItemId, {
+        monday: deps.monday,
+        store: deps.letterSendStore,
+        queue: deps.letterQueue,
+        now: deps.now,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`donor-portal webhook: letter-send trigger failed for donor "${event.donorItemId}": ${errMsg}`);
+      return c.json({ ok: false }, 500);
+    }
+
+    if (result.kind !== 'queued') {
+      console.log(`donor-portal webhook: letter-send for donor "${event.donorItemId}" resulted in "${result.kind}"`);
+    }
+    return c.json({ ok: true, result: result.kind }, 200);
   });
 
   return app;
