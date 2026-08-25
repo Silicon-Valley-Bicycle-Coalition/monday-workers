@@ -1,14 +1,16 @@
 # donation-rollups
 
-**Status:** Built (`feat/donation-rollups`) — not deployed; still needs a Monday webhook
-subscription. Config in `config/svbc.json` is real, verified board/column ids (against the CRM
-Sandbox, 2026-08-24), not placeholders. Core mechanism (donor link resolution, the D1 reverse
-index, fetching donations by id, writing the rollup back) tested directly against that sandbox —
-see "Tested against the real sandbox" below for what that found and fixed. **D1 is provisioned for
-real** (`svbc-donation-rollups`, all three migrations applied `--remote`) **and the
-`donation_links` bootstrap has actually been run** — 37,278 real donation→owner links across all 9
-Donations boards, 7,893 distinct owners, verified against the same donor (Dan King) this Worker's
-mechanism was hand-tested against.
+**Status: live**, 2026-08-25 — deployed to `https://svbc-donation-rollups.svbc-account.workers.dev`,
+D1 provisioned and bootstrapped (37,278 real donation→owner links across all 9 boards, 7,893
+distinct owners), 18 Monday webhook subscriptions active (`create_item` + `change_column_value` ×
+9 Donations era boards, each authenticated via a shared secret in the webhook URL — Monday doesn't
+sign payloads). **Scoped entirely to the CRM Sandbox** — every board id in `config/svbc.json` is a
+sandbox board, not a production one (production doesn't exist yet; real cutover is October), so
+nothing this Worker does can touch live donor data. Verified end-to-end against real production
+traffic from the sandbox itself: editing Dan King's real donation amount live triggered the full
+pipeline (webhook → D1 → queue → consumer → Monday fetch → recompute → write-back) and landed
+correct cross-era numbers (Lifetime Giving $12,434.42, 23 gifts, First Gift 2017-09-14 — spanning
+boards well beyond the one that fired the webhook).
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
 **Owner:** Unassigned.
@@ -146,19 +148,34 @@ before cutover:
 
 ## APIs & auth
 
-* **Monday.com webhooks** — subscribe via the API (`create_webhook` mutation) for `create_pulse`
-  and `change_column_value`, **once per Donations era board** (9 separate subscriptions in the
-  sandbox — Monday webhooks are board-scoped, there's no "subscribe to all boards" option), scoped
-  to the Amount/Date/Fiscal Year/Status/Donor-link columns if Monday's webhook config supports
-  column-level scoping; board-wide otherwise. The subscription-creation handshake POSTs
-  `{"challenge": "..."}` to the webhook URL, which must be echoed back verbatim — handled in
-  `src/webhook/route.ts`.
-* **Monday.com GraphQL API** — standard integration-user token, least-privilege (read/write on the
-  Donations era boards plus People/People Historical/Organizations only), same pattern as every
-  other Worker here.
+* **Monday.com webhooks** — live: 18 subscriptions created via `create_webhook` (`create_item` +
+  `change_column_value`, **one pair per Donations era board**, 9 boards — Monday webhooks are
+  board-scoped, there's no "subscribe to all boards" option), each pointed at
+  `https://svbc-donation-rollups.svbc-account.workers.dev/webhooks/monday/donations` with the
+  shared secret embedded in the URL. The subscription-creation handshake POSTs
+  `{"challenge": "..."}` to the webhook URL, which is echoed back verbatim — handled in
+  `src/webhook/route.ts`, and is also what a new subscription's secret check has to pass, so a
+  wrong secret at subscribe-time fails loudly rather than silently.
+* **Monday.com GraphQL API** — currently reusing `salesforce-import`'s existing token (`.env`,
+  per direct instruction) rather than a token minted specifically for this Worker at
+  least-privilege scope, which is this repo's stated convention for every other Worker. Tracked as
+  open technical debt below, not blocking, since the token only reaches Sandbox boards regardless.
+
+## Non-destructive by design
+
+Every board id in `config/svbc.json` — all 9 Donations era boards, all 3 owner boards — is a CRM
+**Sandbox** id, verified against the sandbox directly (2026-08-24/25), not copied from a
+production workspace. There is no production Monday workspace with real cutover data yet (that's
+October); until there is, this Worker cannot touch live donor data no matter what triggers it.
+**Before ever repointing any id in that config at a production workspace, re-verify every single
+one against production directly** (the sandbox gets rebuilt before cutover, so today's ids won't
+necessarily match) — don't assume sandbox and production share ids just because the schema matches.
 
 ## Not yet done
 
+* **Dedicated least-privilege API token.** Mint one scoped to just the Donations era boards plus
+  People/People Historical/Organizations, and swap it in for the reused `salesforce-import` token
+  above.
 * **The sandbox is getting a fresh full load rehearsal separately** (see
   `docs/18-sandbox-load-rehearsal-lessons.md` in the private planning repo) — re-run the bootstrap
   once that settles, since item ids / board contents may have changed since 2026-08-25's run.
@@ -167,9 +184,6 @@ before cutover:
   boards). Not currently read by anything downstream — the consumer re-resolves it fresh via
   `getItemBoardId` every time — but it's a real gap in the table's own data if anything ever comes
   to depend on that column being populated.
-* **Webhook signature verification** — Monday's webhook payloads aren't currently checked for
-  authenticity beyond the challenge handshake. Confirm what Monday actually offers (a shared
-  secret header, IP allow-listing, or nothing) before deploying publicly.
 * **This/Last Year go stale exactly once a year, on the fiscal-year boundary, if nothing else
   triggers a recompute.** A donor with no new gifts near July 1st keeps last fiscal year's
   This/Last Year split until their next Donation changes. Not a bug this Worker's design can fix
