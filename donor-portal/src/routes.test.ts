@@ -62,7 +62,15 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
   return {
     findDonorsByEmail: vi.fn().mockImplementation((email: string) => Promise.resolve(matchesByEmail[email] ?? [])),
     getDonorPortalData: vi.fn().mockImplementation((id: string) =>
-      Promise.resolve({ id, name: `Donor ${id}`, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '0', donations: [] })
+      Promise.resolve({
+        id,
+        name: `Donor ${id}`,
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '0',
+        donations: [],
+        membershipExpiry: '',
+      })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
@@ -87,6 +95,7 @@ function fakeMondayWithDonations(): MondayClient {
         membershipTier: 'Member',
         totalDonated: '$40.00',
         donations: [{ date: '2025-03-14', amount: '$40.00', description: 'gift' }],
+        membershipExpiry: '',
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),

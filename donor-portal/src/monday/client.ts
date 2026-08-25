@@ -106,7 +106,7 @@ export class HttpMondayClient implements MondayClient {
         items(ids: [$itemId]) {
           id
           name
-          column_values(ids: ["${this.columns.membershipStatus}", "${this.columns.membershipTier}", "${this.columns.dollarDonated}"]) {
+          column_values(ids: ["${this.columns.membershipStatus}", "${this.columns.membershipTier}", "${this.columns.dollarDonated}", "${this.columns.membershipExpiry}"]) {
             id
             text
           }
@@ -128,6 +128,7 @@ export class HttpMondayClient implements MondayClient {
       membershipTier: columnText(donorItem, this.columns.membershipTier),
       totalDonated: columnText(donorItem, this.columns.dollarDonated),
       donations,
+      membershipExpiry: columnText(donorItem, this.columns.membershipExpiry),
     };
   }
 

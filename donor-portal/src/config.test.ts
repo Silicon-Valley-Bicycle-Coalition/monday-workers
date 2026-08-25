@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled } from './config';
 
 const validConfig = {
   monday: {
@@ -20,6 +20,7 @@ const validConfig = {
       discountActive: 'active_col',
       donorAddress: 'text_addr',
       donorPhone: 'phone_1',
+      membershipExpiry: 'expiry_col',
     },
   },
   resend: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
@@ -96,6 +97,12 @@ describe('validateConfig', () => {
       },
     };
     expect(() => validateConfig(broken)).toThrow(/donorEmail/);
+  });
+
+  it('throws when monday.columns is missing membershipExpiry', () => {
+    const { membershipExpiry, ...missingExpiry } = validConfig.monday.columns;
+    const broken = { ...validConfig, monday: { ...validConfig.monday, columns: missingExpiry } };
+    expect(() => validateConfig(broken)).toThrow(/membershipExpiry/);
   });
 });
 
@@ -199,5 +206,18 @@ describe('changeRequestsEnabled', () => {
     const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
     (raw as { monday: { columns: { donorAddress: string } } }).monday.columns.donorAddress = 'REPLACE_WITH_COLUMN_ID';
     expect(changeRequestsEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('cardEnabled', () => {
+  it('is true when membershipExpiry is a real column id', () => {
+    const cfg = validateConfig(validConfig);
+    expect(cardEnabled(cfg)).toBe(true);
+  });
+
+  it('is false while membershipExpiry is still the placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    expect(cardEnabled(validateConfig(raw))).toBe(false);
   });
 });

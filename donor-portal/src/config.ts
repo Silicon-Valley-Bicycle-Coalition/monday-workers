@@ -20,6 +20,11 @@ const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
 // deploy-blocking. They're checked for *presence* only, not placeholder-freedom.
 const V2_DONOR_COLUMNS: (keyof MondayColumns)[] = ['donorAddress', 'donorPhone'];
 
+// CARD_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: this column only matters to the
+// membership-card feature, which is gated (cardEnabled), not deploy-blocking. Checked for
+// *presence* only, not placeholder-freedom — same treatment as V2_DONOR_COLUMNS.
+const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
+
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
@@ -83,6 +88,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', REQUIRED_COLUMNS);
   requireNoPlaceholderColumns(columns);
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
+  requireKeys(columns, 'monday.columns', CARD_COLUMNS);
 
   const resend = requireObject(cfg, 'resend');
   requireKeys(resend, 'resend', REQUIRED_RESEND_KEYS);
@@ -127,4 +133,8 @@ export function changeRequestsEnabled(config: Config): boolean {
   const crCols = [cr.columns.donorLink, cr.columns.field, cr.columns.oldValue, cr.columns.newValue, cr.columns.submittedAt];
   const donorCols = [config.monday.columns.donorAddress, config.monday.columns.donorPhone];
   return [...crCols, ...donorCols].every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
+}
+
+export function cardEnabled(config: Config): boolean {
+  return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
 }

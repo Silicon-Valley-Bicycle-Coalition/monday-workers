@@ -15,6 +15,7 @@ const columns: MondayColumns = {
   discountActive: 'active_col',
   donorAddress: 'addr_col',
   donorPhone: 'phone_col',
+  membershipExpiry: 'expiry_col',
 };
 
 function fetchReturning(body: unknown, ok = true) {
@@ -99,6 +100,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
                   { id: 'status_col', text: 'Active' },
                   { id: 'tier_col', text: 'Member' },
                   { id: 'donated_col', text: '500' },
+                  { id: 'expiry_col', text: '2026-12-31' },
                 ],
               },
             ],
@@ -142,6 +144,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
       membershipTier: 'Member',
       totalDonated: '500',
       donations: [{ amount: '100', date: '2026-01-01', description: 'Annual gift' }],
+      membershipExpiry: '2026-12-31',
     });
   });
 });
