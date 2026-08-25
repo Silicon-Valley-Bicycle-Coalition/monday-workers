@@ -37,6 +37,7 @@
       "registration": "id"
     },
     "entityIdColumn": "text_funraise_entity_id_column",
+    "thankYouSentColumn": "thank_you_sent_column_id",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "donor.contactId",
