@@ -61,8 +61,10 @@ export interface FunraiseSyncConfig {
   };
 }
 
-export interface Env {
-  DB: D1Database;
+// Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
+// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// only secrets and narrowed queue message types are declared here.
+export interface Env extends Cloudflare.Env {
   WRITE_QUEUE: Queue<FunraiseQueueMessage>;
   MONDAY_API_TOKEN: string;
 }

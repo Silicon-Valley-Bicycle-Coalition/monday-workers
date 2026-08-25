@@ -5,6 +5,18 @@ export function dateCol(iso: string | null | undefined): unknown {
   return { date: iso.slice(0, 10) };
 }
 
+// SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes
+// into the fiscal year ending the following June once its month is July or later. Integer
+// parsing, not Date-object arithmetic — no timezone conversion needed since CloseDate/
+// TransactionDate are already plain dates by the time they reach this column (see
+// docs/07-migration-gotchas.md §7 in monday-migration for why that's safe).
+export function fiscalYear(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const [y, m] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !m) return '';
+  return String(m >= 7 ? y + 1 : y);
+}
+
 // One consolidated long-text column instead of five separate provenance columns —
 // never updated after the migration, and slated for a single-column delete once
 // staff no longer need it. Names stay verbatim text (many are former employees
@@ -16,13 +28,22 @@ export function setStaffMatcher(matcher: ((sfName: string) => string | null) | n
   staffMatch = matcher;
 }
 
+// "Name (email)" when the Salesforce user matches a current Monday staff member,
+// bare "Name" otherwise — covers former staff *and* non-human accounts (integration
+// users, guest logins) the same way, since neither matches a current staff export.
+// See monday-migration docs/07 gotcha #3 / docs/05 §9: 25 "active" Salesforce users
+// includes 14 that aren't real staff, which is exactly what this degrades gracefully
+// for by matching against Monday's current user list instead of Salesforce's
+// IsActive flag.
+export function ownerAttribution(v: unknown): string {
+  const name = (v as { Name?: string } | null)?.Name ?? '';
+  if (!name) return '';
+  const email = staffMatch?.(name);
+  return email ? `${name} (${email})` : name;
+}
+
 export function salesforceDebug(row: Record<string, unknown>): Record<string, unknown> {
-  const by = (v: unknown) => {
-    const name = (v as { Name?: string } | null)?.Name ?? '';
-    if (!name) return '';
-    const email = staffMatch?.(name);
-    return email ? `${name} (${email})` : name;
-  };
+  const by = ownerAttribution;
   const day = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 10) : '');
   const stamp = (label: string, date: string, name: string) =>
     date ? `${label}: ${date}${name ? ` by ${name}` : ''}` : '';

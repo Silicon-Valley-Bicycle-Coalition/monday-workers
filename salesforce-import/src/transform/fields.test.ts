@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -71,6 +71,43 @@ describe('dateCol', () => {
     expect(dateCol('2122-01-01')).toEqual({ date: '2122-01-01' });
     expect(dateCol('2019-05-01T12:00:00.000+0000')).toEqual({ date: '2019-05-01' });
     expect(dateCol(null)).toBeNull();
+  });
+});
+
+describe('fiscalYear', () => {
+  // SVBC's FY runs July→June (Organization.FiscalYearStartMonth = 7). FY2026 = Jul 2025–Jun 2026.
+  it('rolls a gift closed in the second half of the calendar year into next year\'s FY', () => {
+    expect(fiscalYear('2025-12-31')).toBe('2026');
+    expect(fiscalYear('2025-07-01')).toBe('2026');
+  });
+  it('keeps a gift closed in the first half of the calendar year in that year\'s FY', () => {
+    expect(fiscalYear('2026-06-30')).toBe('2026');
+    expect(fiscalYear('2026-01-01')).toBe('2026');
+  });
+  it('truncates a full datetime the same way dateCol does', () => {
+    expect(fiscalYear('2025-12-31T23:59:59.000+0000')).toBe('2026');
+  });
+  it('returns empty string for missing or malformed dates, not a crash', () => {
+    expect(fiscalYear(null)).toBe('');
+    expect(fiscalYear(undefined)).toBe('');
+    expect(fiscalYear('')).toBe('');
+  });
+});
+
+describe('ownerAttribution', () => {
+  it('appends the Monday email for a current staff match, leaves former staff and non-human accounts bare', () => {
+    setStaffMatcher((name) => (name === 'Deanna Chevas' ? 'deanna@bikesiliconvalley.org' : null));
+    try {
+      expect(ownerAttribution({ Name: 'Deanna Chevas' })).toBe('Deanna Chevas (deanna@bikesiliconvalley.org)');
+      expect(ownerAttribution({ Name: 'Tim Oey' })).toBe('Tim Oey'); // former staff, no match
+      expect(ownerAttribution({ Name: 'SVBC Integration' })).toBe('SVBC Integration'); // non-human account
+    } finally {
+      setStaffMatcher(null);
+    }
+  });
+  it('returns empty string for a null/missing owner', () => {
+    expect(ownerAttribution(null)).toBe('');
+    expect(ownerAttribution({})).toBe('');
   });
 });
 

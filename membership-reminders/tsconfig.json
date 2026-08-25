@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src", "config"]
+  "include": ["src", "config", "worker-configuration.d.ts"]
 }

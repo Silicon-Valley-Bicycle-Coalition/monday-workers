@@ -109,10 +109,11 @@ export interface ChangeQueueMessage {
   requestId: number;
 }
 
-export interface Env {
-  DB: D1Database;
+// Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
+// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// only secrets and narrowed queue message types are declared here.
+export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
   RESEND_API_KEY: string;
-  LOGIN_RATE_LIMITER: RateLimit;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
 }

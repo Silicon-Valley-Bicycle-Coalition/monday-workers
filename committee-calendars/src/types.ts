@@ -42,7 +42,9 @@ export interface CommitteeCalendarsConfig {
   sources: SourceConfig[];
 }
 
-export interface Env {
-  DB: D1Database;
+// Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
+// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// only secrets and narrowed queue message types are declared here.
+export interface Env extends Cloudflare.Env {
   SLACK_WEBHOOK_URL: string;
 }
