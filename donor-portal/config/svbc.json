@@ -18,7 +18,10 @@
       "donorAddress": "REPLACE_WITH_COLUMN_ID",
       "donorPhone": "REPLACE_WITH_COLUMN_ID",
       "membershipExpiry": "REPLACE_WITH_COLUMN_ID",
-      "preferredLanguage": "REPLACE_WITH_COLUMN_ID"
+      "preferredLanguage": "REPLACE_WITH_COLUMN_ID",
+      "donorEmailOptOut": "REPLACE_WITH_COLUMN_ID",
+      "donorSmsOptOut": "REPLACE_WITH_COLUMN_ID",
+      "donorDoNotMail": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {

@@ -225,6 +225,40 @@ Operator setup, in addition to v1/v2 steps:
    `wrangler queues create donor-portal-letter-emails-dlq`).
 5. Apply D1 migration `0004_create_letter_sends.sql`.
 
+## v2.2 — Communication preferences
+
+From [IT Requests #12893526579](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893526579).
+A "Communication preferences" section on the existing change-request page lets a donor set three
+preferences — **Email Opt-Out**, **SMS Opt-Out**, and **Do Not Mail** — flowing through the same
+staff-review write path as the free-text change requests (the portal still never writes donor
+records; staff apply approved changes by hand). The form shows the current state read live from
+the Donors board and submits a diff: only preferences that actually changed become change
+requests, with fixed staff-facing values ("Opted out of email" / "Subscribed to email", "Opted
+out of SMS" / "Subscribed to SMS", "Do not mail" / "OK to mail") rather than free text.
+
+Two compliance notes baked into the design:
+
+* **The staff-review path is deliberate, not a shortcut.** Mailchimp is SVBC's real system of
+  record for email consent (see the private planning repo's Mailchimp reconciliation item), so
+  the portal must not flip opt-out flags directly; a queued request staff reconcile by hand is
+  also comfortably within CAN-SPAM's 10-business-day window for honoring opt-outs.
+* **Email Opt-Out maps to the compliance-critical `HasOptedOutOfEmail` migration column**
+  (`docs/03-monday-migration-mapping.md`, private planning repo). Do Not Mail maps to Salesforce's
+  `Do_Not_Mail__c`. SMS Opt-Out is net-new — Salesforce has no per-contact SMS consent field — so
+  its column starts empty for every donor.
+
+**Gated per column on `monday.columns.donorEmailOptOut` / `donorSmsOptOut` / `donorDoNotMail`:**
+each preference appears on the form only once its Donors-board **checkbox** column id is filled in
+(same treatment as `preferredLanguage`), so staff can roll out one preference at a time. With none
+configured, the section is absent entirely. The change-request board/queue prerequisites are the
+v2 setup above — no new board, queue, migration, or secret.
+
+Operator setup, in addition to the v2 steps: add up to three checkbox columns (Email Opt-Out,
+SMS Opt-Out, Do Not Mail) to the Donors board and fill in their ids in `config/svbc.json`. At
+migration cutover, Email Opt-Out and Do Not Mail carry over from Salesforce per the mapping doc;
+verify consent state against Mailchimp before trusting migrated opt-out flags (compliance item in
+`docs/09-integrations-and-addons.md`).
+
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a

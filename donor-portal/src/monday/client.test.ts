@@ -17,6 +17,9 @@ const columns: MondayColumns = {
   donorPhone: 'phone_col',
   membershipExpiry: 'expiry_col',
   preferredLanguage: 'lang_col',
+  donorEmailOptOut: 'check_email_opt',
+  donorSmsOptOut: 'check_sms_opt',
+  donorDoNotMail: 'check_no_mail',
 };
 
 function fetchReturning(body: unknown, ok = true) {
@@ -299,6 +302,9 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: '',
+      emailOptOut: false,
+      smsOptOut: false,
+      doNotMail: false,
     });
   });
 
@@ -334,7 +340,93 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: 'Spanish',
+      emailOptOut: false,
+      smsOptOut: false,
+      doNotMail: false,
     });
+  });
+
+  it('reads communication preference checkboxes off the donor item (Monday checkbox text: "v" = checked)', async () => {
+    const client = makeClient({
+      data: {
+        items: [
+          {
+            id: 'donor-1',
+            name: 'Jane Example',
+            column_values: [
+              { id: 'email_col', text: 'jane@example.org' },
+              { id: 'addr_col', text: '1 Old St' },
+              { id: 'phone_col', text: '555-0100' },
+              { id: 'check_email_opt', text: 'v' },
+              { id: 'check_sms_opt', text: '' },
+              { id: 'check_no_mail', text: 'v' },
+            ],
+          },
+        ],
+      },
+    });
+
+    const info = await client.getDonorContactInfo('donor-1');
+
+    expect(info.emailOptOut).toBe(true);
+    expect(info.smsOptOut).toBe(false);
+    expect(info.doNotMail).toBe(true);
+  });
+
+  it('treats a configured preference column absent from the response as unchecked', async () => {
+    const client = makeClient({
+      data: {
+        items: [
+          {
+            id: 'donor-1',
+            name: 'Jane Example',
+            column_values: [{ id: 'email_col', text: 'jane@example.org' }],
+          },
+        ],
+      },
+    });
+
+    const info = await client.getDonorContactInfo('donor-1');
+
+    expect(info.emailOptOut).toBe(false);
+    expect(info.smsOptOut).toBe(false);
+    expect(info.doNotMail).toBe(false);
+  });
+
+  it('returns null for preference fields whose columns are placeholders, omitting their ids from the query', async () => {
+    let captured: { query: string } | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            items: [
+              {
+                id: 'donor-1',
+                name: 'Jane Example',
+                column_values: [{ id: 'email_col', text: 'jane@example.org' }],
+              },
+            ],
+          },
+        }),
+      };
+    });
+    const placeholderPrefColumns: MondayColumns = {
+      ...columns,
+      donorEmailOptOut: 'REPLACE_WITH_COLUMN_ID',
+      donorSmsOptOut: 'REPLACE_WITH_COLUMN_ID',
+      donorDoNotMail: 'REPLACE_WITH_COLUMN_ID',
+    };
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderPrefColumns, 999, 1, 2, fetchMock);
+
+    const info = await client.getDonorContactInfo('donor-1');
+
+    expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    expect(info.emailOptOut).toBeNull();
+    expect(info.smsOptOut).toBeNull();
+    expect(info.doNotMail).toBeNull();
   });
 
   it('omits the placeholder preferredLanguage column id from the outgoing query (and returns "")', async () => {
@@ -375,6 +467,9 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: '',
+      emailOptOut: false,
+      smsOptOut: false,
+      doNotMail: false,
     });
   });
 });

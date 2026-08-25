@@ -21,12 +21,14 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, lettersEnabled, cardEnabled, funraiseLinks } from './config';
+import { changeRequestsEnabled, configuredPrefFields, lettersEnabled, cardEnabled, funraiseLinks } from './config';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
 import { submitChangeRequest } from './changeRequests/submitChangeRequest';
-import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView } from './changeRequests/changeRequestViews';
+import { submitPreferences } from './changeRequests/submitPreferences';
+import type { PrefField } from './types';
+import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
 import { buildCardData } from './card/loadCardData';
 import { generateQrSvg } from './card/qr';
 import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
@@ -318,7 +320,13 @@ export function createApp(deps: AppDeps) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale));
     }
     const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
-    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestFormView(donors, locale), locale));
+    return c.html(
+      page(
+        t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'),
+        changeRequestFormView(donors, locale, configuredPrefFields(deps.config)),
+        locale
+      )
+    );
   });
 
   app.post('/:locale/portal/change-request', async (c) => {
@@ -365,6 +373,54 @@ export function createApp(deps: AppDeps) {
       now: deps.now,
     });
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale));
+  });
+
+  app.post('/:locale/portal/change-request/preferences', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!changeRequestsEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale));
+    }
+
+    // Same limiter keys as the free-text change-request POST above — the two forms share one
+    // abuse budget since they feed the same staff queue.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
+    }
+    const sessionToken = getCookie(c, SESSION_COOKIE) as string;
+    const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
+    if (!sessionResult.success) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
+    }
+
+    const body = await c.req.parseBody();
+    // Only fields whose Donors-board column is configured are read from the body — an
+    // unconfigured preference can't be diffed against Monday, so a value for it is ignored
+    // rather than rejected (the form never renders it; only a hand-crafted POST carries one).
+    const prefs: Partial<Record<PrefField, boolean>> = {};
+    for (const field of configuredPrefFields(deps.config)) {
+      const value = body[field];
+      if (value === 'yes') prefs[field] = true;
+      else if (value === 'no') prefs[field] = false;
+    }
+    const input = {
+      donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
+      prefs,
+    };
+
+    const result = await submitPreferences(donorItemIds, input, {
+      monday: deps.monday,
+      store: deps.changeStore,
+      queue: deps.changeQueue,
+      dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
+      now: deps.now,
+    });
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), preferencesResultView(result, locale), locale));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.
