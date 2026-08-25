@@ -336,6 +336,47 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       preferredLanguage: 'Spanish',
     });
   });
+
+  it('omits the placeholder preferredLanguage column id from the outgoing query (and returns "")', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            items: [
+              {
+                id: 'donor-1',
+                name: 'Jane Example',
+                column_values: [
+                  { id: 'email_col', text: 'jane@example.org' },
+                  { id: 'addr_col', text: '1 Old St' },
+                  { id: 'phone_col', text: '555-0100' },
+                ],
+              },
+            ],
+          },
+        }),
+      };
+    });
+    const placeholderColumns: MondayColumns = { ...columns, preferredLanguage: 'REPLACE_WITH_COLUMN_ID' };
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, fetchMock);
+
+    const info = await client.getDonorContactInfo('donor-1');
+
+    expect(captured).not.toBeNull();
+    expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
+    expect(info).toEqual({
+      id: 'donor-1',
+      name: 'Jane Example',
+      email: 'jane@example.org',
+      address: '1 Old St',
+      phone: '555-0100',
+      preferredLanguage: '',
+    });
+  });
 });
 
 describe('HttpMondayClient.createChangeRequestItem', () => {
