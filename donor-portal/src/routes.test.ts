@@ -298,6 +298,42 @@ describe('GET /auth/callback error handling', () => {
   });
 });
 
+describe('GET /auth/callback locale handling', () => {
+  it('redirects to the locale carried on the callback URL', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+
+    await app.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
+    const token = extractToken(loginUrl);
+
+    const res = await app.request(`/auth/callback?token=${token}&lang=es`, { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/es/portal');
+  });
+
+  it('falls back to /en/portal when lang is missing or invalid', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+
+    await app.request('/login', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
+    const token = extractToken(loginUrl);
+
+    const res = await app.request(`/auth/callback?token=${token}`, { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+});
+
 describe('GET /:locale/portal without a session', () => {
   it('redirects to /login', async () => {
     const app = createApp(makeDeps());

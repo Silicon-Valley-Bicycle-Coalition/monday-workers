@@ -195,7 +195,9 @@ export function createApp(deps: AppDeps) {
       path: '/',
       maxAge: deps.config.auth.sessionTtlHours * 3600,
     });
-    return c.redirect('/portal');
+    const langParam = c.req.query('lang');
+    const redirectLocale = langParam !== undefined && isLocale(langParam) ? langParam : DEFAULT_LOCALE;
+    return c.redirect(`/${redirectLocale}/portal`);
   });
 
   // Back-compat: anything still linking to the old unprefixed /portal (a stale bookmark, an
