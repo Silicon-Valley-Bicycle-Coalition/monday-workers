@@ -8,6 +8,8 @@ import { listLetterYears } from './loadLetterData';
 export type { LetterSendQueueMessage };
 
 export type TriggerLetterSendResult =
+  // 'queued' covers both a brand-new row and a previously 'skipped' row that got requeued for a
+  // fresh attempt — both are real send attempts now in flight, unlike 'duplicate'.
   | { kind: 'queued' }
   | { kind: 'duplicate' }
   | { kind: 'no-eligible-year' }
@@ -34,14 +36,25 @@ export async function triggerLetterSend(donorItemId: string, deps: TriggerLetter
 
   const existing = await deps.store.findByDonorYear(donorItemId, year);
   if (existing !== null) {
-    // A 'queued' match means an earlier trigger's row was written but its queue.send either
-    // never ran or threw — re-send it now so the consumer (idempotent on status) gets another
-    // chance, instead of leaving the row stranded with no message ever in flight. Same pattern
-    // as submitChangeRequest's dedupe-hit handling.
     if (existing.status === 'queued') {
+      // Stranded: an earlier trigger's row was written but its queue.send either never ran
+      // or threw — re-send now so the consumer (idempotent on status) gets another chance,
+      // instead of leaving the row stranded with no message ever in flight. Same pattern as
+      // submitChangeRequest's dedupe-hit handling.
       await deps.queue.send({ sendId: existing.id });
+      return { kind: 'duplicate' };
     }
-    return { kind: 'duplicate' };
+    if (existing.status === 'skipped') {
+      // A prior send attempt was deliberately skipped (config gate not open yet, or the
+      // donor's gifts were momentarily missing) — the condition may have resolved since, so
+      // requeue and give it a fresh attempt rather than permanently locking this donor+year
+      // out (the letter_sends UNIQUE(donor_item_id, year) index means a fresh row can never
+      // be created here).
+      await deps.store.requeue(existing.id, now.toISOString());
+      await deps.queue.send({ sendId: existing.id });
+      return { kind: 'queued' };
+    }
+    return { kind: 'duplicate' }; // status === 'sent' — genuinely already sent, true no-op
   }
 
   const id = await deps.store.createQueued({ donorItemId, year, createdAt: now.toISOString() });

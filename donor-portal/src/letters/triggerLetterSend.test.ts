@@ -10,6 +10,7 @@ function fakeStore(overrides: Partial<LetterSendStore> = {}): LetterSendStore {
     getById: vi.fn().mockResolvedValue(null),
     markSent: vi.fn().mockResolvedValue(undefined),
     markSkipped: vi.fn().mockResolvedValue(undefined),
+    requeue: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -67,6 +68,7 @@ describe('triggerLetterSend', () => {
 
     expect(result).toEqual({ kind: 'duplicate' });
     expect(store.createQueued).not.toHaveBeenCalled();
+    expect(store.requeue).not.toHaveBeenCalled();
     expect(deps.queue.send).not.toHaveBeenCalled();
   });
 
@@ -77,6 +79,18 @@ describe('triggerLetterSend', () => {
 
     expect(result).toEqual({ kind: 'duplicate' });
     expect(store.createQueued).not.toHaveBeenCalled();
+    expect(store.requeue).not.toHaveBeenCalled();
+    expect(deps.queue.send).toHaveBeenCalledWith({ sendId: 7 });
+  });
+
+  it('requeues and re-sends a previously skipped row instead of leaving it permanently blocked', async () => {
+    const store = fakeStore({ findByDonorYear: vi.fn().mockResolvedValue({ id: 7, status: 'skipped' }) });
+    const deps = makeDeps({ store });
+    const result = await triggerLetterSend('donor-1', deps);
+
+    expect(result).toEqual({ kind: 'queued' });
+    expect(store.createQueued).not.toHaveBeenCalled();
+    expect(store.requeue).toHaveBeenCalledWith(7, '2026-08-24T10:00:00.000Z');
     expect(deps.queue.send).toHaveBeenCalledWith({ sendId: 7 });
   });
 });

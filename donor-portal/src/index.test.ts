@@ -69,6 +69,7 @@ function fakeLetterStore(): LetterSendStore {
     getById: vi.fn().mockResolvedValue(null),
     markSent: vi.fn(),
     markSkipped: vi.fn(),
+    requeue: vi.fn(),
   };
 }
 

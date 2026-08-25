@@ -55,8 +55,10 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps): Pro
 
   if (!lettersEnabled(deps.config)) {
     // taxLetter isn't signed off yet — a standing config gate, not a transient failure, so this
-    // is a deliberate skip, not a retry candidate. Re-clicking the button after signoff creates
-    // a fresh row (this one stays 'skipped' as a record of the earlier no-op).
+    // is a deliberate skip, not a retry candidate. Re-clicking the button after signoff requeues
+    // this same row (triggerLetterSend's dedupe-hit handling for a 'skipped' row) rather than
+    // creating a fresh one — the letter_sends UNIQUE(donor_item_id, year) index means a fresh row
+    // can never be created for this donor+year anyway.
     await deps.store.markSkipped(row.id, deps.now().toISOString());
     return;
   }
@@ -70,6 +72,15 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps): Pro
   }
 
   const contact = await deps.monday.getDonorContactInfo(row.donorItemId);
+  if (contact.email.trim().length === 0) {
+    // No email on file in Monday — sending to '' would fail every attempt, burning the full
+    // retry budget into the DLQ while the row stays 'queued' and gets re-enqueued on every
+    // subsequent button click (see triggerLetterSend's requeue-on-'skipped' handling). Not a
+    // transient failure, so skip rather than retry.
+    console.error(`donor-portal consumer: no email on file for donor "${row.donorItemId}" — skipping letter send`);
+    await deps.store.markSkipped(row.id, deps.now().toISOString());
+    return;
+  }
 
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);

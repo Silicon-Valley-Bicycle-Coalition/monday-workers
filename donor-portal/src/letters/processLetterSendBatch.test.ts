@@ -49,6 +49,7 @@ function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
     getById: vi.fn().mockResolvedValue(getResult),
     markSent: vi.fn().mockResolvedValue(undefined),
     markSkipped: vi.fn().mockResolvedValue(undefined),
+    requeue: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -136,6 +137,22 @@ describe('processLetterSendBatch', () => {
     expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
     expect(store.markSkipped).toHaveBeenCalledWith(42, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('marks skipped and acks when the donor has no email on file, without attempting a send', async () => {
+    const monday = { ...fakeMonday(), getDonorContactInfo: vi.fn().mockResolvedValue({
+      id: 'donor-1', name: 'Jane Example', email: '', address: '1 Old St', phone: '555-0100',
+    }) } as unknown as MondayClient;
+    const store = fakeStore(row);
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+
+    await processLetterSendBatch([message], { store, monday, tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z') });
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(store.markSkipped).toHaveBeenCalledWith(42, expect.any(String));
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
   });
 
   it('retries when the row is missing (DLQ makes it visible)', async () => {

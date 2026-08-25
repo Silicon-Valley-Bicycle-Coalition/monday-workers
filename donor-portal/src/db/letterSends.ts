@@ -13,6 +13,7 @@ export interface LetterSendStore {
   getById(id: number): Promise<LetterSendRow | null>;
   markSent(id: number, sentAtISO: string): Promise<void>;
   markSkipped(id: number, atISO: string): Promise<void>;
+  requeue(id: number, atISO: string): Promise<void>;
 }
 
 export class D1LetterSendStore implements LetterSendStore {
@@ -67,6 +68,13 @@ export class D1LetterSendStore implements LetterSendStore {
   async markSkipped(id: number, atISO: string): Promise<void> {
     await this.db
       .prepare(`UPDATE letter_sends SET status = 'skipped', sent_at = ?1 WHERE id = ?2`)
+      .bind(atISO, id)
+      .run();
+  }
+
+  async requeue(id: number, atISO: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE letter_sends SET status = 'queued', sent_at = ?1 WHERE id = ?2`)
       .bind(atISO, id)
       .run();
   }
