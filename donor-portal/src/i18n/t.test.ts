@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { TranslationKey } from './t';
 
 describe('t', () => {
   it('returns the English string for the en locale', async () => {
@@ -30,5 +31,19 @@ describe('t — fallback to English on a missing key', () => {
     expect(t('es', 'checkEmail.heading')).toBe('Check your email');
     vi.doUnmock('./locales/es');
     vi.resetModules();
+  });
+});
+
+describe('t — full English key set', () => {
+  it('has a string for every key used across the app', async () => {
+    const { t } = await import('./t');
+    const sample: TranslationKey[] = [
+      'site.title', 'login.prompt', 'login.submit', 'languagePicker.label',
+      'error.invalidLink', 'portal.heading', 'portal.membership', 'letters.listHeading',
+      'changeRequest.fieldLanguage', 'card.regenerate', 'verify.notValid', 'email.subject',
+    ];
+    for (const key of sample) {
+      expect(t('en', key).length).toBeGreaterThan(0);
+    }
   });
 });
