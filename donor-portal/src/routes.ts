@@ -130,7 +130,7 @@ export function createApp(deps: AppDeps) {
           // cases even though the response body is identical, letting an attacker distinguish
           // "matched" from "didn't match" by response latency alone. Defer it instead so the
           // response returns immediately regardless of match state.
-          const work = requestLogin(email, {
+          const work = requestLogin(email, locale, {
             monday: deps.monday,
             tokenStore: deps.tokenStore,
             emailSender: deps.emailSender,
