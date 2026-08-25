@@ -1,0 +1,29 @@
+{
+  // Local-preview-only config — see README's "Local preview with dummy data" section and
+  // src/index.local.ts. Never used for a real deploy (there is no `deploy:local` script).
+  "name": "svbc-donor-portal-local",
+  "main": "src/index.local.ts",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-donor-portal-local",
+      // Arbitrary — wrangler dev's local D1 simulation never contacts Cloudflare, so this
+      // never needs to be a real `wrangler d1 create` id.
+      "database_id": "local-preview-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Simulated locally by wrangler dev; no `wrangler queues create` needed for local-only queues.
+  "queues": {
+    "producers": [
+      { "queue": "donor-portal-change-requests-local", "binding": "CHANGE_QUEUE" },
+      { "queue": "donor-portal-letter-emails-local", "binding": "LETTER_SEND_QUEUE" }
+    ],
+    "consumers": [
+      { "queue": "donor-portal-change-requests-local", "max_retries": 1, "max_concurrency": 1 },
+      { "queue": "donor-portal-letter-emails-local", "max_retries": 1, "max_concurrency": 1 }
+    ]
+  }
+}

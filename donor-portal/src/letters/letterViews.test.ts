@@ -5,7 +5,7 @@ import type { TaxLetterConfig } from '../types';
 
 const taxLetter: TaxLetterConfig = {
   orgLegalName: 'Silicon Valley Bicycle Coalition', ein: '00-0000000',
-  orgAddress: '123 Example St, San Jose, CA 95112',
+  officeAddress: '123 Example St, San Jose, CA 95112',
   signatureName: 'Alex Example', signatureTitle: 'Executive Director',
   plainStatement: 'No goods or services were provided.', benefitStatement: 'FMV statement.',
   benefitTiers: ['Champion'],

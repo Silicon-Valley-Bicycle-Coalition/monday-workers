@@ -5,7 +5,9 @@ describe('loadConfig', () => {
   it('loads and validates the checked-in svbc config', () => {
     const cfg = loadConfig(); // defaults to config/svbc.json
     expect(cfg.salesforceOrg).toBe('svbc');
-    expect(cfg.eraMaxItems).toBeLessThanOrEqual(9000);
+    expect(cfg.boardMaxItems).toBeLessThanOrEqual(9000);
+    expect(cfg.donationsActiveFiscalYears).toBeGreaterThanOrEqual(1);
+    expect(cfg.monday.boards['donations']).toBeDefined();
     expect(cfg.monday.apiUrl).toMatch(/^https:/);
     expect(cfg.localNews.defaultUrl).toContain('localnewsmatters');
   });

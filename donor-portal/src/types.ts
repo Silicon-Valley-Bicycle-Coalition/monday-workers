@@ -32,7 +32,12 @@ export type PrefField = 'emailOptOut' | 'smsOptOut' | 'doNotMail';
 export interface TaxLetterConfig {
   orgLegalName: string;
   ein: string;
-  orgAddress: string;
+  // The registered/501(c)(3) address — this is what's printed on donor giving letters.
+  officeAddress: string;
+  // Where donors mail checks/correspondence — distinct from officeAddress, not currently
+  // rendered anywhere (no consumer yet), but kept alongside it so the two addresses don't drift
+  // apart or get confused for each other.
+  mailingAddress?: string;
   signatureName: string;
   signatureTitle: string;
   plainStatement: string;

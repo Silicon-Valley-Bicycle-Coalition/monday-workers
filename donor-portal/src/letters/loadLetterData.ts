@@ -1,6 +1,7 @@
 import type { MondayClient } from '../monday/client';
 import type { DonationRecord, TaxLetterConfig } from '../types';
 import { parseAmount as parseAmountOrNull } from '../amounts';
+import { formatUsd } from '../money';
 
 export interface LetterGift {
   date: string;
@@ -21,8 +22,6 @@ export interface LetterYearListing {
   donorName: string;
   years: number[];
 }
-
-const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 // Thin wrapper over the shared parser: a letter total sums amounts, so unparseable text
 // contributes 0 rather than poisoning the sum with null.
@@ -94,7 +93,7 @@ export async function loadLetterData(
     donorName: donor.name,
     year,
     gifts,
-    totalFormatted: USD.format(total),
+    totalFormatted: formatUsd(total),
     statement,
   };
 }

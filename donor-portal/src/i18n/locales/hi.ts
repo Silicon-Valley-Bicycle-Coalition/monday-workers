@@ -4,6 +4,7 @@ export const hi: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC डोनर पोर्टल',
   'languagePicker.label': 'भाषा',
+  'languagePicker.switch': 'बदलें',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'लॉग इन करें',
@@ -12,7 +13,6 @@ export const hi: Record<TranslationKey, string> = {
   'title.portal': 'आपका डोनर पोर्टल',
   'title.lettersList': 'टैक्स दस्तावेज़',
   'title.changeRequest': 'बदलाव का अनुरोध करें',
-  'title.card': 'आपका सदस्यता कार्ड',
   'title.verify': 'सदस्यता सत्यापन',
   'title.events': 'आपके इवेंट पंजीकरण',
 
@@ -43,8 +43,7 @@ export const hi: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': 'आपका डोनर पोर्टल',
   'portal.membership': 'सदस्यता: {{status}} ({{tier}})',
-  'portal.totalDonated': 'कुल दान: {{total}}',
-  'portal.membershipCardLink': 'सदस्यता कार्ड',
+  'portal.totalLabel': 'कुल दान',
   'portal.tableDate': 'तारीख़',
   'portal.tableAmount': 'राशि',
   'portal.tableDescription': 'विवरण',
@@ -121,14 +120,12 @@ export const hi: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': 'स्व-सेवा बदलाव अनुरोध अभी उपलब्ध नहीं हैं। कृपया SVBC से संपर्क करें और हम आपकी जानकारी अपडेट कर देंगे।',
 
   // Membership card + public verify page
-  'card.heading': 'आपका सदस्यता कार्ड',
   'card.tier': 'स्तर: {{tier}}',
   'card.status': 'स्थिति: {{status}}',
   'card.expires': 'समाप्ति: {{expiry}}',
-  'card.scanHint': 'अपनी सदस्यता की पुष्टि के लिए यह कार्ड दिखाएँ, या किसी दुकान को QR कोड स्कैन करने दें या ऊपर दिया गया लिंक खोलने दें।',
+  'card.expiresLabel': 'समाप्ति',
   'card.regenerate': 'कार्ड फिर से जनरेट करें',
-  'card.regenerateHint': 'फिर से जनरेट करने पर पुराना QR कोड और लिंक तुरंत अमान्य हो जाता है — अगर आपको लगता है कि आपके कार्ड का लिंक लीक हो गया है, तो इसका इस्तेमाल करें।',
-  'card.unavailable': 'डिजिटल सदस्यता कार्ड अभी उपलब्ध नहीं हैं। कृपया जल्द ही दोबारा देखें।',
+  'card.qrAlt': 'सदस्यता सत्यापित करने के लिए QR कोड',
   'verify.heading': 'सदस्यता सत्यापन',
   'verify.disclaimer': 'यह जानकारी हमारे रिकॉर्ड से लाइव प्राप्त की जाती है।',
   'verify.notValid': 'यह कार्ड मान्य नहीं है। हो सकता है इसे फिर से जनरेट किया गया हो या यह अब सक्रिय न हो।',

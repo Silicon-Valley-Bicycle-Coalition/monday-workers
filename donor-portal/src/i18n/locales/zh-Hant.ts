@@ -4,6 +4,7 @@ export const zhHant: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 捐款者入口網站',
   'languagePicker.label': '語言',
+  'languagePicker.switch': '切換',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '登入',
@@ -12,7 +13,6 @@ export const zhHant: Record<TranslationKey, string> = {
   'title.portal': '您的捐款者入口網站',
   'title.lettersList': '稅務文件',
   'title.changeRequest': '申請變更',
-  'title.card': '您的會員卡',
   'title.verify': '會員驗證',
   'title.events': '您的活動報名',
 
@@ -43,8 +43,7 @@ export const zhHant: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': '您的捐款者入口網站',
   'portal.membership': '會員狀態：{{status}}（{{tier}}）',
-  'portal.totalDonated': '捐款總額：{{total}}',
-  'portal.membershipCardLink': '會員卡',
+  'portal.totalLabel': '捐款總額',
   'portal.tableDate': '日期',
   'portal.tableAmount': '金額',
   'portal.tableDescription': '說明',
@@ -121,14 +120,12 @@ export const zhHant: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': '自助變更申請功能暫未提供，請與 SVBC 聯絡，我們將為您更新資料。',
 
   // Membership card + public verify page
-  'card.heading': '您的會員卡',
   'card.tier': '等級：{{tier}}',
   'card.status': '狀態：{{status}}',
   'card.expires': '有效期至：{{expiry}}',
-  'card.scanHint': '出示此卡片，或讓店家掃描 QR 碼或開啟上方連結，即可確認您的會員身份。',
+  'card.expiresLabel': '到期',
   'card.regenerate': '重新產生會員卡',
-  'card.regenerateHint': '重新產生會立即令舊的 QR 碼與連結失效 — 如您認為會員卡連結已外洩，請使用此功能。',
-  'card.unavailable': '電子會員卡功能暫未提供，請稍後再查看。',
+  'card.qrAlt': '用於驗證會員身份的 QR 碼',
   'verify.heading': '會員驗證',
   'verify.disclaimer': '此資訊為即時從我們的記錄中擷取。',
   'verify.notValid': '此卡片無效，可能已重新產生或已不再生效。',

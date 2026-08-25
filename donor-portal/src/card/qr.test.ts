@@ -13,4 +13,12 @@ describe('generateQrSvg', () => {
     const b = generateQrSvg('https://portal.example.org/verify/token-b');
     expect(a).not.toBe(b);
   });
+
+  it('recolors the module path gold and the background dark, not the library default black-on-white', () => {
+    const svg = generateQrSvg('https://portal.example.org/verify/abc123');
+    expect(svg).toContain('fill="#FEC10C"');
+    expect(svg).toContain('fill="#171415"');
+    expect(svg).not.toContain('fill="black"');
+    expect(svg).not.toContain('fill="white"');
+  });
 });

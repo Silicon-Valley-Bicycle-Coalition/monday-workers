@@ -131,19 +131,26 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
   Unique Advocacy-Specific Needs.
-* **Volume ceiling — verified and resolved 2026-08-22.** Monday's limit is a hard
+* **Volume ceiling — verified 2026-08-22, redesigned 2026-08-25.** Monday's limit is a hard
   [10,000 items per board on Basic/Standard/Pro](https://support.monday.com/hc/en-us/articles/4404058746642-Item-and-subitem-limits-per-board)
-  (100k on Enterprise; archived items don't count), and the org this was built for is on Pro. That
-  caps not just People but Donations: full donation history (~54k records including Click & Pledge)
-  is 5x over, and even 2023-to-date alone exceeds one board. Two decisions follow, both now final:
-  **(1) Donations splits across era boards** — one live board plus historical era boards each sized
-  ≤ ~9k, cuts computed from the real `CloseDate` distribution at transform time, with script-computed
-  rollup columns (Lifetime Giving, First Gift, Gift Count) on every Donor item so stewardship totals
-  never require paging through eras. **(2) The People inclusion rule is written:** any contact with a
+  (100k on Enterprise), and the org this was built for is on Pro. That caps not just People but
+  Donations: full donation history (~54k records including Click & Pledge) is 5x over. Two
+  decisions follow, both now final: **(1) Donations is ONE board with archive-in-place** —
+  archived items don't count toward the ceiling and remain readable by id (though they reject
+  all writes and their connect columns read empty while archived, verified live 2026-08-25), so
+  `transform` flags every gift older than the retention window (`donationsActiveFiscalYears`,
+  default current + previous fiscal year) and `load` walks fiscal years oldest-first in a
+  create → link (both directions, including event-registrations' Payment links) → archive loop,
+  keeping the active count bounded while total history is unbounded. Script-computed rollup
+  columns (Lifetime Giving, First Gift, Gift Count) on every Donor item keep stewardship totals
+  visible without paging history. This replaced the earlier era-split multi-board design —
+  see `docs/20-donation-history-architecture.md` (private planning repo) for the full design,
+  the verified archive-behavior facts, and what maintains the rollups post-migration.
+  **(2) The People inclusion rule is written:** any contact with a
   real relationship — ever a donor, member, event registrant, volunteer, Funraise supporter, or
   org-affiliated (~12–15k of 50,086) — split as People (live, active since ~2019) + People
   (Historical). Email-list-only contacts stay in Mailchimp (the consent system of record) and the
-  backup archive, not Monday. Full reasoning and sizing queries:
+  backup archive, not Monday. Original sizing queries:
   `docs/11-salesforce-import-design.md` (private planning repo).
 * **Duplicate matching** — ~1,000+ known duplicates; build and validate matching logic against
   sandbox copies repeatedly until merges reliably match SVBC's own judgment. **Keep the

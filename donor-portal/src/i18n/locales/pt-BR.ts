@@ -4,6 +4,7 @@ export const ptBR: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Portal do Doador da SVBC',
   'languagePicker.label': 'Idioma',
+  'languagePicker.switch': 'Trocar',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Entrar',
@@ -12,7 +13,6 @@ export const ptBR: Record<TranslationKey, string> = {
   'title.portal': 'Seu Portal do Doador',
   'title.lettersList': 'Documentos Fiscais',
   'title.changeRequest': 'Solicitar uma Alteração',
-  'title.card': 'Sua Carteirinha de Associado',
   'title.verify': 'Verificação de Associação',
   'title.events': 'Suas Inscrições em Eventos',
 
@@ -43,8 +43,7 @@ export const ptBR: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': 'Seu portal do doador',
   'portal.membership': 'Associação: {{status}} ({{tier}})',
-  'portal.totalDonated': 'Total doado: {{total}}',
-  'portal.membershipCardLink': 'Carteirinha de associado',
+  'portal.totalLabel': 'Total doado',
   'portal.tableDate': 'Data',
   'portal.tableAmount': 'Valor',
   'portal.tableDescription': 'Descrição',
@@ -121,14 +120,12 @@ export const ptBR: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': 'As solicitações de alteração via autoatendimento ainda não estão disponíveis. Entre em contato com a SVBC e nós atualizaremos seus dados para você.',
 
   // Membership card + public verify page
-  'card.heading': 'Sua carteirinha de associado',
   'card.tier': 'Nível: {{tier}}',
   'card.status': 'Situação: {{status}}',
   'card.expires': 'Validade: {{expiry}}',
-  'card.scanHint': 'Mostre esta carteirinha, ou deixe que a loja escaneie o código QR ou abra o link acima, para confirmar sua associação.',
+  'card.expiresLabel': 'Válido até',
   'card.regenerate': 'Gerar nova carteirinha',
-  'card.regenerateHint': 'Gerar uma nova carteirinha invalida imediatamente o código QR e o link antigos — use esta opção se achar que o link da sua carteirinha vazou.',
-  'card.unavailable': 'As carteirinhas de associado digitais ainda não estão disponíveis. Volte a verificar em breve.',
+  'card.qrAlt': 'Código QR para verificar a associação',
   'verify.heading': 'Verificação de associação',
   'verify.disclaimer': 'Esta informação é obtida em tempo real diretamente de nossos registros.',
   'verify.notValid': 'Esta carteirinha não é válida. Ela pode ter sido substituída por uma nova ou não estar mais ativa.',

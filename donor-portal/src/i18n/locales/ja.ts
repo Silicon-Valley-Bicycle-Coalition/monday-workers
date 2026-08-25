@@ -4,6 +4,7 @@ export const ja: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC寄付者ポータル',
   'languagePicker.label': '言語',
+  'languagePicker.switch': '切り替え',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'ログイン',
@@ -12,7 +13,6 @@ export const ja: Record<TranslationKey, string> = {
   'title.portal': '寄付者ポータル',
   'title.lettersList': '税務書類',
   'title.changeRequest': '変更のリクエスト',
-  'title.card': '会員証',
   'title.verify': '会員資格の確認',
   'title.events': 'イベント参加登録',
 
@@ -43,8 +43,7 @@ export const ja: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': '寄付者ポータル',
   'portal.membership': '会員資格: {{status}}（{{tier}}）',
-  'portal.totalDonated': '寄付合計額: {{total}}',
-  'portal.membershipCardLink': '会員証',
+  'portal.totalLabel': '寄付合計額',
   'portal.tableDate': '日付',
   'portal.tableAmount': '金額',
   'portal.tableDescription': '内容',
@@ -121,14 +120,12 @@ export const ja: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': 'セルフサービスでの変更リクエストはまだご利用いただけません。SVBCまでお問い合わせいただければ、代わりに登録情報を更新いたします。',
 
   // Membership card + public verify page
-  'card.heading': '会員証',
   'card.tier': '会員ランク: {{tier}}',
   'card.status': 'ステータス: {{status}}',
   'card.expires': '有効期限: {{expiry}}',
-  'card.scanHint': 'この会員証を提示するか、店舗にQRコードをスキャンしてもらうか、上のリンクを開いてもらうことで、会員資格を確認できます。',
+  'card.expiresLabel': '有効期限',
   'card.regenerate': '会員証を再発行',
-  'card.regenerateHint': '再発行すると、古いQRコードとリンクはすぐに無効になります。会員証のリンクが漏えいした可能性がある場合にご利用ください。',
-  'card.unavailable': 'デジタル会員証はまだご利用いただけません。しばらくしてから再度ご確認ください。',
+  'card.qrAlt': '会員資格を確認するためのQRコード',
   'verify.heading': '会員資格の確認',
   'verify.disclaimer': 'この情報は当団体の記録からリアルタイムで取得されています。',
   'verify.notValid': 'この会員証は無効です。再発行されたか、すでに有効でなくなっている可能性があります。',
