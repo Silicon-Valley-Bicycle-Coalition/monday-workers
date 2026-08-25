@@ -4,7 +4,13 @@ export const hi: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC डोनर पोर्टल',
   'languagePicker.label': 'भाषा',
-  'languagePicker.switch': 'बदलें',
+  'nav.donate': 'दान करें',
+
+  // Site footer
+  'footer.nonprofit': '501(c)(3) गैर-लाभकारी संस्था',
+  'footer.ein': 'EIN: {{ein}}',
+  'footer.mailingAddress': 'डाक पता:',
+  'footer.privacyPolicy': 'गोपनीयता नीति',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'लॉग इन करें',
@@ -17,6 +23,7 @@ export const hi: Record<TranslationKey, string> = {
   'title.events': 'आपके इवेंट पंजीकरण',
 
   // Login
+  'login.heading': 'डोनर पोर्टल',
   'login.prompt': 'लॉगिन लिंक प्राप्त करने के लिए अपना ईमेल दर्ज करें।',
   'login.submit': 'लॉगिन लिंक भेजें',
 

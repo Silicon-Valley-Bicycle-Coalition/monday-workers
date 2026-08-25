@@ -92,7 +92,7 @@ function isPlausibleEmail(email: string): boolean {
 const NO_STORE = 'private, no-store, max-age=0';
 
 // Shared by every authenticated route: resolves the session cookie to the donor item ids it
-// grants access to, or null if there is no valid session. Callers redirect to /login on null.
+// grants access to, or null if there is no valid session. Callers redirect to / (login) on null.
 async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] | null> {
   const sessionToken = getCookie(c, SESSION_COOKIE);
   if (!sessionToken) return null;
@@ -132,48 +132,65 @@ export function createApp(deps: AppDeps) {
     });
   });
 
-  const LANG_REDIRECT_ALLOWLIST = ['/login', '/portal'];
-
-  // The in-portal switcher (Task 14) links back to the locale-prefixed portal path it was
-  // clicked from (e.g. /en/portal), not the bare back-compat /portal — so the allowlist above
-  // (exact matches only, to block open redirects like ?to=https://evil.example) needs a second
-  // check for that one shape specifically, rather than just widening it to any path.
+  // The language switcher lives in the shared site footer (see views.ts's siteFooter) and so
+  // appears on every route, submitting the browser's current location.pathname as `to` — rather
+  // than hand-maintain an exact-match allowlist of every page shape that can now show it, this
+  // accepts any same-origin relative path and only blocks the open-redirect shapes: an absolute
+  // URL, a protocol-relative "//evil.example", and the backslash-tolerant "/\evil.example" some
+  // browsers still treat as protocol-relative.
   function isAllowedLangRedirect(path: string): boolean {
-    if (LANG_REDIRECT_ALLOWLIST.includes(path)) return true;
-    const match = /^\/([^/]+)\/portal$/.exec(path);
-    return match !== null && isLocale(match[1]!);
+    return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
   }
 
-  function setLangCookie(c: Context, code: string): void {
+  // Sets the lang cookie and returns the resolved locale (falling back to the default for an
+  // unsupported/missing code) so the caller can also rewrite a :locale path segment below.
+  function setLangCookie(c: Context, code: string): Locale {
     const locale = isLocale(code) ? code : DEFAULT_LOCALE;
     setCookie(c, LANG_COOKIE, locale, { httpOnly: false, secure: true, sameSite: 'Lax', path: '/', maxAge: 365 * 24 * 3600 });
+    return locale;
   }
 
-  function langRedirectTarget(c: Context): string {
-    const requestedTo = c.req.query('to') ?? '/login';
-    return isAllowedLangRedirect(requestedTo) ? requestedTo : '/login';
+  // The authenticated portal tree reads its locale from the `:locale` path segment, not the lang
+  // cookie (see resolvePathLocale) — so redirecting back to the exact page a switch was submitted
+  // from would silently keep rendering the old locale, cookie notwithstanding. Rewrite that
+  // segment to the newly-selected locale for any /:locale/portal... path; every other page (pre-
+  // identity, /verify) has no locale segment and is left untouched, since those already pick up
+  // the cookie via detectLocale on next render.
+  function applyLocaleToPath(path: string, locale: Locale): string {
+    const match = /^\/[^/]+(\/portal(?:\/.*)?)$/.exec(path);
+    return match ? `/${locale}${match[1]}` : path;
+  }
+
+  function langRedirectTarget(c: Context, locale: Locale): string {
+    const requestedTo = c.req.query('to') ?? '/';
+    const target = isAllowedLangRedirect(requestedTo) ? requestedTo : '/';
+    return applyLocaleToPath(target, locale);
   }
 
   app.get('/lang/:code', (c) => {
-    setLangCookie(c, c.req.param('code'));
-    return c.redirect(langRedirectTarget(c));
+    const locale = setLangCookie(c, c.req.param('code'));
+    return c.redirect(langRedirectTarget(c, locale));
   });
 
-  // Query-string variant of the route above, for the language-select <form method="get">s
-  // (loginFormView's languagePicker and the portal's language switcher) — a native <select>
-  // can't submit into a dynamic path segment without JS, so those forms post `code` as a query
-  // param instead of hitting /lang/:code directly.
+  // Query-string variant of the route above, for the site footer's language <select> (see
+  // views.ts's siteFooter) — a native <select> can't submit into a dynamic path segment without
+  // JS, so the form posts `code` as a query param instead of hitting /lang/:code directly.
   app.get('/lang', (c) => {
-    setLangCookie(c, c.req.query('code') ?? '');
-    return c.redirect(langRedirectTarget(c));
+    const locale = setLangCookie(c, c.req.query('code') ?? '');
+    return c.redirect(langRedirectTarget(c, locale));
   });
 
-  app.get('/login', (c) => {
+  // Back-compat: the login page used to live at /login; a stale bookmark or link lands here and
+  // is sent to the new root path, matching this route table's existing back-compat convention
+  // (see the bare /portal redirect below).
+  app.get('/login', (c) => c.redirect('/'));
+
+  app.get('/', (c) => {
     const locale = detectLocale(c);
     return c.html(page(t(locale, 'title.login') + ' — ' + t(locale, 'site.title'), loginFormView(locale), locale));
   });
 
-  app.post('/login', async (c) => {
+  app.post('/', async (c) => {
     const locale = detectLocale(c);
     const body = await c.req.parseBody();
     const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -276,7 +293,7 @@ export function createApp(deps: AppDeps) {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) {
-      return c.redirect('/login');
+      return c.redirect('/');
     }
 
     const data = await loadPortalData(donorItemIds, deps.monday, {
@@ -318,7 +335,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/letters', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
@@ -339,7 +356,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
@@ -386,7 +403,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/events', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!eventsEnabled(deps.config)) {
@@ -411,7 +428,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/change-request', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
@@ -431,7 +448,7 @@ export function createApp(deps: AppDeps) {
   app.post('/:locale/portal/change-request', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
@@ -477,7 +494,7 @@ export function createApp(deps: AppDeps) {
   app.post('/:locale/portal/change-request/preferences', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
@@ -528,7 +545,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/pledges', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     if (!pledgesEnabled(deps.config)) {
@@ -557,7 +574,7 @@ export function createApp(deps: AppDeps) {
   app.get('/:locale/portal/matching-gifts', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
     // The app's only CSP, on its only page that may run third-party JS. The load-bearing part
@@ -594,7 +611,7 @@ export function createApp(deps: AppDeps) {
   app.post('/:locale/portal/card/:donorItemId/regenerate', async (c) => {
     const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
+    if (donorItemIds === null) return c.redirect('/');
 
     // No dedicated "unavailable" page to render for this anymore (the card is a dashboard
     // widget, not a page) — the widget and its regenerate button only ever render when
@@ -699,7 +716,7 @@ export function createApp(deps: AppDeps) {
       await deps.sessionStore.deleteSession(await sha256Hex(sessionToken));
     }
     deleteCookie(c, SESSION_COOKIE, { path: '/' });
-    return c.redirect('/login');
+    return c.redirect('/');
   });
 
   // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard mitigation

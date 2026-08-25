@@ -4,7 +4,13 @@ export const ja: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC寄付者ポータル',
   'languagePicker.label': '言語',
-  'languagePicker.switch': '切り替え',
+  'nav.donate': '寄付する',
+
+  // Site footer
+  'footer.nonprofit': '501(c)(3) 非営利団体',
+  'footer.ein': 'EIN: {{ein}}',
+  'footer.mailingAddress': '郵送先住所:',
+  'footer.privacyPolicy': 'プライバシーポリシー',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'ログイン',
@@ -17,6 +23,7 @@ export const ja: Record<TranslationKey, string> = {
   'title.events': 'イベント参加登録',
 
   // Login
+  'login.heading': '寄付者ポータル',
   'login.prompt': 'ログインリンクを受け取るには、メールアドレスを入力してください。',
   'login.submit': 'ログインリンクを送信',
 
