@@ -119,4 +119,17 @@ describe('portalView', () => {
     expect(html).toContain('href="/vi/portal/letters"');
     expect(html).toContain('href="/vi/portal/change-request"');
   });
+
+  it('includes a language switcher offering every supported locale', () => {
+    const html = portalView(data, 'en');
+    expect(html).toContain('/lang/es?to=%2Fen%2Fportal');
+    expect(html).toContain('/lang/vi?to=%2Fen%2Fportal');
+  });
+
+  it('includes a per-language "make this my language" form posting field=language to the change-request endpoint', () => {
+    const html = portalView(data, 'en');
+    expect(html).toContain('action="/en/portal/change-request"');
+    expect(html).toContain('value="language"');
+    expect(html).toContain('value="Spanish"'); // the es option's newValue is the Monday label, not "es"
+  });
 });

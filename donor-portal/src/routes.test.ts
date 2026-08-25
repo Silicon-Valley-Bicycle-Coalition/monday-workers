@@ -1045,6 +1045,18 @@ describe('GET /lang/:code', () => {
     const res = await app.request('/lang/es?to=https%3A%2F%2Fevil.example', { redirect: 'manual' });
     expect(res.headers.get('location')).toBe('/login');
   });
+
+  it('redirects back to a locale-prefixed portal path, as used by the in-portal language switcher', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=%2Fen%2Fportal', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+
+  it('rejects a locale-prefixed path with an unsupported locale segment', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=%2Fxx%2Fportal', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/login');
+  });
 });
 
 describe('GET /verify/:token', () => {

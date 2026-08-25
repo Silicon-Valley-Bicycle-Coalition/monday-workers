@@ -79,6 +79,21 @@ describe('submitChangeRequest', () => {
     );
   });
 
+  it('accepts a Monday label as the newValue for a language change (not a locale code)', async () => {
+    const store = fakeStore();
+    const deps = makeDeps(store);
+    const result = await submitChangeRequest(['donor-1'], { donorItemId: 'donor-1', field: 'language', newValue: 'Spanish' }, deps);
+
+    expect(result).toEqual({ kind: 'submitted' });
+    expect(store.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        donorItemId: 'donor-1',
+        field: 'language',
+        newValue: 'Spanish',
+      })
+    );
+  });
+
   it('rejects a donor item id outside the session', async () => {
     const deps = makeDeps();
     const result = await submitChangeRequest(['donor-1'], { donorItemId: 'other', field: 'address', newValue: 'x' }, deps);

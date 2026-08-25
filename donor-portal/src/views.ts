@@ -98,9 +98,37 @@ function discountRow(discount: PortalView['discounts'][number]): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
+// Distinct from languagePicker() (Task 4): this one is for the *authenticated* portal, where
+// picking a language does two things — switches this visit's browsing locale immediately
+// (via /lang/:code, same as the pre-identity picker) and offers to make it the donor's
+// on-file preference via a change request (staff-reviewed, same path as an address/phone edit —
+// see submitChangeRequest.ts). Each option is its own small form rather than one <select> with
+// JS, keeping this view framework-free and working with JS disabled.
+function portalLanguageSwitcher(locale: Locale, donorItemId: string): string {
+  const currentPath = `/${locale}/portal`;
+  const rows = SUPPORTED_LOCALES.filter((code) => code !== locale)
+    .map((code) => {
+      const label = LOCALE_LABELS[code];
+      return `
+        <li>
+          <a href="/lang/${code}?to=${encodeURIComponent(currentPath)}">${escapeHtml(label)}</a>
+          <form action="/${locale}/portal/change-request" method="post" style="display:inline">
+            <input type="hidden" name="donorItemId" value="${escapeHtml(donorItemId)}" />
+            <input type="hidden" name="field" value="language" />
+            <input type="hidden" name="newValue" value="${escapeHtml(label)}" />
+            <button type="submit">${escapeHtml(t(locale, 'changeRequest.submit'))}</button>
+          </form>
+        </li>
+      `;
+    })
+    .join('');
+  return `<section><h2>${escapeHtml(t(locale, 'languagePicker.label'))}</h2><ul>${rows}</ul></section>`;
+}
+
 export function portalView(data: PortalView, locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
+    ${data.donors.length > 0 ? portalLanguageSwitcher(locale, data.donors[0]!.id) : ''}
     ${data.donors.map((donor) => donorSection(donor, locale)).join('')}
     <section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>

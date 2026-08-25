@@ -92,12 +92,22 @@ export function createApp(deps: AppDeps) {
 
   const LANG_REDIRECT_ALLOWLIST = ['/login', '/portal'];
 
+  // The in-portal switcher (Task 14) links back to the locale-prefixed portal path it was
+  // clicked from (e.g. /en/portal), not the bare back-compat /portal — so the allowlist above
+  // (exact matches only, to block open redirects like ?to=https://evil.example) needs a second
+  // check for that one shape specifically, rather than just widening it to any path.
+  function isAllowedLangRedirect(path: string): boolean {
+    if (LANG_REDIRECT_ALLOWLIST.includes(path)) return true;
+    const match = /^\/([^/]+)\/portal$/.exec(path);
+    return match !== null && isLocale(match[1]!);
+  }
+
   app.get('/lang/:code', (c) => {
     const code = c.req.param('code');
     const locale = isLocale(code) ? code : DEFAULT_LOCALE;
     setCookie(c, LANG_COOKIE, locale, { httpOnly: false, secure: true, sameSite: 'Lax', path: '/', maxAge: 365 * 24 * 3600 });
     const requestedTo = c.req.query('to') ?? '/login';
-    const to = LANG_REDIRECT_ALLOWLIST.includes(requestedTo) ? requestedTo : '/login';
+    const to = isAllowedLangRedirect(requestedTo) ? requestedTo : '/login';
     return c.redirect(to);
   });
 
