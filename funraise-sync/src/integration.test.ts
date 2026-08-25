@@ -28,6 +28,7 @@ const config: FunraiseSyncConfig = {
       registration: 'id',
     },
     entityIdColumn: null,
+    thankYouSentColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
