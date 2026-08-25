@@ -112,6 +112,11 @@ export interface DonorContactInfo {
   address: string;
   phone: string;
   preferredLanguage: string;
+  // null = that preference's Donors-board checkbox column isn't configured yet (still the
+  // placeholder id), so the current state is unknowable — distinct from false (unchecked).
+  emailOptOut: boolean | null;
+  smsOptOut: boolean | null;
+  doNotMail: boolean | null;
 }
 
 export interface PortalView {
