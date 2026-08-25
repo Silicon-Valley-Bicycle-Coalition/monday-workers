@@ -7,7 +7,7 @@
   "donationsActiveFiscalYears": 2,
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "boardSuffix": " (sandbox)",
+    "boardSuffix": " (sandbox v2)",
     "workspaceId": 17141226,
     "boards": {
       "donations": null,
