@@ -4,7 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { DonorPortalData, TaxLetterConfig } from '../types';
 
 const taxLetter: TaxLetterConfig = {
-  orgLegalName: 'SVBC', ein: '00-0000000', orgAddress: 'addr',
+  orgLegalName: 'SVBC', ein: '00-0000000', officeAddress: 'addr',
   signatureName: 'Alex', signatureTitle: 'ED',
   plainStatement: 'PLAIN-STATEMENT', benefitStatement: 'BENEFIT-STATEMENT',
   benefitTiers: ['Champion'],

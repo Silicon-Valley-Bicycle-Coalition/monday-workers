@@ -39,7 +39,7 @@ const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as c
 const REQUIRED_TAX_LETTER_KEYS = [
   'orgLegalName',
   'ein',
-  'orgAddress',
+  'officeAddress',
   'signatureName',
   'signatureTitle',
   'plainStatement',
@@ -131,7 +131,7 @@ export function lettersEnabled(config: Config): boolean {
   const strings = [
     t.orgLegalName,
     t.ein,
-    t.orgAddress,
+    t.officeAddress,
     t.signatureName,
     t.signatureTitle,
     t.plainStatement,

@@ -18,7 +18,7 @@ const config: Config = {
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
-    orgAddress: 'addr',
+    officeAddress: 'addr',
     signatureName: 'Alex',
     signatureTitle: 'ED',
     plainStatement: 'plain',

@@ -56,7 +56,7 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
     <article class="letter" lang="en">
       <header>
         <p><strong>${escapeHtml(taxLetter.orgLegalName)}</strong><br>
-        ${escapeHtml(taxLetter.orgAddress)}<br>
+        ${escapeHtml(taxLetter.officeAddress)}<br>
         EIN: ${escapeHtml(taxLetter.ein)}</p>
       </header>
       <p>${escapeHtml(generatedOn)}</p>
