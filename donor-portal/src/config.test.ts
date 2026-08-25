@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled, volunteerHistoryEnabled } from './config';
 
 const validConfig = {
   monday: {
@@ -7,6 +7,7 @@ const validConfig = {
     donorsBoardId: null,
     donationsBoardId: null,
     organizationsBoardId: null,
+    volunteersBoardId: 456,
     columns: {
       donorEmail: 'email_col',
       membershipStatus: 'status_col',
@@ -22,6 +23,11 @@ const validConfig = {
       donorPhone: 'phone_1',
       membershipExpiry: 'expiry_col',
       preferredLanguage: 'lang_col',
+      volunteerDonorLink: 'vol_link_col',
+      volunteerHours: 'vol_hours_col',
+      volunteerDate: 'vol_date_col',
+      volunteerJob: 'vol_job_col',
+      volunteerStatus: 'vol_status_col',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
@@ -50,6 +56,7 @@ const validConfig = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
 };
 
 describe('validateConfig', () => {
@@ -244,6 +251,62 @@ describe('changeRequestsEnabled', () => {
     const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections));
     (raw as { monday: { columns: { donorAddress: string } } }).monday.columns.donorAddress = 'REPLACE_WITH_COLUMN_ID';
     expect(changeRequestsEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('volunteerHistory config section', () => {
+  it('rejects a config missing the volunteerHistory section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).volunteerHistory;
+    expect(() => validateConfig(cfg)).toThrow('volunteerHistory');
+  });
+
+  it('rejects a config missing volunteerHistory.completedStatuses', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { volunteerHistory: Record<string, unknown> }).volunteerHistory.completedStatuses;
+    expect(() => validateConfig(cfg)).toThrow('volunteerHistory.completedStatuses');
+  });
+
+  it('rejects completedStatuses that is not an array of strings', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { volunteerHistory: { completedStatuses: unknown } }).volunteerHistory.completedStatuses = [1, 2];
+    expect(() => validateConfig(cfg)).toThrow(/completedStatuses/);
+  });
+
+  it('accepts an empty completedStatuses array (meaning: include every status)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.volunteerHistory.completedStatuses = [];
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a config missing a volunteer column entirely', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday.columns as Record<string, unknown>).volunteerHours;
+    expect(() => validateConfig(cfg)).toThrow(/monday\.columns\.volunteerHours/);
+  });
+
+  it('accepts volunteer columns left as placeholders (gate, not error)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.volunteerDonorLink = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('volunteerHistoryEnabled', () => {
+  it('is true when volunteersBoardId is set and no volunteer column is a placeholder', () => {
+    expect(volunteerHistoryEnabled(validateConfig(validConfig))).toBe(true);
+  });
+
+  it('is false when volunteersBoardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw.monday as { volunteersBoardId: number | null }).volunteersBoardId = null;
+    expect(volunteerHistoryEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while any volunteer column is still the placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.monday.columns.volunteerStatus = 'REPLACE_WITH_COLUMN_ID';
+    expect(volunteerHistoryEnabled(validateConfig(raw))).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { PortalView } from './types';
+import type { DonorVolunteerHistory, PortalView } from './types';
 import { SUPPORTED_LOCALES, LOCALE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 
@@ -75,7 +75,37 @@ function donationRow(donation: PortalView['donors'][number]['donations'][number]
   `;
 }
 
-function donorSection(donor: PortalView['donors'][number], locale: Locale): string {
+// Rendered only when the feature is enabled AND this donor has at least one qualifying shift —
+// a donor who never volunteered shouldn't see an empty "Volunteer history" table, and while the
+// feature is config-gated off (volunteerHistory null) the portal looks exactly as it did before.
+function volunteerHistorySection(history: DonorVolunteerHistory | undefined, locale: Locale): string {
+  if (!history || history.shifts.length === 0) return '';
+  const rows = history.shifts
+    .map(
+      (shift) => `
+    <tr>
+      <td>${escapeHtml(shift.date)}</td>
+      <td>${escapeHtml(shift.job)}</td>
+      <td>${escapeHtml(shift.hours)}</td>
+    </tr>
+  `
+    )
+    .join('');
+  return `
+      <h3>${escapeHtml(t(locale, 'portal.volunteerHeading'))}</h3>
+      <p>${escapeHtml(t(locale, 'portal.volunteerTotalHours', { hours: String(history.totalHours) }))}</p>
+      <table>
+        <thead>
+          <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableActivity'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableHours'))}</th></tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+  `;
+}
+
+function donorSection(donor: PortalView['donors'][number], locale: Locale, volunteerHistory: DonorVolunteerHistory | undefined): string {
   return `
     <section>
       <h2>${escapeHtml(donor.name)}</h2>
@@ -90,6 +120,7 @@ function donorSection(donor: PortalView['donors'][number], locale: Locale): stri
           ${donor.donations.map((d) => donationRow(d, locale)).join('')}
         </tbody>
       </table>
+      ${volunteerHistorySection(volunteerHistory, locale)}
     </section>
   `;
 }
@@ -129,7 +160,7 @@ export function portalView(data: PortalView, locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
     ${data.donors.length > 0 ? portalLanguageSwitcher(locale, data.donors[0]!.id) : ''}
-    ${data.donors.map((donor) => donorSection(donor, locale)).join('')}
+    ${data.donors.map((donor) => donorSection(donor, locale, data.volunteerHistory?.[donor.id])).join('')}
     <section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>

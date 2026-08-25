@@ -18,7 +18,7 @@ const row: ChangeRequestRow = {
 // Full valid test Config shape, copied from the Task 1 fixture in routes.test.ts — only
 // changeRequests matters here.
 const config: Config = {
-  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
+  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
@@ -39,6 +39,7 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
 };
 
 function makeMessage(requestId: number) {

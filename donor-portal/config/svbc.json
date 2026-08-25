@@ -4,6 +4,7 @@
     "donorsBoardId": null,
     "donationsBoardId": null,
     "organizationsBoardId": null,
+    "volunteersBoardId": null,
     "columns": {
       "donorEmail": "REPLACE_WITH_COLUMN_ID",
       "membershipStatus": "REPLACE_WITH_COLUMN_ID",
@@ -18,7 +19,12 @@
       "donorAddress": "REPLACE_WITH_COLUMN_ID",
       "donorPhone": "REPLACE_WITH_COLUMN_ID",
       "membershipExpiry": "REPLACE_WITH_COLUMN_ID",
-      "preferredLanguage": "REPLACE_WITH_COLUMN_ID"
+      "preferredLanguage": "REPLACE_WITH_COLUMN_ID",
+      "volunteerDonorLink": "REPLACE_WITH_COLUMN_ID",
+      "volunteerHours": "REPLACE_WITH_COLUMN_ID",
+      "volunteerDate": "REPLACE_WITH_COLUMN_ID",
+      "volunteerJob": "REPLACE_WITH_COLUMN_ID",
+      "volunteerStatus": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {
@@ -58,5 +64,8 @@
   },
   "cardTokens": {
     "retentionDays": 30
+  },
+  "volunteerHistory": {
+    "completedStatuses": ["Completed"]
   }
 }

@@ -118,6 +118,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+    getVolunteerShiftsForDonor: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
       Promise.resolve({
         id,
@@ -155,6 +156,7 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
+    getVolunteerShiftsForDonor: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
       Promise.resolve({
         id,
@@ -170,7 +172,7 @@ function fakeMondayWithDonations(): MondayClient {
 }
 
 const config: Config = {
-  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
+  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
@@ -191,6 +193,7 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -533,6 +536,7 @@ describe('POST /login error handling', () => {
       findDonorsByEmail: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')),
       getDonorPortalData: vi.fn(),
       getDiscountOrganizations: vi.fn(),
+      getVolunteerShiftsForDonor: vi.fn(),
       getDonorContactInfo: vi.fn(),
       createChangeRequestItem: vi.fn(),
     };
@@ -1360,5 +1364,49 @@ describe('locale sweep', () => {
     // The <html lang> attribute alone would still pass if the route hardcoded English body copy —
     // assert the actual translated heading text renders too (final review finding).
     expect(body).toContain(t(locale, 'portal.heading'));
+  });
+});
+
+describe('GET /:locale/portal volunteer history gate', () => {
+  function mondayWithShifts(): MondayClient {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getVolunteerShiftsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { date: '2026-03-05', hours: '3.5', job: 'Bike Valet', status: 'Completed' },
+      { date: '2026-02-01', hours: '4', job: 'Ride Marshal', status: 'No-Show' },
+    ]);
+    return monday;
+  }
+
+  it('never queries the Volunteers board while volunteersBoardId is unset', async () => {
+    const monday = mondayWithShifts();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    // The shared config fixture ships volunteersBoardId: null — the feature's disabled state.
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).not.toContain(t('en', 'portal.volunteerHeading'));
+    expect(monday.getVolunteerShiftsForDonor).not.toHaveBeenCalled();
+  });
+
+  it('renders the status-filtered volunteer history once volunteersBoardId is configured', async () => {
+    const monday = mondayWithShifts();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4 } };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain(t('en', 'portal.volunteerHeading'));
+    expect(body).toContain('Bike Valet');
+    expect(body).toContain('Total volunteer hours: 3.5');
+    // completedStatuses: ['Completed'] in the fixture — the No-Show shift must not render.
+    expect(body).not.toContain('Ride Marshal');
   });
 });

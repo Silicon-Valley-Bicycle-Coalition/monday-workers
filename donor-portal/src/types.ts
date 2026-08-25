@@ -13,6 +13,11 @@ export interface MondayColumns {
   donorPhone: string;
   membershipExpiry: string;
   preferredLanguage: string;
+  volunteerDonorLink: string;
+  volunteerHours: string;
+  volunteerDate: string;
+  volunteerJob: string;
+  volunteerStatus: string;
 }
 
 export interface TaxLetterConfig {
@@ -45,12 +50,20 @@ export interface CardTokensConfig {
   retentionDays: number;
 }
 
+export interface VolunteerHistoryConfig {
+  // Shift statuses that count toward the portal's volunteer history (both the listed shifts and
+  // the total-hours sum). An empty array means "include every status" — for orgs whose
+  // Volunteers board has no status column semantics worth filtering on.
+  completedStatuses: string[];
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
     donorsBoardId: number | null;
     donationsBoardId: number | null;
     organizationsBoardId: number | null;
+    volunteersBoardId: number | null;
     columns: MondayColumns;
   };
   email: {
@@ -69,6 +82,7 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  volunteerHistory: VolunteerHistoryConfig;
 }
 
 export interface DonorMatch {
@@ -107,9 +121,25 @@ export interface DonorContactInfo {
   preferredLanguage: string;
 }
 
+export interface VolunteerShift {
+  date: string;
+  hours: string;
+  job: string;
+  status: string;
+}
+
+export interface DonorVolunteerHistory {
+  shifts: VolunteerShift[];
+  totalHours: number;
+}
+
 export interface PortalView {
   donors: DonorPortalData[];
   discounts: DiscountOrganization[];
+  // Keyed by donor item id; null when the volunteer-history feature is disabled (unset
+  // volunteersBoardId / placeholder column ids), so views can distinguish "feature off" from
+  // "no shifts on record".
+  volunteerHistory: Record<string, DonorVolunteerHistory> | null;
 }
 
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for

@@ -1,6 +1,15 @@
 import type { Config, MondayColumns } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
+const REQUIRED_TOP_LEVEL = [
+  'monday',
+  'email',
+  'auth',
+  'rateLimit',
+  'taxLetter',
+  'changeRequests',
+  'cardTokens',
+  'volunteerHistory',
+] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donorEmail',
@@ -30,6 +39,18 @@ const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 // not placeholder-freedom — same treatment as CARD_COLUMNS.
 const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage'];
 
+// VOLUNTEER_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: these columns only matter
+// to the volunteer-history feature, which is gated (volunteerHistoryEnabled), not
+// deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
+// CARD_COLUMNS.
+const VOLUNTEER_COLUMNS: (keyof MondayColumns)[] = [
+  'volunteerDonorLink',
+  'volunteerHours',
+  'volunteerDate',
+  'volunteerJob',
+  'volunteerStatus',
+];
+
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
@@ -49,6 +70,7 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
 
 function requireObject(cfg: Record<string, unknown>, key: string, errorKey: string = key): Record<string, unknown> {
   const value = cfg[key];
@@ -96,6 +118,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
+  requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
 
   const email = requireObject(cfg, 'email');
   requireKeys(email, 'email', REQUIRED_EMAIL_KEYS);
@@ -121,6 +144,13 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(cardTokens, 'cardTokens', REQUIRED_CARD_TOKENS_KEYS);
   if (typeof cardTokens.retentionDays !== 'number' || cardTokens.retentionDays <= 0) {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
+  }
+
+  const volunteerHistory = requireObject(cfg, 'volunteerHistory');
+  requireKeys(volunteerHistory, 'volunteerHistory', REQUIRED_VOLUNTEER_HISTORY_KEYS);
+  const completedStatuses = volunteerHistory.completedStatuses;
+  if (!Array.isArray(completedStatuses) || completedStatuses.some((s) => typeof s !== 'string')) {
+    throw new Error('config: "volunteerHistory.completedStatuses" must be an array of strings');
   }
 
   return cfg as unknown as Config;
@@ -150,4 +180,9 @@ export function changeRequestsEnabled(config: Config): boolean {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+export function volunteerHistoryEnabled(config: Config): boolean {
+  if (config.monday.volunteersBoardId === null) return false;
+  return VOLUNTEER_COLUMNS.every((key) => config.monday.columns[key] !== PLACEHOLDER_COLUMN_VALUE);
 }

@@ -153,7 +153,8 @@ kept separate from the main domain's mail flow, is standard practice for transac
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
-  boards this portal reads (Donors, Donations, Membership, Organizations) — never a staff member's
+  boards this portal reads (Donors, Donations, Membership, Organizations, and — once v4 is
+  configured — Volunteers) — never a staff member's
   personal token, which would make this public-facing Worker a door to the whole workspace. See
   `../README.md`'s least-privilege-token note.
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
@@ -257,6 +258,31 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 `cardTokens.retentionDays` once `revoked_at` is set — a revoked token is a dead bearer credential
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
+
+## v4 — Volunteer history
+
+From the IT Requests board Feature Request "Donor portal: volunteer history" (filed from the
+2026-08-24 v2 brainstorm): show volunteer hours/shifts alongside donations. Each donor's portal
+section gains a "Volunteer history" block — total hours plus a date/activity/hours table — read
+live from the Volunteers board, filtered to shifts whose status is in
+`volunteerHistory.completedStatuses` (default `["Completed"]`, so no-shows and un-worked signups
+don't inflate a donor's hours; set it to `[]` to include every status). The block renders only
+for donors with at least one qualifying shift — donors who never volunteered see no change.
+
+**Gated on `monday.volunteersBoardId` + the `volunteer*` column ids:** the ticket's blocker
+("volunteer data doesn't live in Monday until post-migration") is handled by shipping dark — the
+feature is invisible, and the Volunteers board is never queried, until an operator fills in the
+board id and all five `monday.columns.volunteer*` ids (same treatment as v2's
+`donorAddress`/`donorPhone` and v3's `membershipExpiry`). The expected board shape is exactly
+what `../salesforce-import` loads from GW Volunteers: a connect-boards link to the Donors/People
+board (`volunteerDonorLink`), Hours number (`volunteerHours`), Date (`volunteerDate`), Job text
+(`volunteerJob`), and Status (`volunteerStatus`).
+
+Operator setup for v4, in addition to the v1 steps: after the Volunteers board exists
+post-migration, fill in `monday.volunteersBoardId` and the five `volunteer*` column ids in
+`config/svbc.json`; confirm `volunteerHistory.completedStatuses` matches the board's actual
+"worked this shift" status label(s); and grant the portal's integration user **read access to the
+Volunteers board**. No new D1 migration, no new queue, no new secret, no Monday write access.
 
 ## Future candidates
 

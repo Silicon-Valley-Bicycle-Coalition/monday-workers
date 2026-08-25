@@ -6,6 +6,7 @@ import type {
   DonorMatch,
   DonorPortalData,
   MondayColumns,
+  VolunteerShift,
 } from '../types';
 
 interface MondayColumnValue {
@@ -27,6 +28,7 @@ export interface MondayClient {
   findDonorsByEmail(email: string): Promise<DonorMatch[]>;
   getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
+  getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]>;
   getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
   createChangeRequestItem(params: {
     boardId: number;
@@ -48,6 +50,7 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
+    private volunteersBoardId: number,
     private fetchFn: typeof fetch = fetch
   ) {}
 
@@ -205,6 +208,65 @@ export class HttpMondayClient implements MondayClient {
       amount: columnText(item, this.columns.donationAmount),
       date: columnText(item, this.columns.donationDate),
       description: columnText(item, this.columns.donationDescription),
+    }));
+  }
+
+  async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
+    // Same items_page/next_items_page pagination and connect-board filter shape as
+    // getDonationsForDonor above — including its NOTE about the query_params.rules shape being
+    // unverified against a live account, and donorItemId traveling as a GraphQL variable as
+    // defense-in-depth. Only called when volunteerHistoryEnabled(config) is true, so
+    // volunteersBoardId and the volunteer column ids are real (non-placeholder) here.
+    const columnIds = JSON.stringify([
+      this.columns.volunteerHours,
+      this.columns.volunteerDate,
+      this.columns.volunteerJob,
+      this.columns.volunteerStatus,
+    ]);
+    const firstPageQuery = `
+      query ($boardId: ID!, $donorItemId: String!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${this.columns.volunteerDonorLink}", compare_value: [$donorItemId], operator: any_of }]
+            }
+          ) {
+            cursor
+            items { id column_values(ids: ${columnIds}) { id text } }
+          }
+        }
+      }
+    `;
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          items { id column_values(ids: ${columnIds}) { id text } }
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId: this.volunteersBoardId, donorItemId });
+    const firstPage = firstData.boards[0]?.items_page;
+    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      allItems.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    return allItems.map((item) => ({
+      hours: columnText(item, this.columns.volunteerHours),
+      date: columnText(item, this.columns.volunteerDate),
+      job: columnText(item, this.columns.volunteerJob),
+      status: columnText(item, this.columns.volunteerStatus),
     }));
   }
 

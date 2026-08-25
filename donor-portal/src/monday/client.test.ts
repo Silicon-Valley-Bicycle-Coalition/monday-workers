@@ -17,6 +17,11 @@ const columns: MondayColumns = {
   donorPhone: 'phone_col',
   membershipExpiry: 'expiry_col',
   preferredLanguage: 'lang_col',
+  volunteerDonorLink: 'vol_link_col',
+  volunteerHours: 'vol_hours_col',
+  volunteerDate: 'vol_date_col',
+  volunteerJob: 'vol_job_col',
+  volunteerStatus: 'vol_status_col',
 };
 
 function fetchReturning(body: unknown, ok = true) {
@@ -28,7 +33,7 @@ function fetchReturning(body: unknown, ok = true) {
 }
 
 function makeClient(payload: unknown): HttpMondayClient {
-  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchReturning(payload));
+  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchReturning(payload));
 }
 
 function makeCapturingClient(onBody: (body: { query: string; variables: Record<string, unknown> }) => void): HttpMondayClient {
@@ -40,7 +45,7 @@ function makeCapturingClient(onBody: (body: { query: string; variables: Record<s
       json: async () => ({ data: { create_item: { id: '1' } } }),
     };
   });
-  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
 }
 
 describe('HttpMondayClient.findDonorsByEmail', () => {
@@ -50,7 +55,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         boards: [{ items_page: { items: [{ id: '1', name: 'Jane' }, { id: '2', name: 'Jane Also' }] } }],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
 
     const matches = await client.findDonorsByEmail('shared@example.org');
 
@@ -62,14 +67,14 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
 
   it('returns an empty array when nothing matches', async () => {
     const fetchMock = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
 
     expect(await client.findDonorsByEmail('nobody@example.org')).toEqual([]);
   });
 
   it('passes a GraphQL-breaking email through as data, not interpolated into the query string', async () => {
     const fetchMock = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
     const maliciousEmail = 'x" ], rules: [{ column_id: "y", compare_value: ["z';
 
     await client.findDonorsByEmail(maliciousEmail);
@@ -95,7 +100,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         ],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
 
     const matches = await client.findDonorsByEmail('jane@example.org');
 
@@ -115,7 +120,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
       };
     });
     const placeholderColumns: MondayColumns = { ...columns, preferredLanguage: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, 3, fetchMock);
 
     const matches = await client.findDonorsByEmail('jane@example.org');
 
@@ -175,7 +180,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
         }),
       });
 
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
 
     const data = await client.getDonorPortalData('donor-1');
 
@@ -222,7 +227,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
         json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
       });
     const placeholderColumns: MondayColumns = { ...columns, membershipExpiry: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, 3, fetchMock);
 
     const data = await client.getDonorPortalData('donor-1');
 
@@ -250,7 +255,7 @@ describe('HttpMondayClient.getDiscountOrganizations', () => {
         ],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
 
     const orgs = await client.getDiscountOrganizations();
 
@@ -258,16 +263,101 @@ describe('HttpMondayClient.getDiscountOrganizations', () => {
   });
 });
 
+describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
+  it('returns every shift linked to the donor, reading the volunteer columns', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              cursor: null,
+              items: [
+                {
+                  id: 'shift-1',
+                  column_values: [
+                    { id: 'vol_hours_col', text: '3.5' },
+                    { id: 'vol_date_col', text: '2026-05-02' },
+                    { id: 'vol_job_col', text: 'Bike Valet' },
+                    { id: 'vol_status_col', text: 'Completed' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const shifts = await client.getVolunteerShiftsForDonor('donor-1');
+
+    expect(shifts).toEqual([{ hours: '3.5', date: '2026-05-02', job: 'Bike Valet', status: 'Completed' }]);
+  });
+
+  it('follows the pagination cursor across pages', async () => {
+    const item = (id: string, date: string) => ({
+      id,
+      column_values: [
+        { id: 'vol_hours_col', text: '2' },
+        { id: 'vol_date_col', text: date },
+        { id: 'vol_job_col', text: 'Tabling' },
+        { id: 'vol_status_col', text: 'Completed' },
+      ],
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: { boards: [{ items_page: { cursor: 'next-page', items: [item('shift-1', '2026-01-10')] } }] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: { next_items_page: { cursor: null, items: [item('shift-2', '2026-02-11')] } },
+        }),
+      });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
+
+    const shifts = await client.getVolunteerShiftsForDonor('donor-1');
+
+    expect(shifts.map((s) => s.date)).toEqual(['2026-01-10', '2026-02-11']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes the donor item id as a GraphQL variable, not interpolated into the query', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+      };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
+
+    await client.getVolunteerShiftsForDonor('donor-1');
+
+    expect(captured).not.toBeNull();
+    expect(captured!.variables.donorItemId).toBe('donor-1');
+    expect(captured!.variables.boardId).toBe(3);
+    expect(captured!.query).toContain('$donorItemId');
+  });
+});
+
 describe('HttpMondayClient error handling', () => {
   it('throws on a non-OK HTTP response', async () => {
     const fetchMock = fetchReturning({}, false);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/HTTP 500/);
   });
 
   it('throws on a GraphQL errors array', async () => {
     const fetchMock = fetchReturning({ errors: [{ message: 'Board not found' }] });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, 3, fetchMock);
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/Board not found/);
   });
 });
@@ -362,7 +452,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       };
     });
     const placeholderColumns: MondayColumns = { ...columns, preferredLanguage: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, 3, fetchMock);
 
     const info = await client.getDonorContactInfo('donor-1');
 

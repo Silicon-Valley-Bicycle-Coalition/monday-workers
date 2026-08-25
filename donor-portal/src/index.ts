@@ -83,7 +83,10 @@ export default {
         config.monday.columns,
         config.monday.donorsBoardId,
         config.monday.donationsBoardId,
-        config.monday.organizationsBoardId
+        config.monday.organizationsBoardId,
+        // Safe as 0 while unset: getVolunteerShiftsForDonor is only reachable when
+        // volunteerHistoryEnabled(config) is true, which requires a real volunteersBoardId.
+        config.monday.volunteersBoardId ?? 0
       ),
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),
@@ -112,7 +115,8 @@ export default {
       config.monday.columns,
       config.monday.donorsBoardId ?? 0,
       config.monday.donationsBoardId ?? 0,
-      config.monday.organizationsBoardId ?? 0
+      config.monday.organizationsBoardId ?? 0,
+      config.monday.volunteersBoardId ?? 0
     );
 
     await routeQueueBatch(batch, {

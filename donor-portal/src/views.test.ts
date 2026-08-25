@@ -94,6 +94,7 @@ describe('portalView', () => {
       },
     ],
     discounts: [{ name: 'Local Bikes', discountOffered: '10% off' }],
+    volunteerHistory: null,
   };
 
   it('renders each donor under its own name header, never a single merged view', () => {
@@ -118,6 +119,7 @@ describe('portalView', () => {
         },
       ],
       discounts: [],
+      volunteerHistory: null,
     };
     const html = portalView(maliciousData, 'en');
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
@@ -152,5 +154,62 @@ describe('portalView', () => {
   it('renders actual translated copy for a non-English locale, not just structure', () => {
     const html = portalView(data, 'es');
     expect(html).toContain(t('es', 'portal.heading'));
+  });
+
+  it('omits the volunteer section entirely when the feature is disabled (volunteerHistory null)', () => {
+    const html = portalView(data, 'en');
+    expect(html).not.toContain(t('en', 'portal.volunteerHeading'));
+  });
+
+  it('renders a volunteer section only for donors with at least one shift', () => {
+    const withVolunteers: PortalView = {
+      ...data,
+      volunteerHistory: {
+        'donor-1': {
+          shifts: [
+            { date: '2026-03-05', hours: '3.5', job: 'Bike Valet', status: 'Completed' },
+            { date: '2026-01-10', hours: '2', job: 'Tabling', status: 'Completed' },
+          ],
+          totalHours: 5.5,
+        },
+        'donor-2': { shifts: [], totalHours: 0 },
+      },
+    };
+    const html = portalView(withVolunteers, 'en');
+    expect(html).toContain(t('en', 'portal.volunteerHeading'));
+    expect(html).toContain('Bike Valet');
+    expect(html).toContain('Total volunteer hours: 5.5');
+    // donor-2 has no shifts — exactly one volunteer section should render
+    expect(html.split(t('en', 'portal.volunteerHeading')).length - 1).toBe(1);
+  });
+
+  it('escapes volunteer-shift text instead of rendering it raw', () => {
+    const withMaliciousShift: PortalView = {
+      ...data,
+      volunteerHistory: {
+        'donor-1': {
+          shifts: [{ date: '2026-03-05', hours: '1', job: '<script>alert(1)</script>', status: 'Completed' }],
+          totalHours: 1,
+        },
+      },
+    };
+    const html = portalView(withMaliciousShift, 'en');
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('renders translated volunteer copy for a non-English locale', () => {
+    const withVolunteers: PortalView = {
+      ...data,
+      volunteerHistory: {
+        'donor-1': {
+          shifts: [{ date: '2026-03-05', hours: '3.5', job: 'Bike Valet', status: 'Completed' }],
+          totalHours: 3.5,
+        },
+      },
+    };
+    const html = portalView(withVolunteers, 'es');
+    expect(html).toContain(t('es', 'portal.volunteerHeading'));
+    expect(html).toContain(t('es', 'portal.volunteerTotalHours', { hours: '3.5' }));
   });
 });
