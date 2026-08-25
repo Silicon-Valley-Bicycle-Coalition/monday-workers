@@ -4,13 +4,17 @@ import type {
   DonationRecord,
   DonorContactInfo,
   DonorMatch,
+  DonorName,
   DonorPortalData,
+  EventRegistrationColumns,
+  EventRegistrationRecord,
   MondayColumns,
 } from '../types';
 
 interface MondayColumnValue {
   id: string;
   text: string | null;
+  linked_item_ids?: string[];
 }
 
 interface MondayItem {
@@ -38,6 +42,13 @@ export interface MondayClient {
     newValue: string;
     submittedAtISO: string;
   }): Promise<void>;
+  getDonorNames(donorItemIds: string[]): Promise<DonorName[]>;
+  getEventRegistrationsForDonor(params: {
+    donorItemId: string;
+    boardId: number;
+    columns: EventRegistrationColumns;
+    eventDateColumnId: string;
+  }): Promise<EventRegistrationRecord[]>;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -272,6 +283,112 @@ export class HttpMondayClient implements MondayClient {
       phone: columnText(item, this.columns.donorPhone),
       preferredLanguage: columnText(item, this.columns.preferredLanguage),
     };
+  }
+
+  async getDonorNames(donorItemIds: string[]): Promise<DonorName[]> {
+    // Deliberately not getDonorContactInfo: that query unconditionally includes the
+    // donorAddress/donorPhone column ids, which are placeholder-tolerant (presence-checked only,
+    // see config.ts) — calling it from a feature gated independently of change requests would
+    // ship the literal placeholder ids to Monday's API. Names need only the item itself.
+    if (donorItemIds.length === 0) return [];
+    const query = `
+      query ($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          name
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemIds: donorItemIds });
+    return data.items.map((item) => ({ id: item.id, name: item.name }));
+  }
+
+  async getEventRegistrationsForDonor(params: {
+    donorItemId: string;
+    boardId: number;
+    columns: EventRegistrationColumns;
+    eventDateColumnId: string;
+  }): Promise<EventRegistrationRecord[]> {
+    const { donorItemId, boardId, columns } = params;
+    const columnIds = JSON.stringify([columns.attended, columns.eventLink]);
+    // NOTE: two shapes below are written from current Monday API v2 knowledge but not verified
+    // against a live account — verify against the real Event Registrations board before deploy
+    // (same caveat as getDonationsForDonor above): (1) filtering by a connect-board column's
+    // linked item id via query_params.rules, and (2) reading a board_relation column's
+    // linked_item_ids via the `... on BoardRelationValue` fragment. donorItemId comes from the
+    // session, never the client, but travels as a GraphQL variable anyway — same
+    // defense-in-depth as every other query here.
+    const firstPageQuery = `
+      query ($boardId: ID!, $donorItemId: String!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${columns.attendeeLink}", compare_value: [$donorItemId], operator: any_of }]
+            }
+          ) {
+            cursor
+            items { id name column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }
+          }
+        }
+      }
+    `;
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          items { id name column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId, donorItemId });
+    const firstPage = firstData.boards[0]?.items_page;
+    const registrations: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      registrations.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    const linkedEventId = (item: MondayItem): string | null =>
+      (item.column_values ?? []).find((c) => c.id === columns.eventLink)?.linked_item_ids?.[0] ?? null;
+
+    const eventIds = [...new Set(registrations.map(linkedEventId).filter((id): id is string => id !== null))];
+    const events = new Map<string, { name: string; date: string }>();
+    if (eventIds.length > 0) {
+      const eventsQuery = `
+        query ($itemIds: [ID!]) {
+          items(ids: $itemIds) {
+            id
+            name
+            column_values(ids: ["${params.eventDateColumnId}"]) { id text }
+          }
+        }
+      `;
+      const eventsData = await this.request<{ items: MondayItem[] }>(eventsQuery, { itemIds: eventIds });
+      for (const item of eventsData.items) {
+        events.set(item.id, { name: item.name, date: columnText(item, params.eventDateColumnId) });
+      }
+    }
+
+    return registrations.map((item) => {
+      const event = events.get(linkedEventId(item) ?? '');
+      return {
+        registrationName: item.name,
+        // NOTE: checkbox `text` is expected to be "v" when checked and ""/null when not — any
+        // non-empty text counts as attended. Unverified against a live account, same caveat as
+        // the query shapes above.
+        eventName: event?.name ?? '',
+        eventDate: event?.date ?? '',
+        attended: columnText(item, columns.attended) !== '',
+      };
+    });
   }
 
   async createChangeRequestItem(params: {

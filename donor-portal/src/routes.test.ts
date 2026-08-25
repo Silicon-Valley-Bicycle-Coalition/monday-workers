@@ -129,6 +129,8 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -166,6 +168,8 @@ function fakeMondayWithDonations(): MondayClient {
       })
     ),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -191,6 +195,11 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  eventRegistrations: {
+    boardId: null,
+    columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+    eventDateColumnId: 'ev_date_col',
+  },
 };
 
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -535,6 +544,8 @@ describe('POST /login error handling', () => {
       getDiscountOrganizations: vi.fn(),
       getDonorContactInfo: vi.fn(),
       createChangeRequestItem: vi.fn(),
+      getDonorNames: vi.fn().mockResolvedValue([]),
+      getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
     };
     const app = createApp(makeDeps({ monday }));
 

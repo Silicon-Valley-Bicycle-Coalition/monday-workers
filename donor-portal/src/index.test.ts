@@ -32,6 +32,11 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  eventRegistrations: {
+    boardId: null,
+    columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+    eventDateColumnId: 'ev_date_col',
+  },
 };
 
 function makeMessage<T>(body: T) {
@@ -81,6 +86,8 @@ function fakeMonday(): MondayClient {
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
   } as unknown as MondayClient;
 }
 

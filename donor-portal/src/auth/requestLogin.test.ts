@@ -11,6 +11,8 @@ function fakeMonday(matches: { id: string; name: string; preferredLanguage: stri
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
   };
 }
 

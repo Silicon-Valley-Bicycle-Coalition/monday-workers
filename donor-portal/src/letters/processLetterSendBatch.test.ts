@@ -37,6 +37,11 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  eventRegistrations: {
+    boardId: null,
+    columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+    eventDateColumnId: 'ev_date_col',
+  },
 };
 
 function makeMessage(sendId: number) {

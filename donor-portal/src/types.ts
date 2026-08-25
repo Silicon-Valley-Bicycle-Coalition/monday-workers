@@ -106,6 +106,18 @@ export interface DonorPortalData {
   membershipExpiry: string;
 }
 
+export interface DonorName {
+  id: string;
+  name: string;
+}
+
+export interface EventRegistrationRecord {
+  registrationName: string;
+  eventName: string;
+  eventDate: string;
+  attended: boolean;
+}
+
 export interface DiscountOrganization {
   name: string;
   discountOffered: string;
