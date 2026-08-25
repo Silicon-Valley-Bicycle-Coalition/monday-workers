@@ -21,7 +21,7 @@
       "preferredLanguage": "REPLACE_WITH_COLUMN_ID"
     }
   },
-  "resend": {
+  "email": {
     "fromAddress": "login@mail.bikesiliconvalley.org",
     "fromName": "SVBC Donor Portal"
   },
@@ -55,5 +55,8 @@
     },
     "dedupeWindowHours": 72,
     "retentionDays": 180
+  },
+  "cardTokens": {
+    "retentionDays": 30
   }
 }

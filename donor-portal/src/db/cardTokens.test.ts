@@ -54,4 +54,31 @@ describe('D1CardTokenStore', () => {
     // leave a partial/second row behind.
     expect(await store.getActiveToken('donor-5')).toBe('token-first');
   });
+
+  it('purges revoked rows before the cutoff and returns the count deleted', async () => {
+    const store = new D1CardTokenStore(env.DB);
+    await store.createToken('donor-6', 'token-old', '2026-01-01T10:00:00.000Z');
+    await store.revokeAllForDonor('donor-6', '2026-01-01T11:00:00.000Z');
+    await store.createToken('donor-6', 'token-new', '2026-08-24T10:00:00.000Z');
+
+    const purged = await store.purgeRevokedBefore('2026-06-01T00:00:00.000Z');
+
+    expect(purged).toBe(1);
+    expect(await store.findActiveDonorId('token-old')).toBeNull();
+    // The purged row is gone, not just inactive — recreating it (same token value) must not
+    // collide with a leftover row.
+    await store.revokeAllForDonor('donor-6', '2026-08-24T11:00:00.000Z');
+    await store.createToken('donor-6', 'token-old', '2026-08-24T11:00:01.000Z');
+    expect(await store.getActiveToken('donor-6')).toBe('token-old');
+  });
+
+  it('leaves active (non-revoked) rows alone regardless of age', async () => {
+    const store = new D1CardTokenStore(env.DB);
+    await store.createToken('donor-7', 'token-ancient', '2020-01-01T00:00:00.000Z');
+
+    const purged = await store.purgeRevokedBefore('2026-08-24T00:00:00.000Z');
+
+    expect(purged).toBe(0);
+    expect(await store.getActiveToken('donor-7')).toBe('token-ancient');
+  });
 });

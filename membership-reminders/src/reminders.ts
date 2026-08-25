@@ -3,7 +3,7 @@ import { targetDateForStage } from './dates';
 import { isEligible, hasStamp, appendStamp } from './filter';
 import { renderTemplate } from './templates';
 import { withRetry } from './retry';
-import type { sendReminderEmail } from './email';
+import type { SendReminderEmail } from './email';
 
 export interface MondayClientLike {
   queryDueMembers(
@@ -22,7 +22,7 @@ export interface MondayClientLike {
 
 export interface ReminderDeps {
   monday: MondayClientLike;
-  sendEmail: typeof sendReminderEmail;
+  sendEmail: SendReminderEmail;
 }
 
 const RETRY_OPTIONS = { attempts: 3, delayMs: 200 };

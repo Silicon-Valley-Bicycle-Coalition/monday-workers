@@ -118,19 +118,20 @@ this is the one place this Worker can be used to spam an inbox if left unguarded
 
 **Do not use Cloudflare's old free MailChannels-Workers integration — it's dead.** MailChannels
 ended free sending for Workers on 2024-08-31; any tutorial or example referencing it predates that
-and will not work. Two live options as of this writing, confirm current terms at build time since
-pricing pages change:
+and will not work.
 
-* **[Resend](https://resend.com/pricing)** — free tier: 3,000 emails/month, 100/day, 3 domains.
-  Simple REST API, well-documented Workers integration, no daily-limit surprises at SVBC's likely
-  volume (a few hundred to low-thousands of donor logins, not 100+/day). Recommended default.
-* **[MailChannels Email API](https://support.mailchannels.com/hc/en-us/articles/4565898358413-Sending-Email-from-Cloudflare-Workers-using-MailChannels-Email-API)**
-  — the successor to the old free integration, also free up to 100 emails/day. A viable
-  alternative if Resend's domain-verification flow doesn't fit.
+**Sent via [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/)** — the
+native `send_email` Workers binding (`env.EMAIL`, see `src/email/cloudflareEmail.ts`), not a
+third-party API. No API key to manage: Cloudflare auto-configures SPF/DKIM when the sending domain
+is onboarded, and delivery/bounce/suppression handling is built in. This Worker previously used
+Resend; that integration was replaced before first deploy (see `src/email/cloudflareEmail.ts` and
+its predecessor's git history), consolidating onto Cloudflare rather than running two vendors for
+one low-volume transactional need (a few hundred to low-thousands of donor logins, nowhere near any
+sending quota).
 
-Either way: a dedicated sending subdomain (e.g. `mail.bikesiliconvalley.org`) with its own SPF/DKIM
-records, kept separate from the main domain's mail flow, is standard practice for transactional
-email and worth setting up regardless of provider.
+A dedicated sending subdomain (`mail.bikesiliconvalley.org`) with its own SPF/DKIM/DMARC records,
+kept separate from the main domain's mail flow, is standard practice for transactional email — see
+`DEPLOY.md` Phase 3 for the onboarding steps.
 
 ## Data model dependencies
 
@@ -193,6 +194,37 @@ Requests board only**; create the `donor-portal-change-requests` queue and its
 `0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
 `REPLACE_AFTER_SIGNOFF` in `taxLetter`.
 
+## v2.1 — Staff-triggered letter-ready emails
+
+Design: `../docs/superpowers/specs/2026-08-24-donor-letter-emails-design.md`. A Button column on
+the Donors board lets staff email a donor a "your letter is ready" notification — a magic link to
+the portal home, not the letter content itself. Always sends the most recently completed year with
+gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 table). Inert until
+`taxLetter` is signed off, same as the portal-facing letters.
+
+**The automatic January cron this eventually enables is not built yet** — this ships the send
+primitive (`POST /webhooks/monday/letters` → `donor-portal-letter-emails` queue →
+`processLetterSendBatch`) that a scheduled trigger can reuse later without rework.
+
+Operator setup, in addition to v1/v2 steps:
+
+1. Add a Button column ("Send Giving Letter") to the Donors board.
+2. Create a Monday automation recipe on that board: "When button column changes → Send a webhook
+   to `https://<worker-domain>/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>`". This is
+   the locked-in trigger design (see the design spec's Decisions) — a raw Webhooks-API subscription
+   on the button column's `change_specific_column_value` event does **not** work here, since Button
+   columns are action triggers with no persisted value, so that event likely never fires for a
+   button click. The automation recipe is the supported path for "button clicked → webhook".
+   **Verify the exact automation payload shape against a real delivery before relying on it in
+   production** — this could not be confirmed from a development session without live Monday
+   access.
+3. Set the `LETTER_WEBHOOK_SECRET` Worker secret (`wrangler secret put LETTER_WEBHOOK_SECRET`) —
+   must match the `secret` query param used in the webhook URL above.
+4. Create the `donor-portal-letter-emails` queue and its `donor-portal-letter-emails-dlq` dead-letter
+   queue before deploying (`wrangler queues create donor-portal-letter-emails` and
+   `wrangler queues create donor-portal-letter-emails-dlq`).
+5. Apply D1 migration `0004_create_letter_sends.sql`.
+
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
@@ -231,10 +263,10 @@ touched, regardless of age.
 Ideas from the v2 brainstorm, in rough value order — recorded so they aren't re-derived from
 scratch. None are scheduled; each needs its own scoping pass before build.
 
-1. **January letter email distribution** — portal-only was a deliberate first-cut choice; the
-   letter renderer (`src/letters/`) is an importable module so a future cron can email letters
-   (or links to them) without rework. A staff-triggered per-donor "send letter" button is the
-   discussed middle ground.
+1. **Automatic January cron for letter emails** — the staff-triggered send (button column →
+   webhook → email) shipped in v2.1 above; reuses the same `processLetterSendBatch` consumer. What
+   remains is only the scheduled trigger: iterate all donors with a completed prior year and call
+   `triggerLetterSend` for each, likely from the existing daily `scheduled()` handler once a year.
 2. **Recurring-gift management / membership renewal** — deliberately *link out* to Funraise's
    own donor account surface and checkout rather than building anything; keeps this Worker
    entirely out of PCI scope. "Build" here means adding deep links, nothing more.
@@ -260,6 +292,5 @@ out for donor auth (free tier caps at 50 users; magic-link auth is the scope mat
 
 * `migration-plan.md` (private planning repo) — Integrations: Donor self-service portal
 * `docs/06-staff-process-guide.md` (private planning repo) §§1, 2, 8
-* [Resend pricing](https://resend.com/pricing)
+* [Cloudflare Email Service docs](https://developers.cloudflare.com/email-service/)
 * [MailChannels — End of Life Notice (Cloudflare Workers free integration)](https://support.mailchannels.com/hc/en-us/articles/26814255454093-End-of-Life-Notice-Cloudflare-Workers)
-* [MailChannels Email API — sending from Cloudflare Workers](https://support.mailchannels.com/hc/en-us/articles/4565898358413-Sending-Email-from-Cloudflare-Workers-using-MailChannels-Email-API)

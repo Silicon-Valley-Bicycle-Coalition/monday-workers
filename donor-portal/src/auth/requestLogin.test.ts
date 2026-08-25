@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { requestLogin } from './requestLogin';
 import type { MondayClient } from '../monday/client';
 import type { MagicLinkTokenStore } from '../db/tokens';
-import type { EmailSender } from '../email/resend';
+import type { EmailSender } from '../email/types';
 
 function fakeMonday(matches: { id: string; name: string; preferredLanguage: string }[]): MondayClient {
   return {
@@ -19,7 +19,10 @@ function fakeTokenStore(): MagicLinkTokenStore {
 }
 
 function fakeEmailSender(): EmailSender {
-  return { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+  return {
+    sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 const baseDeps = {

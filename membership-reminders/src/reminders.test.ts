@@ -14,6 +14,7 @@ const baseConfig: Config = {
       email: 'email',
     },
   },
+  email: { fromAddress: 'reminders@example.org', fromName: 'Test Reminders' },
   stages: [{ tag: '6w', offsetDays: 42 }],
   renewalUrl: 'https://example.org/renew',
   timeZone: 'America/Los_Angeles',

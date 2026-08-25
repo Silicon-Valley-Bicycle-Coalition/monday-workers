@@ -1,6 +1,6 @@
 import type { Config, MondayColumns } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'resend', 'auth', 'rateLimit', 'taxLetter', 'changeRequests'] as const;
+const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donorEmail',
@@ -33,7 +33,7 @@ const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage']
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
-const REQUIRED_RESEND_KEYS = ['fromAddress', 'fromName'] as const;
+const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName'] as const;
 const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'sessionTtlHours', 'portalBaseUrl'] as const;
 const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
@@ -48,6 +48,7 @@ const REQUIRED_TAX_LETTER_KEYS = [
 ] as const;
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
+const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
 
 function requireObject(cfg: Record<string, unknown>, key: string, errorKey: string = key): Record<string, unknown> {
   const value = cfg[key];
@@ -96,8 +97,8 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
 
-  const resend = requireObject(cfg, 'resend');
-  requireKeys(resend, 'resend', REQUIRED_RESEND_KEYS);
+  const email = requireObject(cfg, 'email');
+  requireKeys(email, 'email', REQUIRED_EMAIL_KEYS);
 
   const auth = requireObject(cfg, 'auth');
   requireKeys(auth, 'auth', REQUIRED_AUTH_KEYS);
@@ -114,6 +115,12 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(crColumns, 'changeRequests.columns', REQUIRED_CHANGE_REQUEST_COLUMNS);
   if (typeof changeRequests.retentionDays !== 'number' || changeRequests.retentionDays <= 0) {
     throw new Error('config: "changeRequests.retentionDays" must be a positive number of days');
+  }
+
+  const cardTokens = requireObject(cfg, 'cardTokens');
+  requireKeys(cardTokens, 'cardTokens', REQUIRED_CARD_TOKENS_KEYS);
+  if (typeof cardTokens.retentionDays !== 'number' || cardTokens.retentionDays <= 0) {
+    throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
   return cfg as unknown as Config;

@@ -3,6 +3,12 @@ export interface CardTokenStore {
   findActiveDonorId(token: string): Promise<string | null>;
   getActiveToken(donorItemId: string): Promise<string | null>;
   revokeAllForDonor(donorItemId: string, revokedAtISO: string): Promise<void>;
+  // Retention purge: a revoked row is a dead bearer credential with no purpose once superseded —
+  // it stops resolving via findActiveDonorId/getActiveToken the moment revoked_at is set (see
+  // revokeAllForDonor) and never becomes active again. Rows past the retention window are deleted
+  // outright rather than field-scrubbed. Active rows (revoked_at IS NULL) are never touched.
+  // Returns the number of rows deleted.
+  purgeRevokedBefore(cutoffISO: string): Promise<number>;
 }
 
 export class D1CardTokenStore implements CardTokenStore {
@@ -39,5 +45,13 @@ export class D1CardTokenStore implements CardTokenStore {
       .prepare(`UPDATE card_tokens SET revoked_at = ?1 WHERE donor_item_id = ?2 AND revoked_at IS NULL`)
       .bind(revokedAtISO, donorItemId)
       .run();
+  }
+
+  async purgeRevokedBefore(cutoffISO: string): Promise<number> {
+    const result = await this.db
+      .prepare(`DELETE FROM card_tokens WHERE revoked_at IS NOT NULL AND revoked_at < ?1`)
+      .bind(cutoffISO)
+      .run();
+    return result.meta.changes;
   }
 }

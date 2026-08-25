@@ -23,8 +23,14 @@
       "simple": { "limit": 10, "period": 60 }
     }
   ],
+  // Requires `wrangler email sending enable mail.bikesiliconvalley.org` (see DEPLOY.md) before
+  // first deploy — the "from" domain must be onboarded to Cloudflare Email Sending.
+  "send_email": [{ "name": "EMAIL" }],
   "queues": {
-    "producers": [{ "queue": "donor-portal-change-requests", "binding": "CHANGE_QUEUE" }],
+    "producers": [
+      { "queue": "donor-portal-change-requests", "binding": "CHANGE_QUEUE" },
+      { "queue": "donor-portal-letter-emails", "binding": "LETTER_SEND_QUEUE" }
+    ],
     "consumers": [
       {
         "queue": "donor-portal-change-requests",
@@ -33,6 +39,13 @@
         // concurrent writers during a backlog drain.
         "max_concurrency": 1,
         "dead_letter_queue": "donor-portal-change-requests-dlq"
+      },
+      {
+        "queue": "donor-portal-letter-emails",
+        "max_retries": 3,
+        // Same reasoning as the change-requests consumer above.
+        "max_concurrency": 1,
+        "dead_letter_queue": "donor-portal-letter-emails-dlq"
       }
     ]
   },

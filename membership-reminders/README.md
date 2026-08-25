@@ -37,8 +37,12 @@ whatever ingests post-cutover payments.
 
 ## Email sending
 
-Use the same outbound-email mechanism `donor-portal` settles on for magic links — one deliverable
-choice, two consumers. Templates for the three stages live in this Worker; keep them plain
+Sent via [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/) — the same
+native `send_email` binding `donor-portal` uses for magic links (`src/email.ts`'s
+`createEmailSender`), reusing its already-onboarded `mail.bikesiliconvalley.org` sending domain
+under a different from-address (`email.fromAddress`/`fromName` in `config/svbc.json`). No separate
+domain onboarding or secret needed for this Worker — see `donor-portal/DEPLOY.md` Phase 3 for the
+one-time domain setup. Templates for the three stages live in this Worker; keep them plain
 (subject, greeting, expiration date, renewal link) and let the copy be staff-editable via config
 rather than code.
 

@@ -24,7 +24,7 @@ const validConfig = {
       preferredLanguage: 'lang_col',
     },
   },
-  resend: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
+  email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {
@@ -49,6 +49,7 @@ const validConfig = {
     dedupeWindowHours: 72,
     retentionDays: 180,
   },
+  cardTokens: { retentionDays: 30 },
 };
 
 describe('validateConfig', () => {
@@ -57,8 +58,8 @@ describe('validateConfig', () => {
   });
 
   it('throws when a top-level key is missing', () => {
-    const { resend, ...missing } = validConfig;
-    expect(() => validateConfig(missing)).toThrow(/resend/);
+    const { email, ...missing } = validConfig;
+    expect(() => validateConfig(missing)).toThrow(/email/);
   });
 
   it('throws when monday.columns is missing a column', () => {
@@ -67,9 +68,9 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/donorEmail/);
   });
 
-  it('throws when resend is missing a key', () => {
-    const { fromName, ...rest } = validConfig.resend;
-    const broken = { ...validConfig, resend: rest };
+  it('throws when email is missing a key', () => {
+    const { fromName, ...rest } = validConfig.email;
+    const broken = { ...validConfig, email: rest };
     expect(() => validateConfig(broken)).toThrow(/fromName/);
   });
 
@@ -150,6 +151,7 @@ const v2Sections = {
     dedupeWindowHours: 72,
     retentionDays: 180,
   },
+  cardTokens: { retentionDays: 30 },
 };
 
 describe('v2 config sections', () => {
@@ -178,6 +180,24 @@ describe('v2 config sections', () => {
     const cfg = structuredClone(validConfig);
     Object.assign(cfg, structuredClone(v2Sections));
     (cfg as { changeRequests: { retentionDays: number } }).changeRequests.retentionDays = 0;
+    expect(() => validateConfig(cfg)).toThrow(/retentionDays/);
+  });
+
+  it('rejects a config missing the cardTokens section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).cardTokens;
+    expect(() => validateConfig(cfg)).toThrow('cardTokens');
+  });
+
+  it('rejects a config missing cardTokens.retentionDays', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { cardTokens: Record<string, unknown> }).cardTokens.retentionDays;
+    expect(() => validateConfig(cfg)).toThrow('cardTokens.retentionDays');
+  });
+
+  it('rejects cardTokens.retentionDays that is not a positive number', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { cardTokens: { retentionDays: number } }).cardTokens.retentionDays = 0;
     expect(() => validateConfig(cfg)).toThrow(/retentionDays/);
   });
 

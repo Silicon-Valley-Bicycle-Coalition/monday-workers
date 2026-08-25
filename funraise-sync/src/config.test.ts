@@ -28,6 +28,7 @@ const validConfig = {
       registration: 'id',
     },
     entityIdColumn: null,
+    thankYouSentColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
@@ -94,6 +95,21 @@ describe('validateConfig new keys', () => {
   it('throws when rawPayloadRetentionDays is not a positive number', () => {
     const funraiseSync = { ...validConfig.funraiseSync, rawPayloadRetentionDays: 0 };
     expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/rawPayloadRetentionDays/);
+  });
+
+  it('throws when thankYouSentColumn is missing', () => {
+    const { thankYouSentColumn, ...funraiseSync } = validConfig.funraiseSync;
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/thankYouSentColumn/);
+  });
+
+  it('throws when thankYouSentColumn is an empty string', () => {
+    const funraiseSync = { ...validConfig.funraiseSync, thankYouSentColumn: '' };
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/thankYouSentColumn/);
+  });
+
+  it('accepts a configured thankYouSentColumn', () => {
+    const funraiseSync = { ...validConfig.funraiseSync, thankYouSentColumn: 'thank_you_col' };
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).not.toThrow();
   });
 });
 

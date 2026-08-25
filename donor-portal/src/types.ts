@@ -41,6 +41,10 @@ export interface ChangeRequestsConfig {
   retentionDays: number;
 }
 
+export interface CardTokensConfig {
+  retentionDays: number;
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -49,7 +53,7 @@ export interface Config {
     organizationsBoardId: number | null;
     columns: MondayColumns;
   };
-  resend: {
+  email: {
     fromAddress: string;
     fromName: string;
   };
@@ -64,6 +68,7 @@ export interface Config {
   };
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
+  cardTokens: CardTokensConfig;
 }
 
 export interface DonorMatch {
@@ -114,11 +119,18 @@ export interface ChangeQueueMessage {
   requestId: number;
 }
 
+// See the comment on ChangeQueueMessage above — same import-cycle avoidance.
+export interface LetterSendQueueMessage {
+  sendId: number;
+}
+
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
 // only secrets and narrowed queue message types are declared here.
 export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
-  RESEND_API_KEY: string;
+  EMAIL: SendEmail;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
+  LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;
+  LETTER_WEBHOOK_SECRET: string;
 }

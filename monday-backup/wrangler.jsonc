@@ -1,0 +1,26 @@
+{
+  "name": "svbc-monday-backup",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  // Cron-only — no routes, and workers_dev/preview_urls stay false. Nothing about a backup
+  // Worker should be reachable from the Internet; it only makes outbound calls.
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-monday-backup",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    // Daily at 09:00 UTC (1am/2am Pacific depending on DST) — after Monday's own nightly
+    // processing settles, well before SVBC staff start their day. Adjust if a different
+    // time is preferred once this is actually scheduled.
+    "crons": ["0 9 * * *"]
+  },
+  "observability": { "enabled": true }
+}

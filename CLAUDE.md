@@ -40,6 +40,34 @@ commit there, and open the MR from that branch. Once the MR merges to `main`, re
 and delete the local branch — see the parent workspace `CLAUDE.md`'s "Worktree cleanup" section
 for the exact commands.
 
+**A worktree holds exactly one active agent, ever — never fan multiple agents into the same
+one.** Real collision on 2026-08-25: a session working `feat/membership-card` (in the sibling
+worktree `.claude/worktrees/membership-card`) was fixing findings from a code review one at a
+time, then started dispatching each remaining finding to its own `spawn_task` sub-session —
+without giving any of them a separate worktree, so every sub-session's `cwd` pointed at the same
+checkout. Up to three agents ended up editing the same files simultaneously: one session's
+in-progress `CardTokenStore` interface change broke another's already-passing test file mid-task,
+and a documentation commit from one session silently absorbed another session's unrelated
+uncommitted edit to `README.md` (right author, wrong commit — the two sessions' work is now
+tangled in one commit's history). Nothing was unrecoverable, but it easily could have been.
+
+`git worktree` physically cannot check out one branch into two directories at once, so this isn't
+solved by "give each dispatched agent its own worktree on the *same* branch" — that command
+fails. Instead:
+
+- **Default:** do the fixes yourself, one at a time, in the one worktree you have — commit after
+  each before starting the next. This is almost always the right call for a punch-list of fixes
+  against one feature branch; it's what made the commits *before* the incident (one fix, one
+  commit, repeated) collision-free.
+- **Only reach for parallel sub-agents when the fixes are truly independent and worth the
+  overhead:** give each one its *own* worktree on its *own* throwaway branch off the feature
+  branch (`git worktree add ../monday-workers-<topic>-fix-<n> -b fix/<topic>-<n>
+  feat/<topic>`), let it commit there, then merge or cherry-pick each fix branch back into
+  `feat/<topic>` **sequentially** yourself once they're done — never concurrently — and remove
+  the temp worktree/branch afterward (see "Worktree cleanup" above).
+- Never pass your own `cwd` to a spawned sub-agent that's going to edit files. If you can't give
+  it an isolated worktree, don't dispatch it — do the edit inline instead.
+
 ## Commands
 
 There's no root `package.json` — every command runs from inside a Worker's own subdirectory

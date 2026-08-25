@@ -10,6 +10,10 @@
       "email": "REPLACE_WITH_COLUMN_ID"
     }
   },
+  "email": {
+    "fromAddress": "reminders@mail.bikesiliconvalley.org",
+    "fromName": "SVBC Membership"
+  },
   "stages": [
     { "tag": "6w", "offsetDays": 42 },
     { "tag": "4w", "offsetDays": 28 },

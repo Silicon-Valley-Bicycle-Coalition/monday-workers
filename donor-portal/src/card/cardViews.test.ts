@@ -12,6 +12,18 @@ const data: CardData = {
   expiryDisplay: 'December 31, 2026',
 };
 
+// Distinct payload per field so a broken/missing escapeHtml() call on any one
+// field is caught, instead of only ever exercising donorName's escaping.
+const xssData: CardData = {
+  donorId: 'donor-1',
+  donorName: '<script>alert("name")</script>',
+  memberNumber: '<script>alert("number")</script>',
+  membershipTier: '<script>alert("tier")</script>',
+  membershipStatus: '<script>alert("status")</script>',
+  expiryDisplay: '<script>alert("expiry")</script>',
+};
+const xssVerifyUrl = 'https://portal.example.org/verify/"><script>alert("url")</script>';
+
 describe('cardView', () => {
   it('contains the donor identity, tier, status, expiry, verify link, and QR', () => {
     const html = cardView(data, 'https://portal.example.org/verify/tok123', '<svg data-testid="qr"></svg>', 'en');
@@ -27,6 +39,22 @@ describe('cardView', () => {
     const html = cardView(data, 'https://portal.example.org/verify/tok123', '<svg></svg>', 'en');
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('escapes every CRM-sourced field and the verify URL, not just donor name', () => {
+    const html = cardView(xssData, xssVerifyUrl, '<svg></svg>', 'en');
+    expect(html).not.toContain('<script>alert("name")</script>');
+    expect(html).not.toContain('<script>alert("number")</script>');
+    expect(html).not.toContain('<script>alert("tier")</script>');
+    expect(html).not.toContain('<script>alert("status")</script>');
+    expect(html).not.toContain('<script>alert("expiry")</script>');
+    expect(html).not.toContain('<script>alert("url")</script>');
+    expect(html).toContain('&lt;script&gt;alert(&quot;name&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;number&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;tier&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;status&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;expiry&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;url&quot;)&lt;/script&gt;');
   });
 
   it("points the regenerate form at this donor's own regenerate route", () => {
@@ -73,6 +101,16 @@ describe('verifyView', () => {
     // verifyView ignored its locale argument entirely. Assert real Filipino copy too.
     expect(html).toContain(data.membershipTier);
     expect(html).toContain(t('fil', 'verify.disclaimer'));
+  });
+
+  it('escapes tier, status, and expiry, not just donor name', () => {
+    const html = verifyView(xssData, 'en');
+    expect(html).not.toContain('<script>alert("tier")</script>');
+    expect(html).not.toContain('<script>alert("status")</script>');
+    expect(html).not.toContain('<script>alert("expiry")</script>');
+    expect(html).toContain('&lt;script&gt;alert(&quot;tier&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;status&quot;)&lt;/script&gt;');
+    expect(html).toContain('&lt;script&gt;alert(&quot;expiry&quot;)&lt;/script&gt;');
   });
 });
 

@@ -81,12 +81,17 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  // Clear edge cache to prevent stale responses leaking between tests
+  // Clear edge cache to prevent stale responses leaking between tests. Reads
+  // CACHE_VERSION from env rather than hardcoding it — a stale hardcoded
+  // value here previously let cache entries leak across tests silently
+  // (the delete no-ops on a version that no longer matches what the worker
+  // actually keys on) after CACHE_VERSION was bumped in wrangler.jsonc.
   const cache = caches.default;
+  const version = env.CACHE_VERSION || "0";
   for (const key of [
-    "http://worker.test/events?page_size=20&organizer=all&v=4",
-    "http://worker.test/events?page_size=50&organizer=all&v=4",
-    "http://worker.test/events?page_size=20&organizer=17135810858&v=4",
+    `http://worker.test/events?page_size=20&organizer=all&v=${version}`,
+    `http://worker.test/events?page_size=50&organizer=all&v=${version}`,
+    `http://worker.test/events?page_size=20&organizer=17135810858&v=${version}`,
   ]) {
     await cache.delete(new Request(key));
   }
