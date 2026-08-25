@@ -932,4 +932,24 @@ describe('GET /verify/:token', () => {
     const res = await limitedApp.request(verifyPath);
     expect(res.status).toBe(429);
   });
+
+  it('still rate-limits by IP when cardEnabled is false', async () => {
+    // The kill switch must not double as a rate-limit bypass: flipping the feature off during
+    // incident response is exactly when this endpoint most needs its limiter still enforced.
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore = inMemoryCardTokenStore();
+    const permissive = makeDeps({ monday, emailSender, cardTokenStore });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(loginApp, cookie);
+
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const gatedLimitedApp = createApp({ ...permissive, ipLimiter, config: gatedConfig });
+
+    const res = await gatedLimitedApp.request(verifyPath);
+    expect(res.status).toBe(429);
+  });
 });

@@ -397,6 +397,15 @@ export function createApp(deps: AppDeps) {
   app.get('/verify/:token', async (c) => {
     c.header('Cache-Control', NO_STORE);
 
+    // Rate-limit before the kill-switch check below, not after — otherwise disabling the card
+    // feature (config revert, incident response) also disables rate limiting on this endpoint,
+    // turning the exact moment someone flips the kill switch into an unlimited request sink.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(TITLE_VERIFY, errorView('Too many requests — please try again in a minute.')), 429);
+    }
+
     // If the card feature is ever disabled after tokens have already been issued (config
     // revert, incident response), every previously-issued verify link must stop serving PII —
     // this is the kill switch's only enforcement point, since token issuance/regeneration is
@@ -404,12 +413,6 @@ export function createApp(deps: AppDeps) {
     // distinguishing "feature off" from "token doesn't exist".
     if (!cardEnabled(deps.config)) {
       return c.html(page(TITLE_VERIFY, verifyNotValidView()));
-    }
-
-    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
-    const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
-    if (!ipResult.success) {
-      return c.html(page(TITLE_VERIFY, errorView('Too many requests — please try again in a minute.')), 429);
     }
 
     const token = c.req.param('token');
