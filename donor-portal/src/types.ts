@@ -64,6 +64,18 @@ export interface VolunteerHistoryConfig {
   completedStatuses: string[];
 }
 
+export interface EventRegistrationColumns {
+  attendeeLink: string;
+  eventLink: string;
+  attended: string;
+}
+
+export interface EventRegistrationsConfig {
+  boardId: number | null;
+  columns: EventRegistrationColumns;
+  eventDateColumnId: string;
+}
+
 export interface FunraiseConfig {
   manageRecurringUrl: string;
   renewMembershipUrl: string;
@@ -121,6 +133,7 @@ export interface Config {
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
   volunteerHistory: VolunteerHistoryConfig;
+  eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;
   pledges: PledgesConfig;
   matchingGifts: MatchingGiftsConfig;
@@ -146,6 +159,13 @@ export interface DonorPortalData {
   totalDonated: string;
   donations: DonationRecord[];
   membershipExpiry: string;
+}
+
+export interface EventRegistrationRecord {
+  registrationName: string;
+  eventName: string;
+  eventDate: string;
+  attended: boolean;
 }
 
 // All five fields are Monday column text passed through verbatim (same convention as

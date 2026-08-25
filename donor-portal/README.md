@@ -154,7 +154,8 @@ kept separate from the main domain's mail flow, is standard practice for transac
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
   boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
-  v4/v5 features are configured — Pledges and Volunteers) — never a staff member's
+  v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never
+  a staff member's
   personal token, which would make this public-facing Worker a door to the whole workspace. See
   `../README.md`'s least-privilege-token note.
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
@@ -371,8 +372,47 @@ Operator setup for v4, in addition to the v1 steps — each feature independentl
    `matchingGifts.doubleTheDonationPublicKey` to the **public** plugin key (never a private API
    key — this value is served to every logged-in browser), after verifying the embed snippet
    against DTD's current docs.
+## v5 — Event registrations
 
-## v5 — Volunteer history
+From the IT Requests board (["Donor portal: event
+registrations"](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527106),
+scoped 2026-08-25). A read-only page (`GET /:locale/portal/events`, linked from the portal home)
+listing the logged-in donor's event registrations, split into **Upcoming** (event date today or
+later, soonest first) and **Past** (latest first; past rows show Attended/Registered from the
+board's checkbox, and undated registrations sort last). Same multi-donor-household rule as the
+rest of the portal: one explicitly labeled section per matched donor item. No D1 tables, no
+queues, no writes — reads live from Monday like everything else here.
+
+**Data source:** the **Event Registrations** board — the post-migration rename of today's
+hand-maintained Event Participation board, rebuilt at cutover to match the CRM Sandbox rehearsal
+(`salesforce-import`'s `Fundraising_Event_Registration` output: Attendee board-relation → People,
+Event board-relation → Events board, Attended checkbox). The event's name and date come from the
+linked Events-board item, resolved in a second query. Registrations whose Attendee relation was
+never matched to a People item (name/email captured only as fallback text) can't be tied to a
+logged-in donor and simply don't appear. The Eventbrite repoint (see the migration plan) is what
+will keep this board current for *future* events — it isn't a precondition for showing the
+migrated history, which is why this shipped ahead of it.
+
+**Deliberately excluded: ticket and deductible amounts.** Both columns exist on the board, but
+surfacing dollar figures here would blur the portal's carefully-drawn "this is not a tax
+document" line — the deductible-portion story belongs to the tax-letter feature and its
+signed-off IRS language, not an event list.
+
+**Gated on `eventRegistrations` config** (same placeholder-tolerant treatment as
+`changeRequests`): the page shows a "not available yet" state until an operator fills in real
+ids. Operator setup, in addition to the v1 steps, once the post-cutover board exists:
+
+1. Fill in `eventRegistrations.boardId` (Event Registrations board) and its `columns` —
+   `attendeeLink` (Attendee board-relation), `eventLink` (Event board-relation), `attended`
+   (Attended checkbox).
+2. Fill in `eventRegistrations.eventDateColumnId` — the **Events board's** Date column id (the
+   registration board has no date of its own; dates live on the linked event item).
+3. Grant the portal's integration user **read access to the Event Registrations and Events
+   boards** (it stays read-only everywhere except Change Requests).
+
+No new secrets, queues, or D1 migrations.
+
+## v6 — Volunteer history
 
 From the IT Requests board Feature Request "Donor portal: volunteer history" (filed from the
 2026-08-24 v2 brainstorm): show volunteer hours/shifts alongside donations. Each donor's portal
@@ -391,7 +431,7 @@ what `../salesforce-import` loads from GW Volunteers: a connect-boards link to t
 board (`volunteerDonorLink`), Hours number (`volunteerHours`), Date (`volunteerDate`), Job text
 (`volunteerJob`), and Status (`volunteerStatus`).
 
-Operator setup for v5, in addition to the v1 steps: after the Volunteers board exists
+Operator setup for v6, in addition to the v1 steps: after the Volunteers board exists
 post-migration, fill in `monday.volunteersBoardId` and the five `volunteer*` column ids in
 `config/svbc.json`; confirm `volunteerHistory.completedStatuses` matches the board's actual
 "worked this shift" status label(s); and grant the portal's integration user **read access to the
@@ -399,8 +439,8 @@ Volunteers board**. No new D1 migration, no new queue, no new secret, no Monday 
 
 **Upgrading an existing deployment (forks included):** same rule as v4's stanzas — config
 validation requires the `volunteerHistory` stanza and `monday.volunteersBoardId` key to *exist*
-before v5 code will serve any request. Copy them from this repo's `config/svbc.json` (null/
-placeholder values are fine; the feature then ships gated off) before deploying v5 code over an
+before v6 code will serve any request. Copy them from this repo's `config/svbc.json` (null/
+placeholder values are fine; the feature then ships gated off) before deploying v6 code over an
 older config.
 
 

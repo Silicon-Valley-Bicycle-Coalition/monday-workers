@@ -12,6 +12,7 @@ export const en = {
   'title.changeRequest': 'Request a Change',
   'title.card': 'Your Membership Card',
   'title.verify': 'Membership Verification',
+  'title.events': 'Your Event Registrations',
   'title.pledges': 'Your Pledges',
   'title.matchingGifts': 'Matching Gifts',
 
@@ -36,6 +37,7 @@ export const en = {
   'error.cardLoadFailed': 'We could not load your card right now. Please try again in a few minutes.',
   'error.cardRegenerateFailed': 'We could not regenerate your card right now. Please try again in a few minutes.',
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
+  'error.eventsLoadFailed': 'We could not load your event registrations right now. Please try again in a few minutes.',
   'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
 
@@ -57,6 +59,7 @@ export const en = {
   'portal.givingLinksNote': 'These links open Funraise, our secure payment processor. Changes you make there appear in this portal after our records update.',
   'portal.discountsHeading': 'Bike shop discounts',
   'portal.taxDocumentsLink': 'Tax documents',
+  'portal.eventsLink': 'Event registrations',
   'portal.changeRequestLink': 'Request a change to your details',
   'portal.pledgesLink': 'Your pledges',
   'portal.matchingGiftsLink': 'Employer matching gifts',
@@ -72,6 +75,19 @@ export const en = {
   'letters.backToLetters': 'Back to tax documents',
   'letters.print': 'Print or save as PDF',
   'letters.englishOnlyNote': 'This official document is issued in English.',
+
+  // Event registrations
+  'events.listHeading': 'Your event registrations',
+  'events.upcomingHeading': 'Upcoming',
+  'events.pastHeading': 'Past',
+  'events.noneYet': 'No event registrations on file yet for {{name}}.',
+  'events.tableEvent': 'Event',
+  'events.tableDate': 'Date',
+  'events.tableStatus': 'Status',
+  'events.statusAttended': 'Attended',
+  'events.statusRegistered': 'Registered',
+  'events.backToPortal': 'Back to your portal',
+  'events.unavailable': 'Event registrations are not available yet in the portal. Please check back soon.',
 
   // Change request
   'changeRequest.formHeading': 'Request a change to your details',

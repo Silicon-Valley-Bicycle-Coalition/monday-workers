@@ -75,6 +75,15 @@
   "volunteerHistory": {
     "completedStatuses": ["Completed"]
   },
+  "eventRegistrations": {
+    "boardId": null,
+    "columns": {
+      "attendeeLink": "REPLACE_WITH_COLUMN_ID",
+      "eventLink": "REPLACE_WITH_COLUMN_ID",
+      "attended": "REPLACE_WITH_COLUMN_ID"
+    },
+    "eventDateColumnId": "REPLACE_WITH_COLUMN_ID"
+  },
   "pledges": {
     "boardId": null,
     "columns": {

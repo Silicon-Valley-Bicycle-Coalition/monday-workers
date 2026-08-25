@@ -14,6 +14,7 @@ export const hi: Record<TranslationKey, string> = {
   'title.changeRequest': 'बदलाव का अनुरोध करें',
   'title.card': 'आपका सदस्यता कार्ड',
   'title.verify': 'सदस्यता सत्यापन',
+  'title.events': 'आपके इवेंट पंजीकरण',
 
   // Login
   'login.prompt': 'लॉगिन लिंक प्राप्त करने के लिए अपना ईमेल दर्ज करें।',
@@ -36,6 +37,7 @@ export const hi: Record<TranslationKey, string> = {
   'error.cardLoadFailed': 'हम अभी आपका कार्ड लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
   'error.cardRegenerateFailed': 'हम अभी आपका कार्ड फिर से जनरेट नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
   'error.verifyLoadFailed': 'हम अभी इस कार्ड को सत्यापित नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
+  'error.eventsLoadFailed': 'हम अभी आपके इवेंट पंजीकरण लोड नहीं कर सके। कृपया कुछ मिनटों में फिर से प्रयास करें।',
   'error.generic': 'कुछ गड़बड़ हो गई। कृपया फिर से लॉग इन करने की कोशिश करें।',
 
   // Portal
@@ -56,6 +58,7 @@ export const hi: Record<TranslationKey, string> = {
   'portal.givingLinksNote': 'ये लिंक Funraise खोलते हैं, जो हमारा सुरक्षित भुगतान प्रोसेसर है। वहां किए गए बदलाव हमारे रिकॉर्ड अपडेट होने के बाद इस पोर्टल में दिखाई देंगे।',
   'portal.discountsHeading': 'बाइक शॉप छूट',
   'portal.taxDocumentsLink': 'टैक्स दस्तावेज़',
+  'portal.eventsLink': 'इवेंट पंजीकरण',
   'portal.changeRequestLink': 'अपनी जानकारी में बदलाव का अनुरोध करें',
   'portal.logout': 'लॉग आउट करें',
 
@@ -69,6 +72,19 @@ export const hi: Record<TranslationKey, string> = {
   'letters.backToLetters': 'टैक्स दस्तावेज़ों पर वापस जाएँ',
   'letters.print': 'प्रिंट करें या PDF के रूप में सेव करें',
   'letters.englishOnlyNote': 'यह आधिकारिक दस्तावेज़ अंग्रेज़ी में जारी किया जाता है।',
+
+  // Event registrations
+  'events.listHeading': 'आपके इवेंट पंजीकरण',
+  'events.upcomingHeading': 'आगामी',
+  'events.pastHeading': 'पिछले',
+  'events.noneYet': '{{name}} के लिए अभी तक कोई इवेंट पंजीकरण दर्ज नहीं है।',
+  'events.tableEvent': 'इवेंट',
+  'events.tableDate': 'तारीख़',
+  'events.tableStatus': 'स्थिति',
+  'events.statusAttended': 'उपस्थित रहे',
+  'events.statusRegistered': 'पंजीकृत',
+  'events.backToPortal': 'अपने पोर्टल पर वापस जाएँ',
+  'events.unavailable': 'पोर्टल में इवेंट पंजीकरण अभी उपलब्ध नहीं हैं। कृपया जल्द ही फिर से देखें।',
 
   // Change request
   'changeRequest.formHeading': 'अपनी जानकारी में बदलाव का अनुरोध करें',

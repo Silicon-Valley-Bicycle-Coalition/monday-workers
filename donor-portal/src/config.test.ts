@@ -10,6 +10,7 @@ import {
   signedOffEin,
   configuredPrefFields,
   volunteerHistoryEnabled,
+  eventsEnabled,
 } from './config';
 
 const validConfig = {
@@ -71,6 +72,15 @@ const validConfig = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  eventRegistrations: {
+    boardId: 456,
+    columns: {
+      attendeeLink: 'connect_2',
+      eventLink: 'connect_3',
+      attended: 'check_1',
+    },
+    eventDateColumnId: 'date_2',
+  },
   funraise: {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
@@ -333,6 +343,40 @@ describe('volunteerHistory config section', () => {
   });
 });
 
+describe('eventRegistrations config section', () => {
+  it('rejects a config missing the eventRegistrations section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).eventRegistrations;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations');
+  });
+
+  it('rejects a config missing eventRegistrations.boardId', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { eventRegistrations: Record<string, unknown> }).eventRegistrations.boardId;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations.boardId');
+  });
+
+  it('rejects a config missing an eventRegistrations column key', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { eventRegistrations: { columns: Record<string, unknown> } }).eventRegistrations.columns.attendeeLink;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations.columns.attendeeLink');
+  });
+
+  it('rejects a config missing eventRegistrations.eventDateColumnId', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { eventRegistrations: Record<string, unknown> }).eventRegistrations.eventDateColumnId;
+    expect(() => validateConfig(cfg)).toThrow('eventRegistrations.eventDateColumnId');
+  });
+
+  it('accepts placeholder column ids (gate, not error) — same treatment as changeRequests', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.eventRegistrations.boardId = null as unknown as number;
+    cfg.eventRegistrations.columns.attendeeLink = 'REPLACE_WITH_COLUMN_ID';
+    cfg.eventRegistrations.eventDateColumnId = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
 describe('volunteerHistoryEnabled', () => {
   it('is true when volunteersBoardId is set and no volunteer column is a placeholder', () => {
     expect(volunteerHistoryEnabled(validateConfig(validConfig))).toBe(true);
@@ -348,6 +392,31 @@ describe('volunteerHistoryEnabled', () => {
     const raw = structuredClone(validConfig);
     raw.monday.columns.volunteerStatus = 'REPLACE_WITH_COLUMN_ID';
     expect(volunteerHistoryEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('eventsEnabled', () => {
+  it('is true when boardId is set and no column is a placeholder', () => {
+    const cfg = validateConfig(structuredClone(validConfig));
+    expect(eventsEnabled(cfg)).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw as { eventRegistrations: { boardId: number | null } }).eventRegistrations.boardId = null;
+    expect(eventsEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a registrations column id is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.eventRegistrations.columns.attended = 'REPLACE_WITH_COLUMN_ID';
+    expect(eventsEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while eventDateColumnId is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.eventRegistrations.eventDateColumnId = 'REPLACE_WITH_COLUMN_ID';
+    expect(eventsEnabled(validateConfig(raw))).toBe(false);
   });
 });
 

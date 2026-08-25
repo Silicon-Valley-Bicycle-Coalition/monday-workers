@@ -26,6 +26,7 @@ import {
   configuredPrefFields,
   lettersEnabled,
   cardEnabled,
+  eventsEnabled,
   funraiseLinks,
   pledgesEnabled,
   matchingGiftsSearchEnabled,
@@ -42,6 +43,8 @@ import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { loadEventRegistrations } from './events/loadEventRegistrations';
+import { eventsListView, eventsUnavailableView } from './events/eventViews';
 import { buildCardData } from './card/loadCardData';
 import { generateQrSvg } from './card/qr';
 import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
@@ -321,6 +324,31 @@ export function createApp(deps: AppDeps) {
     // its own, not just say "SVBC Donor Portal".
     const letterTitle = `SVBC ${data.year} Tax Letter — ${data.donorName}`;
     return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/events`));
+
+  app.get('/:locale/portal/events', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!eventsEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsUnavailableView(locale), locale));
+    }
+
+    let listings;
+    try {
+      listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
+    } catch (err) {
+      // Same reasoning as the letters routes above: a Monday read failure isn't an auth
+      // problem, so it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`donor-portal events list failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.eventsLoadFailed', locale), locale), 500);
+    }
+    return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsListView(listings, locale), locale));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.

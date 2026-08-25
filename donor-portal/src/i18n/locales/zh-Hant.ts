@@ -14,6 +14,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'title.changeRequest': '申請變更',
   'title.card': '您的會員卡',
   'title.verify': '會員驗證',
+  'title.events': '您的活動報名',
 
   // Login
   'login.prompt': '請輸入您的電郵地址以接收登入連結。',
@@ -36,6 +37,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'error.cardLoadFailed': '我們目前無法載入您的會員卡，請稍後幾分鐘再試。',
   'error.cardRegenerateFailed': '我們目前無法重新產生您的會員卡，請稍後幾分鐘再試。',
   'error.verifyLoadFailed': '我們目前無法驗證此卡片，請稍後幾分鐘再試。',
+  'error.eventsLoadFailed': '目前無法載入您的活動報名記錄。請幾分鐘後再試。',
   'error.generic': '發生問題，請重新登入。',
 
   // Portal
@@ -56,6 +58,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'portal.givingLinksNote': '這些連結將開啟我們的安全付款服務商 Funraise。您在那裡所做的變更將在我們的紀錄更新後顯示於本入口網站。',
   'portal.discountsHeading': '單車店優惠',
   'portal.taxDocumentsLink': '稅務文件',
+  'portal.eventsLink': '活動報名',
   'portal.changeRequestLink': '申請變更您的資料',
   'portal.logout': '登出',
 
@@ -69,6 +72,19 @@ export const zhHant: Record<TranslationKey, string> = {
   'letters.backToLetters': '返回稅務文件',
   'letters.print': '列印或另存為 PDF',
   'letters.englishOnlyNote': '本正式文件以英文發出。',
+
+  // Event registrations
+  'events.listHeading': '您的活動報名',
+  'events.upcomingHeading': '即將舉行',
+  'events.pastHeading': '過往',
+  'events.noneYet': '{{name}} 目前還沒有活動報名記錄。',
+  'events.tableEvent': '活動',
+  'events.tableDate': '日期',
+  'events.tableStatus': '狀態',
+  'events.statusAttended': '已出席',
+  'events.statusRegistered': '已報名',
+  'events.backToPortal': '返回您的入口網站',
+  'events.unavailable': '入口網站中的活動報名功能尚未開放。請稍後再來查看。',
 
   // Change request
   'changeRequest.formHeading': '申請變更您的資料',

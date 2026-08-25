@@ -33,6 +33,11 @@ const config: Config = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  eventRegistrations: {
+    boardId: null,
+    columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
+    eventDateColumnId: 'ev_date_col',
+  },
   funraise: {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
@@ -97,6 +102,8 @@ function fakeMonday(): MondayClient {
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
+    getDonorNames: vi.fn().mockResolvedValue([]),
+    getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
   } as unknown as MondayClient;
 }
 

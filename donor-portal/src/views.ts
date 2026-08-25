@@ -198,6 +198,7 @@ export function portalView(data: PortalView, locale: Locale, funraise: FunraiseL
         ${data.discounts.map(discountRow).join('')}
       </ul>
     </section>
+    <p><a href="/${locale}/portal/events">${escapeHtml(t(locale, 'portal.eventsLink'))}</a></p>
     <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
     <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>
     <p><a href="/${locale}/portal/pledges">${escapeHtml(t(locale, 'portal.pledgesLink'))}</a></p>
