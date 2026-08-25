@@ -1,3 +1,104 @@
 import type { TranslationKey } from '../t';
 
-export const hi: Partial<Record<TranslationKey, string>> = {};
+export const hi: Record<TranslationKey, string> = {
+  // Site-wide
+  'site.title': 'SVBC डोनर पोर्टल',
+  'languagePicker.label': 'भाषा',
+
+  // Page <title> suffixes (rendered as "{title.x} — {site.title}")
+  'title.login': 'लॉग इन करें',
+  'title.checkEmail': 'अपना ईमेल जाँचें',
+  'title.error': 'कुछ गड़बड़ हो गई',
+  'title.portal': 'आपका डोनर पोर्टल',
+  'title.lettersList': 'टैक्स दस्तावेज़',
+  'title.changeRequest': 'बदलाव का अनुरोध करें',
+  'title.card': 'आपका सदस्यता कार्ड',
+  'title.verify': 'सदस्यता सत्यापन',
+
+  // Login
+  'login.prompt': 'लॉगिन लिंक प्राप्त करने के लिए अपना ईमेल दर्ज करें।',
+  'login.submit': 'लॉगिन लिंक भेजें',
+
+  // Check email
+  'checkEmail.heading': 'अपना ईमेल जाँचें',
+  'checkEmail.body': 'कृपया अपना ईमेल जाँचें: यदि वह पता हमारे रिकॉर्ड में है, तो एक लॉगिन लिंक आपकी ओर आ रहा है। यह जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
+
+  // Error page + route-level error messages
+  'error.heading': 'कुछ गड़बड़ हो गई',
+  'error.requestNewLink': 'नया लॉगिन लिंक माँगें',
+  'error.invalidLink': 'यह लिंक अमान्य है। कृपया एक नया लिंक माँगें।',
+  'error.expiredLink': 'यह लिंक समाप्त हो चुका है या पहले ही इस्तेमाल किया जा चुका है। कृपया एक नया लिंक माँगें।',
+  'error.lettersLoadFailed': 'हम अभी आपके पत्र लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
+  'error.letterNotFound': 'वह पत्र मौजूद नहीं है।',
+  'error.letterLoadFailed': 'हम अभी आपका पत्र लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
+  'error.rateLimited': 'बहुत अधिक अनुरोध — कृपया एक मिनट बाद फिर से कोशिश करें।',
+  'error.cardNotFound': 'वह कार्ड मौजूद नहीं है।',
+  'error.cardLoadFailed': 'हम अभी आपका कार्ड लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
+  'error.cardRegenerateFailed': 'हम अभी आपका कार्ड फिर से जनरेट नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
+  'error.verifyLoadFailed': 'हम अभी इस कार्ड को सत्यापित नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
+  'error.generic': 'कुछ गड़बड़ हो गई। कृपया फिर से लॉग इन करने की कोशिश करें।',
+
+  // Portal
+  'portal.heading': 'आपका डोनर पोर्टल',
+  'portal.membership': 'सदस्यता: {{status}} ({{tier}})',
+  'portal.totalDonated': 'कुल दान: {{total}}',
+  'portal.membershipCardLink': 'सदस्यता कार्ड',
+  'portal.tableDate': 'तारीख़',
+  'portal.tableAmount': 'राशि',
+  'portal.tableDescription': 'विवरण',
+  'portal.discountsHeading': 'बाइक शॉप छूट',
+  'portal.taxDocumentsLink': 'टैक्स दस्तावेज़',
+  'portal.changeRequestLink': 'अपनी जानकारी में बदलाव का अनुरोध करें',
+  'portal.logout': 'लॉग आउट करें',
+
+  // Letters
+  'letters.listHeading': 'टैक्स दस्तावेज़',
+  'letters.listIntro': 'हर पत्र उस कैलेंडर वर्ष के लिए हमारे रिकॉर्ड में दर्ज दान का एक समेकित प्रमाण-पत्र है। पत्र खोलें और उसे प्रिंट करने या PDF के रूप में सेव करने के लिए अपने ब्राउज़र के Print विकल्प का इस्तेमाल करें।',
+  'letters.noneYet': '{{name}} के लिए अभी तक कोई पत्र उपलब्ध नहीं है — पत्र उन पूर्ण कैलेंडर वर्षों को कवर करते हैं जिनमें कम से कम एक दान हुआ हो।',
+  'letters.yearLink': '{{year}} का टैक्स पत्र',
+  'letters.backToPortal': 'अपने पोर्टल पर वापस जाएँ',
+  'letters.unavailable': 'साल के अंत के टैक्स पत्र अभी उपलब्ध नहीं हैं। कृपया जल्द ही दोबारा देखें, या इस बीच दान का सारांश चाहिए तो हमसे संपर्क करें।',
+  'letters.backToLetters': 'टैक्स दस्तावेज़ों पर वापस जाएँ',
+  'letters.print': 'प्रिंट करें या PDF के रूप में सेव करें',
+  'letters.englishOnlyNote': 'यह आधिकारिक दस्तावेज़ अंग्रेज़ी में जारी किया जाता है।',
+
+  // Change request
+  'changeRequest.formHeading': 'अपनी जानकारी में बदलाव का अनुरोध करें',
+  'changeRequest.formIntro': 'नीचे नई जानकारी दर्ज करें। SVBC स्टाफ़ इसे लागू करने से पहले हर अनुरोध की समीक्षा करता है — प्रोसेस होने के बाद आपको यह अपडेट दिखाई देगा।',
+  'changeRequest.currentDetailsHeading': '{{name}} — मौजूदा जानकारी',
+  'changeRequest.fieldAddress': 'पता',
+  'changeRequest.fieldEmail': 'ईमेल',
+  'changeRequest.fieldPhone': 'फ़ोन नंबर',
+  'changeRequest.fieldLanguage': 'पसंदीदा भाषा',
+  'changeRequest.whoseRecord': 'किसका रिकॉर्ड',
+  'changeRequest.whatToChange': 'क्या बदलना है',
+  'changeRequest.newValue': 'नई जानकारी',
+  'changeRequest.submit': 'समीक्षा के लिए सबमिट करें',
+  'changeRequest.emailNote': 'स्टाफ़ द्वारा लागू करने के बाद ही ईमेल में बदलाव पोर्टल लॉगिन के लिए प्रभावी होता है।',
+  'changeRequest.submittedHeading': 'अनुरोध प्राप्त हुआ',
+  'changeRequest.submittedBody': 'धन्यवाद — SVBC स्टाफ़ आपके अनुरोध की समीक्षा करके यह बदलाव लागू करेगा। इसमें आमतौर पर कुछ कार्य-दिवस लगते हैं।',
+  'changeRequest.duplicateHeading': 'पहले ही सबमिट किया जा चुका है',
+  'changeRequest.duplicateBody': 'हमारे पास पहले से यही अनुरोध दर्ज है — स्टाफ़ जल्द ही इसे देखेगा। इसे दोबारा सबमिट करने की ज़रूरत नहीं है।',
+  'changeRequest.invalidHeading': 'कुछ ठीक करने की ज़रूरत है',
+  'changeRequest.backToForm': 'फ़ॉर्म पर वापस जाएँ',
+  'changeRequest.unavailableHeading': 'बदलाव का अनुरोध करें',
+  'changeRequest.unavailableBody': 'स्व-सेवा बदलाव अनुरोध अभी उपलब्ध नहीं हैं। कृपया SVBC से संपर्क करें और हम आपकी जानकारी अपडेट कर देंगे।',
+
+  // Membership card + public verify page
+  'card.heading': 'आपका सदस्यता कार्ड',
+  'card.tier': 'स्तर: {{tier}}',
+  'card.status': 'स्थिति: {{status}}',
+  'card.expires': 'समाप्ति: {{expiry}}',
+  'card.scanHint': 'अपनी सदस्यता की पुष्टि के लिए यह कार्ड दिखाएँ, या किसी दुकान को QR कोड स्कैन करने दें या ऊपर दिया गया लिंक खोलने दें।',
+  'card.regenerate': 'कार्ड फिर से जनरेट करें',
+  'card.regenerateHint': 'फिर से जनरेट करने पर पुराना QR कोड और लिंक तुरंत अमान्य हो जाता है — अगर आपको लगता है कि आपके कार्ड का लिंक लीक हो गया है, तो इसका इस्तेमाल करें।',
+  'card.unavailable': 'डिजिटल सदस्यता कार्ड अभी उपलब्ध नहीं हैं। कृपया जल्द ही दोबारा देखें।',
+  'verify.heading': 'सदस्यता सत्यापन',
+  'verify.disclaimer': 'यह जानकारी हमारे रिकॉर्ड से लाइव प्राप्त की जाती है।',
+  'verify.notValid': 'यह कार्ड मान्य नहीं है। हो सकता है इसे फिर से जनरेट किया गया हो या यह अब सक्रिय न हो।',
+
+  // Login email (src/email/resend.ts)
+  'email.subject': 'SVBC डोनर पोर्टल का आपका लॉगिन लिंक',
+  'email.bodyIntro': 'डोनर पोर्टल में लॉग इन करने के लिए नीचे क्लिक करें। यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
+  'email.loginButton': 'लॉग इन करें',
+} satisfies Record<TranslationKey, string>;
