@@ -29,6 +29,9 @@
       {
         "queue": "donor-portal-change-requests",
         "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain.
+        "max_concurrency": 1,
         "dead_letter_queue": "donor-portal-change-requests-dlq"
       }
     ]
