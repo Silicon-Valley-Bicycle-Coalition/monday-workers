@@ -11,3 +11,6 @@ worker-configuration.d.ts
 # main checkout, instead of as siblings — these are live `git worktree` checkouts, never content
 # to track.
 .claude/worktrees/
+
+# superpowers:brainstorming visual-companion mockups (ephemeral scratch, not deliverables)
+.superpowers/
