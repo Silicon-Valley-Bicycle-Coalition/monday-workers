@@ -53,6 +53,7 @@ function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeReq
     findRecentByDedupeHash: vi.fn().mockResolvedValue(null),
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
+    purgeWrittenBefore: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }
@@ -115,6 +116,7 @@ const config: Config = {
     boardId: 99,
     columns: { donorLink: 'c1', field: 'c2', oldValue: 'c3', newValue: 'c4', submittedAt: 'c5' },
     dedupeWindowHours: 72,
+    retentionDays: 180,
   },
 };
 
@@ -185,6 +187,7 @@ describe('full login flow', () => {
     const portalRes = await app.request('/portal', { headers: { cookie: sessionCookie } });
     const portalHtml = await portalRes.text();
     expect(portalHtml).toContain('Donor donor-1');
+    expect(portalHtml).toContain('<title>Your Donor Portal — SVBC Donor Portal</title>');
     // Donor PII must never be servable from browser cache/bfcache after logout — POST /logout
     // only clears the server-side session, it can't evict an already-cached rendering of this page.
     expect(portalRes.headers.get('cache-control')).toBe('private, no-store, max-age=0');
@@ -246,6 +249,17 @@ describe('GET /portal without a session', () => {
     const res = await app.request('/portal');
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/login');
+  });
+});
+
+describe('GET /login', () => {
+  it('renders a full document with a title, charset, and viewport meta', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/login');
+    const html = await res.text();
+    expect(html).toContain('<title>Log In — SVBC Donor Portal</title>');
+    expect(html).toContain('<meta charset="utf-8" />');
+    expect(html).toContain('name="viewport"');
   });
 });
 
@@ -399,7 +413,9 @@ describe('GET /portal/letters', () => {
 
     const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('/portal/letters/donor-1/2025');
+    const html = await res.text();
+    expect(html).toContain('/portal/letters/donor-1/2025');
+    expect(html).toContain('<title>Tax Documents — SVBC Donor Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
@@ -442,6 +458,10 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Total contributions for 2025');
+    // The letter is meant to be printed/saved as a PDF, and browsers print the document <title>
+    // (and URL) in default print headers/footers — so the title must identify the letter itself,
+    // not just say "SVBC Donor Portal".
+    expect(html).toContain('<title>SVBC 2025 Tax Letter — Donor donor-1</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
@@ -503,7 +523,9 @@ describe('GET /portal/change-request', () => {
 
     const res = await app.request('/portal/change-request', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('1 Old St');
+    const html = await res.text();
+    expect(html).toContain('1 Old St');
+    expect(html).toContain('<title>Request a Change — SVBC Donor Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 

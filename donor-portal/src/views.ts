@@ -9,6 +9,23 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+// Wraps a view's HTML fragment in a minimal document so the browser has a real <title> and
+// viewport meta — without it, browsers fall back to printing the bare URL in default print
+// headers/footers, which is how the tax letter page used to print (see letterViews.letterView).
+export function page(title: string, body: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+  </head>
+  <body>
+    ${body}
+  </body>
+</html>`;
+}
+
 export function loginFormView(): string {
   return `
     <h1>SVBC Donor Portal</h1>

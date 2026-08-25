@@ -14,7 +14,7 @@ import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
-import { checkEmailView, errorView, loginFormView, portalView } from './views';
+import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
 import { changeRequestsEnabled, lettersEnabled } from './config';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
@@ -36,6 +36,17 @@ export interface AppDeps {
 }
 
 const SESSION_COOKIE = 'session';
+
+// Page <title>s. Kept as constants rather than inlined at each c.html(page(...)) call so the
+// copy lives in one place; the tax letter title is the exception, built per-request from the
+// donor's own data (see the /portal/letters/:donorItemId/:year route below).
+const SITE_TITLE = 'SVBC Donor Portal';
+const TITLE_LOGIN = `Log In — ${SITE_TITLE}`;
+const TITLE_CHECK_EMAIL = `Check Your Email — ${SITE_TITLE}`;
+const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
+const TITLE_PORTAL = `Your Donor Portal — ${SITE_TITLE}`;
+const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
+const TITLE_CHANGE_REQUEST = `Request a Change — ${SITE_TITLE}`;
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
 // characters that would let a value break out of a GraphQL string literal), and requires an
@@ -66,12 +77,12 @@ export function createApp(deps: AppDeps) {
 
   app.onError((err, c) => {
     console.error(`donor-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
-    return c.html(errorView('Something went wrong. Please try logging in again.'), 500);
+    return c.html(page(TITLE_ERROR, errorView('Something went wrong. Please try logging in again.')), 500);
   });
 
   app.get('/health', (c) => c.json({ ok: true }));
 
-  app.get('/login', (c) => c.html(loginFormView()));
+  app.get('/login', (c) => c.html(page(TITLE_LOGIN, loginFormView())));
 
   app.post('/login', async (c) => {
     const body = await c.req.parseBody();
@@ -125,13 +136,13 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    return c.html(checkEmailView());
+    return c.html(page(TITLE_CHECK_EMAIL, checkEmailView()));
   });
 
   app.get('/auth/callback', async (c) => {
     const token = c.req.query('token');
     if (!token) {
-      return c.html(errorView('This link is invalid. Please request a new one.'));
+      return c.html(page(TITLE_ERROR, errorView('This link is invalid. Please request a new one.')));
     }
 
     let sessionToken: string | null;
@@ -146,11 +157,11 @@ export function createApp(deps: AppDeps) {
       // e.g. the magic-link token was validly consumed but the follow-up session write failed
       // (D1 error) — show the same "request a new one" recovery path rather than a raw 500.
       console.error(`donor-portal login verification failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(errorView('This link has expired or was already used. Please request a new one.'));
+      return c.html(page(TITLE_ERROR, errorView('This link has expired or was already used. Please request a new one.')));
     }
 
     if (sessionToken === null) {
-      return c.html(errorView('This link has expired or was already used. Please request a new one.'));
+      return c.html(page(TITLE_ERROR, errorView('This link has expired or was already used. Please request a new one.')));
     }
 
     setCookie(c, SESSION_COOKIE, sessionToken, {
@@ -171,7 +182,7 @@ export function createApp(deps: AppDeps) {
 
     const data = await loadPortalData(donorItemIds, deps.monday);
     c.header('Cache-Control', NO_STORE);
-    return c.html(portalView(data));
+    return c.html(page(TITLE_PORTAL, portalView(data)));
   });
 
   app.get('/portal/letters', async (c) => {
@@ -180,7 +191,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(lettersUnavailableView());
+      return c.html(page(TITLE_LETTERS_LIST, lettersUnavailableView()));
     }
     let listings;
     try {
@@ -189,9 +200,9 @@ export function createApp(deps: AppDeps) {
       // A Monday read failure here would otherwise fall through to the global onError, whose
       // generic "please try logging in again" copy is misleading — this isn't an auth problem.
       console.error(`donor-portal letters list failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(errorView('We could not load your letters right now. Please try again in a few minutes.'), 500);
+      return c.html(page(TITLE_ERROR, errorView('We could not load your letters right now. Please try again in a few minutes.')), 500);
     }
-    return c.html(lettersListView(listings));
+    return c.html(page(TITLE_LETTERS_LIST, lettersListView(listings)));
   });
 
   app.get('/portal/letters/:donorItemId/:year', async (c) => {
@@ -200,7 +211,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(lettersUnavailableView());
+      return c.html(page(TITLE_LETTERS_LIST, lettersUnavailableView()));
     }
 
     // The path param selects among the session's own donor items — never widens them.
@@ -208,7 +219,7 @@ export function createApp(deps: AppDeps) {
     const yearParam = c.req.param('year');
     const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
     if (!donorItemIds.includes(donorItemId) || year === null) {
-      return c.html(errorView('That letter does not exist.'), 404);
+      return c.html(page(TITLE_ERROR, errorView('That letter does not exist.')), 404);
     }
 
     let data;
@@ -218,10 +229,10 @@ export function createApp(deps: AppDeps) {
       // Same reasoning as the letters-list route above: a Monday read failure isn't an auth
       // problem, so it shouldn't fall through to the global onError's login-focused copy.
       console.error(`donor-portal letter load failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(errorView('We could not load your letter right now. Please try again in a few minutes.'), 500);
+      return c.html(page(TITLE_ERROR, errorView('We could not load your letter right now. Please try again in a few minutes.')), 500);
     }
     if (data === null) {
-      return c.html(errorView('That letter does not exist.'), 404);
+      return c.html(page(TITLE_ERROR, errorView('That letter does not exist.')), 404);
     }
 
     const generatedOn = deps.now().toLocaleDateString('en-US', {
@@ -230,7 +241,11 @@ export function createApp(deps: AppDeps) {
       day: 'numeric',
       timeZone: 'UTC',
     });
-    return c.html(letterView(data, deps.config.taxLetter, generatedOn));
+    // Browsers print the document <title> (and URL) in default print headers/footers, and this
+    // page is meant to be printed/saved as a PDF — so the title needs to identify the letter on
+    // its own, not just say "SVBC Donor Portal".
+    const letterTitle = `SVBC ${data.year} Tax Letter — ${data.donorName}`;
+    return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn)));
   });
 
   app.get('/portal/change-request', async (c) => {
@@ -239,10 +254,10 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
-      return c.html(changeRequestsUnavailableView());
+      return c.html(page(TITLE_CHANGE_REQUEST, changeRequestsUnavailableView()));
     }
     const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
-    return c.html(changeRequestFormView(donors));
+    return c.html(page(TITLE_CHANGE_REQUEST, changeRequestFormView(donors)));
   });
 
   app.post('/portal/change-request', async (c) => {
@@ -251,7 +266,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
-      return c.html(changeRequestsUnavailableView());
+      return c.html(page(TITLE_CHANGE_REQUEST, changeRequestsUnavailableView()));
     }
 
     // Same limiter binding as login, but a distinct key prefix so the two budgets don't
@@ -260,7 +275,7 @@ export function createApp(deps: AppDeps) {
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
     if (!ipResult.success) {
-      return c.html(errorView('Too many requests — please try again in a minute.'), 429);
+      return c.html(page(TITLE_ERROR, errorView('Too many requests — please try again in a minute.')), 429);
     }
 
     // Spec also requires a per-session budget: an IP-only limit lets many donors sharing one
@@ -270,7 +285,7 @@ export function createApp(deps: AppDeps) {
     const sessionToken = getCookie(c, SESSION_COOKIE) as string;
     const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
     if (!sessionResult.success) {
-      return c.html(errorView('Too many requests — please try again in a minute.'), 429);
+      return c.html(page(TITLE_ERROR, errorView('Too many requests — please try again in a minute.')), 429);
     }
 
     const body = await c.req.parseBody();
@@ -287,7 +302,7 @@ export function createApp(deps: AppDeps) {
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
-    return c.html(changeRequestResultView(result));
+    return c.html(page(TITLE_CHANGE_REQUEST, changeRequestResultView(result)));
   });
 
   app.post('/logout', async (c) => {
