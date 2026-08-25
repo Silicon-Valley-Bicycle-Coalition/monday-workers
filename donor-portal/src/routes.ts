@@ -26,6 +26,7 @@ import {
   configuredPrefFields,
   lettersEnabled,
   cardEnabled,
+  funraiseLinks,
   pledgesEnabled,
   matchingGiftsSearchEnabled,
   signedOffEin,
@@ -244,7 +245,7 @@ export function createApp(deps: AppDeps) {
 
     const data = await loadPortalData(donorItemIds, deps.monday);
     c.header('Cache-Control', NO_STORE);
-    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale), locale));
+    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale, funraiseLinks(deps.config)), locale));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.

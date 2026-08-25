@@ -1,4 +1,4 @@
-import type { Config, MondayColumns, PrefField } from './types';
+import type { Config, FunraiseLinkUrls, MondayColumns, PrefField } from './types';
 
 const REQUIRED_TOP_LEVEL = [
   'monday',
@@ -8,6 +8,7 @@ const REQUIRED_TOP_LEVEL = [
   'taxLetter',
   'changeRequests',
   'cardTokens',
+  'funraise',
   'pledges',
   'matchingGifts',
 ] as const;
@@ -73,6 +74,8 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+const REQUIRED_FUNRAISE_KEYS = ['manageRecurringUrl', 'renewMembershipUrl'] as const;
+const FUNRAISE_URL_PLACEHOLDER = 'REPLACE_WITH_FUNRAISE_URL';
 const REQUIRED_PLEDGES_KEYS = ['boardId', 'columns'] as const;
 const REQUIRED_PLEDGE_COLUMNS = ['donorLink', 'pledgedAmount', 'fulfilledAmount', 'status', 'dueDate'] as const;
 const REQUIRED_MATCHING_GIFTS_KEYS = ['doubleTheDonationPublicKey'] as const;
@@ -151,6 +154,22 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
+  // The placeholder (or an empty string) is a gate, not an error — same treatment as the
+  // taxLetter sign-off fields. But a *set* URL must be https: these links are rendered to
+  // donors inside the authenticated portal, so a typo'd or http: URL should fail at deploy,
+  // not in a donor's browser.
+  const funraise = requireObject(cfg, 'funraise');
+  requireKeys(funraise, 'funraise', REQUIRED_FUNRAISE_KEYS);
+  for (const key of REQUIRED_FUNRAISE_KEYS) {
+    const value = funraise[key];
+    if (typeof value !== 'string') {
+      throw new Error(`config: "funraise.${key}" must be a string`);
+    }
+    if (value !== FUNRAISE_URL_PLACEHOLDER && value !== '' && !value.startsWith('https://')) {
+      throw new Error(`config: "funraise.${key}" must be an https:// URL (or the placeholder "${FUNRAISE_URL_PLACEHOLDER}")`);
+    }
+  }
+
   // Both gated (pledgesEnabled / matchingGiftsSearchEnabled), not deploy-blocking — presence
   // checks only, same treatment as changeRequests' columns.
   const pledges = requireObject(cfg, 'pledges');
@@ -197,6 +216,18 @@ export function configuredPrefFields(config: Config): PrefField[] {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+// Each Funraise deep link is gated independently — SVBC may have the donor-account URL before
+// the renewal-checkout URL (or vice versa), and either alone is worth showing. Returns null for
+// an unconfigured link so views render nothing rather than a dead link.
+export function funraiseLinks(config: Config): FunraiseLinkUrls {
+  const resolve = (value: string): string | null =>
+    value === FUNRAISE_URL_PLACEHOLDER || value === '' ? null : value;
+  return {
+    manageRecurringUrl: resolve(config.funraise.manageRecurringUrl),
+    renewMembershipUrl: resolve(config.funraise.renewMembershipUrl),
+  };
 }
 
 export function pledgesEnabled(config: Config): boolean {
