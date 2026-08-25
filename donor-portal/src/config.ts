@@ -8,6 +8,7 @@ const REQUIRED_TOP_LEVEL = [
   'taxLetter',
   'changeRequests',
   'cardTokens',
+  'volunteerHistory',
   'eventRegistrations',
   'funraise',
   'pledges',
@@ -42,6 +43,18 @@ const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 // not placeholder-freedom — same treatment as CARD_COLUMNS.
 const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage'];
 
+// VOLUNTEER_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: these columns only matter
+// to the volunteer-history feature, which is gated (volunteerHistoryEnabled), not
+// deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
+// CARD_COLUMNS.
+const VOLUNTEER_COLUMNS: (keyof MondayColumns)[] = [
+  'volunteerDonorLink',
+  'volunteerHours',
+  'volunteerDate',
+  'volunteerJob',
+  'volunteerStatus',
+];
+
 // COMM_PREF_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: each column only matters to
 // the communication-preferences feature, which is gated per column (configuredPrefFields), not
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
@@ -75,6 +88,7 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
 // Presence-checked only, never placeholder-checked: event registrations are gated
 // (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
 const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumnId'] as const;
@@ -125,12 +139,19 @@ export function validateConfig(raw: unknown): Config {
   }
 
   const monday = requireObject(cfg, 'monday');
+  // volunteersBoardId must exist as an explicit number-or-null: volunteerHistoryEnabled gates
+  // on it, and a missing key (undefined) or a string id would otherwise slip past a `=== null`
+  // check and send Monday a query against board 0.
+  if (!('volunteersBoardId' in monday) || (monday.volunteersBoardId !== null && typeof monday.volunteersBoardId !== 'number')) {
+    throw new Error('config: "monday.volunteersBoardId" must be a number or null');
+  }
   const columns = requireObject(monday, 'columns');
   requireKeys(columns, 'monday.columns', REQUIRED_COLUMNS);
   requireNoPlaceholderColumns(columns);
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
+  requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
   requireKeys(columns, 'monday.columns', COMM_PREF_COLUMNS);
 
   const email = requireObject(cfg, 'email');
@@ -159,6 +180,12 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
+  const volunteerHistory = requireObject(cfg, 'volunteerHistory');
+  requireKeys(volunteerHistory, 'volunteerHistory', REQUIRED_VOLUNTEER_HISTORY_KEYS);
+  const completedStatuses = volunteerHistory.completedStatuses;
+  if (!Array.isArray(completedStatuses) || completedStatuses.some((s) => typeof s !== 'string')) {
+    throw new Error('config: "volunteerHistory.completedStatuses" must be an array of strings');
+  }
   const eventRegistrations = requireObject(cfg, 'eventRegistrations');
   requireKeys(eventRegistrations, 'eventRegistrations', REQUIRED_EVENT_REGISTRATION_KEYS);
   const erColumns = requireObject(eventRegistrations, 'columns', 'eventRegistrations.columns');
@@ -226,6 +253,13 @@ export function configuredPrefFields(config: Config): PrefField[] {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+export function volunteerHistoryEnabled(config: Config): boolean {
+  // typeof check (not === null) so a missing/undefined or mistyped board id counts as disabled
+  // rather than enabled-against-board-0.
+  if (typeof config.monday.volunteersBoardId !== 'number') return false;
+  return VOLUNTEER_COLUMNS.every((key) => config.monday.columns[key] !== PLACEHOLDER_COLUMN_VALUE);
 }
 
 export function eventsEnabled(config: Config): boolean {

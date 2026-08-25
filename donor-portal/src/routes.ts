@@ -31,6 +31,7 @@ import {
   pledgesEnabled,
   matchingGiftsSearchEnabled,
   signedOffEin,
+  volunteerHistoryEnabled,
 } from './config';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
@@ -246,7 +247,10 @@ export function createApp(deps: AppDeps) {
       return c.redirect('/login');
     }
 
-    const data = await loadPortalData(donorItemIds, deps.monday);
+    const data = await loadPortalData(donorItemIds, deps.monday, {
+      enabled: volunteerHistoryEnabled(deps.config),
+      completedStatuses: deps.config.volunteerHistory.completedStatuses,
+    });
     c.header('Cache-Control', NO_STORE);
     return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale, funraiseLinks(deps.config)), locale));
   });

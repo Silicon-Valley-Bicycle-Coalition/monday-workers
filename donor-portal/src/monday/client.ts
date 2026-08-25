@@ -10,6 +10,7 @@ import type {
   MondayColumns,
   PledgeColumns,
   PledgeRecord,
+  VolunteerShift,
 } from '../types';
 
 interface MondayColumnValue {
@@ -39,6 +40,7 @@ export interface MondayClient {
   findDonorsByEmail(email: string): Promise<DonorMatch[]>;
   getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
+  getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]>;
   getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
   // Lightweight id+name lookup (one query for all ids) — exists so the pledges page can label
   // per-donor sections without getDonorPortalData's full donation-history fetch per donor.
@@ -73,6 +75,9 @@ export class HttpMondayClient implements MondayClient {
     // null until an operator configures pledges.boardId + columns (the feature is gated on
     // pledgesEnabled, so routes never call getPledgesForDonor while this is null).
     private pledges: { boardId: number; columns: PledgeColumns } | null = null,
+    // null until an operator configures monday.volunteersBoardId — getVolunteerShiftsForDonor
+    // throws its own config error on null rather than querying a sentinel board id.
+    private volunteersBoardId: number | null = null,
     private fetchFn: typeof fetch = fetch
   ) {}
 
@@ -178,7 +183,7 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
-  // Shared by getDonationsForDonor and getPledgesForDonor: every item on a board whose
+  // Shared by getDonationsForDonor, getPledgesForDonor, and getVolunteerShiftsForDonor: every item on a board whose
   // connect-board column links to donorItemId, following the cursor across pages.
   // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
   // id is written from current Monday API v2 knowledge but not verified against a live
@@ -233,10 +238,14 @@ export class HttpMondayClient implements MondayClient {
 
     while (cursor) {
       const nextData = await this.request<{
-        next_items_page: { cursor: string | null; items: MondayItem[] };
+        next_items_page: { cursor: string | null; items: MondayItem[] } | null;
       }>(nextPageQuery, { cursor });
-      allItems.push(...nextData.next_items_page.items);
-      cursor = nextData.next_items_page.cursor;
+      // A null next_items_page (expired/invalid cursor) ends pagination with what we have
+      // rather than throwing mid-page and failing the whole read.
+      const nextPage = nextData.next_items_page;
+      if (!nextPage) break;
+      allItems.push(...nextPage.items);
+      cursor = nextPage.cursor;
     }
 
     return allItems;
@@ -254,6 +263,39 @@ export class HttpMondayClient implements MondayClient {
       amount: columnText(item, this.columns.donationAmount),
       date: columnText(item, this.columns.donationDate),
       description: columnText(item, this.columns.donationDescription),
+    }));
+  }
+
+  async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
+    // In-client defense mirroring the placeholder guards in findDonorsByEmail and
+    // getDonorPortalData: routes.ts's volunteerHistoryEnabled gate is the intended entry
+    // condition, but a future caller that misses it must fail loudly here rather than ship the
+    // literal placeholder string (or a sentinel board id) to Monday's API.
+    const volunteerColumns = [
+      this.columns.volunteerDonorLink,
+      this.columns.volunteerHours,
+      this.columns.volunteerDate,
+      this.columns.volunteerJob,
+      this.columns.volunteerStatus,
+    ];
+    if (this.volunteersBoardId === null || volunteerColumns.some((id) => id === 'REPLACE_WITH_COLUMN_ID')) {
+      throw new Error(
+        'monday: volunteer history is not configured (monday.volunteersBoardId and every monday.columns.volunteer* id must be set) — gate calls with volunteerHistoryEnabled(config)'
+      );
+    }
+
+    const items = await this.fetchItemsLinkedToDonor(
+      this.volunteersBoardId,
+      this.columns.volunteerDonorLink,
+      donorItemId,
+      [this.columns.volunteerHours, this.columns.volunteerDate, this.columns.volunteerJob, this.columns.volunteerStatus],
+      false
+    );
+    return items.map((item) => ({
+      hours: columnText(item, this.columns.volunteerHours),
+      date: columnText(item, this.columns.volunteerDate),
+      job: columnText(item, this.columns.volunteerJob),
+      status: columnText(item, this.columns.volunteerStatus),
     }));
   }
 

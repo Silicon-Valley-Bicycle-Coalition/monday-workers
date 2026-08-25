@@ -11,7 +11,7 @@ import type { ChangeQueueMessage, Config, LetterSendQueueMessage } from './types
 // Full valid test Config shape, same fixture used in routes.test.ts / processBatch.test.ts /
 // processLetterSendBatch.test.ts.
 const config: Config = {
-  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, columns: {} as never },
+  monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
@@ -32,6 +32,7 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  volunteerHistory: { completedStatuses: ['Completed'] },
   eventRegistrations: {
     boardId: null,
     columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },

@@ -16,6 +16,11 @@ export interface MondayColumns {
   donorEmailOptOut: string;
   donorSmsOptOut: string;
   donorDoNotMail: string;
+  volunteerDonorLink: string;
+  volunteerHours: string;
+  volunteerDate: string;
+  volunteerJob: string;
+  volunteerStatus: string;
 }
 
 // The three donor-facing communication preferences. Each maps to its own gated checkbox column
@@ -50,6 +55,13 @@ export interface ChangeRequestsConfig {
 
 export interface CardTokensConfig {
   retentionDays: number;
+}
+
+export interface VolunteerHistoryConfig {
+  // Shift statuses that count toward the portal's volunteer history (both the listed shifts and
+  // the total-hours sum). An empty array means "include every status" — for orgs whose
+  // Volunteers board has no status column semantics worth filtering on.
+  completedStatuses: string[];
 }
 
 export interface EventRegistrationColumns {
@@ -101,6 +113,7 @@ export interface Config {
     donorsBoardId: number | null;
     donationsBoardId: number | null;
     organizationsBoardId: number | null;
+    volunteersBoardId: number | null;
     columns: MondayColumns;
   };
   email: {
@@ -119,6 +132,7 @@ export interface Config {
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
   cardTokens: CardTokensConfig;
+  volunteerHistory: VolunteerHistoryConfig;
   eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;
   pledges: PledgesConfig;
@@ -184,9 +198,25 @@ export interface DonorContactInfo {
   doNotMail: boolean | null;
 }
 
+export interface VolunteerShift {
+  date: string;
+  hours: string;
+  job: string;
+  status: string;
+}
+
+export interface DonorVolunteerHistory {
+  shifts: VolunteerShift[];
+  totalHours: number;
+}
+
 export interface PortalView {
   donors: DonorPortalData[];
   discounts: DiscountOrganization[];
+  // Keyed by donor item id; null when the volunteer-history feature is disabled (unset
+  // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
+  // section for null, a missing key, and an empty shift list alike.
+  volunteerHistory: Record<string, DonorVolunteerHistory> | null;
 }
 
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for

@@ -10,6 +10,7 @@ function fakeMonday(names: { id: string; name: string }[], pledgesById: Record<s
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
+    getVolunteerShiftsForDonor: vi.fn(),
     getDonorNames: vi.fn().mockResolvedValue(names),
     getPledgesForDonor: vi.fn().mockImplementation((id: string) => Promise.resolve(pledgesById[id] ?? [])),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),

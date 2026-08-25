@@ -9,6 +9,7 @@ function fakeMonday(matches: { id: string; name: string; preferredLanguage: stri
     findDonorsByEmail: vi.fn().mockResolvedValue(matches),
     getDonorPortalData: vi.fn(),
     getDiscountOrganizations: vi.fn(),
+    getVolunteerShiftsForDonor: vi.fn(),
     getDonorContactInfo: vi.fn(),
     createChangeRequestItem: vi.fn(),
     getDonorNames: vi.fn().mockResolvedValue([]),
