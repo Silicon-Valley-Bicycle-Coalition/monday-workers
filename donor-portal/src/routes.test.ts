@@ -718,9 +718,9 @@ describe('POST /:locale/portal/change-request', () => {
   });
 });
 
-describe('GET /portal/card/:donorItemId', () => {
+describe('GET /:locale/portal/card/:donorItemId', () => {
   it('redirects to /login without a session', async () => {
-    const res = await createApp(makeDeps()).request('/portal/card/donor-1');
+    const res = await createApp(makeDeps()).request('/en/portal/card/donor-1');
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/login');
   });
@@ -731,7 +731,7 @@ describe('GET /portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Member #donor-1');
@@ -746,8 +746,8 @@ describe('GET /portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const first = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-    const second = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const first = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const second = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
 
     // Stops at the closing quote/tag rather than \S+, which would otherwise run on through
     // cardView's markup (`<a href="url">url</a>`, no whitespace between the two) and swallow
@@ -763,7 +763,7 @@ describe('GET /portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/other-donor', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/other-donor', { headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
   });
 
@@ -775,7 +775,7 @@ describe('GET /portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
     expect(await res.text()).toContain('not available yet');
   });
 
@@ -787,7 +787,7 @@ describe('GET /portal/card/:donorItemId', () => {
 
     (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
 
-    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not load your card right now');
   });
@@ -808,7 +808,7 @@ describe('GET /portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not load your card right now');
   });
@@ -844,16 +844,25 @@ describe('GET /portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
 
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('/verify/concurrent-winner-token');
   });
 });
 
-describe('POST /portal/card/:donorItemId/regenerate', () => {
+describe('GET /portal/card/:donorItemId (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal/card/donor-1', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/card/donor-1');
+  });
+});
+
+describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
   it('redirects to /login without a session', async () => {
-    const res = await createApp(makeDeps()).request('/portal/card/donor-1/regenerate', { method: 'POST' });
+    const res = await createApp(makeDeps()).request('/en/portal/card/donor-1/regenerate', { method: 'POST' });
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/login');
   });
@@ -864,7 +873,7 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/other-donor/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/other-donor/regenerate', { method: 'POST', headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
   });
 
@@ -878,7 +887,7 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
 
     // Mint an active token via the enabled app first, so there's something a regenerate could
     // wrongly revoke/replace.
-    const before = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const before = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
     const existingVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
 
     // Same deps (including the session, so the existing cookie still authenticates) but the
@@ -888,7 +897,7 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
     gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     const gatedApp = createApp({ ...enabledDeps, config: gatedConfig });
 
-    const regenRes = await gatedApp.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const regenRes = await gatedApp.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
     expect(await regenRes.text()).toContain('not available yet');
 
     // The pre-existing token must still work — regenerate did not revoke or mint anything.
@@ -902,18 +911,18 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const before = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const before = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
     // See the comment above verifyLink: \S+ would otherwise run past the closing quote.
     const oldVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
 
-    const regenRes = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/portal/card/donor-1');
+    expect(regenRes.headers.get('location')).toBe('/en/portal/card/donor-1');
 
     const oldVerifyRes = await app.request(oldVerifyPath, { headers: { Cookie: cookie } });
     expect(await oldVerifyRes.text()).toContain('not valid');
 
-    const after = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const after = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
     const newVerifyPath = /\/verify\/[^"<\s]+/.exec(after)?.[0] as string;
     expect(newVerifyPath).not.toBe(oldVerifyPath);
   });
@@ -950,10 +959,10 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
 
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/portal/card/donor-1');
+    expect(res.headers.get('location')).toBe('/en/portal/card/donor-1');
   });
 
   it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
@@ -974,7 +983,7 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not regenerate your card right now');
   });
@@ -1004,7 +1013,7 @@ describe('GET /lang/:code', () => {
 
 describe('GET /verify/:token', () => {
   async function getVerifyPath(app: ReturnType<typeof createApp>, cookie: string): Promise<string> {
-    const html = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const html = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
     return /\/verify\/[^"<\s]+/.exec(html)?.[0] as string;
   }
 
@@ -1028,6 +1037,23 @@ describe('GET /verify/:token', () => {
     const app = createApp(makeDeps());
     const res = await app.request('/verify/no-such-token');
     expect(await res.text()).toContain('not valid');
+  });
+
+  // The distinguishing design decision for this route: unlike every other authenticated page,
+  // /verify is public and its viewer (a shop clerk) is never the donor, so it detects locale the
+  // same way the pre-identity /login page does — via the lang cookie/Accept-Language, never a
+  // :locale path segment and never the donor's own Monday-stored language preference.
+  it("detects locale from the viewer's own lang cookie, not a path segment or the donor's preference", async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(app, cookie);
+    expect(verifyPath).not.toMatch(/^\/[a-z-]+\/verify\//);
+
+    const res = await app.request(verifyPath, { headers: { Cookie: 'lang=es' } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<html lang="es">');
   });
 
   it('shows the not-valid state when cardEnabled is false, even for an otherwise-valid token', async () => {

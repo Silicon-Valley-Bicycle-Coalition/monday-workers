@@ -1,51 +1,53 @@
 import { escapeHtml } from '../views';
 import type { CardData } from './loadCardData';
+import { t } from '../i18n/t';
+import type { Locale } from '../i18n/locales';
 
-export function cardView(data: CardData, verifyUrl: string, qrSvg: string): string {
+export function cardView(data: CardData, verifyUrl: string, qrSvg: string, locale: Locale): string {
   return `
-    <h1>Your membership card</h1>
+    <h1>${escapeHtml(t(locale, 'card.heading'))}</h1>
     <article class="card">
       <p><strong>${escapeHtml(data.donorName)}</strong></p>
       <p>${escapeHtml(data.memberNumber)}</p>
-      <p>Tier: ${escapeHtml(data.membershipTier)}</p>
-      <p>Status: ${escapeHtml(data.membershipStatus)}</p>
-      <p>Expires: ${escapeHtml(data.expiryDisplay)}</p>
+      <p>${escapeHtml(t(locale, 'card.tier', { tier: data.membershipTier }))}</p>
+      <p>${escapeHtml(t(locale, 'card.status', { status: data.membershipStatus }))}</p>
+      <p>${escapeHtml(t(locale, 'card.expires', { expiry: data.expiryDisplay }))}</p>
       <div class="qr">${qrSvg}</div>
       <p><a href="${escapeHtml(verifyUrl)}">${escapeHtml(verifyUrl)}</a></p>
-      <p><small>Show this card, or let a shop scan the QR code or open the link above, to confirm your membership.</small></p>
+      <p><small>${escapeHtml(t(locale, 'card.scanHint'))}</small></p>
     </article>
-    <form action="/portal/card/${encodeURIComponent(data.donorId)}/regenerate" method="post">
-      <button type="submit">Regenerate card</button>
+    <form action="/${locale}/portal/card/${encodeURIComponent(data.donorId)}/regenerate" method="post">
+      <button type="submit">${escapeHtml(t(locale, 'card.regenerate'))}</button>
     </form>
-    <p><small>Regenerating invalidates the old QR code and link immediately — use this if you think your card link has leaked.</small></p>
-    <p><a href="/portal">Back to your portal</a></p>
+    <p><small>${escapeHtml(t(locale, 'card.regenerateHint'))}</small></p>
+    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
 }
 
-export function cardUnavailableView(): string {
+export function cardUnavailableView(locale: Locale): string {
   return `
-    <h1>Your membership card</h1>
-    <p>Digital membership cards are not available yet. Please check back soon.</p>
-    <p><a href="/portal">Back to your portal</a></p>
+    <h1>${escapeHtml(t(locale, 'card.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'card.unavailable'))}</p>
+    <p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>
   `;
 }
 
-export function verifyView(data: CardData): string {
+export function verifyView(data: CardData, locale: Locale): string {
   return `
-    <h1>Membership verification</h1>
+    <h1>${escapeHtml(t(locale, 'verify.heading'))}</h1>
     <article class="card">
       <p><strong>${escapeHtml(data.donorName)}</strong></p>
-      <p>Tier: ${escapeHtml(data.membershipTier)}</p>
-      <p>Status: ${escapeHtml(data.membershipStatus)}</p>
-      <p>Expires: ${escapeHtml(data.expiryDisplay)}</p>
+      <p>${escapeHtml(t(locale, 'card.tier', { tier: data.membershipTier }))}</p>
+      <p>${escapeHtml(t(locale, 'card.status', { status: data.membershipStatus }))}</p>
+      <p>${escapeHtml(t(locale, 'card.expires', { expiry: data.expiryDisplay }))}</p>
     </article>
-    <p><small>This information is fetched live from our records.</small></p>
+    <p><small>${escapeHtml(t(locale, 'verify.disclaimer'))}</small></p>
   `;
 }
 
-export function verifyNotValidView(): string {
+export function verifyNotValidView(locale: Locale): string {
   return `
-    <h1>Membership verification</h1>
-    <p>This card is not valid. It may have been regenerated or is no longer active.</p>
+    <h1>${escapeHtml(t(locale, 'verify.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'verify.notValid'))}</p>
   `;
 }

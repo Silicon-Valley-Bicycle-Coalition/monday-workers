@@ -47,15 +47,6 @@ export interface AppDeps {
 
 const SESSION_COOKIE = 'session';
 
-// Page <title>s. Kept as constants rather than inlined at each c.html(page(...)) call so the
-// copy lives in one place; the tax letter title is the exception, built per-request from the
-// donor's own data (see the /portal/letters/:donorItemId/:year route below).
-const SITE_TITLE = 'SVBC Donor Portal';
-const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
-const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
-const TITLE_CARD = `Your Membership Card — ${SITE_TITLE}`;
-const TITLE_VERIFY = `Membership Verification — ${SITE_TITLE}`;
-
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
 // characters that would let a value break out of a GraphQL string literal), and requires an
 // "@" plus at least one "." in the domain part. This is intentionally not full RFC 5322
@@ -357,18 +348,22 @@ export function createApp(deps: AppDeps) {
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale));
   });
 
-  app.get('/portal/card/:donorItemId', async (c) => {
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/card/${c.req.param('donorItemId')}`));
+
+  app.get('/:locale/portal/card/:donorItemId', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
     c.header('Cache-Control', NO_STORE);
     if (!cardEnabled(deps.config)) {
-      return c.html(page(TITLE_CARD, cardUnavailableView()));
+      return c.html(page(t(locale, 'title.card') + ' — ' + t(locale, 'site.title'), cardUnavailableView(locale), locale));
     }
 
     const donorItemId = c.req.param('donorItemId');
     if (!donorItemIds.includes(donorItemId)) {
-      return c.html(page(TITLE_ERROR, errorView('That card does not exist.')), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale), 404);
     }
 
     let donor;
@@ -376,7 +371,7 @@ export function createApp(deps: AppDeps) {
       donor = await deps.monday.getDonorPortalData(donorItemId);
     } catch (err) {
       console.error(`donor-portal card load failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardLoadFailed', locale), locale), 500);
     }
 
     let token: string | null;
@@ -384,7 +379,7 @@ export function createApp(deps: AppDeps) {
       token = await deps.cardTokenStore.getActiveToken(donorItemId);
     } catch (err) {
       console.error(`donor-portal card token lookup failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardLoadFailed', locale), locale), 500);
     }
     if (token === null) {
       token = generateToken();
@@ -404,27 +399,30 @@ export function createApp(deps: AppDeps) {
           token = null;
         }
         if (token === null) {
-          return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+          return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardLoadFailed', locale), locale), 500);
         }
       }
     }
 
     const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
     const qrSvg = generateQrSvg(verifyUrl);
-    return c.html(page(TITLE_CARD, cardView(buildCardData(donor), verifyUrl, qrSvg)));
+    return c.html(page(t(locale, 'title.card') + ' — ' + t(locale, 'site.title'), cardView(buildCardData(donor), verifyUrl, qrSvg, locale), locale));
   });
 
-  app.post('/portal/card/:donorItemId/regenerate', async (c) => {
+  // No bare-POST redirect for /regenerate — same reasoning as the change-request POST above: the
+  // form action is always rendered locale-prefixed already, so there is no unprefixed submitter.
+  app.post('/:locale/portal/card/:donorItemId/regenerate', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
     if (!cardEnabled(deps.config)) {
-      return c.html(page(TITLE_CARD, cardUnavailableView()));
+      return c.html(page(t(locale, 'title.card') + ' — ' + t(locale, 'site.title'), cardUnavailableView(locale), locale));
     }
 
     const donorItemId = c.req.param('donorItemId');
     if (!donorItemIds.includes(donorItemId)) {
-      return c.html(page(TITLE_ERROR, errorView('That card does not exist.')), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale), 404);
     }
 
     const now = deps.now().toISOString();
@@ -432,7 +430,7 @@ export function createApp(deps: AppDeps) {
       await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
     } catch (err) {
       console.error(`donor-portal card token revoke failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not regenerate your card right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale), 500);
     }
     try {
       await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
@@ -453,14 +451,19 @@ export function createApp(deps: AppDeps) {
         token = null;
       }
       if (token === null) {
-        return c.html(page(TITLE_ERROR, errorView('We could not regenerate your card right now. Please try again in a few minutes.')), 500);
+        return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale), 500);
       }
     }
 
-    return c.redirect(`/portal/card/${encodeURIComponent(donorItemId)}`);
+    return c.redirect(`/${locale}/portal/card/${encodeURIComponent(donorItemId)}`);
   });
 
+  // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR
+  // code or opening the link, not the donor, so it uses the same cookie/Accept-Language
+  // detection as the pre-identity pages (detectLocale), never a locale path segment and never
+  // the donor's Monday-stored preference.
   app.get('/verify/:token', async (c) => {
+    const locale = detectLocale(c);
     c.header('Cache-Control', NO_STORE);
 
     // Rate-limit before the kill-switch check below, not after — otherwise disabling the card
@@ -469,7 +472,7 @@ export function createApp(deps: AppDeps) {
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
     if (!ipResult.success) {
-      return c.html(page(TITLE_VERIFY, errorView('Too many requests — please try again in a minute.')), 429);
+      return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
     }
 
     // If the card feature is ever disabled after tokens have already been issued (config
@@ -478,7 +481,7 @@ export function createApp(deps: AppDeps) {
     // already gated. Reuse the generic "not valid" response so this carries no signal
     // distinguishing "feature off" from "token doesn't exist".
     if (!cardEnabled(deps.config)) {
-      return c.html(page(TITLE_VERIFY, verifyNotValidView()));
+      return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), verifyNotValidView(locale), locale));
     }
 
     const token = c.req.param('token');
@@ -487,10 +490,10 @@ export function createApp(deps: AppDeps) {
       donorItemId = await deps.cardTokenStore.findActiveDonorId(token);
     } catch (err) {
       console.error(`donor-portal verify lookup failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not verify this card right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
     }
     if (donorItemId === null) {
-      return c.html(page(TITLE_VERIFY, verifyNotValidView()));
+      return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), verifyNotValidView(locale), locale));
     }
 
     let donor;
@@ -498,10 +501,10 @@ export function createApp(deps: AppDeps) {
       donor = await deps.monday.getDonorPortalData(donorItemId);
     } catch (err) {
       console.error(`donor-portal verify load failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not verify this card right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
     }
 
-    return c.html(page(TITLE_VERIFY, verifyView(buildCardData(donor))));
+    return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), verifyView(buildCardData(donor), locale), locale));
   });
 
   app.post('/logout', async (c) => {
