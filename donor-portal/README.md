@@ -173,6 +173,31 @@ Requests board only**; create the `donor-portal-change-requests` queue and its
 `0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
 `REPLACE_AFTER_SIGNOFF` in `taxLetter`.
 
+## v2.1 — Staff-triggered letter-ready emails
+
+Design: `../docs/superpowers/specs/2026-08-24-donor-letter-emails-design.md`. A Button column on
+the Donors board lets staff email a donor a "your letter is ready" notification — a magic link to
+the portal home, not the letter content itself. Always sends the most recently completed year with
+gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 table). Inert until
+`taxLetter` is signed off, same as the portal-facing letters.
+
+**The automatic January cron this eventually enables is not built yet** — this ships the send
+primitive (`POST /webhooks/monday/letters` → `donor-portal-letter-emails` queue →
+`processLetterSendBatch`) that a scheduled trigger can reuse later without rework.
+
+Operator setup, in addition to v1/v2 steps:
+
+1. Add a Button column ("Send Giving Letter") to the Donors board.
+2. Subscribe a Monday webhook to that column's value-change event
+   (`create_webhook(board_id, url, event: change_specific_column_value, config: { columnId: "<button column id>" })`),
+   targeting `https://<worker-domain>/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>`.
+3. Set the `LETTER_WEBHOOK_SECRET` Worker secret (`wrangler secret put LETTER_WEBHOOK_SECRET`) —
+   must match the `secret` query param used in the webhook URL above.
+4. Create the `donor-portal-letter-emails` queue and its `donor-portal-letter-emails-dlq` dead-letter
+   queue before deploying (`wrangler queues create donor-portal-letter-emails` and
+   `wrangler queues create donor-portal-letter-emails-dlq`).
+5. Apply D1 migration `0003_create_letter_sends.sql`.
+
 ## Future candidates (discussed 2026-08-24, not committed)
 
 Ideas from the v2 brainstorm, in rough value order — recorded so they aren't re-derived from
@@ -181,10 +206,10 @@ scratch. None are scheduled; each needs its own scoping pass before build.
 1. **Digital membership card** — a rendered card (name, tier, expiry, QR or member number)
    donors show at partner shops, optionally an Apple/Google Wallet pass. Highest-value because
    it directly amplifies the bike-shop discount feature, and gives shops an easy validity check.
-2. **January letter email distribution** — portal-only was a deliberate first-cut choice; the
-   letter renderer (`src/letters/`) is an importable module so a future cron can email letters
-   (or links to them) without rework. A staff-triggered per-donor "send letter" button is the
-   discussed middle ground.
+2. **Automatic January cron for letter emails** — the staff-triggered send (button column →
+   webhook → email) shipped in v2.1 above; reuses the same `processLetterSendBatch` consumer. What
+   remains is only the scheduled trigger: iterate all donors with a completed prior year and call
+   `triggerLetterSend` for each, likely from the existing daily `scheduled()` handler once a year.
 3. **Recurring-gift management / membership renewal** — deliberately *link out* to Funraise's
    own donor account surface and checkout rather than building anything; keeps this Worker
    entirely out of PCI scope. "Build" here means adding deep links, nothing more.
