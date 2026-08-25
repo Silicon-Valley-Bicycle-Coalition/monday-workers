@@ -1,0 +1,13 @@
+name = "svbc-events-widgets"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+
+# The Eventbrite private token is stored as a secret, NOT in this file.
+# After first deploy, run:
+#   npx wrangler secret put EVENTBRITE_TOKEN
+# and paste the token value when prompted.
+
+[vars]
+EVENTBRITE_ORG_ID = "9974694499"
+CACHE_TTL = "900"  # seconds (15 min). Tune higher if you like.
+CACHE_VERSION = "4"  # Bump to bust the edge cache on deploy.
