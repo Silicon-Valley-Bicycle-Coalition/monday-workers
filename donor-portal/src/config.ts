@@ -1,4 +1,4 @@
-import type { Config, MondayColumns } from './types';
+import type { Config, MondayColumns, PrefField } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
 
@@ -29,6 +29,20 @@ const CARD_COLUMNS: (keyof MondayColumns)[] = ['membershipExpiry'];
 // matters to the i18n feature, which is gated, not deploy-blocking. Checked for *presence* only,
 // not placeholder-freedom — same treatment as CARD_COLUMNS.
 const PREFERRED_LANGUAGE_COLUMN: (keyof MondayColumns)[] = ['preferredLanguage'];
+
+// COMM_PREF_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: each column only matters to
+// the communication-preferences feature, which is gated per column (configuredPrefFields), not
+// deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
+// V2_DONOR_COLUMNS.
+const COMM_PREF_COLUMNS: (keyof MondayColumns)[] = ['donorEmailOptOut', 'donorSmsOptOut', 'donorDoNotMail'];
+
+// Which Donors-board checkbox column backs each preference field. Also fixes the order the
+// preferences render in on the change-request form.
+export const PREF_FIELD_COLUMNS: Record<PrefField, keyof MondayColumns> = {
+  emailOptOut: 'donorEmailOptOut',
+  smsOptOut: 'donorSmsOptOut',
+  doNotMail: 'donorDoNotMail',
+};
 
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
@@ -96,6 +110,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', V2_DONOR_COLUMNS);
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
+  requireKeys(columns, 'monday.columns', COMM_PREF_COLUMNS);
 
   const email = requireObject(cfg, 'email');
   requireKeys(email, 'email', REQUIRED_EMAIL_KEYS);
@@ -146,6 +161,15 @@ export function changeRequestsEnabled(config: Config): boolean {
   const crCols = [cr.columns.donorLink, cr.columns.field, cr.columns.oldValue, cr.columns.newValue, cr.columns.submittedAt];
   const donorCols = [config.monday.columns.donorAddress, config.monday.columns.donorPhone];
   return [...crCols, ...donorCols].every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
+}
+
+// Unlike the all-or-nothing changeRequestsEnabled gate, preferences gate per column: an operator
+// can configure just the Email Opt-Out checkbox and ship that alone.
+export function configuredPrefFields(config: Config): PrefField[] {
+  return (Object.keys(PREF_FIELD_COLUMNS) as PrefField[]).filter((field) => {
+    const columnId = config.monday.columns[PREF_FIELD_COLUMNS[field]];
+    return typeof columnId === 'string' && columnId !== PLACEHOLDER_COLUMN_VALUE;
+  });
 }
 
 export function cardEnabled(config: Config): boolean {

@@ -1,6 +1,6 @@
 import type { MondayClient } from '../monday/client';
 import type { ChangeRequestField, ChangeRequestStore } from '../db/changeRequests';
-import type { ChangeQueueMessage } from '../types';
+import type { ChangeQueueMessage, PrefField } from '../types';
 import { sha256Hex } from '../crypto/hash';
 
 // Re-exported so existing importers of `./submitChangeRequest` keep working — the type itself
@@ -17,7 +17,23 @@ export const FIELD_LABELS: Record<ChangeRequestField, string> = {
   email: 'Email',
   phone: 'Phone',
   language: 'Preferred Language',
+  emailOptOut: 'Email Opt-Out',
+  smsOptOut: 'SMS Opt-Out',
+  doNotMail: 'Do Not Mail',
 };
+
+// Preference fields take exactly one of two canonical values, not free text. These strings are
+// staff-facing (they land on the Change Requests board and in D1 old/new values) and stay
+// English like FIELD_LABELS; the donor-facing form translates its own labels via i18n.
+export const PREF_VALUES: Record<PrefField, { on: string; off: string }> = {
+  emailOptOut: { on: 'Opted out of email', off: 'Subscribed to email' },
+  smsOptOut: { on: 'Opted out of SMS', off: 'Subscribed to SMS' },
+  doNotMail: { on: 'Do not mail', off: 'OK to mail' },
+};
+
+export function isPrefField(value: string): value is PrefField {
+  return Object.prototype.hasOwnProperty.call(PREF_VALUES, value);
+}
 
 export const MAX_NEW_VALUE_LENGTH = 500;
 
@@ -49,6 +65,9 @@ export async function submitChangeRequest(
   if (newValue.length === 0 || newValue.length > MAX_NEW_VALUE_LENGTH) {
     return { kind: 'invalid', message: `Please enter a value up to ${MAX_NEW_VALUE_LENGTH} characters.` };
   }
+  if (isPrefField(input.field) && newValue !== PREF_VALUES[input.field].on && newValue !== PREF_VALUES[input.field].off) {
+    return { kind: 'invalid', message: 'Unknown preference value.' };
+  }
 
   const now = deps.now();
   const dedupeHash = await sha256Hex(`${input.donorItemId}|${input.field}|${newValue}`);
@@ -66,11 +85,21 @@ export async function submitChangeRequest(
   }
 
   const contact = await deps.monday.getDonorContactInfo(input.donorItemId);
-  const oldValue =
-    input.field === 'address' ? contact.address :
-    input.field === 'email' ? contact.email :
-    input.field === 'phone' ? contact.phone :
-    contact.preferredLanguage;
+  let oldValue: string;
+  if (isPrefField(input.field)) {
+    const current = contact[input.field];
+    if (current === null) {
+      // The backing Donors-board checkbox column isn't configured, so there's no state to change.
+      return { kind: 'invalid', message: 'This preference is not available yet.' };
+    }
+    oldValue = current ? PREF_VALUES[input.field].on : PREF_VALUES[input.field].off;
+  } else {
+    oldValue =
+      input.field === 'address' ? contact.address :
+      input.field === 'email' ? contact.email :
+      input.field === 'phone' ? contact.phone :
+      contact.preferredLanguage;
+  }
 
   const requestId = await deps.store.createRequest({
     donorItemId: input.donorItemId,

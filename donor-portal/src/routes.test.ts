@@ -1362,3 +1362,163 @@ describe('locale sweep', () => {
     expect(body).toContain(t(locale, 'portal.heading'));
   });
 });
+
+// Communication preferences: a fakeMonday whose single donor has known preference states
+// (email: subscribed, SMS: subscribed, postal mail: do-not-mail) and a config with the three
+// Donors-board checkbox columns configured.
+function fakeMondayWithPrefs(): MondayClient {
+  const monday = fakeMondayWithDonations();
+  (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+    Promise.resolve({
+      id,
+      name: `Donor ${id}`,
+      email: 'donor@example.org',
+      address: '1 Old St',
+      phone: '555-0100',
+      preferredLanguage: '',
+      emailOptOut: false,
+      smsOptOut: false,
+      doNotMail: true,
+    })
+  );
+  return monday;
+}
+
+function prefsConfig(): Config {
+  const cfg = structuredClone(config);
+  cfg.monday.columns = {
+    donorEmailOptOut: 'check_email_opt',
+    donorSmsOptOut: 'check_sms_opt',
+    donorDoNotMail: 'check_no_mail',
+  } as never;
+  return cfg;
+}
+
+function prefsEmailSender() {
+  return {
+    sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+describe('GET /:locale/portal/change-request — communication preferences section', () => {
+  it('renders the preferences forms with current state when the columns are configured', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const app = createApp(makeDeps({ monday, emailSender, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    const html = await res.text();
+    expect(html).toContain('action="/en/portal/change-request/preferences"');
+    expect(html).toMatch(/name="emailOptOut" value="no"[^>]* checked/);
+    expect(html).toMatch(/name="doNotMail" value="yes"[^>]* checked/);
+  });
+
+  it('omits the preferences section while the columns are unconfigured', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = prefsEmailSender();
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    expect(await res.text()).not.toContain('change-request/preferences');
+  });
+});
+
+describe('POST /:locale/portal/change-request/preferences', () => {
+  function postPrefs(app: ReturnType<typeof createApp>, cookie: string, fields: Record<string, string>) {
+    return app.request('/en/portal/change-request/preferences', {
+      method: 'POST',
+      body: new URLSearchParams(fields),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+    });
+  }
+
+  it('submits only the changed preferences and confirms', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const changeStore = fakeChangeStore();
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, changeStore, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, {
+      donorItemId: 'donor-1',
+      emailOptOut: 'yes',
+      smsOptOut: 'no',
+      doNotMail: 'yes',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('review');
+    expect(changeQueue.send).toHaveBeenCalledOnce();
+    expect(changeStore.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ field: 'emailOptOut', newValue: 'Opted out of email' })
+    );
+  });
+
+  it('reports no changes when the submitted state matches Monday', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, config: prefsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, {
+      donorItemId: 'donor-1',
+      emailOptOut: 'no',
+      smsOptOut: 'no',
+      doNotMail: 'yes',
+    });
+
+    expect(await res.text()).toContain('already match');
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('ignores fields whose columns are unconfigured, even if present in the body', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const cfg = prefsConfig();
+    (cfg.monday.columns as unknown as Record<string, string>).donorSmsOptOut = 'REPLACE_WITH_COLUMN_ID';
+    const app = createApp(makeDeps({ monday, emailSender, changeQueue, config: cfg }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, { donorItemId: 'donor-1', emailOptOut: 'no', smsOptOut: 'yes', doNotMail: 'yes' });
+
+    expect(await res.text()).toContain('already match');
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('redirects to /login without a session', async () => {
+    const app = createApp(makeDeps({ config: prefsConfig() }));
+    const res = await app.request('/en/portal/change-request/preferences', { method: 'POST' });
+    expect(res.status).toBe(302);
+  });
+
+  it('shows the unavailable state when the Change Requests board is not configured', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const cfg = prefsConfig();
+    cfg.changeRequests.boardId = null;
+    const app = createApp(makeDeps({ monday, emailSender, config: cfg }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await postPrefs(app, cookie, { donorItemId: 'donor-1', emailOptOut: 'yes' });
+    expect(await res.text()).toContain('not available yet');
+  });
+
+  it('denies when the IP rate limiter says no', async () => {
+    const monday = fakeMondayWithPrefs();
+    const emailSender = prefsEmailSender();
+    const permissive = makeDeps({ monday, emailSender, config: prefsConfig() });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const limitedApp = createApp({ ...permissive, ipLimiter });
+
+    const res = await postPrefs(limitedApp, cookie, { donorItemId: 'donor-1', emailOptOut: 'yes' });
+    expect(res.status).toBe(429);
+  });
+});
