@@ -1,5 +1,5 @@
 import rawConfig from '../config/svbc.json';
-import { validateConfig } from './config';
+import { validateConfig, pledgesEnabled } from './config';
 import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
@@ -83,7 +83,10 @@ export default {
         config.monday.columns,
         config.monday.donorsBoardId,
         config.monday.donationsBoardId,
-        config.monday.organizationsBoardId
+        config.monday.organizationsBoardId,
+        // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
+        // non-null assertion below can't fire on a placeholder config.
+        pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null
       ),
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),

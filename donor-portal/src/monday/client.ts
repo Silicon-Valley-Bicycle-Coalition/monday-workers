@@ -6,6 +6,8 @@ import type {
   DonorMatch,
   DonorPortalData,
   MondayColumns,
+  PledgeColumns,
+  PledgeRecord,
 } from '../types';
 
 interface MondayColumnValue {
@@ -28,6 +30,10 @@ export interface MondayClient {
   getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
   getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
+  // Lightweight id+name lookup (one query for all ids) — exists so the pledges page can label
+  // per-donor sections without getDonorPortalData's full donation-history fetch per donor.
+  getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]>;
+  getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]>;
   createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -48,6 +54,9 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
+    // null until an operator configures pledges.boardId + columns (the feature is gated on
+    // pledgesEnabled, so routes never call getPledgesForDonor while this is null).
+    private pledges: { boardId: number; columns: PledgeColumns } | null = null,
     private fetchFn: typeof fetch = fetch
   ) {}
 
@@ -205,6 +214,81 @@ export class HttpMondayClient implements MondayClient {
       amount: columnText(item, this.columns.donationAmount),
       date: columnText(item, this.columns.donationDate),
       description: columnText(item, this.columns.donationDescription),
+    }));
+  }
+
+  async getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]> {
+    if (donorItemIds.length === 0) return [];
+    const query = `
+      query ($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          name
+        }
+      }
+    `;
+    const data = await this.request<{ items: MondayItem[] }>(query, { itemIds: donorItemIds });
+    return (data.items ?? []).map((item) => ({ id: item.id, name: item.name }));
+  }
+
+  async getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]> {
+    // Routes gate on pledgesEnabled before calling, so this only throws on a wiring bug —
+    // loudly, rather than silently returning [] and rendering a misleading "no pledges" page.
+    if (this.pledges === null) {
+      throw new Error('monday: pledges board is not configured');
+    }
+    const { boardId, columns } = this.pledges;
+    const columnIds = JSON.stringify([columns.pledgedAmount, columns.fulfilledAmount, columns.status, columns.dueDate]);
+    // Same query shape, pagination, and caveat as getDonationsForDonor above: the
+    // query_params.rules shape for filtering by a connect-board column's linked item id is
+    // written from current Monday API v2 knowledge but not verified against a live account —
+    // verify against the real Pledges board before deploy. donorItemId travels as a GraphQL
+    // variable, never interpolated.
+    const firstPageQuery = `
+      query ($boardId: ID!, $donorItemId: String!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: 500,
+            query_params: {
+              rules: [{ column_id: "${columns.donorLink}", compare_value: [$donorItemId], operator: any_of }]
+            }
+          ) {
+            cursor
+            items { id name column_values(ids: ${columnIds}) { id text } }
+          }
+        }
+      }
+    `;
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          items { id name column_values(ids: ${columnIds}) { id text } }
+        }
+      }
+    `;
+
+    const firstData = await this.request<{
+      boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
+    }>(firstPageQuery, { boardId, donorItemId });
+    const firstPage = firstData.boards[0]?.items_page;
+    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
+    let cursor = firstPage?.cursor ?? null;
+
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] };
+      }>(nextPageQuery, { cursor });
+      allItems.push(...nextData.next_items_page.items);
+      cursor = nextData.next_items_page.cursor;
+    }
+
+    return allItems.map((item) => ({
+      name: item.name,
+      pledged: columnText(item, columns.pledgedAmount),
+      fulfilled: columnText(item, columns.fulfilledAmount),
+      status: columnText(item, columns.status),
+      dueDate: columnText(item, columns.dueDate),
     }));
   }
 

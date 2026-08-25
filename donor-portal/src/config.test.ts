@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled } from './config';
+import { validateConfig, lettersEnabled, changeRequestsEnabled, cardEnabled, pledgesEnabled, matchingGiftsSearchEnabled } from './config';
 
 const validConfig = {
   monday: {
@@ -50,6 +50,17 @@ const validConfig = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  pledges: {
+    boardId: 456,
+    columns: {
+      donorLink: 'connect_2',
+      pledgedAmount: 'numbers_1',
+      fulfilledAmount: 'numbers_2',
+      status: 'status_2',
+      dueDate: 'date_2',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
 };
 
 describe('validateConfig', () => {
@@ -257,5 +268,65 @@ describe('cardEnabled', () => {
     const raw = structuredClone(validConfig);
     raw.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     expect(cardEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('pledges + matchingGifts config sections', () => {
+  it('rejects a config missing the pledges section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).pledges;
+    expect(() => validateConfig(cfg)).toThrow('pledges');
+  });
+
+  it('rejects a config missing a pledges column key', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.pledges.columns as Record<string, unknown>).fulfilledAmount;
+    expect(() => validateConfig(cfg)).toThrow('pledges.columns.fulfilledAmount');
+  });
+
+  it('rejects a config missing the matchingGifts section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).matchingGifts;
+    expect(() => validateConfig(cfg)).toThrow('matchingGifts');
+  });
+
+  it('accepts placeholder pledge columns and a null DTD key (gates, not errors)', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.pledges as { boardId: number | null }).boardId = null;
+    cfg.pledges.columns.donorLink = 'REPLACE_WITH_COLUMN_ID';
+    (cfg.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = null;
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('pledgesEnabled', () => {
+  it('is true when boardId is set and no pledge column is a placeholder', () => {
+    expect(pledgesEnabled(validateConfig(validConfig))).toBe(true);
+  });
+
+  it('is false when boardId is null', () => {
+    const raw = structuredClone(validConfig);
+    (raw.pledges as { boardId: number | null }).boardId = null;
+    expect(pledgesEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('is false while a pledge column id is a placeholder', () => {
+    const raw = structuredClone(validConfig);
+    raw.pledges.columns.pledgedAmount = 'REPLACE_WITH_COLUMN_ID';
+    expect(pledgesEnabled(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('matchingGiftsSearchEnabled', () => {
+  it('is true when a public key is configured', () => {
+    expect(matchingGiftsSearchEnabled(validateConfig(validConfig))).toBe(true);
+  });
+
+  it('is false when the key is null or empty', () => {
+    const raw = structuredClone(validConfig);
+    (raw.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = null;
+    expect(matchingGiftsSearchEnabled(validateConfig(raw))).toBe(false);
+    (raw.matchingGifts as { doubleTheDonationPublicKey: string | null }).doubleTheDonationPublicKey = '';
+    expect(matchingGiftsSearchEnabled(validateConfig(raw))).toBe(false);
   });
 });

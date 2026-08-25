@@ -1,6 +1,16 @@
 import type { Config, MondayColumns } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens'] as const;
+const REQUIRED_TOP_LEVEL = [
+  'monday',
+  'email',
+  'auth',
+  'rateLimit',
+  'taxLetter',
+  'changeRequests',
+  'cardTokens',
+  'pledges',
+  'matchingGifts',
+] as const;
 
 const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donorEmail',
@@ -49,6 +59,9 @@ const REQUIRED_TAX_LETTER_KEYS = [
 const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours', 'retentionDays'] as const;
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
+const REQUIRED_PLEDGES_KEYS = ['boardId', 'columns'] as const;
+const REQUIRED_PLEDGE_COLUMNS = ['donorLink', 'pledgedAmount', 'fulfilledAmount', 'status', 'dueDate'] as const;
+const REQUIRED_MATCHING_GIFTS_KEYS = ['doubleTheDonationPublicKey'] as const;
 
 function requireObject(cfg: Record<string, unknown>, key: string, errorKey: string = key): Record<string, unknown> {
   const value = cfg[key];
@@ -123,6 +136,16 @@ export function validateConfig(raw: unknown): Config {
     throw new Error('config: "cardTokens.retentionDays" must be a positive number of days');
   }
 
+  // Both gated (pledgesEnabled / matchingGiftsSearchEnabled), not deploy-blocking — presence
+  // checks only, same treatment as changeRequests' columns.
+  const pledges = requireObject(cfg, 'pledges');
+  requireKeys(pledges, 'pledges', REQUIRED_PLEDGES_KEYS);
+  const pledgeColumns = requireObject(pledges, 'columns', 'pledges.columns');
+  requireKeys(pledgeColumns, 'pledges.columns', REQUIRED_PLEDGE_COLUMNS);
+
+  const matchingGifts = requireObject(cfg, 'matchingGifts');
+  requireKeys(matchingGifts, 'matchingGifts', REQUIRED_MATCHING_GIFTS_KEYS);
+
   return cfg as unknown as Config;
 }
 
@@ -150,4 +173,18 @@ export function changeRequestsEnabled(config: Config): boolean {
 
 export function cardEnabled(config: Config): boolean {
   return config.monday.columns.membershipExpiry !== PLACEHOLDER_COLUMN_VALUE;
+}
+
+export function pledgesEnabled(config: Config): boolean {
+  const p = config.pledges;
+  if (p.boardId === null) return false;
+  const cols = [p.columns.donorLink, p.columns.pledgedAmount, p.columns.fulfilledAmount, p.columns.status, p.columns.dueDate];
+  return cols.every((c) => c !== PLACEHOLDER_COLUMN_VALUE);
+}
+
+// Gates only the embedded employer-search widget — the matching-gifts page itself always
+// renders (its generic "ask your HR team" guidance is useful with no vendor at all).
+export function matchingGiftsSearchEnabled(config: Config): boolean {
+  const key = config.matchingGifts.doubleTheDonationPublicKey;
+  return key !== null && key.length > 0;
 }

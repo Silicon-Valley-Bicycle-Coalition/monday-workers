@@ -21,7 +21,10 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, lettersEnabled, cardEnabled } from './config';
+import { changeRequestsEnabled, lettersEnabled, cardEnabled, pledgesEnabled, matchingGiftsSearchEnabled } from './config';
+import { loadPledgeData } from './pledges/loadPledgeData';
+import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
+import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
@@ -365,6 +368,51 @@ export function createApp(deps: AppDeps) {
       now: deps.now,
     });
     return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/pledges', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/pledges`));
+
+  app.get('/:locale/portal/pledges', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!pledgesEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesUnavailableView(locale), locale));
+    }
+
+    let sections;
+    try {
+      sections = await loadPledgeData(donorItemIds, deps.monday);
+    } catch (err) {
+      // Same reasoning as the letters routes: a Monday read failure isn't an auth problem, so
+      // it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`donor-portal pledges load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.pledgesLoadFailed', locale), locale), 500);
+    }
+    return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesView(sections, locale), locale));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/matching-gifts', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/matching-gifts`));
+
+  // Authenticated (it lives in the portal nav) but deliberately PII-free — see the note in
+  // matchingGiftViews.ts about third-party JS. Reads nothing from Monday or D1, so there's no
+  // load-failure branch; the only gate is whether the embedded search is configured, and the
+  // page itself always renders.
+  app.get('/:locale/portal/matching-gifts', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    const ein = deps.config.taxLetter.ein !== 'REPLACE_AFTER_SIGNOFF' && deps.config.taxLetter.ein.length > 0 ? deps.config.taxLetter.ein : null;
+    const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
+    return c.html(
+      page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein }, locale), locale)
+    );
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.

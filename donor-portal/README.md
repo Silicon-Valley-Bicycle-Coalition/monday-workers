@@ -258,6 +258,43 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
 
+## v4 — Pledge tracking + employer matching gifts
+
+Scoped from the [IT Requests board item](https://bikesiliconvalley.monday.com/boards/8846215481/pulses/12893527597)
+("Donor portal: pledge tracking / employer matching-gift lookup"). Two independent, config-gated
+features, both read-only — no new D1 tables, queues, secrets, or Monday write access.
+
+* **Pledge tracking** (`GET /:locale/portal/pledges`): a per-donor list of pledges rendered live
+  from a Pledges board — pledge name, pledged amount, fulfilled amount, computed percent
+  complete (shown as a dash when either amount doesn't parse as a number; overpayment caps at
+  100%), status, and due date. Scoped to the session's own donor item ids like every other
+  portal read. **Gated on `pledges.boardId` + its five column ids** — no Pledges board exists in
+  the migration design yet (same situation the Change Requests board was in before v2), so the
+  page shows a "not available yet" state until staff design one and an operator fills in the
+  config. The board needs: a connect-boards column to Donors, two number/formula columns
+  (pledged and fulfilled amounts — a mirror of linked payments works, anything whose text
+  renders a number), a status column, and a date column.
+* **Employer matching-gift lookup** (`GET /:locale/portal/matching-gifts`): always renders —
+  generic "ask your HR team whether gifts are matched" guidance is useful with no vendor at
+  all, plus SVBC's EIN once `taxLetter.ein` is signed off. **The embedded Double the Donation
+  employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
+  SVBC buys a DTD subscription, which it currently has not — the board item notes this was
+  "discussed, not prioritized"). This is the only portal page that may load third-party
+  JavaScript, so it deliberately renders **zero donor PII** — keep it that way; the embed shape
+  also carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
+  it couldn't be checked against a live DTD account. No Subresource Integrity hash on the DTD
+  script by their design (mutable unversioned URL); the PII-free page is the compensating
+  control.
+
+Operator setup for v4, in addition to the v1 steps — each feature independently optional:
+
+1. Pledges: create the Pledges board, grant the portal's integration user **read** access to
+   it, and fill in `pledges.boardId` and all five `pledges.columns` ids in `config/svbc.json`.
+2. Matching gifts: obtain a Double the Donation subscription, then set
+   `matchingGifts.doubleTheDonationPublicKey` to the **public** plugin key (never a private API
+   key — this value is served to every logged-in browser), after verifying the embed snippet
+   against DTD's current docs.
+
 ## Future candidates
 
 The candidate list from the v2 brainstorm (discussed 2026-08-24) is no longer tracked here —

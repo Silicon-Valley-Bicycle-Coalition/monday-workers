@@ -32,6 +32,17 @@ const config: Config = {
     retentionDays: 180,
   },
   cardTokens: { retentionDays: 30 },
+  pledges: {
+    boardId: null,
+    columns: {
+      donorLink: 'REPLACE_WITH_COLUMN_ID',
+      pledgedAmount: 'REPLACE_WITH_COLUMN_ID',
+      fulfilledAmount: 'REPLACE_WITH_COLUMN_ID',
+      status: 'REPLACE_WITH_COLUMN_ID',
+      dueDate: 'REPLACE_WITH_COLUMN_ID',
+    },
+  },
+  matchingGifts: { doubleTheDonationPublicKey: null },
 };
 
 function makeMessage<T>(body: T) {
