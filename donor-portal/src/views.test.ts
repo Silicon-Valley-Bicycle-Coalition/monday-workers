@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
-import type { PortalView } from './types';
+import type { FunraiseLinkUrls, PortalView } from './types';
 import { t } from './i18n/t';
 
 describe('page', () => {
@@ -97,8 +97,14 @@ describe('portalView', () => {
     volunteerHistory: null,
   };
 
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+  const bothFunraise: FunraiseLinkUrls = {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership&a=1',
+  };
+
   it('renders each donor under its own name header, never a single merged view', () => {
-    const html = portalView(data, 'en');
+    const html = portalView(data, 'en', noFunraise);
     expect(html).toContain('Jane Donor');
     expect(html).toContain('Jane Also');
     expect(html).toContain('Annual gift');
@@ -121,43 +127,43 @@ describe('portalView', () => {
       discounts: [],
       volunteerHistory: null,
     };
-    const html = portalView(maliciousData, 'en');
+    const html = portalView(maliciousData, 'en', noFunraise);
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
     expect(html).toContain('&lt;img');
   });
 
   it('links each donor to their own membership card, locale-prefixed', () => {
-    const html = portalView(data, 'es');
+    const html = portalView(data, 'es', noFunraise);
     expect(html).toContain('/es/portal/card/donor-1');
     expect(html).toContain('/es/portal/card/donor-2');
   });
 
   it('links tax documents and change-request under the same locale prefix', () => {
-    const html = portalView(data, 'vi');
+    const html = portalView(data, 'vi', noFunraise);
     expect(html).toContain('href="/vi/portal/letters"');
     expect(html).toContain('href="/vi/portal/change-request"');
   });
 
   it('includes a language switcher offering every supported locale', () => {
-    const html = portalView(data, 'en');
+    const html = portalView(data, 'en', noFunraise);
     expect(html).toContain('/lang/es?to=%2Fen%2Fportal');
     expect(html).toContain('/lang/vi?to=%2Fen%2Fportal');
   });
 
   it('includes a per-language "make this my language" form posting field=language to the change-request endpoint', () => {
-    const html = portalView(data, 'en');
+    const html = portalView(data, 'en', noFunraise);
     expect(html).toContain('action="/en/portal/change-request"');
     expect(html).toContain('value="language"');
     expect(html).toContain('value="Spanish"'); // the es option's newValue is the Monday label, not "es"
   });
 
   it('renders actual translated copy for a non-English locale, not just structure', () => {
-    const html = portalView(data, 'es');
+    const html = portalView(data, 'es', noFunraise);
     expect(html).toContain(t('es', 'portal.heading'));
   });
 
   it('omits the volunteer section entirely when the feature is disabled (volunteerHistory null)', () => {
-    const html = portalView(data, 'en');
+    const html = portalView(data, 'en', noFunraise);
     expect(html).not.toContain(t('en', 'portal.volunteerHeading'));
   });
 
@@ -175,7 +181,7 @@ describe('portalView', () => {
         'donor-2': { shifts: [], totalHours: 0 },
       },
     };
-    const html = portalView(withVolunteers, 'en');
+    const html = portalView(withVolunteers, 'en', noFunraise);
     expect(html).toContain(t('en', 'portal.volunteerHeading'));
     expect(html).toContain('Bike Valet');
     expect(html).toContain('Total volunteer hours: 5.5');
@@ -193,7 +199,7 @@ describe('portalView', () => {
         },
       },
     };
-    const html = portalView(withMaliciousShift, 'en');
+    const html = portalView(withMaliciousShift, 'en', noFunraise);
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
@@ -208,8 +214,69 @@ describe('portalView', () => {
         },
       },
     };
-    const html = portalView(withVolunteers, 'es');
+    const html = portalView(withVolunteers, 'es', noFunraise);
     expect(html).toContain(t('es', 'portal.volunteerHeading'));
     expect(html).toContain(t('es', 'portal.volunteerTotalHours', { hours: '3.5' }));
+  });
+});
+
+describe('portalView funraise deep links', () => {
+  const data: PortalView = {
+    donors: [
+      {
+        id: 'donor-1',
+        name: 'Jane Donor',
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '500',
+        donations: [],
+        membershipExpiry: '',
+      },
+    ],
+    discounts: [],
+    volunteerHistory: null,
+  };
+
+  it('renders both Funraise links when both URLs are configured', () => {
+    const html = portalView(data, 'en', {
+      manageRecurringUrl: 'https://example.funraise.org/account',
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+    });
+    expect(html).toContain(t('en', 'portal.givingLinksHeading'));
+    expect(html).toContain('href="https://example.funraise.org/account"');
+    expect(html).toContain(t('en', 'portal.manageRecurringLink'));
+    expect(html).toContain(t('en', 'portal.renewMembershipLink'));
+    expect(html).toContain(t('en', 'portal.givingLinksNote'));
+  });
+
+  it('renders only the configured link when the other is null', () => {
+    const html = portalView(data, 'en', {
+      manageRecurringUrl: null,
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+    });
+    expect(html).toContain(t('en', 'portal.renewMembershipLink'));
+    expect(html).not.toContain(t('en', 'portal.manageRecurringLink'));
+  });
+
+  it('omits the whole section when neither URL is configured', () => {
+    const html = portalView(data, 'en', { manageRecurringUrl: null, renewMembershipUrl: null });
+    expect(html).not.toContain(t('en', 'portal.givingLinksHeading'));
+    expect(html).not.toContain(t('en', 'portal.givingLinksNote'));
+  });
+
+  it('escapes URL query ampersands rather than emitting raw & in href', () => {
+    const html = portalView(data, 'en', {
+      manageRecurringUrl: null,
+      renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership&a=1',
+    });
+    expect(html).toContain('href="https://example.funraise.org/give?campaign=membership&amp;a=1"');
+  });
+
+  it('renders actual translated copy for a non-English locale, not just structure', () => {
+    const html = portalView(data, 'es', {
+      manageRecurringUrl: 'https://example.funraise.org/account',
+      renewMembershipUrl: null,
+    });
+    expect(html).toContain(t('es', 'portal.manageRecurringLink'));
   });
 });

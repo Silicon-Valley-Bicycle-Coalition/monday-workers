@@ -40,6 +40,10 @@ const config: Config = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  funraise: {
+    manageRecurringUrl: 'https://example.funraise.org/account',
+    renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
+  },
   pledges: {
     boardId: null,
     columns: {
