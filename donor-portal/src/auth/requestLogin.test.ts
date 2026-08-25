@@ -19,7 +19,10 @@ function fakeTokenStore(): MagicLinkTokenStore {
 }
 
 function fakeEmailSender(): EmailSender {
-  return { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+  return {
+    sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+    sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 const baseDeps = {

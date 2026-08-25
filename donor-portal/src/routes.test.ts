@@ -8,6 +8,7 @@ import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/resend';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
+import type { LetterSendStore } from './db/letterSends';
 
 function inMemoryTokenStore(): MagicLinkTokenStore {
   const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; usedAt: string | null }>();
@@ -54,6 +55,17 @@ function fakeChangeStore(overrides: Partial<ChangeRequestStore> = {}): ChangeReq
     getRequest: vi.fn().mockResolvedValue(null),
     markWritten: vi.fn().mockResolvedValue(undefined),
     purgeWrittenBefore: vi.fn().mockResolvedValue(0),
+    ...overrides,
+  };
+}
+
+function fakeLetterSendStore(overrides: Partial<LetterSendStore> = {}): LetterSendStore {
+  return {
+    findByDonorYear: vi.fn().mockResolvedValue(null),
+    createQueued: vi.fn().mockResolvedValue(42),
+    getById: vi.fn().mockResolvedValue(null),
+    markSent: vi.fn().mockResolvedValue(undefined),
+    markSkipped: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -126,12 +138,18 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     tokenStore: inMemoryTokenStore(),
     sessionStore: inMemorySessionStore(),
     attemptStore: inMemoryAttemptStore(),
-    emailSender: { sendLoginEmail: vi.fn().mockResolvedValue(undefined) },
+    emailSender: {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    },
     ipLimiter: { limit: vi.fn().mockResolvedValue({ success: true }) },
     config,
     now: () => new Date('2026-08-22T00:00:00.000Z'),
     changeStore: fakeChangeStore(),
     changeQueue: { send: vi.fn().mockResolvedValue(undefined) },
+    letterSendStore: fakeLetterSendStore(),
+    letterQueue: { send: vi.fn().mockResolvedValue(undefined) },
+    letterWebhookSecret: 'shh',
     ...overrides,
   };
 }
@@ -165,7 +183,10 @@ describe('POST /login', () => {
 describe('full login flow', () => {
   it('logs a donor in via the emailed link and renders their own name on the portal', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const deps = makeDeps({ monday, emailSender });
     const app = createApp(deps);
 
@@ -195,7 +216,10 @@ describe('full login flow', () => {
 
   it('rejects a second use of the same magic-link token', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const deps = makeDeps({ monday, emailSender });
     const app = createApp(deps);
 
@@ -219,7 +243,10 @@ describe('full login flow', () => {
 describe('GET /auth/callback error handling', () => {
   it('shows the recovery error page, not a raw 500, when session creation throws', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const tokenStore = inMemoryTokenStore();
     const sessionStore: SessionStore = {
       createSession: vi.fn().mockRejectedValue(new Error('D1 write failed')),
@@ -266,7 +293,10 @@ describe('GET /login', () => {
 describe('POST /login rate limiting', () => {
   it('still returns the generic response when the IP limiter denies the request', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
     const app = createApp(makeDeps({ monday, emailSender, ipLimiter }));
 
@@ -337,7 +367,10 @@ describe('GET /portal error handling', () => {
 
   it('shows a friendly error page, not a raw 500, when the Monday lookup throws', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
 
     // Log in for real so we get a valid session cookie.
@@ -407,7 +440,10 @@ describe('GET /portal/letters', () => {
 
   it('lists a completed year for the logged-in donor with no-store caching', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -423,7 +459,10 @@ describe('GET /portal/letters', () => {
     const gatedConfig = structuredClone(config);
     gatedConfig.taxLetter.plainStatement = 'REPLACE_AFTER_SIGNOFF';
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -435,7 +474,10 @@ describe('GET /portal/letters', () => {
   // whose "please try logging in again" copy is wrong for a data-fetch problem, not an auth one.
   it('shows a friendly, letters-specific error page when the Monday lookup throws', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -450,7 +492,10 @@ describe('GET /portal/letters', () => {
 describe('GET /portal/letters/:donorItemId/:year', () => {
   it('renders the letter for the session donor and a completed year', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -467,7 +512,10 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
   it("404s for a donor item id that is not the session's own", async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -477,7 +525,10 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
   it('404s for the current (incomplete) year', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -487,7 +538,10 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
   it('404s for a non-numeric year', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -497,7 +551,10 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
   it('shows a friendly, letter-specific error page when the Monday lookup throws', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -517,7 +574,10 @@ describe('GET /portal/change-request', () => {
 
   it('renders the form with current values for the logged-in donor', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -533,7 +593,10 @@ describe('GET /portal/change-request', () => {
     const gatedConfig = structuredClone(config);
     gatedConfig.changeRequests.boardId = null;
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
@@ -553,7 +616,10 @@ describe('POST /portal/change-request', () => {
 
   it('submits a valid request and confirms', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, changeQueue }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
@@ -566,7 +632,10 @@ describe('POST /portal/change-request', () => {
 
   it('denies when the IP rate limiter says no', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
     const app = createApp(makeDeps({ monday, emailSender, ipLimiter }));
     // login also consults ipLimiter — mock success:false AFTER login, or build the cookie first
@@ -586,7 +655,10 @@ describe('POST /portal/change-request', () => {
   // it's actually consulted, not just the per-IP one.
   it('denies when the per-session rate limiter says no, even though the IP limiter allows it', async () => {
     const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
     const permissive = makeDeps({ monday, emailSender });
     const loginApp = createApp(permissive);
     const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
@@ -598,5 +670,63 @@ describe('POST /portal/change-request', () => {
 
     const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
     expect(res.status).toBe(429);
+  });
+});
+
+describe('POST /webhooks/monday/letters', () => {
+  function post(app: ReturnType<typeof createApp>, body: unknown, query = '') {
+    return app.request(`/webhooks/monday/letters${query}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('rejects a request missing the configured secret with 401, before touching the body', async () => {
+    const letterQueue = { send: vi.fn() };
+    const app = createApp(makeDeps({ letterQueue }));
+    const res = await post(app, { event: { pulseId: 1 } });
+    expect(res.status).toBe(401);
+    expect(letterQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('rejects the wrong secret too', async () => {
+    const app = createApp(makeDeps());
+    const res = await post(app, { challenge: 'abc' }, '?secret=wrong');
+    expect(res.status).toBe(401);
+  });
+
+  it('echoes the challenge verbatim during webhook-subscription verification', async () => {
+    const app = createApp(makeDeps());
+    const res = await post(app, { challenge: 'abc123' }, '?secret=shh');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc123' });
+  });
+
+  it('triggers a send for a valid event and returns its result kind', async () => {
+    const letterSendStore = fakeLetterSendStore();
+    const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const monday = fakeMonday({});
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Champion', totalDonated: '$50.00',
+      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+    });
+    const app = createApp(makeDeps({ letterSendStore, letterQueue, monday }));
+
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, boardId: 1 } }, '?secret=shh');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, result: 'queued' });
+    expect(letterSendStore.createQueued).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: '555', year: 2025 }));
+    expect(letterQueue.send).toHaveBeenCalledWith({ sendId: 42 });
+  });
+
+  it('rejects a malformed event body with 200 (no useful retry) and does not enqueue', async () => {
+    const letterQueue = { send: vi.fn() };
+    const app = createApp(makeDeps({ letterQueue }));
+    const res = await post(app, { event: { type: 'update_column_value' } }, '?secret=shh'); // no pulseId
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: false });
+    expect(letterQueue.send).not.toHaveBeenCalled();
   });
 });
