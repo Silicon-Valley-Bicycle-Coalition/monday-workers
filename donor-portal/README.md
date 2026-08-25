@@ -47,6 +47,20 @@ full renewal-workflow design (what triggers a reminder, what "lapsed" means oper
 that slice is a real prerequisite, not a nice-to-have. Don't let this Worker's existence pressure
 that design into being rushed; if the minimal slice isn't stable, wait.
 
+## Localization
+
+The portal is available in English plus nine languages (see `src/i18n/locales.ts` for the full
+list). A donor's preferred language is read from a **Preferred Language** dropdown column on the
+Donors board — add it with these exact option labels (staff-facing, matching what
+`src/i18n/locales.ts`'s `LOCALE_LABELS` expects): English, Spanish, Chinese (Simplified), Chinese
+(Traditional), Filipino, Hindi, Japanese, Korean, Portuguese (Brazil), Vietnamese. Until that
+column exists (or for a donor with nothing set), the portal falls back to whatever the pre-login
+page guessed from the browser's language and a cookie.
+
+Translations are AI-drafted without a separate human review pass — a deliberate, approved
+tradeoff. The tax letter's own acknowledgment text stays English-only regardless of locale (see
+`letterViews.ts`); only its surrounding page chrome is translated.
+
 ## Data flow
 
 ```
