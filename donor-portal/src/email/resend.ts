@@ -1,6 +1,10 @@
+import { t } from '../i18n/t';
+import type { Locale } from '../i18n/locales';
+
 export interface SendLoginEmailParams {
   to: string;
   loginUrl: string;
+  locale: Locale;
 }
 
 export interface EmailSender {
@@ -25,8 +29,8 @@ export class ResendEmailSender implements EmailSender {
       body: JSON.stringify({
         from: `${this.fromName} <${this.fromAddress}>`,
         to: [params.to],
-        subject: 'Your SVBC donor portal login link',
-        html: `<p>Click below to log in to the donor portal. This link expires soon and can only be used once.</p><p><a href="${params.loginUrl}">Log in</a></p>`,
+        subject: t(params.locale, 'email.subject'),
+        html: `<p>${t(params.locale, 'email.bodyIntro')}</p><p><a href="${params.loginUrl}">${t(params.locale, 'email.loginButton')}</a></p>`,
       }),
     });
     if (!response.ok) {
