@@ -1,10 +1,14 @@
 # donation-rollups
 
-**Status:** Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning and a Monday
-webhook subscription. Config in `config/svbc.json` is real, verified board/column ids (against the
-CRM Sandbox, 2026-08-24), not placeholders. Core mechanism (donor link resolution, the D1 reverse
+**Status:** Built (`feat/donation-rollups`) — not deployed; still needs a Monday webhook
+subscription. Config in `config/svbc.json` is real, verified board/column ids (against the CRM
+Sandbox, 2026-08-24), not placeholders. Core mechanism (donor link resolution, the D1 reverse
 index, fetching donations by id, writing the rollup back) tested directly against that sandbox —
-see "Tested against the real sandbox" below for what that found and fixed.
+see "Tested against the real sandbox" below for what that found and fixed. **D1 is provisioned for
+real** (`svbc-donation-rollups`, all three migrations applied `--remote`) **and the
+`donation_links` bootstrap has actually been run** — 37,278 real donation→owner links across all 9
+Donations boards, 7,893 distinct owners, verified against the same donor (Dan King) this Worker's
+mechanism was hand-tested against.
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
 **Owner:** Unassigned.
@@ -90,6 +94,14 @@ within moments of each other queue two independent recompute jobs, not one. Each
 idempotent full recompute on its own — mildly redundant work, not a correctness bug — so this
 wasn't worth the added complexity of a per-owner dedup layer for v1.
 
+**Bootstrap run for real, 2026-08-25.** `svbc-donation-rollups` D1 database provisioned
+(`wrangler d1 create`), all three migrations applied `--remote`, then
+`scripts/bootstrap-links.mjs` run against every configured Donations board: **37,278 links, 9
+boards, 7,893 distinct owners**. Spot-checked against the same donor (Dan King, item
+`12873971044`) this Worker's mechanism was hand-verified against earlier — all 3 of his real
+donations came back exactly right. Re-run this after the next full sandbox load rehearsal (see
+"Not yet done") since item ids can change between loads.
+
 ## The Closed Won filter — read this before touching the Status column
 
 The rollup filters on `Status === 'Received'` **exactly** (config: `donationRollups.receivedStatusLabel`).
@@ -147,11 +159,9 @@ before cutover:
 
 ## Not yet done
 
-* **`donation_links` bootstrap hasn't been run against any real target yet.** `scripts/
-  bootstrap-links.mjs` exists and is unit-tested at the query-shape level (the same GraphQL it
-  uses was verified directly against the sandbox), but it hasn't actually been run end-to-end to
-  populate a real D1 database — needs a provisioned D1 instance and `wrangler d1 execute --remote`
-  before this Worker can be trusted for any donor whose donations predate its first webhook.
+* **The sandbox is getting a fresh full load rehearsal separately** (see
+  `docs/18-sandbox-load-rehearsal-lessons.md` in the private planning repo) — re-run the bootstrap
+  once that settles, since item ids / board contents may have changed since 2026-08-25's run.
 * **`owner_board_id` in `donation_links` is written blank by the bootstrap script.** Not resolvable
   from the same query that finds the donation→owner link (the owner could be on any of three
   boards). Not currently read by anything downstream — the consumer re-resolves it fresh via
