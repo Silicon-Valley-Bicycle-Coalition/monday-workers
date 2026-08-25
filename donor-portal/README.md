@@ -173,30 +173,46 @@ Requests board only**; create the `donor-portal-change-requests` queue and its
 `0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
 `REPLACE_AFTER_SIGNOFF` in `taxLetter`.
 
+## v3 — Digital membership card
+
+Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
+live card (`GET /portal/card/:donorItemId`) — name, member number, tier, status, expiry — with a
+QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
+current status live from Monday, never from whatever was true when the card was viewed or
+scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"
+camera-scan feature — no Apple Developer account or signing infrastructure on our side. Android
+has no equivalent yet, so Android donors use the web card directly.
+
+**Gated on `monday.columns.membershipExpiry`:** the whole feature shows a "not available yet"
+state until that column is set to a real Monday column id (same treatment as v2's
+`donorAddress`/`donorPhone`). If a card's link ever leaks, the donor can invalidate it and get a
+fresh one any time from `/portal/card/:donorItemId` ("Regenerate card").
+
+Operator setup for v3, in addition to the v1/v2 steps: add a Membership Expiry (date) column to
+the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migration
+`0003_create_card_tokens.sql`. No new Monday write access, no new queue, no new secret.
+
 ## Future candidates (discussed 2026-08-24, not committed)
 
 Ideas from the v2 brainstorm, in rough value order — recorded so they aren't re-derived from
 scratch. None are scheduled; each needs its own scoping pass before build.
 
-1. **Digital membership card** — a rendered card (name, tier, expiry, QR or member number)
-   donors show at partner shops, optionally an Apple/Google Wallet pass. Highest-value because
-   it directly amplifies the bike-shop discount feature, and gives shops an easy validity check.
-2. **January letter email distribution** — portal-only was a deliberate first-cut choice; the
+1. **January letter email distribution** — portal-only was a deliberate first-cut choice; the
    letter renderer (`src/letters/`) is an importable module so a future cron can email letters
    (or links to them) without rework. A staff-triggered per-donor "send letter" button is the
    discussed middle ground.
-3. **Recurring-gift management / membership renewal** — deliberately *link out* to Funraise's
+2. **Recurring-gift management / membership renewal** — deliberately *link out* to Funraise's
    own donor account surface and checkout rather than building anything; keeps this Worker
    entirely out of PCI scope. "Build" here means adding deep links, nothing more.
-4. **Communication preferences** (email opt-outs, mailing prefs) — natural extension of the
+3. **Communication preferences** (email opt-outs, mailing prefs) — natural extension of the
    existing change-request queue: new form fields, same staff-review write path.
-5. **Impact summary** — "your giving supported X" per year or tier; cheap even as a static
+4. **Impact summary** — "your giving supported X" per year or tier; cheap even as a static
    annual number.
-6. **Volunteer history** — show hours/shifts alongside donations once volunteer data lives in
+5. **Volunteer history** — show hours/shifts alongside donations once volunteer data lives in
    Monday post-migration.
-7. **Event registrations** — upcoming/past events, dependent on the Eventbrite integration
+6. **Event registrations** — upcoming/past events, dependent on the Eventbrite integration
    (itself post-migration).
-8. **Pledge tracking / employer matching-gift lookup** — commonly an embedded Double the
+7. **Pledge tracking / employer matching-gift lookup** — commonly an embedded Double the
    Donation widget; discussed, not prioritized.
 
 **Considered and ruled out:** peer-to-peer fundraising pages and DAF tooling (Funraise's job;
