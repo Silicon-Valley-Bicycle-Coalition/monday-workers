@@ -1,0 +1,69 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+stages:
+  - test
+
+default:
+  image: node:20
+
+# One job per Worker subdirectory — this repo has no root package.json, each
+# Worker is self-contained (see root README/CLAUDE.md). A job only runs when
+# its own directory changes, so an MR touching one Worker doesn't wait on the
+# others. Add a new job here once a requirements-only Worker gets built out.
+.worker_job:
+  stage: test
+  cache:
+    key: "$WORKER_DIR"
+    paths:
+      - "$WORKER_DIR/node_modules/"
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run typecheck
+
+committee-calendars:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: committee-calendars
+
+donation-rollups:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: donation-rollups
+
+donor-portal:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: donor-portal
+
+events-widgets:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: events-widgets
+
+funraise-sync:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: funraise-sync
+
+membership-reminders:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: membership-reminders
+
+quickbooks-sync:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: quickbooks-sync
+
+salesforce-import:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: salesforce-import
