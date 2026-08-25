@@ -1,11 +1,12 @@
+import { parseAmount as parseAmountOrNull } from './amounts';
+
 const USD_FORMATTER = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
-// Monday's dollar-amount columns come back as free-text (e.g. "75.00", "$1,234.56", or "pending"
-// for a not-yet-processed gift) — this strips everything but digits/decimal point/minus sign and
-// falls back to 0 for anything that doesn't parse, rather than showing NaN.
+// Thin display-oriented wrapper over the shared parser (see ./amounts): unlike a letter/pledge
+// total, a single formatted display value has no sum to poison, so unparseable text ("pending")
+// just renders as $0.00 rather than propagating null.
 export function parseAmount(text: string): number {
-  const n = Number(text.replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
+  return parseAmountOrNull(text) ?? 0;
 }
 
 export function formatUsd(amount: number): string {

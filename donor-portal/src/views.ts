@@ -1,4 +1,4 @@
-import type { PortalView } from './types';
+import type { DonorVolunteerHistory, FunraiseLinkUrls, PortalView } from './types';
 import { SUPPORTED_LOCALES, LOCALE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 import { SVBC_LOGO_SVG } from './assets/logo';
@@ -227,6 +227,12 @@ export function languagePicker(currentPath: string, locale: Locale): string {
   `;
 }
 
+// Shared by the authenticated sub-pages (pledges, matching gifts; older views predate it and
+// still inline the same markup — fold them in when next touched).
+export function backToPortalLink(locale: Locale): string {
+  return `<p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>`;
+}
+
 export function loginFormView(locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'site.title'))}</h1>
@@ -290,7 +296,42 @@ function memberCardWidget(card: PortalCard, locale: Locale): string {
   `;
 }
 
-function donorSection(donor: PortalView['donors'][number], locale: Locale, card: PortalCard | undefined): string {
+// Rendered only when the feature is enabled AND this donor has at least one qualifying shift —
+// a donor who never volunteered shouldn't see an empty "Volunteer history" table, and while the
+// feature is config-gated off (volunteerHistory null) the portal looks exactly as it did before.
+function volunteerShiftRow(shift: DonorVolunteerHistory['shifts'][number]): string {
+  return `
+    <tr>
+      <td>${escapeHtml(shift.date)}</td>
+      <td>${escapeHtml(shift.job)}</td>
+      <td>${escapeHtml(shift.hours)}</td>
+    </tr>
+  `;
+}
+
+function volunteerHistorySection(history: DonorVolunteerHistory | undefined, locale: Locale): string {
+  if (!history || history.shifts.length === 0) return '';
+  const rows = history.shifts.map(volunteerShiftRow).join('');
+  return `
+      <h3>${escapeHtml(t(locale, 'portal.volunteerHeading'))}</h3>
+      <p>${escapeHtml(t(locale, 'portal.volunteerTotalHours', { hours: String(history.totalHours) }))}</p>
+      <table>
+        <thead>
+          <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableActivity'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableHours'))}</th></tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+  `;
+}
+
+function donorSection(
+  donor: PortalView['donors'][number],
+  locale: Locale,
+  card: PortalCard | undefined,
+  volunteerHistory: DonorVolunteerHistory | undefined
+): string {
   return `
     <section>
       <h2>${escapeHtml(donor.name)}</h2>
@@ -311,6 +352,31 @@ function donorSection(donor: PortalView['donors'][number], locale: Locale, card:
           </tr>
         </tfoot>
       </table>
+      ${volunteerHistorySection(volunteerHistory, locale)}
+    </section>
+  `;
+}
+
+// Deep links out to Funraise's own donor-account and checkout surfaces — deliberately links,
+// not embedded flows, so recurring-gift changes and renewal payments happen entirely on
+// Funraise's PCI-scoped pages, never in this Worker (IT Requests item 12893519422). Each link
+// renders only when its URL is configured (see funraiseLinks() in config.ts); with neither
+// configured the whole section disappears.
+function funraiseSection(links: FunraiseLinkUrls, locale: Locale): string {
+  const rows = [
+    links.manageRecurringUrl !== null
+      ? `<li><a href="${escapeHtml(links.manageRecurringUrl)}" rel="noopener noreferrer">${escapeHtml(t(locale, 'portal.manageRecurringLink'))}</a></li>`
+      : '',
+    links.renewMembershipUrl !== null
+      ? `<li><a href="${escapeHtml(links.renewMembershipUrl)}" rel="noopener noreferrer">${escapeHtml(t(locale, 'portal.renewMembershipLink'))}</a></li>`
+      : '',
+  ].join('');
+  if (rows === '') return '';
+  return `
+    <section>
+      <h2>${escapeHtml(t(locale, 'portal.givingLinksHeading'))}</h2>
+      <ul>${rows}</ul>
+      <p>${escapeHtml(t(locale, 'portal.givingLinksNote'))}</p>
     </section>
   `;
 }
@@ -343,18 +409,22 @@ function portalLanguageSwitcher(locale: Locale): string {
   `;
 }
 
-export function portalView(data: PortalView, locale: Locale, cards: Record<string, PortalCard>): string {
+export function portalView(data: PortalView, locale: Locale, cards: Record<string, PortalCard>, funraise: FunraiseLinkUrls): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
     ${portalLanguageSwitcher(locale)}
-    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id])).join('')}
+    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id])).join('')}
+    ${funraiseSection(funraise, locale)}
     <section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>
         ${data.discounts.map(discountRow).join('')}
       </ul>
     </section>
+    <p><a href="/${locale}/portal/events">${escapeHtml(t(locale, 'portal.eventsLink'))}</a></p>
     <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
     <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>
+    <p><a href="/${locale}/portal/pledges">${escapeHtml(t(locale, 'portal.pledgesLink'))}</a></p>
+    <p><a href="/${locale}/portal/matching-gifts">${escapeHtml(t(locale, 'portal.matchingGiftsLink'))}</a></p>
   `;
 }

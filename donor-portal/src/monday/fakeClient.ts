@@ -1,5 +1,18 @@
 import type { MondayClient } from './client';
-import type { ChangeRequestColumns, DiscountOrganization, DonationRecord, DonorContactInfo, DonorMatch, DonorPortalData } from '../types';
+import type {
+  ChangeRequestColumns,
+  DiscountOrganization,
+  DonationRecord,
+  DonorContactInfo,
+  DonorMatch,
+  DonorPortalData,
+  EventRegistrationColumns,
+  EventRegistrationRecord,
+  LetterCronColumns,
+  LetterSettings,
+  PledgeRecord,
+  VolunteerShift,
+} from '../types';
 
 // Dummy data for local preview only (see src/index.local.ts) — never imported by the real
 // Worker entrypoint (src/index.ts). Deliberately covers the interesting cases the read-only
@@ -87,6 +100,23 @@ const DISCOUNT_ORGANIZATIONS: DiscountOrganization[] = [
   { name: 'South Bay Cycles', discountOffered: 'Free flat repair for members' },
 ];
 
+// Only Jordan (1001) has volunteer/pledge/event data — the household donors and the lapsed
+// member stay empty, so the empty-state rendering for each of these sections gets exercised too.
+const VOLUNTEER_SHIFTS: Record<string, VolunteerShift[]> = {
+  '1001': [
+    { date: '2025-04-12', hours: '3.5', job: 'Bike Valet', status: 'Completed' },
+    { date: '2025-09-06', hours: '2', job: 'Tabling — Bike to Work Day', status: 'Completed' },
+  ],
+};
+
+const PLEDGES: Record<string, PledgeRecord[]> = {
+  '1001': [{ name: 'Annual Giving Pledge', pledged: '500.00', fulfilled: '340.00', status: 'In Progress', dueDate: '2026-12-31' }],
+};
+
+const EVENT_REGISTRATIONS: Record<string, EventRegistrationRecord[]> = {
+  '1001': [{ registrationName: 'Jordan Alvarez', eventName: 'Bike to Work Day 2025', eventDate: '2025-05-08', attended: true }],
+};
+
 function findDonor(donorItemId: string): FakeDonor {
   const donor = DONORS.find((d) => d.id === donorItemId);
   if (!donor) {
@@ -130,7 +160,43 @@ export class FakeMondayClient implements MondayClient {
       address: donor.address,
       phone: donor.phone,
       preferredLanguage: donor.preferredLanguage,
+      // No communication-preference columns configured for local preview — same "not
+      // knowable yet" null the real client returns for an unconfigured column.
+      emailOptOut: null,
+      smsOptOut: null,
+      doNotMail: null,
     };
+  }
+
+  async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
+    return VOLUNTEER_SHIFTS[donorItemId] ?? [];
+  }
+
+  async getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]> {
+    return donorItemIds.map((id) => ({ id, name: findDonor(id).name }));
+  }
+
+  async getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]> {
+    return PLEDGES[donorItemId] ?? [];
+  }
+
+  async getEventRegistrationsForDonor(params: {
+    donorItemId: string;
+    boardId: number;
+    columns: EventRegistrationColumns;
+    eventDateColumnId: string;
+  }): Promise<EventRegistrationRecord[]> {
+    return EVENT_REGISTRATIONS[params.donorItemId] ?? [];
+  }
+
+  // Letter-cron settings and the year-end donor sweep are cron-only concerns, never exercised by
+  // the interactive portal preview this fake backs — safe no-op defaults.
+  async getLetterSettings(_params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null> {
+    return null;
+  }
+
+  async listDonorIdsWithDonationsInYear(_year: number): Promise<string[]> {
+    return [];
   }
 
   async createChangeRequestItem(params: {

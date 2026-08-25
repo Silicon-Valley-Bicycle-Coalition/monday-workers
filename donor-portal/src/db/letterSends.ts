@@ -14,6 +14,9 @@ export interface LetterSendStore {
   markSent(id: number, sentAtISO: string): Promise<void>;
   markSkipped(id: number, atISO: string): Promise<void>;
   requeue(id: number, atISO: string): Promise<void>;
+  // Every donor with a row for the year, any status — the January cron's dedupe pre-check, so
+  // already-triggered donors cost zero Monday API calls on later runs.
+  listDonorItemIdsForYear(year: number): Promise<Set<string>>;
 }
 
 export class D1LetterSendStore implements LetterSendStore {
@@ -77,5 +80,13 @@ export class D1LetterSendStore implements LetterSendStore {
       .prepare(`UPDATE letter_sends SET status = 'queued', sent_at = ?1 WHERE id = ?2`)
       .bind(atISO, id)
       .run();
+  }
+
+  async listDonorItemIdsForYear(year: number): Promise<Set<string>> {
+    const result = await this.db
+      .prepare(`SELECT donor_item_id FROM letter_sends WHERE year = ?1`)
+      .bind(year)
+      .all<{ donor_item_id: string }>();
+    return new Set(result.results.map((row) => row.donor_item_id));
   }
 }

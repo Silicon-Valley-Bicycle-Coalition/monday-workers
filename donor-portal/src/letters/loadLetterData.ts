@@ -1,11 +1,7 @@
 import type { MondayClient } from '../monday/client';
 import type { DonationRecord, TaxLetterConfig } from '../types';
-import { parseAmount, formatUsd } from '../money';
-
-// Re-exported for backward compatibility — this module used to define parseAmount itself; it now
-// lives in ../money so views.ts (the donor-facing portal) can format amounts the same way without
-// importing from the letters feature.
-export { parseAmount };
+import { parseAmount as parseAmountOrNull } from '../amounts';
+import { formatUsd } from '../money';
 
 export interface LetterGift {
   date: string;
@@ -25,6 +21,12 @@ export interface LetterYearListing {
   donorId: string;
   donorName: string;
   years: number[];
+}
+
+// Thin wrapper over the shared parser: a letter total sums amounts, so unparseable text
+// contributes 0 rather than poisoning the sum with null.
+export function parseAmount(text: string): number {
+  return parseAmountOrNull(text) ?? 0;
 }
 
 export function giftYear(date: string): number | null {

@@ -5,6 +5,7 @@
     "donorsBoardId": 1,
     "donationsBoardId": 2,
     "organizationsBoardId": 3,
+    "volunteersBoardId": 5,
     "columns": {
       "donorEmail": "email",
       "membershipStatus": "status",
@@ -19,7 +20,15 @@
       "donorAddress": "address",
       "donorPhone": "phone",
       "membershipExpiry": "expiry",
-      "preferredLanguage": "language"
+      "preferredLanguage": "language",
+      "donorEmailOptOut": "email_opt_out",
+      "donorSmsOptOut": "sms_opt_out",
+      "donorDoNotMail": "do_not_mail",
+      "volunteerDonorLink": "volunteer_donor_link",
+      "volunteerHours": "volunteer_hours",
+      "volunteerDate": "volunteer_date",
+      "volunteerJob": "volunteer_job",
+      "volunteerStatus": "volunteer_status"
     }
   },
   "email": {
@@ -60,5 +69,44 @@
   },
   "cardTokens": {
     "retentionDays": 30
+  },
+  "funraise": {
+    "manageRecurringUrl": "https://give.funraise.org/login",
+    "renewMembershipUrl": "https://give.funraise.org/give?campaign=membership"
+  },
+  "letterCron": {
+    "boardId": 6,
+    "columns": {
+      "autoSend": "auto_send",
+      "startDate": "start_date",
+      "bodyTemplate": "body_template",
+      "bodyTemplatesByLocale": {}
+    },
+    "maxTriggersPerRun": 200
+  },
+  "volunteerHistory": {
+    "completedStatuses": ["Completed"]
+  },
+  "eventRegistrations": {
+    "boardId": 7,
+    "columns": {
+      "attendeeLink": "attendee_link",
+      "eventLink": "event_link",
+      "attended": "attended"
+    },
+    "eventDateColumnId": "event_date"
+  },
+  "pledges": {
+    "boardId": 8,
+    "columns": {
+      "donorLink": "pledge_donor_link",
+      "pledgedAmount": "pledged_amount",
+      "fulfilledAmount": "fulfilled_amount",
+      "status": "pledge_status",
+      "dueDate": "due_date"
+    }
+  },
+  "matchingGifts": {
+    "doubleTheDonationPublicKey": null
   }
 }
