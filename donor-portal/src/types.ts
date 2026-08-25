@@ -13,7 +13,14 @@ export interface MondayColumns {
   donorPhone: string;
   membershipExpiry: string;
   preferredLanguage: string;
+  donorEmailOptOut: string;
+  donorSmsOptOut: string;
+  donorDoNotMail: string;
 }
+
+// The three donor-facing communication preferences. Each maps to its own gated checkbox column
+// on the Donors board (see PREF_FIELD_COLUMNS in config.ts) and doubles as a ChangeRequestField.
+export type PrefField = 'emailOptOut' | 'smsOptOut' | 'doNotMail';
 
 export interface TaxLetterConfig {
   orgLegalName: string;
