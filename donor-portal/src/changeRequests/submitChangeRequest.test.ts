@@ -24,6 +24,9 @@ function fakeMonday(): MondayClient {
       address: '1 Old St',
       phone: '555-0100',
       preferredLanguage: 'English',
+      emailOptOut: false,
+      smsOptOut: false,
+      doNotMail: true,
     }),
   } as unknown as MondayClient;
 }
@@ -41,6 +44,12 @@ function makeDeps(store = fakeStore()) {
 describe('FIELD_LABELS', () => {
   it('has a staff-facing label for the language field', () => {
     expect(FIELD_LABELS.language).toBe('Preferred Language');
+  });
+
+  it('has a staff-facing label for each communication preference field', () => {
+    expect(FIELD_LABELS.emailOptOut).toBe('Email Opt-Out');
+    expect(FIELD_LABELS.smsOptOut).toBe('SMS Opt-Out');
+    expect(FIELD_LABELS.doNotMail).toBe('Do Not Mail');
   });
 });
 
@@ -152,5 +161,87 @@ describe('submitChangeRequest', () => {
     expect(store.createRequest).not.toHaveBeenCalled();
     expect((deps.monday.getDonorContactInfo as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
     expect(deps.queue.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('submitChangeRequest — communication preference fields', () => {
+  it('records a preference change with vocabulary old/new values', async () => {
+    const store = fakeStore();
+    const deps = makeDeps(store);
+
+    const result = await submitChangeRequest(
+      ['donor-1'],
+      { donorItemId: 'donor-1', field: 'emailOptOut', newValue: 'Opted out of email' },
+      deps
+    );
+
+    expect(result).toEqual({ kind: 'submitted' });
+    expect(store.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        field: 'emailOptOut',
+        oldValue: 'Subscribed to email',
+        newValue: 'Opted out of email',
+      })
+    );
+  });
+
+  it('maps a currently-checked checkbox to the opted-out old value', async () => {
+    const store = fakeStore();
+    const deps = makeDeps(store);
+
+    await submitChangeRequest(
+      ['donor-1'],
+      { donorItemId: 'donor-1', field: 'doNotMail', newValue: 'OK to mail' },
+      deps
+    );
+
+    expect(store.createRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ field: 'doNotMail', oldValue: 'Do not mail', newValue: 'OK to mail' })
+    );
+  });
+
+  it('rejects a preference value outside the fixed vocabulary', async () => {
+    const deps = makeDeps();
+    const result = await submitChangeRequest(
+      ['donor-1'],
+      { donorItemId: 'donor-1', field: 'smsOptOut', newValue: 'maybe' },
+      deps
+    );
+    expect(result.kind).toBe('invalid');
+  });
+
+  it("rejects a free-text field's value being submitted under a preference field", async () => {
+    const deps = makeDeps();
+    const result = await submitChangeRequest(
+      ['donor-1'],
+      { donorItemId: 'donor-1', field: 'emailOptOut', newValue: '2 New Ave' },
+      deps
+    );
+    expect(result.kind).toBe('invalid');
+  });
+
+  it('rejects a preference change while its Donors-board column is unconfigured', async () => {
+    const deps = makeDeps();
+    deps.monday = {
+      getDonorContactInfo: vi.fn().mockResolvedValue({
+        id: 'donor-1',
+        name: 'Jane Example',
+        email: 'jane@example.org',
+        address: '1 Old St',
+        phone: '555-0100',
+        preferredLanguage: 'English',
+        emailOptOut: null,
+        smsOptOut: null,
+        doNotMail: null,
+      }),
+    } as unknown as MondayClient;
+
+    const result = await submitChangeRequest(
+      ['donor-1'],
+      { donorItemId: 'donor-1', field: 'emailOptOut', newValue: 'Opted out of email' },
+      deps
+    );
+
+    expect(result.kind).toBe('invalid');
   });
 });
