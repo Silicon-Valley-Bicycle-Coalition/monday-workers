@@ -161,23 +161,16 @@ Monday changes only after staff approve it, exactly like an address correction t
 
 ## Config additions (`config/svbc.json`)
 
-```jsonc
-"i18n": {
-  "defaultLocale": "en",
-  "localeLabels": {
-    "en": "English",
-    "es": "Spanish",
-    "zh-Hans": "Chinese (Simplified)",
-    "zh-Hant": "Chinese (Traditional)",
-    "fil": "Filipino",
-    "hi": "Hindi",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "pt-BR": "Portuguese (Brazil)",
-    "vi": "Vietnamese"
-  }
-}
-```
+**Amended during plan-writing (2026-08-24):** the locale code list and their Monday dropdown
+labels moved from `config/svbc.json` into `src/i18n/locales.ts` (`SUPPORTED_LOCALES`,
+`LOCALE_LABELS`) instead of shipping as JSON config. Reasoning: unlike a board ID or column ID,
+this list is 1:1 with which locale files actually exist in `src/i18n/locales/` — it isn't a value
+an SVBC operator would ever tune independently of the code, and keeping it in one TypeScript module
+(rather than kept in sync across a `.ts` file and a `.json` file) removes a drift risk. `en` as the
+default/fallback locale is likewise a hardcoded constant (`DEFAULT_LOCALE`), not configurable —
+English fallback is a property of `t()`'s design, not an SVBC preference. `config/svbc.json` gets
+no new top-level key for this; see the Monday schema change below for the one config addition that
+*is* SVBC-specific (the `preferredLanguage` column id).
 
 `MondayColumns` (in `src/types.ts`) gains `preferredLanguage: string` (the new Donors-board column
 id), validated at startup like every other configured column, consistent with `src/config.ts`'s
