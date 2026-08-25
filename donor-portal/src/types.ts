@@ -11,6 +11,7 @@ export interface MondayColumns {
   discountActive: string;
   donorAddress: string;
   donorPhone: string;
+  membershipExpiry: string;
 }
 
 export interface TaxLetterConfig {
@@ -82,6 +83,7 @@ export interface DonorPortalData {
   membershipTier: string;
   totalDonated: string;
   donations: DonationRecord[];
+  membershipExpiry: string;
 }
 
 export interface DiscountOrganization {

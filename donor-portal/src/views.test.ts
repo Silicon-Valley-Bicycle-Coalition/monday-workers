@@ -51,6 +51,7 @@ describe('portalView', () => {
         membershipTier: 'Member',
         totalDonated: '500',
         donations: [{ date: '2026-01-01', amount: '100', description: 'Annual gift' }],
+        membershipExpiry: '',
       },
       {
         id: 'donor-2',
@@ -59,6 +60,7 @@ describe('portalView', () => {
         membershipTier: 'Lifetime',
         totalDonated: '2500',
         donations: [],
+        membershipExpiry: '',
       },
     ],
     discounts: [{ name: 'Local Bikes', discountOffered: '10% off' }],
@@ -82,6 +84,7 @@ describe('portalView', () => {
           membershipTier: 'Member',
           totalDonated: '0',
           donations: [],
+          membershipExpiry: '',
         },
       ],
       discounts: [],
@@ -89,5 +92,11 @@ describe('portalView', () => {
     const html = portalView(maliciousData);
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
     expect(html).toContain('&lt;img');
+  });
+
+  it('links each donor to their own membership card', () => {
+    const html = portalView(data);
+    expect(html).toContain('/portal/card/donor-1');
+    expect(html).toContain('/portal/card/donor-2');
   });
 });

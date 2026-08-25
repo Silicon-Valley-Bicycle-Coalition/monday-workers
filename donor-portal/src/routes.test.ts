@@ -8,6 +8,31 @@ import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/resend';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
+import type { CardTokenStore } from './db/cardTokens';
+
+function inMemoryCardTokenStore(): CardTokenStore {
+  const byDonor = new Map<string, string>();
+  const byToken = new Map<string, string>();
+  return {
+    async createToken(donorItemId, token) {
+      byDonor.set(donorItemId, token);
+      byToken.set(token, donorItemId);
+    },
+    async findActiveDonorId(token) {
+      return byToken.get(token) ?? null;
+    },
+    async getActiveToken(donorItemId) {
+      return byDonor.get(donorItemId) ?? null;
+    },
+    async revokeAllForDonor(donorItemId) {
+      const token = byDonor.get(donorItemId);
+      if (token !== undefined) {
+        byToken.delete(token);
+        byDonor.delete(donorItemId);
+      }
+    },
+  };
+}
 
 function inMemoryTokenStore(): MagicLinkTokenStore {
   const rows = new Map<string, { donorItemIds: string[]; expiresAt: string; usedAt: string | null }>();
@@ -62,7 +87,15 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
   return {
     findDonorsByEmail: vi.fn().mockImplementation((email: string) => Promise.resolve(matchesByEmail[email] ?? [])),
     getDonorPortalData: vi.fn().mockImplementation((id: string) =>
-      Promise.resolve({ id, name: `Donor ${id}`, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '0', donations: [] })
+      Promise.resolve({
+        id,
+        name: `Donor ${id}`,
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '0',
+        donations: [],
+        membershipExpiry: '',
+      })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
     getDonorContactInfo: vi.fn().mockImplementation((id: string) =>
@@ -87,6 +120,7 @@ function fakeMondayWithDonations(): MondayClient {
         membershipTier: 'Member',
         totalDonated: '$40.00',
         donations: [{ date: '2025-03-14', amount: '$40.00', description: 'gift' }],
+        membershipExpiry: '',
       })
     ),
     getDiscountOrganizations: vi.fn().mockResolvedValue([]),
@@ -132,6 +166,7 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     now: () => new Date('2026-08-22T00:00:00.000Z'),
     changeStore: fakeChangeStore(),
     changeQueue: { send: vi.fn().mockResolvedValue(undefined) },
+    cardTokenStore: inMemoryCardTokenStore(),
     ...overrides,
   };
 }
@@ -597,6 +632,325 @@ describe('POST /portal/change-request', () => {
     const limitedApp = createApp({ ...permissive, ipLimiter });
 
     const res = await postForm(limitedApp, cookie, { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' });
+    expect(res.status).toBe(429);
+  });
+});
+
+describe('GET /portal/card/:donorItemId', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/portal/card/donor-1');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('renders the card with a verify link, QR, and no-store caching', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Member #donor-1');
+    expect(html).toContain('/verify/');
+    expect(html).toContain('<svg');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
+  it('reuses the same verify link across repeat visits', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const first = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const second = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+
+    // Stops at the closing quote/tag rather than \S+, which would otherwise run on through
+    // cardView's markup (`<a href="url">url</a>`, no whitespace between the two) and swallow
+    // the closing tag plus the repeated visible-text URL into the match.
+    const verifyLink = /https?:\/\/\S*\/verify\/[^"<\s]+/.exec(first)?.[0];
+    expect(verifyLink).toBeDefined();
+    expect(second).toContain(verifyLink as string);
+  });
+
+  it("404s for a donor item id that is not the session's own", async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/other-donor', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
+  });
+
+  it('shows the unavailable state while the membership expiry column is unset', async () => {
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    expect(await res.text()).toContain('not available yet');
+  });
+
+  it('shows a friendly error page when the Monday lookup throws', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+
+    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('We could not load your card right now');
+  });
+
+  it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
+    // Simulates the migrations/0003 one-active-token-per-donor DB constraint tripping because a
+    // concurrent request for the same donor won the race and inserted first: this request's
+    // getActiveToken sees null, but its own createToken then throws, and the route must
+    // re-read and use the winner's token rather than failing the request.
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    let active: string | null = null;
+    let createCalls = 0;
+    const cardTokenStore: CardTokenStore = {
+      async createToken(_donorItemId, token) {
+        createCalls++;
+        if (createCalls === 1) {
+          active = 'concurrent-winner-token';
+          throw new Error('UNIQUE constraint failed: card_tokens.donor_item_id');
+        }
+        active = token;
+      },
+      async findActiveDonorId(token) {
+        return token === active ? 'donor-1' : null;
+      },
+      async getActiveToken() {
+        return active;
+      },
+      async revokeAllForDonor() {
+        active = null;
+      },
+    };
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('/verify/concurrent-winner-token');
+  });
+});
+
+describe('POST /portal/card/:donorItemId/regenerate', () => {
+  it('redirects to /login without a session', async () => {
+    const res = await createApp(makeDeps()).request('/portal/card/donor-1/regenerate', { method: 'POST' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it("404s for a donor item id that is not the session's own", async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/other-donor/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    expect(res.status).toBe(404);
+  });
+
+  it('shows the unavailable state when cardEnabled is false, and does not touch the existing token', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore = inMemoryCardTokenStore();
+    const enabledDeps = makeDeps({ monday, emailSender, cardTokenStore });
+    const app = createApp(enabledDeps);
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    // Mint an active token via the enabled app first, so there's something a regenerate could
+    // wrongly revoke/replace.
+    const before = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const existingVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
+
+    // Same deps (including the session, so the existing cookie still authenticates) but the
+    // card feature is now gated off — as if an operator reverted config after tokens were
+    // already issued.
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const gatedApp = createApp({ ...enabledDeps, config: gatedConfig });
+
+    const regenRes = await gatedApp.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    expect(await regenRes.text()).toContain('not available yet');
+
+    // The pre-existing token must still work — regenerate did not revoke or mint anything.
+    const stillWorksRes = await app.request(existingVerifyPath);
+    expect(await stillWorksRes.text()).not.toContain('not valid');
+  });
+
+  it('invalidates the previous verify link and issues a new one', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const before = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    // See the comment above verifyLink: \S+ would otherwise run past the closing quote.
+    const oldVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
+
+    const regenRes = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    expect(regenRes.status).toBe(302);
+    expect(regenRes.headers.get('location')).toBe('/portal/card/donor-1');
+
+    const oldVerifyRes = await app.request(oldVerifyPath, { headers: { Cookie: cookie } });
+    expect(await oldVerifyRes.text()).toContain('not valid');
+
+    const after = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    const newVerifyPath = /\/verify\/[^"<\s]+/.exec(after)?.[0] as string;
+    expect(newVerifyPath).not.toBe(oldVerifyPath);
+  });
+
+  it('redirects successfully when createToken loses the concurrent-regenerate race', async () => {
+    // Simulates two concurrent regenerate requests for the same donor: both revoke (this
+    // request's revoke is a no-op since the concurrent request already revoked), the concurrent
+    // request's createToken wins the migrations/0003 one-active-token-per-donor race and inserts
+    // first, and this request's own createToken then throws. The route must re-read the winner's
+    // now-active token and still redirect, rather than falling through to a 500.
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    let active: string | null = null;
+    let createCalls = 0;
+    const cardTokenStore: CardTokenStore = {
+      async createToken(_donorItemId, token) {
+        createCalls++;
+        if (createCalls === 1) {
+          active = 'concurrent-winner-token';
+          throw new Error('UNIQUE constraint failed: card_tokens.donor_item_id');
+        }
+        active = token;
+      },
+      async findActiveDonorId(token) {
+        return token === active ? 'donor-1' : null;
+      },
+      async getActiveToken() {
+        return active;
+      },
+      async revokeAllForDonor() {
+        active = null;
+      },
+    };
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/portal/card/donor-1');
+  });
+});
+
+describe('GET /verify/:token', () => {
+  async function getVerifyPath(app: ReturnType<typeof createApp>, cookie: string): Promise<string> {
+    const html = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
+    return /\/verify\/[^"<\s]+/.exec(html)?.[0] as string;
+  }
+
+  it('renders live membership info for a valid token', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(app, cookie);
+
+    const res = await app.request(verifyPath);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Donor donor-1');
+    expect(html).toContain('Tier: Member');
+    expect(html).toContain('Status: Active');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+  });
+
+  it('shows the not-valid state for an unknown token', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/verify/no-such-token');
+    expect(await res.text()).toContain('not valid');
+  });
+
+  it('shows the not-valid state when cardEnabled is false, even for an otherwise-valid token', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(app, cookie);
+
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const gatedApp = createApp(makeDeps({ monday, emailSender, cardTokenStore, config: gatedConfig }));
+
+    const res = await gatedApp.request(verifyPath);
+    expect(await res.text()).toContain('not valid');
+  });
+
+  it('reflects a Monday update made after the card was first viewed', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(app, cookie);
+
+    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'donor-1',
+      name: 'Donor donor-1',
+      membershipStatus: 'Lapsed',
+      membershipTier: 'Member',
+      totalDonated: '$40.00',
+      donations: [],
+      membershipExpiry: '',
+    });
+
+    const res = await app.request(verifyPath);
+    expect(await res.text()).toContain('Lapsed');
+  });
+
+  it('rate-limits by IP', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const permissive = makeDeps({ monday, emailSender });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(loginApp, cookie);
+
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const limitedApp = createApp({ ...permissive, ipLimiter });
+
+    const res = await limitedApp.request(verifyPath);
+    expect(res.status).toBe(429);
+  });
+
+  it('still rate-limits by IP when cardEnabled is false', async () => {
+    // The kill switch must not double as a rate-limit bypass: flipping the feature off during
+    // incident response is exactly when this endpoint most needs its limiter still enforced.
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
+    const cardTokenStore = inMemoryCardTokenStore();
+    const permissive = makeDeps({ monday, emailSender, cardTokenStore });
+    const loginApp = createApp(permissive);
+    const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
+    const verifyPath = await getVerifyPath(loginApp, cookie);
+
+    const gatedConfig = structuredClone(config);
+    gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
+    const gatedLimitedApp = createApp({ ...permissive, ipLimiter, config: gatedConfig });
+
+    const res = await gatedLimitedApp.request(verifyPath);
     expect(res.status).toBe(429);
   });
 });

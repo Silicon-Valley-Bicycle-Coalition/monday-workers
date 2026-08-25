@@ -4,7 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { DonorPortalData } from '../types';
 
 function donor(id: string, name: string): DonorPortalData {
-  return { id, name, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '100', donations: [] };
+  return { id, name, membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '100', donations: [], membershipExpiry: '' };
 }
 
 describe('loadPortalData', () => {

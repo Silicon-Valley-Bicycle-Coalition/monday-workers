@@ -5,6 +5,7 @@ import { D1MagicLinkTokenStore } from './db/tokens';
 import { D1SessionStore } from './db/sessions';
 import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
+import { D1CardTokenStore } from './db/cardTokens';
 import { HttpMondayClient } from './monday/client';
 import { ResendEmailSender } from './email/resend';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
@@ -42,6 +43,7 @@ export default {
       now: () => new Date(),
       changeStore: new D1ChangeRequestStore(env.DB),
       changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
+      cardTokenStore: new D1CardTokenStore(env.DB),
     });
     return app.fetch(request, env, ctx);
   },
