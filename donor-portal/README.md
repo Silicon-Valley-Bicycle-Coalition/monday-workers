@@ -183,6 +183,14 @@ scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's ow
 camera-scan feature — no Apple Developer account or signing infrastructure on our side. Android
 has no equivalent yet, so Android donors use the web card directly.
 
+**`GET /verify/:token` is public and unauthenticated by design** — unlike every other `/portal/*`
+route, it requires no session cookie, since the whole point is that a bike shop clerk (or anyone
+who scans the QR code) can check a card's validity without logging in as the donor. It serves the
+donor's name, member number, tier, status, and expiry to anyone holding the token. Protection comes
+from the token being an unguessable, revocable secret (rather than the donor's login), IP rate
+limiting (`deps.ipLimiter`), and the `cardEnabled` kill switch, not from authentication — treat the
+verify link with the same care as the card itself.
+
 **Gated on `monday.columns.membershipExpiry`:** the whole feature shows a "not available yet"
 state until that column is set to a real Monday column id (same treatment as v2's
 `donorAddress`/`donorPhone`). If a card's link ever leaks, the donor can invalidate it and get a
@@ -191,6 +199,12 @@ fresh one any time from `/portal/card/:donorItemId` ("Regenerate card").
 Operator setup for v3, in addition to the v1/v2 steps: add a Membership Expiry (date) column to
 the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migration
 `0003_create_card_tokens.sql`. No new Monday write access, no new queue, no new secret.
+
+**Revoked tokens don't linger:** the daily retention cron (same one that purges `change_requests`
+— see `src/index.ts`'s `scheduled` handler) also deletes `card_tokens` rows past
+`cardTokens.retentionDays` once `revoked_at` is set — a revoked token is a dead bearer credential
+for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
+touched, regardless of age.
 
 ## Future candidates (discussed 2026-08-24, not committed)
 
