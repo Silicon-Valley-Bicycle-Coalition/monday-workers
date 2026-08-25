@@ -225,13 +225,20 @@ export function createApp(deps: AppDeps) {
     return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale), locale));
   });
 
-  app.get('/portal/letters', async (c) => {
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/letters', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/letters`));
+  app.get('/portal/letters/:donorItemId/:year', (c) =>
+    c.redirect(`/${DEFAULT_LOCALE}/portal/letters/${c.req.param('donorItemId')}/${c.req.param('year')}`)
+  );
+
+  app.get('/:locale/portal/letters', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(page(TITLE_LETTERS_LIST, lettersUnavailableView()));
+      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale));
     }
     let listings;
     try {
@@ -240,18 +247,19 @@ export function createApp(deps: AppDeps) {
       // A Monday read failure here would otherwise fall through to the global onError, whose
       // generic "please try logging in again" copy is misleading — this isn't an auth problem.
       console.error(`donor-portal letters list failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not load your letters right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale), 500);
     }
-    return c.html(page(TITLE_LETTERS_LIST, lettersListView(listings)));
+    return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale));
   });
 
-  app.get('/portal/letters/:donorItemId/:year', async (c) => {
+  app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(page(TITLE_LETTERS_LIST, lettersUnavailableView()));
+      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale));
     }
 
     // The path param selects among the session's own donor items — never widens them.
@@ -259,7 +267,7 @@ export function createApp(deps: AppDeps) {
     const yearParam = c.req.param('year');
     const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
     if (!donorItemIds.includes(donorItemId) || year === null) {
-      return c.html(page(TITLE_ERROR, errorView('That letter does not exist.')), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale), 404);
     }
 
     let data;
@@ -269,10 +277,10 @@ export function createApp(deps: AppDeps) {
       // Same reasoning as the letters-list route above: a Monday read failure isn't an auth
       // problem, so it shouldn't fall through to the global onError's login-focused copy.
       console.error(`donor-portal letter load failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(TITLE_ERROR, errorView('We could not load your letter right now. Please try again in a few minutes.')), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterLoadFailed', locale), locale), 500);
     }
     if (data === null) {
-      return c.html(page(TITLE_ERROR, errorView('That letter does not exist.')), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale), 404);
     }
 
     const generatedOn = deps.now().toLocaleDateString('en-US', {
@@ -285,7 +293,7 @@ export function createApp(deps: AppDeps) {
     // page is meant to be printed/saved as a PDF — so the title needs to identify the letter on
     // its own, not just say "SVBC Donor Portal".
     const letterTitle = `SVBC ${data.year} Tax Letter — ${data.donorName}`;
-    return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn)));
+    return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale));
   });
 
   app.get('/portal/change-request', async (c) => {

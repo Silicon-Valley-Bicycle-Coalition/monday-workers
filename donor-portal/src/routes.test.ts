@@ -468,9 +468,9 @@ async function loginAndGetCookie(
   return (callbackRes.headers.get('set-cookie') as string).split(';')[0]!;
 }
 
-describe('GET /portal/letters', () => {
+describe('GET /:locale/portal/letters', () => {
   it('redirects to /login without a session', async () => {
-    const res = await createApp(makeDeps()).request('/portal/letters');
+    const res = await createApp(makeDeps()).request('/en/portal/letters');
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/login');
   });
@@ -481,10 +481,10 @@ describe('GET /portal/letters', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('/portal/letters/donor-1/2025');
+    expect(html).toContain('/en/portal/letters/donor-1/2025');
     expect(html).toContain('<title>Tax Documents — SVBC Donor Portal</title>');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
@@ -497,7 +497,7 @@ describe('GET /portal/letters', () => {
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters', { headers: { Cookie: cookie } });
     expect(await res.text()).toContain('not available yet');
   });
 
@@ -511,20 +511,29 @@ describe('GET /portal/letters', () => {
 
     (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
 
-    const res = await app.request('/portal/letters', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters', { headers: { Cookie: cookie } });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not load your letters right now');
   });
 });
 
-describe('GET /portal/letters/:donorItemId/:year', () => {
+describe('GET /portal/letters (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal/letters', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/letters');
+  });
+});
+
+describe('GET /:locale/portal/letters/:donorItemId/:year', () => {
   it('renders the letter for the session donor and a completed year', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/letters/donor-1/2025', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters/donor-1/2025', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Total contributions for 2025');
@@ -541,7 +550,7 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/letters/other-donor/2025', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters/other-donor/2025', { headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
   });
 
@@ -551,7 +560,7 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/letters/donor-1/2026', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters/donor-1/2026', { headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
   });
 
@@ -561,7 +570,7 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/letters/donor-1/not-a-year', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters/donor-1/not-a-year', { headers: { Cookie: cookie } });
     expect(res.status).toBe(404);
   });
 
@@ -573,9 +582,18 @@ describe('GET /portal/letters/:donorItemId/:year', () => {
 
     (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
 
-    const res = await app.request('/portal/letters/donor-1/2025', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/letters/donor-1/2025', { headers: { Cookie: cookie } });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not load your letter right now');
+  });
+});
+
+describe('GET /portal/letters/:donorItemId/:year (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal/letters/donor-1/2025', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/letters/donor-1/2025');
   });
 });
 
