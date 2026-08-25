@@ -1,29 +1,31 @@
-export interface DonationRollupsConfig {
-  monday: {
-    apiUrl: string;
-    boards: {
-      donations: number | null;
-      donors: number | null;
-      organizations: number | null;
-    };
+// One entry per Donations *era* board — salesforce-import splits donation history across
+// several boards to stay under Monday's 10k-item ceiling (a "live" current-era board plus
+// several dated historical ones), and each is an independently created board with its own
+// column-id namespace even though they're structurally identical. Confirmed against the
+// real CRM Sandbox workspace 2026-08-24: 9 Donations boards, no two sharing a column id.
+export interface DonationBoardConfig {
+  boardId: number;
+  columns: {
+    donorLink: string;
+    amount: string;
+    date: string;
+    fiscalYear: string | null; // null where the column doesn't exist yet — derived from date instead
+    status: string;
   };
+}
+
+export interface DonationRollupsConfig {
+  monday: { apiUrl: string };
   donationRollups: {
-    donationColumns: {
-      donorLink: string;
-      amount: string;
-      date: string;
-      fiscalYear: string;
-      status: string;
-    };
+    donationBoards: DonationBoardConfig[];
     receivedStatusLabel: string;
-    // Donors and Organizations are separate Monday boards with independent column-id
-    // namespaces, even for identically-named fields — a shared column-id map would
-    // silently write to the wrong (or a nonexistent) column on whichever board isn't
-    // "donors".
-    ownerColumnsByBoard: {
-      donors: OwnerColumns;
-      organizations: OwnerColumns;
-    };
+    // Keyed by the real Monday board id (as a string), not a "donors"/"organizations"
+    // category — confirmed against the real CRM Sandbox 2026-08-24 that a Donation's
+    // "Donor" connect column can point at three separate boards (People, People
+    // Historical, Organizations), each with its own independent column-id namespace
+    // even for identically-named/purposed fields. Every board a Donation can link an
+    // owner to needs an entry here.
+    ownerColumnsByBoard: Record<string, OwnerColumns>;
   };
 }
 
@@ -46,10 +48,11 @@ export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
 
 export interface PendingRow {
   donationItemId: string;
+  donationBoardId: string;
   eventId: string;
   status: PendingStatus;
   ownerItemId: string | null;
-  ownerBoard: 'donors' | 'organizations' | null;
+  ownerBoard: string | null; // the real Monday board id the owner lives on
   error: string | null;
   receivedAt: string;
   writtenAt: string | null;
@@ -64,4 +67,7 @@ export interface Env {
 
 export interface RecomputeQueueMessage {
   donationItemId: string;
+  // Which Donations *era* board this donation lives on — needed to resolve its Donor
+  // link using that board's own column ids (see DonationBoardConfig).
+  donationBoardId: string;
 }

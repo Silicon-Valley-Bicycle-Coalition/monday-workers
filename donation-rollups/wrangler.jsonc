@@ -8,8 +8,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-donation-rollups",
-      // Replace after running: wrangler d1 create svbc-donation-rollups
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "58bbaabb-acab-437a-9786-1e6a5cce256e",
       "migrations_dir": "migrations"
     }
   ],
