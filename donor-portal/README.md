@@ -276,10 +276,16 @@ neither configured the whole section disappears (same gate-not-error treatment a
 `taxLetter` sign-off fields). A set value must be an `https://` URL or config validation fails at
 startup — a typo'd link should fail a deploy, not a donor.
 
-Operator setup: paste the two URLs into `config/svbc.json` → `funraise` — the donor-account URL
-from Funraise's donor login page, and the membership campaign's giving-form URL (with whatever
-campaign query parameters Funraise's dashboard shows for it). No new Monday access, no new
-secret, no D1 migration.
+Operator setup: `funraise.manageRecurringUrl` ships pre-filled with
+`https://give.funraise.org/login` — Funraise's donor portal is a shared surface, not
+org-specific, and donors sign in there with the same email they donated with (the address they
+already used for this portal's magic link). `funraise.renewMembershipUrl` still needs the
+membership form's hosted Giving Page link, which lives only in the Funraise form editor —
+**Giving Forms → open the membership form → Publish tab → Page** — not in the dashboard
+(confirm which form is membership first; the site embeds forms 33777 and 35786). Optionally
+append prefill parameters, e.g. `?x_frequency=y&x_amount=35` for an annual $35 membership; use
+the full Page link, not the Bitly Short URL, which drops query parameters. No new Monday access,
+no new secret, no D1 migration.
 
 ## Future candidates
 
