@@ -477,6 +477,45 @@ describe('HttpMondayClient.getLetterSettings', () => {
     const client = makeClient({ data: { boards: [{ items_page: { items: [] } }] } });
     expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toBeNull();
   });
+
+  it('prefers the item named "Letter emails" over stray board-template defaults like "Task 1"', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '10',
+                  name: 'Task 1',
+                  column_values: [
+                    { id: 'checkbox_1', text: null, checked: false },
+                    { id: 'date_2', text: null },
+                    { id: 'long_text_1', text: null },
+                  ],
+                },
+                {
+                  id: '11',
+                  name: 'Letter emails',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'Hi {{donorName}}' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+      autoSend: true,
+      startDate: '2027-01-05',
+      bodyTemplate: 'Hi {{donorName}}',
+    });
+  });
 });
 
 describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {

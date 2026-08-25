@@ -319,15 +319,17 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null> {
-    // The Letter Settings board holds a single staff-edited item (see
-    // scripts/create-letter-settings-board.mjs), so only the first item is read. Checkbox state
-    // comes from the CheckboxValue fragment's `checked` field rather than the display text —
-    // Monday renders an unchecked box as null text and a checked one as "v", neither of which is
-    // worth string-matching on.
+    // The Letter Settings board holds a single staff-edited item, "Letter emails" (see
+    // scripts/create-letter-settings-board.mjs). Prefer that item by name and only fall back to
+    // the board's first item — Monday's board-creation template seeds default items ("Task 1")
+    // that sort ahead of the real settings item, a failure observed live on the sandbox board.
+    // Checkbox state comes from the CheckboxValue fragment's `checked` field rather than the
+    // display text — Monday renders an unchecked box as null text and a checked one as "v",
+    // neither of which is worth string-matching on.
     const query = `
       query ($boardId: ID!) {
         boards(ids: [$boardId]) {
-          items_page(limit: 1) {
+          items_page(limit: 25) {
             items {
               id
               name
@@ -344,7 +346,8 @@ export class HttpMondayClient implements MondayClient {
     const data = await this.request<{ boards: { items_page: { items: MondayItem[] } }[] }>(query, {
       boardId: params.boardId,
     });
-    const item = data.boards[0]?.items_page.items[0];
+    const items = data.boards[0]?.items_page.items ?? [];
+    const item = items.find((i) => i.name === 'Letter emails') ?? items[0];
     if (!item) return null;
     const autoSendValue = (item.column_values ?? []).find((c) => c.id === params.columns.autoSend);
     return {

@@ -137,3 +137,11 @@ npm run deploy
 - **When letter sign-off lands:** fill `taxLetter.*`, commit, `npm run deploy` — letters
   appear; verify one letter against a known donor's giving history and run a print preview
   before telling donors.
+- **When the automatic January send should go live:** run
+  `scripts/create-letter-settings-board.mjs` against the production workspace (as an admin
+  user), grant the integration user read access to the board, paste the printed `letterCron`
+  block into `config/svbc.json`, deploy — then staff arm it from the board itself (Auto-send
+  checkbox + start date; see README v2.2). Verify the date-`between` items_page filter in
+  `listDonorIdsWithDonationsInYear` against the live Donations board the same way as the other
+  NOTE-flagged GraphQL shapes in Phase 5 — a wrong shape degrades to a larger sweep, not wrong
+  sends, but it burns complexity budget.

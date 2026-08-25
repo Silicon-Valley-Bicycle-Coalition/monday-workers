@@ -50,8 +50,9 @@
     ]
   },
   "triggers": {
-    // Daily change_requests PII retention purge — window set by changeRequests.retentionDays
-    // in config/svbc.json.
+    // Daily run: change_requests/card_tokens retention purges, plus the automatic January
+    // letter-email check (runLetterCron — a no-op unless the Letter Settings board arms it;
+    // see README v2.2).
     "crons": ["0 9 * * *"]
   },
   "observability": {
