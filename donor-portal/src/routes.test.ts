@@ -177,7 +177,7 @@ const config: Config = {
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
-    orgAddress: 'addr',
+    officeAddress: 'addr',
     signatureName: 'Alex',
     signatureTitle: 'ED',
     plainStatement: 'plain',
@@ -410,6 +410,17 @@ describe('GET /:locale/portal locale handling', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('<html lang="en">');
   });
+
+  it('shows a logout button once signed in', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+
+    expect(await res.text()).toContain('action="/logout"');
+  });
 });
 
 describe('GET /login', () => {
@@ -420,6 +431,25 @@ describe('GET /login', () => {
     expect(html).toContain('<title>Log In — SVBC Donor Portal</title>');
     expect(html).toContain('<meta charset="utf-8" />');
     expect(html).toContain('name="viewport"');
+  });
+
+  it('does not show a logout button before the donor is signed in', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/login');
+    expect(await res.text()).not.toContain('action="/logout"');
+  });
+});
+
+describe('GET /favicon.png', () => {
+  it('serves a cacheable PNG', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/favicon.png');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect(res.headers.get('Cache-Control')).toContain('immutable');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // PNG magic bytes
+    expect(bytes.slice(0, 8)).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   });
 });
 
@@ -910,56 +940,63 @@ describe('POST /webhooks/monday/letters', () => {
   });
 });
 
-describe('GET /:locale/portal/card/:donorItemId', () => {
+// The card widget's QR encodes the verify URL as a scannable pattern, not as visible/extractable
+// text (that's the whole point — see the "shouldn't be visible in plain text" requirement in
+// views.ts's memberCardWidget) — so these tests read the actual active token straight out of the
+// injected cardTokenStore instead of screen-scraping the dashboard HTML for a URL that, by design,
+// is no longer there.
+describe('GET /:locale/portal — dashboard membership card widget', () => {
   it('redirects to /login without a session', async () => {
-    const res = await createApp(makeDeps()).request('/en/portal/card/donor-1');
+    const res = await createApp(makeDeps()).request('/en/portal');
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/login');
   });
 
-  it('renders the card with a verify link, QR, and no-store caching', async () => {
+  it('renders the card widget inline with a QR and issues a verify token, with no-store caching', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
+    expect(html).toContain('class="member-card"');
     expect(html).toContain('Member #donor-1');
-    expect(html).toContain('/verify/');
     expect(html).toContain('<svg');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+
+    expect(await cardTokenStore.getActiveToken('donor-1')).toEqual(expect.any(String));
   });
 
-  it('reuses the same verify link across repeat visits', async () => {
+  it('never renders the verify URL as visible text on the dashboard', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const first = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-    const second = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-
-    // Stops at the closing quote/tag rather than \S+, which would otherwise run on through
-    // cardView's markup (`<a href="url">url</a>`, no whitespace between the two) and swallow
-    // the closing tag plus the repeated visible-text URL into the match.
-    const verifyLink = /https?:\/\/\S*\/verify\/[^"<\s]+/.exec(first)?.[0];
-    expect(verifyLink).toBeDefined();
-    expect(second).toContain(verifyLink as string);
+    const html = await (await app.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(html).not.toContain('/verify/');
   });
 
-  it("404s for a donor item id that is not the session's own", async () => {
+  it('reuses the same active token across repeat dashboard visits', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/other-donor', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(404);
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const firstToken = await cardTokenStore.getActiveToken('donor-1');
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const secondToken = await cardTokenStore.getActiveToken('donor-1');
+
+    expect(firstToken).toEqual(expect.any(String));
+    expect(secondToken).toBe(firstToken);
   });
 
-  it('shows the unavailable state while the membership expiry column is unset', async () => {
+  it('omits the card widget, but still renders the rest of the dashboard, while the membership expiry column is unset', async () => {
     const gatedConfig = structuredClone(config);
     gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     const monday = fakeMondayWithDonations();
@@ -967,24 +1004,14 @@ describe('GET /:locale/portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
-    expect(await res.text()).toContain('not available yet');
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const html = await res.text();
+    expect(res.status).toBe(200);
+    expect(html).not.toContain('class="member-card"');
+    expect(html).toContain('gift'); // donation history still renders
   });
 
-  it('shows a friendly error page when the Monday lookup throws', async () => {
-    const monday = fakeMondayWithDonations();
-    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
-    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-
-    (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
-
-    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(500);
-    expect(await res.text()).toContain('We could not load your card right now');
-  });
-
-  it('shows a friendly error page when getActiveToken throws (D1 failure, not the insert race)', async () => {
+  it('logs and omits just the card widget (not the whole dashboard) when getActiveToken throws', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const cardTokenStore: CardTokenStore = {
@@ -1003,9 +1030,11 @@ describe('GET /:locale/portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
-    expect(res.status).toBe(500);
-    expect(await res.text()).toContain('We could not load your card right now');
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const html = await res.text();
+    expect(res.status).toBe(200);
+    expect(html).not.toContain('class="member-card"');
+    expect(html).toContain('gift'); // donation history still renders
   });
 
   it('falls back to the concurrently-minted token when createToken loses the one-active-token race', async () => {
@@ -1042,19 +1071,27 @@ describe('GET /:locale/portal/card/:donorItemId', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('/verify/concurrent-winner-token');
+    expect(await res.text()).toContain('class="member-card"');
+    expect(active).toBe('concurrent-winner-token');
   });
 });
 
-describe('GET /portal/card/:donorItemId (bare, no locale)', () => {
-  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+describe('GET /portal/card/:donorItemId (old standalone card page)', () => {
+  it('redirects the bare form to the default-locale dashboard instead of 404ing', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/portal/card/donor-1', { redirect: 'manual' });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/card/donor-1');
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+
+  it('redirects the locale-prefixed form to that locale\'s dashboard instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/es/portal/card/donor-1', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/es/portal');
   });
 });
 
@@ -1075,7 +1112,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     expect(res.status).toBe(404);
   });
 
-  it('shows the unavailable state when cardEnabled is false, and does not touch the existing token', async () => {
+  it('redirects to the dashboard when cardEnabled is false, and does not touch the existing token', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const cardTokenStore = inMemoryCardTokenStore();
@@ -1085,8 +1122,8 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
 
     // Mint an active token via the enabled app first, so there's something a regenerate could
     // wrongly revoke/replace.
-    const before = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-    const existingVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const existingToken = await cardTokenStore.getActiveToken('donor-1');
 
     // Same deps (including the session, so the existing cookie still authenticates) but the
     // card feature is now gated off — as if an operator reverted config after tokens were
@@ -1096,33 +1133,33 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const gatedApp = createApp({ ...enabledDeps, config: gatedConfig });
 
     const regenRes = await gatedApp.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
-    expect(await regenRes.text()).toContain('not available yet');
+    expect(regenRes.status).toBe(302);
+    expect(regenRes.headers.get('location')).toBe('/en/portal');
 
     // The pre-existing token must still work — regenerate did not revoke or mint anything.
-    const stillWorksRes = await app.request(existingVerifyPath);
+    const stillWorksRes = await app.request(`/verify/${existingToken}`);
     expect(await stillWorksRes.text()).not.toContain('not valid');
   });
 
   it('invalidates the previous verify link and issues a new one', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const before = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-    // See the comment above verifyLink: \S+ would otherwise run past the closing quote.
-    const oldVerifyPath = /\/verify\/[^"<\s]+/.exec(before)?.[0] as string;
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const oldToken = await cardTokenStore.getActiveToken('donor-1');
 
     const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
     expect(regenRes.status).toBe(302);
-    expect(regenRes.headers.get('location')).toBe('/en/portal/card/donor-1');
+    expect(regenRes.headers.get('location')).toBe('/en/portal');
 
-    const oldVerifyRes = await app.request(oldVerifyPath, { headers: { Cookie: cookie } });
+    const oldVerifyRes = await app.request(`/verify/${oldToken}`, { headers: { Cookie: cookie } });
     expect(await oldVerifyRes.text()).toContain('not valid');
 
-    const after = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-    const newVerifyPath = /\/verify\/[^"<\s]+/.exec(after)?.[0] as string;
-    expect(newVerifyPath).not.toBe(oldVerifyPath);
+    const newToken = await cardTokenStore.getActiveToken('donor-1');
+    expect(newToken).not.toBe(oldToken);
   });
 
   it('redirects successfully when createToken loses the concurrent-regenerate race', async () => {
@@ -1163,7 +1200,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
 
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/en/portal/card/donor-1');
+    expect(res.headers.get('location')).toBe('/en/portal');
   });
 
   it('shows a friendly error page when revokeAllForDonor throws (D1 failure, not the insert race)', async () => {
@@ -1227,18 +1264,56 @@ describe('GET /lang/:code', () => {
   });
 });
 
+describe('GET /lang', () => {
+  // Query-string variant of /lang/:code, used by the <select>-based language pickers (a native
+  // <select> can't submit into a dynamic path segment without JS) — same behavior, just `code`
+  // arrives as a query param instead of a path param.
+  it('sets the lang cookie and redirects to an allowlisted path', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang?code=es&to=%2Flogin', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('set-cookie')).toContain('lang=es');
+  });
+
+  it('falls back to en when no code is given', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang?to=%2Flogin', { redirect: 'manual' });
+    expect(res.headers.get('set-cookie')).toContain('lang=en');
+  });
+
+  it('ignores a non-allowlisted "to" and redirects to /login', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang?code=es&to=https%3A%2F%2Fevil.example', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/login');
+  });
+
+  it('redirects back to a locale-prefixed portal path, as used by the in-portal language switcher', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang?code=es&to=%2Fen%2Fportal', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+});
+
 describe('GET /verify/:token', () => {
-  async function getVerifyPath(app: ReturnType<typeof createApp>, cookie: string): Promise<string> {
-    const html = await (await app.request('/en/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
-    return /\/verify\/[^"<\s]+/.exec(html)?.[0] as string;
+  // The dashboard's QR encodes the verify URL as a scannable pattern, not visible/extractable
+  // text (see the "shouldn't be visible in plain text" requirement in views.ts's
+  // memberCardWidget) — so this loads the dashboard (which mints a token as a side effect, same
+  // as production) and reads the actual active token straight out of the injected
+  // cardTokenStore, rather than screen-scraping HTML for a URL that's deliberately not there.
+  async function getVerifyPath(app: ReturnType<typeof createApp>, cookie: string, cardTokenStore: CardTokenStore): Promise<string> {
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const token = await cardTokenStore.getActiveToken('donor-1');
+    return `/verify/${token}`;
   }
 
   it('renders live membership info for a valid token', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-    const verifyPath = await getVerifyPath(app, cookie);
+    const verifyPath = await getVerifyPath(app, cookie, cardTokenStore);
 
     const res = await app.request(verifyPath);
     expect(res.status).toBe(200);
@@ -1262,9 +1337,10 @@ describe('GET /verify/:token', () => {
   it("detects locale from the viewer's own lang cookie, not a path segment or the donor's preference", async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-    const verifyPath = await getVerifyPath(app, cookie);
+    const verifyPath = await getVerifyPath(app, cookie, cardTokenStore);
     expect(verifyPath).not.toMatch(/^\/[a-z-]+\/verify\//);
 
     const res = await app.request(verifyPath, { headers: { Cookie: 'lang=es' } });
@@ -1278,7 +1354,7 @@ describe('GET /verify/:token', () => {
     const cardTokenStore = inMemoryCardTokenStore();
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-    const verifyPath = await getVerifyPath(app, cookie);
+    const verifyPath = await getVerifyPath(app, cookie, cardTokenStore);
 
     const gatedConfig = structuredClone(config);
     gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
@@ -1291,9 +1367,10 @@ describe('GET /verify/:token', () => {
   it('reflects a Monday update made after the card was first viewed', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const app = createApp(makeDeps({ monday, emailSender }));
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
-    const verifyPath = await getVerifyPath(app, cookie);
+    const verifyPath = await getVerifyPath(app, cookie, cardTokenStore);
 
     (monday.getDonorPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'donor-1',
@@ -1312,10 +1389,11 @@ describe('GET /verify/:token', () => {
   it('rate-limits by IP', async () => {
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
-    const permissive = makeDeps({ monday, emailSender });
+    const cardTokenStore = inMemoryCardTokenStore();
+    const permissive = makeDeps({ monday, emailSender, cardTokenStore });
     const loginApp = createApp(permissive);
     const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
-    const verifyPath = await getVerifyPath(loginApp, cookie);
+    const verifyPath = await getVerifyPath(loginApp, cookie, cardTokenStore);
 
     const ipLimiter = { limit: vi.fn().mockResolvedValue({ success: false }) };
     const limitedApp = createApp({ ...permissive, ipLimiter });
@@ -1333,7 +1411,7 @@ describe('GET /verify/:token', () => {
     const permissive = makeDeps({ monday, emailSender, cardTokenStore });
     const loginApp = createApp(permissive);
     const cookie = await loginAndGetCookie(loginApp, emailSender, 'donor@example.org');
-    const verifyPath = await getVerifyPath(loginApp, cookie);
+    const verifyPath = await getVerifyPath(loginApp, cookie, cardTokenStore);
 
     const gatedConfig = structuredClone(config);
     gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';

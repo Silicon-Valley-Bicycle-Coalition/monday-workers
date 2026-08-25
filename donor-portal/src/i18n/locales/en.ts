@@ -2,6 +2,7 @@ export const en = {
   // Site-wide
   'site.title': 'SVBC Donor Portal',
   'languagePicker.label': 'Language',
+  'languagePicker.switch': 'Switch',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Log In',
@@ -10,7 +11,6 @@ export const en = {
   'title.portal': 'Your Donor Portal',
   'title.lettersList': 'Tax Documents',
   'title.changeRequest': 'Request a Change',
-  'title.card': 'Your Membership Card',
   'title.verify': 'Membership Verification',
 
   // Login
@@ -39,8 +39,7 @@ export const en = {
   // Portal
   'portal.heading': 'Your donor portal',
   'portal.membership': 'Membership: {{status}} ({{tier}})',
-  'portal.totalDonated': 'Total donated: {{total}}',
-  'portal.membershipCardLink': 'Membership card',
+  'portal.totalLabel': 'Total donated',
   'portal.tableDate': 'Date',
   'portal.tableAmount': 'Amount',
   'portal.tableDescription': 'Description',
@@ -83,14 +82,12 @@ export const en = {
   'changeRequest.unavailableBody': "Self-service change requests are not available yet. Please contact SVBC and we'll update your details for you.",
 
   // Membership card + public verify page
-  'card.heading': 'Your membership card',
   'card.tier': 'Tier: {{tier}}',
   'card.status': 'Status: {{status}}',
   'card.expires': 'Expires: {{expiry}}',
-  'card.scanHint': 'Show this card, or let a shop scan the QR code or open the link above, to confirm your membership.',
+  'card.expiresLabel': 'Expires',
   'card.regenerate': 'Regenerate card',
-  'card.regenerateHint': 'Regenerating invalidates the old QR code and link immediately — use this if you think your card link has leaked.',
-  'card.unavailable': 'Digital membership cards are not available yet. Please check back soon.',
+  'card.qrAlt': 'QR code to verify membership',
   'verify.heading': 'Membership verification',
   'verify.disclaimer': 'This information is fetched live from our records.',
   'verify.notValid': 'This card is not valid. It may have been regenerated or is no longer active.',

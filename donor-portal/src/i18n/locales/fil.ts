@@ -4,6 +4,7 @@ export const fil: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC Donor Portal',
   'languagePicker.label': 'Wika',
+  'languagePicker.switch': 'Lumipat',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Mag-log In',
@@ -12,7 +13,6 @@ export const fil: Record<TranslationKey, string> = {
   'title.portal': 'Ang Iyong Donor Portal',
   'title.lettersList': 'Mga Dokumento sa Buwis',
   'title.changeRequest': 'Humiling ng Pagbabago',
-  'title.card': 'Ang Iyong Membership Card',
   'title.verify': 'Pagpapatunay ng Membership',
 
   // Login
@@ -41,8 +41,7 @@ export const fil: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': 'Ang iyong donor portal',
   'portal.membership': 'Katayuan ng membership: {{status}} ({{tier}})',
-  'portal.totalDonated': 'Kabuuang na-donate: {{total}}',
-  'portal.membershipCardLink': 'Kard ng membership',
+  'portal.totalLabel': 'Kabuuang na-donate',
   'portal.tableDate': 'Petsa',
   'portal.tableAmount': 'Halaga',
   'portal.tableDescription': 'Deskripsyon',
@@ -85,14 +84,12 @@ export const fil: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': 'Hindi pa available ang self-service change requests. Makipag-ugnayan sa SVBC at kami na ang mag-a-update ng iyong impormasyon.',
 
   // Membership card + public verify page
-  'card.heading': 'Ang iyong membership card',
   'card.tier': 'Antas: {{tier}}',
   'card.status': 'Katayuan: {{status}}',
   'card.expires': 'Mag-e-expire: {{expiry}}',
-  'card.scanHint': 'Ipakita ang card na ito, o hayaang i-scan ng shop ang QR code o buksan ang link sa itaas, para kumpirmahin ang iyong membership.',
+  'card.expiresLabel': 'Mag-e-expire',
   'card.regenerate': 'I-regenerate ang card',
-  'card.regenerateHint': 'Agad na mawawalan ng bisa ang lumang QR code at link kapag nag-regenerate — gamitin ito kung sa tingin mo ay na-leak ang link ng iyong card.',
-  'card.unavailable': 'Hindi pa available ang digital membership cards. Pakibalikan ulit sa lalong madaling panahon.',
+  'card.qrAlt': 'QR code para i-verify ang membership',
   'verify.heading': 'Pagpapatunay ng membership',
   'verify.disclaimer': 'Kinukuha nang live ang impormasyong ito mula sa aming records.',
   'verify.notValid': 'Hindi valid ang card na ito. Maaaring na-regenerate na ito o hindi na active.',

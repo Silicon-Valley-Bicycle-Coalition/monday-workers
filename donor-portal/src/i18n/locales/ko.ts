@@ -4,6 +4,7 @@ export const ko: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 기부자 포털',
   'languagePicker.label': '언어',
+  'languagePicker.switch': '전환',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '로그인',
@@ -12,7 +13,6 @@ export const ko: Record<TranslationKey, string> = {
   'title.portal': '기부자 포털',
   'title.lettersList': '세금 서류',
   'title.changeRequest': '변경 요청',
-  'title.card': '회원 카드',
   'title.verify': '회원 자격 확인',
 
   // Login
@@ -41,8 +41,7 @@ export const ko: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': '기부자 포털',
   'portal.membership': '회원 자격: {{status}} ({{tier}})',
-  'portal.totalDonated': '총 기부금: {{total}}',
-  'portal.membershipCardLink': '회원 카드',
+  'portal.totalLabel': '총 기부금',
   'portal.tableDate': '날짜',
   'portal.tableAmount': '금액',
   'portal.tableDescription': '설명',
@@ -85,14 +84,12 @@ export const ko: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': '셀프 서비스 변경 요청은 아직 제공되지 않습니다. SVBC에 문의해 주시면 저희가 대신 정보를 변경해 드리겠습니다.',
 
   // Membership card + public verify page
-  'card.heading': '회원 카드',
   'card.tier': '등급: {{tier}}',
   'card.status': '상태: {{status}}',
   'card.expires': '만료일: {{expiry}}',
-  'card.scanHint': '회원 자격을 확인하려면 이 카드를 제시하거나 매장 직원이 QR코드를 스캔하게 하거나 위 링크를 열어 주세요.',
+  'card.expiresLabel': '만료',
   'card.regenerate': '카드 재발급',
-  'card.regenerateHint': '재발급하면 이전 QR코드와 링크가 즉시 무효화됩니다 — 카드 링크가 유출되었다고 생각되는 경우 이 기능을 사용하세요.',
-  'card.unavailable': '디지털 회원 카드는 아직 제공되지 않습니다. 잠시 후 다시 확인해 주세요.',
+  'card.qrAlt': '회원 자격을 확인하는 QR 코드',
   'verify.heading': '회원 자격 확인',
   'verify.disclaimer': '이 정보는 저희 기록에서 실시간으로 불러온 것입니다.',
   'verify.notValid': '이 카드는 유효하지 않습니다. 재발급되었거나 더 이상 활성 상태가 아닐 수 있습니다.',

@@ -4,6 +4,7 @@ export const es: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Portal de Donantes de SVBC',
   'languagePicker.label': 'Idioma',
+  'languagePicker.switch': 'Cambiar',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Iniciar sesión',
@@ -12,7 +13,6 @@ export const es: Record<TranslationKey, string> = {
   'title.portal': 'Tu portal de donante',
   'title.lettersList': 'Documentos fiscales',
   'title.changeRequest': 'Solicitar un cambio',
-  'title.card': 'Tu tarjeta de membresía',
   'title.verify': 'Verificación de membresía',
 
   // Login
@@ -41,8 +41,7 @@ export const es: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': 'Tu portal de donante',
   'portal.membership': 'Membresía: {{status}} ({{tier}})',
-  'portal.totalDonated': 'Total donado: {{total}}',
-  'portal.membershipCardLink': 'Tarjeta de membresía',
+  'portal.totalLabel': 'Total donado',
   'portal.tableDate': 'Fecha',
   'portal.tableAmount': 'Monto',
   'portal.tableDescription': 'Descripción',
@@ -85,14 +84,12 @@ export const es: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': 'Las solicitudes de cambio de autoservicio aún no están disponibles. Por favor contacta a SVBC y actualizaremos tus datos por ti.',
 
   // Membership card + public verify page
-  'card.heading': 'Tu tarjeta de membresía',
   'card.tier': 'Nivel: {{tier}}',
   'card.status': 'Estado: {{status}}',
   'card.expires': 'Vence: {{expiry}}',
-  'card.scanHint': 'Muestra esta tarjeta, o deja que una tienda escanee el código QR o abra el enlace de arriba, para confirmar tu membresía.',
+  'card.expiresLabel': 'Vence',
   'card.regenerate': 'Regenerar tarjeta',
-  'card.regenerateHint': 'Regenerarla invalida de inmediato el código QR y el enlace anteriores — usa esta opción si crees que el enlace de tu tarjeta se ha filtrado.',
-  'card.unavailable': 'Las tarjetas de membresía digitales aún no están disponibles. Por favor vuelve a consultar pronto.',
+  'card.qrAlt': 'Código QR para verificar la membresía',
   'verify.heading': 'Verificación de membresía',
   'verify.disclaimer': 'Esta información se obtiene en tiempo real de nuestros registros.',
   'verify.notValid': 'Esta tarjeta no es válida. Es posible que haya sido regenerada o que ya no esté activa.',

@@ -1,5 +1,11 @@
 import type { MondayClient } from '../monday/client';
 import type { DonationRecord, TaxLetterConfig } from '../types';
+import { parseAmount, formatUsd } from '../money';
+
+// Re-exported for backward compatibility — this module used to define parseAmount itself; it now
+// lives in ../money so views.ts (the donor-facing portal) can format amounts the same way without
+// importing from the letters feature.
+export { parseAmount };
 
 export interface LetterGift {
   date: string;
@@ -19,13 +25,6 @@ export interface LetterYearListing {
   donorId: string;
   donorName: string;
   years: number[];
-}
-
-const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-
-export function parseAmount(text: string): number {
-  const n = Number(text.replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
 }
 
 export function giftYear(date: string): number | null {
@@ -92,7 +91,7 @@ export async function loadLetterData(
     donorName: donor.name,
     year,
     gifts,
-    totalFormatted: USD.format(total),
+    totalFormatted: formatUsd(total),
     statement,
   };
 }

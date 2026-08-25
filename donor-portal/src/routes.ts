@@ -28,12 +28,15 @@ import { letterView, lettersListView, lettersUnavailableView } from './letters/l
 import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView } from './changeRequests/changeRequestViews';
 import { buildCardData } from './card/loadCardData';
+import type { PortalCard } from './card/loadCardData';
 import { generateQrSvg } from './card/qr';
-import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
+import { getOrCreateCardToken } from './card/getOrCreateCardToken';
+import { verifyView, verifyNotValidView } from './card/cardViews';
 import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
 import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
 import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
+import { decodeFavicon } from './assets/favicon';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -97,6 +100,20 @@ export function createApp(deps: AppDeps) {
 
   app.get('/health', (c) => c.json({ ok: true }));
 
+  // Served from an embedded constant rather than a Workers Assets binding (none configured here)
+  // — long cache header since the bytes never change without a redeploy.
+  app.get('/favicon.png', () => {
+    // decodeFavicon()'s Uint8Array itself isn't a valid BodyInit under this project's TS lib
+    // config (its .buffer is typed ArrayBufferLike, and .slice() widens further to include
+    // SharedArrayBuffer) — copying into a fresh ArrayBuffer sidesteps both.
+    const bytes = decodeFavicon();
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return new Response(buffer, {
+      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' },
+    });
+  });
+
   const LANG_REDIRECT_ALLOWLIST = ['/login', '/portal'];
 
   // The in-portal switcher (Task 14) links back to the locale-prefixed portal path it was
@@ -109,13 +126,28 @@ export function createApp(deps: AppDeps) {
     return match !== null && isLocale(match[1]!);
   }
 
-  app.get('/lang/:code', (c) => {
-    const code = c.req.param('code');
+  function setLangCookie(c: Context, code: string): void {
     const locale = isLocale(code) ? code : DEFAULT_LOCALE;
     setCookie(c, LANG_COOKIE, locale, { httpOnly: false, secure: true, sameSite: 'Lax', path: '/', maxAge: 365 * 24 * 3600 });
+  }
+
+  function langRedirectTarget(c: Context): string {
     const requestedTo = c.req.query('to') ?? '/login';
-    const to = isAllowedLangRedirect(requestedTo) ? requestedTo : '/login';
-    return c.redirect(to);
+    return isAllowedLangRedirect(requestedTo) ? requestedTo : '/login';
+  }
+
+  app.get('/lang/:code', (c) => {
+    setLangCookie(c, c.req.param('code'));
+    return c.redirect(langRedirectTarget(c));
+  });
+
+  // Query-string variant of the route above, for the language-select <form method="get">s
+  // (loginFormView's languagePicker and the portal's language switcher) — a native <select>
+  // can't submit into a dynamic path segment without JS, so those forms post `code` as a query
+  // param instead of hitting /lang/:code directly.
+  app.get('/lang', (c) => {
+    setLangCookie(c, c.req.query('code') ?? '');
+    return c.redirect(langRedirectTarget(c));
   });
 
   app.get('/login', (c) => {
@@ -231,7 +263,25 @@ export function createApp(deps: AppDeps) {
 
     const data = await loadPortalData(donorItemIds, deps.monday);
     c.header('Cache-Control', NO_STORE);
-    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale), locale));
+
+    // The membership card is now a dashboard widget (one per donor), not a separate page — see
+    // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
+    // renders without a card widget; it must never take down the whole dashboard, since donation
+    // history, discounts, and everything else on the page is still useful without it.
+    const cards: Record<string, PortalCard> = {};
+    if (cardEnabled(deps.config)) {
+      for (const donor of data.donors) {
+        try {
+          const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
+          const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
+          cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
+        } catch (err) {
+          console.error(`donor-portal dashboard card failed for donor "${donor.id}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    return c.html(page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale, cards), locale, { authenticated: true }));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.
@@ -247,7 +297,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale));
+      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
     }
     let listings;
     try {
@@ -256,9 +306,9 @@ export function createApp(deps: AppDeps) {
       // A Monday read failure here would otherwise fall through to the global onError, whose
       // generic "please try logging in again" copy is misleading — this isn't an auth problem.
       console.error(`donor-portal letters list failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale, { authenticated: true }), 500);
     }
-    return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale));
+    return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale, { authenticated: true }));
   });
 
   app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
@@ -268,7 +318,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!lettersEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale));
+      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
     }
 
     // The path param selects among the session's own donor items — never widens them.
@@ -276,7 +326,7 @@ export function createApp(deps: AppDeps) {
     const yearParam = c.req.param('year');
     const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
     if (!donorItemIds.includes(donorItemId) || year === null) {
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale, { authenticated: true }), 404);
     }
 
     let data;
@@ -286,10 +336,10 @@ export function createApp(deps: AppDeps) {
       // Same reasoning as the letters-list route above: a Monday read failure isn't an auth
       // problem, so it shouldn't fall through to the global onError's login-focused copy.
       console.error(`donor-portal letter load failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterLoadFailed', locale), locale), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterLoadFailed', locale), locale, { authenticated: true }), 500);
     }
     if (data === null) {
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale, { authenticated: true }), 404);
     }
 
     const generatedOn = deps.now().toLocaleDateString('en-US', {
@@ -302,7 +352,7 @@ export function createApp(deps: AppDeps) {
     // page is meant to be printed/saved as a PDF — so the title needs to identify the letter on
     // its own, not just say "SVBC Donor Portal".
     const letterTitle = `SVBC ${data.year} Tax Letter — ${data.donorName}`;
-    return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale));
+    return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale, { authenticated: true }));
   });
 
   // Back-compat: same reasoning as the bare /portal redirect above.
@@ -315,10 +365,10 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale));
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
     const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
-    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestFormView(donors, locale), locale));
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestFormView(donors, locale), locale, { authenticated: true }));
   });
 
   app.post('/:locale/portal/change-request', async (c) => {
@@ -328,7 +378,7 @@ export function createApp(deps: AppDeps) {
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale));
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
 
     // Same limiter binding as login, but a distinct key prefix so the two budgets don't
@@ -337,7 +387,7 @@ export function createApp(deps: AppDeps) {
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
     if (!ipResult.success) {
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
     }
 
     // Spec also requires a per-session budget: an IP-only limit lets many donors sharing one
@@ -347,7 +397,7 @@ export function createApp(deps: AppDeps) {
     const sessionToken = getCookie(c, SESSION_COOKIE) as string;
     const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
     if (!sessionResult.success) {
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
     }
 
     const body = await c.req.parseBody();
@@ -364,69 +414,15 @@ export function createApp(deps: AppDeps) {
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
-    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale));
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale, { authenticated: true }));
   });
 
-  // Back-compat: same reasoning as the bare /portal redirect above.
-  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/card/${c.req.param('donorItemId')}`));
-
-  app.get('/:locale/portal/card/:donorItemId', async (c) => {
-    const locale = resolvePathLocale(c);
-    const donorItemIds = await getSessionDonorIds(c, deps);
-    if (donorItemIds === null) return c.redirect('/login');
-
-    c.header('Cache-Control', NO_STORE);
-    if (!cardEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.card') + ' — ' + t(locale, 'site.title'), cardUnavailableView(locale), locale));
-    }
-
-    const donorItemId = c.req.param('donorItemId');
-    if (!donorItemIds.includes(donorItemId)) {
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale), 404);
-    }
-
-    let donor;
-    try {
-      donor = await deps.monday.getDonorPortalData(donorItemId);
-    } catch (err) {
-      console.error(`donor-portal card load failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardLoadFailed', locale), locale), 500);
-    }
-
-    let token: string | null;
-    try {
-      token = await deps.cardTokenStore.getActiveToken(donorItemId);
-    } catch (err) {
-      console.error(`donor-portal card token lookup failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardLoadFailed', locale), locale), 500);
-    }
-    if (token === null) {
-      token = generateToken();
-      try {
-        await deps.cardTokenStore.createToken(donorItemId, token, deps.now().toISOString());
-      } catch (err) {
-        // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
-        // concurrent request for the same donor won the race and inserted first. Re-read rather
-        // than fail the request — the other request's token is just as valid. A genuine
-        // unrelated D1 outage would simply fail again on this re-read, and is reported with this
-        // route's own copy below rather than falling through to the generic (and misleading,
-        // login-flavored) app.onError handler.
-        console.error(`donor-portal card token insert failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
-        try {
-          token = await deps.cardTokenStore.getActiveToken(donorItemId);
-        } catch {
-          token = null;
-        }
-        if (token === null) {
-          return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardLoadFailed', locale), locale), 500);
-        }
-      }
-    }
-
-    const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
-    const qrSvg = generateQrSvg(verifyUrl);
-    return c.html(page(t(locale, 'title.card') + ' — ' + t(locale, 'site.title'), cardView(buildCardData(donor), verifyUrl, qrSvg, locale), locale));
-  });
+  // The membership card used to be its own page — it's now a dashboard widget (see GET
+  // /:locale/portal above), so both the bare and locale-prefixed forms just redirect a stale
+  // link/bookmark to the dashboard instead of 404ing, matching this route table's existing
+  // back-compat convention (see the bare /portal redirect above).
+  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
+  app.get('/:locale/portal/card/:donorItemId', (c) => c.redirect(`/${resolvePathLocale(c)}/portal`));
 
   // No bare-POST redirect for /regenerate — same reasoning as the change-request POST above: the
   // form action is always rendered locale-prefixed already, so there is no unprefixed submitter.
@@ -435,13 +431,17 @@ export function createApp(deps: AppDeps) {
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
+    // No dedicated "unavailable" page to render for this anymore (the card is a dashboard
+    // widget, not a page) — the widget and its regenerate button only ever render when
+    // cardEnabled() is already true, so a POST arriving with it false is a stale form/replay.
+    // Just send them back to the dashboard rather than a full error page.
     if (!cardEnabled(deps.config)) {
-      return c.html(page(t(locale, 'title.card') + ' — ' + t(locale, 'site.title'), cardUnavailableView(locale), locale));
+      return c.redirect(`/${locale}/portal`);
     }
 
     const donorItemId = c.req.param('donorItemId');
     if (!donorItemIds.includes(donorItemId)) {
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale), 404);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale, { authenticated: true }), 404);
     }
 
     const now = deps.now().toISOString();
@@ -449,7 +449,7 @@ export function createApp(deps: AppDeps) {
       await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
     } catch (err) {
       console.error(`donor-portal card token revoke failed: ${err instanceof Error ? err.message : String(err)}`);
-      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale), 500);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale, { authenticated: true }), 500);
     }
     try {
       await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
@@ -470,11 +470,13 @@ export function createApp(deps: AppDeps) {
         token = null;
       }
       if (token === null) {
-        return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale), 500);
+        return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale, { authenticated: true }), 500);
       }
     }
 
-    return c.redirect(`/${locale}/portal/card/${encodeURIComponent(donorItemId)}`);
+    // Back to the dashboard, not a per-card page — the card widget there picks up the freshly
+    // regenerated token on next render (getOrCreateCardToken reads whatever is currently active).
+    return c.redirect(`/${locale}/portal`);
   });
 
   // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR

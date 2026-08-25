@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import type { PortalView } from './types';
+import type { PortalCard } from './card/loadCardData';
 import { t } from './i18n/t';
 
 describe('page', () => {
@@ -18,6 +19,23 @@ describe('page', () => {
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
+
+  it('renders the shared site header with the SVBC wordmark on every page', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).toContain('class="site-header"');
+    expect(html).toContain('class="site-logo"');
+  });
+
+  it('omits the logout button by default (pre-identity and public pages)', () => {
+    const html = page('Title', '<p>body</p>', 'en');
+    expect(html).not.toContain('action="/logout"');
+  });
+
+  it('shows a logout button in the header when authenticated', () => {
+    const html = page('Title', '<p>body</p>', 'en', { authenticated: true });
+    expect(html).toContain('action="/logout"');
+    expect(html).toContain(t('en', 'portal.logout'));
+  });
 });
 
 describe('loginFormView', () => {
@@ -26,9 +44,10 @@ describe('loginFormView', () => {
     expect(html).toContain('action="/login"');
     expect(html).toContain('name="email"');
     expect(html).toContain('Send login link');
-    // one option per supported locale, each linking through /lang/:code
-    expect(html).toContain('/lang/es');
-    expect(html).toContain('/lang/vi');
+    // a <select> submitting to GET /lang, with one <option> per supported locale
+    expect(html).toContain('action="/lang"');
+    expect(html).toContain('<option value="es">');
+    expect(html).toContain('<option value="vi">');
   });
 
   it('renders the prompt in the requested locale when translated (fallback to English otherwise)', () => {
@@ -96,8 +115,34 @@ describe('portalView', () => {
     discounts: [{ name: 'Local Bikes', discountOffered: '10% off' }],
   };
 
+  it('formats donation amounts and the running total as US currency', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).toContain('$100.00'); // donation row, from data.donors[0]
+    expect(html).toContain('$500.00'); // totalDonated: '500' -> $500.00
+    expect(html).toContain('$2,500.00'); // totalDonated: '2500' -> thousands separator
+  });
+
+  it('formats donation dates as "Mon D, YYYY" instead of the raw ISO date', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).toContain('Jan 1, 2026'); // date: '2026-01-01', from data.donors[0]'s donation
+    expect(html).not.toContain('2026-01-01');
+  });
+
+  it('right-aligns the Amount column header and cells', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).toContain('<th class="col-amount">');
+    expect(html).toContain('<td class="col-amount">');
+  });
+
+  it('shows the running total as a table footer row, not a standalone paragraph', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).toContain('<tfoot>');
+    expect(html).toContain('Total donated');
+    expect(html).not.toContain('<p>Total donated');
+  });
+
   it('renders each donor under its own name header, never a single merged view', () => {
-    const html = portalView(data, 'en');
+    const html = portalView(data, 'en', {});
     expect(html).toContain('Jane Donor');
     expect(html).toContain('Jane Also');
     expect(html).toContain('Annual gift');
@@ -119,38 +164,84 @@ describe('portalView', () => {
       ],
       discounts: [],
     };
-    const html = portalView(maliciousData, 'en');
+    const html = portalView(maliciousData, 'en', {});
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
     expect(html).toContain('&lt;img');
   });
 
-  it('links each donor to their own membership card, locale-prefixed', () => {
-    const html = portalView(data, 'es');
-    expect(html).toContain('/es/portal/card/donor-1');
-    expect(html).toContain('/es/portal/card/donor-2');
+  it('renders the wallet card widget inline for a donor with card data, and points regenerate at their own route', () => {
+    const cards: Record<string, PortalCard> = {
+      'donor-1': {
+        data: {
+          donorId: 'donor-1',
+          donorName: 'Jane Donor',
+          memberNumber: 'Member #donor-1',
+          membershipTier: 'Gold',
+          membershipStatus: 'Active',
+          expiryDisplay: 'June 30, 2027',
+          expiryShort: 'Jun 2027',
+        },
+        qrSvg: '<svg data-testid="qr"></svg>',
+      },
+    };
+    const html = portalView(data, 'es', cards);
+    expect(html).toContain('class="member-card"');
+    expect(html).toContain('Member #donor-1');
+    expect(html).toContain('Jun 2027');
+    expect(html).toContain('Gold');
+    expect(html).toContain('<svg data-testid="qr"></svg>');
+    expect(html).toContain('action="/es/portal/card/donor-1/regenerate"');
+    expect(html).not.toContain('June 30, 2027'); // the long form is verify-page-only, not on the card
+  });
+
+  it('never shows the QR target URL as visible text', () => {
+    const cards: Record<string, PortalCard> = {
+      'donor-1': {
+        data: {
+          donorId: 'donor-1',
+          donorName: 'Jane Donor',
+          memberNumber: 'Member #donor-1',
+          membershipTier: 'Gold',
+          membershipStatus: 'Active',
+          expiryDisplay: 'June 30, 2027',
+          expiryShort: 'Jun 2027',
+        },
+        qrSvg: '<svg data-testid="qr"></svg>',
+      },
+    };
+    const html = portalView(data, 'en', cards);
+    expect(html).not.toContain('https://portal.bikesiliconvalley.org/verify/');
+    expect(html).not.toContain('/verify/');
+  });
+
+  it('omits the card widget for a donor with no card data (e.g. cardEnabled is false, or token issuance failed)', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).not.toContain('class="member-card"');
+    expect(html).not.toContain('/regenerate"');
   });
 
   it('links tax documents and change-request under the same locale prefix', () => {
-    const html = portalView(data, 'vi');
+    const html = portalView(data, 'vi', {});
     expect(html).toContain('href="/vi/portal/letters"');
     expect(html).toContain('href="/vi/portal/change-request"');
   });
 
-  it('includes a language switcher offering every supported locale', () => {
-    const html = portalView(data, 'en');
-    expect(html).toContain('/lang/es?to=%2Fen%2Fportal');
-    expect(html).toContain('/lang/vi?to=%2Fen%2Fportal');
+  it('includes a language switcher offering every supported locale, submitting to /lang', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).toContain('action="/lang"');
+    expect(html).toContain('name="to" value="/en/portal"');
+    expect(html).toContain('<option value="es">');
+    expect(html).toContain('<option value="vi">');
+    expect(html).toContain('<option value="en" selected>');
   });
 
-  it('includes a per-language "make this my language" form posting field=language to the change-request endpoint', () => {
-    const html = portalView(data, 'en');
-    expect(html).toContain('action="/en/portal/change-request"');
-    expect(html).toContain('value="language"');
-    expect(html).toContain('value="Spanish"'); // the es option's newValue is the Monday label, not "es"
+  it('does not offer a per-language change-request button (superseded by the general "Request a change" form\'s Language field)', () => {
+    const html = portalView(data, 'en', {});
+    expect(html).not.toContain('action="/en/portal/change-request"');
   });
 
   it('renders actual translated copy for a non-English locale, not just structure', () => {
-    const html = portalView(data, 'es');
+    const html = portalView(data, 'es', {});
     expect(html).toContain(t('es', 'portal.heading'));
   });
 });

@@ -4,6 +4,7 @@ export const zhHans: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'SVBC 捐赠者门户',
   'languagePicker.label': '语言',
+  'languagePicker.switch': '切换',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '登录',
@@ -12,7 +13,6 @@ export const zhHans: Record<TranslationKey, string> = {
   'title.portal': '您的捐赠者门户',
   'title.lettersList': '税务文件',
   'title.changeRequest': '申请变更',
-  'title.card': '您的会员卡',
   'title.verify': '会员验证',
 
   // Login
@@ -41,8 +41,7 @@ export const zhHans: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': '您的捐赠者门户',
   'portal.membership': '会员状态：{{status}}（{{tier}}）',
-  'portal.totalDonated': '捐款总额：{{total}}',
-  'portal.membershipCardLink': '会员卡',
+  'portal.totalLabel': '捐款总额',
   'portal.tableDate': '日期',
   'portal.tableAmount': '金额',
   'portal.tableDescription': '说明',
@@ -85,14 +84,12 @@ export const zhHans: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': '自助变更申请功能暂未提供，请联系 SVBC，我们将为您更新信息。',
 
   // Membership card + public verify page
-  'card.heading': '您的会员卡',
   'card.tier': '等级：{{tier}}',
   'card.status': '状态：{{status}}',
   'card.expires': '有效期至：{{expiry}}',
-  'card.scanHint': '出示此卡片，或让店家扫描二维码或打开上方链接，即可确认您的会员身份。',
+  'card.expiresLabel': '到期',
   'card.regenerate': '重新生成会员卡',
-  'card.regenerateHint': '重新生成会立即使旧的二维码和链接失效 — 如果您认为会员卡链接已泄露，请使用此功能。',
-  'card.unavailable': '电子会员卡功能暂未提供，请稍后再查看。',
+  'card.qrAlt': '用于验证会员身份的二维码',
   'verify.heading': '会员验证',
   'verify.disclaimer': '此信息为实时从我们的记录中获取。',
   'verify.notValid': '此卡片无效，可能已被重新生成或已不再有效。',

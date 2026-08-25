@@ -4,6 +4,7 @@ export const vi: Record<TranslationKey, string> = {
   // Site-wide
   'site.title': 'Cổng thông tin Nhà tài trợ SVBC',
   'languagePicker.label': 'Ngôn ngữ',
+  'languagePicker.switch': 'Chuyển',
 
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Đăng nhập',
@@ -12,7 +13,6 @@ export const vi: Record<TranslationKey, string> = {
   'title.portal': 'Cổng thông tin nhà tài trợ của bạn',
   'title.lettersList': 'Tài liệu thuế',
   'title.changeRequest': 'Yêu cầu thay đổi',
-  'title.card': 'Thẻ thành viên của bạn',
   'title.verify': 'Xác minh tư cách thành viên',
 
   // Login
@@ -41,8 +41,7 @@ export const vi: Record<TranslationKey, string> = {
   // Portal
   'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',
   'portal.membership': 'Tư cách thành viên: {{status}} ({{tier}})',
-  'portal.totalDonated': 'Tổng số tiền đã quyên góp: {{total}}',
-  'portal.membershipCardLink': 'Thẻ thành viên',
+  'portal.totalLabel': 'Tổng số tiền đã quyên góp',
   'portal.tableDate': 'Ngày',
   'portal.tableAmount': 'Số tiền',
   'portal.tableDescription': 'Mô tả',
@@ -85,14 +84,12 @@ export const vi: Record<TranslationKey, string> = {
   'changeRequest.unavailableBody': 'Tính năng tự yêu cầu thay đổi hiện chưa khả dụng. Vui lòng liên hệ với SVBC và chúng tôi sẽ cập nhật thông tin giúp bạn.',
 
   // Membership card + public verify page
-  'card.heading': 'Thẻ thành viên của bạn',
   'card.tier': 'Hạng: {{tier}}',
   'card.status': 'Trạng thái: {{status}}',
   'card.expires': 'Hết hạn: {{expiry}}',
-  'card.scanHint': 'Xuất trình thẻ này, hoặc để cửa hàng quét mã QR hay mở liên kết ở trên, để xác nhận tư cách thành viên của bạn.',
+  'card.expiresLabel': 'Hết hạn',
   'card.regenerate': 'Tạo lại thẻ',
-  'card.regenerateHint': 'Việc tạo lại thẻ sẽ vô hiệu hóa ngay lập tức mã QR và liên kết cũ — hãy sử dụng tính năng này nếu bạn nghĩ liên kết thẻ của mình đã bị lộ.',
-  'card.unavailable': 'Thẻ thành viên điện tử hiện chưa khả dụng. Vui lòng quay lại kiểm tra sau.',
+  'card.qrAlt': 'Mã QR để xác minh tư cách thành viên',
   'verify.heading': 'Xác minh tư cách thành viên',
   'verify.disclaimer': 'Thông tin này được lấy trực tiếp từ hồ sơ của chúng tôi theo thời gian thực.',
   'verify.notValid': 'Thẻ này không hợp lệ. Thẻ có thể đã được tạo lại hoặc không còn hoạt động.',

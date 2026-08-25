@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './cardViews';
+import { verifyView, verifyNotValidView } from './cardViews';
 import type { CardData } from './loadCardData';
 import { t } from '../i18n/t';
 
@@ -10,6 +10,7 @@ const data: CardData = {
   membershipTier: 'Champion',
   membershipStatus: 'Active',
   expiryDisplay: 'December 31, 2026',
+  expiryShort: 'Dec 2026',
 };
 
 // Distinct payload per field so a broken/missing escapeHtml() call on any one
@@ -21,69 +22,8 @@ const xssData: CardData = {
   membershipTier: '<script>alert("tier")</script>',
   membershipStatus: '<script>alert("status")</script>',
   expiryDisplay: '<script>alert("expiry")</script>',
+  expiryShort: '<script>alert("expiryShort")</script>',
 };
-const xssVerifyUrl = 'https://portal.example.org/verify/"><script>alert("url")</script>';
-
-describe('cardView', () => {
-  it('contains the donor identity, tier, status, expiry, verify link, and QR', () => {
-    const html = cardView(data, 'https://portal.example.org/verify/tok123', '<svg data-testid="qr"></svg>', 'en');
-    expect(html).toContain('Member #donor-1');
-    expect(html).toContain('Champion');
-    expect(html).toContain('Active');
-    expect(html).toContain('December 31, 2026');
-    expect(html).toContain('https://portal.example.org/verify/tok123');
-    expect(html).toContain('<svg data-testid="qr">');
-  });
-
-  it('escapes donor-sourced text', () => {
-    const html = cardView(data, 'https://portal.example.org/verify/tok123', '<svg></svg>', 'en');
-    expect(html).not.toContain('<script>');
-    expect(html).toContain('&lt;script&gt;');
-  });
-
-  it('escapes every CRM-sourced field and the verify URL, not just donor name', () => {
-    const html = cardView(xssData, xssVerifyUrl, '<svg></svg>', 'en');
-    expect(html).not.toContain('<script>alert("name")</script>');
-    expect(html).not.toContain('<script>alert("number")</script>');
-    expect(html).not.toContain('<script>alert("tier")</script>');
-    expect(html).not.toContain('<script>alert("status")</script>');
-    expect(html).not.toContain('<script>alert("expiry")</script>');
-    expect(html).not.toContain('<script>alert("url")</script>');
-    expect(html).toContain('&lt;script&gt;alert(&quot;name&quot;)&lt;/script&gt;');
-    expect(html).toContain('&lt;script&gt;alert(&quot;number&quot;)&lt;/script&gt;');
-    expect(html).toContain('&lt;script&gt;alert(&quot;tier&quot;)&lt;/script&gt;');
-    expect(html).toContain('&lt;script&gt;alert(&quot;status&quot;)&lt;/script&gt;');
-    expect(html).toContain('&lt;script&gt;alert(&quot;expiry&quot;)&lt;/script&gt;');
-    expect(html).toContain('&lt;script&gt;alert(&quot;url&quot;)&lt;/script&gt;');
-  });
-
-  it("points the regenerate form at this donor's own regenerate route", () => {
-    const html = cardView(data, 'https://portal.example.org/verify/tok123', '<svg></svg>', 'en');
-    expect(html).toContain('action="/en/portal/card/donor-1/regenerate"');
-    expect(html).toContain('method="post"');
-  });
-
-  it('locale-prefixes the regenerate form action and back-to-portal link', () => {
-    const html = cardView(data, 'https://portal.example.org/verify/abc', '<svg></svg>', 'ko');
-    expect(html).toContain('/ko/portal');
-    expect(html).toContain(`/ko/portal/card/${data.donorId}/regenerate`);
-  });
-
-  it('renders actual translated copy for the requested locale, not just structure', () => {
-    const html = cardView(data, 'https://portal.example.org/verify/tok123', '<svg></svg>', 'ko');
-    expect(html).toContain(t('ko', 'card.regenerateHint'));
-  });
-});
-
-describe('cardUnavailableView', () => {
-  it('says cards are not available yet', () => {
-    expect(cardUnavailableView('en')).toContain('not available yet');
-  });
-
-  it('renders the unavailable message as real translated copy for a non-English locale', () => {
-    expect(cardUnavailableView('ko')).toContain(t('ko', 'card.unavailable'));
-  });
-});
 
 describe('verifyView', () => {
   it("shows the donor identity, tier, status, and expiry, but not a member number", () => {
