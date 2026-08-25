@@ -93,4 +93,10 @@ describe('portalView', () => {
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
     expect(html).toContain('&lt;img');
   });
+
+  it('links each donor to their own membership card', () => {
+    const html = portalView(data);
+    expect(html).toContain('/portal/card/donor-1');
+    expect(html).toContain('/portal/card/donor-2');
+  });
 });

@@ -10,17 +10,22 @@ import type { IpRateLimiter } from './ratelimit';
 import type { Config } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { ChangeQueueMessage } from './changeRequests/submitChangeRequest';
+import type { CardTokenStore } from './db/cardTokens';
 import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
-import { changeRequestsEnabled, lettersEnabled } from './config';
+import { changeRequestsEnabled, lettersEnabled, cardEnabled } from './config';
+import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
 import { submitChangeRequest } from './changeRequests/submitChangeRequest';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView } from './changeRequests/changeRequestViews';
+import { buildCardData } from './card/loadCardData';
+import { generateQrSvg } from './card/qr';
+import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -33,6 +38,7 @@ export interface AppDeps {
   now: () => Date;
   changeStore: ChangeRequestStore;
   changeQueue: { send(message: ChangeQueueMessage): Promise<void> };
+  cardTokenStore: CardTokenStore;
 }
 
 const SESSION_COOKIE = 'session';
@@ -47,6 +53,8 @@ const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
 const TITLE_PORTAL = `Your Donor Portal — ${SITE_TITLE}`;
 const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
 const TITLE_CHANGE_REQUEST = `Request a Change — ${SITE_TITLE}`;
+const TITLE_CARD = `Your Membership Card — ${SITE_TITLE}`;
+const TITLE_VERIFY = `Membership Verification — ${SITE_TITLE}`;
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
 // characters that would let a value break out of a GraphQL string literal), and requires an
@@ -303,6 +311,87 @@ export function createApp(deps: AppDeps) {
       now: deps.now,
     });
     return c.html(page(TITLE_CHANGE_REQUEST, changeRequestResultView(result)));
+  });
+
+  app.get('/portal/card/:donorItemId', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(TITLE_CARD, cardUnavailableView()));
+    }
+
+    const donorItemId = c.req.param('donorItemId');
+    if (!donorItemIds.includes(donorItemId)) {
+      return c.html(page(TITLE_ERROR, errorView('That card does not exist.')), 404);
+    }
+
+    let donor;
+    try {
+      donor = await deps.monday.getDonorPortalData(donorItemId);
+    } catch (err) {
+      console.error(`donor-portal card load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not load your card right now. Please try again in a few minutes.')), 500);
+    }
+
+    let token = await deps.cardTokenStore.getActiveToken(donorItemId);
+    if (token === null) {
+      token = generateToken();
+      await deps.cardTokenStore.createToken(donorItemId, token, deps.now().toISOString());
+    }
+
+    const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
+    const qrSvg = generateQrSvg(verifyUrl);
+    return c.html(page(TITLE_CARD, cardView(buildCardData(donor), verifyUrl, qrSvg)));
+  });
+
+  app.post('/portal/card/:donorItemId/regenerate', async (c) => {
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/login');
+
+    const donorItemId = c.req.param('donorItemId');
+    if (!donorItemIds.includes(donorItemId)) {
+      return c.html(page(TITLE_ERROR, errorView('That card does not exist.')), 404);
+    }
+
+    const now = deps.now().toISOString();
+    await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
+    await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
+
+    return c.redirect(`/portal/card/${encodeURIComponent(donorItemId)}`);
+  });
+
+  app.get('/verify/:token', async (c) => {
+    c.header('Cache-Control', NO_STORE);
+
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(TITLE_VERIFY, errorView('Too many requests — please try again in a minute.')), 429);
+    }
+
+    const token = c.req.param('token');
+    let donorItemId: string | null;
+    try {
+      donorItemId = await deps.cardTokenStore.findActiveDonorId(token);
+    } catch (err) {
+      console.error(`donor-portal verify lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not verify this card right now. Please try again in a few minutes.')), 500);
+    }
+    if (donorItemId === null) {
+      return c.html(page(TITLE_VERIFY, verifyNotValidView()));
+    }
+
+    let donor;
+    try {
+      donor = await deps.monday.getDonorPortalData(donorItemId);
+    } catch (err) {
+      console.error(`donor-portal verify load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(TITLE_ERROR, errorView('We could not verify this card right now. Please try again in a few minutes.')), 500);
+    }
+
+    return c.html(page(TITLE_VERIFY, verifyView(buildCardData(donor))));
   });
 
   app.post('/logout', async (c) => {

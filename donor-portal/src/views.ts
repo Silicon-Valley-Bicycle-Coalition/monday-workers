@@ -68,6 +68,7 @@ function donorSection(donor: PortalView['donors'][number]): string {
       <h2>${escapeHtml(donor.name)}</h2>
       <p>Membership: ${escapeHtml(donor.membershipStatus)} (${escapeHtml(donor.membershipTier)})</p>
       <p>Total donated: ${escapeHtml(donor.totalDonated)}</p>
+      <p><a href="/portal/card/${encodeURIComponent(donor.id)}">Membership card</a></p>
       <table>
         <thead>
           <tr><th>Date</th><th>Amount</th><th>Description</th></tr>
