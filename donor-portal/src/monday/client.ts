@@ -9,6 +9,7 @@ import type {
   LetterSettings,
   MondayColumns,
 } from '../types';
+import type { Locale } from '../i18n/locales';
 
 interface MondayColumnValue {
   id: string;
@@ -326,6 +327,13 @@ export class HttpMondayClient implements MondayClient {
     // Checkbox state comes from the CheckboxValue fragment's `checked` field rather than the
     // display text — Monday renders an unchecked box as null text and a checked one as "v",
     // neither of which is worth string-matching on.
+    const localeColumnEntries = Object.entries(params.columns.bodyTemplatesByLocale) as [Locale, string][];
+    const columnIds = [
+      params.columns.autoSend,
+      params.columns.startDate,
+      params.columns.bodyTemplate,
+      ...localeColumnEntries.map(([, columnId]) => columnId),
+    ];
     const query = `
       query ($boardId: ID!) {
         boards(ids: [$boardId]) {
@@ -333,7 +341,7 @@ export class HttpMondayClient implements MondayClient {
             items {
               id
               name
-              column_values(ids: ${JSON.stringify([params.columns.autoSend, params.columns.startDate, params.columns.bodyTemplate])}) {
+              column_values(ids: ${JSON.stringify(columnIds)}) {
                 id
                 text
                 ... on CheckboxValue { checked }
@@ -356,10 +364,18 @@ export class HttpMondayClient implements MondayClient {
     const item = named ?? items[0];
     if (!item) return null;
     const autoSendValue = (item.column_values ?? []).find((c) => c.id === params.columns.autoSend);
+    const bodyTemplatesByLocale: Partial<Record<Locale, string>> = {};
+    for (const [locale, columnId] of localeColumnEntries) {
+      const text = columnText(item, columnId);
+      if (text.trim().length > 0) {
+        bodyTemplatesByLocale[locale] = text;
+      }
+    }
     return {
       autoSend: autoSendValue?.checked === true,
       startDate: columnText(item, params.columns.startDate),
       bodyTemplate: columnText(item, params.columns.bodyTemplate),
+      bodyTemplatesByLocale,
     };
   }
 

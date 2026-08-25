@@ -101,4 +101,10 @@ export const es: Record<TranslationKey, string> = {
   'email.subject': 'Tu enlace de acceso al portal de donantes de SVBC',
   'email.bodyIntro': 'Haz clic abajo para iniciar sesión en el portal de donantes. Este enlace caduca pronto y solo se puede usar una vez.',
   'email.loginButton': 'Iniciar sesión',
+
+  'letterReady.subject': 'Tu carta de donaciones {{year}} de SVBC está lista',
+  'letterReady.greeting': 'Hola {{donorName}}:',
+  'letterReady.body': 'Tu carta de donaciones de {{year}} ya está disponible en el portal de donantes.',
+  'letterReady.loginLink': 'Inicia sesión para verla',
+  'letterReady.expiry': 'Este enlace caduca pronto y solo se puede usar una vez.',
 } satisfies Record<TranslationKey, string>;

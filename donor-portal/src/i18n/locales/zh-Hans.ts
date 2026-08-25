@@ -101,4 +101,10 @@ export const zhHans: Record<TranslationKey, string> = {
   'email.subject': '您的 SVBC 捐赠者门户登录链接',
   'email.bodyIntro': '点击下方链接登录捐赠者门户。此链接很快会失效，且只能使用一次。',
   'email.loginButton': '登录',
+
+  'letterReady.subject': '您的 {{year}} 年 SVBC 捐赠信函已就绪',
+  'letterReady.greeting': '{{donorName}}，您好：',
+  'letterReady.body': '您的 {{year}} 年捐赠信函现在可以在捐赠者门户中查看。',
+  'letterReady.loginLink': '登录查看',
+  'letterReady.expiry': '此链接很快会失效，且只能使用一次。',
 } satisfies Record<TranslationKey, string>;

@@ -241,6 +241,12 @@ sends — no button-clicking through the whole Donors board. Staff control it en
   emails, button-triggered and cron alike; blank falls back to the built-in copy. Pasted markup
   is escaped, never rendered, so the board can't become an HTML-injection vector into donor
   email.
+* **Per-locale templates** — one optional "Email body template (Spanish)"-style column per
+  supported non-English locale (`letterCron.columns.bodyTemplatesByLocale`). Each donor's email
+  resolves their Monday Preferred Language, then picks their locale's template → the default
+  template → the built-in copy *in their language* (`letterReady.*` keys exist across all ten
+  locales). The subject line always follows the donor's language, and the magic link carries
+  `&lang=<locale>` so the portal opens localized — same resolution as the login email.
 
 How it runs (`src/letters/runLetterCron.ts`, called from the existing daily `scheduled()`
 handler — no separate cron trigger): every day the Worker reads the settings board (one cheap
@@ -268,9 +274,11 @@ Operator setup, in addition to v1/v2/v2.1 steps:
    holds). The script creates the checkbox/date/long-text columns, seeds the single
    "Letter emails" settings item with the built-in template, deletes Monday's board-template
    default items, and prints the `letterCron` config block to paste into `config/svbc.json`.
-   Already run against the CRM Sandbox: board `18428114991`
-   ("Donor Portal Letter Settings (sandbox)"); re-run the same command against the production
-   workspace at rollout.
+   A fresh board also gets the nine per-locale template columns. Already run against the CRM
+   Sandbox: board `18428114991` ("Donor Portal Letter Settings (sandbox)", locale columns added
+   via `--add-locale-columns 18428114991` — the idempotent upgrade mode for boards created
+   before those columns existed); re-run the same command against the production workspace at
+   rollout.
 2. Grant the portal's integration user **read** access to the new board (it never writes to it).
 3. Paste the printed `letterCron` block into `config/svbc.json`, commit, deploy.
 4. When SVBC wants the January send armed: check Auto-send and set the start date on the board.

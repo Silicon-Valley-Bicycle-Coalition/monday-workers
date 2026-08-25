@@ -39,7 +39,7 @@ const config: Config = {
   cardTokens: { retentionDays: 30 },
   letterCron: {
     boardId: null,
-    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
     maxTriggersPerRun: 200,
   },
 };
@@ -233,6 +233,85 @@ describe('processLetterSendBatch', () => {
     expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledTimes(1);
     expect((emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].bodyTemplate).toBeUndefined();
     expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('resolves the donor locale from Monday and localizes the email and portal link', async () => {
+    const monday = fakeMonday();
+    (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'donor-1', name: 'Juana Ejemplo', email: 'juana@example.org', address: '', phone: '', preferredLanguage: 'Spanish',
+    });
+    const emailSender = fakeEmailSender();
+
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row),
+      monday,
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    const sent = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sent.locale).toBe('es');
+    expect(sent.loginUrl).toContain('&lang=es');
+  });
+
+  it('defaults to English when the preferred language is unset or unrecognized', async () => {
+    const monday = fakeMonday();
+    (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'donor-1', name: 'Jane', email: 'jane@example.org', address: '', phone: '', preferredLanguage: 'Klingon',
+    });
+    const emailSender = fakeEmailSender();
+
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row),
+      monday,
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    const sent = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sent.locale).toBe('en');
+    expect(sent.loginUrl).toContain('&lang=en');
+  });
+
+  it('picks the donor locale’s template, falling back to the default template', async () => {
+    const monday = fakeMonday();
+    (monday.getLetterSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      autoSend: true,
+      startDate: '2027-01-05',
+      bodyTemplate: 'Default {{donorName}}',
+      bodyTemplatesByLocale: { es: 'Hola {{donorName}}' },
+    });
+    (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockImplementation(async (id: string) => ({
+      id,
+      name: id === 'donor-1' ? 'Juana' : 'Jane',
+      email: `${id}@example.org`,
+      address: '',
+      phone: '',
+      preferredLanguage: id === 'donor-1' ? 'Spanish' : 'Japanese',
+    }));
+    const secondRow: LetterSendRow = { ...row, id: 43, donorItemId: 'donor-2' };
+    const store = fakeStore(row);
+    (store.getById as ReturnType<typeof vi.fn>).mockImplementation(async (id: number) => (id === 42 ? row : secondRow));
+    const emailSender = fakeEmailSender();
+
+    await processLetterSendBatch([makeMessage(42), makeMessage(43)], {
+      store,
+      monday,
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config: configWithLetterCron,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    const calls = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls;
+    const spanish = calls.find((c) => c[0].locale === 'es')![0];
+    const japanese = calls.find((c) => c[0].locale === 'ja')![0];
+    expect(spanish.bodyTemplate).toBe('Hola {{donorName}}');
+    expect(japanese.bodyTemplate).toBe('Default {{donorName}}'); // no ja column → default template
   });
 
   it('never reads the Letter Settings board while letterCron is unconfigured', async () => {

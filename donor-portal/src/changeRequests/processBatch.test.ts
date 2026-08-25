@@ -41,7 +41,7 @@ const config: Config = {
   cardTokens: { retentionDays: 30 },
   letterCron: {
     boardId: null,
-    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
     maxTriggersPerRun: 200,
   },
 };

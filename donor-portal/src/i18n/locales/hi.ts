@@ -101,4 +101,10 @@ export const hi: Record<TranslationKey, string> = {
   'email.subject': 'SVBC डोनर पोर्टल का आपका लॉगिन लिंक',
   'email.bodyIntro': 'डोनर पोर्टल में लॉग इन करने के लिए नीचे क्लिक करें। यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
   'email.loginButton': 'लॉग इन करें',
+
+  'letterReady.subject': 'आपका {{year}} SVBC दान पत्र तैयार है',
+  'letterReady.greeting': 'नमस्ते {{donorName}},',
+  'letterReady.body': 'आपका {{year}} का दान पत्र अब डोनर पोर्टल में देखने के लिए तैयार है।',
+  'letterReady.loginLink': 'देखने के लिए लॉग इन करें',
+  'letterReady.expiry': 'यह लिंक जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
 } satisfies Record<TranslationKey, string>;

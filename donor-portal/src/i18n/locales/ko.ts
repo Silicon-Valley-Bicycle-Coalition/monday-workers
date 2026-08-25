@@ -101,4 +101,10 @@ export const ko: Record<TranslationKey, string> = {
   'email.subject': 'SVBC 기부자 포털 로그인 링크',
   'email.bodyIntro': '아래 버튼을 클릭해 기부자 포털에 로그인하세요. 이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
   'email.loginButton': '로그인',
+
+  'letterReady.subject': '{{year}}년 SVBC 기부 확인서가 준비되었습니다',
+  'letterReady.greeting': '{{donorName}}님, 안녕하세요.',
+  'letterReady.body': '{{year}}년 기부 확인서를 기부자 포털에서 확인하실 수 있습니다.',
+  'letterReady.loginLink': '로그인하여 확인하기',
+  'letterReady.expiry': '이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
 } satisfies Record<TranslationKey, string>;

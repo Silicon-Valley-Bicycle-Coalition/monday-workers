@@ -1,4 +1,5 @@
 import type { Config, MondayColumns } from './types';
+import { isLocale } from './i18n/locales';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'email', 'auth', 'rateLimit', 'taxLetter', 'changeRequests', 'cardTokens', 'letterCron'] as const;
 
@@ -129,6 +130,12 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(letterCron, 'letterCron', REQUIRED_LETTER_CRON_KEYS);
   const letterCronColumns = requireObject(letterCron, 'columns', 'letterCron.columns');
   requireKeys(letterCronColumns, 'letterCron.columns', REQUIRED_LETTER_CRON_COLUMNS);
+  const byLocale = requireObject(letterCronColumns, 'bodyTemplatesByLocale', 'letterCron.columns.bodyTemplatesByLocale');
+  for (const key of Object.keys(byLocale)) {
+    if (!isLocale(key)) {
+      throw new Error(`config: "letterCron.columns.bodyTemplatesByLocale" has unsupported locale key "${key}"`);
+    }
+  }
   if (typeof letterCron.maxTriggersPerRun !== 'number' || letterCron.maxTriggersPerRun <= 0) {
     throw new Error('config: "letterCron.maxTriggersPerRun" must be a positive number');
   }

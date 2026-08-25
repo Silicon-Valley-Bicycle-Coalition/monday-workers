@@ -10,6 +10,12 @@
 //   MONDAY_API_TOKEN=... node scripts/create-letter-settings-board.mjs --workspace <workspaceId> \
 //     [--name "Donor Portal Letter Settings"]
 //
+// A fresh board gets one "Email body template" column per non-English locale in addition to the
+// default one. To add those locale columns to a board created before they existed, run the
+// upgrade mode instead (idempotent — skips columns whose title already exists):
+//
+//   MONDAY_API_TOKEN=... node scripts/create-letter-settings-board.mjs --add-locale-columns <boardId>
+//
 // The token needs board-create permission in the target workspace. Note that's *more* than the
 // portal's own least-privilege integration user should hold — run this as an admin/staff user,
 // then grant the integration user read access to the created board (it never writes to it).
@@ -31,15 +37,34 @@ function argValue(flag) {
   return idx >= 0 ? process.argv[idx + 1] : undefined;
 }
 
+const upgradeBoardId = argValue('--add-locale-columns');
 const workspaceId = argValue('--workspace');
-if (!workspaceId) {
-  console.error('create-letter-settings-board: --workspace <workspaceId> is required');
+if (!workspaceId && !upgradeBoardId) {
+  console.error('create-letter-settings-board: --workspace <workspaceId> (create) or --add-locale-columns <boardId> (upgrade) is required');
   process.exit(1);
 }
 const boardName = argValue('--name') ?? 'Donor Portal Letter Settings';
 
 const config = JSON.parse(readFileSync(join(HERE, '..', 'config', 'svbc.json'), 'utf8'));
 const { apiUrl } = config.monday;
+
+// Keep in sync with LOCALE_LABELS in src/i18n/locales.ts — 'en' is deliberately absent: English
+// donors use the default "Email body template" column, like any locale without its own column.
+const NON_EN_LOCALES = {
+  es: 'Spanish',
+  'zh-Hans': 'Chinese (Simplified)',
+  'zh-Hant': 'Chinese (Traditional)',
+  fil: 'Filipino',
+  hi: 'Hindi',
+  ja: 'Japanese',
+  ko: 'Korean',
+  'pt-BR': 'Portuguese (Brazil)',
+  vi: 'Vietnamese',
+};
+
+const localeColumnTitle = (label) => `Email body template (${label})`;
+const localeColumnDescription = (label) =>
+  `Optional ${label} version of the letter-ready email. Same {{donorName}}/{{year}}/{{loginUrl}} placeholders as the main template. Blank = donors with this language preference get the main template (or the built-in copy in their language if that is blank too).`;
 
 async function graphql(query, variables) {
   const res = await fetch(apiUrl, {
@@ -66,6 +91,48 @@ This link expires soon and can only be used once.`;
 
 const ITEM_NAME = 'Letter emails';
 
+async function createColumnOn(boardId, title, columnType, description) {
+  const data = await graphql(
+    `mutation ($boardId: ID!, $title: String!, $columnType: ColumnType!, $description: String) {
+      create_column(board_id: $boardId, title: $title, column_type: $columnType, description: $description) { id }
+    }`,
+    { boardId, title, columnType, description }
+  );
+  console.error(`created ${columnType} column ${data.create_column.id} ("${title}")`);
+  return data.create_column.id;
+}
+
+// Creates any missing per-locale template columns on the board, keyed by column title, and
+// returns the full locale → column id map (existing columns included). Idempotent.
+async function ensureLocaleColumns(boardId) {
+  const columnData = await graphql(
+    `query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`,
+    { boardId: [boardId] }
+  );
+  const byTitle = new Map((columnData.boards[0]?.columns ?? []).map((c) => [c.title, c.id]));
+  const ids = {};
+  for (const [locale, label] of Object.entries(NON_EN_LOCALES)) {
+    const title = localeColumnTitle(label);
+    const existingId = byTitle.get(title);
+    if (existingId) {
+      console.error(`column "${title}" already exists (${existingId}) — skipping`);
+      ids[locale] = existingId;
+    } else {
+      ids[locale] = await createColumnOn(boardId, title, 'long_text', localeColumnDescription(label));
+    }
+  }
+  return ids;
+}
+
+// --add-locale-columns: upgrade an existing Letter Settings board in place, then print the
+// bodyTemplatesByLocale block to merge into config/svbc.json.
+if (upgradeBoardId) {
+  const ids = await ensureLocaleColumns(upgradeBoardId);
+  console.log(JSON.stringify({ bodyTemplatesByLocale: ids }, null, 2));
+  console.error('\nMerge the bodyTemplatesByLocale block above into letterCron.columns in config/svbc.json.');
+  process.exit(0);
+}
+
 // Pre-flight: refuse to create a duplicate. An accidental second run against the same
 // workspace would otherwise mint a second settings board and a config-pointing footgun.
 const existing = await graphql(
@@ -91,32 +158,25 @@ const boardData = await graphql(
 const boardId = boardData.create_board.id;
 console.error(`created board ${boardId} ("${boardName}") in workspace ${workspaceId}`);
 
-async function createColumn(title, columnType, description) {
-  const data = await graphql(
-    `mutation ($boardId: ID!, $title: String!, $columnType: ColumnType!, $description: String) {
-      create_column(board_id: $boardId, title: $title, column_type: $columnType, description: $description) { id }
-    }`,
-    { boardId, title, columnType, description }
-  );
-  console.error(`created ${columnType} column ${data.create_column.id} ("${title}")`);
-  return data.create_column.id;
-}
-
-const autoSendId = await createColumn(
+const autoSendId = await createColumnOn(
+  boardId,
   'Auto-send',
   'checkbox',
   'Master switch for the automatic January letter emails. While unchecked, the cron never sends.'
 );
-const startDateId = await createColumn(
+const startDateId = await createColumnOn(
+  boardId,
   'Auto-send start date',
   'date',
   'The cron only sends on or after this date. It re-arms each January for the newly completed year, so move this date forward (or uncheck Auto-send) to delay a season.'
 );
-const bodyTemplateId = await createColumn(
+const bodyTemplateId = await createColumnOn(
+  boardId,
   'Email body template',
   'long_text',
-  'Plain text with {{donorName}}, {{year}}, {{loginUrl}} placeholders. Used for every letter-ready email (button and cron). Blank = built-in copy. Pasted HTML is shown literally, never rendered.'
+  'Plain text with {{donorName}}, {{year}}, {{loginUrl}} placeholders. The default for every letter-ready email (button and cron) — locales with their own template column override it. Blank = built-in copy in the donor’s language. Pasted HTML is shown literally, never rendered.'
 );
+const localeColumnIds = await ensureLocaleColumns(boardId);
 
 const itemData = await graphql(
   `mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
@@ -153,7 +213,12 @@ console.log(
     {
       letterCron: {
         boardId: Number(boardId),
-        columns: { autoSend: autoSendId, startDate: startDateId, bodyTemplate: bodyTemplateId },
+        columns: {
+          autoSend: autoSendId,
+          startDate: startDateId,
+          bodyTemplate: bodyTemplateId,
+          bodyTemplatesByLocale: localeColumnIds,
+        },
         maxTriggersPerRun: config.letterCron?.maxTriggersPerRun ?? 200,
       },
     },

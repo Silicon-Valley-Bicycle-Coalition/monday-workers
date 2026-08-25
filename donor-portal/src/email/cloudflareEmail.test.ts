@@ -52,6 +52,7 @@ describe('CloudflareEmailSender', () => {
 
       await sender.sendLetterReadyEmail({
         to: 'jane@example.org',
+        locale: 'en',
         donorName: 'Jane Example',
         year: 2025,
         loginUrl: 'https://portal.example.org/auth/callback?token=abc',
@@ -72,6 +73,7 @@ describe('CloudflareEmailSender', () => {
 
       await sender.sendLetterReadyEmail({
         to: 'jane@example.org',
+        locale: 'en',
         donorName: '<b>Jane</b> & Co',
         year: 2025,
         loginUrl: 'https://portal.example.org/auth/callback?token=abc',
@@ -87,7 +89,7 @@ describe('CloudflareEmailSender', () => {
       const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
 
       await expect(
-        sender.sendLetterReadyEmail({ to: 'jane@example.org', donorName: 'Jane', year: 2025, loginUrl: 'https://x/callback' })
+        sender.sendLetterReadyEmail({ to: 'jane@example.org', donorName: 'Jane', year: 2025, loginUrl: 'https://x/callback', locale: 'en' })
       ).rejects.toThrow('E_CONTENT_TOO_LARGE');
     });
 
@@ -100,6 +102,7 @@ describe('CloudflareEmailSender', () => {
         donorName: 'Jane Example',
         year: 2025,
         loginUrl: 'https://portal.example.org/auth/callback?token=abc',
+        locale: 'en',
         bodyTemplate: 'Dear {{donorName}},\n\nYour {{year}} letter awaits: {{loginUrl}}',
       });
 
@@ -122,6 +125,7 @@ describe('CloudflareEmailSender', () => {
         donorName: 'Jane',
         year: 2025,
         loginUrl: 'https://x/callback',
+        locale: 'en',
         bodyTemplate: 'Hello <img src=x onerror=alert(1)> {{donorName}}',
       });
 
@@ -136,6 +140,7 @@ describe('CloudflareEmailSender', () => {
 
       await sender.sendLetterReadyEmail({
         to: 'jane@example.org',
+        locale: 'en',
         donorName: 'Jane',
         year: 2025,
         loginUrl: 'https://x/callback',
@@ -155,11 +160,50 @@ describe('CloudflareEmailSender', () => {
         donorName: 'Jane',
         year: 2025,
         loginUrl: 'https://x/callback',
+        locale: 'en',
         bodyTemplate: '\n\nHi {{donorName}}\n\n',
       });
 
       const message = binding.send.mock.calls[0]![0];
       expect(message.html).toBe('<p>Hi Jane</p>');
+    });
+
+    it('localizes the subject and built-in body to the donor’s locale', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Juana Ejemplo',
+        year: 2025,
+        loginUrl: 'https://portal.example.org/auth/callback?token=abc',
+        locale: 'es',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.subject).toBe(t('es', 'letterReady.subject', { year: '2025' }));
+      expect(message.html).toContain(t('es', 'letterReady.body', { year: '2025' }));
+      expect(message.html).toContain(t('es', 'letterReady.loginLink'));
+      expect(message.text).toContain(t('es', 'letterReady.expiry'));
+      expect(message.text).toContain('Juana Ejemplo');
+    });
+
+    it('localizes the subject even when a custom template supplies the body', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Juana',
+        year: 2025,
+        loginUrl: 'https://x/callback',
+        locale: 'es',
+        bodyTemplate: 'Hola {{donorName}}',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.subject).toBe(t('es', 'letterReady.subject', { year: '2025' }));
+      expect(message.html).toBe('<p>Hola Juana</p>');
     });
   });
 });

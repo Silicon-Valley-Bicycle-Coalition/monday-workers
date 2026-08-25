@@ -95,8 +95,16 @@ export const en = {
   'verify.disclaimer': 'This information is fetched live from our records.',
   'verify.notValid': 'This card is not valid. It may have been regenerated or is no longer active.',
 
-  // Login email (src/email/resend.ts)
+  // Login email (src/email/cloudflareEmail.ts)
   'email.subject': 'Your SVBC donor portal login link',
   'email.bodyIntro': 'Click below to log in to the donor portal. This link expires soon and can only be used once.',
   'email.loginButton': 'Log in',
+
+  // Letter-ready email (src/email/cloudflareEmail.ts) — the built-in copy used when the Letter
+  // Settings board has no template for the donor's locale.
+  'letterReady.subject': 'Your {{year}} SVBC giving letter is ready',
+  'letterReady.greeting': 'Hi {{donorName}},',
+  'letterReady.body': 'Your {{year}} giving letter is ready to view in your donor portal.',
+  'letterReady.loginLink': 'Log in to view it',
+  'letterReady.expiry': 'This link expires soon and can only be used once.',
 } as const;

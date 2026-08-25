@@ -101,4 +101,10 @@ export const fil: Record<TranslationKey, string> = {
   'email.subject': 'Ang login link mo para sa SVBC donor portal',
   'email.bodyIntro': 'I-click sa ibaba para mag-log in sa donor portal. Malapit na mag-expire ang link na ito at isang beses lang magagamit.',
   'email.loginButton': 'Mag-log in',
+
+  'letterReady.subject': 'Handa na ang iyong {{year}} SVBC giving letter',
+  'letterReady.greeting': 'Hi {{donorName}},',
+  'letterReady.body': 'Handa nang tingnan ang iyong {{year}} giving letter sa donor portal.',
+  'letterReady.loginLink': 'Mag-log in para tingnan ito',
+  'letterReady.expiry': 'Malapit na mag-expire ang link na ito at isang beses lang magagamit.',
 } satisfies Record<TranslationKey, string>;

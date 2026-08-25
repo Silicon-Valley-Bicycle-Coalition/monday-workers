@@ -101,4 +101,10 @@ export const ja: Record<TranslationKey, string> = {
   'email.subject': 'SVBC寄付者ポータルへのログインリンク',
   'email.bodyIntro': '下のボタンをクリックして寄付者ポータルにログインしてください。このリンクは有効期限が短く、1回のみご利用いただけます。',
   'email.loginButton': 'ログイン',
+
+  'letterReady.subject': '{{year}}年のSVBC寄付証明レターの準備ができました',
+  'letterReady.greeting': '{{donorName}}様',
+  'letterReady.body': '{{year}}年の寄付証明レターを寄付者ポータルでご覧いただけます。',
+  'letterReady.loginLink': 'ログインして確認する',
+  'letterReady.expiry': 'このリンクは有効期限が短く、1回のみご利用いただけます。',
 } satisfies Record<TranslationKey, string>;

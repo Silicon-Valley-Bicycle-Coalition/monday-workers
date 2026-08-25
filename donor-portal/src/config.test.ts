@@ -52,7 +52,12 @@ const validConfig = {
   cardTokens: { retentionDays: 30 },
   letterCron: {
     boardId: 456,
-    columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' },
+    columns: {
+      autoSend: 'checkbox_1',
+      startDate: 'date_2',
+      bodyTemplate: 'long_text_1',
+      bodyTemplatesByLocale: { es: 'long_text_es' },
+    },
     maxTriggersPerRun: 200,
   },
 };
@@ -287,6 +292,24 @@ describe('letterCron config section', () => {
   it('accepts letterCron placeholder column ids (gate, not error)', () => {
     const cfg = structuredClone(validConfig);
     cfg.letterCron.columns.autoSend = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a config missing letterCron.columns.bodyTemplatesByLocale', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.columns\.bodyTemplatesByLocale/);
+  });
+
+  it('rejects a bodyTemplatesByLocale key that is not a supported locale', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron.columns.bodyTemplatesByLocale as Record<string, string>)['xx'] = 'long_text_xx';
+    expect(() => validateConfig(cfg)).toThrow(/xx/);
+  });
+
+  it('accepts an empty bodyTemplatesByLocale (every locale falls back)', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale = {};
     expect(() => validateConfig(cfg)).not.toThrow();
   });
 });

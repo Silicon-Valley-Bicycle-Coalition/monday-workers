@@ -101,4 +101,10 @@ export const zhHant: Record<TranslationKey, string> = {
   'email.subject': '您的 SVBC 捐款者入口網站登入連結',
   'email.bodyIntro': '請按下方按鈕登入捐款者入口網站。此連結將於短時間內失效，且只能使用一次。',
   'email.loginButton': '登入',
+
+  'letterReady.subject': '您的 {{year}} 年 SVBC 捐款信函已準備就緒',
+  'letterReady.greeting': '{{donorName}}，您好：',
+  'letterReady.body': '您的 {{year}} 年捐款信函現在可以在捐款者入口網站中查看。',
+  'letterReady.loginLink': '登入查看',
+  'letterReady.expiry': '此連結將於短時間內失效，且只能使用一次。',
 } satisfies Record<TranslationKey, string>;

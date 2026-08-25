@@ -101,4 +101,10 @@ export const vi: Record<TranslationKey, string> = {
   'email.subject': 'Liên kết đăng nhập cổng thông tin nhà tài trợ SVBC của bạn',
   'email.bodyIntro': 'Nhấp vào bên dưới để đăng nhập vào cổng thông tin nhà tài trợ. Liên kết này sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
   'email.loginButton': 'Đăng nhập',
+
+  'letterReady.subject': 'Thư ghi nhận đóng góp {{year}} của SVBC của bạn đã sẵn sàng',
+  'letterReady.greeting': 'Chào {{donorName}},',
+  'letterReady.body': 'Thư ghi nhận đóng góp năm {{year}} của bạn đã sẵn sàng để xem trong cổng thông tin nhà tài trợ.',
+  'letterReady.loginLink': 'Đăng nhập để xem',
+  'letterReady.expiry': 'Liên kết này sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
 } satisfies Record<TranslationKey, string>;

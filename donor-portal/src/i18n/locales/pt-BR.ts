@@ -101,4 +101,10 @@ export const ptBR: Record<TranslationKey, string> = {
   'email.subject': 'Seu link de acesso ao portal do doador da SVBC',
   'email.bodyIntro': 'Clique abaixo para entrar no portal do doador. Este link expira em breve e só pode ser usado uma vez.',
   'email.loginButton': 'Entrar',
+
+  'letterReady.subject': 'Sua carta de doações {{year}} da SVBC está pronta',
+  'letterReady.greeting': 'Olá, {{donorName}},',
+  'letterReady.body': 'Sua carta de doações de {{year}} já está disponível no portal do doador.',
+  'letterReady.loginLink': 'Entre para vê-la',
+  'letterReady.expiry': 'Este link expira em breve e só pode ser usado uma vez.',
 } satisfies Record<TranslationKey, string>;

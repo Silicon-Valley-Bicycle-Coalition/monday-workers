@@ -410,7 +410,12 @@ describe('HttpMondayClient.createChangeRequestItem', () => {
   });
 });
 
-const letterCronColumns = { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1' };
+const letterCronColumns = {
+  autoSend: 'checkbox_1',
+  startDate: 'date_2',
+  bodyTemplate: 'long_text_1',
+  bodyTemplatesByLocale: { es: 'long_text_es', 'zh-Hant': 'long_text_zht' } as const,
+};
 
 describe('HttpMondayClient.getLetterSettings', () => {
   it('parses the settings item into autoSend/startDate/bodyTemplate', async () => {
@@ -440,7 +445,38 @@ describe('HttpMondayClient.getLetterSettings', () => {
       autoSend: true,
       startDate: '2027-01-05',
       bodyTemplate: 'Hi {{donorName}}, your {{year}} letter: {{loginUrl}}',
+      bodyTemplatesByLocale: {},
     });
+  });
+
+  it('collects per-locale templates from their configured columns', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '11',
+                  name: 'Letter emails',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'Default {{donorName}}' },
+                    { id: 'long_text_es', text: 'Hola {{donorName}}' },
+                    { id: 'long_text_zht', text: null },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const settings = await client.getLetterSettings({ boardId: 456, columns: letterCronColumns });
+    // An empty locale column is omitted from the map, so callers fall through to the default.
+    expect(settings?.bodyTemplatesByLocale).toEqual({ es: 'Hola {{donorName}}' });
   });
 
   it('reports autoSend false when the checkbox is unchecked and blanks for empty columns', async () => {
@@ -470,6 +506,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       autoSend: false,
       startDate: '',
       bodyTemplate: '',
+      bodyTemplatesByLocale: {},
     });
   });
 
@@ -514,6 +551,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       autoSend: true,
       startDate: '2027-01-05',
       bodyTemplate: 'Hi {{donorName}}',
+      bodyTemplatesByLocale: {},
     });
   });
 });
