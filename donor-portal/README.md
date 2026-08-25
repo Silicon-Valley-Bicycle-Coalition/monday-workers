@@ -258,28 +258,12 @@ the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migrati
 for donor PII with no purpose once superseded. Active tokens (`revoked_at IS NULL`) are never
 touched, regardless of age.
 
-## Future candidates (discussed 2026-08-24, not committed)
+## Future candidates
 
-Ideas from the v2 brainstorm, in rough value order — recorded so they aren't re-derived from
-scratch. None are scheduled; each needs its own scoping pass before build.
-
-1. **Automatic January cron for letter emails** — the staff-triggered send (button column →
-   webhook → email) shipped in v2.1 above; reuses the same `processLetterSendBatch` consumer. What
-   remains is only the scheduled trigger: iterate all donors with a completed prior year and call
-   `triggerLetterSend` for each, likely from the existing daily `scheduled()` handler once a year.
-2. **Recurring-gift management / membership renewal** — deliberately *link out* to Funraise's
-   own donor account surface and checkout rather than building anything; keeps this Worker
-   entirely out of PCI scope. "Build" here means adding deep links, nothing more.
-3. **Communication preferences** (email opt-outs, mailing prefs) — natural extension of the
-   existing change-request queue: new form fields, same staff-review write path.
-4. **Impact summary** — "your giving supported X" per year or tier; cheap even as a static
-   annual number.
-5. **Volunteer history** — show hours/shifts alongside donations once volunteer data lives in
-   Monday post-migration.
-6. **Event registrations** — upcoming/past events, dependent on the Eventbrite integration
-   (itself post-migration).
-7. **Pledge tracking / employer matching-gift lookup** — commonly an embedded Double the
-   Donation widget; discussed, not prioritized.
+The candidate list from the v2 brainstorm (discussed 2026-08-24) is no longer tracked here —
+each un-built idea is filed as a Feature Request on the
+[IT Requests board](https://bikesiliconvalley.monday.com/boards/8846215481) ("Donor portal: …"
+items). None are scheduled; each needs its own scoping pass before build.
 
 **Considered and ruled out:** peer-to-peer fundraising pages and DAF tooling (Funraise's job;
 heavy build, low value at SVBC's scale), and full self-serve profile editing (the review-queue
