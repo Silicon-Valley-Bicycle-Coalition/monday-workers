@@ -26,6 +26,8 @@ import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailab
 import { buildCardData } from './card/loadCardData';
 import { generateQrSvg } from './card/qr';
 import { cardView, cardUnavailableView, verifyView, verifyNotValidView } from './card/cardViews';
+import { LANG_COOKIE } from './i18n/detectLocale';
+import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -89,6 +91,17 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get('/health', (c) => c.json({ ok: true }));
+
+  const LANG_REDIRECT_ALLOWLIST = ['/login', '/portal'];
+
+  app.get('/lang/:code', (c) => {
+    const code = c.req.param('code');
+    const locale = isLocale(code) ? code : DEFAULT_LOCALE;
+    setCookie(c, LANG_COOKIE, locale, { httpOnly: false, secure: true, sameSite: 'Lax', path: '/', maxAge: 365 * 24 * 3600 });
+    const requestedTo = c.req.query('to') ?? '/login';
+    const to = LANG_REDIRECT_ALLOWLIST.includes(requestedTo) ? requestedTo : '/login';
+    return c.redirect(to);
+  });
 
   app.get('/login', (c) => c.html(page(TITLE_LOGIN, loginFormView())));
 

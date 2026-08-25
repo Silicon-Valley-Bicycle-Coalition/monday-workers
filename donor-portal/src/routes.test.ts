@@ -898,6 +898,28 @@ describe('POST /portal/card/:donorItemId/regenerate', () => {
   });
 });
 
+describe('GET /lang/:code', () => {
+  it('sets the lang cookie and redirects to an allowlisted path', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=%2Flogin', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/login');
+    expect(res.headers.get('set-cookie')).toContain('lang=es');
+  });
+
+  it('falls back to en for an unsupported code', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/xx?to=%2Flogin', { redirect: 'manual' });
+    expect(res.headers.get('set-cookie')).toContain('lang=en');
+  });
+
+  it('ignores a non-allowlisted "to" and redirects to /login', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/lang/es?to=https%3A%2F%2Fevil.example', { redirect: 'manual' });
+    expect(res.headers.get('location')).toBe('/login');
+  });
+});
+
 describe('GET /verify/:token', () => {
   async function getVerifyPath(app: ReturnType<typeof createApp>, cookie: string): Promise<string> {
     const html = await (await app.request('/portal/card/donor-1', { headers: { Cookie: cookie } })).text();
