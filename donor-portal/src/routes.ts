@@ -53,7 +53,6 @@ const SESSION_COOKIE = 'session';
 const SITE_TITLE = 'SVBC Donor Portal';
 const TITLE_ERROR = `Something Went Wrong — ${SITE_TITLE}`;
 const TITLE_LETTERS_LIST = `Tax Documents — ${SITE_TITLE}`;
-const TITLE_CHANGE_REQUEST = `Request a Change — ${SITE_TITLE}`;
 const TITLE_CARD = `Your Membership Card — ${SITE_TITLE}`;
 const TITLE_VERIFY = `Membership Verification — ${SITE_TITLE}`;
 
@@ -296,25 +295,30 @@ export function createApp(deps: AppDeps) {
     return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale));
   });
 
-  app.get('/portal/change-request', async (c) => {
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/change-request', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/change-request`));
+
+  app.get('/:locale/portal/change-request', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
-      return c.html(page(TITLE_CHANGE_REQUEST, changeRequestsUnavailableView()));
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale));
     }
     const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
-    return c.html(page(TITLE_CHANGE_REQUEST, changeRequestFormView(donors)));
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestFormView(donors, locale), locale));
   });
 
-  app.post('/portal/change-request', async (c) => {
+  app.post('/:locale/portal/change-request', async (c) => {
+    const locale = resolvePathLocale(c);
     const donorItemIds = await getSessionDonorIds(c, deps);
     if (donorItemIds === null) return c.redirect('/login');
 
     c.header('Cache-Control', NO_STORE);
     if (!changeRequestsEnabled(deps.config)) {
-      return c.html(page(TITLE_CHANGE_REQUEST, changeRequestsUnavailableView()));
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale));
     }
 
     // Same limiter binding as login, but a distinct key prefix so the two budgets don't
@@ -323,7 +327,7 @@ export function createApp(deps: AppDeps) {
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
     if (!ipResult.success) {
-      return c.html(page(TITLE_ERROR, errorView('Too many requests — please try again in a minute.')), 429);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
     }
 
     // Spec also requires a per-session budget: an IP-only limit lets many donors sharing one
@@ -333,7 +337,7 @@ export function createApp(deps: AppDeps) {
     const sessionToken = getCookie(c, SESSION_COOKIE) as string;
     const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
     if (!sessionResult.success) {
-      return c.html(page(TITLE_ERROR, errorView('Too many requests — please try again in a minute.')), 429);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
     }
 
     const body = await c.req.parseBody();
@@ -350,7 +354,7 @@ export function createApp(deps: AppDeps) {
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
-    return c.html(page(TITLE_CHANGE_REQUEST, changeRequestResultView(result)));
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale));
   });
 
   app.get('/portal/card/:donorItemId', async (c) => {

@@ -617,9 +617,9 @@ describe('GET /portal/letters/:donorItemId/:year (bare, no locale)', () => {
   });
 });
 
-describe('GET /portal/change-request', () => {
+describe('GET /:locale/portal/change-request', () => {
   it('redirects to /login without a session', async () => {
-    const res = await createApp(makeDeps()).request('/portal/change-request');
+    const res = await createApp(makeDeps()).request('/en/portal/change-request');
     expect(res.status).toBe(302);
   });
 
@@ -629,7 +629,7 @@ describe('GET /portal/change-request', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('1 Old St');
@@ -645,14 +645,23 @@ describe('GET /portal/change-request', () => {
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/portal/change-request', { headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
     expect(await res.text()).toContain('not available yet');
   });
 });
 
-describe('POST /portal/change-request', () => {
+describe('GET /portal/change-request (bare, no locale)', () => {
+  it('redirects to the default-locale equivalent instead of 404ing', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/portal/change-request', { redirect: 'manual' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/en/portal/change-request');
+  });
+});
+
+describe('POST /:locale/portal/change-request', () => {
   function postForm(app: ReturnType<typeof createApp>, cookie: string, fields: Record<string, string>) {
-    return app.request('/portal/change-request', {
+    return app.request('/en/portal/change-request', {
       method: 'POST',
       body: new URLSearchParams(fields),
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },

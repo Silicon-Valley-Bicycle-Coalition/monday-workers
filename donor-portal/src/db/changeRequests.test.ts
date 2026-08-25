@@ -37,6 +37,24 @@ describe('D1ChangeRequestStore', () => {
     expect(await store.getRequest(999_999)).toBeNull();
   });
 
+  it('accepts "language" as a valid ChangeRequestField value in a stored row round-trip', async () => {
+    const store = new D1ChangeRequestStore(env.DB);
+    const id = await store.createRequest(
+      newRequest({ field: 'language', oldValue: 'English', newValue: 'Vietnamese', dedupeHash: 'hash-language' })
+    );
+    const row = await store.getRequest(id);
+    expect(row).toEqual({
+      id,
+      donorItemId: 'donor-1',
+      donorName: 'Jane Example',
+      field: 'language',
+      oldValue: 'English',
+      newValue: 'Vietnamese',
+      status: 'queued',
+      createdAt: '2026-08-24T10:00:00.000Z',
+    });
+  });
+
   it('finds a duplicate inside the window and not outside it', async () => {
     const store = new D1ChangeRequestStore(env.DB);
     await store.createRequest(newRequest({ dedupeHash: 'hash-window', createdAt: '2026-08-24T10:00:00.000Z' }));

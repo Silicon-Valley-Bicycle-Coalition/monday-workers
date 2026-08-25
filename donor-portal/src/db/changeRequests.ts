@@ -1,4 +1,4 @@
-export type ChangeRequestField = 'address' | 'email' | 'phone';
+export type ChangeRequestField = 'address' | 'email' | 'phone' | 'language';
 
 export interface NewChangeRequest {
   donorItemId: string;
