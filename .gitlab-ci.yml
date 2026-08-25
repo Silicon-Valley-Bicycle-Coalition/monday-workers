@@ -7,7 +7,7 @@ stages:
   - test
 
 default:
-  image: node:20
+  image: node:22
 
 # One job per Worker subdirectory — this repo has no root package.json, each
 # Worker is self-contained (see root README/CLAUDE.md). A job only runs when
