@@ -1,3 +1,104 @@
 import type { TranslationKey } from '../t';
 
-export const ptBR: Partial<Record<TranslationKey, string>> = {};
+export const ptBR: Record<TranslationKey, string> = {
+  // Site-wide
+  'site.title': 'Portal do Doador da SVBC',
+  'languagePicker.label': 'Idioma',
+
+  // Page <title> suffixes (rendered as "{title.x} — {site.title}")
+  'title.login': 'Entrar',
+  'title.checkEmail': 'Verifique Seu E-mail',
+  'title.error': 'Algo Deu Errado',
+  'title.portal': 'Seu Portal do Doador',
+  'title.lettersList': 'Documentos Fiscais',
+  'title.changeRequest': 'Solicitar uma Alteração',
+  'title.card': 'Sua Carteirinha de Associado',
+  'title.verify': 'Verificação de Associação',
+
+  // Login
+  'login.prompt': 'Digite seu e-mail para receber um link de acesso.',
+  'login.submit': 'Enviar link de acesso',
+
+  // Check email
+  'checkEmail.heading': 'Verifique seu e-mail',
+  'checkEmail.body': 'Verifique seu e-mail: se esse endereço estiver em nosso cadastro, um link de acesso está a caminho. Ele expira em breve e só pode ser usado uma vez.',
+
+  // Error page + route-level error messages
+  'error.heading': 'Algo deu errado',
+  'error.requestNewLink': 'Solicitar um novo link de acesso',
+  'error.invalidLink': 'Este link é inválido. Solicite um novo.',
+  'error.expiredLink': 'Este link expirou ou já foi usado. Solicite um novo.',
+  'error.lettersLoadFailed': 'Não foi possível carregar suas cartas no momento. Tente novamente em alguns minutos.',
+  'error.letterNotFound': 'Essa carta não existe.',
+  'error.letterLoadFailed': 'Não foi possível carregar sua carta no momento. Tente novamente em alguns minutos.',
+  'error.rateLimited': 'Muitas solicitações — tente novamente em um minuto.',
+  'error.cardNotFound': 'Essa carteirinha não existe.',
+  'error.cardLoadFailed': 'Não foi possível carregar sua carteirinha no momento. Tente novamente em alguns minutos.',
+  'error.cardRegenerateFailed': 'Não foi possível gerar uma nova carteirinha no momento. Tente novamente em alguns minutos.',
+  'error.verifyLoadFailed': 'Não foi possível verificar esta carteirinha no momento. Tente novamente em alguns minutos.',
+  'error.generic': 'Algo deu errado. Tente entrar novamente.',
+
+  // Portal
+  'portal.heading': 'Seu portal do doador',
+  'portal.membership': 'Associação: {{status}} ({{tier}})',
+  'portal.totalDonated': 'Total doado: {{total}}',
+  'portal.membershipCardLink': 'Carteirinha de associado',
+  'portal.tableDate': 'Data',
+  'portal.tableAmount': 'Valor',
+  'portal.tableDescription': 'Descrição',
+  'portal.discountsHeading': 'Descontos em lojas de bicicletas',
+  'portal.taxDocumentsLink': 'Documentos fiscais',
+  'portal.changeRequestLink': 'Solicitar uma alteração em seus dados',
+  'portal.logout': 'Sair',
+
+  // Letters
+  'letters.listHeading': 'Documentos fiscais',
+  'letters.listIntro': 'Cada carta é um comprovante consolidado das doações que constam em nossos registros para aquele ano civil. Abra uma carta e use a opção de impressão do seu navegador para imprimi-la ou salvá-la como PDF.',
+  'letters.noneYet': 'Ainda não há cartas disponíveis para {{name}} — as cartas abrangem anos civis já concluídos com pelo menos uma doação.',
+  'letters.yearLink': 'Carta fiscal de {{year}}',
+  'letters.backToPortal': 'Voltar ao seu portal',
+  'letters.unavailable': 'As cartas fiscais de fim de ano ainda não estão disponíveis. Volte a verificar em breve ou entre em contato conosco caso precise de um resumo de doações enquanto isso.',
+  'letters.backToLetters': 'Voltar aos documentos fiscais',
+  'letters.print': 'Imprimir ou salvar como PDF',
+  'letters.englishOnlyNote': 'Este documento oficial é emitido em inglês.',
+
+  // Change request
+  'changeRequest.formHeading': 'Solicitar uma alteração em seus dados',
+  'changeRequest.formIntro': 'Envie o novo valor abaixo. A equipe da SVBC analisa cada solicitação antes de aplicá-la — você verá a atualização assim que ela for processada.',
+  'changeRequest.currentDetailsHeading': '{{name}} — dados atuais',
+  'changeRequest.fieldAddress': 'Endereço',
+  'changeRequest.fieldEmail': 'E-mail',
+  'changeRequest.fieldPhone': 'Telefone',
+  'changeRequest.fieldLanguage': 'Idioma Preferido',
+  'changeRequest.whoseRecord': 'Cadastro a alterar',
+  'changeRequest.whatToChange': 'O que alterar',
+  'changeRequest.newValue': 'Novo valor',
+  'changeRequest.submit': 'Enviar para análise',
+  'changeRequest.emailNote': 'Uma alteração de e-mail passa a valer para o login do portal somente depois que a equipe a aplicar.',
+  'changeRequest.submittedHeading': 'Solicitação recebida',
+  'changeRequest.submittedBody': 'Obrigado — a equipe da SVBC vai analisar sua solicitação e aplicar a alteração. Isso costuma levar alguns dias úteis.',
+  'changeRequest.duplicateHeading': 'Já enviada',
+  'changeRequest.duplicateBody': 'Já temos esta mesma solicitação registrada — a equipe vai atendê-la em breve. Não é preciso enviá-la novamente.',
+  'changeRequest.invalidHeading': 'Algo precisa ser corrigido',
+  'changeRequest.backToForm': 'Voltar ao formulário',
+  'changeRequest.unavailableHeading': 'Solicitar uma alteração',
+  'changeRequest.unavailableBody': 'As solicitações de alteração via autoatendimento ainda não estão disponíveis. Entre em contato com a SVBC e nós atualizaremos seus dados para você.',
+
+  // Membership card + public verify page
+  'card.heading': 'Sua carteirinha de associado',
+  'card.tier': 'Nível: {{tier}}',
+  'card.status': 'Situação: {{status}}',
+  'card.expires': 'Validade: {{expiry}}',
+  'card.scanHint': 'Mostre esta carteirinha, ou deixe que a loja escaneie o código QR ou abra o link acima, para confirmar sua associação.',
+  'card.regenerate': 'Gerar nova carteirinha',
+  'card.regenerateHint': 'Gerar uma nova carteirinha invalida imediatamente o código QR e o link antigos — use esta opção se achar que o link da sua carteirinha vazou.',
+  'card.unavailable': 'As carteirinhas de associado digitais ainda não estão disponíveis. Volte a verificar em breve.',
+  'verify.heading': 'Verificação de associação',
+  'verify.disclaimer': 'Esta informação é obtida em tempo real diretamente de nossos registros.',
+  'verify.notValid': 'Esta carteirinha não é válida. Ela pode ter sido substituída por uma nova ou não estar mais ativa.',
+
+  // Login email (src/email/resend.ts)
+  'email.subject': 'Seu link de acesso ao portal do doador da SVBC',
+  'email.bodyIntro': 'Clique abaixo para entrar no portal do doador. Este link expira em breve e só pode ser usado uma vez.',
+  'email.loginButton': 'Entrar',
+} satisfies Record<TranslationKey, string>;
