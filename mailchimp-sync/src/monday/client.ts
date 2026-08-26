@@ -2,6 +2,9 @@ import type { MondayColumnsConfig, DonorRecord } from '../types';
 
 export interface MondayClient {
   getDonorById(itemId: string, columns: MondayColumnsConfig): Promise<DonorRecord | null>;
+  createCampaignItem(boardId: number, name: string): Promise<string>;
+  renameItem(boardId: number, itemId: string, name: string): Promise<void>;
+  archiveItem(itemId: string): Promise<void>;
 }
 
 interface GraphQLResponse<T> {
@@ -61,5 +64,35 @@ export class HttpMondayClient implements MondayClient {
       zip: byId.get(columns.zip) ?? '',
       totalGiven: byId.get(columns.totalGiven) ?? '',
     };
+  }
+
+  async createCampaignItem(boardId: number, name: string): Promise<string> {
+    const data = await this.graphql<{ create_item: { id: string } }>(
+      `mutation ($boardId: ID!, $name: String!) {
+        create_item(board_id: $boardId, item_name: $name) { id }
+      }`,
+      { boardId, name },
+    );
+    return data.create_item.id;
+  }
+
+  // Monday's item name isn't editable via a normal column mutation, but the item
+  // schema treats "name" itself as a simple-value column with id "name" — a
+  // documented, commonly-used trick, not a real user-defined column. Verify against
+  // Monday's current API docs if this ever starts failing.
+  async renameItem(boardId: number, itemId: string, name: string): Promise<void> {
+    await this.graphql(
+      `mutation ($boardId: ID!, $itemId: ID!, $name: String!) {
+        change_simple_column_value(board_id: $boardId, item_id: $itemId, column_id: "name", value: $name) { id }
+      }`,
+      { boardId, itemId, name },
+    );
+  }
+
+  async archiveItem(itemId: string): Promise<void> {
+    await this.graphql(
+      `mutation ($itemId: ID!) { archive_item(item_id: $itemId) { id } }`,
+      { itemId },
+    );
   }
 }

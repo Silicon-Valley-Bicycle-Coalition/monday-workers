@@ -35,7 +35,10 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
 describe('processOutboundBatch', () => {
   it('upserts the donor to Mailchimp and acks on success', async () => {
     const message = fakeMessage('1');
-    const mondayClient: MondayClient = { getDonorById: vi.fn().mockResolvedValue(donor()) };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor()),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+    };
     const mailchimpClient: MailchimpClient = {
       upsertMember: vi.fn().mockResolvedValue(undefined),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),
@@ -51,7 +54,10 @@ describe('processOutboundBatch', () => {
 
   it('skips and acks (does not call Mailchimp) when the donor has no email', async () => {
     const message = fakeMessage('2');
-    const mondayClient: MondayClient = { getDonorById: vi.fn().mockResolvedValue(donor({ email: '' })) };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor({ email: '' })),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+    };
     const mailchimpClient: MailchimpClient = { upsertMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -64,7 +70,10 @@ describe('processOutboundBatch', () => {
 
   it('skips and acks when the donor item no longer exists', async () => {
     const message = fakeMessage('3');
-    const mondayClient: MondayClient = { getDonorById: vi.fn().mockResolvedValue(null) };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(null),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+    };
     const mailchimpClient: MailchimpClient = { upsertMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -75,7 +84,10 @@ describe('processOutboundBatch', () => {
 
   it('retries (does not ack) on a transient Mailchimp failure', async () => {
     const message = fakeMessage('4');
-    const mondayClient: MondayClient = { getDonorById: vi.fn().mockResolvedValue(donor()) };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor()),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+    };
     const mailchimpClient: MailchimpClient = {
       upsertMember: vi.fn().mockRejectedValue(new Error('rate limited')),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),
@@ -91,7 +103,10 @@ describe('processOutboundBatch', () => {
 
   it('acks (does not retry) on a permanent Mailchimp failure', async () => {
     const message = fakeMessage('5');
-    const mondayClient: MondayClient = { getDonorById: vi.fn().mockResolvedValue(donor()) };
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor()),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+    };
     const mailchimpClient: MailchimpClient = {
       upsertMember: vi.fn().mockRejectedValue(new MailchimpPermanentError('invalid email')),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),

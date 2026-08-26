@@ -50,3 +50,32 @@ describe('HttpMondayClient.getDonorById', () => {
     await expect(client.getDonorById('42', COLUMNS)).rejects.toThrow('monday: board not found');
   });
 });
+
+describe('HttpMondayClient.createCampaignItem', () => {
+  it('returns the new item id', async () => {
+    const fetchFn = fakeFetch({ create_item: { id: 'new-item' } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    expect(await client.createCampaignItem(123, 'Newsletter')).toBe('new-item');
+  });
+});
+
+describe('HttpMondayClient.renameItem', () => {
+  it('sends the new name via the "name" pseudo-column', async () => {
+    const fetchFn = fakeFetch({ change_simple_column_value: { id: 'item1' } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    await client.renameItem(123, 'item1', 'New Name');
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.monday.com/v2',
+      expect.objectContaining({ body: expect.stringContaining('"name":"New Name"') }),
+    );
+  });
+});
+
+describe('HttpMondayClient.archiveItem', () => {
+  it('archives the given item id', async () => {
+    const fetchFn = fakeFetch({ archive_item: { id: 'item1' } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    await client.archiveItem('item1');
+    expect(fetchFn).toHaveBeenCalled();
+  });
+});
