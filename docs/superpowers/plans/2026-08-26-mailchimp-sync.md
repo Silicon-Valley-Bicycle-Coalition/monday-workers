@@ -2298,11 +2298,10 @@ describe('scheduled', () => {
 
 Run: `npm test -- src/index.test.ts` — expect FAIL (`worker.scheduled` is not a function).
 
-Add to `src/index.ts`:
+Add to `src/index.ts`'s existing import block — `HttpMailchimpClient` is already imported from
+Task 8, do not add a second `import` line for it, only these two new ones:
 
 ```typescript
-// Add these imports:
-import { HttpMailchimpClient } from './mailchimp/client'; // already imported in Task 8
 import { D1CampaignItemsStore } from './db/campaignItems';
 import { reconcileCampaigns } from './campaigns/reconcile';
 ```
