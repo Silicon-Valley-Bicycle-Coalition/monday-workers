@@ -4,7 +4,7 @@
 upgrade and the QuickBooks Complete Marketplace app (both carry an ongoing cost this avoids).
 **Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
 **Owner:** Unassigned.
-**Stack:** Hono + TypeScript + D1, same shape as `funraise-sync` / `squarespace-forms`.
+**Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
 
 ## The ask
 
