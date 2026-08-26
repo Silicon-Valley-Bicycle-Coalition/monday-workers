@@ -1,79 +1,83 @@
-# membership-reminders
+# mailchimp-sync
 
-**Status:** Decided — build (scoped 2026-08-21).
-**Priority:** Post-migration, but **time-sensitive**: Salesforce's renewal-reminder automation
-dies at retirement, and until this ships nobody is asked to renew. Build it in the first
-post-cutover wave, not "eventually."
+**Status:** Built — repurposed from the never-deployed `membership-reminders` (2026-08-26). Not
+deployed; blocked on the same Donors-board prerequisite as everything else downstream of
+`salesforce-import`, plus a Mailchimp audience with the merge fields/Interest Categories below.
+**Priority:** Post-migration, **time-sensitive** — SVBC's existing Mailchimp newsletter
+segmentation (by city, by donation history) is fed from Salesforce today and breaks at
+retirement, same urgency as the renewal reminders this Worker's predecessor was built for.
 **Owner:** Unassigned.
-**Stack:** Hono + TypeScript, daily **Cron Trigger**, same least-privilege-token shape as the
-other Workers. No D1 needed — idempotency state lives on the board items themselves.
+**Stack:** Hono + TypeScript + D1 + Cloudflare Queues (two pairs) + Cloudflare Cron Trigger.
+**Design doc:** [`docs/superpowers/specs/2026-08-26-mailchimp-sync-design.md`](../docs/superpowers/specs/2026-08-26-mailchimp-sync-design.md)
 
 ## The ask
 
-Replace the Salesforce workflow rules that email members 6, 4, and 2 weeks before their
-membership expires. With ~1,500 active members and yearly (not monthly) renewal as the dominant
-pattern, these reminders are the org's recurring-revenue mechanism — the one piece of Salesforce
-automation whose silent disappearance directly costs money.
+Keep Monday.com (the post-migration source of truth for donor data) and Mailchimp in sync, in both
+directions, so that:
 
-## How it works
+* The 3-stage new-member welcome drip and the 3-stage renewal reminders (formerly planned as
+  Worker-side sends — see the design doc's Decision History) run as Mailchimp Customer Journeys,
+  staff-owned, triggered off Member Since / Member Until merge fields this Worker maintains.
+* The existing newsletter segments (by city/address, by donation history) keep working after
+  Salesforce retires.
+* Staff can see, per donor, which Mailchimp campaigns/journeys they're currently part of, via a
+  connect-column on the Donor item pointing at an auto-generated "Mailchimp Campaigns" board.
 
-Once daily:
+## Data flow
 
-1. Query the Donors board for items where **Membership Status = Active** and **Member Until** is
-   exactly 42, 28, or 14 days out (one query per stage, using Monday's date filters).
-2. Skip items with **Membership Tier = Lifetime** or a blank Member Until (belt and suspenders —
-   the import leaves Member Until blank for Lifetime precisely so date automations never touch
-   them).
-3. For each match, send that stage's templated renewal email to the item's email column.
-4. Stamp the item's **Reminders Sent** column (a text/tag column, e.g. appending `6w`, `4w`,
-   `2w` with the term-end date) before considering the send complete. On the next run, items
-   already stamped for the current term's stage are skipped — re-runs and overlapping cron
-   firings are idempotent, and a member who renews (new Member Until) naturally resets to a
-   clean slate for the next term.
+Three independent flows — see the design doc for full sequence diagrams:
 
-Renewal itself is not this Worker's job: a renewal arrives as a new membership payment, and the
-import-era rule (latest term's end date → Member Until, status → Active) is maintained by
-whatever ingests post-cutover payments.
+1. **Outbound:** Donor column change on Monday → webhook → D1 idempotency → Cloudflare Queue →
+   Mailchimp contact upsert (merge fields: Member Since/Until, Tier, Status, Address, Total
+   Given; tags: active/lapsed/lifetime-member, has-donated).
+2. **Campaign catalog reconciliation:** daily cron diffs Mailchimp's Interest Categories against a
+   D1-tracked set of Monday items on the Campaigns board — creates, renames, or archives as
+   needed. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
+   a reliability fallback.
+3. **Inbound:** Mailchimp subscribe/unsubscribe/profile event → webhook → D1 idempotency →
+   Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
+   the full current set to the Donor's connect column.
 
-## Email sending
+## Prerequisites before this can run against real data
 
-Sent via [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/) — the same
-native `send_email` binding `donor-portal` uses for magic links (`src/email.ts`'s
-`createEmailSender`), reusing its already-onboarded `mail.bikesiliconvalley.org` sending domain
-under a different from-address (`email.fromAddress`/`fromName` in `config/svbc.json`). No separate
-domain onboarding or secret needed for this Worker — see `donor-portal/DEPLOY.md` Phase 3 for the
-one-time domain setup. Templates for the three stages live in this Worker; keep them plain
-(subject, greeting, expiration date, renewal link) and let the copy be staff-editable via config
-rather than code.
+**Mailchimp side (staff task):**
+* Create five merge fields in the target audience: `MEMBERSINCE`, `MEMBERUNTIL`, `MTIER`,
+  `MSTATUS`, `ADDRESS` (type: Address), `TOTALGIVE`.
+* Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
+  Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
+  independently.
+* Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
+  Interest, triggered off `MEMBERSINCE`/`MEMBERUNTIL` respectively. Recommended renewal cadence:
+  42/28/14 days before `MEMBERUNTIL` (carried forward from the original `membership-reminders`
+  design).
+* Set up an audience webhook (Subscribes/Unsubscribes/Profile updates/Cleaned) pointed at this
+  Worker's `/webhooks/mailchimp/audience`, with a secret in the URL.
 
-## Deliberately not in v1
-
-* **The 3-stage new-member welcome drip** (Salesforce's other membership email automation) — same
-  machinery would work (trigger on Member Since instead of Member Until), but it's a separate
-  decision and separate templates. Flagged in the plan as a possible follow-up.
-* **Grace-period handling** — the status model is a hard Active→Lapsed flip on Member Until
-  (dwk's call, 2026-08-21). If staff later add a Grace status, this Worker needs no change; the
-  reminder window ends at expiration either way.
-* **Lapsed-member win-back emails** — a campaign question for Mailchimp segments, not scheduled
-  infrastructure.
-
-## Monday-side prerequisites (from the import, see the private repo's `docs/05` §2)
-
-* Donors board columns: Membership Status, Membership Tier, Member Since, Member Until — written
-  by `salesforce-import`.
-* The **Reminders Sent** column this Worker stamps — add it during sandbox-week board build-out.
-* The native automation "When Member Until arrives → set Membership Status to Lapsed" — Monday
-  configuration, not this Worker.
+**Monday side:**
+* Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
+  (addr1/city/state/zip), Email — written by `salesforce-import`.
+* The Total Given / Last Gift rollup columns `donation-rollups` maintains.
+* A new connect-column on the Donors board pointed at the Campaigns board (auto-created by this
+  Worker's first reconciliation run).
+* A webhook subscription (`create_item` + `change_column_value`) on the Donors board, pointed at
+  `/webhooks/monday/donors`, with a secret in the URL.
+* Fill in every `REPLACE_WITH_*` placeholder in `config/svbc.json` once the above exist.
 
 ## Local development
 
 - `npm install` — install dependencies
-- `npm test` — run the Vitest suite
+- `npm test` — run the Vitest suite (D1-backed via `@cloudflare/vitest-plugin`, no live API calls)
 - `npm run typecheck` — type-check with no emit
 - `npm run dev` — run the Worker locally with `wrangler dev`
 - `npm run deploy` — deploy with `wrangler deploy`
-- `wrangler secret put MONDAY_API_TOKEN` — set the Monday API token (never commit it)
+- `wrangler secret put MONDAY_API_TOKEN` / `MAILCHIMP_API_KEY` / `MONDAY_WEBHOOK_SECRET` /
+  `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them)
+- `wrangler d1 create svbc-mailchimp-sync` — provision D1, then fill the real `database_id` into
+  `wrangler.jsonc`
 
-`config/svbc.json`'s `monday.donorsBoardId` and column IDs are placeholders until the sandbox Donors
-board exists (see the design spec). Fill them in before the first real `wrangler dev` / `deploy` run
-against Monday — until then, `npm test` covers all logic against mocked dependencies.
+## Related follow-on, not in this Worker
+
+A donor-facing "communication preferences" UI in `donor-portal`, letting a donor toggle their own
+Mailchimp Interests directly (writing to Mailchimp, not to Monday — this Worker's inbound side
+picks up the resulting change on its own). See the design doc's closing section; the natural home
+for that work is the existing `feat/donor-portal-comm-prefs` branch/worktree.

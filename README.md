@@ -46,7 +46,7 @@ a Worker secret.
 | [`events-widgets`](events-widgets/README.md) | **Live** (deployed 2026-02, last deploy 2026-04-01) — serving `https://events.bikesiliconvalley.org` (Eventbrite events for Squarespace embeds). Reconciled into this repo 2026-08-24 from the standalone `svbc-events-widgets` GitLab repo (history preserved); **deployed version lags the repo** — Bike Parking org + private-event fixes are committed but not yet redeployed | Not migration-related; predates this repo | Unassigned |
 | [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
 | [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
-| [`membership-reminders`](membership-reminders/README.md) | Built (merged) — not deployed; hard-blocked on the Donors board id and column ids, which exist only after `salesforce-import`'s load stage runs | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
+| [`mailchimp-sync`](mailchimp-sync/README.md) | Built — repurposed from the never-deployed `membership-reminders` (2026-08-26); not deployed, blocked on the Donors board (same as everything downstream of `salesforce-import`) plus a Mailchimp audience with the required merge fields/Interest Categories | Post-migration, **time-sensitive** — newsletter segmentation and both membership email journeys depend on it once Salesforce retires | Unassigned |
 | [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward | Unassigned |
 | [`monday-backup`](monday-backup/README.md) | Built (`feat/monday-backup`) — not deployed; needs D1 provisioning, a dedicated Monday backup integration user/token, and a Google service account scoped to the destination Drive folder | Post-migration, non-blocking, but time-relevant once real donor data lives in Monday with no Salesforce copy to fall back on | Unassigned |
 
@@ -130,9 +130,9 @@ here.
 
 1. **`salesforce-import`** and **`funraise-sync`** first — both are blocking on the October
    Salesforce cutover; everything else here is explicitly post-migration and non-blocking.
-2. **`membership-reminders` next** — it's post-migration but time-sensitive: Salesforce's
-   renewal-reminder automation dies at retirement, and members stop being asked to renew until
-   this ships.
+2. **`mailchimp-sync` next** — it's post-migration but time-sensitive: Salesforce's
+   renewal-reminder automation and newsletter segmentation die at retirement, and members stop
+   being asked to renew and segmented for newsletters until this ships.
 3. Everything else can happen in any order, gated mainly by owner availability (see the table
    above — most rows are unassigned) and, for `volunteermatch-sync`, by Idealist confirming terms.
    `donor-portal`'s former dependency on the Membership design was resolved 2026-08-21 — the
