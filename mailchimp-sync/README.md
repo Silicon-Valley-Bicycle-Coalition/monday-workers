@@ -21,7 +21,9 @@ directions, so that:
 * The existing newsletter segments (by city/address, by donation history) keep working after
   Salesforce retires.
 * Staff can see, per donor, which Mailchimp campaigns/journeys they're currently part of, via a
-  connect-column on the Donor item pointing at an auto-generated "Mailchimp Campaigns" board.
+  connect-column on the Donor item pointing at a "Mailchimp Campaigns" board, whose items are kept
+  current by this Worker's daily reconciliation run (the board itself is staff-created once, like
+  every other board id in this repo).
 
 ## Data flow
 
@@ -41,7 +43,7 @@ Three independent flows — see the design doc for full sequence diagrams:
 ## Prerequisites before this can run against real data
 
 **Mailchimp side (staff task):**
-* Create five merge fields in the target audience: `MEMBERSINCE`, `MEMBERUNTIL`, `MTIER`,
+* Create six merge fields in the target audience: `MEMBERSINCE`, `MEMBERUNTIL`, `MTIER`,
   `MSTATUS`, `ADDRESS` (type: Address), `TOTALGIVE`.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
@@ -51,16 +53,31 @@ Three independent flows — see the design doc for full sequence diagrams:
   42/28/14 days before `MEMBERUNTIL` (carried forward from the original `membership-reminders`
   design).
 * Set up an audience webhook (Subscribes/Unsubscribes/Profile updates/Cleaned) pointed at this
-  Worker's `/webhooks/mailchimp/audience`, with a secret in the URL.
+  Worker's `/webhooks/mailchimp/audience`, with a secret in the URL, and leave Mailchimp's
+  webhook "API" event source **unchecked** — otherwise this Worker's own writes back to Mailchimp
+  (from the outbound side) can themselves trigger inbound webhook events, risking a feedback loop
+  with the Donors-board webhook below.
+* **Not yet verified against a live Mailchimp account** — confirm before relying on the
+  `active-member`/`lapsed-member`/`lifetime-member` tags for any live segment or Journey: does a
+  Mailchimp list-member `PUT` (what `upsertMember` sends) actually *replace* a contact's existing
+  `tags` array, or does it *merge* with what's already there? Public documentation disagrees. If it
+  merges, a donor's status change (e.g. active → lapsed) would leave the stale `active-member` tag
+  in place alongside the new one. If confirmed to merge, the fix is switching to Mailchimp's
+  dedicated `POST /lists/{id}/members/{hash}/tags` endpoint with explicit `active`/`inactive`
+  status per tag, rather than sending `tags` through the upsert call.
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
   (addr1/city/state/zip), Email — written by `salesforce-import`.
 * The Total Given / Last Gift rollup columns `donation-rollups` maintains.
-* A new connect-column on the Donors board pointed at the Campaigns board (auto-created by this
-  Worker's first reconciliation run).
+* A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
+  this Worker reconciles its *items* daily but does not create the board itself), plus a new
+  connect-column on the Donors board pointed at it.
 * A webhook subscription (`create_item` + `change_column_value`) on the Donors board, pointed at
-  `/webhooks/monday/donors`, with a secret in the URL.
+  `/webhooks/monday/donors`, with a secret in the URL. If Monday's webhook UI allows scoping to
+  specific columns, exclude the `mailchimpCampaigns` connect-column from the watched columns —
+  defense in depth against the inbound consumer's own write to that column re-triggering this
+  webhook (the Worker also guards against this in code; see the design doc's feedback-loop note).
 * Fill in every `REPLACE_WITH_*` placeholder in `config/svbc.json` once the above exist.
 
 ## Local development

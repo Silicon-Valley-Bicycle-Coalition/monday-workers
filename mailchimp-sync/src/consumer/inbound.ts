@@ -41,9 +41,16 @@ async function processOne(email: string, deps: InboundConsumerDeps): Promise<voi
     return;
   }
 
-  const subscribedInterestIds = Object.entries(member.interests)
-    .filter(([, subscribed]) => subscribed)
-    .map(([interestId]) => interestId);
+  // Mailchimp preserves `interests` unchanged after a contact unsubscribes/is cleaned/
+  // archived, so a status other than actively-subscribed means no active connections at
+  // all — skip resolving interests entirely and clear the connect column below.
+  const isActivelySubscribed = member.status === 'subscribed' || member.status === 'pending';
+
+  const subscribedInterestIds = isActivelySubscribed
+    ? Object.entries(member.interests)
+        .filter(([, subscribed]) => subscribed)
+        .map(([interestId]) => interestId)
+    : [];
 
   const campaignItemIds: string[] = [];
   let triedReconcile = false;
@@ -56,7 +63,14 @@ async function processOne(email: string, deps: InboundConsumerDeps): Promise<voi
       triedReconcile = true;
       row = await campaignItemsStore.getByInterestId(interestId);
     }
-    if (row !== null) campaignItemIds.push(row.mondayItemId);
+    if (row !== null) {
+      campaignItemIds.push(row.mondayItemId);
+    } else if (triedReconcile) {
+      // Still unresolvable even after a fresh reconcile — surface this loudly instead of
+      // silently under-populating the connect column. Propagates to processInboundBatch's
+      // catch, which retries via the Queue and eventually DLQs like any genuine failure.
+      throw new Error(`interest "${interestId}" could not be resolved to a Campaigns-board item even after reconciliation`);
+    }
   }
 
   const donorsBoardId = config.monday.donorsBoardId;

@@ -95,6 +95,37 @@ describe('reconcileCampaigns', () => {
     expect(result).toEqual({ created: 0, renamed: 0, archived: 0 });
   });
 
+  it('retries a transient Monday failure and still creates the item on the next attempt', async () => {
+    // withRetry uses a real setTimeout backoff (see retry.ts) — stub it to fire
+    // immediately so this test doesn't actually wait, same approach as retry.test.ts.
+    const originalSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal('setTimeout', ((cb: () => void) => {
+      cb();
+      return 0 as unknown as ReturnType<typeof originalSetTimeout>;
+    }) as typeof setTimeout);
+
+    const mailchimpClient: MailchimpClient = {
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
+      upsertMember: vi.fn(), getMemberInterests: vi.fn(),
+    };
+    const mondayClient: MondayClient = {
+      createCampaignItem: vi.fn().mockRejectedValueOnce(new Error('transient')).mockResolvedValue('item1'),
+      renameItem: vi.fn(), archiveItem: vi.fn(), getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const campaignItemsStore = fakeCampaignItemsStore();
+
+    try {
+      const result = await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config: CONFIG });
+
+      expect(mondayClient.createCampaignItem).toHaveBeenCalledTimes(2);
+      expect(campaignItemsStore.upsert).toHaveBeenCalledWith({ interestId: 'int1', mondayItemId: 'item1', name: 'Newsletter', archivedAt: null });
+      expect(result).toEqual({ created: 1, renamed: 0, archived: 0 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('throws if campaignsBoardId is not configured', async () => {
     const config: Config = { ...CONFIG, monday: { ...CONFIG.monday, campaignsBoardId: null } };
     const mailchimpClient: MailchimpClient = { listInterests: vi.fn(), upsertMember: vi.fn(), getMemberInterests: vi.fn() };

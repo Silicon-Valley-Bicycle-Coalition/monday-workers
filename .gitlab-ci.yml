@@ -53,10 +53,10 @@ funraise-sync:
   variables:
     WORKER_DIR: funraise-sync
 
-membership-reminders:
+mailchimp-sync:
   extends: .worker_job
   variables:
-    WORKER_DIR: membership-reminders
+    WORKER_DIR: mailchimp-sync
 
 quickbooks-sync:
   extends: .worker_job

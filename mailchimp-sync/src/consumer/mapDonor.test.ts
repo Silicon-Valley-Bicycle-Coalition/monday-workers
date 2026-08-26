@@ -38,6 +38,18 @@ describe('buildMergeFields', () => {
       TOTALGIVE: '0',
     });
   });
+
+  it('omits the ADDRESS key entirely when any address component is blank', () => {
+    const result = buildMergeFields(donor({ city: '' }), CONFIG);
+    expect(result).not.toHaveProperty('ADDRESS');
+    expect(result).toEqual({
+      MEMBERSINCE: '2026-01-01',
+      MEMBERUNTIL: '2027-01-01',
+      MTIER: 'Standard',
+      MSTATUS: 'Active',
+      TOTALGIVE: '0',
+    });
+  });
 });
 
 describe('buildTags', () => {

@@ -30,6 +30,14 @@ function requireStringKeys(obj: Record<string, unknown>, keys: readonly string[]
   }
 }
 
+function numberOrNull(value: unknown, path: string): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'number') {
+    throw new Error(`config: "${path}" must be a number or null`);
+  }
+  return value;
+}
+
 export function validateConfig(raw: unknown): Config {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -71,8 +79,8 @@ export function validateConfig(raw: unknown): Config {
   return {
     monday: {
       apiUrl: monday.apiUrl,
-      donorsBoardId: (monday.donorsBoardId as number | null) ?? null,
-      campaignsBoardId: (monday.campaignsBoardId as number | null) ?? null,
+      donorsBoardId: numberOrNull(monday.donorsBoardId, 'monday.donorsBoardId'),
+      campaignsBoardId: numberOrNull(monday.campaignsBoardId, 'monday.campaignsBoardId'),
       columns: columns as unknown as MondayColumnsConfig,
     },
     mailchimp: {

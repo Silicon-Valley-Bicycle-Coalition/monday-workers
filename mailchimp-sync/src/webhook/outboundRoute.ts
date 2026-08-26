@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { PendingOutboundStore } from '../db/pendingOutbound';
 import { validateMondayWebhookBody } from './validateMonday';
-import type { OutboundSyncMessage } from '../types';
+import type { Config, OutboundSyncMessage } from '../types';
 
 export interface OutboundQueueLike {
   send(message: OutboundSyncMessage): Promise<void>;
@@ -14,6 +14,10 @@ export interface OutboundAppDeps {
   // in the webhook URL at subscription time, checked here. Unset disables the check;
   // never leave it unset outside local dev.
   webhookSecret?: string;
+  // Needed to recognize and skip this Worker's own self-inflicted events: the inbound
+  // consumer writes to config.monday.columns.mailchimpCampaigns on this same Donors board,
+  // which would otherwise re-trigger this webhook and risk a feedback loop with Mailchimp.
+  config: Config;
 }
 
 // Ingest-and-enqueue only — resolving the Donor's current columns and writing to
@@ -47,6 +51,13 @@ export function createOutboundApp(deps: OutboundAppDeps) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`mailchimp-sync outbound webhook: rejected delivery: ${errMsg}`);
       return c.json({ ok: false, error: errMsg }, 200);
+    }
+
+    // Self-inflicted event: the inbound consumer's own write to the mailchimpCampaigns
+    // connect-column just triggered this webhook. Not an error — skip without enqueueing to
+    // avoid an outbound→Mailchimp→inbound feedback loop.
+    if (donorEvent.columnId !== undefined && donorEvent.columnId === deps.config.monday.columns.mailchimpCampaigns) {
+      return c.json({ ok: true, skipped: true }, 200);
     }
 
     await deps.pendingStore.upsertPending(donorEvent.donorItemId, new Date().toISOString());

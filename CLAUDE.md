@@ -73,7 +73,7 @@ fails. Instead:
 There's no root `package.json` — every command runs from inside a Worker's own subdirectory
 (`cd funraise-sync`, etc.), each with its own `package.json`, `wrangler.jsonc`, and lockfile.
 
-For a Worker built on the standard Hono + D1 stack (e.g. `funraise-sync`, `membership-reminders`):
+For a Worker built on the standard Hono + D1 stack (e.g. `funraise-sync`, `mailchimp-sync`):
 
 ```sh
 npm test                    # vitest run

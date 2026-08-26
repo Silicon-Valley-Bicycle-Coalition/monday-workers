@@ -64,4 +64,25 @@ describe('validateConfig', () => {
     delete (raw as Record<string, unknown>).lifetimeTierValue;
     expect(() => validateConfig(raw)).toThrow('config: missing required key "lifetimeTierValue"');
   });
+
+  it('accepts a real numeric donorsBoardId/campaignsBoardId', () => {
+    const raw = validRaw();
+    (raw.monday as Record<string, unknown>).donorsBoardId = 111;
+    (raw.monday as Record<string, unknown>).campaignsBoardId = 999;
+    const config = validateConfig(raw);
+    expect(config.monday.donorsBoardId).toBe(111);
+    expect(config.monday.campaignsBoardId).toBe(999);
+  });
+
+  it('rejects a string donorsBoardId', () => {
+    const raw = validRaw();
+    (raw.monday as Record<string, unknown>).donorsBoardId = '111';
+    expect(() => validateConfig(raw)).toThrow('config: "monday.donorsBoardId" must be a number or null');
+  });
+
+  it('rejects a string campaignsBoardId', () => {
+    const raw = validRaw();
+    (raw.monday as Record<string, unknown>).campaignsBoardId = '999';
+    expect(() => validateConfig(raw)).toThrow('config: "monday.campaignsBoardId" must be a number or null');
+  });
 });

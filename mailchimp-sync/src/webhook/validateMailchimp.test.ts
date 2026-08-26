@@ -16,4 +16,9 @@ describe('validateMailchimpWebhookBody', () => {
     const params = new URLSearchParams({ type: 'profile' });
     expect(() => validateMailchimpWebhookBody(params)).toThrow('webhook body has no "data[email]" field');
   });
+
+  it('normalizes email case and surrounding whitespace', () => {
+    const params = new URLSearchParams({ type: 'unsubscribe', 'data[email]': ' Mixed@Case.COM ' });
+    expect(validateMailchimpWebhookBody(params)).toEqual({ email: 'mixed@case.com' });
+  });
 });

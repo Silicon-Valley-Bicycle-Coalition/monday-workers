@@ -74,6 +74,12 @@ and the future donor-portal preference UI are all built on top of it, not separa
 * **Chosen: an auto-generated "Mailchimp Campaigns" Monday board**, not staff-maintained. Rejected
   a manually-maintained board — campaigns/interests change quarterly, and manual upkeep drifts
   stale. A daily reconciliation cron keeps it current instead (see below).
+  **Correction (post-implementation review, 2026-08-26):** only the board's *items* are
+  auto-reconciled daily, as designed and implemented in `reconcile.ts`. The board itself is not
+  auto-created — no `createBoard` call was ever built, and doing so is out of scope for this fix
+  wave (unverified against a live Monday account). Staff creates the "Mailchimp Campaigns" board
+  once, the same way every other board id in this repo is provisioned, and fills its id into
+  `config/svbc.json`'s `monday.campaignsBoardId`.
 
 ## Scope recap
 
@@ -308,7 +314,7 @@ tests). Cover:
 
 ## Prerequisites (Mailchimp-side, staff task, not code)
 
-* Create the five merge fields listed above (including the `ADDRESS`-type one) in the target
+* Create the six merge fields listed above (including the `ADDRESS`-type one) in the target
   audience's settings before first deploy — the API will reject writes to merge fields that don't
   exist yet.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:

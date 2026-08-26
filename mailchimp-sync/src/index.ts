@@ -23,6 +23,7 @@ export default {
       pendingStore: new D1PendingOutboundStore(env.DB),
       queue: { send: (message: OutboundSyncMessage) => env.OUTBOUND_QUEUE.send(message).then(() => undefined) },
       webhookSecret: env.MONDAY_WEBHOOK_SECRET,
+      config,
     }));
     app.route('/', createInboundApp({
       pendingStore: new D1PendingInboundStore(env.DB),
@@ -46,13 +47,20 @@ export default {
       return;
     }
 
-    await processInboundBatch(batch.messages as unknown as { body: InboundSyncMessage; ack(): void; retry(): void }[], {
-      pendingStore: new D1PendingInboundStore(env.DB),
-      mondayClient,
-      mailchimpClient,
-      campaignItemsStore: new D1CampaignItemsStore(env.DB),
-      config,
-    });
+    if (batch.queue === 'mailchimp-sync-inbound') {
+      await processInboundBatch(batch.messages as unknown as { body: InboundSyncMessage; ack(): void; retry(): void }[], {
+        pendingStore: new D1PendingInboundStore(env.DB),
+        mondayClient,
+        mailchimpClient,
+        campaignItemsStore: new D1CampaignItemsStore(env.DB),
+        config,
+      });
+      return;
+    }
+
+    // A typo'd or renamed queue name should fail loudly rather than silently falling
+    // through to the inbound consumer, which would misprocess messages it can't parse.
+    throw new Error(`unknown queue: ${batch.queue}`);
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {

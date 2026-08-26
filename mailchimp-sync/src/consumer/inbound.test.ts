@@ -116,6 +116,51 @@ describe('processInboundBatch', () => {
     expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['campaign-new']);
   });
 
+  it('clears the connect column for an unsubscribed contact even though interests are still non-empty', async () => {
+    const message = fakeMessage('unsub@b.com');
+    const mondayClient = fakeMonday();
+    const campaignItemsStore = fakeCampaignItemsStore([
+      { interestId: 'int1', mondayItemId: 'campaign-1', name: 'Newsletter', archivedAt: null },
+    ]);
+    const mailchimpClient = fakeMailchimp({
+      // Mailchimp preserves `interests` unchanged after unsubscribe — status is the signal.
+      getMemberInterests: vi.fn().mockResolvedValue({ status: 'unsubscribed', interests: { int1: true } }),
+    });
+    const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+
+    await processInboundBatch([message], {
+      mondayClient, mailchimpClient, campaignItemsStore, pendingStore, config: CONFIG,
+    });
+
+    expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', []);
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('retries (does not ack) when an interest is still unresolvable after the one-shot reconcile', async () => {
+    const message = fakeMessage('a@b.com');
+    const mondayClient = fakeMonday();
+    // listInterests returns nothing matching, so reconcile can't create/track it either.
+    const mailchimpClient = fakeMailchimp({
+      getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { 'ghost-int': true } }),
+      listInterests: vi.fn().mockResolvedValue([]),
+    });
+    const campaignItemsStore = fakeCampaignItemsStore([]);
+    const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+
+    await processInboundBatch([message], {
+      mondayClient, mailchimpClient, campaignItemsStore, pendingStore, config: CONFIG,
+    });
+
+    expect(mondayClient.setConnectColumn).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith(
+      'a@b.com',
+      'failed',
+      expect.stringContaining('ghost-int'),
+    );
+  });
+
   it('retries (does not ack) when Monday lookup throws', async () => {
     const message = fakeMessage('a@b.com');
     const mondayClient = fakeMonday({ findItemIdByEmail: vi.fn().mockRejectedValue(new Error('monday down')) });
