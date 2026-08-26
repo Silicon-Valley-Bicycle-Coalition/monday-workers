@@ -303,12 +303,12 @@ describe('portalView', () => {
     expect(html).toContain(t('es', 'portal.heading'));
   });
 
-  it('omits the volunteer section entirely when the feature is disabled (volunteerHistory null)', () => {
+  it('omits the volunteer tab entirely when the feature is disabled (volunteerHistory null)', () => {
     const html = portalView(data, 'en', {}, noFunraise);
     expect(html).not.toContain(t('en', 'portal.volunteerHeading'));
   });
 
-  it('renders a volunteer section only for donors with at least one shift', () => {
+  it('renders a Volunteer tab with real data for a donor with shifts, and a CTA for one without', () => {
     const withVolunteers: PortalView = {
       ...data,
       volunteerHistory: {
@@ -323,11 +323,25 @@ describe('portalView', () => {
       },
     };
     const html = portalView(withVolunteers, 'en', {}, noFunraise);
-    expect(html).toContain(t('en', 'portal.volunteerHeading'));
+    // Both donors now get a Volunteer tab (feature is enabled) — donor-1's has real data,
+    // donor-2's is empty, so the tab label itself appears once per donor.
+    expect(html.split(t('en', 'portal.volunteerHeading')).length - 1).toBe(2);
     expect(html).toContain('Bike Valet');
     expect(html).toContain('Total volunteer hours: 5.5');
-    // donor-2 has no shifts — exactly one volunteer section should render
-    expect(html.split(t('en', 'portal.volunteerHeading')).length - 1).toBe(1);
+  });
+
+  it('shows the volunteer CTA, not an empty table, for a donor with the feature enabled but no shifts', () => {
+    const withVolunteers: PortalView = {
+      ...data,
+      volunteerHistory: {
+        'donor-1': { shifts: [{ date: '2026-03-05', hours: '3.5', job: 'Bike Valet', status: 'Completed' }], totalHours: 3.5 },
+        'donor-2': { shifts: [], totalHours: 0 },
+      },
+    };
+    const html = portalView(withVolunteers, 'en', {}, noFunraise);
+    expect(html).toContain(t('en', 'portal.volunteerEmptyMessage'));
+    expect(html).toContain(t('en', 'portal.volunteerButton'));
+    expect(html).toContain('href="https://bikesiliconvalley.org/get-involved/volunteer"');
   });
 
   it('escapes volunteer-shift text instead of rendering it raw', () => {
@@ -358,6 +372,168 @@ describe('portalView', () => {
     const html = portalView(withVolunteers, 'es', {}, noFunraise);
     expect(html).toContain(t('es', 'portal.volunteerHeading'));
     expect(html).toContain(t('es', 'portal.volunteerTotalHours', { hours: '3.5' }));
+  });
+
+  it('shows a Donate CTA instead of an empty table for a donor with no donations and nothing on file', () => {
+    const noDonations: PortalView = {
+      donors: [
+        {
+          id: 'donor-3',
+          name: 'New Donor',
+          membershipStatus: 'Active',
+          membershipTier: 'Member',
+          totalDonated: '0',
+          donations: [],
+          membershipExpiry: '',
+        },
+      ],
+      discounts: [],
+      volunteerHistory: null,
+    };
+    const html = portalView(noDonations, 'en', {}, noFunraise);
+    expect(html).toContain(t('en', 'portal.donationsEmptyMessage'));
+    expect(html).toContain(t('en', 'portal.donateButton'));
+    expect(html).toContain('href="https://bikesiliconvalley.org/ways-to-give"');
+    expect(html).not.toContain('<tfoot>');
+  });
+
+  it('still shows the donations table and running total when totalDonated is nonzero, even with no itemized rows on file', () => {
+    // donor-2 has totalDonated: '2500' but donations: [] — a real rollup with no itemized rows
+    // (e.g. older gifts never synced as line items), not a donor who's never given.
+    const html = portalView(data, 'en', {}, noFunraise);
+    expect(html).toContain('$2,500.00');
+    expect(html).not.toContain(t('en', 'portal.donationsEmptyMessage'));
+  });
+});
+
+describe('portalView events tab', () => {
+  const base: PortalView = {
+    donors: [
+      {
+        id: 'donor-1',
+        name: 'Jane Donor',
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '500',
+        donations: [{ date: '2026-01-01', amount: '100', description: 'Annual gift' }],
+        membershipExpiry: '',
+      },
+    ],
+    discounts: [],
+    volunteerHistory: null,
+  };
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+
+  it('omits the Events tab entirely when no events data is passed (feature disabled or load failed)', () => {
+    const html = portalView(base, 'en', {}, noFunraise);
+    expect(html).not.toContain(t('en', 'events.tabLabel'));
+  });
+
+  it('renders upcoming and past registrations when present', () => {
+    const events = {
+      'donor-1': {
+        donorId: 'donor-1',
+        donorName: 'Jane Donor',
+        upcoming: [{ registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false }],
+        past: [{ registrationName: 'reg-2', eventName: 'Spring Ride', eventDate: '2026-03-01', attended: true }],
+      },
+    };
+    const html = portalView(base, 'en', {}, noFunraise, events);
+    expect(html).toContain(t('en', 'events.tabLabel'));
+    expect(html).toContain('Fall Gala');
+    expect(html).toContain('Spring Ride');
+    expect(html).toContain(t('en', 'events.upcomingHeading'));
+    expect(html).toContain(t('en', 'events.pastHeading'));
+    expect(html).not.toContain(t('en', 'events.emptyMessage'));
+  });
+
+  it('shows a Find Upcoming Events CTA when the donor has no registrations', () => {
+    const events = {
+      'donor-1': { donorId: 'donor-1', donorName: 'Jane Donor', upcoming: [], past: [] },
+    };
+    const html = portalView(base, 'en', {}, noFunraise, events);
+    expect(html).toContain(t('en', 'events.emptyMessage'));
+    expect(html).toContain(t('en', 'events.findEventsButton'));
+    expect(html).toContain('href="https://bikesiliconvalley.org/events"');
+  });
+
+  it('escapes event-sourced text instead of rendering it raw', () => {
+    const events = {
+      'donor-1': {
+        donorId: 'donor-1',
+        donorName: 'Jane Donor',
+        upcoming: [{ registrationName: 'reg-1', eventName: '<script>alert(1)</script>', eventDate: '2026-10-03', attended: false }],
+        past: [],
+      },
+    };
+    const html = portalView(base, 'en', {}, noFunraise, events);
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+describe('portalView tab structure', () => {
+  const base: PortalView = {
+    donors: [
+      {
+        id: 'donor-1',
+        name: 'Jane Donor',
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '500',
+        donations: [{ date: '2026-01-01', amount: '100', description: 'Annual gift' }],
+        membershipExpiry: '',
+      },
+    ],
+    discounts: [],
+    volunteerHistory: null,
+  };
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+
+  it('renders donations content directly, with no tab UI, when it is the only applicable tab', () => {
+    const html = portalView(base, 'en', {}, noFunraise);
+    expect(html).not.toContain('class="tabs"');
+    expect(html).not.toContain('type="radio"');
+    expect(html).toContain('Annual gift');
+  });
+
+  it('renders a tab for each applicable section, with the first checked by default', () => {
+    const withAll: PortalView = {
+      ...base,
+      volunteerHistory: { 'donor-1': { shifts: [{ date: '2026-03-05', hours: '1', job: 'Tabling', status: 'Completed' }], totalHours: 1 } },
+    };
+    const events = { 'donor-1': { donorId: 'donor-1', donorName: 'Jane Donor', upcoming: [], past: [] } };
+    const html = portalView(withAll, 'en', {}, noFunraise, events);
+    expect((html.match(/type="radio"/g) ?? []).length).toBe(3);
+    expect((html.match(/ checked/g) ?? []).length).toBe(1);
+    expect(html).toContain(t('en', 'portal.donationsTabLabel'));
+    expect(html).toContain(t('en', 'portal.volunteerHeading'));
+    expect(html).toContain(t('en', 'events.tabLabel'));
+  });
+
+  it("scopes each donor's tabs to their own radio group so multiple donors on one page do not collide", () => {
+    const twoDonors: PortalView = {
+      donors: [
+        base.donors[0]!,
+        {
+          id: 'donor-2',
+          name: 'Jane Also',
+          membershipStatus: 'Active',
+          membershipTier: 'Lifetime',
+          totalDonated: '500',
+          donations: [{ date: '2026-01-01', amount: '100', description: 'Another gift' }],
+          membershipExpiry: '',
+        },
+      ],
+      discounts: [],
+      volunteerHistory: {
+        'donor-1': { shifts: [{ date: '2026-03-05', hours: '1', job: 'Tabling', status: 'Completed' }], totalHours: 1 },
+        'donor-2': { shifts: [{ date: '2026-03-05', hours: '1', job: 'Tabling', status: 'Completed' }], totalHours: 1 },
+      },
+    };
+    const html = portalView(twoDonors, 'en', {}, noFunraise);
+    expect(html).toContain('name="tabs-donor-1"');
+    expect(html).toContain('name="tabs-donor-2"');
   });
 });
 
