@@ -1,8 +1,8 @@
 {
-  "name": "membership-reminders",
-  "version": "1.0.0",
-  "description": "**Status:** Decided — build (scoped 2026-08-21). **Priority:** Post-migration, but **time-sensitive**: Salesforce's renewal-reminder automation dies at retirement, and until this ships nobody is asked to renew. Build it in the first post-cutover wave, not \"eventually.\" **Owner:** Unassigned. **Stack:** Hono + TypeScript, daily **Cron Trigger**, same least-privilege-token shape as the other Workers. No D1 needed — idempotency state lives on the board items themselves.",
-  "main": "index.js",
+  "name": "mailchimp-sync",
+  "version": "0.1.0",
+  "description": "Bidirectional Monday.com <-> Mailchimp sync: Donor merge fields/tags out, campaign/journey membership back, plus a Campaigns board kept in sync with Mailchimp's Interest Categories.",
+  "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
     "dev": "wrangler dev",
@@ -11,14 +11,17 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
-  "private": "true",
+  "private": true,
   "dependencies": {
-    "hono": "^4.13.3"
+    "hono": "^4.13.3",
+    "md5": "^2.3.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
     "@cloudflare/workers-types": "^5.20260822.1",
+    "@types/md5": "^2.3.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.125.0"
