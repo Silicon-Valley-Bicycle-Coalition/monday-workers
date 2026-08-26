@@ -2,25 +2,39 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "donorsBoardId": null,
+    "campaignsBoardId": null,
     "columns": {
       "membershipStatus": "REPLACE_WITH_COLUMN_ID",
       "membershipTier": "REPLACE_WITH_COLUMN_ID",
+      "memberSince": "REPLACE_WITH_COLUMN_ID",
       "memberUntil": "REPLACE_WITH_COLUMN_ID",
-      "remindersSent": "REPLACE_WITH_COLUMN_ID",
-      "email": "REPLACE_WITH_COLUMN_ID"
+      "addr1": "REPLACE_WITH_COLUMN_ID",
+      "city": "REPLACE_WITH_COLUMN_ID",
+      "state": "REPLACE_WITH_COLUMN_ID",
+      "zip": "REPLACE_WITH_COLUMN_ID",
+      "email": "REPLACE_WITH_COLUMN_ID",
+      "totalGiven": "REPLACE_WITH_COLUMN_ID",
+      "mailchimpCampaigns": "REPLACE_WITH_COLUMN_ID"
     }
   },
-  "email": {
-    "fromAddress": "reminders@mail.bikesiliconvalley.org",
-    "fromName": "SVBC Membership"
+  "mailchimp": {
+    "apiBaseUrl": "https://REPLACE_WITH_DC.api.mailchimp.com/3.0",
+    "audienceId": "REPLACE_WITH_AUDIENCE_ID",
+    "mergeFields": {
+      "memberSince": "MEMBERSINCE",
+      "memberUntil": "MEMBERUNTIL",
+      "membershipTier": "MTIER",
+      "membershipStatus": "MSTATUS",
+      "address": "ADDRESS",
+      "totalGiven": "TOTALGIVE"
+    },
+    "tags": {
+      "activeMember": "active-member",
+      "lapsedMember": "lapsed-member",
+      "lifetimeMember": "lifetime-member",
+      "hasDonated": "has-donated"
+    }
   },
-  "stages": [
-    { "tag": "6w", "offsetDays": 42 },
-    { "tag": "4w", "offsetDays": 28 },
-    { "tag": "2w", "offsetDays": 14 }
-  ],
-  "renewalUrl": "https://bikesiliconvalley.org/renew",
-  "timeZone": "America/Los_Angeles",
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active"
 }

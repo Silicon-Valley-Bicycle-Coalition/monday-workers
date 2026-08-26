@@ -1,0 +1,87 @@
+import type { Config, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+
+const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue'] as const;
+
+const REQUIRED_MONDAY_COLUMNS: (keyof MondayColumnsConfig)[] = [
+  'membershipStatus', 'membershipTier', 'memberSince', 'memberUntil',
+  'addr1', 'city', 'state', 'zip', 'email', 'totalGiven', 'mailchimpCampaigns',
+];
+
+const REQUIRED_MERGE_FIELDS: (keyof MailchimpMergeFieldsConfig)[] = [
+  'memberSince', 'memberUntil', 'membershipTier', 'membershipStatus', 'address', 'totalGiven',
+];
+
+const REQUIRED_TAGS: (keyof MailchimpTagsConfig)[] = [
+  'activeMember', 'lapsedMember', 'lifetimeMember', 'hasDonated',
+];
+
+function requireObject(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error(`config: missing required key "${path}"`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireStringKeys(obj: Record<string, unknown>, keys: readonly string[], prefix: string): void {
+  for (const key of keys) {
+    if (typeof obj[key] !== 'string' || obj[key] === '') {
+      throw new Error(`config: missing required key "${prefix}.${key}"`);
+    }
+  }
+}
+
+export function validateConfig(raw: unknown): Config {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('config: expected an object');
+  }
+  const cfg = raw as Record<string, unknown>;
+
+  for (const key of REQUIRED_TOP_LEVEL) {
+    if (!(key in cfg)) {
+      throw new Error(`config: missing required key "${key}"`);
+    }
+  }
+
+  const monday = requireObject(cfg.monday, 'monday');
+  if (typeof monday.apiUrl !== 'string' || monday.apiUrl === '') {
+    throw new Error('config: missing required key "monday.apiUrl"');
+  }
+  const columns = requireObject(monday.columns, 'monday.columns');
+  requireStringKeys(columns, REQUIRED_MONDAY_COLUMNS, 'monday.columns');
+
+  const mailchimp = requireObject(cfg.mailchimp, 'mailchimp');
+  if (typeof mailchimp.apiBaseUrl !== 'string' || mailchimp.apiBaseUrl === '') {
+    throw new Error('config: missing required key "mailchimp.apiBaseUrl"');
+  }
+  if (typeof mailchimp.audienceId !== 'string' || mailchimp.audienceId === '') {
+    throw new Error('config: missing required key "mailchimp.audienceId"');
+  }
+  const mergeFields = requireObject(mailchimp.mergeFields, 'mailchimp.mergeFields');
+  requireStringKeys(mergeFields, REQUIRED_MERGE_FIELDS, 'mailchimp.mergeFields');
+  const tags = requireObject(mailchimp.tags, 'mailchimp.tags');
+  requireStringKeys(tags, REQUIRED_TAGS, 'mailchimp.tags');
+
+  if (typeof cfg.lifetimeTierValue !== 'string' || cfg.lifetimeTierValue === '') {
+    throw new Error('config: missing required key "lifetimeTierValue"');
+  }
+  if (typeof cfg.activeStatusValue !== 'string' || cfg.activeStatusValue === '') {
+    throw new Error('config: missing required key "activeStatusValue"');
+  }
+
+  return {
+    monday: {
+      apiUrl: monday.apiUrl,
+      donorsBoardId: (monday.donorsBoardId as number | null) ?? null,
+      campaignsBoardId: (monday.campaignsBoardId as number | null) ?? null,
+      columns: columns as unknown as MondayColumnsConfig,
+    },
+    mailchimp: {
+      apiBaseUrl: mailchimp.apiBaseUrl,
+      audienceId: mailchimp.audienceId,
+      mergeFields: mergeFields as unknown as MailchimpMergeFieldsConfig,
+      tags: tags as unknown as MailchimpTagsConfig,
+    },
+    lifetimeTierValue: cfg.lifetimeTierValue,
+    activeStatusValue: cfg.activeStatusValue,
+  };
+}

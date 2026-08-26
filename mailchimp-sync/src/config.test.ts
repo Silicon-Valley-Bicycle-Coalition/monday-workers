@@ -1,0 +1,67 @@
+import { describe, it, expect } from 'vitest';
+import { validateConfig } from './config';
+
+function validRaw() {
+  return {
+    monday: {
+      apiUrl: 'https://api.monday.com/v2',
+      donorsBoardId: null,
+      campaignsBoardId: null,
+      columns: {
+        membershipStatus: 'c1', membershipTier: 'c2', memberSince: 'c3', memberUntil: 'c4',
+        addr1: 'c5', city: 'c6', state: 'c7', zip: 'c8', email: 'c9', totalGiven: 'c10',
+        mailchimpCampaigns: 'c11',
+      },
+    },
+    mailchimp: {
+      apiBaseUrl: 'https://us1.api.mailchimp.com/3.0',
+      audienceId: 'abc123',
+      mergeFields: {
+        memberSince: 'MEMBERSINCE', memberUntil: 'MEMBERUNTIL', membershipTier: 'MTIER',
+        membershipStatus: 'MSTATUS', address: 'ADDRESS', totalGiven: 'TOTALGIVE',
+      },
+      tags: {
+        activeMember: 'active-member', lapsedMember: 'lapsed-member',
+        lifetimeMember: 'lifetime-member', hasDonated: 'has-donated',
+      },
+    },
+    lifetimeTierValue: 'Lifetime',
+    activeStatusValue: 'Active',
+  };
+}
+
+describe('validateConfig', () => {
+  it('accepts a fully-populated config', () => {
+    const config = validateConfig(validRaw());
+    expect(config.mailchimp.audienceId).toBe('abc123');
+    expect(config.monday.columns.email).toBe('c9');
+  });
+
+  it('rejects a non-object', () => {
+    expect(() => validateConfig(null)).toThrow('config: expected an object');
+  });
+
+  it('rejects a missing monday.columns key', () => {
+    const raw = validRaw();
+    delete (raw.monday.columns as Record<string, unknown>).email;
+    expect(() => validateConfig(raw)).toThrow('config: missing required key "monday.columns.email"');
+  });
+
+  it('rejects a missing mailchimp.mergeFields key', () => {
+    const raw = validRaw();
+    delete (raw.mailchimp.mergeFields as Record<string, unknown>).address;
+    expect(() => validateConfig(raw)).toThrow('config: missing required key "mailchimp.mergeFields.address"');
+  });
+
+  it('rejects a missing mailchimp.tags key', () => {
+    const raw = validRaw();
+    delete (raw.mailchimp.tags as Record<string, unknown>).hasDonated;
+    expect(() => validateConfig(raw)).toThrow('config: missing required key "mailchimp.tags.hasDonated"');
+  });
+
+  it('rejects a missing top-level key', () => {
+    const raw = validRaw();
+    delete (raw as Record<string, unknown>).lifetimeTierValue;
+    expect(() => validateConfig(raw)).toThrow('config: missing required key "lifetimeTierValue"');
+  });
+});
