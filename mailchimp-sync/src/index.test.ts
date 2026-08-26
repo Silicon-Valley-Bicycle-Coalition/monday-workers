@@ -34,3 +34,15 @@ describe('fetch', () => {
     expect(await res.json()).toEqual({ challenge: 'abc' });
   });
 });
+
+describe('scheduled', () => {
+  it('runs reconcileCampaigns and does not throw when it fails', async () => {
+    const env = fakeEnv();
+    const ctx = { waitUntil: vi.fn() } as unknown as ExecutionContext;
+    // No throw expected even though config.monday.campaignsBoardId is null in the
+    // placeholder config/svbc.json — reconcileCampaigns's own rejection is caught
+    // inside scheduled(), not propagated.
+    await expect(worker.scheduled({} as ScheduledEvent, env, ctx)).resolves.toBeUndefined();
+    expect(ctx.waitUntil).toHaveBeenCalled();
+  });
+});

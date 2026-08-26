@@ -4,8 +4,10 @@ import { validateConfig } from './config';
 import { HttpMondayClient } from './monday/client';
 import { HttpMailchimpClient } from './mailchimp/client';
 import { D1PendingOutboundStore } from './db/pendingOutbound';
+import { D1CampaignItemsStore } from './db/campaignItems';
 import { createOutboundApp } from './webhook/outboundRoute';
 import { processOutboundBatch } from './consumer/outbound';
+import { reconcileCampaigns } from './campaigns/reconcile';
 import type { Env, OutboundSyncMessage } from './types';
 
 const config = validateConfig(configJson);
@@ -29,5 +31,18 @@ export default {
       mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
       config,
     });
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      reconcileCampaigns({
+        mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+        campaignItemsStore: new D1CampaignItemsStore(env.DB),
+        config,
+      })
+        .then((result) => console.log(`mailchimp-sync reconcile: created ${result.created}, renamed ${result.renamed}, archived ${result.archived}`))
+        .catch((err) => console.error(`mailchimp-sync reconcile: run failed: ${(err as Error).message}`)),
+    );
   },
 };
