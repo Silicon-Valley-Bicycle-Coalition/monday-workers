@@ -79,3 +79,29 @@ describe('HttpMondayClient.archiveItem', () => {
     expect(fetchFn).toHaveBeenCalled();
   });
 });
+
+describe('HttpMondayClient.findItemIdByEmail', () => {
+  it('returns the matching item id', async () => {
+    const fetchFn = fakeFetch({ items_page_by_column_values: { items: [{ id: '42' }] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    expect(await client.findItemIdByEmail(123, 'email', 'a@b.com')).toBe('42');
+  });
+
+  it('returns null when no item matches', async () => {
+    const fetchFn = fakeFetch({ items_page_by_column_values: { items: [] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    expect(await client.findItemIdByEmail(123, 'email', 'nobody@b.com')).toBeNull();
+  });
+});
+
+describe('HttpMondayClient.setConnectColumn', () => {
+  it('writes the full linked-item-ids set as JSON', async () => {
+    const fetchFn = fakeFetch({ change_column_value: { id: '42' } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    await client.setConnectColumn(123, '42', 'campaigns', ['1', '2']);
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.monday.com/v2',
+      expect.objectContaining({ body: expect.stringContaining('"item_ids\\":[1,2]') }),
+    );
+  });
+});

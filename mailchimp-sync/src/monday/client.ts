@@ -5,6 +5,8 @@ export interface MondayClient {
   createCampaignItem(boardId: number, name: string): Promise<string>;
   renameItem(boardId: number, itemId: string, name: string): Promise<void>;
   archiveItem(itemId: string): Promise<void>;
+  findItemIdByEmail(boardId: number, emailColumnId: string, email: string): Promise<string | null>;
+  setConnectColumn(boardId: number, itemId: string, columnId: string, linkedItemIds: string[]): Promise<void>;
 }
 
 interface GraphQLResponse<T> {
@@ -93,6 +95,32 @@ export class HttpMondayClient implements MondayClient {
     await this.graphql(
       `mutation ($itemId: ID!) { archive_item(item_id: $itemId) { id } }`,
       { itemId },
+    );
+  }
+
+  // Text-column filtering is supported by Monday's API — donation-rollups hit a wall
+  // specifically with board_relation columns, not plain text ones, so this is safe.
+  async findItemIdByEmail(boardId: number, emailColumnId: string, email: string): Promise<string | null> {
+    const data = await this.graphql<{ items_page_by_column_values: { items: { id: string }[] } }>(
+      `query ($boardId: ID!, $columnId: String!, $email: [String!]) {
+        items_page_by_column_values(board_id: $boardId, columns: [{ column_id: $columnId, column_values: $email }], limit: 1) {
+          items { id }
+        }
+      }`,
+      { boardId, columnId: emailColumnId, email: [email] },
+    );
+    return data.items_page_by_column_values.items[0]?.id ?? null;
+  }
+
+  // Writes the *full current set* of linked items, not a diff — same
+  // recompute-the-whole-thing philosophy as donation-rollups' rollup writes. Simpler
+  // and self-healing; cheap at the scale of one donor's campaign memberships.
+  async setConnectColumn(boardId: number, itemId: string, columnId: string, linkedItemIds: string[]): Promise<void> {
+    await this.graphql(
+      `mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+        change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+      }`,
+      { boardId, itemId, columnId, value: JSON.stringify({ item_ids: linkedItemIds.map(Number) }) },
     );
   }
 }

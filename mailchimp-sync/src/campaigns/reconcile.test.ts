@@ -29,6 +29,7 @@ describe('reconcileCampaigns', () => {
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn().mockResolvedValue('item1'),
       renameItem: vi.fn(), archiveItem: vi.fn(), getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const campaignItemsStore = fakeCampaignItemsStore();
 
@@ -47,6 +48,7 @@ describe('reconcileCampaigns', () => {
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn().mockResolvedValue(undefined),
       archiveItem: vi.fn(), getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const campaignItemsStore = fakeCampaignItemsStore([{ interestId: 'int1', mondayItemId: 'item1', name: 'Old Name', archivedAt: null }]);
 
@@ -62,6 +64,7 @@ describe('reconcileCampaigns', () => {
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn().mockResolvedValue(undefined),
       getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const campaignItemsStore = fakeCampaignItemsStore([{ interestId: 'int1', mondayItemId: 'item1', name: 'Gone', archivedAt: null }]);
 
@@ -80,6 +83,7 @@ describe('reconcileCampaigns', () => {
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const campaignItemsStore = fakeCampaignItemsStore([{ interestId: 'int1', mondayItemId: 'item1', name: 'Same', archivedAt: null }]);
 
@@ -97,6 +101,7 @@ describe('reconcileCampaigns', () => {
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     await expect(reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore: fakeCampaignItemsStore(), config }))
       .rejects.toThrow('monday.campaignsBoardId must be set');

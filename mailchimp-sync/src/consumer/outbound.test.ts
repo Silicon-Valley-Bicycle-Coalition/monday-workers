@@ -38,6 +38,7 @@ describe('processOutboundBatch', () => {
     const mondayClient: MondayClient = {
       getDonorById: vi.fn().mockResolvedValue(donor()),
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
       upsertMember: vi.fn().mockResolvedValue(undefined),
@@ -57,6 +58,7 @@ describe('processOutboundBatch', () => {
     const mondayClient: MondayClient = {
       getDonorById: vi.fn().mockResolvedValue(donor({ email: '' })),
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = { upsertMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
@@ -73,6 +75,7 @@ describe('processOutboundBatch', () => {
     const mondayClient: MondayClient = {
       getDonorById: vi.fn().mockResolvedValue(null),
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = { upsertMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
@@ -87,6 +90,7 @@ describe('processOutboundBatch', () => {
     const mondayClient: MondayClient = {
       getDonorById: vi.fn().mockResolvedValue(donor()),
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
       upsertMember: vi.fn().mockRejectedValue(new Error('rate limited')),
@@ -106,6 +110,7 @@ describe('processOutboundBatch', () => {
     const mondayClient: MondayClient = {
       getDonorById: vi.fn().mockResolvedValue(donor()),
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
       upsertMember: vi.fn().mockRejectedValue(new MailchimpPermanentError('invalid email')),
