@@ -4,11 +4,14 @@ import { validateConfig } from './config';
 import { HttpMondayClient } from './monday/client';
 import { HttpMailchimpClient } from './mailchimp/client';
 import { D1PendingOutboundStore } from './db/pendingOutbound';
+import { D1PendingInboundStore } from './db/pendingInbound';
 import { D1CampaignItemsStore } from './db/campaignItems';
 import { createOutboundApp } from './webhook/outboundRoute';
+import { createInboundApp } from './webhook/inboundRoute';
 import { processOutboundBatch } from './consumer/outbound';
+import { processInboundBatch } from './consumer/inbound';
 import { reconcileCampaigns } from './campaigns/reconcile';
-import type { Env, OutboundSyncMessage } from './types';
+import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
 const config = validateConfig(configJson);
 
@@ -21,14 +24,33 @@ export default {
       queue: { send: (message: OutboundSyncMessage) => env.OUTBOUND_QUEUE.send(message).then(() => undefined) },
       webhookSecret: env.MONDAY_WEBHOOK_SECRET,
     }));
+    app.route('/', createInboundApp({
+      pendingStore: new D1PendingInboundStore(env.DB),
+      queue: { send: (message: InboundSyncMessage) => env.INBOUND_QUEUE.send(message).then(() => undefined) },
+      webhookSecret: env.MAILCHIMP_WEBHOOK_SECRET,
+    }));
     return app.fetch(request, env, ctx);
   },
 
-  async queue(batch: MessageBatch<OutboundSyncMessage>, env: Env): Promise<void> {
-    await processOutboundBatch([...batch.messages], {
-      pendingStore: new D1PendingOutboundStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
-      mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
+  async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+    const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
+    const mailchimpClient = new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId);
+
+    if (batch.queue === 'mailchimp-sync-outbound') {
+      await processOutboundBatch(batch.messages as unknown as { body: OutboundSyncMessage; ack(): void; retry(): void }[], {
+        pendingStore: new D1PendingOutboundStore(env.DB),
+        mondayClient,
+        mailchimpClient,
+        config,
+      });
+      return;
+    }
+
+    await processInboundBatch(batch.messages as unknown as { body: InboundSyncMessage; ack(): void; retry(): void }[], {
+      pendingStore: new D1PendingInboundStore(env.DB),
+      mondayClient,
+      mailchimpClient,
+      campaignItemsStore: new D1CampaignItemsStore(env.DB),
       config,
     });
   },

@@ -35,6 +35,29 @@ describe('fetch', () => {
   });
 });
 
+describe('fetch — inbound', () => {
+  it('mounts the inbound Mailchimp webhook route', async () => {
+    const res = await worker.fetch(
+      new Request('https://worker.example/webhooks/mailchimp/audience'), fakeEnv(), {} as ExecutionContext,
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('queue dispatch', () => {
+  it('routes an outbound-queue batch to processOutboundBatch (no crash on empty batch)', async () => {
+    const env = fakeEnv();
+    const batch = { queue: 'mailchimp-sync-outbound', messages: [] } as unknown as MessageBatch<unknown>;
+    await expect(worker.queue(batch, env)).resolves.toBeUndefined();
+  });
+
+  it('routes an inbound-queue batch to processInboundBatch (no crash on empty batch)', async () => {
+    const env = fakeEnv();
+    const batch = { queue: 'mailchimp-sync-inbound', messages: [] } as unknown as MessageBatch<unknown>;
+    await expect(worker.queue(batch, env)).resolves.toBeUndefined();
+  });
+});
+
 describe('scheduled', () => {
   it('runs reconcileCampaigns and does not throw when it fails', async () => {
     const env = fakeEnv();
