@@ -1,10 +1,15 @@
-import type { DonorVolunteerHistory, FunraiseLinkUrls, PortalView } from './types';
+import type { DonorVolunteerHistory, EventRegistrationRecord, FunraiseLinkUrls, PortalView } from './types';
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 import { SVBC_LOGO_SVG } from './assets/logo';
 import { formatUsdText } from './money';
 import { formatShortDate } from './dates';
+import { parseAmount } from './amounts';
 import type { PortalCard } from './card/loadCardData';
+// Type-only: eventViews.ts imports escapeHtml from this module, so a runtime import back from
+// there would be circular. The (small) event-table rendering below is duplicated rather than
+// shared for the same reason — see the comment on eventsPanel.
+import type { EventRegistrationListing } from './events/loadEventRegistrations';
 
 // Brand chrome constants — same values as config/svbc.json's taxLetter.orgLegalName /
 // officeAddress / mailingAddress / ein, duplicated here (rather than threaded through every
@@ -16,6 +21,8 @@ const ORG_MAILING_ADDRESS = 'PO Box 1927, San José, CA 95109';
 const ORG_EIN = '77-0338658';
 const ORG_WEBSITE_URL = 'https://bikesiliconvalley.org';
 const ORG_DONATE_URL = 'https://bikesiliconvalley.org/ways-to-give';
+const VOLUNTEER_CTA_URL = 'https://bikesiliconvalley.org/get-involved/volunteer';
+const EVENTS_CTA_URL = 'https://bikesiliconvalley.org/events';
 const ORG_PRIVACY_POLICY_URL = 'https://siliconvalleybicyclecoaliti.app.box.com/s/1diyqeoe5dcsfsg0qx2yk7oa539toz35';
 
 export function escapeHtml(value: string): string {
@@ -183,6 +190,67 @@ const STYLE = `
     border-bottom: none;
   }
 
+  /* CSS-only tabs (no JS anywhere in this portal): real radio inputs + labels, shown/hidden via
+     :checked and positional :nth-of-type sibling selectors — so the same static rule set works
+     for any subset of the three possible tabs (donations always; volunteering and event
+     registrations only when that feature is enabled), regardless of which ones a given donor
+     actually has. Inputs and labels share the same order value (flexbox then falls back to DOM
+     order within a tie, i.e. input-then-its-own-label), with panels after — no position:absolute
+     on the inputs, since taking three same-sized boxes out of flow collapses them on top of each
+     other instead of next to their own label, breaking anything that targets the input's own hit
+     area (assistive tech, automated clicks) even though clicking the visible label still "works"
+     by accident. */
+  .tabs { display: flex; flex-wrap: wrap; margin: 12px 0; }
+  .tab-input { order: 1; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
+  .tab-label {
+    order: 1;
+    padding: 8px 16px;
+    margin: 0 4px 0 0;
+    cursor: pointer;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    font-weight: bold;
+    font-size: 14px;
+  }
+  .tab-input:checked + .tab-label {
+    background: var(--svbc-black);
+    color: var(--svbc-gold);
+    border-color: var(--svbc-black);
+  }
+  .tab-input:focus-visible + .tab-label {
+    outline: 2px solid var(--svbc-gold);
+    outline-offset: 2px;
+  }
+  .tab-panel {
+    order: 2;
+    display: none;
+    width: 100%;
+    padding-top: 14px;
+    border-top: 2px solid var(--svbc-black);
+  }
+  .tab-input:nth-of-type(1):checked ~ .tab-panel:nth-of-type(1),
+  .tab-input:nth-of-type(2):checked ~ .tab-panel:nth-of-type(2),
+  .tab-input:nth-of-type(3):checked ~ .tab-panel:nth-of-type(3) {
+    display: block;
+  }
+  .tab-empty { padding: 8px 0; }
+  .cta-button {
+    display: inline-flex;
+    align-items: center;
+    height: 38px;
+    background: var(--svbc-gold);
+    color: var(--svbc-black);
+    border: 1px solid var(--svbc-gold);
+    padding: 0 20px;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 19px;
+    text-decoration: none;
+    margin-top: 4px;
+  }
+
   /* Wallet-style membership card, embedded per-donor on the dashboard (not a separate page —
      see routes.ts's GET /:locale/portal). Fixed max-width with aspect-ratio (not a fixed height)
      so it scales down cleanly on narrow viewports instead of overflowing. */
@@ -281,6 +349,10 @@ const STYLE = `
   }
   @media print {
     .site-header, .site-footer { display: none; }
+    /* A printed/PDF'd dashboard should show every tab's content, not just whichever was active
+       on screen. */
+    .tab-panel { display: block !important; }
+    .tab-label { display: none; }
   }
 `;
 
@@ -397,6 +469,75 @@ function donationRow(donation: PortalView['donors'][number]['donations'][number]
   `;
 }
 
+// One tab of a donor's dashboard section. `label` is pre-translated (not a TranslationKey)
+// since the Volunteer tab reuses portal.volunteerHeading's text as-is rather than adding a
+// second, near-duplicate key.
+interface DonorTab {
+  label: string;
+  content: string;
+}
+
+// A single tab (today's overwhelmingly common case — most donors have neither volunteered nor
+// registered for an event) renders its content directly with no tab chrome at all. Two or three
+// tabs get the CSS-only radio/label widget (see .tabs in STYLE); the wrapper only ever needs to
+// know how many tabs there are, not which ones, so the same three :nth-of-type rules in STYLE
+// cover every combination.
+function renderTabs(tabs: DonorTab[], groupName: string): string {
+  const only = tabs[0];
+  if (tabs.length <= 1) return only?.content ?? '';
+  const safeGroup = escapeHtml(groupName);
+  const inputs = tabs
+    .map(
+      (tab, i) =>
+        `<input type="radio" class="tab-input" name="${safeGroup}" id="${safeGroup}-${i}"${i === 0 ? ' checked' : ''}>` +
+        `<label class="tab-label" for="${safeGroup}-${i}">${escapeHtml(tab.label)}</label>`
+    )
+    .join('');
+  const panels = tabs.map((tab) => `<div class="tab-panel">${tab.content}</div>`).join('');
+  return `<div class="tabs">${inputs}${panels}</div>`;
+}
+
+// A generic empty-state: a short message plus an external CTA button. Used by all three tabs —
+// SVBC would rather every donor see an invitation to donate/volunteer/register than a bare empty
+// table, so "no entries" always means a CTA, never a silently blank panel.
+function emptyStateTab(messageKey: TranslationKey, url: string, buttonLabelKey: TranslationKey, locale: Locale): string {
+  return `
+    <div class="tab-empty">
+      <p>${escapeHtml(t(locale, messageKey))}</p>
+      <a class="cta-button" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t(locale, buttonLabelKey))}</a>
+    </div>
+  `;
+}
+
+// Donations panel: the itemized table when there's something to show, otherwise a Donate CTA.
+// "Something to show" is donations.length > 0 OR a nonzero totalDonated — a donor can have a
+// nonzero lifetime rollup with no itemized rows on file (e.g. older gifts never synced as line
+// items), and that donor has clearly already given, so a "you haven't donated yet" CTA would be
+// wrong for them even though their itemized list is empty.
+function donationsPanel(donor: PortalView['donors'][number], locale: Locale): string {
+  const hasDonations = donor.donations.length > 0 || (parseAmount(donor.totalDonated) ?? 0) !== 0;
+  if (!hasDonations) {
+    return emptyStateTab('portal.donationsEmptyMessage', ORG_DONATE_URL, 'portal.donateButton', locale);
+  }
+  return `
+    <table>
+      <thead>
+        <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th class="col-amount">${escapeHtml(t(locale, 'portal.tableAmount'))}</th><th>${escapeHtml(t(locale, 'portal.tableDescription'))}</th></tr>
+      </thead>
+      <tbody>
+        ${donor.donations.map((d) => donationRow(d, locale)).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>${escapeHtml(t(locale, 'portal.totalLabel'))}</td>
+          <td class="col-amount">${escapeHtml(formatUsdText(donor.totalDonated))}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+}
+
 // Single-sided wallet card — no flip, no back face (an earlier flip-card design was scrapped
 // during review). Logo top-left, QR top-right (where a physical card's chip would sit), name,
 // then a meta row with member #, expiry, and a tier badge. The QR's target verify URL is never
@@ -423,9 +564,6 @@ function memberCardWidget(card: PortalCard, locale: Locale): string {
   `;
 }
 
-// Rendered only when the feature is enabled AND this donor has at least one qualifying shift —
-// a donor who never volunteered shouldn't see an empty "Volunteer history" table, and while the
-// feature is config-gated off (volunteerHistory null) the portal looks exactly as it did before.
 function volunteerShiftRow(shift: DonorVolunteerHistory['shifts'][number]): string {
   return `
     <tr>
@@ -436,50 +574,92 @@ function volunteerShiftRow(shift: DonorVolunteerHistory['shifts'][number]): stri
   `;
 }
 
-function volunteerHistorySection(history: DonorVolunteerHistory | undefined, locale: Locale): string {
-  if (!history || history.shifts.length === 0) return '';
+// Volunteer tab: the tab label itself already says "Volunteer history" (portal.volunteerHeading,
+// reused rather than duplicated), so the panel content skips a redundant second heading.
+function volunteerPanel(history: DonorVolunteerHistory, locale: Locale): string {
+  if (history.shifts.length === 0) {
+    return emptyStateTab('portal.volunteerEmptyMessage', VOLUNTEER_CTA_URL, 'portal.volunteerButton', locale);
+  }
   const rows = history.shifts.map(volunteerShiftRow).join('');
   return `
-      <h3>${escapeHtml(t(locale, 'portal.volunteerHeading'))}</h3>
-      <p>${escapeHtml(t(locale, 'portal.volunteerTotalHours', { hours: String(history.totalHours) }))}</p>
-      <table>
-        <thead>
-          <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableActivity'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableHours'))}</th></tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
+    <p>${escapeHtml(t(locale, 'portal.volunteerTotalHours', { hours: String(history.totalHours) }))}</p>
+    <table>
+      <thead>
+        <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableActivity'))}</th><th>${escapeHtml(t(locale, 'portal.volunteerTableHours'))}</th></tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
   `;
+}
+
+// events/eventViews.ts already has near-identical table-rendering for the standalone events
+// page, but it imports escapeHtml from this module — importing its helpers back here would be
+// circular, so this ~15-line table renderer is duplicated rather than shared.
+function eventLabel(record: EventRegistrationRecord): string {
+  return record.eventName !== '' ? record.eventName : record.registrationName;
+}
+
+function eventRegistrationTable(records: EventRegistrationRecord[], locale: Locale, withStatus: boolean): string {
+  const statusHeader = withStatus ? `<th>${escapeHtml(t(locale, 'events.tableStatus'))}</th>` : '';
+  const rows = records
+    .map((record) => {
+      const statusCell = withStatus
+        ? `<td>${escapeHtml(t(locale, record.attended ? 'events.statusAttended' : 'events.statusRegistered'))}</td>`
+        : '';
+      return `<tr><td>${escapeHtml(eventLabel(record))}</td><td>${escapeHtml(record.eventDate)}</td>${statusCell}</tr>`;
+    })
+    .join('');
+  return `
+    <table>
+      <thead>
+        <tr><th>${escapeHtml(t(locale, 'events.tableEvent'))}</th><th>${escapeHtml(t(locale, 'events.tableDate'))}</th>${statusHeader}</tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function eventsPanel(listing: Pick<EventRegistrationListing, 'upcoming' | 'past'>, locale: Locale): string {
+  if (listing.upcoming.length === 0 && listing.past.length === 0) {
+    return emptyStateTab('events.emptyMessage', EVENTS_CTA_URL, 'events.findEventsButton', locale);
+  }
+  const upcoming =
+    listing.upcoming.length > 0
+      ? `<h3>${escapeHtml(t(locale, 'events.upcomingHeading'))}</h3>${eventRegistrationTable(listing.upcoming, locale, false)}`
+      : '';
+  const past =
+    listing.past.length > 0
+      ? `<h3>${escapeHtml(t(locale, 'events.pastHeading'))}</h3>${eventRegistrationTable(listing.past, locale, true)}`
+      : '';
+  return `${upcoming}${past}`;
 }
 
 function donorSection(
   donor: PortalView['donors'][number],
   locale: Locale,
   card: PortalCard | undefined,
-  volunteerHistory: DonorVolunteerHistory | undefined
+  volunteerHistory: DonorVolunteerHistory | undefined,
+  events: EventRegistrationListing | undefined
 ): string {
+  // Donations always applies. Volunteer/Events tabs appear only when that feature is enabled at
+  // all (an undefined donor entry means the whole feature is off or its Monday read failed —
+  // see loadPortalData/routes.ts) — independent of whether *this* donor has any entries, which
+  // is instead handled inside each panel as an empty-state CTA.
+  const tabs: DonorTab[] = [{ label: t(locale, 'portal.donationsTabLabel'), content: donationsPanel(donor, locale) }];
+  if (volunteerHistory) {
+    tabs.push({ label: t(locale, 'portal.volunteerHeading'), content: volunteerPanel(volunteerHistory, locale) });
+  }
+  if (events) {
+    tabs.push({ label: t(locale, 'events.tabLabel'), content: eventsPanel(events, locale) });
+  }
   return `
     <section>
       <h2>${escapeHtml(donor.name)}</h2>
       <p>${escapeHtml(t(locale, 'portal.membership', { status: donor.membershipStatus, tier: donor.membershipTier }))}</p>
       ${card ? memberCardWidget(card, locale) : ''}
-      <table>
-        <thead>
-          <tr><th>${escapeHtml(t(locale, 'portal.tableDate'))}</th><th class="col-amount">${escapeHtml(t(locale, 'portal.tableAmount'))}</th><th>${escapeHtml(t(locale, 'portal.tableDescription'))}</th></tr>
-        </thead>
-        <tbody>
-          ${donor.donations.map((d) => donationRow(d, locale)).join('')}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td>${escapeHtml(t(locale, 'portal.totalLabel'))}</td>
-            <td class="col-amount">${escapeHtml(formatUsdText(donor.totalDonated))}</td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>
-      ${volunteerHistorySection(volunteerHistory, locale)}
+      ${renderTabs(tabs, `tabs-${donor.id}`)}
     </section>
   `;
 }
@@ -512,10 +692,16 @@ function discountRow(discount: PortalView['discounts'][number]): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
-export function portalView(data: PortalView, locale: Locale, cards: Record<string, PortalCard>, funraise: FunraiseLinkUrls): string {
+export function portalView(
+  data: PortalView,
+  locale: Locale,
+  cards: Record<string, PortalCard>,
+  funraise: FunraiseLinkUrls,
+  events: Record<string, EventRegistrationListing> | null = null
+): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
-    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id])).join('')}
+    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id])).join('')}
     ${funraiseSection(funraise, locale)}
     <section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>

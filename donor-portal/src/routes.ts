@@ -44,6 +44,7 @@ import { submitPreferences } from './changeRequests/submitPreferences';
 import type { PrefField } from './types';
 import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
 import { loadEventRegistrations } from './events/loadEventRegistrations';
+import type { EventRegistrationListing } from './events/loadEventRegistrations';
 import { eventsListView, eventsUnavailableView } from './events/eventViews';
 import { buildCardData } from './card/loadCardData';
 import type { PortalCard } from './card/loadCardData';
@@ -302,6 +303,19 @@ export function createApp(deps: AppDeps) {
     });
     c.header('Cache-Control', NO_STORE);
 
+    // Same degrade-instead-of-fail treatment as volunteer history above: a Monday read failure
+    // here should cost the donor the Events tab, not the whole dashboard. Disabled and
+    // failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
+    let eventsByDonor: Record<string, EventRegistrationListing> | null = null;
+    if (eventsEnabled(deps.config)) {
+      try {
+        const listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
+        eventsByDonor = Object.fromEntries(listings.map((listing) => [listing.donorId, listing]));
+      } catch (err) {
+        console.error(`donor-portal dashboard events load failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // The membership card is now a dashboard widget (one per donor), not a separate page — see
     // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
     // renders without a card widget; it must never take down the whole dashboard, since donation
@@ -320,9 +334,12 @@ export function createApp(deps: AppDeps) {
     }
 
     return c.html(
-      page(t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'), portalView(data, locale, cards, funraiseLinks(deps.config)), locale, {
-        authenticated: true,
-      })
+      page(
+        t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'),
+        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor),
+        locale,
+        { authenticated: true }
+      )
     );
   });
 

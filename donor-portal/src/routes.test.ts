@@ -1690,6 +1690,75 @@ describe('GET /:locale/portal volunteer history gate', () => {
   });
 });
 
+describe('GET /:locale/portal — events tab', () => {
+  function enabledEventsConfig(): Config {
+    const cfg = structuredClone(config);
+    cfg.eventRegistrations.boardId = 555;
+    return cfg;
+  }
+
+  it('never queries the events board while eventRegistrations.boardId is unset, and omits the Events tab', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).not.toContain('>' + t('en', 'events.tabLabel') + '<');
+    expect(monday.getEventRegistrationsForDonor).not.toHaveBeenCalled();
+  });
+
+  it('renders the Events tab with the donor\'s registrations once eventRegistrations.boardId is configured', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getDonorNames as ReturnType<typeof vi.fn>).mockResolvedValue([{ id: 'donor-1', name: 'Jane' }]);
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { registrationName: 'reg-1', eventName: 'Fall Gala', eventDate: '2026-10-03', attended: false },
+    ]);
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain(t('en', 'events.tabLabel'));
+    expect(body).toContain('Fall Gala');
+  });
+
+  it('shows the Find Upcoming Events CTA once configured for a donor with no registrations', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain(t('en', 'events.emptyMessage'));
+    expect(body).toContain('href="https://bikesiliconvalley.org/events"');
+  });
+
+  it('logs and omits just the Events tab (not the whole dashboard) when the Monday lookup throws', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    (monday.getEventRegistrationsForDonor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender, config: enabledEventsConfig() }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+
+    const res = await app.request('/en/portal', { headers: { cookie } });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).not.toContain('>' + t('en', 'events.tabLabel') + '<');
+    expect(body).toContain('Donor donor-1'); // rest of the dashboard still renders
+  });
+});
+
 describe('GET /:locale/portal/events', () => {
   function enabledEventsConfig(): Config {
     const cfg = structuredClone(config);
