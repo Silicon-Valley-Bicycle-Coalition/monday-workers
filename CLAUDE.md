@@ -99,16 +99,16 @@ npm run typecheck
 
 ## Architecture
 
-**Webhook-driven Workers** (`funraise-sync`, `quickbooks-sync`, `instagram-threads-interactions`,
-`bluesky-interactions`) share one shape: a Hono route validates and dedupes the incoming event into
+**Webhook-driven Workers** (`funraise-sync`, `quickbooks-sync`) share one shape: a Hono route
+validates and dedupes the incoming event into
 D1 (the idempotency store), then enqueues a message to a Cloudflare Queue producer. A separate
 queue consumer (the Worker's exported `queue()` handler) performs the actual Monday.com write.
 Queues retry automatically (3 attempts) on failure and route to a dead-letter queue once exhausted,
 so a failed write becomes a visible, replayable backlog instead of a silently dropped donation.
 D1 status here means "ingested," not "written" — the queue is what makes the write durable.
 
-**Cron-polled Workers** (`squarespace-forms`, `committee-calendars`, `buffer-content-calendar`)
-don't need a queue — a failed poll self-heals on the next scheduled run. The one invariant that
+**Cron-polled Worker** (`committee-calendars`)
+doesn't need a queue — a failed poll self-heals on the next scheduled run. The one invariant that
 matters: the D1 "last processed" cursor must only advance *after* a confirmed Monday write, never
 before, or a failed run silently skips what it should have processed with nothing to retry it.
 

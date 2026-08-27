@@ -33,22 +33,17 @@ a Worker secret.
 
 ## Status at a glance
 
-| Worker | Status | Priority | Owner |
-|---|---|---|---|
-| [`salesforce-import`](salesforce-import/README.md) | Built (merged) — extract → geocode → transform exercised on real data; **load and validate not yet run**, so no production Monday boards exist yet | **Blocking.** Central migration deliverable | Unassigned — needs owner + time budget for the load/validate/cutover runs |
-| [`funraise-sync`](funraise-sync/README.md) | Built (merged) — the three review findings decided and closed 2026-08-22 (entity-keyed upsert, matching in the queue consumer, PII strip + retention purge); not deployed, needs D1 provisioning, real board/column ids, and Funraise webhook subscriptions | Blocking (feeds the import) | Unassigned |
-| [`quickbooks-sync`](quickbooks-sync/README.md) | Built (merged) — not deployed; needs D1 provisioning, real board ids, and the Intuit app-review question resolved | Post-migration, non-blocking | Unassigned |
-| [`squarespace-forms`](squarespace-forms/README.md) | Decided — no Worker needed (resolved 2026-08-22) | N/A | dwk |
-| [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
-| [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
-| [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
-| [`committee-calendars`](committee-calendars/README.md) | **Live** (deployed 2026-08-23) — serving `https://committees.bikesiliconvalley.org/committees.ics` | Post-migration, non-blocking | Unassigned |
-| [`events-widgets`](events-widgets/README.md) | **Live** (deployed 2026-02, last deploy 2026-04-01) — serving `https://events.bikesiliconvalley.org` (Eventbrite events for Squarespace embeds). Reconciled into this repo 2026-08-24 from the standalone `svbc-events-widgets` GitLab repo (history preserved); **deployed version lags the repo** — Bike Parking org + private-event fixes are committed but not yet redeployed | Not migration-related; predates this repo | Unassigned |
-| [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
-| [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
-| [`mailchimp-sync`](mailchimp-sync/README.md) | Built — repurposed from the never-deployed `membership-reminders` (2026-08-26); not deployed, blocked on the Donors board (same as everything downstream of `salesforce-import`) plus a Mailchimp audience with the required merge fields/Interest Categories | Post-migration, **time-sensitive** — newsletter segmentation and both membership email journeys depend on it once Salesforce retires | Unassigned |
-| [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward | Unassigned |
-| [`monday-backup`](monday-backup/README.md) | Built (`feat/monday-backup`) — not deployed; needs D1 provisioning, a dedicated Monday backup integration user/token, and a Google service account scoped to the destination Drive folder | Post-migration, non-blocking, but time-relevant once real donor data lives in Monday with no Salesforce copy to fall back on | Unassigned |
+| Worker | Status | Priority |
+|---|---|---|
+| [`salesforce-import`](salesforce-import/README.md) | Built (merged) — extract → geocode → transform exercised on real data; **load and validate not yet run**, so no production Monday boards exist yet | **Blocking.** Central migration deliverable — needs a time budget for the load/validate/cutover runs |
+| [`funraise-sync`](funraise-sync/README.md) | Built (merged) — the three review findings decided and closed 2026-08-22 (entity-keyed upsert, matching in the queue consumer, PII strip + retention purge); not deployed, needs D1 provisioning, real board/column ids, and Funraise webhook subscriptions | Blocking (feeds the import) |
+| [`quickbooks-sync`](quickbooks-sync/README.md) | Built (merged) — not deployed; needs D1 provisioning, real board ids, and the Intuit app-review question resolved | Post-migration, non-blocking |
+| [`committee-calendars`](committee-calendars/README.md) | **Live** (deployed 2026-08-23) — serving `https://committees.bikesiliconvalley.org/committees.ics` | Post-migration, non-blocking |
+| [`events-widgets`](events-widgets/README.md) | **Live** (deployed 2026-02, last deploy 2026-04-01) — serving `https://events.bikesiliconvalley.org` (Eventbrite events for Squarespace embeds). Reconciled into this repo 2026-08-24 from the standalone `svbc-events-widgets` GitLab repo (history preserved); **deployed version lags the repo** — Bike Parking org + private-event fixes are committed but not yet redeployed | Not migration-related; predates this repo |
+| [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) |
+| [`mailchimp-sync`](mailchimp-sync/README.md) | Built — repurposed from the never-deployed `membership-reminders` (2026-08-26); not deployed, blocked on the Donors board (same as everything downstream of `salesforce-import`) plus a Mailchimp audience with the required merge fields/Interest Categories | Post-migration, **time-sensitive** — newsletter segmentation and both membership email journeys depend on it once Salesforce retires |
+| [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward |
+| [`monday-backup`](monday-backup/README.md) | Built (`feat/monday-backup`) — not deployed; needs D1 provisioning, a dedicated Monday backup integration user/token, and a Google service account scoped to the destination Drive folder | Post-migration, non-blocking, but time-relevant once real donor data lives in Monday with no Salesforce copy to fall back on |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
 plan for both:
@@ -82,21 +77,18 @@ inspect and replay, not a donation that quietly never reached Monday.
 **Cost: effectively free at SVBC's volume.** Cloudflare Queues
 [shipped on the Workers Free plan](https://developers.cloudflare.com/changelog/post/2026-02-04-queues-free-plan/)
 in February 2026 — 10,000 operations/day included. SVBC's actual event volume (a few hundred
-Funraise transactions a month, occasional QuickBooks/Instagram/Bluesky events) is nowhere near
+Funraise transactions a month, occasional QuickBooks events) is nowhere near
 that ceiling; this is a genuine build-over-subscription fit, not a paid upgrade.
 
-**Applies to:** `funraise-sync`, `quickbooks-sync`, `instagram-threads-interactions`,
-`bluesky-interactions` — every Worker driven by a webhook or firehose with no natural retry of its
-own. Each Worker's own README notes this in its Data Flow section.
+**Applies to:** `funraise-sync`, `quickbooks-sync` — every Worker driven by a webhook or firehose
+with no natural retry of its own. Each Worker's own README notes this in its Data Flow section.
 
-**Lower risk, but not risk-free: the Cron-polled Workers** (`committee-calendars`,
-`buffer-content-calendar`) self-heal on the next scheduled run if one poll fails — no Queue needed
-there. But each one's D1 "last processed" cursor must only advance **after** a confirmed Monday
-write, never before — otherwise a failed run silently skips whatever it was supposed to process
-that cycle, with nothing to retry it and nothing telling anyone it happened. Worth a
-Slack-automation ping (native, no build) on repeated failure, not just silent retry-next-cycle.
-(`squarespace-forms` was originally planned as a third cron-polled Worker here — see its own
-README for why that turned out to be unnecessary.)
+**Lower risk, but not risk-free: the Cron-polled Worker** (`committee-calendars`) self-heals on the
+next scheduled run if a poll fails — no Queue needed there. But its D1 "last processed" cursor
+must only advance **after** a confirmed Monday write, never before — otherwise a failed run
+silently skips whatever it was supposed to process that cycle, with nothing to retry it and
+nothing telling anyone it happened. Worth a Slack-automation ping (native, no build) on repeated
+failure, not just silent retry-next-cycle.
 
 **`salesforce-import` is different — a one-time batch job, not an ongoing sync.** A Queue is the
 wrong tool for a run that happens once and is already validated by repeated sandbox dry-runs (see
@@ -133,7 +125,6 @@ here.
 2. **`mailchimp-sync` next** — it's post-migration but time-sensitive: Salesforce's
    renewal-reminder automation and newsletter segmentation die at retirement, and members stop
    being asked to renew and segmented for newsletters until this ships.
-3. Everything else can happen in any order, gated mainly by owner availability (see the table
-   above — most rows are unassigned) and, for `volunteermatch-sync`, by Idealist confirming terms.
-   `donor-portal`'s former dependency on the Membership design was resolved 2026-08-21 — the
+3. Everything else can happen in any order, gated mainly by available time (see the table
+   above). `donor-portal`'s former dependency on the Membership design was resolved 2026-08-21 — the
    Status/Tier slice it needs is now part of the import scope.
