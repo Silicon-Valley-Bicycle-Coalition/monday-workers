@@ -7,6 +7,7 @@ import { getSourceCalendar } from './calendarSource';
 import { buildListing, buildListingHtml } from './listing';
 import { getAllSourceStatuses } from './calendarStore';
 import { sendFailureAlert } from './alert';
+import { recordMetric } from './metrics';
 import type { Env } from './types';
 
 const config = validateConfig(rawConfig);
@@ -59,6 +60,7 @@ async function withCache(cacheKey: Request, ttlSeconds: number, ctx: ExecutionCo
 async function handleCalendarIcs(sourceId: string, env: Env): Promise<Response> {
   const source = config.sources.find((s) => s.id === sourceId);
   if (!source) {
+    recordMetric(env, { route: 'calendars.ics', sourceId, outcome: 'error' });
     return new Response('Not found', { status: 404 });
   }
   const result = await getSourceCalendar(source, {
@@ -68,6 +70,7 @@ async function handleCalendarIcs(sourceId: string, env: Env): Promise<Response> 
     slackWebhookUrl: env.SLACK_WEBHOOK_URL,
     now: () => new Date(),
   });
+  recordMetric(env, { route: 'calendars.ics', sourceId, outcome: result.ics === null ? 'error' : result.servedFromFallback ? 'fallback' : 'live' });
   if (result.ics === null) {
     return new Response('This calendar has never successfully synced and has no cached fallback.', { status: 503 });
   }
@@ -122,19 +125,31 @@ export default {
       const pageSize = Math.min(parseInt(url.searchParams.get('page_size') || '20', 10), 50);
       const cacheTTL = parseInt(env.CACHE_TTL || '900', 10);
       const cacheKey = new Request(`${url.origin}/events?page_size=${pageSize}&organizer=${organizerId || 'all'}&v=${version}`, { method: 'GET' });
-      return handleCORS(request, await withCache(cacheKey, cacheTTL, ctx, () => fetchEventsResponse(env, organizerId, pageSize, cacheTTL)));
+      const response = await withCache(cacheKey, cacheTTL, ctx, () => fetchEventsResponse(env, organizerId, pageSize, cacheTTL));
+      if (response.headers.get('X-Cache') === 'HIT') {
+        recordMetric(env, { route: 'events', sourceId: organizerId || 'all', outcome: 'cache-hit' });
+      }
+      return handleCORS(request, response);
     }
     if (url.pathname === '/calendars') {
       const calendarTTL = parseInt(env.CALENDAR_CACHE_TTL || '86400', 10);
       const cacheKey = new Request(`${url.origin}/calendars?v=${version}`, { method: 'GET' });
-      return handleCORS(request, await withCache(cacheKey, calendarTTL, ctx, () => handleCalendarListing(request, env)));
+      const response = await withCache(cacheKey, calendarTTL, ctx, () => handleCalendarListing(request, env));
+      if (response.headers.get('X-Cache') === 'HIT') {
+        recordMetric(env, { route: 'calendars', sourceId: 'all', outcome: 'cache-hit' });
+      }
+      return handleCORS(request, response);
     }
     const icsMatch = /^\/calendars\/([a-z0-9-]+)\.ics$/.exec(url.pathname);
     if (icsMatch) {
       const sourceId = icsMatch[1];
       const calendarTTL = parseInt(env.CALENDAR_CACHE_TTL || '86400', 10);
       const cacheKey = new Request(`${url.origin}/calendars/${sourceId}.ics?v=${version}`, { method: 'GET' });
-      return handleCORS(request, await withCache(cacheKey, calendarTTL, ctx, () => handleCalendarIcs(sourceId, env)));
+      const response = await withCache(cacheKey, calendarTTL, ctx, () => handleCalendarIcs(sourceId, env));
+      if (response.headers.get('X-Cache') === 'HIT') {
+        recordMetric(env, { route: 'calendars.ics', sourceId, outcome: 'cache-hit' });
+      }
+      return handleCORS(request, response);
     }
     if (url.pathname === '/status.json') {
       return handleCORS(request, await handleStatus(env));
@@ -143,7 +158,7 @@ export default {
     return handleCORS(request, new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
   },
 
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const fetchSourceEvents = createFetchSourceEvents(env.EVENTBRITE_TOKEN);
     for (const source of config.sources) {
       await getSourceCalendar(source, {

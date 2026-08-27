@@ -36,7 +36,7 @@ describe('scheduled', () => {
       })
     );
 
-    await worker.scheduled!({} as ScheduledController, env, {} as ExecutionContext);
+    await worker.scheduled!({} as ScheduledController, env as any, {} as ExecutionContext);
 
     for (const source of config.sources) {
       expect(await getLastKnownGoodIcs(env.CALENDAR_KV, source.id)).toContain('BEGIN:VCALENDAR');
