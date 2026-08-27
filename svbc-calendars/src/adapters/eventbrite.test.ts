@@ -59,7 +59,9 @@ describe('fetchEventbriteEvents', () => {
       if (String(url).includes('continuation=cont-token-1')) {
         return new Response(JSON.stringify(PAGE_2), { status: 200 });
       }
-      expect(String(url)).toBe('https://www.eventbriteapi.com/v3/organizers/org-123/events/?expand=venue&status=live&order_by=start_asc');
+      expect(String(url)).toBe(
+        'https://www.eventbriteapi.com/v3/organizers/org-123/events/?expand=venue&status=live&order_by=start_asc&time_filter=current_future'
+      );
       return new Response(JSON.stringify(PAGE_1), { status: 200 });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -146,5 +148,41 @@ describe('fetchEventbriteEvents', () => {
     expect(events).toHaveLength(20);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('hit the 20-page cap'));
     errorSpy.mockRestore();
+  });
+
+  it('excludes unlisted and invite-only events', async () => {
+    const page = {
+      events: [
+        { ...PAGE_1.events[0], id: 'evt-public' },
+        { ...PAGE_1.events[0], id: 'evt-unlisted', name: { text: 'Private Board Meeting' }, listed: false },
+        { ...PAGE_1.events[0], id: 'evt-invite-only', name: { text: 'Invite-Only Donor Reception' }, invite_only: true },
+      ],
+      pagination: { has_more_items: false },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(page), { status: 200 })));
+
+    const events = await fetchEventbriteEvents(SOURCE, 'test-token');
+
+    expect(events.map((e) => e.externalId)).toEqual(['evt-public']);
+  });
+
+  it('strips crop/resize params from the logo URL, keeping only auto/q/sharp/s', async () => {
+    const page = {
+      events: [
+        {
+          ...PAGE_1.events[0],
+          logo: {
+            url: 'https://img.example.com/cropped.jpg?w=100&h=100&auto=format',
+            original: { url: 'https://img.example.com/original.jpg?crop=1&w=800&h=600&auto=format&q=75&sharp=10&s=abc123&fit=crop' },
+          },
+        },
+      ],
+      pagination: { has_more_items: false },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(page), { status: 200 })));
+
+    const [event] = await fetchEventbriteEvents(SOURCE, 'test-token');
+
+    expect(event.logoUrl).toBe('https://img.example.com/original.jpg?auto=format&q=75&sharp=10&s=abc123');
   });
 });

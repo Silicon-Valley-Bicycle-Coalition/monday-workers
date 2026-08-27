@@ -1,6 +1,6 @@
 {
   "name": "svbc-calendars",
-  "main": "src/worker.ts",
+  "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   // Matches the deployed Worker (last deploy 2026-04-01); bump deliberately, with a redeploy.
   "compatibility_date": "2024-12-01",
