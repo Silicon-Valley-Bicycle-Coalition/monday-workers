@@ -16,7 +16,7 @@ export interface NormalizedEvent {
   timezone?: string;
   isFree?: boolean;
   onlineEvent?: boolean;
-  summary?: string;
+  summary?: string | null;
   logoUrl?: string | null;
   venueName?: string | null;
   venueCity?: string | null;
