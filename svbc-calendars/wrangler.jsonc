@@ -23,5 +23,11 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "CALENDAR_KV",
+      "id": "placeholder-replaced-in-task-16"
+    }
+  ]
 }
