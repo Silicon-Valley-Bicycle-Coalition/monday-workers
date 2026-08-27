@@ -10,6 +10,9 @@
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "ical.js": "^2.2.1"
+  },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.13.2",
     "@cloudflare/workers-types": "^4.20241205.0",
