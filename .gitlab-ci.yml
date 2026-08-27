@@ -28,11 +28,6 @@ default:
     - npm test
     - npm run typecheck
 
-committee-calendars:
-  extends: .worker_job
-  variables:
-    WORKER_DIR: committee-calendars
-
 donation-rollups:
   extends: .worker_job
   variables:
@@ -42,11 +37,6 @@ donor-portal:
   extends: .worker_job
   variables:
     WORKER_DIR: donor-portal
-
-events-widgets:
-  extends: .worker_job
-  variables:
-    WORKER_DIR: events-widgets
 
 funraise-sync:
   extends: .worker_job
@@ -67,3 +57,8 @@ salesforce-import:
   extends: .worker_job
   variables:
     WORKER_DIR: salesforce-import
+
+svbc-calendars:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: svbc-calendars

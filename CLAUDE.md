@@ -21,6 +21,12 @@ merged to `main` once ready; most are now merged with full implementations, whil
 subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
 "Status at a glance" table for what's built, deployed, or pending.
 
+One Worker is an exception to the migration scope above — `svbc-calendars` (Eventbrite widget +
+committee/event ICS calendar feeds) predates this repo and serves the public
+bikesiliconvalley.org website directly, unrelated to the Salesforce/Monday migration. It's here
+for the same reason `events-widgets` originally was: one place to deploy SVBC's Cloudflare
+Workers from.
+
 ## Concurrency — default to a worktree
 
 Workers are built one per feature branch, each in its own sibling worktree directory (e.g.
@@ -107,10 +113,12 @@ Queues retry automatically (3 attempts) on failure and route to a dead-letter qu
 so a failed write becomes a visible, replayable backlog instead of a silently dropped donation.
 D1 status here means "ingested," not "written" — the queue is what makes the write durable.
 
-**Cron-polled Worker** (`committee-calendars`)
-doesn't need a queue — a failed poll self-heals on the next scheduled run. The one invariant that
-matters: the D1 "last processed" cursor must only advance *after* a confirmed Monday write, never
-before, or a failed run silently skips what it should have processed with nothing to retry it.
+**A cron-polled Worker** doesn't need a queue — a failed poll self-heals on the next scheduled run.
+The one invariant that matters: the D1 "last processed" cursor must only advance *after* a
+confirmed Monday write, never before, or a failed run silently skips what it should have processed
+with nothing to retry it. (`svbc-calendars`'s daily cron is a KV-fallback warm, not a Monday write,
+so this invariant doesn't apply to it — no Worker in this repo currently needs this pattern for a
+real Monday-writing cron; it's documented here for the next one that does.)
 
 **`salesforce-import` is a one-time batch job**, not an ongoing sync, so it uses neither pattern.
 It's a self-registering CLI (`src/commands.ts` holds a `registerCommand` map; each pipeline stage
