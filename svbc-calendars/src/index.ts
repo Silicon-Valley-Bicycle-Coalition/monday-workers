@@ -143,8 +143,16 @@ export default {
     return handleCORS(request, new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
   },
 
-  async scheduled(): Promise<void> {
-    // Replaced in full by Task 13 — kept as an explicit no-op here so every commit stays
-    // deployable once wrangler.jsonc's cron trigger is added in Task 16.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const fetchSourceEvents = createFetchSourceEvents(env.EVENTBRITE_TOKEN);
+    for (const source of config.sources) {
+      await getSourceCalendar(source, {
+        kv: env.CALENDAR_KV,
+        fetchSourceEvents,
+        sendFailureAlert,
+        slackWebhookUrl: env.SLACK_WEBHOOK_URL,
+        now: () => new Date(),
+      });
+    }
   },
 } satisfies ExportedHandler<Env>;
