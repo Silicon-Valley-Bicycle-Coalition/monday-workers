@@ -28,11 +28,6 @@ default:
     - npm test
     - npm run typecheck
 
-committee-calendars:
-  extends: .worker_job
-  variables:
-    WORKER_DIR: committee-calendars
-
 donation-rollups:
   extends: .worker_job
   variables:
