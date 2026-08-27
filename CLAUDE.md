@@ -21,6 +21,12 @@ merged to `main` once ready; most are now merged with full implementations, whil
 subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
 "Status at a glance" table for what's built, deployed, or pending.
 
+One Worker is an exception to the migration scope above — `svbc-calendars` (Eventbrite widget +
+committee/event ICS calendar feeds) predates this repo and serves the public
+bikesiliconvalley.org website directly, unrelated to the Salesforce/Monday migration. It's here
+for the same reason `events-widgets` originally was: one place to deploy SVBC's Cloudflare
+Workers from.
+
 ## Concurrency — default to a worktree
 
 Workers are built one per feature branch, each in its own sibling worktree directory (e.g.
