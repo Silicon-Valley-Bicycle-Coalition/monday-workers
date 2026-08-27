@@ -58,6 +58,11 @@ mailchimp-sync:
   variables:
     WORKER_DIR: mailchimp-sync
 
+monday-backup:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: monday-backup
+
 quickbooks-sync:
   extends: .worker_job
   variables:
