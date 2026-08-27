@@ -2,33 +2,48 @@
   "name": "svbc-calendars",
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
-  // Matches the deployed Worker (last deploy 2026-04-01); bump deliberately, with a redeploy.
-  "compatibility_date": "2024-12-01",
+  "compatibility_date": "2026-08-27",
   "upload_source_maps": true,
-  // Public-facing — serve only on the custom domain, not *.workers.dev or preview URLs.
+  // Public-facing — serve only on the custom domains, not *.workers.dev or preview URLs.
   "workers_dev": false,
   "preview_urls": false,
   "routes": [
-    {
-      "pattern": "events.bikesiliconvalley.org",
-      "custom_domain": true
-    }
+    { "pattern": "events.bikesiliconvalley.org", "custom_domain": true },
+    { "pattern": "committees.bikesiliconvalley.org", "custom_domain": true }
   ],
-  // The Eventbrite private token is a secret, NOT in this file:
-  //   npx wrangler secret put EVENTBRITE_TOKEN
-  "vars": {
-    "EVENTBRITE_ORG_ID": "9974694499",
-    "CACHE_TTL": "900", // seconds (15 min). Tune higher if you like.
-    "CACHE_VERSION": "5", // Bump to bust the edge cache on deploy.
-    "CF_WEB_ANALYTICS_TOKEN": "test-analytics-token-placeholder"
-  },
-  "observability": {
-    "enabled": true
-  },
   "kv_namespaces": [
     {
       "binding": "CALENDAR_KV",
+      // Placeholder pending real provisioning — a live agent session isn't authorized to run
+      // `npx wrangler kv namespace create` against the SVBC account. Run it manually and replace
+      // this id before deploying; see README.md's Deploy section.
       "id": "placeholder-replaced-in-task-16"
     }
-  ]
+  ],
+  "analytics_engine_datasets": [
+    {
+      "binding": "CALENDAR_ANALYTICS",
+      "dataset": "svbc_calendars"
+    }
+  ],
+  // The Eventbrite private token and Slack webhook are secrets, NOT in this file:
+  //   npx wrangler secret put EVENTBRITE_TOKEN
+  //   npx wrangler secret put SLACK_WEBHOOK_URL
+  "vars": {
+    "EVENTBRITE_ORG_ID": "9974694499",
+    "CACHE_TTL": "900", // /events, /widget — 15 min, unchanged from events-widgets
+    "CALENDAR_CACHE_TTL": "86400", // /calendars/*.ics, /calendars — 24h, "nothing needs to be real-time"
+    "CACHE_VERSION": "1", // reset to 1 for the new merged Worker's cache key space
+    // Placeholder pending manual setup — enable Web Analytics for bikesiliconvalley.org (or its
+    // subdomains) in the Cloudflare dashboard (Analytics & Logs -> Web Analytics -> Add a site)
+    // and paste the resulting site token here before deploying.
+    "CF_WEB_ANALYTICS_TOKEN": "REPLACE_WITH_REAL_WEB_ANALYTICS_TOKEN"
+  },
+  "triggers": {
+    // Daily at 13:00 UTC (5am/6am Pacific depending on DST), matching committee-calendars' prior schedule.
+    "crons": ["0 13 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
 }

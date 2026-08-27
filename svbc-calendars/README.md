@@ -1,29 +1,54 @@
-# SVBC Events Widget
+# SVBC Calendars
 
-Displays upcoming Silicon Valley Bicycle Coalition events from Eventbrite on the SVBC Squarespace website.
+A single Cloudflare Worker that serves two things for the Silicon Valley Bicycle Coalition:
+an embeddable Eventbrite events widget for the Squarespace site (`events.bikesiliconvalley.org`),
+and nine subscribable ICS calendar feeds — SVBC's own Eventbrite Public Events and Volunteer
+Opportunities, plus seven local Bicycle & Pedestrian Advisory Committee meetings across five
+cities and two transit agencies (`committees.bikesiliconvalley.org`) — with a staff-facing
+listing page of every subscribe link. One-click "Subscribe to calendar" replaces staff or members
+manually checking a handful of different city, transit-agency, and Eventbrite pages.
 
 ## Architecture
 
 ```text
-┌──────────────┐      ┌─────────────────────┐      ┌───────────────┐
-│  Squarespace │─────▶│  Cloudflare Worker   │─────▶│ Eventbrite    │
-│  (iframe)    │      │  (proxy + widget)    │      │ API v3        │
-└──────────────┘      └─────────────────────┘      └───────────────┘
-                              │
-                       Cloudflare Cache
-                       (serves HIT for 15 min)
+┌────────────────────────────────────┐
+│  Squarespace (iframe)               │  events.bikesiliconvalley.org
+│  Calendar apps / browsers           │  committees.bikesiliconvalley.org
+└────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────┐      ┌──────────────────────────────┐
+│    Cloudflare Worker      │─────▶│  Eventbrite API v3             │
+│  (proxy + widget +        │      │  Legistar / CivicPlus /        │
+│   calendar feeds)         │      │  Caltrain BATAC (per source)   │
+└──────────────────────────┘      └──────────────────────────────┘
+              │
+       Cloudflare Cache (caches.default)
+       CALENDAR_KV (last-known-good fallback)
 ```
 
 **Why a proxy?** Eventbrite's public token can't list events by organization — it only works for individual event lookups. The private token is needed, so we keep it server-side in a Cloudflare Worker. The Cache API means most requests never hit Eventbrite at all.
 
-## Files
+## Per-source adapters
 
-```text
-src/worker.ts              Cloudflare Worker (API proxy + widget + cache)
-wrangler.toml              Wrangler deployment config
-tsconfig.json              TypeScript configuration
-.dev.vars.example          Template for local secrets
-```
+| Source | Platform | Feed id |
+|---|---|---|
+| Santa Clara, BART, San Jose, Cupertino | Legistar (Granicus) Web API | `santa-clara`, `bart`, `san-jose`, `cupertino` |
+| Campbell, Saratoga (PEBTAC) | CivicPlus Agenda Center `iCalendar.aspx` | `campbell`, `saratoga` |
+| Caltrain BATAC | `caltrain.com` BATAC page, embedded `data:text/calendar` links | `caltrain-batac` |
+| SVBC Public Events, SVBC Volunteer Opportunities | Eventbrite Organizer Events API | `eventbrite-public-events`, `eventbrite-volunteer-opportunities` |
+
+## How it works
+
+Every route fetches live, per request — there's no daily rebuild. `/events` and `/widget` call
+the Eventbrite API directly; `/calendars` and `/calendars/*.ics` dispatch to the matching source's
+adapter (see the table above). Every route is wrapped in a Cloudflare edge cache
+(`caches.default`): 900s (15 min) for `/events` and `/widget`, 86400s (24h) for `/calendars` and
+`/calendars/*.ics` — nothing on the committee-meeting side needs to be real-time. If a source's
+live fetch fails, its calendar route falls back to the last-known-good `.ics` stored in
+`CALENDAR_KV` instead of erroring; a daily cron proactively warms every source into KV so that
+fallback stays fresh even for sources nobody has requested recently. `/status.json` reports each
+source's live consecutive-failure count and last success time, for at-a-glance health.
 
 ## Setup
 
@@ -37,7 +62,7 @@ tsconfig.json              TypeScript configuration
 
 ```sh
 git clone <this-repo>
-cd svbc-events-widget
+cd svbc-calendars
 npm install
 ```
 
@@ -55,26 +80,27 @@ npx wrangler secret put EVENTBRITE_TOKEN
 
 Paste the **Private token** from Eventbrite when prompted. This is stored encrypted in Cloudflare — it never appears in code or logs.
 
-### 4. Deploy
+### 4. Set the Slack webhook as a secret
+
+```sh
+npx wrangler secret put SLACK_WEBHOOK_URL
+```
+
+Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failure streak first reaches 3.
+
+## Deploy
 
 ```sh
 npx wrangler deploy
 ```
 
-Note the URL it prints, e.g. `https://events.bikesiliconvalley.org`
+Deploys to both custom domains configured in `wrangler.jsonc`: `events.bikesiliconvalley.org`
+(widget + JSON events API) and `committees.bikesiliconvalley.org` (calendar feeds + staff
+listing page).
 
-### 5. Test
+## Widget embed snippet
 
-```sh
-curl https://events.bikesiliconvalley.org/events
-```
-
-You should see JSON with upcoming events. Run it again and check the `X-Cache` header — the second request should show `HIT`.
-
-### 6. Add the widget to Squarespace
-
-1. In Squarespace, edit the events page → add a **Code Block**
-2. Paste an iframe pointing at your Worker:
+In Squarespace, edit the events page → add a **Code Block** → paste an iframe pointing at the Worker:
 
 ```html
 <iframe
@@ -95,72 +121,14 @@ window.addEventListener("message", function(e) {
 
 The widget posts its content height to the parent page via `postMessage`, and the listener script resizes the iframe to fit. This eliminates scrollbars and blank space.
 
-   The `src` URL accepts query params to customize the display — see [Widget query params](#widget-widget-query-params) and [Organizer IDs](#organizer-ids) below.
-
-3. Save and publish
-
-## Configuration
-
-### Worker (`wrangler.toml`)
-
-| Variable | Default | Description |
-|---|---|---|
-| `EVENTBRITE_ORG_ID` | `9974694499` | SVBC's Eventbrite organization ID |
-| `CACHE_TTL` | `900` | Edge cache lifetime in seconds (15 min) |
-
-### Widget (`/widget` query params)
-
-| Param | Default | Description |
-|---|---|---|
-| `max` | `20` | Number of events to display (max 50) |
-| `images` | `true` | Set to `false` to hide event images |
-| `descriptions` | `true` | Set to `false` to hide event summaries |
-| `organizer` | _(all)_ | Filter to a specific Eventbrite organizer profile |
-| `layout` | `list` | Set to `grid` for a multi-column card layout |
-
-Example: `/widget?max=10&images=false`
-
-### Organizer IDs
-
-Use the `organizer` query param to show events from a specific organizer profile:
-
-| Organizer ID | Name | Example |
-| --- | --- | --- |
-| `21763925459` | Silicon Valley Bicycle Coalition (main) | `/widget?organizer=21763925459` |
-| `17135810858` | Silicon Valley Bicycle Coalition (volunteering) | `/widget?organizer=17135810858` |
-| `121346572357` | Silicon Valley Bicycle Coalition (bike parking) | `/widget?organizer=121346572357` |
-
-Without the `organizer` param, events from all organizers are shown.
-
-## Local development
+## Commands
 
 ```sh
-cp .dev.vars.example .dev.vars
-# Edit .dev.vars with the real Eventbrite token
-npm run dev
+npm install
+npm test           # vitest run
+npm run dev         # wrangler dev — local Worker at http://localhost:8787
+                     # no separate build step — Wrangler transpiles on deploy
+npm run typecheck   # wrangler types && tsc --noEmit
+npm run deploy      # wrangler deploy
+npm run tail        # wrangler tail — stream live Worker logs
 ```
-
-The Worker runs at `http://localhost:8787`. Visit `http://localhost:8787/widget` to preview the widget, or `http://localhost:8787/events` for the JSON API.
-
-## How the cache works
-
-1. Browser requests `/events` from the Worker
-2. Worker checks Cloudflare's edge cache for a matching response
-3. **HIT** → response served instantly from the edge, no Eventbrite API call
-4. **MISS** → Worker fetches from Eventbrite, serves the response, and writes it to cache in the background
-5. Cache expires after `CACHE_TTL` seconds, next request triggers a fresh fetch
-
-The `X-Cache` response header shows `HIT` or `MISS` for debugging.
-
-## Eventbrite credentials
-
-| Credential | Where it's used | Sensitive? |
-| --- | --- | --- |
-| API key (`KEV3IXL...`) | Not used | — |
-| Private token (`GQNO2O...`) | Worker secret | **Yes** — stored encrypted in Cloudflare, never in code |
-| Public token (`MRZOTJ...`) | Not used (can't list org events) | No |
-| Organization ID (`9974694499`) | `wrangler.toml` | No |
-
-## Cost
-
-$0. Cloudflare Workers free tier includes 100,000 requests/day. With 15-minute caching, even heavy traffic will only generate a handful of Eventbrite API calls per day.
