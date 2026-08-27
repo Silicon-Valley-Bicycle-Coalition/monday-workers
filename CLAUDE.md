@@ -113,10 +113,12 @@ Queues retry automatically (3 attempts) on failure and route to a dead-letter qu
 so a failed write becomes a visible, replayable backlog instead of a silently dropped donation.
 D1 status here means "ingested," not "written" — the queue is what makes the write durable.
 
-**Cron-polled Worker** (`committee-calendars`)
-doesn't need a queue — a failed poll self-heals on the next scheduled run. The one invariant that
-matters: the D1 "last processed" cursor must only advance *after* a confirmed Monday write, never
-before, or a failed run silently skips what it should have processed with nothing to retry it.
+**A cron-polled Worker** doesn't need a queue — a failed poll self-heals on the next scheduled run.
+The one invariant that matters: the D1 "last processed" cursor must only advance *after* a
+confirmed Monday write, never before, or a failed run silently skips what it should have processed
+with nothing to retry it. (`svbc-calendars`'s daily cron is a KV-fallback warm, not a Monday write,
+so this invariant doesn't apply to it — no Worker in this repo currently needs this pattern for a
+real Monday-writing cron; it's documented here for the next one that does.)
 
 **`salesforce-import` is a one-time batch job**, not an ongoing sync, so it uses neither pattern.
 It's a self-registering CLI (`src/commands.ts` holds a `registerCommand` map; each pipeline stage

@@ -1,12 +1,41 @@
 import type { Env, NormalizedEvent } from './types';
 import { fetchEventbriteEvents } from './adapters/eventbrite';
+import rawOrganizers from '../config/eventbriteOrganizers.json';
 
-/** Eventbrite organizer IDs allowed via the `organizer` query param. */
-export const ALLOWED_ORGANIZERS: string[] = [
-  '21763925459', // Silicon Valley Bicycle Coalition (main)
-  '17135810858', // Silicon Valley Bicycle Coalition (volunteering)
-  '121346572357', // Silicon Valley Bicycle Coalition (bike parking)
-];
+interface EventbriteOrganizerConfig {
+  id: string;
+  label: string;
+}
+
+function validateOrganizers(raw: unknown): EventbriteOrganizerConfig[] {
+  if (typeof raw !== 'object' || raw === null || !Array.isArray((raw as Record<string, unknown>).organizers)) {
+    throw new Error('config/eventbriteOrganizers.json: missing required key "organizers" (array)');
+  }
+  return (raw as { organizers: unknown[] }).organizers.map((entry, index) => {
+    if (typeof entry !== 'object' || entry === null) {
+      throw new Error(`config/eventbriteOrganizers.json: organizers[${index}] must be an object`);
+    }
+    const { id, label } = entry as Record<string, unknown>;
+    if (typeof id !== 'string' || id === '') {
+      throw new Error(`config/eventbriteOrganizers.json: organizers[${index}].id must be a non-empty string`);
+    }
+    if (typeof label !== 'string' || label === '') {
+      throw new Error(`config/eventbriteOrganizers.json: organizers[${index}].label must be a non-empty string`);
+    }
+    return { id, label };
+  });
+}
+
+/**
+ * Eventbrite organizer IDs allowed via the `organizer` query param, derived from
+ * config/eventbriteOrganizers.json rather than hardcoded here. Two of these three ids are also
+ * the `organizerId` of an Eventbrite source in config/sources.json (those two have their own ICS
+ * calendar feed); the third — "bike parking" — has no ICS feed of its own and exists only in this
+ * organizers list. Kept as its own small config file, rather than folded entirely into
+ * sources.json, to avoid turning "bike parking" into a 10th public calendar feed + listing entry
+ * for a change that's purely about not hardcoding organizer ids in source.
+ */
+export const ALLOWED_ORGANIZERS: string[] = validateOrganizers(rawOrganizers).map((o) => o.id);
 
 interface EventVenue {
   name: string;

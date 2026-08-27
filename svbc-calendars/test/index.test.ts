@@ -166,11 +166,28 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     expect(html).toContain("var MAX_EVENTS = 5");
   });
 
-  it("GET /widget includes the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is set", async () => {
+  it("GET /widget omits the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is unset (the shipped default)", async () => {
+    // wrangler.jsonc ships CF_WEB_ANALYTICS_TOKEN as "" until a real deploy fills it in — this is
+    // the actual default state, not just a hypothetical, so it's worth asserting directly (see
+    // finding: the placeholder used to be a non-empty sentinel string, which was truthy and would
+    // have emitted a broken beacon tag).
+    expect(env.CF_WEB_ANALYTICS_TOKEN).toBe("");
     const res = await call(req("/widget"));
     const html = await res.text();
-    expect(html).toContain("cloudflareinsights.com/beacon.min.js");
-    expect(html).toContain(env.CF_WEB_ANALYTICS_TOKEN);
+    expect(html).not.toContain("cloudflareinsights.com");
+  });
+
+  it("GET /widget includes the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is set", async () => {
+    const original = env.CF_WEB_ANALYTICS_TOKEN;
+    env.CF_WEB_ANALYTICS_TOKEN = "wa-test-token";
+    try {
+      const res = await call(req("/widget"));
+      const html = await res.text();
+      expect(html).toContain("cloudflareinsights.com/beacon.min.js");
+      expect(html).toContain("wa-test-token");
+    } finally {
+      env.CF_WEB_ANALYTICS_TOKEN = original;
+    }
   });
 
   it("/widget respects images=false", async () => {
@@ -219,6 +236,16 @@ describe("calendars", () => {
     expect(res.status).toBe(404);
   });
 
+  it("GET /calendars/unknown-source.ics records the metric with a sentinel sourceId, not the raw attacker-controlled path", async () => {
+    const writeDataPoint = vi.spyOn(env.CALENDAR_ANALYTICS, "writeDataPoint");
+    const res = await call(req("/calendars/some-random-crawled-path.ics"));
+    expect(res.status).toBe(404);
+    expect(writeDataPoint).toHaveBeenCalledWith(
+      expect.objectContaining({ blobs: ["calendars.ics", "unknown", "error"], indexes: ["unknown"] })
+    );
+    expect(writeDataPoint).not.toHaveBeenCalledWith(expect.objectContaining({ indexes: ["some-random-crawled-path"] }));
+  });
+
   it("GET /calendars returns the staff listing HTML", async () => {
     const res = await call(req("/calendars"));
     expect(res.status).toBe(200);
@@ -227,10 +254,61 @@ describe("calendars", () => {
     expect(html).toContain("Santa Clara");
   });
 
+  it("GET /calendars builds subscribe links from the canonical committees domain, not the request origin", async () => {
+    // Requested via http://worker.test (see ORIGIN/req() above) — links must still point at
+    // committees.bikesiliconvalley.org, since staff paste these into permanent places and this
+    // Worker also answers on events.bikesiliconvalley.org.
+    const res = await call(req("/calendars"));
+    const html = await res.text();
+    expect(html).toContain("https://committees.bikesiliconvalley.org/calendars/santa-clara.ics");
+    expect(html).not.toContain("http://worker.test");
+  });
+
   it("GET /status.json returns a status map for every configured source", async () => {
     const res = await call(req("/status.json"));
     expect(res.status).toBe(200);
     const data = await res.json<Record<string, unknown>>();
     expect(Object.keys(data)).toEqual(expect.arrayContaining(["santa-clara", "eventbrite-public-events"]));
+  });
+
+  it("GET /calendars/santa-clara.ics falls back to the KV last-known-good ICS when the live adapter fails, with X-Served-From: fallback", async () => {
+    const seededIcs = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\nEND:VCALENDAR";
+    await env.CALENDAR_KV.put("ics:santa-clara", seededIcs);
+    fetchSpy.mockImplementation(async (url: string | URL) => {
+      expect(String(url)).toContain("webapi.legistar.com");
+      return new Response("Internal Server Error", { status: 500 });
+    });
+
+    const res = await call(req("/calendars/santa-clara.ics"));
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(seededIcs);
+    expect(res.headers.get("X-Served-From")).toBe("fallback");
+  });
+
+  it("GET /calendars/santa-clara.ics returns 503 when the live adapter fails and there is no KV fallback", async () => {
+    // No env.CALENDAR_KV.put here — beforeEach already deletes ics:santa-clara, so this starts
+    // with no fallback stored.
+    fetchSpy.mockImplementation(async (url: string | URL) => {
+      expect(String(url)).toContain("webapi.legistar.com");
+      return new Response("Internal Server Error", { status: 500 });
+    });
+
+    const res = await call(req("/calendars/santa-clara.ics"));
+
+    expect(res.status).toBe(503);
+  });
+});
+
+describe("error handling", () => {
+  it("GET /status.json returns a 500 with a CORS header, not an unhandled exception, when a KV status value is malformed JSON", async () => {
+    await env.CALENDAR_KV.put("status:santa-clara", "{not valid json");
+
+    const res = await call(req("/status.json", { origin: "https://www.bikesiliconvalley.org" }));
+
+    expect(res.status).toBe(500);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://www.bikesiliconvalley.org");
+    const data = await res.json<{ error: string }>();
+    expect(data.error).toBe("Internal error");
   });
 });

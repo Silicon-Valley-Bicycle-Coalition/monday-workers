@@ -90,6 +90,46 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 ## Deploy
 
+This Worker has never been deployed — `wrangler.jsonc`'s KV namespace id is a placeholder, no
+secrets are set, and both custom domains below still point at the two Workers this one replaces.
+Cutover checklist, in order:
+
+### 1. Provision the KV namespace
+
+```sh
+npx wrangler kv namespace create CALENDAR_KV
+```
+
+Paste the printed `id` into `wrangler.jsonc`'s `kv_namespaces[0].id`, replacing the
+`placeholder-replaced-in-task-16` value.
+
+### 2. Enable Cloudflare Web Analytics
+
+In the Cloudflare dashboard: **Analytics & Logs → Web Analytics → Add a site**, for
+`bikesiliconvalley.org` (or its relevant subdomains). Paste the resulting site token into
+`wrangler.jsonc`'s `vars.CF_WEB_ANALYTICS_TOKEN`, replacing the empty string. If left empty, the
+widget and listing page simply omit the beacon script rather than shipping a broken one — see the
+comment above that var in `wrangler.jsonc`.
+
+### 3. Set the secrets
+
+```sh
+npx wrangler secret put EVENTBRITE_TOKEN
+npx wrangler secret put SLACK_WEBHOOK_URL
+```
+
+See "Setup" above for where each value comes from.
+
+### 4. Point Workers Builds at this subdirectory
+
+In the Cloudflare dashboard, update this Worker's connected [Workers
+Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) root directory — currently
+pointing at whichever of the two predecessor directories it was last connected to (see the root
+`README.md`'s Deploys section, e.g. `/committee-calendars`, `/events-widgets`) — to `/svbc-calendars`,
+so future pushes to `main` auto-deploy the right directory instead of a now-deleted one.
+
+### 5. Deploy
+
 ```sh
 npx wrangler deploy
 ```
@@ -97,6 +137,14 @@ npx wrangler deploy
 Deploys to both custom domains configured in `wrangler.jsonc`: `events.bikesiliconvalley.org`
 (widget + JSON events API) and `committees.bikesiliconvalley.org` (calendar feeds + staff
 listing page).
+
+### 6. Verify, then retire the old Workers
+
+Cloudflare custom domains are exclusive to one Worker, so step 5's deploy reassigns both
+`events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` away from their current
+Workers (`svbc-events-widgets`, `svbc-committee-calendars`) to this one. Verify both domains serve
+correctly — widget, JSON API, calendar feeds, listing page — **before** considering the old
+Workers' scripts (and `committee-calendars`'s D1 database) safe to manually delete.
 
 ## Widget embed snippet
 

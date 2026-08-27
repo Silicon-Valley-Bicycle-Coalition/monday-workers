@@ -38,11 +38,6 @@ donor-portal:
   variables:
     WORKER_DIR: donor-portal
 
-events-widgets:
-  extends: .worker_job
-  variables:
-    WORKER_DIR: events-widgets
-
 funraise-sync:
   extends: .worker_job
   variables:
@@ -62,3 +57,8 @@ salesforce-import:
   extends: .worker_job
   variables:
     WORKER_DIR: salesforce-import
+
+svbc-calendars:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: svbc-calendars

@@ -20,6 +20,7 @@ routes, 24h for the calendar routes — with a KV last-known-good fallback per s
 - `src/listing.ts` — the staff-facing listing page of every subscribe link.
 - `src/metrics.ts` — per-route, per-source metrics recorded to Workers Analytics Engine.
 - `config/sources.json` — the 9 source definitions (id, adapter, platform-specific config).
+- `config/eventbriteOrganizers.json` — the Eventbrite organizer ids allowed via the `organizer` query param (`src/eventsApi.ts`'s `ALLOWED_ORGANIZERS`, derived at module load, not hardcoded).
 
 ## Development commands
 

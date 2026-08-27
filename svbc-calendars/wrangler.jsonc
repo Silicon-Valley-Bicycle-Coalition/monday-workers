@@ -34,10 +34,13 @@
     "CACHE_TTL": "900", // /events, /widget — 15 min, unchanged from events-widgets
     "CALENDAR_CACHE_TTL": "86400", // /calendars/*.ics, /calendars — 24h, "nothing needs to be real-time"
     "CACHE_VERSION": "1", // reset to 1 for the new merged Worker's cache key space
-    // Placeholder pending manual setup — enable Web Analytics for bikesiliconvalley.org (or its
+    // Empty pending manual setup — enable Web Analytics for bikesiliconvalley.org (or its
     // subdomains) in the Cloudflare dashboard (Analytics & Logs -> Web Analytics -> Add a site)
-    // and paste the resulting site token here before deploying.
-    "CF_WEB_ANALYTICS_TOKEN": "REPLACE_WITH_REAL_WEB_ANALYTICS_TOKEN"
+    // and paste the resulting site token here before deploying. Deliberately empty rather than a
+    // non-empty placeholder: src/widget.ts and src/listing.ts only emit the beacon <script> when
+    // this is truthy, so an un-filled-in deploy silently ships with no analytics instead of a
+    // broken beacon carrying a garbage token.
+    "CF_WEB_ANALYTICS_TOKEN": ""
   },
   "triggers": {
     // Daily at 13:00 UTC (5am/6am Pacific depending on DST), matching committee-calendars' prior schedule.

@@ -77,7 +77,7 @@ Google Drive, one dated snapshot per run, kept indefinitely (see Retention below
 ## Cloudflare config (fleet standard)
 
 When this gets built, its `wrangler.jsonc` follows the conventions applied fleet-wide on
-2026-08-24 (see any deployed Worker, e.g. `../committee-calendars/wrangler.jsonc`):
+2026-08-24 (see any built Worker, e.g. `../svbc-calendars/wrangler.jsonc`):
 
 * **Pinned `account_id`** (SVBC) so a deploy can't land on the wrong Cloudflare account,
   `upload_source_maps: true`, observability enabled, and `Env` generated via `wrangler types`
