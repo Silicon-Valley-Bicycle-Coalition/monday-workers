@@ -166,6 +166,13 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     expect(html).toContain("var MAX_EVENTS = 5");
   });
 
+  it("GET /widget includes the Web Analytics beacon when CF_WEB_ANALYTICS_TOKEN is set", async () => {
+    const res = await call(req("/widget"));
+    const html = await res.text();
+    expect(html).toContain("cloudflareinsights.com/beacon.min.js");
+    expect(html).toContain(env.CF_WEB_ANALYTICS_TOKEN);
+  });
+
   it("/widget respects images=false", async () => {
     const res = await call(req("/widget?images=false"));
     const html = await res.text();

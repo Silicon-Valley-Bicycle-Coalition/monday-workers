@@ -1,10 +1,10 @@
-export function widgetResponse(url: URL, organizerId: string | null): Response {
+export function widgetResponse(url: URL, organizerId: string | null, webAnalyticsToken: string): Response {
   const maxEvents = Math.min(parseInt(url.searchParams.get('max') || '20', 10), 50);
   const showImages = url.searchParams.get('images') !== 'false';
   const showDescriptions = url.searchParams.get('descriptions') !== 'false';
   const layout = url.searchParams.get('layout') === 'grid' ? 'grid' : 'list';
 
-  const html = widgetHTML(maxEvents, showImages, showDescriptions, organizerId, layout);
+  const html = widgetHTML(maxEvents, showImages, showDescriptions, organizerId, layout, webAnalyticsToken);
   return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 }
 
@@ -13,19 +13,21 @@ function widgetHTML(
   showImages: boolean,
   showDescriptions: boolean,
   organizerId: string | null,
-  layout: 'list' | 'grid'
+  layout: 'list' | 'grid',
+  webAnalyticsToken: string
 ): string {
   // Unchanged from events-widgets/src/worker.ts's widgetHTML (styles, card layout, resize
   // postMessage, XSS-safe esc()) — copy that function's body verbatim here, including its full
   // <style> block and inline <script> tags. Only the outbound fetch URL below differs by nothing
-  // (still fetches this Worker's own /events with the same query params), so no other line
-  // changes.
+  // (still fetches this Worker's own /events with the same query params). The beacon script
+  // injection (when a token is present) is the one structural addition to the HTML template.
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SVBC Events</title>
+${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliberately: Cloudflare serves beacon.min.js from its own edge and updates it without version pinning, so a pinned SRI hash would break the beacon the next time Cloudflare ships an update. This is the standard, documented way to load Cloudflare Web Analytics. --><script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${webAnalyticsToken}"}'></script>` : ''}
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {

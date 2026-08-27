@@ -119,7 +119,7 @@ export default {
     }
 
     if (url.pathname === '/widget') {
-      return handleCORS(request, widgetResponse(url, organizerId));
+      return handleCORS(request, widgetResponse(url, organizerId, env.CF_WEB_ANALYTICS_TOKEN ?? ''));
     }
     if (url.pathname === '/' || url.pathname === '/events') {
       const pageSize = Math.min(parseInt(url.searchParams.get('page_size') || '20', 10), 50);
