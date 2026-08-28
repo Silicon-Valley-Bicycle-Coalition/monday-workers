@@ -61,13 +61,16 @@ export async function runGeocode(
     if (apiKey) {
       let attempted = 0, failed = 0;
       for (const a of unmatched) {
+        // City/state/zip locates the failure for debugging without putting the street —
+        // the actually identifying part — into captured run logs.
+        const label = `${a.city}, ${a.state} ${a.zip}`;
         try {
-          const r = await googleGeocode(`${a.street}, ${a.city}, ${a.state} ${a.zip}`, apiKey, deps);
+          const r = await googleGeocode(`${a.street}, ${a.city}, ${a.state} ${a.zip}`, apiKey, { ...deps, label });
           if (r) { await cache.set(a.key, r); google++; }
         } catch (err) {
           // Exhausted retries on one address — leave it unresolved, keep the run alive.
           failed++;
-          console.warn(`geocode: google failed for key ${a.key} (${String(err)}) — leaving unresolved`);
+          console.warn(`geocode: google failed for "${label}" (${String(err)}) — leaving unresolved`);
         }
         if (++attempted % 1000 === 0) {
           console.log(`geocode progress: google ${attempted}/${unmatched.length} (resolved ${google}, failed ${failed})`);
