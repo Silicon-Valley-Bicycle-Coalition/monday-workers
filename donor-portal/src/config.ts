@@ -93,6 +93,7 @@ const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours',
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
 const REQUIRED_LETTER_CRON_KEYS = ['boardId', 'columns', 'maxTriggersPerRun'] as const;
+const DEFAULT_LETTER_SETTINGS_ITEM_NAME = 'Letter emails';
 const REQUIRED_LETTER_CRON_COLUMNS = ['autoSend', 'startDate', 'bodyTemplate'] as const;
 const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
 const REQUIRED_DONATIONS_KEYS = ['countableStatuses'] as const;
@@ -189,6 +190,15 @@ export function validateConfig(raw: unknown): Config {
 
   const letterCron = requireObject(cfg, 'letterCron');
   requireKeys(letterCron, 'letterCron', REQUIRED_LETTER_CRON_KEYS);
+  // The name of the board's single settings item, matched exactly by getLetterSettings (and
+  // used by scripts/create-letter-settings-board.mjs when creating it). Optional with a
+  // default, so an older config keeps working; a present-but-blank value is a config error,
+  // not a silent match-nothing.
+  if (!('settingsItemName' in letterCron)) {
+    letterCron.settingsItemName = DEFAULT_LETTER_SETTINGS_ITEM_NAME;
+  } else if (typeof letterCron.settingsItemName !== 'string' || letterCron.settingsItemName.trim() === '') {
+    throw new Error('config: "letterCron.settingsItemName" must be a non-empty string');
+  }
   const letterCronColumns = requireObject(letterCron, 'columns', 'letterCron.columns');
   requireKeys(letterCronColumns, 'letterCron.columns', REQUIRED_LETTER_CRON_COLUMNS);
   const byLocale = requireObject(letterCronColumns, 'bodyTemplatesByLocale', 'letterCron.columns.bodyTemplatesByLocale');

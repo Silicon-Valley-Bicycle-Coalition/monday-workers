@@ -79,6 +79,10 @@ export interface LetterCronColumns {
 export interface LetterCronConfig {
   boardId: number | null;
   columns: LetterCronColumns;
+  // Name of the single staff-edited item on the Letter Settings board that getLetterSettings
+  // reads (and scripts/create-letter-settings-board.mjs creates). validateConfig defaults it to
+  // 'Letter emails' when the key is absent.
+  settingsItemName: string;
   maxTriggersPerRun: number;
 }
 

@@ -62,6 +62,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   const settings = await deps.monday.getLetterSettings({
     boardId: config.letterCron.boardId,
     columns: config.letterCron.columns,
+    settingsItemName: config.letterCron.settingsItemName,
   });
   if (settings === null) {
     return { kind: 'skipped', reason: 'no-settings' };

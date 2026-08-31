@@ -520,6 +520,35 @@ describe('HttpMondayClient error handling', () => {
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/Board not found/);
   });
+
+  it('throws the server message when a 200 response carries no data (Monday rate-limit/auth shape)', async () => {
+    // Monday's rate-limit and auth failures return HTTP 200 with only error_message/status_code
+    // and NO data field — without a guard that surfaces as "Cannot read properties of undefined"
+    // somewhere downstream instead of the server's actual message.
+    const fetchMock = fetchReturning({ error_message: 'Rate limit exceeded', status_code: 429 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/Rate limit exceeded/);
+  });
+
+  it('throws with the raw payload when a no-data response has no error_message either', async () => {
+    const fetchMock = fetchReturning({ status_code: 500 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/no data/);
+  });
+
+  it('pins the Monday API version via the API-Version header on every request', async () => {
+    let capturedHeaders: Record<string, string> | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      capturedHeaders = init.headers as Record<string, string>;
+      return { ok: true, status: 200, json: async () => ({ data: { boards: [{ items_page: { items: [] } }] } }) };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+
+    await client.findDonorsByEmail('x@example.org');
+
+    expect(capturedHeaders).not.toBeNull();
+    expect(capturedHeaders!['API-Version']).toBe('2026-01');
+  });
 });
 
 describe('HttpMondayClient.getDonorContactInfo', () => {
@@ -1033,7 +1062,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toEqual({
       autoSend: true,
       startDate: '2027-01-05',
       bodyTemplate: 'Hi {{donorName}}, your {{year}} letter: {{loginUrl}}',
@@ -1066,7 +1095,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    const settings = await client.getLetterSettings({ boardId: 456, columns: letterCronColumns });
+    const settings = await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' });
     // An empty locale column is omitted from the map, so callers fall through to the default.
     expect(settings?.bodyTemplatesByLocale).toEqual({ es: 'Hola {{donorName}}' });
   });
@@ -1094,7 +1123,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toEqual({
       autoSend: false,
       startDate: '',
       bodyTemplate: '',
@@ -1104,7 +1133,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
 
   it('returns null when the settings board has no items', async () => {
     const client = makeClient({ data: { boards: [{ items_page: { items: [] } }] } });
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toBeNull();
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toBeNull();
   });
 
   it('prefers the item named "Letter emails" over stray board-template defaults like "Task 1"', async () => {
@@ -1139,12 +1168,74 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toEqual({
       autoSend: true,
       startDate: '2027-01-05',
       bodyTemplate: 'Hi {{donorName}}',
       bodyTemplatesByLocale: {},
     });
+  });
+
+  it('throws (never reads an arbitrary item) when no item matches the configured settings name', async () => {
+    // A renamed settings item or a hand-recreated board must fail loudly: silently reading
+    // autoSend/startDate/templates off whatever item happens to be first could arm (or disarm)
+    // the automated letter run from a stray "Task 1".
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '10',
+                  name: 'Task 1',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'stray template' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(
+      client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })
+    ).rejects.toThrow(/no item named "Letter emails"/);
+  });
+
+  it('matches the settings item by the configured name, not a hardcoded literal', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '11',
+                  name: 'Custom settings item',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'Hi {{donorName}}' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const settings = await client.getLetterSettings({
+      boardId: 456,
+      columns: letterCronColumns,
+      settingsItemName: 'Custom settings item',
+    });
+    expect(settings?.autoSend).toBe(true);
   });
 });
 
@@ -1207,6 +1298,44 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77', '88']);
+  });
+
+  it('ends the sweep gracefully when next_items_page comes back null (expired cursor)', async () => {
+    // Same guard as fetchItemsLinkedToDonor: an expired/invalid cursor yields a null
+    // next_items_page, which must terminate the loop with the ids gathered so far rather than
+    // throw mid-sweep and cost the January cron a whole day's run.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: 'stale-cursor',
+                  items: [
+                    {
+                      id: '1',
+                      column_values: [
+                        { id: 'date_col', text: '2026-03-01' },
+                        { id: 'donation_status_col', text: 'Received' },
+                        { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
+
+    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('drops donations whose date falls outside the requested year (server filter is advisory)', async () => {

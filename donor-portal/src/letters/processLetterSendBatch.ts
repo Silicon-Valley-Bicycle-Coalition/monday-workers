@@ -58,7 +58,11 @@ async function loadBodyTemplates(deps: ProcessLetterSendBatchDeps): Promise<Lett
   const lc = deps.config.letterCron;
   if (!letterCronConfigured(deps.config) || lc.boardId === null) return { byLocale: {} };
   try {
-    const settings = await deps.monday.getLetterSettings({ boardId: lc.boardId, columns: lc.columns });
+    const settings = await deps.monday.getLetterSettings({
+      boardId: lc.boardId,
+      columns: lc.columns,
+      settingsItemName: lc.settingsItemName,
+    });
     const template = settings?.bodyTemplate.trim();
     return {
       default: template ? template : undefined,

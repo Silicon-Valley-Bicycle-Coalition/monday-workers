@@ -107,6 +107,7 @@ const validConfig = {
       bodyTemplate: 'long_text_1',
       bodyTemplatesByLocale: { es: 'long_text_es' },
     },
+    settingsItemName: 'Letter emails',
     maxTriggersPerRun: 200,
   },
 };
@@ -610,6 +611,30 @@ describe('letterCron config section', () => {
     const cfg = structuredClone(validConfig);
     (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale = {};
     expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('defaults letterCron.settingsItemName to "Letter emails" when absent', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.letterCron as Record<string, unknown>).settingsItemName;
+    expect(validateConfig(cfg).letterCron.settingsItemName).toBe('Letter emails');
+  });
+
+  it('keeps a configured letterCron.settingsItemName', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron as Record<string, unknown>).settingsItemName = 'Custom settings item';
+    expect(validateConfig(cfg).letterCron.settingsItemName).toBe('Custom settings item');
+  });
+
+  it('rejects a blank letterCron.settingsItemName', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron as Record<string, unknown>).settingsItemName = '   ';
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.settingsItemName/);
+  });
+
+  it('rejects a non-string letterCron.settingsItemName', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron as Record<string, unknown>).settingsItemName = 42;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.settingsItemName/);
   });
 });
 

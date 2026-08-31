@@ -82,6 +82,7 @@
       "bodyTemplate": "REPLACE_WITH_COLUMN_ID",
       "bodyTemplatesByLocale": {}
     },
+    "settingsItemName": "Letter emails",
     "maxTriggersPerRun": 200
   },
   "volunteerHistory": {

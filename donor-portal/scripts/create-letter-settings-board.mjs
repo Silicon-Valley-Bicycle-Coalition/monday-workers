@@ -89,7 +89,10 @@ Log in to view it: {{loginUrl}}
 
 This link expires soon and can only be used once.`;
 
-const ITEM_NAME = 'Letter emails';
+// Same config key the Worker's getLetterSettings matches on (src/config.ts defaults it to
+// 'Letter emails' when absent) — keeping the two in sync is what lets the cron find the item
+// this script creates.
+const ITEM_NAME = config.letterCron?.settingsItemName ?? 'Letter emails';
 
 async function createColumnOn(boardId, title, columnType, description) {
   const data = await graphql(

@@ -191,7 +191,11 @@ export class FakeMondayClient implements MondayClient {
 
   // Letter-cron settings and the year-end donor sweep are cron-only concerns, never exercised by
   // the interactive portal preview this fake backs — safe no-op defaults.
-  async getLetterSettings(_params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null> {
+  async getLetterSettings(_params: {
+    boardId: number;
+    columns: LetterCronColumns;
+    settingsItemName: string;
+  }): Promise<LetterSettings | null> {
     return null;
   }
 
