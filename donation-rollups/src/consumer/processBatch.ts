@@ -47,10 +47,17 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     throw new Error(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
   }
 
-  const ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
+  let ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
   if (ownerItemId === null) {
-    // Legitimately nothing to recompute — an unlinked donation isn't a transient
-    // failure, so this is a benign skip, not a retry candidate.
+    // An archived item's board_relation reads back empty (see projections/giftHistory.ts),
+    // and the July sweep's representative gift per owner is often archived — before
+    // concluding there's nothing to recompute, fall back to the owner D1 already knows
+    // for this donation so lapsed donors still get their fiscal-year rollover.
+    ownerItemId = (await deps.linksStore.getLinkForDonation(donationItemId))?.ownerItemId ?? null;
+  }
+  if (ownerItemId === null) {
+    // Legitimately nothing to recompute — a donation unlinked on Monday AND unknown to
+    // D1 isn't a transient failure, so this is a benign skip, not a retry candidate.
     await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
     return;
   }

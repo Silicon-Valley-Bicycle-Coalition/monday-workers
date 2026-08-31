@@ -10,6 +10,10 @@ export interface DonationLinksStore {
   // Grouped by donation_board_id, since fetching each donation's column values needs
   // that board's own column ids (see monday/client.ts getDonationsByIds).
   getLinksForOwner(ownerItemId: string): Promise<Map<string, string[]>>; // board id -> donation item ids
+  // The owner D1 already knows for one donation — the fallback when Monday's
+  // board_relation reads back empty because the item is archived (see
+  // projections/giftHistory.ts and consumer/processBatch.ts).
+  getLinkForDonation(donationItemId: string): Promise<{ ownerItemId: string; ownerBoardId: string } | null>;
   bulkUpsert(links: (DonationLink & { updatedAt: string })[]): Promise<number>;
 }
 
@@ -48,6 +52,14 @@ export class D1DonationLinksStore implements DonationLinksStore {
       byBoard.set(row.donation_board_id, list);
     }
     return byBoard;
+  }
+
+  async getLinkForDonation(donationItemId: string): Promise<{ ownerItemId: string; ownerBoardId: string } | null> {
+    const row = await this.db
+      .prepare(`SELECT owner_item_id, owner_board_id FROM donation_links WHERE donation_item_id = ?1`)
+      .bind(donationItemId)
+      .first<{ owner_item_id: string; owner_board_id: string }>();
+    return row === null ? null : { ownerItemId: row.owner_item_id, ownerBoardId: row.owner_board_id };
   }
 
   // Batched (D1 has a per-statement bind-parameter ceiling) — used by the one-time

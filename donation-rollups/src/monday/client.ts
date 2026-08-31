@@ -131,10 +131,14 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       );
       for (const item of data.items) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
-        const amount = Number(byId.get(columns.amount) ?? '');
+        // A blank Amount must be treated as malformed like a blank Date — Number('') is 0,
+        // not NaN, and letting it through would refresh the ledger's real (bootstrap-loaded)
+        // amount down to $0 on the next recompute (refreshFacts upserts unconditionally).
+        const amountText = (byId.get(columns.amount) ?? '').trim();
+        const amount = Number(amountText);
         const dateISO = byId.get(columns.date) ?? '';
         const status = byId.get(columns.status) ?? '';
-        if (!dateISO || Number.isNaN(amount)) continue; // malformed or deleted item, skip
+        if (!dateISO || amountText === '' || Number.isNaN(amount)) continue; // malformed or deleted item, skip
         // Fall back to deriving from the Date column when this board has no Fiscal
         // Year column yet (or the cell is blank) — see fiscalYearFromDate in
         // rollups/compute.ts.

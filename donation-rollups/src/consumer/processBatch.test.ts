@@ -42,6 +42,7 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
   return {
     upsertLink: vi.fn().mockResolvedValue(undefined),
     getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])),
+    getLinkForDonation: vi.fn().mockResolvedValue(null),
     bulkUpsert: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
@@ -214,7 +215,7 @@ describe('processRecomputeBatch', () => {
     }));
   });
 
-  it('skips cleanly (no retry) when the donation has no linked owner', async () => {
+  it('skips cleanly (no retry) when the donation has no linked owner on Monday or in D1', async () => {
     const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null) });
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn3');
@@ -225,6 +226,25 @@ describe('processRecomputeBatch', () => {
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn3', 'written', expect.anything());
+  });
+
+  it('recomputes via the D1-known owner when the Monday link reads back empty (archived representative gift)', async () => {
+    // The July sweep's representative gift is often the owner's oldest, archived gift —
+    // its board_relation reads back empty, but donation_links still knows the owner.
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null) });
+    const linksStore = fakeLinksStore({
+      getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }),
+    });
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dnArchived');
+
+    await processRecomputeBatch([message], { pendingStore, linksStore, giftsStore: fakeGiftsStore(), mondayClient, config, now: new Date('2026-01-01') });
+
+    expect(linksStore.getLinkForDonation).toHaveBeenCalledWith('dnArchived');
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dnArchived', 'written',
+      expect.objectContaining({ ownerItemId: 'donor-1' }));
   });
 
   it('retries and marks failed on a Monday API error, does not ack', async () => {
