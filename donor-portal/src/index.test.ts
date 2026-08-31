@@ -33,6 +33,7 @@ const config: Config = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  donations: { countableStatuses: ['Received', 'Received (Historical)'] },
   eventRegistrations: {
     boardId: null,
     columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },

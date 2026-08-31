@@ -78,6 +78,11 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
+    // Donations-board status labels that count as real gifts (config donations.countableStatuses,
+    // e.g. ['Received', 'Received (Historical)']). Every donation read filters on these at this
+    // layer, so no consumer — portal history, letter totals, the letter-cron sweep — can ever see
+    // a Failed or Pending item as real giving.
+    private countableDonationStatuses: string[],
     // null until an operator configures pledges.boardId + columns (the feature is gated on
     // pledgesEnabled, so routes never call getPledgesForDonor while this is null).
     private pledges: { boardId: number; columns: PledgeColumns } | null = null,
@@ -262,14 +267,24 @@ export class HttpMondayClient implements MondayClient {
       this.donationsBoardId,
       this.columns.donationDonorLink,
       donorItemId,
-      [this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription],
+      [
+        this.columns.donationAmount,
+        this.columns.donationDate,
+        this.columns.donationDescription,
+        this.columns.donationStatus,
+      ],
       false
     );
-    return items.map((item) => ({
-      amount: columnText(item, this.columns.donationAmount),
-      date: columnText(item, this.columns.donationDate),
-      description: columnText(item, this.columns.donationDescription),
-    }));
+    // Only countable statuses (strict: an item with a blank/unknown status is dropped too —
+    // for money that ends up on a tax letter, "not provably received" means "doesn't count").
+    const countable = new Set(this.countableDonationStatuses);
+    return items
+      .filter((item) => countable.has(columnText(item, this.columns.donationStatus)))
+      .map((item) => ({
+        amount: columnText(item, this.columns.donationAmount),
+        date: columnText(item, this.columns.donationDate),
+        description: columnText(item, this.columns.donationDescription),
+      }));
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
@@ -573,7 +588,11 @@ export class HttpMondayClient implements MondayClient {
     // uses) was verified live on 2026-08-25 against the sandbox Donations board (18427756119) —
     // unlike the other rules-shape NOTEs in this file, this one is confirmed working. The
     // client-side year check below stays as a correctness backstop regardless.
-    const columnIds = JSON.stringify([this.columns.donationDate, this.columns.donationDonorLink]);
+    const columnIds = JSON.stringify([
+      this.columns.donationDate,
+      this.columns.donationDonorLink,
+      this.columns.donationStatus,
+    ]);
     const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
     const firstPageQuery = `
       query ($boardId: ID!, $from: String!, $to: String!) {
@@ -615,8 +634,12 @@ export class HttpMondayClient implements MondayClient {
     }
 
     const donorIds = new Set<string>();
+    // Same status filter as getDonationsForDonor: a donor whose only gifts in the year are
+    // Failed/Pending must not be swept into the letter run.
+    const countable = new Set(this.countableDonationStatuses);
     for (const item of allItems) {
       if (!columnText(item, this.columns.donationDate).startsWith(`${year}-`)) continue;
+      if (!countable.has(columnText(item, this.columns.donationStatus))) continue;
       const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
       for (const donorId of link?.linked_item_ids ?? []) {
         donorIds.add(donorId);

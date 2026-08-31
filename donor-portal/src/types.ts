@@ -9,6 +9,7 @@ export interface MondayColumns {
   donationAmount: string;
   donationDate: string;
   donationDescription: string;
+  donationStatus: string;
   discountOffered: string;
   discountActive: string;
   donorAddress: string;
@@ -92,6 +93,17 @@ export interface LetterSettings {
   bodyTemplatesByLocale: Partial<Record<Locale, string>>;
 }
 
+export interface DonationsConfig {
+  // Donations-board status labels that count as real gifts — everywhere: portal donation
+  // history, tax-letter gift lists and totals, and the January letter-cron sweep. The board's
+  // vocabulary is ['Received', 'Received (Historical)', 'Failed', 'Pending'] (seeded by
+  // salesforce-import); only the two Received labels belong here. 'Received (Historical)' is
+  // included deliberately — migrated historical gifts are real gifts and belong on tax letters.
+  // Unlike volunteerHistory.completedStatuses, an empty array is a config error, not
+  // "include everything": silently counting Failed gifts would overstate deductible totals.
+  countableStatuses: string[];
+}
+
 export interface VolunteerHistoryConfig {
   // Shift statuses that count toward the portal's volunteer history (both the listed shifts and
   // the total-hours sum). An empty array means "include every status" — for orgs whose
@@ -169,6 +181,7 @@ export interface Config {
   cardTokens: CardTokensConfig;
   letterCron: LetterCronConfig;
   volunteerHistory: VolunteerHistoryConfig;
+  donations: DonationsConfig;
   eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;
   pledges: PledgesConfig;

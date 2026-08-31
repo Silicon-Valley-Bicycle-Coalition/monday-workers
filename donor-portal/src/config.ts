@@ -10,6 +10,7 @@ const REQUIRED_TOP_LEVEL = [
   'changeRequests',
   'cardTokens',
   'volunteerHistory',
+  'donations',
   'eventRegistrations',
   'funraise',
   'pledges',
@@ -26,6 +27,7 @@ const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donationAmount',
   'donationDate',
   'donationDescription',
+  'donationStatus',
   'discountOffered',
   'discountActive',
 ];
@@ -93,6 +95,7 @@ const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
 const REQUIRED_LETTER_CRON_KEYS = ['boardId', 'columns', 'maxTriggersPerRun'] as const;
 const REQUIRED_LETTER_CRON_COLUMNS = ['autoSend', 'startDate', 'bodyTemplate'] as const;
 const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
+const REQUIRED_DONATIONS_KEYS = ['countableStatuses'] as const;
 // Presence-checked only, never placeholder-checked: event registrations are gated
 // (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
 const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumnId'] as const;
@@ -202,6 +205,20 @@ export function validateConfig(raw: unknown): Config {
   const completedStatuses = volunteerHistory.completedStatuses;
   if (!Array.isArray(completedStatuses) || completedStatuses.some((s) => typeof s !== 'string')) {
     throw new Error('config: "volunteerHistory.completedStatuses" must be an array of strings');
+  }
+  const donations = requireObject(cfg, 'donations');
+  requireKeys(donations, 'donations', REQUIRED_DONATIONS_KEYS);
+  const countableStatuses = donations.countableStatuses;
+  // Unlike volunteerHistory.completedStatuses (where empty means "include every status"), an
+  // empty list here is rejected: it would filter every gift out of portal history and tax
+  // letters, and an accidental [] silently zeroing donors' deductible totals is exactly the kind
+  // of quiet financial error this key exists to prevent.
+  if (
+    !Array.isArray(countableStatuses) ||
+    countableStatuses.length === 0 ||
+    countableStatuses.some((s) => typeof s !== 'string')
+  ) {
+    throw new Error('config: "donations.countableStatuses" must be a non-empty array of strings');
   }
   const eventRegistrations = requireObject(cfg, 'eventRegistrations');
   requireKeys(eventRegistrations, 'eventRegistrations', REQUIRED_EVENT_REGISTRATION_KEYS);
