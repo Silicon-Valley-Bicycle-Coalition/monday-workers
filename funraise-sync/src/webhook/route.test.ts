@@ -47,8 +47,10 @@ function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore {
   };
 }
 
+const SECRET = 'test-secret';
+
 function postEvent(app: ReturnType<typeof createApp>, body: unknown, entityType = 'transaction') {
-  return app.request(`/webhooks/funraise/${entityType}`, {
+  return app.request(`/webhooks/funraise/${entityType}?secret=${SECRET}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -57,7 +59,7 @@ function postEvent(app: ReturnType<typeof createApp>, body: unknown, entityType 
 
 describe('createApp', () => {
   it('responds to GET /health with ok: true', async () => {
-    const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() } });
+    const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
     const res = await app.request('/health');
 
@@ -65,11 +67,11 @@ describe('createApp', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it('echoes x-hook-secret on a handshake request without touching the event store', async () => {
+  it('echoes x-hook-secret on an authorized handshake request without touching the event store', async () => {
     const eventStore = fakeEventStore();
-    const app = createApp({ eventStore, config, queue: { send: vi.fn() } });
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
-    const res = await app.request('/webhooks/funraise/transaction', {
+    const res = await app.request(`/webhooks/funraise/transaction?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'x-hook-secret': 'shake' },
     });
@@ -81,7 +83,7 @@ describe('createApp', () => {
 
   it('rejects an unknown entity type without inserting', async () => {
     const eventStore = fakeEventStore();
-    const app = createApp({ eventStore, config, queue: { send: vi.fn() } });
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
     const res = await postEvent(app, { id: 'evt-1' }, 'donation');
 
@@ -93,7 +95,7 @@ describe('createApp', () => {
   it('ingests a new event with its entity id, strips denylisted PII, and enqueues by entity', async () => {
     const eventStore = fakeEventStore();
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     const res = await postEvent(app, {
       id: 'evt-1',
@@ -119,7 +121,7 @@ describe('createApp', () => {
   it('re-enqueues when the upsert reports an update to a known entity', async () => {
     const eventStore = fakeEventStore({ upsertEvent: vi.fn().mockResolvedValue('updated') });
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     const res = await postEvent(app, { id: 'evt-2', transactionId: 'txn-9', amount: 50 });
 
@@ -130,7 +132,7 @@ describe('createApp', () => {
   it('short-circuits on a duplicate delivery without enqueueing', async () => {
     const eventStore = fakeEventStore({ upsertEvent: vi.fn().mockResolvedValue('duplicate') });
     const send = vi.fn();
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
 
@@ -142,7 +144,7 @@ describe('createApp', () => {
   it('returns 500 when the enqueue fails, so the delivery is not falsely acknowledged', async () => {
     const eventStore = fakeEventStore();
     const send = vi.fn().mockRejectedValue(new Error('queue unavailable'));
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     const res = await postEvent(app, { id: 'evt-3', transactionId: 'txn-3' });
 
@@ -153,11 +155,107 @@ describe('createApp', () => {
   });
 });
 
+describe('webhook authentication', () => {
+  it('rejects a POST without the shared-secret query param with 401, before touching the store', async () => {
+    const eventStore = fakeEventStore();
+    const send = vi.fn();
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
+
+    const res = await app.request('/webhooks/funraise/transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9' }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(eventStore.upsertEvent).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('rejects a POST with a wrong secret with 401', async () => {
+    const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request('/webhooks/funraise/transaction?secret=wrong', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('fails closed with 401 when no secret is configured, even if the request carries one', async () => {
+    const eventStore = fakeEventStore();
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: undefined });
+
+    const res = await app.request(`/webhooks/funraise/transaction?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9' }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(eventStore.upsertEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unauthenticated handshake attempt instead of echoing x-hook-secret', async () => {
+    const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request('/webhooks/funraise/transaction', {
+      method: 'POST',
+      headers: { 'x-hook-secret': 'shake' },
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get('x-hook-secret')).toBeNull();
+  });
+
+  it('still processes a valid event delivery that carries an x-hook-secret header', async () => {
+    const eventStore = fakeEventStore();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
+
+    const res = await app.request(`/webhooks/funraise/transaction?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-hook-secret': 'per-delivery' },
+      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9', amount: 25 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(eventStore.upsertEvent).toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
+  });
+
+  it('echoes x-hook-secret when authorized and the body is not a valid event payload', async () => {
+    const eventStore = fakeEventStore();
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request(`/webhooks/funraise/transaction?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-hook-secret': 'shake' },
+      body: JSON.stringify({ hello: 'not an event' }), // no "id" — non-event shape
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-hook-secret')).toBe('shake');
+    expect(eventStore.upsertEvent).not.toHaveBeenCalled();
+  });
+
+  it('leaves GET /health unauthenticated', async () => {
+    const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request('/health');
+
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('validation-failure observability', () => {
   it('logs a validation failure so a payload-shape change is visible in observability', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() } });
+      const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
       const res = await postEvent(app, { amount: 100 }); // missing "id"
 
@@ -176,7 +274,7 @@ describe('redelivery of a stranded event', () => {
       getEventByEntity: vi.fn().mockResolvedValue({ status: 'failed' }),
     });
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
 
@@ -191,7 +289,7 @@ describe('redelivery of a stranded event', () => {
       getEventByEntity: vi.fn().mockResolvedValue({ status: 'received' }),
     });
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
 
@@ -204,7 +302,7 @@ describe('redelivery of a stranded event', () => {
       getEventByEntity: vi.fn().mockResolvedValue({ status: 'written' }),
     });
     const send = vi.fn();
-    const app = createApp({ eventStore, config, queue: { send } });
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
     const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
 

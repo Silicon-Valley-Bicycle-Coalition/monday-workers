@@ -48,7 +48,7 @@
     "emailFieldPrecedence": ["donor.email"],
     "statusField": "status",
     "statusValueMap": {
-      "Posted": "Done"
+      "Posted": "Received"
     },
     "doNotMigrateFields": ["paymentMethod.lastFour", "paymentMethod.expiration"]
   }

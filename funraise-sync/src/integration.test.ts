@@ -49,9 +49,9 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
 
     let captured: FunraiseQueueMessage | undefined;
     const queue = { send: async (m: FunraiseQueueMessage) => { captured = m; } };
-    const app = createApp({ eventStore, config, queue });
+    const app = createApp({ eventStore, config, queue, webhookSecret: 'int-secret' });
 
-    const res = await app.request('/webhooks/funraise/transaction', {
+    const res = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
       method: 'POST',
       body: JSON.stringify({
         id: 'int-evt-1',
@@ -96,7 +96,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
     expect(afterConsumer?.mondayItemId).toBe('monday-item-int-1');
 
     // A second delivery for the same transaction updates the existing item instead of creating another.
-    const res2 = await app.request('/webhooks/funraise/transaction', {
+    const res2 = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
       method: 'POST',
       body: JSON.stringify({
         id: 'int-evt-2',

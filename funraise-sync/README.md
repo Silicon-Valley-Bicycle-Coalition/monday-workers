@@ -63,9 +63,22 @@ across every webhook-driven Worker in this plan.
   requests/month base, 10,000/month on "API Plus." [API overview](https://help.funraise.io/en/articles/10518268-funraise-api) ·
   [API reference](https://funraise.stoplight.io/docs/funraise/44e37c461ba67-funraise-api) ·
   [Webhooks](https://help.funraise.io/en/articles/4471107-webhooks).
-* **Webhook auth**: one-time signing-secret handshake (`x-hook-secret`). **Unconfirmed**: whether
-  individual deliveries also carry a per-event signature — check the full docs before assuming
-  request authenticity extends beyond the initial handshake.
+* **Webhook auth**: Funraise's own mechanism is a one-time REST-Hooks subscribe handshake
+  (`x-hook-secret`), and it's unconfirmed whether individual deliveries carry any per-event
+  signature — so this Worker does not rely on it for request authenticity. Instead, every
+  delivery must carry a shared secret in the webhook URL's query string, checked on every POST:
+
+  1. `wrangler secret put FUNRAISE_WEBHOOK_SECRET` (generate a long random value, e.g.
+     `openssl rand -hex 32`).
+  2. Register the webhook URL in Funraise **with that secret embedded**:
+     `https://<worker-host>/webhooks/funraise/<entityType>?secret=<value>`.
+
+  The route **fails closed**: any POST whose `secret` query param doesn't match — including
+  every POST while the secret is unset — is rejected with 401. The `x-hook-secret` handshake is
+  still honored, but only after the secret check passes, and only when the request body isn't a
+  valid event payload (empty body or non-event shape); a valid event that happens to carry an
+  `x-hook-secret` header is processed normally, so a per-delivery secret can never swallow real
+  deliveries.
 * **Monday.com GraphQL API** — standard API token, same pattern as every other Worker here.
 
 ## Donor matching
@@ -81,7 +94,11 @@ Full column-by-column mapping (Donations ← Opportunity/Transaction fields, Rec
 Subscription, status-value mapping where `Posted` — not `Closed Won` — is the real success state,
 and the full do-not-migrate list) lives in
 `docs/03-monday-migration-mapping.md` (private planning repo) — this
-Worker's write step should follow that mapping exactly, not redefine it. Notably: **Pledge and
+Worker's write step should follow that mapping exactly, not redefine it. One board-side
+constraint on top of that doc: `config/svbc.json` maps `Posted` to `Received` because the
+Donations board's status vocabulary (seeded by `salesforce-import`) is exactly `Received` /
+`Received (Historical)` / `Failed` / `Pending`, and `donation-rollups` counts only `Received` —
+mapping to any label outside that set silently drops the gift from rollups. Notably: **Pledge and
 Subscription are a confirmed 1:1 duplicate** — do not create separate items for both; **8 email
 fields collapse to one** with precedence `npe01__Preferred_Email__c` → `Primary_Email__c` →
 `Email`; **payment-method fields (last four, expiration) are PII and must never be written to

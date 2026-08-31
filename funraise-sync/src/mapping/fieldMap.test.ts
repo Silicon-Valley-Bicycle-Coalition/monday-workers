@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import rawSvbcConfig from '../../config/svbc.json';
+import { validateConfig } from '../config';
 import { mapToMondayColumns } from './fieldMap';
 import type { FunraiseSyncConfig } from '../types';
 
@@ -34,7 +36,7 @@ const config: FunraiseSyncConfig = {
     donorLinkColumn: 'connect_col',
     emailFieldPrecedence: ['donor.email'],
     statusField: 'status',
-    statusValueMap: { Posted: 'Done' },
+    statusValueMap: { Posted: 'Received' },
     doNotMigrateFields: ['paymentMethod.lastFour'],
   },
 };
@@ -42,7 +44,7 @@ const config: FunraiseSyncConfig = {
 describe('mapToMondayColumns', () => {
   it('maps mapped fields to their Monday column ids', () => {
     const result = mapToMondayColumns('transaction', { amount: 100, status: 'Posted' }, config);
-    expect(result).toEqual({ numeric_col: 100, status_col: 'Done' });
+    expect(result).toEqual({ numeric_col: 100, status_col: 'Received' });
   });
 
   it('drops any field not present in columnMap', () => {
@@ -64,6 +66,29 @@ describe('mapToMondayColumns', () => {
   it('routes subscription and pledge through the recurringGift map', () => {
     const result = mapToMondayColumns('subscription', { amount: 50 }, config);
     expect(result).toEqual({ numeric_col: 50 });
+  });
+
+  // The Donations board status vocabulary as seeded by salesforce-import.
+  // donation-rollups counts only 'Received', so any mapped value outside this
+  // set silently drops the donation from rollups.
+  const DONATIONS_STATUS_VOCABULARY = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
+
+  it("maps Funraise's Posted success state to 'Received' in the shipped SVBC config", () => {
+    const svbcConfig = validateConfig(rawSvbcConfig);
+
+    const result = mapToMondayColumns('transaction', { status: 'Posted' }, svbcConfig);
+
+    const statusColumn = svbcConfig.funraiseSync.columnMap.transaction.status;
+    expect(statusColumn).toBeDefined();
+    expect(result[statusColumn as string]).toBe('Received');
+  });
+
+  it('only maps to labels that exist in the Donations board status vocabulary', () => {
+    const svbcConfig = validateConfig(rawSvbcConfig);
+
+    for (const [from, to] of Object.entries(svbcConfig.funraiseSync.statusValueMap)) {
+      expect(DONATIONS_STATUS_VOCABULARY, `statusValueMap["${from}"]`).toContain(to);
+    }
   });
 
   it('supports dot-path field lookup', () => {

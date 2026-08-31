@@ -71,4 +71,9 @@ export interface FunraiseSyncConfig {
 export interface Env extends Cloudflare.Env {
   WRITE_QUEUE: Queue<FunraiseQueueMessage>;
   MONDAY_API_TOKEN: string;
+  // Shared secret required as `?secret=...` on the registered Funraise webhook URL
+  // (`wrangler secret put FUNRAISE_WEBHOOK_SECRET`). Optional in the type because
+  // secrets aren't declared in wrangler.jsonc — the webhook route fails closed
+  // (401 on every delivery) until it is set.
+  FUNRAISE_WEBHOOK_SECRET?: string;
 }

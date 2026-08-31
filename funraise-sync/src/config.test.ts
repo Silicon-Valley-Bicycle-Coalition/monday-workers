@@ -38,7 +38,7 @@ const validConfig = {
     donorLinkColumn: 'connect_col',
     emailFieldPrecedence: ['donor.email'],
     statusField: 'status',
-    statusValueMap: { Posted: 'Done' },
+    statusValueMap: { Posted: 'Received' },
     doNotMigrateFields: ['paymentMethod.lastFour'],
   },
 };
