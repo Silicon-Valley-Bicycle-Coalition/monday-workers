@@ -14,6 +14,7 @@
       "donationAmount": "REPLACE_WITH_COLUMN_ID",
       "donationDate": "REPLACE_WITH_COLUMN_ID",
       "donationDescription": "REPLACE_WITH_COLUMN_ID",
+      "donationStatus": "color_mm6jqdhn",
       "discountOffered": "REPLACE_WITH_COLUMN_ID",
       "discountActive": "REPLACE_WITH_COLUMN_ID",
       "donorAddress": "REPLACE_WITH_COLUMN_ID",
@@ -81,10 +82,14 @@
       "bodyTemplate": "REPLACE_WITH_COLUMN_ID",
       "bodyTemplatesByLocale": {}
     },
+    "settingsItemName": "Letter emails",
     "maxTriggersPerRun": 200
   },
   "volunteerHistory": {
     "completedStatuses": ["Completed"]
+  },
+  "donations": {
+    "countableStatuses": ["Received", "Received (Historical)"]
   },
   "eventRegistrations": {
     "boardId": null,

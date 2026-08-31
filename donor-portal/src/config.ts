@@ -10,6 +10,7 @@ const REQUIRED_TOP_LEVEL = [
   'changeRequests',
   'cardTokens',
   'volunteerHistory',
+  'donations',
   'eventRegistrations',
   'funraise',
   'pledges',
@@ -26,6 +27,7 @@ const REQUIRED_COLUMNS: (keyof MondayColumns)[] = [
   'donationAmount',
   'donationDate',
   'donationDescription',
+  'donationStatus',
   'discountOffered',
   'discountActive',
 ];
@@ -91,8 +93,10 @@ const REQUIRED_CHANGE_REQUEST_KEYS = ['boardId', 'columns', 'dedupeWindowHours',
 const REQUIRED_CHANGE_REQUEST_COLUMNS = ['donorLink', 'field', 'oldValue', 'newValue', 'submittedAt'] as const;
 const REQUIRED_CARD_TOKENS_KEYS = ['retentionDays'] as const;
 const REQUIRED_LETTER_CRON_KEYS = ['boardId', 'columns', 'maxTriggersPerRun'] as const;
+const DEFAULT_LETTER_SETTINGS_ITEM_NAME = 'Letter emails';
 const REQUIRED_LETTER_CRON_COLUMNS = ['autoSend', 'startDate', 'bodyTemplate'] as const;
 const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
+const REQUIRED_DONATIONS_KEYS = ['countableStatuses'] as const;
 // Presence-checked only, never placeholder-checked: event registrations are gated
 // (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
 const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumnId'] as const;
@@ -186,6 +190,15 @@ export function validateConfig(raw: unknown): Config {
 
   const letterCron = requireObject(cfg, 'letterCron');
   requireKeys(letterCron, 'letterCron', REQUIRED_LETTER_CRON_KEYS);
+  // The name of the board's single settings item, matched exactly by getLetterSettings (and
+  // used by scripts/create-letter-settings-board.mjs when creating it). Optional with a
+  // default, so an older config keeps working; a present-but-blank value is a config error,
+  // not a silent match-nothing.
+  if (!('settingsItemName' in letterCron)) {
+    letterCron.settingsItemName = DEFAULT_LETTER_SETTINGS_ITEM_NAME;
+  } else if (typeof letterCron.settingsItemName !== 'string' || letterCron.settingsItemName.trim() === '') {
+    throw new Error('config: "letterCron.settingsItemName" must be a non-empty string');
+  }
   const letterCronColumns = requireObject(letterCron, 'columns', 'letterCron.columns');
   requireKeys(letterCronColumns, 'letterCron.columns', REQUIRED_LETTER_CRON_COLUMNS);
   const byLocale = requireObject(letterCronColumns, 'bodyTemplatesByLocale', 'letterCron.columns.bodyTemplatesByLocale');
@@ -202,6 +215,20 @@ export function validateConfig(raw: unknown): Config {
   const completedStatuses = volunteerHistory.completedStatuses;
   if (!Array.isArray(completedStatuses) || completedStatuses.some((s) => typeof s !== 'string')) {
     throw new Error('config: "volunteerHistory.completedStatuses" must be an array of strings');
+  }
+  const donations = requireObject(cfg, 'donations');
+  requireKeys(donations, 'donations', REQUIRED_DONATIONS_KEYS);
+  const countableStatuses = donations.countableStatuses;
+  // Unlike volunteerHistory.completedStatuses (where empty means "include every status"), an
+  // empty list here is rejected: it would filter every gift out of portal history and tax
+  // letters, and an accidental [] silently zeroing donors' deductible totals is exactly the kind
+  // of quiet financial error this key exists to prevent.
+  if (
+    !Array.isArray(countableStatuses) ||
+    countableStatuses.length === 0 ||
+    countableStatuses.some((s) => typeof s !== 'string')
+  ) {
+    throw new Error('config: "donations.countableStatuses" must be a non-empty array of strings');
   }
   const eventRegistrations = requireObject(cfg, 'eventRegistrations');
   requireKeys(eventRegistrations, 'eventRegistrations', REQUIRED_EVENT_REGISTRATION_KEYS);

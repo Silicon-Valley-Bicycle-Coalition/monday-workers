@@ -19,17 +19,91 @@ export interface GiftHistoryRow {
   archived: boolean;
 }
 
+// Docs/20: overflow must be a planned decision, never a surprise truncation — the recompute
+// path alerts (custodian path, not just a log line) once a projection passes this threshold,
+// well before the item budget, so reconciliation-era humans see it coming.
+export const GIFT_LEDGER_ALERT_BYTES = 48_000;
+// Hard write budget, safely under Monday's ~64KB per-item ceiling: past this the projection
+// is truncated to the newest entries that fit (plus a marker) instead of letting the one
+// combined column write throw, DLQ the donor, and freeze their rollups forever.
+export const GIFT_LEDGER_MAX_BYTES = 60_000;
+// First tuple element of the marker entry a truncated projection ends with. '~' can never
+// collide with a Monday item id (they're numeric), and reconciliation keys off it.
+export const GIFT_LEDGER_TRUNCATION_ID = '~truncated';
+
+export interface GiftLedgerProjection {
+  json: string; // what to write to the column — truncated when the full form won't fit
+  fullBytes: number; // byte size of the untruncated projection (the alert-decision number)
+  truncated: boolean;
+  totalCount: number;
+  includedCount: number;
+}
+
+type GiftLedgerTuple = [string, string, number, string, string];
+
+const tuple = (r: GiftHistoryRow): GiftLedgerTuple =>
+  [r.mondayItemId, r.giftDateISO, r.amountCents, r.giftType ?? '', r.status];
+
 // Newest first. Compact tuple form: [itemId, dateISO, cents, type, status] ≈ 45 bytes/gift —
 // a 20-year monthly donor (~240 gifts) is ~11KB against Monday's ~64KB per-item budget.
-export function buildGiftLedgerJson(rows: GiftHistoryRow[]): string {
-  const json = JSON.stringify(sorted(rows).map((r) =>
-    [r.mondayItemId, r.giftDateISO, r.amountCents, r.giftType ?? '', r.status]));
-  // Docs/20: overflow must be a planned decision, never a surprise truncation — warn well
-  // before the item budget so reconciliation-era humans see it coming.
-  if (json.length > 48_000) {
-    console.warn(`gift-history: JSON projection is ${json.length} bytes for an owner — approaching Monday's per-item budget`);
+export function buildGiftLedgerJson(rows: GiftHistoryRow[]): GiftLedgerProjection {
+  const tuples = sorted(rows).map(tuple);
+  const encoder = new TextEncoder();
+  const full = JSON.stringify(tuples);
+  const fullBytes = encoder.encode(full).length;
+  if (fullBytes <= GIFT_LEDGER_MAX_BYTES) {
+    return { json: full, fullBytes, truncated: false, totalCount: rows.length, includedCount: rows.length };
   }
-  return json;
+
+  // Keep the newest entries that fit alongside a marker tuple in the oldest position. The
+  // marker carries 0 cents so a naive sum over the tuples stays honest, and its "N of M"
+  // note points at D1, which still holds the full history.
+  const marker = (included: number): GiftLedgerTuple => [
+    GIFT_LEDGER_TRUNCATION_ID, '', 0, '',
+    `${rows.length - included} older of ${rows.length} gifts omitted — full history in the D1 gifts ledger`,
+  ];
+  // Budgeting against the worst-case marker (included = 0 has the most omitted digits).
+  let bytes = encoder.encode(JSON.stringify([marker(0)])).length;
+  const kept: GiftLedgerTuple[] = [];
+  for (const t of tuples) {
+    bytes += encoder.encode(JSON.stringify(t)).length + 1; // +1 for the joining comma
+    if (bytes > GIFT_LEDGER_MAX_BYTES) break;
+    kept.push(t);
+  }
+  return {
+    json: JSON.stringify([...kept, marker(kept.length)]),
+    fullBytes, truncated: true, totalCount: rows.length, includedCount: kept.length,
+  };
+}
+
+export interface ParsedGiftLedger {
+  entries: { mondayItemId: string; amountCents: number; status: string }[];
+  truncated: boolean;
+}
+
+// Reconciliation's reader for the column above: null means "not a projection we wrote"
+// (unparseable, wrong shape) — the caller decides whether that's drift. The truncation
+// marker is stripped from entries and reported as a flag.
+export function parseGiftLedgerJson(text: string): ParsedGiftLedger | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(raw)) return null;
+  const entries: ParsedGiftLedger['entries'] = [];
+  let truncated = false;
+  for (const t of raw) {
+    if (!Array.isArray(t) || t.length < 5) return null;
+    if (t[0] === GIFT_LEDGER_TRUNCATION_ID) {
+      truncated = true;
+      continue;
+    }
+    if (typeof t[0] !== 'string' || typeof t[2] !== 'number' || typeof t[4] !== 'string') return null;
+    entries.push({ mondayItemId: t[0], amountCents: t[2], status: t[4] });
+  }
+  return { entries, truncated };
 }
 
 const dollars = (cents: number): string =>

@@ -80,7 +80,11 @@ async function processOne(email: string, deps: InboundConsumerDeps): Promise<voi
 
   const donorItemId = await mondayClient.findItemIdByEmail(donorsBoardId, config.monday.columns.email, email);
   if (donorItemId === null) {
-    await pendingStore.updateStatus(email, 'written', undefined, new Date().toISOString());
+    // A genuine miss (even after the client's case-insensitive fallback) must stay
+    // distinguishable from a successful write — 'skipped', never 'written', so misses
+    // are visible and countable in the pending table.
+    console.warn(`mailchimp-sync inbound consumer: no Donor item matches "${email}" — recording as skipped`);
+    await pendingStore.updateStatus(email, 'skipped', `no Donor item matches email "${email}"`);
     return;
   }
 

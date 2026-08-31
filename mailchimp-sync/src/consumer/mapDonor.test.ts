@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMergeFields, buildTags } from './mapDonor';
+import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 import type { Config, DonorRecord } from '../types';
 
 const CONFIG: Config = {
@@ -72,5 +72,22 @@ describe('buildTags', () => {
     expect(buildTags(donor({ totalGiven: '150' }), CONFIG)).toContain('has-donated');
     expect(buildTags(donor({ totalGiven: '0' }), CONFIG)).not.toContain('has-donated');
     expect(buildTags(donor({ totalGiven: '' }), CONFIG)).not.toContain('has-donated');
+  });
+});
+
+describe('managedTags', () => {
+  it('enumerates every configured tag this worker owns, and only those', () => {
+    expect(managedTags(CONFIG).sort()).toEqual(
+      ['active-member', 'has-donated', 'lapsed-member', 'lifetime-member'],
+    );
+  });
+
+  it('always contains whatever buildTags produces', () => {
+    const managed = managedTags(CONFIG);
+    for (const d of [donor(), donor({ membershipTier: 'Lifetime' }), donor({ membershipStatus: 'Lapsed', totalGiven: '150' })]) {
+      for (const tag of buildTags(d, CONFIG)) {
+        expect(managed).toContain(tag);
+      }
+    }
   });
 });

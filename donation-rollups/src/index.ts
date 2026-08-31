@@ -37,6 +37,7 @@ export default {
     }
     const app = createApp({
       pendingStore: new D1PendingStore(env.DB),
+      donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
       queue: {
         send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined),
       },
@@ -56,10 +57,12 @@ export default {
   },
 
   // One daily trigger; dutiesForDate decides what today owes (reconcile nightly, capacity
-  // Mondays, the July 1 fiscal-year sweep, the July 15 year-end archive run — docs/20 §5.3).
+  // Mondays, the July 1 fiscal-year sweep, the July 15 year-end archive run — docs/20 §5.3),
+  // consulting the last recorded runs so an incomplete sliced sweep/archive keeps getting
+  // continued daily until it reports remaining === 0.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const deps = custodianDeps(env);
-    for (const duty of dutiesForDate(new Date())) {
+    for (const duty of dutiesForDate(new Date(), await deps.gifts.lastRuns())) {
       const report = await runDuty(duty, deps);
       console.log(`custodian ${duty}: ${report.ok ? 'ok' : 'ATTENTION'} — ${report.summary}`);
     }

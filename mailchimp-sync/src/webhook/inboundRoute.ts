@@ -11,8 +11,9 @@ export interface InboundAppDeps {
   pendingStore: PendingInboundStore;
   queue: InboundQueueLike;
   // Mailchimp Marketing webhooks aren't cryptographically signed either — same
-  // shared-secret-in-URL convention as the Monday side.
-  webhookSecret?: string;
+  // shared-secret-in-URL convention as the Monday side. Fails closed: an unset or
+  // empty binding 401s every delivery rather than disabling the check.
+  webhookSecret: string;
 }
 
 export function createInboundApp(deps: InboundAppDeps) {
@@ -22,7 +23,7 @@ export function createInboundApp(deps: InboundAppDeps) {
   app.get('/webhooks/mailchimp/audience', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/mailchimp/audience', async (c) => {
-    if (deps.webhookSecret && c.req.query('secret') !== deps.webhookSecret) {
+    if (!deps.webhookSecret || c.req.query('secret') !== deps.webhookSecret) {
       return c.json({ ok: false }, 401);
     }
 

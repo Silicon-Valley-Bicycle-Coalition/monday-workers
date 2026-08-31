@@ -10,6 +10,13 @@ export interface QueueLike {
 export interface AppDeps {
   pendingStore: PendingStore;
   queue: QueueLike;
+  // The configured Donations boards (config.donationRollups.donationBoards, stringified).
+  // Events from any other board — e.g. a stale webhook subscription on a superseded
+  // sandbox board — are acknowledged and ignored at ingest, because a board outside
+  // config is a permanent mismatch: enqueued it would retry three times and DLQ on
+  // every delivery, and a 4xx would make Monday retry or eventually disable the
+  // subscription. We want stale subscriptions visibly ignored, not churning.
+  donationBoardIds: ReadonlySet<string>;
   // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard
   // mitigation is a shared secret embedded in the webhook URL itself, set when
   // subscribing (e.g. .../webhooks/monday/donations?secret=...) and checked here.
@@ -51,6 +58,11 @@ export function createApp(deps: AppDeps) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups webhook: rejected delivery: ${errMsg}`);
       return c.json({ ok: false, error: errMsg }, 200);
+    }
+
+    if (!deps.donationBoardIds.has(donationEvent.boardId)) {
+      console.warn(`donation-rollups webhook: ignoring event for donation "${donationEvent.donationItemId}" on board "${donationEvent.boardId}" — not in config.donationBoards (stale subscription?)`);
+      return c.json({ ok: true, ignored: `board "${donationEvent.boardId}" not in config.donationBoards` }, 200);
     }
 
     await deps.pendingStore.upsertPending({

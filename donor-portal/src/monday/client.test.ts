@@ -11,6 +11,7 @@ const columns: MondayColumns = {
   donationAmount: 'amount_col',
   donationDate: 'date_col',
   donationDescription: 'desc_col',
+  donationStatus: 'donation_status_col',
   discountOffered: 'offer_col',
   discountActive: 'active_col',
   donorAddress: 'addr_col',
@@ -26,6 +27,10 @@ const columns: MondayColumns = {
   volunteerJob: 'vol_job_col',
   volunteerStatus: 'vol_status_col',
 };
+
+// Mirrors config donations.countableStatuses — the Donations-board status labels that count as
+// real gifts. Failed and Pending items must never reach portal history or letter totals.
+const countableStatuses = ['Received', 'Received (Historical)'];
 
 const pledgesCfg = {
   boardId: 777,
@@ -47,7 +52,7 @@ function fetchReturning(body: unknown, ok = true) {
 }
 
 function makeClient(payload: unknown): HttpMondayClient {
-  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchReturning(payload));
+  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchReturning(payload));
 }
 
 function makeCapturingClient(onBody: (body: { query: string; variables: Record<string, unknown> }) => void): HttpMondayClient {
@@ -59,7 +64,7 @@ function makeCapturingClient(onBody: (body: { query: string; variables: Record<s
       json: async () => ({ data: { create_item: { id: '1' } } }),
     };
   });
-  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+  return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 }
 
 describe('HttpMondayClient.findDonorsByEmail', () => {
@@ -69,7 +74,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         boards: [{ items_page: { items: [{ id: '1', name: 'Jane' }, { id: '2', name: 'Jane Also' }] } }],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const matches = await client.findDonorsByEmail('shared@example.org');
 
@@ -81,14 +86,14 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
 
   it('returns an empty array when nothing matches', async () => {
     const fetchMock = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     expect(await client.findDonorsByEmail('nobody@example.org')).toEqual([]);
   });
 
   it('passes a GraphQL-breaking email through as data, not interpolated into the query string', async () => {
     const fetchMock = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
     const maliciousEmail = 'x" ], rules: [{ column_id: "y", compare_value: ["z';
 
     await client.findDonorsByEmail(maliciousEmail);
@@ -114,7 +119,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         ],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const matches = await client.findDonorsByEmail('jane@example.org');
 
@@ -134,7 +139,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
       };
     });
     const placeholderColumns: MondayColumns = { ...columns, preferredLanguage: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const matches = await client.findDonorsByEmail('jane@example.org');
 
@@ -184,6 +189,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
                         { id: 'amount_col', text: '100' },
                         { id: 'date_col', text: '2026-01-01' },
                         { id: 'desc_col', text: 'Annual gift' },
+                        { id: 'donation_status_col', text: 'Received' },
                       ],
                     },
                   ],
@@ -194,7 +200,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
         }),
       });
 
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const data = await client.getDonorPortalData('donor-1');
 
@@ -241,7 +247,7 @@ describe('HttpMondayClient.getDonorPortalData', () => {
         json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
       });
     const placeholderColumns: MondayColumns = { ...columns, membershipExpiry: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const data = await client.getDonorPortalData('donor-1');
 
@@ -250,6 +256,91 @@ describe('HttpMondayClient.getDonorPortalData', () => {
     // No downstream change needed: columnText() already returns '' for a column not present in
     // the response, matching the existing "no expiry" convention.
     expect(data.membershipExpiry).toBe('');
+  });
+});
+
+describe('HttpMondayClient donation status filtering', () => {
+  const donorItemResponse = {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        items: [
+          {
+            id: 'donor-1',
+            name: 'Jane Donor',
+            column_values: [
+              { id: 'status_col', text: 'Active' },
+              { id: 'tier_col', text: 'Member' },
+              { id: 'donated_col', text: '500' },
+            ],
+          },
+        ],
+      },
+    }),
+  };
+
+  const donationItem = (id: string, status: string, amount: string) => ({
+    id,
+    column_values: [
+      { id: 'amount_col', text: amount },
+      { id: 'date_col', text: '2025-03-01' },
+      { id: 'desc_col', text: 'gift' },
+      { id: 'donation_status_col', text: status },
+    ],
+  });
+
+  it('excludes Failed and Pending donations, keeping Received and Received (Historical)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(donorItemResponse)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: null,
+                  items: [
+                    donationItem('d-1', 'Received', '100'),
+                    donationItem('d-2', 'Failed', '500'),
+                    donationItem('d-3', 'Pending', '250'),
+                    donationItem('d-4', 'Received (Historical)', '75'),
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+
+    const data = await client.getDonorPortalData('donor-1');
+
+    expect(data.donations.map((d) => d.amount)).toEqual(['100', '75']);
+  });
+
+  it('requests the donation status column id in the donations query', async () => {
+    const bodies: { query: string }[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => donorItemResponse)
+      .mockImplementationOnce(async (_url: string, init: RequestInit) => {
+        bodies.push(JSON.parse(init.body as string) as { query: string });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+        };
+      });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+
+    await client.getDonorPortalData('donor-1');
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.query).toContain('donation_status_col');
   });
 });
 
@@ -269,7 +360,7 @@ describe('HttpMondayClient.getDiscountOrganizations', () => {
         ],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const orgs = await client.getDiscountOrganizations();
 
@@ -333,7 +424,7 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
           data: { next_items_page: { cursor: null, items: [item('shift-2', '2026-02-11')] } },
         }),
       });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const shifts = await client.getVolunteerShiftsForDonor('donor-1');
 
@@ -343,7 +434,7 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
 
   it('throws a config error (before any fetch) when the board id is null', async () => {
     const fetchMock = fetchReturning({ data: {} });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, null, fetchMock);
 
     await expect(client.getVolunteerShiftsForDonor('donor-1')).rejects.toThrow(/not configured/);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -352,7 +443,7 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
   it('throws a config error (before any fetch) when a volunteer column is still the placeholder', async () => {
     const fetchMock = fetchReturning({ data: {} });
     const placeholderColumns: MondayColumns = { ...columns, volunteerStatus: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     await expect(client.getVolunteerShiftsForDonor('donor-1')).rejects.toThrow(/not configured/);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -388,7 +479,7 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
         }),
       })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const shifts = await client.getVolunteerShiftsForDonor('donor-1');
 
@@ -406,7 +497,7 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
         json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
       };
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     await client.getVolunteerShiftsForDonor('donor-1');
 
@@ -420,14 +511,43 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
 describe('HttpMondayClient error handling', () => {
   it('throws on a non-OK HTTP response', async () => {
     const fetchMock = fetchReturning({}, false);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/HTTP 500/);
   });
 
   it('throws on a GraphQL errors array', async () => {
     const fetchMock = fetchReturning({ errors: [{ message: 'Board not found' }] });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/Board not found/);
+  });
+
+  it('throws the server message when a 200 response carries no data (Monday rate-limit/auth shape)', async () => {
+    // Monday's rate-limit and auth failures return HTTP 200 with only error_message/status_code
+    // and NO data field — without a guard that surfaces as "Cannot read properties of undefined"
+    // somewhere downstream instead of the server's actual message.
+    const fetchMock = fetchReturning({ error_message: 'Rate limit exceeded', status_code: 429 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/Rate limit exceeded/);
+  });
+
+  it('throws with the raw payload when a no-data response has no error_message either', async () => {
+    const fetchMock = fetchReturning({ status_code: 500 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow(/no data/);
+  });
+
+  it('pins the Monday API version via the API-Version header on every request', async () => {
+    let capturedHeaders: Record<string, string> | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      capturedHeaders = init.headers as Record<string, string>;
+      return { ok: true, status: 200, json: async () => ({ data: { boards: [{ items_page: { items: [] } }] } }) };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
+
+    await client.findDonorsByEmail('x@example.org');
+
+    expect(capturedHeaders).not.toBeNull();
+    expect(capturedHeaders!['API-Version']).toBe('2026-01');
   });
 });
 
@@ -575,7 +695,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       donorSmsOptOut: 'REPLACE_WITH_COLUMN_ID',
       donorDoNotMail: 'REPLACE_WITH_COLUMN_ID',
     };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderPrefColumns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderPrefColumns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const info = await client.getDonorContactInfo('donor-1');
 
@@ -610,7 +730,7 @@ describe('HttpMondayClient.getDonorContactInfo', () => {
       };
     });
     const placeholderColumns: MondayColumns = { ...columns, preferredLanguage: 'REPLACE_WITH_COLUMN_ID' };
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', placeholderColumns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const info = await client.getDonorContactInfo('donor-1');
 
@@ -716,7 +836,7 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
           },
         })
       );
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     const records = await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams });
 
@@ -732,7 +852,7 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
       captured = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
       return jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } });
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     await client.getEventRegistrationsForDonor({ donorItemId: 'donor-9', ...eventParams });
 
@@ -745,7 +865,7 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }));
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     expect(await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams })).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -775,7 +895,7 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
         },
       })
     );
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     const records = await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams });
 
@@ -806,7 +926,7 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
           data: { items: [{ id: 'ev-1', name: 'Big Ride', column_values: [{ id: 'ev_date_col', text: '2027-05-01' }] }] },
         })
       );
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     const records = await client.getEventRegistrationsForDonor({ donorItemId: 'donor-1', ...eventParams });
 
@@ -819,7 +939,7 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
 describe('HttpMondayClient.getDonorNames', () => {
   it('returns id+name pairs from one query and skips the request entirely for no ids', async () => {
     const fetchMock = fetchReturning({ data: { items: [{ id: '1', name: 'Jane' }, { id: '2', name: 'Sam' }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     expect(await client.getDonorNames(['1', '2'])).toEqual([
       { id: '1', name: 'Jane' },
@@ -834,7 +954,7 @@ describe('HttpMondayClient.getDonorNames', () => {
 
 describe('HttpMondayClient.getPledgesForDonor', () => {
   it('throws loudly when the pledges board is not configured', async () => {
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, 3, fetchReturning({}));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, 3, fetchReturning({}));
     await expect(client.getPledgesForDonor('4567')).rejects.toThrow(/pledges board is not configured/);
   });
 
@@ -862,7 +982,7 @@ describe('HttpMondayClient.getPledgesForDonor', () => {
         ],
       },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const pledges = await client.getPledgesForDonor('4567');
 
@@ -902,7 +1022,7 @@ describe('HttpMondayClient.getPledgesForDonor', () => {
       .fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => page2 });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, pledgesCfg, 3, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, pledgesCfg, 3, fetchMock);
 
     const pledges = await client.getPledgesForDonor('4567');
 
@@ -942,7 +1062,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toEqual({
       autoSend: true,
       startDate: '2027-01-05',
       bodyTemplate: 'Hi {{donorName}}, your {{year}} letter: {{loginUrl}}',
@@ -975,7 +1095,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    const settings = await client.getLetterSettings({ boardId: 456, columns: letterCronColumns });
+    const settings = await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' });
     // An empty locale column is omitted from the map, so callers fall through to the default.
     expect(settings?.bodyTemplatesByLocale).toEqual({ es: 'Hola {{donorName}}' });
   });
@@ -1003,7 +1123,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toEqual({
       autoSend: false,
       startDate: '',
       bodyTemplate: '',
@@ -1013,7 +1133,7 @@ describe('HttpMondayClient.getLetterSettings', () => {
 
   it('returns null when the settings board has no items', async () => {
     const client = makeClient({ data: { boards: [{ items_page: { items: [] } }] } });
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toBeNull();
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toBeNull();
   });
 
   it('prefers the item named "Letter emails" over stray board-template defaults like "Task 1"', async () => {
@@ -1048,12 +1168,74 @@ describe('HttpMondayClient.getLetterSettings', () => {
       },
     });
 
-    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns })).toEqual({
+    expect(await client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })).toEqual({
       autoSend: true,
       startDate: '2027-01-05',
       bodyTemplate: 'Hi {{donorName}}',
       bodyTemplatesByLocale: {},
     });
+  });
+
+  it('throws (never reads an arbitrary item) when no item matches the configured settings name', async () => {
+    // A renamed settings item or a hand-recreated board must fail loudly: silently reading
+    // autoSend/startDate/templates off whatever item happens to be first could arm (or disarm)
+    // the automated letter run from a stray "Task 1".
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '10',
+                  name: 'Task 1',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'stray template' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(
+      client.getLetterSettings({ boardId: 456, columns: letterCronColumns, settingsItemName: 'Letter emails' })
+    ).rejects.toThrow(/no item named "Letter emails"/);
+  });
+
+  it('matches the settings item by the configured name, not a hardcoded literal', async () => {
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                {
+                  id: '11',
+                  name: 'Custom settings item',
+                  column_values: [
+                    { id: 'checkbox_1', text: 'v', checked: true },
+                    { id: 'date_2', text: '2027-01-05' },
+                    { id: 'long_text_1', text: 'Hi {{donorName}}' },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const settings = await client.getLetterSettings({
+      boardId: 456,
+      columns: letterCronColumns,
+      settingsItemName: 'Custom settings item',
+    });
+    expect(settings?.autoSend).toBe(true);
   });
 });
 
@@ -1071,6 +1253,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                     id: '1',
                     column_values: [
                       { id: 'date_col', text: '2026-03-01' },
+                      { id: 'donation_status_col', text: 'Received' },
                       { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
                     ],
                   },
@@ -1078,6 +1261,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                     id: '2',
                     column_values: [
                       { id: 'date_col', text: '2026-11-12' },
+                      { id: 'donation_status_col', text: 'Received' },
                       { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
                     ],
                   },
@@ -1096,6 +1280,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                 id: '3',
                 column_values: [
                   { id: 'date_col', text: '2026-06-30' },
+                  { id: 'donation_status_col', text: 'Received' },
                   { id: 'link_col', text: 'Sam', linked_item_ids: ['88'] },
                 ],
               },
@@ -1110,9 +1295,47 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
       status: 200,
       json: async () => pages[call++],
     }));
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77', '88']);
+  });
+
+  it('ends the sweep gracefully when next_items_page comes back null (expired cursor)', async () => {
+    // Same guard as fetchItemsLinkedToDonor: an expired/invalid cursor yields a null
+    // next_items_page, which must terminate the loop with the ids gathered so far rather than
+    // throw mid-sweep and cost the January cron a whole day's run.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: {
+            boards: [
+              {
+                items_page: {
+                  cursor: 'stale-cursor',
+                  items: [
+                    {
+                      id: '1',
+                      column_values: [
+                        { id: 'date_col', text: '2026-03-01' },
+                        { id: 'donation_status_col', text: 'Received' },
+                        { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ data: { next_items_page: null } }) });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
+
+    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('drops donations whose date falls outside the requested year (server filter is advisory)', async () => {
@@ -1127,6 +1350,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                   id: '1',
                   column_values: [
                     { id: 'date_col', text: '2025-12-31' },
+                    { id: 'donation_status_col', text: 'Received' },
                     { id: 'link_col', text: 'Old', linked_item_ids: ['66'] },
                   ],
                 },
@@ -1134,6 +1358,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
                   id: '2',
                   column_values: [
                     { id: 'date_col', text: '2026-01-01' },
+                    { id: 'donation_status_col', text: 'Received' },
                     { id: 'link_col', text: 'Jane', linked_item_ids: ['77'] },
                   ],
                 },
@@ -1147,6 +1372,53 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
     expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77']);
   });
 
+  it('skips donations with non-countable statuses so donors with only Failed/Pending gifts get no letter', async () => {
+    const item = (id: string, status: string, donorId: string) => ({
+      id,
+      column_values: [
+        { id: 'date_col', text: '2026-04-01' },
+        { id: 'donation_status_col', text: status },
+        { id: 'link_col', text: 'Donor', linked_item_ids: [donorId] },
+      ],
+    });
+    const client = makeClient({
+      data: {
+        boards: [
+          {
+            items_page: {
+              cursor: null,
+              items: [
+                item('1', 'Failed', '66'), // donor 66's only gift failed — no letter
+                item('2', 'Received', '77'),
+                item('3', 'Pending', '88'), // pending is not a completed gift
+                item('4', 'Received (Historical)', '99'), // migrated gifts are real gifts
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(await client.listDonorIdsWithDonationsInYear(2026)).toEqual(['77', '99']);
+  });
+
+  it('requests the donation status column in the sweep query', async () => {
+    let captured: { query: string } | null = null;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(init.body as string) as { query: string };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+      };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
+
+    await client.listDonorIdsWithDonationsInYear(2026);
+
+    expect(captured!.query).toContain('donation_status_col');
+  });
+
   it('sends the year bounds as variables, not interpolated into the query', async () => {
     let captured: { query: string; variables: Record<string, unknown> } | null = null;
     const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
@@ -1157,7 +1429,7 @@ describe('HttpMondayClient.listDonorIdsWithDonationsInYear', () => {
         json: async () => ({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
       };
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, null, null, fetchMock);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, countableStatuses, null, null, fetchMock);
 
     await client.listDonorIdsWithDonationsInYear(2026);
 

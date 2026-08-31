@@ -10,7 +10,13 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            // Both webhooks fail closed without their shared secret; give the
+            // worker-entry-point tests known values to authenticate with.
+            MONDAY_WEBHOOK_SECRET: 'test-monday-webhook-secret',
+            MAILCHIMP_WEBHOOK_SECRET: 'test-mailchimp-webhook-secret',
+          },
         },
       }),
     ],

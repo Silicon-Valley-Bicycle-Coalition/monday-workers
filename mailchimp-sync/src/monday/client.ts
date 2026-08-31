@@ -9,9 +9,14 @@ export interface MondayClient {
   setConnectColumn(boardId: number, itemId: string, columnId: string, linkedItemIds: string[]): Promise<void>;
 }
 
+const MONDAY_API_VERSION = '2026-01';
+
 interface GraphQLResponse<T> {
   data?: T;
   errors?: { message: string }[];
+  // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
+  error_message?: string;
+  status_code?: number;
 }
 
 export class HttpMondayClient implements MondayClient {
@@ -24,7 +29,11 @@ export class HttpMondayClient implements MondayClient {
   private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     const response = await this.fetchFn(this.apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: this.apiToken },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: this.apiToken,
+        'API-Version': MONDAY_API_VERSION,
+      },
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
@@ -34,7 +43,16 @@ export class HttpMondayClient implements MondayClient {
     if (json.errors && json.errors.length > 0) {
       throw new Error(`monday: ${json.errors.map((e) => e.message).join('; ')}`);
     }
-    return json.data as T;
+    if (!json.data) {
+      // Without this, `json.data` is undefined and the caller fails downstream with something
+      // like "Cannot read properties of undefined" instead of the server's actual message.
+      const detail =
+        typeof json.error_message === 'string'
+          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
+          : JSON.stringify(json);
+      throw new Error(`monday: response contained no data — ${detail}`);
+    }
+    return json.data;
   }
 
   async getDonorById(itemId: string, columns: MondayColumnsConfig): Promise<DonorRecord | null> {
@@ -109,7 +127,34 @@ export class HttpMondayClient implements MondayClient {
       }`,
       { boardId, columnId: emailColumnId, email: [email] },
     );
-    return data.items_page_by_column_values.items[0]?.id ?? null;
+    const exactMatch = data.items_page_by_column_values.items[0]?.id;
+    if (exactMatch !== undefined) return exactMatch;
+    return this.findItemIdByEmailInsensitive(boardId, emailColumnId, email);
+  }
+
+  // items_page_by_column_values matches exact strings only, and salesforce-import
+  // lowercases every email it writes — but a staff-entered Donor item can hold the
+  // email mixed-case, which would otherwise be a permanent silent miss. Rare path,
+  // so the extra API call is fine: contains_text narrows the candidates server-side,
+  // then we compare lowercased to keep the match strict.
+  private async findItemIdByEmailInsensitive(boardId: number, emailColumnId: string, email: string): Promise<string | null> {
+    const data = await this.graphql<{
+      boards?: { items_page: { items: { id: string; column_values: { text: string | null }[] }[] } }[];
+    }>(
+      `query ($boardId: ID!, $columnId: ID!, $columnIds: [String!], $email: CompareValue!) {
+        boards(ids: [$boardId]) {
+          items_page(limit: 25, query_params: { rules: [{ column_id: $columnId, compare_value: $email, operator: contains_text }] }) {
+            items { id column_values(ids: $columnIds) { text } }
+          }
+        }
+      }`,
+      { boardId, columnId: emailColumnId, columnIds: [emailColumnId], email: [email] },
+    );
+    const wanted = email.trim().toLowerCase();
+    const items = data.boards?.[0]?.items_page.items ?? [];
+    return items.find((item) =>
+      item.column_values.some((cv) => (cv.text ?? '').trim().toLowerCase() === wanted),
+    )?.id ?? null;
   }
 
   // Writes the *full current set* of linked items, not a diff — same

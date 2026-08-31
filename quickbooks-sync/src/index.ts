@@ -49,6 +49,7 @@ export default {
         mapStore,
         queue,
         config,
+        mondayWebhookSecret: env.MONDAY_WEBHOOK_SECRET,
       })
     );
 

@@ -73,4 +73,5 @@ export interface Env extends Cloudflare.Env {
   QB_CLIENT_ID: string;
   QB_CLIENT_SECRET: string;
   QB_WEBHOOK_VERIFIER_TOKEN: string;
+  MONDAY_WEBHOOK_SECRET: string;
 }

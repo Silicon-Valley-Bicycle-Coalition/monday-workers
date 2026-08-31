@@ -28,6 +28,13 @@ describe('D1DonationLinksStore', () => {
     expect((await store.getLinksForOwner('nope')).size).toBe(0);
   });
 
+  it('looks up the stored owner for one donation, null when unknown', async () => {
+    const store = new D1DonationLinksStore(env.DB);
+    await store.upsertLink({ donationItemId: 'd9', donationBoardId: '1', ownerItemId: 'o9', ownerBoardId: '2' }, '2026-01-01T00:00:00Z');
+    expect(await store.getLinkForDonation('d9')).toEqual({ ownerItemId: 'o9', ownerBoardId: '2' });
+    expect(await store.getLinkForDonation('never-seen')).toBeNull();
+  });
+
   it('bulk-upserts in batches, reporting the total row count written', async () => {
     const store = new D1DonationLinksStore(env.DB);
     const rows = Array.from({ length: 250 }, (_, i) => ({

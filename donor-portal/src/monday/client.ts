@@ -16,6 +16,10 @@ import type {
 } from '../types';
 import type { Locale } from '../i18n/locales';
 
+// Pinned so Monday's quarterly rolling default can't change query semantics under a deployed
+// Worker — same pin as the other Workers in this repo (e.g. funraise-sync's client).
+const MONDAY_API_VERSION = '2026-01';
+
 interface MondayColumnValue {
   id: string;
   text: string | null;
@@ -66,7 +70,11 @@ export interface MondayClient {
     columns: EventRegistrationColumns;
     eventDateColumnId: string;
   }): Promise<EventRegistrationRecord[]>;
-  getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null>;
+  getLetterSettings(params: {
+    boardId: number;
+    columns: LetterCronColumns;
+    settingsItemName: string;
+  }): Promise<LetterSettings | null>;
   listDonorIdsWithDonationsInYear(year: number): Promise<string[]>;
 }
 
@@ -78,6 +86,11 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
+    // Donations-board status labels that count as real gifts (config donations.countableStatuses,
+    // e.g. ['Received', 'Received (Historical)']). Every donation read filters on these at this
+    // layer, so no consumer — portal history, letter totals, the letter-cron sweep — can ever see
+    // a Failed or Pending item as real giving.
+    private countableDonationStatuses: string[],
     // null until an operator configures pledges.boardId + columns (the feature is gated on
     // pledgesEnabled, so routes never call getPledgesForDonor while this is null).
     private pledges: { boardId: number; columns: PledgeColumns } | null = null,
@@ -93,17 +106,33 @@ export class HttpMondayClient implements MondayClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.apiToken,
+        'API-Version': MONDAY_API_VERSION,
       },
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
       throw new Error(`monday: HTTP ${response.status}`);
     }
-    const json = (await response.json()) as { data?: T; errors?: { message: string }[] };
+    const json = (await response.json()) as {
+      data?: T;
+      errors?: { message: string }[];
+      // Monday's rate-limit/auth failures come back HTTP 200 with only these two fields.
+      error_message?: string;
+      status_code?: number;
+    };
     if (json.errors?.length) {
       throw new Error(`monday: ${json.errors.map((e) => e.message).join('; ')}`);
     }
-    return json.data as T;
+    if (json.data === undefined) {
+      // Without this, a rate-limited request surfaces downstream as "Cannot read properties of
+      // undefined" instead of the server's actual message (same guard as funraise-sync's client).
+      const detail =
+        typeof json.error_message === 'string'
+          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
+          : JSON.stringify(json);
+      throw new Error(`monday: response contained no data — ${detail}`);
+    }
+    return json.data;
   }
 
   async findDonorsByEmail(email: string): Promise<DonorMatch[]> {
@@ -262,14 +291,24 @@ export class HttpMondayClient implements MondayClient {
       this.donationsBoardId,
       this.columns.donationDonorLink,
       donorItemId,
-      [this.columns.donationAmount, this.columns.donationDate, this.columns.donationDescription],
+      [
+        this.columns.donationAmount,
+        this.columns.donationDate,
+        this.columns.donationDescription,
+        this.columns.donationStatus,
+      ],
       false
     );
-    return items.map((item) => ({
-      amount: columnText(item, this.columns.donationAmount),
-      date: columnText(item, this.columns.donationDate),
-      description: columnText(item, this.columns.donationDescription),
-    }));
+    // Only countable statuses (strict: an item with a blank/unknown status is dropped too —
+    // for money that ends up on a tax letter, "not provably received" means "doesn't count").
+    const countable = new Set(this.countableDonationStatuses);
+    return items
+      .filter((item) => countable.has(columnText(item, this.columns.donationStatus)))
+      .map((item) => ({
+        amount: columnText(item, this.columns.donationAmount),
+        date: columnText(item, this.columns.donationDate),
+        description: columnText(item, this.columns.donationDescription),
+      }));
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {
@@ -506,11 +545,19 @@ export class HttpMondayClient implements MondayClient {
     });
   }
 
-  async getLetterSettings(params: { boardId: number; columns: LetterCronColumns }): Promise<LetterSettings | null> {
-    // The Letter Settings board holds a single staff-edited item, "Letter emails" (see
-    // scripts/create-letter-settings-board.mjs). Prefer that item by name and only fall back to
-    // the board's first item — Monday's board-creation template seeds default items ("Task 1")
-    // that sort ahead of the real settings item, a failure observed live on the sandbox board.
+  async getLetterSettings(params: {
+    boardId: number;
+    columns: LetterCronColumns;
+    settingsItemName: string;
+  }): Promise<LetterSettings | null> {
+    // The Letter Settings board holds a single staff-edited item, named by config
+    // letterCron.settingsItemName ("Letter emails" — created by
+    // scripts/create-letter-settings-board.mjs, which reads the same config key). Only that
+    // exact item is read: Monday's board-creation template seeds default items ("Task 1") that
+    // sort ahead of the real settings item (a failure observed live on the sandbox board), and
+    // runLetterCron gates automated sending on this item's autoSend — so a renamed item or a
+    // hand-recreated board must throw loudly rather than silently arm/disarm the letter run
+    // from an arbitrary item. An empty board still returns null ("not seeded yet").
     // Checkbox state comes from the CheckboxValue fragment's `checked` field rather than the
     // display text — Monday renders an unchecked box as null text and a checked one as "v",
     // neither of which is worth string-matching on.
@@ -542,14 +589,15 @@ export class HttpMondayClient implements MondayClient {
       boardId: params.boardId,
     });
     const items = data.boards[0]?.items_page.items ?? [];
-    const named = items.find((i) => i.name === 'Letter emails');
-    if (!named && items.length > 0) {
-      console.warn(
-        `monday: Letter Settings board ${params.boardId} has no item named "Letter emails" — falling back to its first item ("${items[0]!.name}")`
+    if (items.length === 0) return null;
+    const item = items.find((i) => i.name === params.settingsItemName);
+    if (!item) {
+      throw new Error(
+        `monday: Letter Settings board ${params.boardId} has no item named "${params.settingsItemName}" ` +
+          `(items present: ${items.map((i) => `"${i.name}"`).join(', ')}) — rename the settings item ` +
+          'or update letterCron.settingsItemName in config'
       );
     }
-    const item = named ?? items[0];
-    if (!item) return null;
     const autoSendValue = (item.column_values ?? []).find((c) => c.id === params.columns.autoSend);
     const bodyTemplatesByLocale: Partial<Record<Locale, string>> = {};
     for (const [locale, columnId] of localeColumnEntries) {
@@ -573,7 +621,11 @@ export class HttpMondayClient implements MondayClient {
     // uses) was verified live on 2026-08-25 against the sandbox Donations board (18427756119) —
     // unlike the other rules-shape NOTEs in this file, this one is confirmed working. The
     // client-side year check below stays as a correctness backstop regardless.
-    const columnIds = JSON.stringify([this.columns.donationDate, this.columns.donationDonorLink]);
+    const columnIds = JSON.stringify([
+      this.columns.donationDate,
+      this.columns.donationDonorLink,
+      this.columns.donationStatus,
+    ]);
     const itemFields = `items { id column_values(ids: ${columnIds}) { id text ... on BoardRelationValue { linked_item_ids } } }`;
     const firstPageQuery = `
       query ($boardId: ID!, $from: String!, $to: String!) {
@@ -608,15 +660,24 @@ export class HttpMondayClient implements MondayClient {
 
     while (cursor) {
       const nextData = await this.request<{
-        next_items_page: { cursor: string | null; items: MondayItem[] };
+        next_items_page: { cursor: string | null; items: MondayItem[] } | null;
       }>(nextPageQuery, { cursor });
-      allItems.push(...nextData.next_items_page.items);
-      cursor = nextData.next_items_page.cursor;
+      // Same guard as fetchItemsLinkedToDonor: a null next_items_page (expired/invalid cursor)
+      // ends the sweep with what we have rather than throwing mid-page — an exception here
+      // costs the January cron a whole day's run before its daily retry.
+      const nextPage = nextData.next_items_page;
+      if (!nextPage) break;
+      allItems.push(...nextPage.items);
+      cursor = nextPage.cursor;
     }
 
     const donorIds = new Set<string>();
+    // Same status filter as getDonationsForDonor: a donor whose only gifts in the year are
+    // Failed/Pending must not be swept into the letter run.
+    const countable = new Set(this.countableDonationStatuses);
     for (const item of allItems) {
       if (!columnText(item, this.columns.donationDate).startsWith(`${year}-`)) continue;
+      if (!countable.has(columnText(item, this.columns.donationStatus))) continue;
       const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
       for (const donorId of link?.linked_item_ids ?? []) {
         donorIds.add(donorId);

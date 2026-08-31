@@ -16,6 +16,7 @@ export default {
       queue: {
         send: (message: FunraiseQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
       },
+      webhookSecret: env.FUNRAISE_WEBHOOK_SECRET,
     });
     return app.fetch(request, env, ctx);
   },

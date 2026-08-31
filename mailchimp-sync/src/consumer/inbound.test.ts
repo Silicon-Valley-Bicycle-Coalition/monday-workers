@@ -79,7 +79,7 @@ describe('processInboundBatch', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
-  it('skips and acks when no Donor item matches the email', async () => {
+  it('records skipped (not written) and acks when no Donor item matches the email', async () => {
     const message = fakeMessage('a@b.com');
     const mondayClient = fakeMonday({ findItemIdByEmail: vi.fn().mockResolvedValue(null) });
     const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
@@ -90,6 +90,10 @@ describe('processInboundBatch', () => {
     });
 
     expect(mondayClient.setConnectColumn).not.toHaveBeenCalled();
+    // A genuine miss must be distinguishable from a successful write — 'skipped',
+    // never 'written'.
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'skipped', expect.stringContaining('a@b.com'));
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('a@b.com', 'written', undefined, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
   });
 

@@ -30,6 +30,7 @@ const validConfig = {
       donationAmount: 'amount_col',
       donationDate: 'date_col',
       donationDescription: 'desc_col',
+      donationStatus: 'donation_status_col',
       discountOffered: 'offer_col',
       discountActive: 'active_col',
       donorAddress: 'text_addr',
@@ -73,6 +74,7 @@ const validConfig = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  donations: { countableStatuses: ['Received', 'Received (Historical)'] },
   eventRegistrations: {
     boardId: 456,
     columns: {
@@ -105,6 +107,7 @@ const validConfig = {
       bodyTemplate: 'long_text_1',
       bodyTemplatesByLocale: { es: 'long_text_es' },
     },
+    settingsItemName: 'Letter emails',
     maxTriggersPerRun: 200,
   },
 };
@@ -354,6 +357,44 @@ describe('volunteerHistory config section', () => {
   });
 });
 
+describe('donations config section', () => {
+  it('rejects a config missing the donations section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).donations;
+    expect(() => validateConfig(cfg)).toThrow('donations');
+  });
+
+  it('rejects a config missing donations.countableStatuses', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { donations: Record<string, unknown> }).donations.countableStatuses;
+    expect(() => validateConfig(cfg)).toThrow('donations.countableStatuses');
+  });
+
+  it('rejects countableStatuses that is not an array of strings', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg as { donations: { countableStatuses: unknown } }).donations.countableStatuses = [1, 2];
+    expect(() => validateConfig(cfg)).toThrow(/countableStatuses/);
+  });
+
+  it('rejects an empty countableStatuses array (it would filter out every gift)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.donations.countableStatuses = [];
+    expect(() => validateConfig(cfg)).toThrow(/countableStatuses/);
+  });
+
+  it('rejects a config missing monday.columns.donationStatus entirely', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.monday.columns as Record<string, unknown>).donationStatus;
+    expect(() => validateConfig(cfg)).toThrow(/monday\.columns\.donationStatus/);
+  });
+
+  it('rejects donationStatus still set to the placeholder (deploy-blocking, like the other donation columns)', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.monday.columns.donationStatus = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(cfg)).toThrow(/donationStatus/);
+  });
+});
+
 describe('eventRegistrations config section', () => {
   it('rejects a config missing the eventRegistrations section', () => {
     const cfg = structuredClone(validConfig);
@@ -570,6 +611,30 @@ describe('letterCron config section', () => {
     const cfg = structuredClone(validConfig);
     (cfg.letterCron.columns as Record<string, unknown>).bodyTemplatesByLocale = {};
     expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('defaults letterCron.settingsItemName to "Letter emails" when absent', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.letterCron as Record<string, unknown>).settingsItemName;
+    expect(validateConfig(cfg).letterCron.settingsItemName).toBe('Letter emails');
+  });
+
+  it('keeps a configured letterCron.settingsItemName', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron as Record<string, unknown>).settingsItemName = 'Custom settings item';
+    expect(validateConfig(cfg).letterCron.settingsItemName).toBe('Custom settings item');
+  });
+
+  it('rejects a blank letterCron.settingsItemName', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron as Record<string, unknown>).settingsItemName = '   ';
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.settingsItemName/);
+  });
+
+  it('rejects a non-string letterCron.settingsItemName', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.letterCron as Record<string, unknown>).settingsItemName = 42;
+    expect(() => validateConfig(cfg)).toThrow(/letterCron\.settingsItemName/);
   });
 });
 

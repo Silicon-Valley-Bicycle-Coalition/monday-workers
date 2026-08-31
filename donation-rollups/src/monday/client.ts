@@ -38,6 +38,9 @@ export interface DonationRollupsMondayClient {
   // processing.
   listDonationOwnerLinks(boardId: number, donorLinkColumnId: string): Promise<{ itemId: string; ownerItemId: string | null }[]>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  // Posts an update on an item — the consumer's alert path for oversized gift-ledger
+  // projections (same Monday alert item the custodian duties use).
+  createUpdate(itemId: number, body: string): Promise<void>;
 }
 
 const MONDAY_API_VERSION = '2026-01';
@@ -131,10 +134,14 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       );
       for (const item of data.items) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
-        const amount = Number(byId.get(columns.amount) ?? '');
+        // A blank Amount must be treated as malformed like a blank Date — Number('') is 0,
+        // not NaN, and letting it through would refresh the ledger's real (bootstrap-loaded)
+        // amount down to $0 on the next recompute (refreshFacts upserts unconditionally).
+        const amountText = (byId.get(columns.amount) ?? '').trim();
+        const amount = Number(amountText);
         const dateISO = byId.get(columns.date) ?? '';
         const status = byId.get(columns.status) ?? '';
-        if (!dateISO || Number.isNaN(amount)) continue; // malformed or deleted item, skip
+        if (!dateISO || amountText === '' || Number.isNaN(amount)) continue; // malformed or deleted item, skip
         // Fall back to deriving from the Date column when this board has no Fiscal
         // Year column yet (or the cell is blank) — see fiscalYearFromDate in
         // rollups/compute.ts.
@@ -232,22 +239,27 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return data.boards.map((b) => ({ id: b.id, name: b.name, itemsCount: b.items_count, itemsLimit: b.items_limit }));
   }
 
-  async getItemsColumnNumber(itemIds: string[], columnId: string): Promise<Map<string, number | null>> {
-    const out = new Map<string, number | null>();
+  async getItemsColumnsText(itemIds: string[], columnIds: string[]): Promise<Map<string, Map<string, string | null>>> {
+    const out = new Map<string, Map<string, string | null>>();
     // 100 is a hard Monday API limit on items(ids:) — "Argument 'ids' exceeding the 100
     // limit", verified live 2026-08-31 — so large reads can't be squeezed into fewer
     // subrequests here; callers with big id sets must slice themselves (see runReconcile).
+    // Multiple columns per item DO share one subrequest, which is why reconciliation
+    // reads Lifetime Giving and the Gift Ledger JSON together instead of twice.
     for (const chunk of chunksOf(itemIds, 100)) {
       // limit: 100 — same silent-25 default as getDonationsByIds above.
       const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
           items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text } }
         }`,
-        { ids: chunk, columnIds: [columnId] },
+        { ids: chunk, columnIds },
       );
       for (const item of data.items) {
-        const text = item.column_values[0]?.text;
-        out.set(item.id, text === null || text === undefined || text === '' ? null : Number(text));
+        const cols = new Map<string, string | null>(columnIds.map((id) => [id, null]));
+        for (const cv of item.column_values) {
+          cols.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
+        }
+        out.set(item.id, cols);
       }
     }
     return out;

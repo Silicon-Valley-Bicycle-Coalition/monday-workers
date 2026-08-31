@@ -144,6 +144,13 @@ kept separate from the main domain's mail flow, is standard practice for transac
   already modeled as Organizations, just not consistently tagged for this yet.
 * **Donations board's existing Donor connection and $ Donated mirror** — already live, no changes
   needed; see `docs/06-staff-process-guide.md` §2.
+* **Donation Status on the Donations board** (`monday.columns.donationStatus`) — every donation
+  read is filtered to the labels in `donations.countableStatuses` (SVBC:
+  `["Received", "Received (Historical)"]` — migrated historical gifts are real gifts; the
+  board's remaining labels, `Failed` and `Pending`, are not). The filter lives in the Monday
+  client, so portal history, tax-letter gift lists and totals, and the January letter sweep all
+  see only countable gifts. Both keys are deploy-blocking config, not gated: a portal that
+  can't tell a Failed gift from a received one would overstate donors' deductible totals.
 
 ## Security notes
 

@@ -27,7 +27,10 @@ export class MondayClient {
       }
       if (res.status >= 500) { lastError = `HTTP ${res.status}`; continue; }
       if (!res.ok) throw new Error(`monday: HTTP ${res.status}: ${await res.text()}`);
-      const body = await res.json() as { data?: T; errors?: GqlError[] };
+      const body = await res.json() as
+        // error_message/status_code: Monday's rate-limit/auth shape — HTTP 200, NO data,
+        // NO errors array (see funraise-sync/src/monday/client.ts for the same handling).
+        { data?: T; errors?: GqlError[]; error_message?: string; status_code?: number };
       if (body.errors?.length) {
         const complexity = body.errors.some((e) =>
           e.extensions?.code === 'ComplexityException' || /complexity/i.test(e.message));
@@ -35,7 +38,17 @@ export class MondayClient {
         if (complexity) continue;
         throw new Error(`monday: ${lastError}`);
       }
-      return body.data as T;
+      if (body.data === undefined) {
+        // Retry with the same backoff as 429 — this shape usually IS a rate limit — and let
+        // the exhausted-attempts throw below carry the server's message. Returning body.data
+        // here would hand the caller undefined and fail later with a bare TypeError.
+        lastError = typeof body.error_message === 'string'
+          ? `no data — ${body.error_message}` +
+            (body.status_code === undefined ? '' : ` (status_code ${body.status_code})`)
+          : `no data — ${JSON.stringify(body)}`;
+        continue;
+      }
+      return body.data;
     }
     throw new Error(`monday: exhausted ${this.attempts} attempts — last error: ${lastError}`);
   }

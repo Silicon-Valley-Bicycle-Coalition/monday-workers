@@ -9,6 +9,7 @@ export interface MondayColumns {
   donationAmount: string;
   donationDate: string;
   donationDescription: string;
+  donationStatus: string;
   discountOffered: string;
   discountActive: string;
   donorAddress: string;
@@ -78,6 +79,10 @@ export interface LetterCronColumns {
 export interface LetterCronConfig {
   boardId: number | null;
   columns: LetterCronColumns;
+  // Name of the single staff-edited item on the Letter Settings board that getLetterSettings
+  // reads (and scripts/create-letter-settings-board.mjs creates). validateConfig defaults it to
+  // 'Letter emails' when the key is absent.
+  settingsItemName: string;
   maxTriggersPerRun: number;
 }
 
@@ -90,6 +95,17 @@ export interface LetterSettings {
   // Only locales whose column holds text appear here — blank columns are omitted so callers
   // fall through to bodyTemplate.
   bodyTemplatesByLocale: Partial<Record<Locale, string>>;
+}
+
+export interface DonationsConfig {
+  // Donations-board status labels that count as real gifts — everywhere: portal donation
+  // history, tax-letter gift lists and totals, and the January letter-cron sweep. The board's
+  // vocabulary is ['Received', 'Received (Historical)', 'Failed', 'Pending'] (seeded by
+  // salesforce-import); only the two Received labels belong here. 'Received (Historical)' is
+  // included deliberately — migrated historical gifts are real gifts and belong on tax letters.
+  // Unlike volunteerHistory.completedStatuses, an empty array is a config error, not
+  // "include everything": silently counting Failed gifts would overstate deductible totals.
+  countableStatuses: string[];
 }
 
 export interface VolunteerHistoryConfig {
@@ -169,6 +185,7 @@ export interface Config {
   cardTokens: CardTokensConfig;
   letterCron: LetterCronConfig;
   volunteerHistory: VolunteerHistoryConfig;
+  donations: DonationsConfig;
   eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;
   pledges: PledgesConfig;

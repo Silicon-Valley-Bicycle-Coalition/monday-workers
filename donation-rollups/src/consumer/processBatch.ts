@@ -4,7 +4,10 @@ import type { GiftsStore } from '../db/gifts';
 import type { DonationRollupsMondayClient } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage } from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
-import { buildGiftLedgerJson, buildGiftHistoryMarkdown } from '../projections/giftHistory';
+import {
+  buildGiftLedgerJson, buildGiftHistoryMarkdown,
+  GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
+} from '../projections/giftHistory';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -21,6 +24,11 @@ export interface ProcessBatchDeps {
   now?: Date; // injectable for tests; defaults to the real current time
 }
 
+// A failure that no amount of retrying can heal (e.g. a config mismatch): the row is
+// marked failed for the operator, but the message is acked so it doesn't burn three
+// retries and land in the DLQ on every future delivery for the same owner.
+class NonRetryableError extends Error {}
+
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
@@ -33,7 +41,8 @@ export async function processRecomputeBatch(
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups consumer: failed to process donation "${donationItemId}": ${errMsg}`);
       await deps.pendingStore.updateStatus(donationItemId, 'failed', { error: errMsg });
-      message.retry();
+      if (err instanceof NonRetryableError) message.ack();
+      else message.retry();
     }
   }
 }
@@ -42,15 +51,25 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   const { mondayClient, config } = deps;
   const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
 
+  // Defense in depth behind the webhook route's board allowlist: anything already in the
+  // queue from an unknown board is a permanent config mismatch, not a transient failure —
+  // mark it failed and ack rather than retrying it into the DLQ.
   const sourceBoard = donationBoards.find((b) => String(b.boardId) === donationBoardId);
   if (sourceBoard === undefined) {
-    throw new Error(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
+    throw new NonRetryableError(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
   }
 
-  const ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
+  let ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
   if (ownerItemId === null) {
-    // Legitimately nothing to recompute — an unlinked donation isn't a transient
-    // failure, so this is a benign skip, not a retry candidate.
+    // An archived item's board_relation reads back empty (see projections/giftHistory.ts),
+    // and the July sweep's representative gift per owner is often archived — before
+    // concluding there's nothing to recompute, fall back to the owner D1 already knows
+    // for this donation so lapsed donors still get their fiscal-year rollover.
+    ownerItemId = (await deps.linksStore.getLinkForDonation(donationItemId))?.ownerItemId ?? null;
+  }
+  if (ownerItemId === null) {
+    // Legitimately nothing to recompute — a donation unlinked on Monday AND unknown to
+    // D1 isn't a transient failure, so this is a benign skip, not a retry candidate.
     await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
     return;
   }
@@ -102,9 +121,18 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   // Sourced from the ledger (not the Monday fetch) — it carries gift types and archived
   // state for the full history, including gifts archived long before this webhook.
   const history = await deps.giftsStore.giftsForOwner(ownerItemId);
+  const ledgerProjection = buildGiftLedgerJson(history);
+  // Docs/20 §5.5: overflow is a planned decision, never a surprise truncation — alert the
+  // moment a projection crosses the planning threshold (48KB), and past the hard write
+  // budget (~60KB) write the truncated form rather than letting the one combined column
+  // write throw, exhaust queue retries, and permanently DLQ every future gift for this
+  // owner. The full history stays in D1 either way.
+  if (ledgerProjection.fullBytes > GIFT_LEDGER_ALERT_BYTES) {
+    await alertOversizedLedger(deps, ownerItemId, ledgerProjection);
+  }
   const columnValues = {
     ...rollupToColumnValues(rollup, ownerColumns),
-    [ownerColumns.giftLedgerJson]: buildGiftLedgerJson(history),
+    [ownerColumns.giftLedgerJson]: ledgerProjection.json,
   };
 
   await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
@@ -123,6 +151,28 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
   });
+}
+
+// Same alerting path as the custodian's failed duties (custodian/custodian.ts alert()):
+// console.error always, plus a Monday update on custodian.alertItemId when configured.
+// Nothing here may throw — the rollup write must land whether or not the alert posts.
+async function alertOversizedLedger(
+  deps: ProcessBatchDeps, ownerItemId: string, ledger: GiftLedgerProjection,
+): Promise<void> {
+  const message =
+    `donation-rollups: Gift Ledger JSON for owner ${ownerItemId} is ${ledger.fullBytes} bytes ` +
+    `(${ledger.totalCount} gifts), past the ${GIFT_LEDGER_ALERT_BYTES}-byte planning threshold (docs/20 §5.5). ` +
+    (ledger.truncated
+      ? `Wrote the ${ledger.includedCount} most recent gifts plus a truncation marker; the full history remains in D1.`
+      : `Still written in full — plan the projection split before it reaches Monday's ~64KB item budget.`);
+  console.error(message);
+  const { alertItemId } = deps.config.custodian;
+  if (alertItemId === null) return;
+  try {
+    await deps.mondayClient.createUpdate(alertItemId, message);
+  } catch (err) {
+    console.error(`donation-rollups: posting oversized-ledger alert to Monday item ${alertItemId} failed: ${String(err)}`);
+  }
 }
 
 function numCol(n: number | null): string {

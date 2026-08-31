@@ -27,6 +27,7 @@ const config: Config = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  donations: { countableStatuses: ['Received', 'Received (Historical)'] },
   eventRegistrations: {
     boardId: null,
     columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
@@ -50,6 +51,7 @@ const config: Config = {
   letterCron: {
     boardId: 456,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
+    settingsItemName: 'Letter emails',
     maxTriggersPerRun: 200,
   },
 };
@@ -219,6 +221,24 @@ describe('runLetterCron', () => {
     const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
 
     expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 500' });
+  });
+
+  it('surfaces a missing settings item as an error result, never an arbitrary-item read', async () => {
+    // getLetterSettings throws (rather than falling back to the board's first item) when no item
+    // matches the configured name — the cron must report that loudly, not swallow it.
+    const monday = fakeMonday({
+      getLetterSettings: vi
+        .fn()
+        .mockRejectedValue(new Error('monday: Letter Settings board 456 has no item named "Letter emails"')),
+    });
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+
+    expect(result.kind).toBe('error');
+    expect(result).toMatchObject({ message: expect.stringContaining('no item named "Letter emails"') });
+    expect(monday.getLetterSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ settingsItemName: 'Letter emails' })
+    );
   });
 
   it('returns an error result instead of throwing when the donations sweep fails', async () => {

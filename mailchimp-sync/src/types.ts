@@ -50,9 +50,9 @@ export interface Env {
   OUTBOUND_QUEUE: Queue<OutboundSyncMessage>;
   INBOUND_QUEUE: Queue<InboundSyncMessage>;
   MONDAY_API_TOKEN: string;
-  MONDAY_WEBHOOK_SECRET?: string;
+  MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
-  MAILCHIMP_WEBHOOK_SECRET?: string;
+  MAILCHIMP_WEBHOOK_SECRET: string;
 }
 
 export interface OutboundSyncMessage {
@@ -63,7 +63,9 @@ export interface InboundSyncMessage {
   email: string;
 }
 
-export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
+// 'skipped' = processed to completion but no Monday write happened (e.g. no Donor
+// item matches the email) — distinct from 'written' so misses stay countable.
+export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed';
 
 // A Donor item's column values, already resolved to plain strings — '' means the
 // column was blank, never undefined/missing (see monday/client.ts's getDonorById).

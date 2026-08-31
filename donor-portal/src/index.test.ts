@@ -33,6 +33,7 @@ const config: Config = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
+  donations: { countableStatuses: ['Received', 'Received (Historical)'] },
   eventRegistrations: {
     boardId: null,
     columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
@@ -56,6 +57,7 @@ const config: Config = {
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
+    settingsItemName: 'Letter emails',
     maxTriggersPerRun: 200,
   },
 };

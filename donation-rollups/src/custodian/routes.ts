@@ -4,8 +4,9 @@ import { DUTIES, type Duty, type DutyReport } from './custodian';
 export interface CustodianAppDeps {
   runDuty(duty: Duty): Promise<DutyReport>;
   lastRuns(): Promise<unknown>;
-  // Same shared-secret convention as the webhook route (?secret=...) — these routes trigger
-  // real Monday writes (archive) and queue floods (sweep), so they are never left open.
+  // Same shared-secret convention as the webhook route (?secret=...) — but unlike the
+  // webhook route, these routes trigger real Monday writes (archive) and queue floods
+  // (sweep), so an unset/empty secret disables them entirely rather than opening them.
   secret?: string;
 }
 
@@ -15,7 +16,11 @@ export interface CustodianAppDeps {
 export function createCustodianApp(deps: CustodianAppDeps) {
   const app = new Hono();
 
-  const authorized = (secret: string | undefined) => !deps.secret || secret === deps.secret;
+  // Fail closed: unlike the webhook route's documented dev-only fallback, an unset or
+  // empty secret here must mean "nobody is authorized" — these routes trigger real
+  // Monday writes (archive) and queue floods (sweep).
+  const authorized = (secret: string | undefined) =>
+    typeof deps.secret === 'string' && deps.secret.length > 0 && secret === deps.secret;
 
   app.get('/custodian/status', async (c) => {
     if (!authorized(c.req.query('secret'))) return c.json({ ok: false }, 401);

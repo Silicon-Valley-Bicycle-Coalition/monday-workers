@@ -12,6 +12,29 @@ function fakeFetch(data: unknown) {
   return vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data }) } as Response);
 }
 
+describe('HttpMondayClient GraphQL transport', () => {
+  it('pins the Monday API version on every request', async () => {
+    const fetchFn = fakeFetch({ items: [] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    await client.getDonorById('42', COLUMNS);
+    expect(fetchFn).toHaveBeenCalledWith(
+      'https://api.monday.com/v2',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'API-Version': '2026-01' }),
+      }),
+    );
+  });
+
+  it("throws with the server's message when a 200 response carries no data", async () => {
+    // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ error_message: 'Rate limit exceeded', status_code: 429 }),
+    } as Response);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    await expect(client.getDonorById('42', COLUMNS)).rejects.toThrow('Rate limit exceeded');
+  });
+});
+
 describe('HttpMondayClient.getDonorById', () => {
   it('maps column_values to a DonorRecord, defaulting blank columns to empty string', async () => {
     const fetchFn = fakeFetch({
@@ -87,10 +110,41 @@ describe('HttpMondayClient.findItemIdByEmail', () => {
     expect(await client.findItemIdByEmail(123, 'email', 'a@b.com')).toBe('42');
   });
 
-  it('returns null when no item matches', async () => {
-    const fetchFn = fakeFetch({ items_page_by_column_values: { items: [] } });
+  it('falls back to a case-insensitive lookup when the exact match misses', async () => {
+    // Exact match (salesforce-import lowercases what it writes) comes up empty; the
+    // staff-entered item stores the email mixed-case.
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { items_page_by_column_values: { items: [] } } }) } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { boards: [{ items_page: { items: [
+          { id: '7', column_values: [{ text: 'Staff@Example.com' }] },
+          { id: '8', column_values: [{ text: 'other@example.com' }] },
+        ] } }] } }),
+      } as Response);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    expect(await client.findItemIdByEmail(123, 'email', 'staff@example.com')).toBe('7');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns null when even the case-insensitive fallback finds no match', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { items_page_by_column_values: { items: [] } } }) } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { boards: [{ items_page: { items: [
+          { id: '8', column_values: [{ text: 'other@example.com' }] },
+        ] } }] } }),
+      } as Response);
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
     expect(await client.findItemIdByEmail(123, 'email', 'nobody@b.com')).toBeNull();
+  });
+
+  it('does not issue the fallback query when the exact match hits', async () => {
+    const fetchFn = fakeFetch({ items_page_by_column_values: { items: [{ id: '42' }] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    expect(await client.findItemIdByEmail(123, 'email', 'a@b.com')).toBe('42');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -15,6 +15,7 @@
       "donationAmount": "amount",
       "donationDate": "date",
       "donationDescription": "description",
+      "donationStatus": "donation_status",
       "discountOffered": "discount_offered",
       "discountActive": "discount_active",
       "donorAddress": "address",
@@ -82,10 +83,14 @@
       "bodyTemplate": "body_template",
       "bodyTemplatesByLocale": {}
     },
+    "settingsItemName": "Letter emails",
     "maxTriggersPerRun": 200
   },
   "volunteerHistory": {
     "completedStatuses": ["Completed"]
+  },
+  "donations": {
+    "countableStatuses": ["Received", "Received (Historical)"]
   },
   "eventRegistrations": {
     "boardId": 7,
