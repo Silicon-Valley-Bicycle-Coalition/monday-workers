@@ -38,6 +38,9 @@ export interface DonationRollupsMondayClient {
   // processing.
   listDonationOwnerLinks(boardId: number, donorLinkColumnId: string): Promise<{ itemId: string; ownerItemId: string | null }[]>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  // Posts an update on an item — the consumer's alert path for oversized gift-ledger
+  // projections (same Monday alert item the custodian duties use).
+  createUpdate(itemId: number, body: string): Promise<void>;
 }
 
 const MONDAY_API_VERSION = '2026-01';

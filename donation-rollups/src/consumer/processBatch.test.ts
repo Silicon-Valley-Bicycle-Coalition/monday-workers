@@ -77,9 +77,22 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     listDonationOwnerLinks: vi.fn().mockResolvedValue([]),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
     setItemDescription: vi.fn().mockResolvedValue(undefined),
+    createUpdate: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
+
+// Enough ledger rows that the JSON projection blows past the ~60KB write budget.
+const oversizedHistory = Array.from({ length: 2_000 }, (_, i) => ({
+  mondayItemId: `18427756${String(i).padStart(6, '0')}`, donationBoardId: '1',
+  amountCents: 5000, giftDateISO: `${2000 + (i % 26)}-01-15`, fiscalYear: 2000 + (i % 26),
+  status: 'Received', giftType: 'Donation', archived: false,
+}));
+
+const configWithAlert: DonationRollupsConfig = {
+  ...config,
+  custodian: { ...config.custodian, alertItemId: 42 },
+};
 
 describe('gift-history projections in the recompute path', () => {
   it('writes the JSON column with the rollups and the markdown description, from the ledger', async () => {
@@ -122,6 +135,85 @@ describe('gift-history projections in the recompute path', () => {
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+  });
+});
+
+describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
+  function oversizedSetup(overrides: Partial<DonationRollupsMondayClient> = {}) {
+    const giftsStore = fakeGiftsStore();
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory);
+    const mondayClient = fakeMondayClient({
+      getDonationsByIds: vi.fn().mockResolvedValue([
+        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+      ]),
+      ...overrides,
+    });
+    return { giftsStore, mondayClient };
+  }
+
+  it('truncates the projection instead of letting an over-budget JSON kill the rollup write', async () => {
+    const { giftsStore, mondayClient } = oversizedSetup();
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, mondayClient, config, now: new Date('2026-01-01') });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    const written = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<string, unknown>;
+    const json = written['glj'] as string;
+    expect(json.length).toBeLessThanOrEqual(60_000);
+    const tuples = JSON.parse(json) as unknown[][];
+    expect(tuples.length).toBeLessThan(oversizedHistory.length);
+    expect(tuples.at(-1)![0]).toBe('~truncated'); // marker entry, full count noted
+    expect(tuples.at(-1)![4]).toContain('2000');
+  });
+
+  it('alerts through the custodian path (Monday update on alertItemId) with owner id and byte size', async () => {
+    const createUpdate = vi.fn().mockResolvedValue(undefined);
+    const { giftsStore, mondayClient } = oversizedSetup({ createUpdate });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+
+    expect(createUpdate).toHaveBeenCalledTimes(1);
+    const [itemId, body] = createUpdate.mock.calls[0]! as [number, string];
+    expect(itemId).toBe(42);
+    expect(body).toContain('donor-1'); // the owner whose projection overflowed
+    expect(body).toMatch(/\d{5,} bytes/); // the actual size, for the planning decision
+  });
+
+  it('alerts (without truncating) already at the 48KB planning threshold', async () => {
+    const createUpdate = vi.fn().mockResolvedValue(undefined);
+    const giftsStore = fakeGiftsStore();
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory.slice(0, 1_000)); // ~50KB
+    const mondayClient = fakeMondayClient({ createUpdate });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+
+    expect(createUpdate).toHaveBeenCalledTimes(1);
+    const written = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<string, unknown>;
+    expect(JSON.parse(written['glj'] as string)).toHaveLength(1_000); // still the full projection
+  });
+
+  it('a failing alert post never kills the rollup write', async () => {
+    const { giftsStore, mondayClient } = oversizedSetup({
+      createUpdate: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')),
+    });
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message],
+      { pendingStore, linksStore: fakeLinksStore(), giftsStore, mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+  });
+
+  it('does not alert for an ordinary-sized projection', async () => {
+    const createUpdate = vi.fn().mockResolvedValue(undefined);
+    const mondayClient = fakeMondayClient({ createUpdate });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+    expect(createUpdate).not.toHaveBeenCalled();
   });
 });
 
