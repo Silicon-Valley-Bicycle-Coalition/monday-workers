@@ -63,7 +63,9 @@ export interface InboundSyncMessage {
   email: string;
 }
 
-export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
+// 'skipped' = processed to completion but no Monday write happened (e.g. no Donor
+// item matches the email) — distinct from 'written' so misses stay countable.
+export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed';
 
 // A Donor item's column values, already resolved to plain strings — '' means the
 // column was blank, never undefined/missing (see monday/client.ts's getDonorById).
