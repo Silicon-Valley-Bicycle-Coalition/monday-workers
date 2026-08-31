@@ -35,6 +35,22 @@ describe('MondayClient', () => {
     await expect(c2.gql('q')).rejects.toThrow(/ColumnValueException/);
   });
 
+  it('retries the HTTP-200 no-data rate-limit shape then succeeds', async () => {
+    // Monday's rate-limit/auth shape: HTTP 200 with error_message/status_code and NO data.
+    const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
+      fetchFn: sequence([
+        () => Response.json({ error_message: 'Rate Limit Exceeded', status_code: 429 }),
+        () => Response.json({ data: { ok: true } }),
+      ]) });
+    expect(await c.gql('query')).toEqual({ ok: true });
+  });
+
+  it('throws the server error_message when the no-data shape persists, never returns undefined', async () => {
+    const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, maxAttempts: 2,
+      fetchFn: sequence([() => Response.json({ error_message: 'Not Authenticated', status_code: 401 })]) });
+    await expect(c.gql('q')).rejects.toThrow(/Not Authenticated.*401/);
+  });
+
   it('gives up after maxAttempts', async () => {
     const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, maxAttempts: 3,
       fetchFn: sequence([() => new Response('boom', { status: 500 })]) });
