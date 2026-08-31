@@ -199,9 +199,12 @@ necessarily match) — don't assume sandbox and production share ids just becaus
 
 ## Not yet done
 
-* **Webhook cutover to the v2 board** — deploy this config (`npm run deploy`) with a fresh
-  `MONDAY_WEBHOOK_SECRET`, then `setup-webhooks.mjs --prune <9 era board ids>` to subscribe the
-  v2 pair and delete the 18 era-board subscriptions. Then re-verify one live edit end to end.
+* ~~Webhook cutover to the v2 board~~ **Done 2026-08-31**: secret rotated, Worker redeployed,
+  v2 pair subscribed, all 18 era-board subscriptions pruned, and verified live end to end — a
+  test donation flowed webhook → D1 → queue → recompute and wrote all 12 columns on the donor's
+  v2 item with values matching the importer's independent computation (Lifetime $714.93 / 15
+  gifts, average exact). Note: the `webhooks` API query only returns subscriptions created by
+  the SAME token/app — another client seeing an empty list doesn't mean none exist.
 * **Dedicated least-privilege API token — scheduled for production cutover, not before** (see
   "APIs & auth" above). Scope, once minted: read-only on the Donations board, read/write on
   People/People Historical/Organizations.
