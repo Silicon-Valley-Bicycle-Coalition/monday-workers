@@ -126,6 +126,16 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     throw new Error('config: "funraiseSync.entityIdColumn" must be a Monday column id string, or null to disable orphan recovery');
   }
 
+  if (
+    !('thankYouSentColumn' in funraiseSync) ||
+    (funraiseSync.thankYouSentColumn !== null &&
+      (typeof funraiseSync.thankYouSentColumn !== 'string' || funraiseSync.thankYouSentColumn === ''))
+  ) {
+    throw new Error(
+      'config: "funraiseSync.thankYouSentColumn" must be a Monday column id string, or null to disable'
+    );
+  }
+
   for (const key of ['rawPayloadRetentionDays', 'unresolvedPayloadRetentionDays'] as const) {
     if (typeof funraiseSync[key] !== 'number' || (funraiseSync[key] as number) <= 0) {
       throw new Error(`config: "funraiseSync.${key}" must be a positive number of days`);

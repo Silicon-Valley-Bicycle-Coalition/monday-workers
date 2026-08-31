@@ -87,6 +87,31 @@ fields collapse to one** with precedence `npe01__Preferred_Email__c` → `Primar
 `Email`; **payment-method fields (last four, expiration) are PII and must never be written to
 Monday**.
 
+## Acknowledgment / receipting
+
+**Decided (private planning repo, `migration-plan.md` Decisions Needed, 2026-08-24, Option 2):**
+this Worker sets `Thank You Sent = true` when it creates a Donations item, treating Funraise's own
+transaction-time donor receipt as satisfying Salesforce's donation-acknowledgment automation for
+Funraise-sourced gifts. Hand-entered gifts (checks, cash) are out of scope here — staff handle
+those manually, unchanged from today.
+
+**Verified 2026-08-24.** `GET /api/v1/form` against the live `svbc` Funraise org (`X-Api-Key` auth,
+see API & auth below) returned all 20 active forms with a fully populated `receiptFromEmail`,
+`receiptFromName`, `receiptSubject`, and merge-tagged HTML `emailResponse` body — each customized
+per campaign, not left at template defaults. That's deliberate configuration, strong evidence the
+receipt actually sends on every donation through these forms. Note the API doesn't expose a single
+`sendReceipt: true/false` toggle to check directly — `sendReceipt` only exists as a write parameter
+on `TransactionApiCreate` (for donations created *through* the API), not as a readable field on the
+canonical `GET /api/v1/crm/donation/{id}` donation record or on webhook payloads, so donor-form
+receipting has to be inferred from the Form-level config like this instead. If a new form gets
+added later without these fields populated, its gifts won't be auto-receipted — worth a periodic
+spot-check (`GET /api/v1/form`, check `receiptSubject` is non-empty for any `status: active` form)
+rather than a one-time assumption.
+
+This Worker does **not** need to compute the $200-and-up "major gift" tier — that's a native
+Monday status automation on the Donations board (`Amount ≥ $200 → Acknowledgment Tier: Major`),
+independent of write source. Just don't overwrite that column on create/update.
+
 ## Related, not yet in scope here
 
 * **Double the Donation / 360MatchPro** — a *third*, independent pipeline (Salesforce AppExchange

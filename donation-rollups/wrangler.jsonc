@@ -1,0 +1,31 @@
+{
+  "name": "svbc-donation-rollups",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-donation-rollups",
+      "database_id": "58bbaabb-acab-437a-9786-1e6a5cce256e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [{ "queue": "donation-rollups-recompute", "binding": "RECOMPUTE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "donation-rollups-recompute",
+        "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain (same reasoning as funraise-sync).
+        "max_concurrency": 1,
+        "dead_letter_queue": "donation-rollups-recompute-dlq"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

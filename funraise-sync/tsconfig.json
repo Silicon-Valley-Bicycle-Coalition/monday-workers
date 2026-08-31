@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
   },
-  "include": ["src", "config", "test"]
+  "include": ["src", "config", "test", "worker-configuration.d.ts"]
 }

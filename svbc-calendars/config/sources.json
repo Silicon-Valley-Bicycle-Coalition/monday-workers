@@ -1,0 +1,74 @@
+{
+  "sources": [
+    {
+      "id": "santa-clara",
+      "name": "Santa Clara",
+      "committeeName": "Bicycle & Pedestrian Advisory Committee",
+      "adapter": "legistar",
+      "client": "santaclara",
+      "bodyId": 232
+    },
+    {
+      "id": "bart",
+      "name": "BART",
+      "committeeName": "BART Bicycle Advisory Task Force",
+      "adapter": "legistar",
+      "client": "bart",
+      "bodyId": 182
+    },
+    {
+      "id": "san-jose",
+      "name": "San Jose",
+      "committeeName": "Bicycle Pedestrian Advisory Committee",
+      "adapter": "legistar",
+      "client": "sanjose",
+      "bodyId": 230
+    },
+    {
+      "id": "cupertino",
+      "name": "Cupertino",
+      "committeeName": "Bicycle Pedestrian Commission",
+      "adapter": "legistar",
+      "client": "cupertino",
+      "bodyId": 170
+    },
+    {
+      "id": "campbell",
+      "name": "Campbell",
+      "committeeName": "Bicycle & Pedestrian Advisory Committee",
+      "adapter": "civicplus",
+      "domain": "www.campbellca.gov",
+      "catId": 32
+    },
+    {
+      "id": "saratoga",
+      "name": "Saratoga (PEBTAC)",
+      "committeeName": "Pedestrian, Equestrian & Bicycle Trails Advisory Committee",
+      "adapter": "civicplus",
+      "domain": "www.saratoga.ca.us",
+      "catId": 34
+    },
+    {
+      "id": "caltrain-batac",
+      "name": "Caltrain",
+      "committeeName": "Bicycle and Active Transportation Advisory Committee (BATAC)",
+      "adapter": "caltrainBatac",
+      "pageUrl": "https://www.caltrain.com/about-caltrain/advisory-committees/batac",
+      "titleFilter": "Bicycle and Active Transportation Advisory Committee"
+    },
+    {
+      "id": "eventbrite-public-events",
+      "name": "SVBC Public Events",
+      "committeeName": "SVBC Events — Public Events",
+      "adapter": "eventbrite",
+      "organizerId": "21763925459"
+    },
+    {
+      "id": "eventbrite-volunteer-opportunities",
+      "name": "SVBC Volunteer Opportunities",
+      "committeeName": "SVBC Events — Volunteer Opportunities",
+      "adapter": "eventbrite",
+      "organizerId": "17135810858"
+    }
+  ]
+}

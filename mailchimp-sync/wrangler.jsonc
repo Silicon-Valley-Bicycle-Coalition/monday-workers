@@ -1,0 +1,43 @@
+{
+  "name": "svbc-mailchimp-sync",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-mailchimp-sync",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID", // set by `wrangler d1 create` at deploy time
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "queue": "mailchimp-sync-outbound", "binding": "OUTBOUND_QUEUE" },
+      { "queue": "mailchimp-sync-inbound", "binding": "INBOUND_QUEUE" }
+    ],
+    "consumers": [
+      {
+        "queue": "mailchimp-sync-outbound",
+        "max_retries": 3,
+        "max_concurrency": 1,
+        "dead_letter_queue": "mailchimp-sync-outbound-dlq"
+      },
+      {
+        "queue": "mailchimp-sync-inbound",
+        "max_retries": 3,
+        "max_concurrency": 1,
+        "dead_letter_queue": "mailchimp-sync-inbound-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    // Once daily, 15:00 UTC = 7am Pacific (PDT) / 8am Pacific (PST) — Campaigns-board
+    // reconciliation only, see Task 10. Fire hour doesn't affect correctness.
+    "crons": ["0 15 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}

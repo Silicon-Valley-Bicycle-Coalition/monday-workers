@@ -47,6 +47,10 @@ export interface FunraiseSyncConfig {
     // Monday text column on every target board holding the Funraise entity id;
     // enables the consumer's orphan-recovery lookup before create. null disables it.
     entityIdColumn: string | null;
+    // Checkbox column on the Donations board, set true on a transaction's first write only —
+    // Funraise's own transaction-time donor receipt already covers acknowledgment (migration-plan.md
+    // Decisions Needed, Option 2). null disables it. Never set for recurring gifts or registrations.
+    thankYouSentColumn: string | null;
     rawPayloadRetentionDays: number;
     unresolvedPayloadRetentionDays: number;
     donorExternalIdField: string;
@@ -61,8 +65,10 @@ export interface FunraiseSyncConfig {
   };
 }
 
-export interface Env {
-  DB: D1Database;
+// Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
+// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// only secrets and narrowed queue message types are declared here.
+export interface Env extends Cloudflare.Env {
   WRITE_QUEUE: Queue<FunraiseQueueMessage>;
   MONDAY_API_TOKEN: string;
 }

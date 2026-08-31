@@ -1,0 +1,111 @@
+import type { PendingRow, PendingStatus } from '../types';
+
+export interface NewPending {
+  donationItemId: string;
+  donationBoardId: string;
+  eventId: string;
+  receivedAt: string;
+}
+
+export interface PendingStatusPatch {
+  ownerItemId?: string;
+  ownerBoard?: string;
+  error?: string;
+  writtenAt?: string;
+}
+
+export type UpsertResult = 'inserted' | 'updated' | 'duplicate';
+
+export interface PendingStore {
+  upsertPending(row: NewPending): Promise<UpsertResult>;
+  updateStatus(donationItemId: string, status: PendingStatus, patch?: PendingStatusPatch): Promise<void>;
+  getPending(donationItemId: string): Promise<PendingRow | null>;
+}
+
+interface D1PendingRecord {
+  donation_item_id: string;
+  donation_board_id: string;
+  event_id: string;
+  status: PendingStatus;
+  owner_item_id: string | null;
+  owner_board: string | null;
+  error: string | null;
+  received_at: string;
+  written_at: string | null;
+}
+
+function toPendingRow(record: D1PendingRecord): PendingRow {
+  return {
+    donationItemId: record.donation_item_id,
+    donationBoardId: record.donation_board_id,
+    eventId: record.event_id,
+    status: record.status,
+    ownerItemId: record.owner_item_id,
+    ownerBoard: record.owner_board,
+    error: record.error,
+    receivedAt: record.received_at,
+    writtenAt: record.written_at,
+  };
+}
+
+export class D1PendingStore implements PendingStore {
+  constructor(private db: D1Database) {}
+
+  // Keyed on the Donation item — a redelivery for the same donation replaces the
+  // pending row's event_id and resets to 'received' rather than being dropped, since
+  // it's still the same recompute work either way (donation-level dedup, same
+  // reasoning as funraise-sync's entity-keyed events table).
+  async upsertPending(row: NewPending): Promise<UpsertResult> {
+    const existing = await this.db
+      .prepare(`SELECT donation_item_id FROM pending_recomputes WHERE donation_item_id = ?1`)
+      .bind(row.donationItemId)
+      .first<{ donation_item_id: string }>();
+
+    const result = await this.db
+      .prepare(
+        `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at)
+         VALUES (?1, ?2, ?3, 'received', ?4)
+         ON CONFLICT (donation_item_id) DO UPDATE SET
+           donation_board_id = excluded.donation_board_id,
+           event_id = excluded.event_id,
+           status = 'received',
+           error = NULL,
+           received_at = excluded.received_at`,
+      )
+      .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt)
+      .run();
+
+    if (existing !== null && result.meta.changes === 0) return 'duplicate';
+    return existing === null ? 'inserted' : 'updated';
+  }
+
+  async updateStatus(donationItemId: string, status: PendingStatus, patch: PendingStatusPatch = {}): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE pending_recomputes SET
+           status = ?2,
+           owner_item_id = COALESCE(?3, owner_item_id),
+           owner_board = COALESCE(?4, owner_board),
+           error = ?5,
+           written_at = COALESCE(?6, written_at)
+         WHERE donation_item_id = ?1`,
+      )
+      .bind(
+        donationItemId, status,
+        patch.ownerItemId ?? null, patch.ownerBoard ?? null,
+        patch.error ?? null, patch.writtenAt ?? null,
+      )
+      .run();
+  }
+
+  async getPending(donationItemId: string): Promise<PendingRow | null> {
+    const record = await this.db
+      .prepare(
+        `SELECT donation_item_id, donation_board_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at
+         FROM pending_recomputes WHERE donation_item_id = ?1`,
+      )
+      .bind(donationItemId)
+      .first<D1PendingRecord>();
+    return record === null ? null : toPendingRow(record);
+  }
+}

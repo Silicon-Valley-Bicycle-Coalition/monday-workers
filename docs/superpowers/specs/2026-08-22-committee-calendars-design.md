@@ -9,7 +9,7 @@ gap and covers the implementation-level decisions the README leaves open.
 
 Let people subscribe to local Bicycle & Pedestrian Advisory Committee meetings from one merged
 ICS feed instead of checking a handful of city/agency agenda sites by hand. Cron-polled, no
-Queue — self-healing on next run, same shape as `squarespace-forms`/`buffer-content-calendar`.
+Queue — self-healing on next run.
 
 ## Platform confirmation (resolves the README's open item)
 
