@@ -269,6 +269,50 @@ describe('createMondayWebhookApp', () => {
     }
   });
 
+  it('returns 5xx and records the row failed when the enqueue throws, so Monday redelivers', async () => {
+    // A 200 here would tell Monday the delivery succeeded — create_pulse fires once per item,
+    // so without a redelivery the resume branch never runs and the customer never reaches
+    // QuickBooks.
+    const mondayEventStore = fakeMondayEventStore();
+    const queue = { send: vi.fn().mockRejectedValue(new Error('queue unavailable')) };
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+
+    const res = await app.request(WEBHOOK_URL, {
+      method: 'POST',
+      body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ ok: false });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', {
+      error: 'queue unavailable',
+    });
+    expect(mondayEventStore.updateStatus).not.toHaveBeenCalledWith('42', 'queued');
+  });
+
+  it('re-enqueues on redelivery after a failed enqueue was recorded', async () => {
+    // Second half of the retry loop: the 5xx above makes Monday redeliver; the recorded
+    // 'failed' row (not hasReachedQueue) is what lets this delivery resume idempotently.
+    const mondayEventStore = fakeMondayEventStore({
+      insertEvent: vi.fn().mockResolvedValue('duplicate'),
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'failed', error: 'queue unavailable' })),
+    });
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+
+    const res = await app.request(WEBHOOK_URL, {
+      method: 'POST',
+      body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json<{ ok: boolean; resumed: boolean }>()).resumed).toBe(true);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'monday-to-qb', eventId: '42' });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'queued');
+  });
+
   it('returns a recorded error at HTTP 200 for a malformed JSON body instead of crashing', async () => {
     const mondayEventStore = fakeMondayEventStore();
     const queue = { send: vi.fn() };
