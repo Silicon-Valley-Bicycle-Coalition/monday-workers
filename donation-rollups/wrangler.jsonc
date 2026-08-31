@@ -25,6 +25,11 @@
       }
     ]
   },
+  // Daily custodian trigger at 09:00 UTC (≈ 2am Pacific) — src/custodian/custodian.ts's
+  // dutiesForDate decides which duties today owes.
+  "triggers": {
+    "crons": ["0 9 * * *"]
+  },
   "observability": {
     "enabled": true
   }

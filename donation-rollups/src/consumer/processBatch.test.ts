@@ -2,18 +2,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { processRecomputeBatch, rollupToColumnValues } from './processBatch';
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
+import type { GiftsStore } from '../db/gifts';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns } from '../types';
 
 const ownerColumns: OwnerColumns = {
-  lifetimeGiving: 'lg', giftCount: 'gc', firstGift: 'fg',
+  giftLedgerJson: 'glj', lifetimeGiving: 'lg', giftCount: 'gc', firstGift: 'fg',
   thisYearAmount: 'tya', thisYearCount: 'tyc', lastYearAmount: 'lya', lastYearCount: 'lyc',
   largestGift: 'lag', smallestGift: 'smg', averageGift: 'avg',
   lastGiftDate: 'lgd', lastGiftAmount: 'lga',
 };
 
 const config: DonationRollupsConfig = {
-  monday: { apiUrl: 'https://api.monday.com/v2' },
+  monday: { apiUrl: 'https://api.monday.com/v2', accountUrl: 'https://acme.monday.com' },
+  custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
+    annualSummaryBoardId: null, annualSummaryColumns: null },
   donationRollups: {
     donationBoards: [
       { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1' } },
@@ -44,6 +47,23 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
   };
 }
 
+function fakeGiftsStore(): GiftsStore {
+  return {
+    refreshFacts: vi.fn().mockResolvedValue(undefined),
+    giftsForOwner: vi.fn().mockResolvedValue([]),
+    setSummaryItemId: vi.fn().mockResolvedValue(undefined),
+    getArchivable: vi.fn().mockResolvedValue([]),
+    markArchived: vi.fn().mockResolvedValue(undefined),
+    ownersWithOneGift: vi.fn().mockResolvedValue([]),
+    ownerTotals: vi.fn().mockResolvedValue(new Map()),
+    fiscalYearTotals: vi.fn().mockResolvedValue([]),
+    upsertAnnualSummaries: vi.fn().mockResolvedValue({ changed: [] }),
+    getAnnualSummaries: vi.fn().mockResolvedValue([]),
+    recordRun: vi.fn().mockResolvedValue(undefined),
+    lastRuns: vi.fn().mockResolvedValue([]),
+  };
+}
+
 function fakeMessage(donationItemId: string, donationBoardId = '1') {
   return { body: { donationItemId, donationBoardId }, ack: vi.fn(), retry: vi.fn() };
 }
@@ -55,9 +75,54 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     getDonationsByIds: vi.fn().mockResolvedValue([]),
     listDonationOwnerLinks: vi.fn().mockResolvedValue([]),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
+    setItemDescription: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
+
+describe('gift-history projections in the recompute path', () => {
+  it('writes the JSON column with the rollups and the markdown description, from the ledger', async () => {
+    const giftsStore = fakeGiftsStore();
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { mondayItemId: 'dn1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2020-01-15',
+        fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: true },
+    ]);
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const setItemDescription = vi.fn().mockResolvedValue(undefined);
+    const mondayClient = fakeMondayClient({
+      changeColumnValues, setItemDescription,
+      getDonationsByIds: vi.fn().mockResolvedValue([
+        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+      ]),
+    });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, mondayClient, config, now: new Date('2026-01-01') });
+
+    const written = changeColumnValues.mock.calls[0]![2] as Record<string, unknown>;
+    expect(JSON.parse(written['glj'] as string)).toEqual([['dn1', '2020-01-15', 5000, 'Donation', 'Received']]);
+    expect(setItemDescription).toHaveBeenCalledWith('donor-1',
+      expect.stringContaining('https://acme.monday.com/boards/1/pulses/dn1'));
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ mondayItemId: 'dn1', giftType: null })], 'webhook', expect.any(String));
+  });
+
+  it('a failing description write is non-fatal — rollups land and the message still acks', async () => {
+    const pendingStore = fakePendingStore();
+    const setItemDescription = vi.fn().mockRejectedValue(new Error('monday API: Internal server error'));
+    const mondayClient = fakeMondayClient({
+      setItemDescription,
+      getDonationsByIds: vi.fn().mockResolvedValue([
+        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+      ]),
+    });
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message],
+      { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), mondayClient, config, now: new Date('2026-01-01') });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+  });
+});
 
 describe('rollupToColumnValues', () => {
   it('maps every rollup field to its configured column id, nulls stay null', () => {
@@ -90,7 +155,7 @@ describe('processRecomputeBatch', () => {
     const upsertLink = vi.fn().mockResolvedValue(undefined);
     const mondayClient = fakeMondayClient({ getDonorLinkForDonation, getItemBoardId: vi.fn().mockResolvedValue('2') });
     await processRecomputeBatch([fakeMessage('dn1', '9')], // board 9, not board 1
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ upsertLink }), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ upsertLink }), giftsStore: fakeGiftsStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonorLinkForDonation).toHaveBeenCalledWith('dn1', 'donor_link_9'); // board 9's own column id
     expect(upsertLink).toHaveBeenCalledWith(
       { donationItemId: 'dn1', donationBoardId: '9', ownerItemId: 'donor-1', ownerBoardId: '2' },
@@ -103,7 +168,7 @@ describe('processRecomputeBatch', () => {
     const getLinksForOwner = vi.fn().mockResolvedValue(new Map([['1', ['dn1', 'dnOld']], ['9', ['dnHist']]]));
     const mondayClient = fakeMondayClient({ getDonationsByIds });
     await processRecomputeBatch([fakeMessage('dn1', '1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), giftsStore: fakeGiftsStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(2); // both boards the index has links on
     expect(getDonationsByIds).toHaveBeenCalledWith(['dn1', 'dnOld'], expect.objectContaining({ fiscalYear: 'fy_1' }));
     expect(getDonationsByIds).toHaveBeenCalledWith(['dnHist'], expect.objectContaining({ fiscalYear: null }));
@@ -114,7 +179,7 @@ describe('processRecomputeBatch', () => {
     const getLinksForOwner = vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])); // nothing on board 9
     const mondayClient = fakeMondayClient({ getDonationsByIds });
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), giftsStore: fakeGiftsStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(1);
   });
 
@@ -129,7 +194,7 @@ describe('processRecomputeBatch', () => {
     const linksStore = fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])) });
     const pendingStore = fakePendingStore();
 
-    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore, linksStore, mondayClient, config, now: new Date('2026-01-01') });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore, linksStore, giftsStore: fakeGiftsStore(), mondayClient, config, now: new Date('2026-01-01') });
 
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-1', expect.objectContaining({ lg: '100' }));
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written',
@@ -141,7 +206,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn1');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), mondayClient, config });
 
     expect(message.retry).toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'failed', expect.objectContaining({
@@ -154,7 +219,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn3');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), mondayClient, config });
 
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
@@ -169,7 +234,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn4');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), mondayClient, config });
 
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();

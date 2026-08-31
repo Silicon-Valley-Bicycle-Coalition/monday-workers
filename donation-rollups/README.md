@@ -1,16 +1,26 @@
 # donation-rollups
 
-**Status: live**, 2026-08-25 — deployed to `https://svbc-donation-rollups.svbc-account.workers.dev`,
-D1 provisioned and bootstrapped (37,278 real donation→owner links across all 9 boards, 7,893
-distinct owners), 18 Monday webhook subscriptions active (`create_item` + `change_column_value` ×
-9 Donations era boards, each authenticated via a shared secret in the webhook URL — Monday doesn't
-sign payloads). **Scoped entirely to the CRM Sandbox** — every board id in `config/svbc.json` is a
-sandbox board, not a production one (production doesn't exist yet; real cutover is October), so
-nothing this Worker does can touch live donor data. Verified end-to-end against real production
-traffic from the sandbox itself: editing Dan King's real donation amount live triggered the full
-pipeline (webhook → D1 → queue → consumer → Monday fetch → recompute → write-back) and landed
-correct cross-era numbers (Lifetime Giving $12,434.42, 23 gifts, First Gift 2017-09-14 — spanning
-boards well beyond the one that fired the webhook).
+**Status: repointed at the single archive-in-place Donations board ("sandbox v2"), 2026-08-31** —
+config now targets ONE Donations board (id `18428131791`, with a real `fiscalYear` column at
+last) plus the three v2 owner boards, replacing the 9-era-board layout that docs/20 in the
+private planning repo retired. D1 re-bootstrapped from `salesforce-import`'s run artifacts
+(37,286 donation→owner links — see `scripts/bootstrap-links-from-artifacts.mjs` and "Why the
+bootstrap reads artifacts now" below), owner boards provisioned with the full 12-column rollup
+set (`scripts/setup-owner-columns.mjs`). Webhooks drop from 18 subscriptions to 2
+(`create_item` + `change_column_value` on the one board, shared secret in the URL — Monday
+doesn't sign payloads); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
+Worker with the matching `MONDAY_WEBHOOK_SECRET`. **Scoped entirely to the CRM Sandbox** —
+every board id in `config/svbc.json` is a sandbox board, not a production one (production
+doesn't exist yet; real cutover is October), so nothing this Worker does can touch live donor
+data. The era-board deployment was verified end-to-end 2026-08-25 (webhook → D1 → queue →
+consumer → Monday fetch → recompute → write-back, correct cross-board totals); re-verify the
+same flow against the v2 board after the webhook cutover.
+
+**Archived donations and this Worker:** most gifts on the v2 board are archived in place.
+Archived items reject all writes and their `board_relation` columns read empty, but they remain
+readable by id — which is exactly what the recompute path does (`items(ids: [...])`), so
+historical gifts still count. Corollary: `donation_links` rows for archived donations can never
+be re-derived from Monday — the importer's artifacts are their only source (docs/20).
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
 **Owner:** Unassigned.
@@ -33,12 +43,12 @@ Full background: `docs/07-migration-gotchas.md` gotcha #10, `docs/05-migration-s
 ## Data flow
 
 ```
-Monday.com (any of the 9 Donations era boards — see below)
+Monday.com (the single Donations board — config/svbc.json)
   │  webhook, on Donation item create / column change
   ▼
 Cloudflare Worker (webhook handler)
   │  1. echo the challenge verbatim during webhook-subscription setup (one-time handshake,
-  │     needed once per era board — Monday webhooks are board-scoped)
+  │     needed once per subscribed board — Monday webhooks are board-scoped)
   │  2. upsert into D1 `pending_recomputes`, keyed on the *Donation item id* plus which
   │     board it came from — a later event for the same donation replaces the pending
   │     row instead of queuing a redundant duplicate
@@ -46,7 +56,8 @@ Cloudflare Worker (webhook handler)
   ▼
 Cloudflare Queue → consumer Worker
   │  1. resolve the Donation's linked owner (Donor or Organization item) using *that
-  │     board's own* column ids — every era board has independently generated column ids
+  │     board's own* column ids (kept per-board in config, since every Monday board has
+  │     independently generated column ids)
   │     — no owner linked yet → nothing to recompute, ack and skip (not a retry candidate)
   │  2. record this donation→owner link in D1 `donation_links` (the reverse index — see
   │     "Why a D1 reverse index" below for why this exists at all)
@@ -80,10 +91,19 @@ starts empty regardless of what already points at that item from the other side.
 
 So this Worker keeps its **own** reverse index instead of asking Monday to filter for it:
 `donation_links` (donation item id → owner item id, grouped by which Donations board it's on),
-populated incrementally as webhooks arrive and bootstrapped once from every already-existing
-donation via `scripts/bootstrap-links.mjs` before this Worker can be trusted for a real donor's
-totals. Recompute then fetches specific donation ids directly (`items(ids: [...])`, which *does*
-work, no filter needed) instead of asking Monday to find them.
+populated incrementally as webhooks arrive and bootstrapped from `salesforce-import`'s run
+artifacts via `scripts/bootstrap-links-from-artifacts.mjs` before this Worker can be trusted for
+a real donor's totals. Recompute then fetches specific donation ids directly
+(`items(ids: [...])`, which *does* work — even for archived items — no filter needed) instead of
+asking Monday to find them.
+
+**Why the bootstrap reads artifacts now.** The original `scripts/bootstrap-links.mjs` (kept for
+reference) walked the boards with `items_page` — impossible under archive-in-place, where most
+donations are archived: `items_page` never returns archived items, and an archived item's
+`board_relation` column reads empty anyway. The importer's `payloads.ndjson` + `ledger.ndjson` +
+`boards.json` are the authoritative donation→owner record including every archived gift, which
+is why doc 20 treats those artifacts (and their durable copies in the private planning repo's
+`rehearsal-artifacts/`) as infrastructure, not migration leftovers.
 
 **Full recompute, not incremental.** Every run re-pulls and re-sums *all* of an owner's Donations
 rather than adjusting a running total. Simpler, self-healing (a missed webhook or a bad prior
@@ -96,13 +116,64 @@ within moments of each other queue two independent recompute jobs, not one. Each
 idempotent full recompute on its own — mildly redundant work, not a correctness bug — so this
 wasn't worth the added complexity of a per-owner dedup layer for v1.
 
-**Bootstrap run for real, 2026-08-25.** `svbc-donation-rollups` D1 database provisioned
-(`wrangler d1 create`), all three migrations applied `--remote`, then
-`scripts/bootstrap-links.mjs` run against every configured Donations board: **37,278 links, 9
-boards, 7,893 distinct owners**. Spot-checked against the same donor (Dan King, item
-`12873971044`) this Worker's mechanism was hand-verified against earlier — all 3 of his real
-donations came back exactly right. Re-run this after the next full sandbox load rehearsal (see
-"Not yet done") since item ids can change between loads.
+**Bootstrap history.** 2026-08-25: first bootstrap from the era boards via the API walker
+(37,278 links, 9 boards, 7,893 owners; Dan King spot-check exact). 2026-08-31: re-bootstrapped
+for the single v2 board from the archive-in-place rehearsal's artifacts — **37,286 links, all on
+board `18428131791`** (17 anonymous gifts and 11,231 excluded-owner gifts skipped by design),
+`pending_recomputes` cleared. Re-run `bootstrap-links-from-artifacts.mjs` (then
+`wrangler d1 execute svbc-donation-rollups --remote --file bootstrap.sql -y` — the `-y`
+matters: without a TTY, wrangler's confirm prompt silently cancels with exit 0) after any fresh
+load, since item ids change between loads.
+
+## Ledger v2 + the custodian (docs/20 §5.1/§5.3)
+
+D1 is the **authoritative gift ledger**, not just a reverse index: `gifts` (one row per gift —
+amount in cents, date, fiscal year, status, provenance, archived state) and `annual_summaries`
+(one row per closed fiscal year, restatement-stamped). Monday stays the working surface; staff
+edits flow back via webhooks, and every recompute re-asserts the facts of every gift it reads,
+so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs` (37,286 gifts
+loaded 2026-08-31; 32,739 Received, 33,541 archived).
+
+The **custodian** runs four duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile}?secret=…`
+and `GET /custodian/status` (last run per duty, from `custodian_runs`):
+
+* **archive** (July 15 + on demand) — archives active gifts past the retention window
+  (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.
+* **capacity** (Mondays) — every board in the workspace vs its item limit; alerts at
+  `capacityAlertPct` (update posted to `custodian.alertItemId`). First live run immediately
+  flagged Activities v2 at 90% — a true positive.
+* **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
+  fiscal boundary (closes the staleness gap in Not-yet-done).
+* **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
+  comparison; Monday stores float noise) plus summaries vs fresh ledger totals. First full
+  pass 2026-08-31: 6,886 owners, zero mismatches.
+
+**Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
+`Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
+`[itemId, date, cents, type, status]`, sourced from the D1 ledger so it includes archived gifts
+and their types — plus (where the account supports it) a markdown gift-history table in the
+item description with a deep link per gift. The description write is **deliberately non-fatal**:
+`set_item_description_content` 500s outright on this account (the item-description feature isn't
+enabled — even a trivial markdown fails, observed 2026-08-31), so a failure logs and moves on
+rather than burning queue retries over a redundant rendering of the JSON column. Provision the
+column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
+
+**The Annual Giving Summary board (docs/20 §5.4)** — created by
+`scripts/setup-annual-summary-board.mjs`, one item per closed fiscal year (Fiscal Year, Total
+Received, Gift Count, By Gift Type, Restated), written ONLY by the custodian's archive duty:
+new years created once, and a closed year rewritten only when the ledger's totals changed (an
+audit restatement — the Restated date is stamped). D1's `annual_summaries` stays authoritative;
+the board is its staff-facing projection, wired via `custodian.annualSummaryBoardId` +
+`annualSummaryColumns` in config.
+
+Duties that touch many items **slice themselves** and report `remaining` + a cursor (re-run to
+continue): the Workers Free plan caps subrequests at 50/invocation, Monday caps `items(ids:)`
+at 100 ids — and note `items(ids:)` **silently returns 25 items unless you pass `limit: 100`**
+(bit for real 2026-08-31: 75% of owners read back "missing"; the same default would silently
+under-roll any donor with >25 gifts on one board — every batched read in `monday/client.ts`
+now passes an explicit limit). When Workers Paid lands, the per-run slice constants in
+`custodian.ts` can grow.
 
 ## The Closed Won filter — read this before touching the Status column
 
@@ -127,17 +198,17 @@ year" always means the fiscal year, matching the reporting basis decided for got
 
 ## Config
 
-`config/svbc.json` holds real ids verified against the CRM Sandbox (2026-08-24), not placeholders
-— re-verify against production board ids before deploying for real, since the sandbox gets rebuilt
-before cutover:
+`config/svbc.json` holds real ids verified against the CRM Sandbox v2 boards (2026-08-31), not
+placeholders — re-verify against production board ids before deploying for real, since the
+sandbox gets rebuilt before cutover:
 
-* `donationRollups.donationBoards` — one entry per Donations *era* board (9 in the sandbox: one
-  "live" board plus 8 dated historical ones, split to stay under Monday's 10k-item ceiling), each
-  with its own `columns` block (Donor-link, Amount, Date, Status, and Fiscal Year — `null` where
-  that column doesn't exist yet on that particular board; this Worker derives it from Date instead
-  in that case, see `fiscalYearFromDate` in `rollups/compute.ts`). **Every board id here needs its
-  own webhook subscription** — Monday webhooks are board-scoped, so a new era board added later
-  needs both a config entry and a new subscription, not just one.
+* `donationRollups.donationBoards` — now a single entry: the archive-in-place Donations board
+  (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
+  Status, and Fiscal Year — `null` still supported for boards without one; this Worker derives it
+  from Date instead in that case, see `fiscalYearFromDate` in `rollups/compute.ts`). The list
+  stays an array on purpose — a second board (e.g. a future workspace split) is config + one
+  `setup-webhooks.mjs` run, not code. **Every board id here needs its own webhook subscription**
+  — Monday webhooks are board-scoped.
 * `donationRollups.ownerColumnsByBoard` — keyed by the **real Monday board id** (a string), one
   entry per board a Donation's Donor connect column can point to. Confirmed against the sandbox
   this is three boards, not two — People, People (Historical), and Organizations — each with
@@ -148,14 +219,17 @@ before cutover:
 
 ## APIs & auth
 
-* **Monday.com webhooks** — live: 18 subscriptions created via `create_webhook` (`create_item` +
-  `change_column_value`, **one pair per Donations era board**, 9 boards — Monday webhooks are
-  board-scoped, there's no "subscribe to all boards" option), each pointed at
+* **Monday.com webhooks** — one pair (`create_item` + `change_column_value`) on the single
+  Donations board, pointed at
   `https://svbc-donation-rollups.svbc-account.workers.dev/webhooks/monday/donations` with the
-  shared secret embedded in the URL. The subscription-creation handshake POSTs
-  `{"challenge": "..."}` to the webhook URL, which is echoed back verbatim — handled in
-  `src/webhook/route.ts`, and is also what a new subscription's secret check has to pass, so a
-  wrong secret at subscribe-time fails loudly rather than silently.
+  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
+  Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
+  era boards' 18 old ones). The subscription-creation handshake POSTs `{"challenge": "..."}` to
+  the webhook URL, which is echoed back verbatim — handled in `src/webhook/route.ts`, and is
+  also what a new subscription's secret check has to pass, so a wrong secret at subscribe-time
+  fails loudly rather than silently. Note the API cannot read back a webhook's URL, so a lost
+  secret means rotate (`wrangler secret put MONDAY_WEBHOOK_SECRET`, redeploy, re-run
+  `setup-webhooks.mjs`), not recover.
 * **Monday.com GraphQL API** — reusing `salesforce-import`'s existing token for Sandbox testing.
   **Deliberately deferred, not open debt** (decided 2026-08-24, same reasoning as the donor-portal
   integration user — see `migration-plan.md`'s Post-Migration Follow-ups in the private planning
@@ -165,8 +239,8 @@ before cutover:
 
 ## Non-destructive by design
 
-Every board id in `config/svbc.json` — all 9 Donations era boards, all 3 owner boards — is a CRM
-**Sandbox** id, verified against the sandbox directly (2026-08-24/25), not copied from a
+Every board id in `config/svbc.json` — the Donations board and all 3 owner boards — is a CRM
+**Sandbox** id (the "(sandbox v2)" set, verified directly 2026-08-31), not copied from a
 production workspace. There is no production Monday workspace with real cutover data yet (that's
 October); until there is, this Worker cannot touch live donor data no matter what triggers it.
 **Before ever repointing any id in that config at a production workspace, re-verify every single
@@ -175,22 +249,23 @@ necessarily match) — don't assume sandbox and production share ids just becaus
 
 ## Not yet done
 
+* ~~Webhook cutover to the v2 board~~ **Done 2026-08-31**: secret rotated, Worker redeployed,
+  v2 pair subscribed, all 18 era-board subscriptions pruned, and verified live end to end — a
+  test donation flowed webhook → D1 → queue → recompute and wrote all 12 columns on the donor's
+  v2 item with values matching the importer's independent computation (Lifetime $714.93 / 15
+  gifts, average exact). Note: the `webhooks` API query only returns subscriptions created by
+  the SAME token/app — another client seeing an empty list doesn't mean none exist.
 * **Dedicated least-privilege API token — scheduled for production cutover, not before** (see
-  "APIs & auth" above). Scope, once minted: read-only on the 9 Donations era boards, read/write on
+  "APIs & auth" above). Scope, once minted: read-only on the Donations board, read/write on
   People/People Historical/Organizations.
-* **The sandbox is getting a fresh full load rehearsal separately** (see
-  `docs/18-sandbox-load-rehearsal-lessons.md` in the private planning repo) — re-run the bootstrap
-  once that settles, since item ids / board contents may have changed since 2026-08-25's run.
-* **`owner_board_id` in `donation_links` is written blank by the bootstrap script.** Not resolvable
-  from the same query that finds the donation→owner link (the owner could be on any of three
-  boards). Not currently read by anything downstream — the consumer re-resolves it fresh via
-  `getItemBoardId` every time — but it's a real gap in the table's own data if anything ever comes
-  to depend on that column being populated.
+* ~~`owner_board_id` in `donation_links` is written blank by the bootstrap script.~~ Fixed
+  2026-08-31: `bootstrap-links-from-artifacts.mjs` populates it from the importer's ledger.
 * **This/Last Year go stale exactly once a year, on the fiscal-year boundary, if nothing else
   triggers a recompute.** A donor with no new gifts near July 1st keeps last fiscal year's
   This/Last Year split until their next Donation changes. Not a bug this Worker's design can fix
   on its own — a small annual cron sweep (recompute every owner once, first week of July) would
-  close this gap if it turns out to matter in practice.
+  close this gap if it turns out to matter in practice; docs/20's custodian duties list already
+  includes it alongside the year-end archive run.
 
 ## Sources
 

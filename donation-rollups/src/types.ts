@@ -11,11 +11,31 @@ export interface DonationBoardConfig {
     date: string;
     fiscalYear: string | null; // null where the column doesn't exist yet — derived from date instead
     status: string;
+    // Optional: refreshes the gifts ledger's gift_type from Monday when configured.
+    giftType?: string | null;
   };
 }
 
+export interface CustodianConfig {
+  // How many fiscal years of donations stay active (unarchived) on the Donations board —
+  // must match salesforce-import's donationsActiveFiscalYears so the custodian's year-end
+  // run continues exactly the policy the initial load established. 2 = current + previous.
+  activeFiscalYears: number;
+  // Workspace whose boards the capacity alarm watches (every board, not just donations).
+  workspaceId: number;
+  capacityAlertPct: number;
+  // Monday item to post alert updates on (e.g. the IT Requests tracker) — null = log-only.
+  alertItemId: number | null;
+  // Annual Giving Summary board (docs/20 §5.4) — null until that board exists; summaries
+  // still materialize into D1's annual_summaries either way. Column ids come with it.
+  annualSummaryBoardId: number | null;
+  annualSummaryColumns: { fiscalYear: string; total: string; giftCount: string; byType: string; restatedAt: string } | null;
+}
+
 export interface DonationRollupsConfig {
-  monday: { apiUrl: string };
+  // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
+  monday: { apiUrl: string; accountUrl: string };
+  custodian: CustodianConfig;
   donationRollups: {
     donationBoards: DonationBoardConfig[];
     receivedStatusLabel: string;
@@ -30,6 +50,8 @@ export interface DonationRollupsConfig {
 }
 
 export interface OwnerColumns {
+  // Machine-readable gift-history projection (docs/20 §5.5) — a text column.
+  giftLedgerJson: string;
   lifetimeGiving: string;
   giftCount: string;
   firstGift: string;

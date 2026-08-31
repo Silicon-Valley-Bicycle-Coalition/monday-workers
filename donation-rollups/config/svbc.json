@@ -1,42 +1,83 @@
 {
   "monday": {
-    "apiUrl": "https://api.monday.com/v2"
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com"
   },
   "donationRollups": {
     "receivedStatusLabel": "Received",
     "donationBoards": [
-      { "boardId": 18427756119, "columns": { "donorLink": "board_relation_mm6g5f9s", "amount": "numeric_mm6g9jp3", "date": "date_mm6ghdgs", "status": "color_mm6gqn6y", "fiscalYear": null } },
-      { "boardId": 18427756102, "columns": { "donorLink": "board_relation_mm6gnn45", "amount": "numeric_mm6gqp1d", "date": "date_mm6g1hbe", "status": "color_mm6gs0x1", "fiscalYear": null } },
-      { "boardId": 18427756105, "columns": { "donorLink": "board_relation_mm6gkxvg", "amount": "numeric_mm6gkcr5", "date": "date_mm6gcsr8", "status": "color_mm6g3xed", "fiscalYear": null } },
-      { "boardId": 18427756108, "columns": { "donorLink": "board_relation_mm6gmvtk", "amount": "numeric_mm6gvag0", "date": "date_mm6ge0h4", "status": "color_mm6gy12b", "fiscalYear": null } },
-      { "boardId": 18427756110, "columns": { "donorLink": "board_relation_mm6grf13", "amount": "numeric_mm6g8rx8", "date": "date_mm6gqvjz", "status": "color_mm6g3rn4", "fiscalYear": null } },
-      { "boardId": 18427756112, "columns": { "donorLink": "board_relation_mm6gw2bt", "amount": "numeric_mm6ge1eg", "date": "date_mm6gkjka", "status": "color_mm6ga9jm", "fiscalYear": null } },
-      { "boardId": 18427756115, "columns": { "donorLink": "board_relation_mm6g3569", "amount": "numeric_mm6gjhzs", "date": "date_mm6ge23x", "status": "color_mm6g8ca", "fiscalYear": null } },
-      { "boardId": 18427756117, "columns": { "donorLink": "board_relation_mm6gxmza", "amount": "numeric_mm6g8n3n", "date": "date_mm6g10dw", "status": "color_mm6gbc77", "fiscalYear": null } },
-      { "boardId": 18427756121, "columns": { "donorLink": "board_relation_mm6g3xhs", "amount": "numeric_mm6g2mex", "date": "date_mm6g59fj", "status": "color_mm6g9gpg", "fiscalYear": null } }
+      {
+        "boardId": 18428131791,
+        "columns": {
+          "donorLink": "board_relation_mm6jf5jb",
+          "amount": "numeric_mm6jkxrs",
+          "date": "date_mm6jthpq",
+          "status": "color_mm6jqdhn",
+          "fiscalYear": "numeric_mm6jm0g4",
+          "giftType": "text_mm6j66w3"
+        }
+      }
     ],
     "ownerColumnsByBoard": {
-      "18427756096": {
-        "lifetimeGiving": "numeric_mm6gbs0h", "giftCount": "numeric_mm6gwt35", "firstGift": "date_mm6gzfj1",
-        "thisYearAmount": "numeric_mm6jasjs", "thisYearCount": "numeric_mm6je53j",
-        "lastYearAmount": "numeric_mm6j4my8", "lastYearCount": "numeric_mm6j6rxd",
-        "largestGift": "numeric_mm6jmwx6", "smallestGift": "numeric_mm6j63dn", "averageGift": "numeric_mm6jn6fk",
-        "lastGiftDate": "date_mm6jt5w6", "lastGiftAmount": "numeric_mm6j5k6c"
+      "18428131737": {
+        "giftLedgerJson": "text_mm6rxx8c",
+        "lifetimeGiving": "numeric_mm6j7y8j",
+        "giftCount": "numeric_mm6j9wxh",
+        "firstGift": "date_mm6jgwmh",
+        "thisYearAmount": "numeric_mm6rga0j",
+        "thisYearCount": "numeric_mm6rmv2x",
+        "lastYearAmount": "numeric_mm6r6pd8",
+        "lastYearCount": "numeric_mm6rm7sh",
+        "largestGift": "numeric_mm6r76sx",
+        "smallestGift": "numeric_mm6r4bp",
+        "averageGift": "numeric_mm6r24vk",
+        "lastGiftDate": "date_mm6rm3t",
+        "lastGiftAmount": "numeric_mm6rtf0e"
       },
-      "18427756098": {
-        "lifetimeGiving": "numeric_mm6gtm38", "giftCount": "numeric_mm6g4k6d", "firstGift": "date_mm6g6scg",
-        "thisYearAmount": "numeric_mm6j886y", "thisYearCount": "numeric_mm6jbp4g",
-        "lastYearAmount": "numeric_mm6jmaxr", "lastYearCount": "numeric_mm6jk8ys",
-        "largestGift": "numeric_mm6jwhqj", "smallestGift": "numeric_mm6j4mfd", "averageGift": "numeric_mm6jzat9",
-        "lastGiftDate": "date_mm6jmega", "lastGiftAmount": "numeric_mm6jfbgs"
+      "18428131744": {
+        "giftLedgerJson": "text_mm6r2dnp",
+        "lifetimeGiving": "numeric_mm6jbx7d",
+        "giftCount": "numeric_mm6jnr4e",
+        "firstGift": "date_mm6j4xxn",
+        "thisYearAmount": "numeric_mm6r2kz0",
+        "thisYearCount": "numeric_mm6re5g2",
+        "lastYearAmount": "numeric_mm6r2zhn",
+        "lastYearCount": "numeric_mm6rzcjd",
+        "largestGift": "numeric_mm6rrs6r",
+        "smallestGift": "numeric_mm6rmwn5",
+        "averageGift": "numeric_mm6rmqtn",
+        "lastGiftDate": "date_mm6rt5fm",
+        "lastGiftAmount": "numeric_mm6rh3pw"
       },
-      "18427756095": {
-        "lifetimeGiving": "numeric_mm6gghwr", "giftCount": "numeric_mm6ghb3m", "firstGift": "date_mm6gp2s7",
-        "thisYearAmount": "numeric_mm6jxjg6", "thisYearCount": "numeric_mm6jn8xb",
-        "lastYearAmount": "numeric_mm6jmy8q", "lastYearCount": "numeric_mm6jsp1g",
-        "largestGift": "numeric_mm6jgbnh", "smallestGift": "numeric_mm6j2vpj", "averageGift": "numeric_mm6jwa2v",
-        "lastGiftDate": "date_mm6j20cv", "lastGiftAmount": "numeric_mm6j9z7q"
+      "18428131727": {
+        "giftLedgerJson": "text_mm6r9q6m",
+        "lifetimeGiving": "numeric_mm6jkfnk",
+        "giftCount": "numeric_mm6jypaf",
+        "firstGift": "date_mm6jh48s",
+        "thisYearAmount": "numeric_mm6rzf1y",
+        "thisYearCount": "numeric_mm6rhqxv",
+        "lastYearAmount": "numeric_mm6r2h0p",
+        "lastYearCount": "numeric_mm6rv1gh",
+        "largestGift": "numeric_mm6r6r74",
+        "smallestGift": "numeric_mm6rpcqf",
+        "averageGift": "numeric_mm6rzzxx",
+        "lastGiftDate": "date_mm6rkf7c",
+        "lastGiftAmount": "numeric_mm6rckjb"
       }
+    }
+  },
+  "custodian": {
+    "activeFiscalYears": 2,
+    "workspaceId": 17141226,
+    "capacityAlertPct": 80,
+    "alertItemId": 12887692259,
+    "annualSummaryBoardId": 18429045784,
+    "annualSummaryColumns": {
+      "fiscalYear": "numeric_mm6r9er0",
+      "total": "numeric_mm6r1v6s",
+      "giftCount": "numeric_mm6rehes",
+      "byType": "long_text_mm6rqd1q",
+      "restatedAt": "date_mm6rw3g8"
     }
   }
 }
