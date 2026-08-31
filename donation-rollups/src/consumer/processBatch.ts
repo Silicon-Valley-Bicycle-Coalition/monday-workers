@@ -24,6 +24,11 @@ export interface ProcessBatchDeps {
   now?: Date; // injectable for tests; defaults to the real current time
 }
 
+// A failure that no amount of retrying can heal (e.g. a config mismatch): the row is
+// marked failed for the operator, but the message is acked so it doesn't burn three
+// retries and land in the DLQ on every future delivery for the same owner.
+class NonRetryableError extends Error {}
+
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
@@ -36,7 +41,8 @@ export async function processRecomputeBatch(
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups consumer: failed to process donation "${donationItemId}": ${errMsg}`);
       await deps.pendingStore.updateStatus(donationItemId, 'failed', { error: errMsg });
-      message.retry();
+      if (err instanceof NonRetryableError) message.ack();
+      else message.retry();
     }
   }
 }
@@ -45,9 +51,12 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   const { mondayClient, config } = deps;
   const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
 
+  // Defense in depth behind the webhook route's board allowlist: anything already in the
+  // queue from an unknown board is a permanent config mismatch, not a transient failure —
+  // mark it failed and ack rather than retrying it into the DLQ.
   const sourceBoard = donationBoards.find((b) => String(b.boardId) === donationBoardId);
   if (sourceBoard === undefined) {
-    throw new Error(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
+    throw new NonRetryableError(`config: no donationBoards entry for board id "${donationBoardId}" (this donation's board)`);
   }
 
   let ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);

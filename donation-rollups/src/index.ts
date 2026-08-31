@@ -37,6 +37,7 @@ export default {
     }
     const app = createApp({
       pendingStore: new D1PendingStore(env.DB),
+      donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
       queue: {
         send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined),
       },

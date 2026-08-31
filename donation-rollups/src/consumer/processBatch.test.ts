@@ -339,6 +339,21 @@ describe('processRecomputeBatch', () => {
       expect.objectContaining({ ownerItemId: 'donor-1' }));
   });
 
+  it('acks (not retries) a donation from a board missing from config — a config mismatch never heals by retrying', async () => {
+    const mondayClient = fakeMondayClient();
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dn5', '77'); // no donationBoards entry for board 77
+
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), mondayClient, config });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn5', 'failed', expect.objectContaining({
+      error: expect.stringContaining('77'),
+    }));
+  });
+
   it('retries and marks failed on a Monday API error, does not ack', async () => {
     const mondayClient = fakeMondayClient({
       changeColumnValues: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')),
