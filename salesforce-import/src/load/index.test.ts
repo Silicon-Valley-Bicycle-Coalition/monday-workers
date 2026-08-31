@@ -152,6 +152,24 @@ describe('runLoad donations archive-in-place (phase 3)', () => {
     expect(l.linkDone('r1', 'Payment')).toBe(true);
   });
 
+  it('defers archiving an item whose links failed, then links and archives it on re-run', async () => {
+    // OldGift is item 103 (Ada=101, Reg=102, OldGift=103); fail its Donor link write.
+    expect(await runLoad([], { client: fakeClient(new Set(), new Set(['103'])) })).toBe(1);
+    expect(archived).toEqual([]); // never archived with a missing link — that would strand the retry
+    const l = new Ledger(); await l.load();
+    expect(l.archivedDone('o-old')).toBe(false);
+    expect(l.linkDone('r1', 'Payment')).toBe(true); // Reg's inbound link (source 102) still landed
+
+    created = []; linked = []; archived = []; events = [];
+    expect(await runLoad([], { client: fakeClient() })).toBe(0);
+    expect(created).toEqual([]); // nothing re-created
+    expect(linked).toEqual(['103']); // only the failed Donor link retried
+    expect(archived).toEqual(['103']); // and the item archived right after it landed
+    const l2 = new Ledger(); await l2.load();
+    expect(l2.failures()).toEqual([]);
+    expect(l2.archivedDone('o-old')).toBe(true);
+  });
+
   it('archive failures are ledgered, exit 1, and only the archive retries on re-run', async () => {
     const archiveFailClient = (): MondayClient => {
       const fetchFn = (async (_u: unknown, init: unknown) => {

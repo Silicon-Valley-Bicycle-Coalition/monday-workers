@@ -123,6 +123,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
     return tasks;
   };
+  // sfIds whose links were (re)written during THIS run — an item that had a link retried
+  // after a prior run archived it must be re-archived below, ledger notwithstanding.
+  const linkedThisRun = new Set<string>();
   const runLinkTasks = async (linkTasks: LinkTask[]): Promise<void> => {
     let nextTask = 0;
     const linkWorker = async (): Promise<void> => {
@@ -136,6 +139,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
             { boardId: String(t.boardId), itemId: t.itemId,
               cols: JSON.stringify({ [t.colId]: { item_ids: t.targetIds } }), create: true });
           await ledger.recordLink(t.sfId, t.column);
+          linkedThisRun.add(t.sfId);
         } catch (err) {
           await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err) });
         }
@@ -191,20 +195,34 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         ...(deferredByFY.get(fy) ?? []),
       ]));
       deferredByFY.delete(fy);
+      // Never archive an item whose links didn't land — archived items reject all writes, so
+      // archiving would strand the retry behind a UI-only unarchive (bit for real: a network
+      // blip during FY2025's links left 5 archived gifts with no Donor link, 2026-08-28).
+      const pendingLinkSfIds = new Set(
+        ledger.failures().filter((f) => f.board.startsWith('link:')).map((f) => f.sfId));
       const toArchive = group.filter((p) => p.archive);
+      let archivedCount = 0, deferredCount = 0;
       for (const p of toArchive) {
-        if (ledger.archivedDone(p.sfId)) continue;
+        // Re-archive when a link was rewritten this run (the user unarchived it for the retry).
+        if (ledger.archivedDone(p.sfId) && !linkedThisRun.has(p.sfId)) { archivedCount++; continue; }
         const itemId = ledger.itemId(p.sfId);
         if (!itemId) continue; // creation failed above; already ledgered as a failure
+        if (pendingLinkSfIds.has(p.sfId)) {
+          deferredCount++;
+          console.warn(`load: NOT archiving donations/${p.sfId} — links still unresolved; ` +
+            `fix links (re-run load), then it archives on the next run`);
+          continue;
+        }
         try {
           await client.gql(`mutation ($id: ID!) { archive_item (item_id: $id) { id } }`, { id: itemId });
           await ledger.recordArchive(p.sfId);
+          archivedCount++;
         } catch (err) {
           await ledger.recordArchiveFailure(p.sfId, String(err));
         }
       }
       console.log(`load: donations FY${fy || '(undated)'} — ${group.length} items, ` +
-        `${toArchive.length} archived`);
+        `${archivedCount} archived` + (deferredCount > 0 ? `, ${deferredCount} archive-deferred` : ''));
     }
     console.log('load: donations phase-3 complete');
   }

@@ -31,8 +31,23 @@ describe('googleGeocode error handling', () => {
     expect(await googleGeocode('garbage address', 'k', { fetchFn })).toBeNull();
   });
 
-  it('still throws on server errors so transient failures stay visible', async () => {
-    const fetchFn = (async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch;
-    await expect(googleGeocode('1 Main St', 'k', { fetchFn })).rejects.toThrow(/HTTP 500/);
+  it('retries server errors with backoff, then throws so the caller can skip the address', async () => {
+    let calls = 0;
+    const fetchFn = (async () => { calls++; return { ok: false, status: 500, json: async () => ({}) }; }) as unknown as typeof fetch;
+    await expect(googleGeocode('1 Main St', 'k', { fetchFn, sleepFn: async () => {} }))
+      .rejects.toThrow(/HTTP 500/);
+    expect(calls).toBe(4); // all retry attempts consumed
+  });
+
+  it('a transient network throw recovers on retry', async () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls++;
+      if (calls === 1) throw new TypeError('fetch failed');
+      return Response.json(ok);
+    }) as typeof fetch;
+    const r = await googleGeocode('1 Infinite Loop', 'k', { fetchFn, sleepFn: async () => {} });
+    expect(r?.city).toBe('Cupertino');
+    expect(calls).toBe(2);
   });
 });

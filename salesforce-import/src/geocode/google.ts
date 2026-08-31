@@ -1,15 +1,24 @@
 import type { GeoResult } from './cache.js';
+import { withRetry, type RetryDeps } from './retry.js';
 
 export async function googleGeocode(
-  oneLine: string, apiKey: string, deps: { fetchFn?: typeof fetch } = {},
+  oneLine: string, apiKey: string,
+  deps: { fetchFn?: typeof fetch; label?: string } & RetryDeps = {},
 ): Promise<GeoResult | null> {
   const fetchFn = deps.fetchFn ?? fetch;
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(oneLine)}&key=${apiKey}`;
-  const res = await fetchFn(url);
+  // Network throws and 5xx retry with backoff; a still-failing request throws to the caller,
+  // which skips just that address rather than the run.
+  const res = await withRetry(async () => {
+    const r = await fetchFn(url);
+    if (r.status >= 500) throw new Error(`google geocode: HTTP ${r.status}`);
+    return r;
+  }, 'google geocode', deps);
   if (res.status >= 400 && res.status < 500) {
     // A 4xx is this address's problem (malformed beyond repair), not the run's —
     // log it and leave the address unresolved instead of crashing the stage.
-    console.warn(`google geocode: HTTP ${res.status} for "${oneLine}" — skipping`);
+    // Never log the street: run logs get captured (rehearsal-run.log) and this repo is public-bound.
+    console.warn(`google geocode: HTTP ${res.status} for "${deps.label ?? '(address withheld)'}" — skipping`);
     return null;
   }
   if (!res.ok) throw new Error(`google geocode: HTTP ${res.status}`);
