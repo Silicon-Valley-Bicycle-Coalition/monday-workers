@@ -4,6 +4,8 @@ export interface ItemPayload {
   name: string;
   columns: Record<string, unknown>;
   links?: { column: string; targetSfIds: string[] }[];
+  // Donations only: load archives this item in place after its links land (transform/schedule.ts).
+  archive?: boolean;
 }
 
 export interface TransformReport {

@@ -97,6 +97,20 @@ Render src/letters/letterView.ts → HTML with print CSS. No storage anywhere.
   view reflects Monday. The generation-date line on the letter makes "which version is this"
   answerable.
 
+### Storage and immutability (decided 2026-08-24: none for v2)
+
+* **Letters are renders, not records — no artifact storage.** R2 was considered and rejected:
+  with HTML + print CSS there is no server-side file to store, and persisting rendered letters
+  would widen the portal's PII surface (against Feature 2's retention-purge ethos) without
+  changing what the donor receives.
+* **If immutability-at-issuance ever becomes a real requirement** (an auditor ask, or a dispute
+  over a letter re-rendered after a data correction), the designated fix is to snapshot the
+  letter's *input data* — one JSON blob per (donor item, year) in D1, captured on first render
+  and used for every subsequent render of that letter — not to store rendered artifacts. Same
+  guarantee, no new binding, and it stays consistent with letters-as-renders (a template fix
+  still improves every letter, since only the data is frozen). Deferred until someone actually
+  asks; the generation-date line covers the ordinary case today.
+
 ## Feature 2 — Address/contact change requests
 
 ### Routes
@@ -164,8 +178,14 @@ checks. SVBC-specific values stay in config so a fork remains a config change.
 ## Error handling
 
 * Monday API failure mid-letter-render → friendly retry page; never a partial letter.
-* Queue write failure → the POST returns an error and the D1 row stays 'queued' for the consumer
-  retry path; nothing is silently dropped (DLQ visibility per the monorepo invariant).
+* Queue write failure → the POST returns an error and the D1 row stays 'queued'. There's no
+  consumer retry to fall back on here — the send never reached the queue, so no message exists to
+  redeliver. Instead, recovery happens on the donor's side: if they resubmit within the dedupe
+  window, `submitChangeRequest` finds the still-'queued' row via `findRecentByDedupeHash` and
+  re-enqueues it (`{ requestId }`) before returning 'duplicate', giving the stranded row another
+  shot at the queue. This is safe because the consumer is idempotent on already-written status —
+  a redundant send is a no-op, not a duplicate staff item. Nothing is silently dropped (DLQ
+  visibility per the monorepo invariant) once a message is in flight.
 * Placeholder acknowledgment language in config → letters feature disabled with explicit UI
   state, not a broken letter.
 

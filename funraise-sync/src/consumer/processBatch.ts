@@ -77,7 +77,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     });
   }
 
-  const { donorLinkColumn, entityIdColumn } = deps.config.funraiseSync;
+  const { donorLinkColumn, entityIdColumn, thankYouSentColumn } = deps.config.funraiseSync;
   const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
   if (donorItemId) {
     columnValues[donorLinkColumn] = {
@@ -97,6 +97,16 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
       writtenAt: new Date().toISOString(),
     });
     return;
+  }
+
+  // Funraise's own transaction-time donor receipt already covers acknowledgment for
+  // Funraise-sourced gifts (migration-plan.md Decisions Needed, Option 2), so this Worker
+  // marks it sent itself instead of relying on Salesforce's donation-acknowledgment automation.
+  // Only on a Donations item's first write, never on a later update — a later event might carry
+  // a staff correction to this column that a resend would clobber. Recurring gifts and event
+  // registrations aren't in scope.
+  if (thankYouSentColumn && entityType === 'transaction') {
+    columnValues[thankYouSentColumn] = { checked: 'true' };
   }
 
   // The D1 update recording mondayItemId can fail after a successful create, leaving

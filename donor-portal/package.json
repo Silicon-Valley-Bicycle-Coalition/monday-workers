@@ -6,6 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "dev": "wrangler dev",
+    "predev:local": "wrangler d1 migrations apply svbc-donor-portal-local --local --config wrangler.local.jsonc",
+    "dev:local": "wrangler dev --config wrangler.local.jsonc",
     "deploy": "wrangler deploy",
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
   },
@@ -15,7 +17,8 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "hono": "^4.13.3"
+    "hono": "^4.13.3",
+    "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",

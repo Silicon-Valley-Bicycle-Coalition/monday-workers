@@ -57,6 +57,10 @@ describe('campaignToPayload', () => {
     expect(campaignToPayload({ Id: 'k2', Name: 'Now', IsActive: true, ...prov }, since)).not.toBeNull();
     expect(campaignToPayload({ Id: 'k3', Name: 'Recent', IsActive: false, EndDate: '2023-01-01', ...prov }, since)).not.toBeNull();
   });
+  it('sets Salesforce Owner from Campaign.Owner', () => {
+    const p = campaignToPayload({ Id: 'k4', Name: 'Now', IsActive: true, Owner: { Name: 'Jessica Waite' }, ...prov }, since)!;
+    expect(p.columns['Salesforce Owner']).toBe('Jessica Waite');
+  });
 });
 
 describe('volunteers + activities', () => {

@@ -26,25 +26,23 @@ token carries the full permissions of the user who minted it, so a compromise of
 exposes everything that user can see — the whole workspace, if it's a staff member's own token.
 Mint tokens from dedicated integration users, scoped per exposure class: at minimum, the
 public-facing `donor-portal` gets its own user with access to only the boards it reads (Donors,
-Donations, Membership, Organizations), kept separate from the token(s) the staff-facing Workers
-use. Never ship a staff member's personal token into a Worker secret.
+Donations, Membership, Organizations — plus Event Registrations, Events, and Volunteers once
+the gated event-registrations and volunteer-history features are configured), kept separate
+from the token(s) the staff-facing Workers use. Never ship a staff member's personal token into
+a Worker secret.
 
 ## Status at a glance
 
-| Worker | Status | Priority | Owner |
-|---|---|---|---|
-| [`salesforce-import`](salesforce-import/README.md) | Built (merged) — extract → geocode → transform exercised on real data; **load and validate not yet run**, so no production Monday boards exist yet | **Blocking.** Central migration deliverable | Unassigned — needs owner + time budget for the load/validate/cutover runs |
-| [`funraise-sync`](funraise-sync/README.md) | Built (merged) — the three review findings decided and closed 2026-08-22 (entity-keyed upsert, matching in the queue consumer, PII strip + retention purge); not deployed, needs D1 provisioning, real board/column ids, and Funraise webhook subscriptions | Blocking (feeds the import) | Unassigned |
-| [`quickbooks-sync`](quickbooks-sync/README.md) | Built (merged) — not deployed; needs D1 provisioning, real board ids, and the Intuit app-review question resolved | Post-migration, non-blocking | Unassigned |
-| [`squarespace-forms`](squarespace-forms/README.md) | Decided — no Worker needed (resolved 2026-08-22) | N/A | dwk |
-| [`buffer-content-calendar`](buffer-content-calendar/README.md) | Recommended | Post-migration, non-blocking | Unassigned |
-| [`instagram-threads-interactions`](instagram-threads-interactions/README.md) | Decided — greenlit | Post-migration, non-blocking | Unassigned |
-| [`bluesky-interactions`](bluesky-interactions/README.md) | Recommended | Post-migration, non-blocking (after Instagram/Threads is stable) | Unassigned |
-| [`committee-calendars`](committee-calendars/README.md) | **Live** (deployed 2026-08-23) — serving `https://committees.bikesiliconvalley.org/committees.ics` | Post-migration, non-blocking | Unassigned |
-| [`volunteermatch-sync`](volunteermatch-sync/README.md) | Design complete, pending terms | Post-migration, non-blocking | dwk (confirms terms with Idealist first) |
-| [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) | Unassigned |
-| [`membership-reminders`](membership-reminders/README.md) | Built (merged) — not deployed; hard-blocked on the Donors board id and column ids, which exist only after `salesforce-import`'s load stage runs | Post-migration, **time-sensitive** — renewal emails stop at Salesforce retirement until this ships | Unassigned |
-| [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward | Unassigned |
+| Worker | Status | Priority |
+|---|---|---|
+| [`salesforce-import`](salesforce-import/README.md) | Built (merged) — extract → geocode → transform exercised on real data; **load and validate not yet run**, so no production Monday boards exist yet | **Blocking.** Central migration deliverable — needs a time budget for the load/validate/cutover runs |
+| [`funraise-sync`](funraise-sync/README.md) | Built (merged) — the three review findings decided and closed 2026-08-22 (entity-keyed upsert, matching in the queue consumer, PII strip + retention purge); not deployed, needs D1 provisioning, real board/column ids, and Funraise webhook subscriptions | Blocking (feeds the import) |
+| [`quickbooks-sync`](quickbooks-sync/README.md) | Built (merged) — not deployed; needs D1 provisioning, real board ids, and the Intuit app-review question resolved | Post-migration, non-blocking |
+| [`svbc-calendars`](svbc-calendars/README.md) | Code-complete, not yet deployed — see [svbc-calendars/README.md](svbc-calendars/README.md)'s Deploy section for the cutover checklist (KV provisioning, secrets, Web Analytics token, Workers Builds root directory, then reassigning `events.bikesiliconvalley.org`/`committees.bikesiliconvalley.org` from the two Workers it replaces). Merged 2026-08-27 from `events-widgets`, `committee-calendars`, and the standalone `bike-calendars` project (history: see [the merge design doc](docs/superpowers/specs/2026-08-27-events-bike-calendars-merge-design.md)) | Not migration-related; predates this repo |
+| [`donor-portal`](donor-portal/README.md) | Code-complete (v1, 2026-08-22) — not yet deployed; blocked on the spec's Pre-launch checklist (domain verification, real Monday column ids, dedicated integration token) | Post-migration, non-blocking (Membership dependency resolved 2026-08-21) |
+| [`mailchimp-sync`](mailchimp-sync/README.md) | Built — repurposed from the never-deployed `membership-reminders` (2026-08-26); not deployed, blocked on the Donors board (same as everything downstream of `salesforce-import`) plus a Mailchimp audience with the required merge fields/Interest Categories | Post-migration, **time-sensitive** — newsletter segmentation and both membership email journeys depend on it once Salesforce retires |
+| [`donation-rollups`](donation-rollups/README.md) | Built (`feat/donation-rollups`) — not deployed; needs D1 provisioning, real board/column ids, a Monday webhook subscription, and hasn't been tested against a live Monday account | Post-migration, non-blocking — `salesforce-import` ships correct initial values; this Worker keeps This/Last Year, Largest/Smallest/Average, and Last Gift from going stale afterward |
+| [`monday-backup`](monday-backup/README.md) | Built (`feat/monday-backup`) — not deployed; needs D1 provisioning, a dedicated Monday backup integration user/token, and a Google service account scoped to the destination Drive folder | Post-migration, non-blocking, but time-relevant once real donor data lives in Monday with no Salesforce copy to fall back on |
 
 Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
 plan for both:
@@ -78,27 +76,36 @@ inspect and replay, not a donation that quietly never reached Monday.
 **Cost: effectively free at SVBC's volume.** Cloudflare Queues
 [shipped on the Workers Free plan](https://developers.cloudflare.com/changelog/post/2026-02-04-queues-free-plan/)
 in February 2026 — 10,000 operations/day included. SVBC's actual event volume (a few hundred
-Funraise transactions a month, occasional QuickBooks/Instagram/Bluesky events) is nowhere near
+Funraise transactions a month, occasional QuickBooks events) is nowhere near
 that ceiling; this is a genuine build-over-subscription fit, not a paid upgrade.
 
-**Applies to:** `funraise-sync`, `quickbooks-sync`, `instagram-threads-interactions`,
-`bluesky-interactions` — every Worker driven by a webhook or firehose with no natural retry of its
-own. Each Worker's own README notes this in its Data Flow section.
+**Applies to:** `funraise-sync`, `quickbooks-sync` — every Worker driven by a webhook or firehose
+with no natural retry of its own. Each Worker's own README notes this in its Data Flow section.
 
-**Lower risk, but not risk-free: the Cron-polled Workers** (`committee-calendars`,
-`buffer-content-calendar`) self-heal on the next scheduled run if one poll fails — no Queue needed
-there. But each one's D1 "last processed" cursor must only advance **after** a confirmed Monday
-write, never before — otherwise a failed run silently skips whatever it was supposed to process
-that cycle, with nothing to retry it and nothing telling anyone it happened. Worth a
-Slack-automation ping (native, no build) on repeated failure, not just silent retry-next-cycle.
-(`squarespace-forms` was originally planned as a third cron-polled Worker here — see its own
-README for why that turned out to be unnecessary.)
+**Lower risk, but not risk-free: a Cron-polled Worker** self-heals on the next scheduled run if a
+poll fails — no Queue needed there. But its D1 "last processed" cursor must only advance **after**
+a confirmed Monday write, never before — otherwise a failed run silently skips whatever it was
+supposed to process that cycle, with nothing to retry it and nothing telling anyone it happened.
+Worth a Slack-automation ping (native, no build) on repeated failure, not just silent
+retry-next-cycle. (`svbc-calendars`'s cron is a KV-fallback warm, not a Monday write, so this
+invariant doesn't apply there — it's documented here as the general pattern for any future
+cron-polled, Monday-writing Worker.)
 
 **`salesforce-import` is different — a one-time batch job, not an ongoing sync.** A Queue is the
 wrong tool for a run that happens once and is already validated by repeated sandbox dry-runs (see
 Migration Method). What it needs instead: retry-with-backoff on individual Monday API writes
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
+
+## Deploys
+
+The live Workers deploy automatically via [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
+a merge to `main` builds and deploys each connected Worker from its subdirectory (root directory
+set per Worker in the Cloudflare dashboard, e.g. `/svbc-calendars`), and non-production branches
+upload preview versions. Manual `npm run deploy` still works for
+first-time provisioning or emergencies, but routine changes should ship by merging — this repo
+previously drifted from production for months when a Worker was deployed by hand and its CI
+connection silently broke.
 
 ## License
 
@@ -116,10 +123,9 @@ here.
 
 1. **`salesforce-import`** and **`funraise-sync`** first — both are blocking on the October
    Salesforce cutover; everything else here is explicitly post-migration and non-blocking.
-2. **`membership-reminders` next** — it's post-migration but time-sensitive: Salesforce's
-   renewal-reminder automation dies at retirement, and members stop being asked to renew until
-   this ships.
-3. Everything else can happen in any order, gated mainly by owner availability (see the table
-   above — most rows are unassigned) and, for `volunteermatch-sync`, by Idealist confirming terms.
-   `donor-portal`'s former dependency on the Membership design was resolved 2026-08-21 — the
+2. **`mailchimp-sync` next** — it's post-migration but time-sensitive: Salesforce's
+   renewal-reminder automation and newsletter segmentation die at retirement, and members stop
+   being asked to renew and segmented for newsletters until this ships.
+3. Everything else can happen in any order, gated mainly by available time (see the table
+   above). `donor-portal`'s former dependency on the Membership design was resolved 2026-08-21 — the
    Status/Tier slice it needs is now part of the import scope.

@@ -6,3 +6,11 @@ node_modules/
 
 # generated per-machine by `wrangler types` (can absorb local .env vars) — regenerate, don't commit
 worker-configuration.d.ts
+
+# Claude Code sessions' EnterWorktree tool defaults to checking worktrees out here, inside the
+# main checkout, instead of as siblings — these are live `git worktree` checkouts, never content
+# to track.
+.claude/worktrees/
+
+# superpowers:brainstorming visual-companion mockups (ephemeral scratch, not deliverables)
+.superpowers/

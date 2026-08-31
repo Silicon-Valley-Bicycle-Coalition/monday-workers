@@ -1,0 +1,112 @@
+{
+  "_comment": "Local-preview-only config (see src/index.local.ts / wrangler.local.jsonc). Board ids and column ids are unused by FakeMondayClient — they only need to be present and non-placeholder so validateConfig and the v2/v3 feature gates pass, unlocking letters/change-requests/card for preview. Never used by the real Worker entrypoint (src/index.ts reads config/svbc.json).",
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "donorsBoardId": 1,
+    "donationsBoardId": 2,
+    "organizationsBoardId": 3,
+    "volunteersBoardId": 5,
+    "columns": {
+      "donorEmail": "email",
+      "membershipStatus": "status",
+      "membershipTier": "tier",
+      "dollarDonated": "donated",
+      "donationDonorLink": "donor_link",
+      "donationAmount": "amount",
+      "donationDate": "date",
+      "donationDescription": "description",
+      "discountOffered": "discount_offered",
+      "discountActive": "discount_active",
+      "donorAddress": "address",
+      "donorPhone": "phone",
+      "membershipExpiry": "expiry",
+      "preferredLanguage": "language",
+      "donorEmailOptOut": "email_opt_out",
+      "donorSmsOptOut": "sms_opt_out",
+      "donorDoNotMail": "do_not_mail",
+      "volunteerDonorLink": "volunteer_donor_link",
+      "volunteerHours": "volunteer_hours",
+      "volunteerDate": "volunteer_date",
+      "volunteerJob": "volunteer_job",
+      "volunteerStatus": "volunteer_status"
+    }
+  },
+  "email": {
+    "fromAddress": "login@localhost",
+    "fromName": "SVBC Donor Portal (local preview)"
+  },
+  "auth": {
+    "magicLinkTtlMinutes": 15,
+    "sessionTtlHours": 24,
+    "portalBaseUrl": "http://localhost:8787"
+  },
+  "rateLimit": {
+    "emailWindowSeconds": 900,
+    "emailMaxAttempts": 5
+  },
+  "taxLetter": {
+    "orgLegalName": "Silicon Valley Bicycle Coalition",
+    "ein": "00-0000000",
+    "officeAddress": "123 Bike Lane, San José, CA 95112",
+    "mailingAddress": "PO Box 123, San José, CA 95112",
+    "signatureName": "Dev Preview",
+    "signatureTitle": "Executive Director",
+    "plainStatement": "No goods or services were provided in exchange for this contribution.",
+    "benefitStatement": "In exchange for this contribution, you received membership benefits.",
+    "benefitTiers": ["Gold"]
+  },
+  "changeRequests": {
+    "boardId": 4,
+    "columns": {
+      "donorLink": "donor",
+      "field": "field",
+      "oldValue": "old_value",
+      "newValue": "new_value",
+      "submittedAt": "submitted_at"
+    },
+    "dedupeWindowHours": 72,
+    "retentionDays": 180
+  },
+  "cardTokens": {
+    "retentionDays": 30
+  },
+  "funraise": {
+    "manageRecurringUrl": "https://give.funraise.org/login",
+    "renewMembershipUrl": "https://give.funraise.org/give?campaign=membership"
+  },
+  "letterCron": {
+    "boardId": 6,
+    "columns": {
+      "autoSend": "auto_send",
+      "startDate": "start_date",
+      "bodyTemplate": "body_template",
+      "bodyTemplatesByLocale": {}
+    },
+    "maxTriggersPerRun": 200
+  },
+  "volunteerHistory": {
+    "completedStatuses": ["Completed"]
+  },
+  "eventRegistrations": {
+    "boardId": 7,
+    "columns": {
+      "attendeeLink": "attendee_link",
+      "eventLink": "event_link",
+      "attended": "attended"
+    },
+    "eventDateColumnId": "event_date"
+  },
+  "pledges": {
+    "boardId": 8,
+    "columns": {
+      "donorLink": "pledge_donor_link",
+      "pledgedAmount": "pledged_amount",
+      "fulfilledAmount": "fulfilled_amount",
+      "status": "pledge_status",
+      "dueDate": "due_date"
+    }
+  },
+  "matchingGifts": {
+    "doubleTheDonationPublicKey": null
+  }
+}

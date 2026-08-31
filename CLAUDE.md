@@ -21,12 +21,65 @@ merged to `main` once ready; most are now merged with full implementations, whil
 subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
 "Status at a glance" table for what's built, deployed, or pending.
 
+One Worker is an exception to the migration scope above — `svbc-calendars` (Eventbrite widget +
+committee/event ICS calendar feeds) predates this repo and serves the public
+bikesiliconvalley.org website directly, unrelated to the Salesforce/Monday migration. It's here
+for the same reason `events-widgets` originally was: one place to deploy SVBC's Cloudflare
+Workers from.
+
+## Concurrency — default to a worktree
+
+Workers are built one per feature branch, each in its own sibling worktree directory (e.g.
+`monday-workers-si` for `feat/salesforce-import`, `monday-workers-donor-portal-v2` for
+`feat/donor-portal-v2` — see the parent workspace's `CLAUDE.md`). When starting work on a new
+Worker, or a change of any real size to an existing one, create a new worktree rather than editing
+the primary `monday-workers` checkout directly:
+
+```sh
+git worktree add ../monday-workers-<short-topic> -b feat/<topic>
+```
+
+(Claude Code sessions: use the `EnterWorktree` tool rather than the raw command above.)
+
+Before starting, `git worktree list` to see what's already checked out. Work in the worktree,
+commit there, and open the MR from that branch. Once the MR merges to `main`, remove the worktree
+and delete the local branch — see the parent workspace `CLAUDE.md`'s "Worktree cleanup" section
+for the exact commands.
+
+**A worktree holds exactly one active agent, ever — never fan multiple agents into the same
+one.** Real collision on 2026-08-25: a session working `feat/membership-card` (in the sibling
+worktree `.claude/worktrees/membership-card`) was fixing findings from a code review one at a
+time, then started dispatching each remaining finding to its own `spawn_task` sub-session —
+without giving any of them a separate worktree, so every sub-session's `cwd` pointed at the same
+checkout. Up to three agents ended up editing the same files simultaneously: one session's
+in-progress `CardTokenStore` interface change broke another's already-passing test file mid-task,
+and a documentation commit from one session silently absorbed another session's unrelated
+uncommitted edit to `README.md` (right author, wrong commit — the two sessions' work is now
+tangled in one commit's history). Nothing was unrecoverable, but it easily could have been.
+
+`git worktree` physically cannot check out one branch into two directories at once, so this isn't
+solved by "give each dispatched agent its own worktree on the *same* branch" — that command
+fails. Instead:
+
+- **Default:** do the fixes yourself, one at a time, in the one worktree you have — commit after
+  each before starting the next. This is almost always the right call for a punch-list of fixes
+  against one feature branch; it's what made the commits *before* the incident (one fix, one
+  commit, repeated) collision-free.
+- **Only reach for parallel sub-agents when the fixes are truly independent and worth the
+  overhead:** give each one its *own* worktree on its *own* throwaway branch off the feature
+  branch (`git worktree add ../monday-workers-<topic>-fix-<n> -b fix/<topic>-<n>
+  feat/<topic>`), let it commit there, then merge or cherry-pick each fix branch back into
+  `feat/<topic>` **sequentially** yourself once they're done — never concurrently — and remove
+  the temp worktree/branch afterward (see "Worktree cleanup" above).
+- Never pass your own `cwd` to a spawned sub-agent that's going to edit files. If you can't give
+  it an isolated worktree, don't dispatch it — do the edit inline instead.
+
 ## Commands
 
 There's no root `package.json` — every command runs from inside a Worker's own subdirectory
 (`cd funraise-sync`, etc.), each with its own `package.json`, `wrangler.jsonc`, and lockfile.
 
-For a Worker built on the standard Hono + D1 stack (e.g. `funraise-sync`, `membership-reminders`):
+For a Worker built on the standard Hono + D1 stack (e.g. `funraise-sync`, `mailchimp-sync`):
 
 ```sh
 npm test                    # vitest run
@@ -52,18 +105,20 @@ npm run typecheck
 
 ## Architecture
 
-**Webhook-driven Workers** (`funraise-sync`, `quickbooks-sync`, `instagram-threads-interactions`,
-`bluesky-interactions`) share one shape: a Hono route validates and dedupes the incoming event into
+**Webhook-driven Workers** (`funraise-sync`, `quickbooks-sync`) share one shape: a Hono route
+validates and dedupes the incoming event into
 D1 (the idempotency store), then enqueues a message to a Cloudflare Queue producer. A separate
 queue consumer (the Worker's exported `queue()` handler) performs the actual Monday.com write.
 Queues retry automatically (3 attempts) on failure and route to a dead-letter queue once exhausted,
 so a failed write becomes a visible, replayable backlog instead of a silently dropped donation.
 D1 status here means "ingested," not "written" — the queue is what makes the write durable.
 
-**Cron-polled Workers** (`squarespace-forms`, `committee-calendars`, `buffer-content-calendar`)
-don't need a queue — a failed poll self-heals on the next scheduled run. The one invariant that
-matters: the D1 "last processed" cursor must only advance *after* a confirmed Monday write, never
-before, or a failed run silently skips what it should have processed with nothing to retry it.
+**A cron-polled Worker** doesn't need a queue — a failed poll self-heals on the next scheduled run.
+The one invariant that matters: the D1 "last processed" cursor must only advance *after* a
+confirmed Monday write, never before, or a failed run silently skips what it should have processed
+with nothing to retry it. (`svbc-calendars`'s daily cron is a KV-fallback warm, not a Monday write,
+so this invariant doesn't apply to it — no Worker in this repo currently needs this pattern for a
+real Monday-writing cron; it's documented here for the next one that does.)
 
 **`salesforce-import` is a one-time batch job**, not an ongoing sync, so it uses neither pattern.
 It's a self-registering CLI (`src/commands.ts` holds a `registerCommand` map; each pipeline stage

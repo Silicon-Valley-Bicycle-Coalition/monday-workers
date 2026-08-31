@@ -1,14 +1,19 @@
 import type { ItemPayload } from './types.js';
 import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
-import { eraFor, type Era } from './eras.js';
 
+// Closed Won is a distinct label, not plain "Received", on purpose: it's the same
+// 438 stale-stage records docs/07 gotcha #4 found (IsWon = false, unlike Posted — see
+// gotcha #10). Staff still see the gift succeeded, but donation-rollups (monday-workers)
+// filters on Status === 'Received' exactly, so a shared label would silently pull these
+// back into ongoing Lifetime Giving totals every time it recomputes, undoing the fix in
+// transform/rollups.ts. See docs/17 for the full picklist audit.
 const STATUS: Record<string, string> = {
-  Posted: 'Received', 'Closed Won': 'Received', 'Closed Lost': 'Failed',
+  Posted: 'Received', 'Closed Won': 'Received (Historical)', 'Closed Lost': 'Failed',
 };
 
 export function opportunityToPayload(
   o: Record<string, unknown>,
-  deps: { eras: Era[]; termCols: Map<string, Record<string, unknown>> },
+  deps: { termCols: Map<string, Record<string, unknown>> },
 ): ItemPayload {
   const donorId = (o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? o['AccountId']) as string | null;
   const links: ItemPayload['links'] = [];
@@ -16,7 +21,7 @@ export function opportunityToPayload(
   if (o['funraise__Subscription__c']) links.push({ column: 'Recurring Gift', targetSfIds: [o['funraise__Subscription__c'] as string] });
   if (o['CampaignId']) links.push({ column: 'Campaign', targetSfIds: [o['CampaignId'] as string] });
   return {
-    board: eraFor(o['CloseDate'] as string | null, deps.eras),
+    board: 'donations',
     sfId: o['Id'] as string,
     name: (o['Name'] as string) ?? '(no name)',
     columns: {
@@ -48,10 +53,10 @@ export function cnpOverlapCheck(
   return { duplicateTransactionIds, unique };
 }
 
-export function cnpToPayload(tx: Record<string, unknown>, deps: { eras: Era[] }): ItemPayload {
+export function cnpToPayload(tx: Record<string, unknown>): ItemPayload {
   const donorId = (tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c']) as string | null;
   return {
-    board: eraFor(tx['CnP_PaaS__TransactionDate__c'] as string | null, deps.eras),
+    board: 'donations',
     sfId: tx['Id'] as string,
     name: (tx['Name'] as string) ?? '(C&P transaction)',
     columns: {

@@ -11,6 +11,14 @@ describe('donorRollups', () => {
          CnP_PaaS__TransactionDate__c: '2015-01-01T00:00:00Z' }]);
     expect(r.get('c1')).toEqual({ lifetimeGiving: 35.3, firstGiftISO: '2015-01-01', giftCount: 3 });
   });
+
+  it('excludes Closed Won — not IsWon in Salesforce, unlike Posted (monday-migration docs/07 gotcha #10)', () => {
+    const r = donorRollups(
+      [{ Id: 'o1', npsp__Primary_Contact__c: 'c1', Amount: 10, CloseDate: '2020-01-01', StageName: 'Posted' },
+       { Id: 'o2', npsp__Primary_Contact__c: 'c1', Amount: 500, CloseDate: '2020-01-01', StageName: 'Closed Won' }],
+      []);
+    expect(r.get('c1')).toEqual({ lifetimeGiving: 10, firstGiftISO: '2020-01-01', giftCount: 1 });
+  });
 });
 
 describe('applyRollups', () => {
