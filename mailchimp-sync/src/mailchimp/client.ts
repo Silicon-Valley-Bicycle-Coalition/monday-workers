@@ -10,7 +10,13 @@ export interface MailchimpMemberInterests {
 }
 
 export interface MailchimpClient {
-  upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[]): Promise<void>;
+  /**
+   * Upsert the member, then sync its worker-managed tags. `tags` is the desired set;
+   * `managedTags` is every tag this worker owns — managed tags not in `tags` are
+   * deactivated, and tags outside `managedTags` (staff-applied, other tools') are
+   * never touched.
+   */
+  upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<void>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
   listInterests(): Promise<MailchimpInterest[]>;
 }
@@ -33,9 +39,10 @@ export class HttpMailchimpClient implements MailchimpClient {
     return `Basic ${btoa(`anystring:${this.apiKey}`)}`;
   }
 
-  async upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[]): Promise<void> {
+  async upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<void> {
+    const hash = subscriberHash(email);
     const response = await this.fetchFn(
-      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${subscriberHash(email)}`,
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
@@ -47,12 +54,40 @@ export class HttpMailchimpClient implements MailchimpClient {
         }),
       },
     );
+    if (!response.ok) {
+      const detail = await response.text();
+      if (response.status === 429 || response.status >= 500) {
+        throw new MailchimpTransientError(`mailchimp upsertMember: HTTP ${response.status}: ${detail}`);
+      }
+      throw new MailchimpPermanentError(`mailchimp upsertMember: HTTP ${response.status}: ${detail}`);
+    }
+    await this.syncTags(hash, tags, managedTags);
+  }
+
+  // Mailchimp applies the PUT body's `tags` only when the member is first created — on
+  // updates the field is silently ignored — so without this explicit sync a lapsed
+  // member would keep e.g. svbc-active-member forever. Desired tags go active; managed
+  // tags no longer desired go inactive; anything outside the managed set is untouched.
+  private async syncTags(hash: string, desired: string[], managed: string[]): Promise<void> {
+    const tags = [
+      ...desired.map((name) => ({ name, status: 'active' as const })),
+      ...managed.filter((name) => !desired.includes(name)).map((name) => ({ name, status: 'inactive' as const })),
+    ];
+    if (tags.length === 0) return;
+    const response = await this.fetchFn(
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}/tags`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
+        body: JSON.stringify({ tags }),
+      },
+    );
     if (response.ok) return;
     const detail = await response.text();
     if (response.status === 429 || response.status >= 500) {
-      throw new MailchimpTransientError(`mailchimp upsertMember: HTTP ${response.status}: ${detail}`);
+      throw new MailchimpTransientError(`mailchimp syncTags: HTTP ${response.status}: ${detail}`);
     }
-    throw new MailchimpPermanentError(`mailchimp upsertMember: HTTP ${response.status}: ${detail}`);
+    throw new MailchimpPermanentError(`mailchimp syncTags: HTTP ${response.status}: ${detail}`);
   }
 
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {

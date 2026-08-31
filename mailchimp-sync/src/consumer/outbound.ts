@@ -3,7 +3,7 @@ import type { MondayClient } from '../monday/client';
 import type { MailchimpClient } from '../mailchimp/client';
 import { MailchimpPermanentError } from '../mailchimp/client';
 import type { Config, OutboundSyncMessage } from '../types';
-import { buildMergeFields, buildTags } from './mapDonor';
+import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -49,6 +49,6 @@ async function processOne(donorItemId: string, deps: OutboundConsumerDeps): Prom
     return;
   }
 
-  await mailchimpClient.upsertMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config));
+  await mailchimpClient.upsertMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config));
   await pendingStore.updateStatus(donorItemId, 'written', undefined, new Date().toISOString());
 }

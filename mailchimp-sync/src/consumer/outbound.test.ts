@@ -48,7 +48,13 @@ describe('processOutboundBatch', () => {
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG });
 
-    expect(mailchimpClient.upsertMember).toHaveBeenCalledWith('a@b.com', expect.any(Object), expect.any(Array));
+    expect(mailchimpClient.upsertMember).toHaveBeenCalledWith(
+      'a@b.com',
+      expect.any(Object),
+      ['active-member'],
+      // The full worker-managed set, so the client can deactivate the ones no longer desired.
+      ['active-member', 'lapsed-member', 'lifetime-member', 'has-donated'],
+    );
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('1', 'written', undefined, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
   });
