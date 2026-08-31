@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Ledger } from './ledger.js';
+import { appendNdjson, dataPath } from '../artifacts.js';
 
 describe('Ledger', () => {
   beforeEach(() => { process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-'))); });
@@ -40,6 +41,25 @@ describe('Ledger', () => {
     const b = new Ledger(); await b.load();
     expect(b.archivedDone('o1')).toBe(true);
     expect(b.failures()).toEqual([]);
+  });
+
+  it('a link failure carries its target sfIds; the retry success clears them', async () => {
+    const a = new Ledger(); await a.load();
+    await a.recordLinkFailure({ sfId: 'r1', column: 'Payment', error: 'boom', targetSfIds: ['o-old'] });
+    const b = new Ledger(); await b.load();
+    expect(b.failures()).toEqual([
+      { sfId: 'r1', board: 'link:Payment', error: 'boom', targetSfIds: ['o-old'] }]);
+    await b.recordLink('r1', 'Payment');
+    const c = new Ledger(); await c.load();
+    expect(c.failures()).toEqual([]);
+  });
+
+  it('parses pre-targetSfIds linkFailure entries (older ledger.ndjson format)', async () => {
+    await appendNdjson(dataPath('load', 'ledger.ndjson'),
+      { kind: 'linkFailure', sfId: 'r1', column: 'Payment', error: 'boom' });
+    const a = new Ledger(); await a.load();
+    expect(a.failures().map((f) => ({ sfId: f.sfId, board: f.board, targets: f.targetSfIds ?? [] })))
+      .toEqual([{ sfId: 'r1', board: 'link:Payment', targets: [] }]);
   });
 
   it('an archive failure is keyed apart from create and link failures', async () => {

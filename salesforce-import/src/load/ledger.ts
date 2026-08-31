@@ -4,7 +4,9 @@ import { appendNdjson, dataPath, readNdjson } from '../artifacts.js';
 type Entry =
   | { kind: 'success'; sfId: string; board: string; itemId: string }
   | { kind: 'failure'; sfId: string; board: string; error: string }
-  | { kind: 'linkFailure'; sfId: string; column: string; error: string }
+  // targetSfIds (the link's TARGET items) is optional for compatibility with ledger.ndjson
+  // files written before it existed — absent means "targets unknown", not "no targets".
+  | { kind: 'linkFailure'; sfId: string; column: string; error: string; targetSfIds?: string[] }
   | { kind: 'link'; sfId: string; column: string }
   | { kind: 'archive'; sfId: string }
   | { kind: 'archiveFailure'; sfId: string; error: string };
@@ -18,7 +20,7 @@ function archiveFailureKey(sfId: string): string {
 
 export class Ledger {
   private successes = new Map<string, { board: string; itemId: string }>();
-  private failuresMap = new Map<string, { sfId: string; board: string; error: string }>();
+  private failuresMap = new Map<string, { sfId: string; board: string; error: string; targetSfIds?: string[] }>();
   private links = new Set<string>();
   private archives = new Set<string>();
   private path = dataPath('load', 'ledger.ndjson');
@@ -37,7 +39,8 @@ export class Ledger {
         // `${sfId}|${board}`) — a link failure and the item's own create failure must not
         // collide and clobber each other's ledger state.
         this.failuresMap.set(linkFailureKey(e.sfId, e.column),
-          { sfId: e.sfId, board: `link:${e.column}`, error: e.error });
+          { sfId: e.sfId, board: `link:${e.column}`, error: e.error,
+            ...(e.targetSfIds ? { targetSfIds: e.targetSfIds } : {}) });
       } else if (e.kind === 'archive') {
         this.archives.add(e.sfId);
         this.failuresMap.delete(archiveFailureKey(e.sfId));
@@ -53,7 +56,7 @@ export class Ledger {
   }
   has(sfId: string, board: string): boolean { return this.successes.get(sfId)?.board === board; }
   itemId(sfId: string): string | undefined { return this.successes.get(sfId)?.itemId; }
-  failures(): { sfId: string; board: string; error: string }[] { return [...this.failuresMap.values()]; }
+  failures(): { sfId: string; board: string; error: string; targetSfIds?: string[] }[] { return [...this.failuresMap.values()]; }
   linkDone(sfId: string, column: string): boolean { return this.links.has(`${sfId}|${column}`); }
   async recordSuccess(e: { sfId: string; board: string; itemId: string }): Promise<void> {
     this.successes.set(e.sfId, { board: e.board, itemId: e.itemId });
@@ -64,9 +67,10 @@ export class Ledger {
     this.failuresMap.set(`${e.sfId}|${e.board}`, e);
     await appendNdjson(this.path, { kind: 'failure', ...e });
   }
-  async recordLinkFailure(e: { sfId: string; column: string; error: string }): Promise<void> {
+  async recordLinkFailure(e: { sfId: string; column: string; error: string; targetSfIds?: string[] }): Promise<void> {
     this.failuresMap.set(linkFailureKey(e.sfId, e.column),
-      { sfId: e.sfId, board: `link:${e.column}`, error: e.error });
+      { sfId: e.sfId, board: `link:${e.column}`, error: e.error,
+        ...(e.targetSfIds ? { targetSfIds: e.targetSfIds } : {}) });
     await appendNdjson(this.path, { kind: 'linkFailure', ...e });
   }
   async recordLink(sfId: string, column: string): Promise<void> {

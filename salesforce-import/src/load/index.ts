@@ -23,7 +23,11 @@ function boardOrder(keys: string[]): string[] {
 
 const payloadFY = (p: ItemPayload): string => String(p.columns['Fiscal Year'] ?? '');
 
-interface LinkTask { boardId: number; itemId: string; colId: string; targetIds: number[]; sfId: string; column: string }
+// targetSfIds mirrors targetIds — the resolved TARGET items' Salesforce ids — so a failed
+// link can be ledgered against its targets too (the archive gate below must not archive a
+// donation that a failed incoming link still points at).
+interface LinkTask { boardId: number; itemId: string; colId: string; targetIds: number[];
+  targetSfIds: string[]; sfId: string; column: string }
 // A payload link that can't be written yet because its targets are donations that phase 3
 // hasn't created (and must link before archiving).
 interface DeferredLink { key: string; payload: ItemPayload; link: { column: string; targetSfIds: string[] } }
@@ -112,14 +116,15 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       if (!itemId) continue;
       if (ledger.linkDone(p.sfId, link.column)) continue;
       const resolved = link.targetSfIds
-        .map((id) => ledger.itemId(id))
-        .filter((id): id is string => id !== undefined);
+        .map((sfId) => ({ sfId, targetItemId: ledger.itemId(sfId) }))
+        .filter((t): t is { sfId: string; targetItemId: string } => t.targetItemId !== undefined);
       if (resolved.length === 0) { skippedLinks++; continue; }
       if (resolved.length < link.targetSfIds.length) partialLinks++;
       const colId = board.columns[link.column];
       if (!colId) throw new Error(`load: board ${key} missing connect column "${link.column}"`);
       tasks.push({ boardId: board.boardId, itemId, colId,
-        targetIds: resolved.map(Number), sfId: p.sfId, column: link.column });
+        targetIds: resolved.map((t) => Number(t.targetItemId)),
+        targetSfIds: resolved.map((t) => t.sfId), sfId: p.sfId, column: link.column });
     }
     return tasks;
   };
@@ -140,8 +145,12 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
               cols: JSON.stringify({ [t.colId]: { item_ids: t.targetIds } }), create: true });
           await ledger.recordLink(t.sfId, t.column);
           linkedThisRun.add(t.sfId);
+          // Targets count too: a retried incoming link means its target was unarchived for
+          // the write to stick, so the re-archive check below must see it as touched.
+          for (const target of t.targetSfIds) linkedThisRun.add(target);
         } catch (err) {
-          await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err) });
+          await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err),
+            targetSfIds: t.targetSfIds });
         }
       }
     };
@@ -198,8 +207,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       // Never archive an item whose links didn't land — archived items reject all writes, so
       // archiving would strand the retry behind a UI-only unarchive (bit for real: a network
       // blip during FY2025's links left 5 archived gifts with no Donor link, 2026-08-28).
+      // "Its links" means both directions: a failed link is ledgered under its SOURCE's sfId
+      // (e.g. an event-registration whose Payment points INTO a donation), so the gate must
+      // also block every TARGET of a pending link, not just payloads that are themselves the
+      // source. Pre-targetSfIds ledger entries have no target list — those can only gate by
+      // source, same as before.
       const pendingLinkSfIds = new Set(
-        ledger.failures().filter((f) => f.board.startsWith('link:')).map((f) => f.sfId));
+        ledger.failures().filter((f) => f.board.startsWith('link:'))
+          .flatMap((f) => [f.sfId, ...(f.targetSfIds ?? [])]));
       const toArchive = group.filter((p) => p.archive);
       let archivedCount = 0, deferredCount = 0;
       for (const p of toArchive) {

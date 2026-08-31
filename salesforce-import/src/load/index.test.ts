@@ -170,6 +170,30 @@ describe('runLoad donations archive-in-place (phase 3)', () => {
     expect(l2.archivedDone('o-old')).toBe(true);
   });
 
+  it('defers archiving a donation that is the TARGET of a failed incoming link, then archives once it lands', async () => {
+    // Reg is item 102; failing its change_multiple_column_values writes fails BOTH its links —
+    // Attendee (phase 2) and the deferred incoming Payment link whose TARGET is OldGift (103).
+    // The link failures are ledgered under Reg's sfId (r1), not the donation's (o-old), so the
+    // archive gate must know link targets or OldGift archives with its Payment link missing.
+    expect(await runLoad([], { client: fakeClient(new Set(), new Set(['102'])) })).toBe(1);
+    expect(archived).toEqual([]); // OldGift NOT archived — the failed Payment link points into it
+    const l = new Ledger(); await l.load();
+    expect(l.archivedDone('o-old')).toBe(false);
+    expect(l.linkDone('r1', 'Payment')).toBe(false);
+    expect(l.linkDone('o-old', 'Donor')).toBe(true); // the donation's own outgoing link landed
+
+    // Recovery: the retry lands the Payment link, and only then does OldGift archive.
+    created = []; linked = []; archived = []; events = [];
+    expect(await runLoad([], { client: fakeClient() })).toBe(0);
+    expect(created).toEqual([]);
+    expect(linked).toEqual(['102', '102']); // Attendee + Payment retried, nothing else
+    expect(archived).toEqual(['103']);
+    expect(events.indexOf('archive:103')).toBeGreaterThan(events.lastIndexOf('link:102'));
+    const l2 = new Ledger(); await l2.load();
+    expect(l2.failures()).toEqual([]);
+    expect(l2.archivedDone('o-old')).toBe(true);
+  });
+
   it('archive failures are ledgered, exit 1, and only the archive retries on re-run', async () => {
     const archiveFailClient = (): MondayClient => {
       const fetchFn = (async (_u: unknown, init: unknown) => {
