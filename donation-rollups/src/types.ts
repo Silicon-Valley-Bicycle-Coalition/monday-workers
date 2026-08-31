@@ -14,8 +14,24 @@ export interface DonationBoardConfig {
   };
 }
 
+export interface CustodianConfig {
+  // How many fiscal years of donations stay active (unarchived) on the Donations board —
+  // must match salesforce-import's donationsActiveFiscalYears so the custodian's year-end
+  // run continues exactly the policy the initial load established. 2 = current + previous.
+  activeFiscalYears: number;
+  // Workspace whose boards the capacity alarm watches (every board, not just donations).
+  workspaceId: number;
+  capacityAlertPct: number;
+  // Monday item to post alert updates on (e.g. the IT Requests tracker) — null = log-only.
+  alertItemId: number | null;
+  // Annual Giving Summary board (docs/20 §5.4) — null until that board exists; summaries
+  // still materialize into D1's annual_summaries either way.
+  annualSummaryBoardId: number | null;
+}
+
 export interface DonationRollupsConfig {
   monday: { apiUrl: string };
+  custodian: CustodianConfig;
   donationRollups: {
     donationBoards: DonationBoardConfig[];
     receivedStatusLabel: string;

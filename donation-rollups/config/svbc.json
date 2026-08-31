@@ -60,5 +60,12 @@
         "lastGiftAmount": "numeric_mm6rckjb"
       }
     }
+  },
+  "custodian": {
+    "activeFiscalYears": 2,
+    "workspaceId": 17141226,
+    "capacityAlertPct": 80,
+    "alertItemId": 12887692259,
+    "annualSummaryBoardId": null
   }
 }

@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -93,6 +93,34 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
 
   return {
     monday: { apiUrl: monday.apiUrl },
+    custodian: validateCustodian(cfg.custodian),
     donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard },
+  };
+}
+
+function validateCustodian(raw: unknown): CustodianConfig {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('config: missing required key "custodian"');
+  }
+  const c = raw as Record<string, unknown>;
+  for (const key of ['activeFiscalYears', 'workspaceId', 'capacityAlertPct'] as const) {
+    if (typeof c[key] !== 'number' || !Number.isFinite(c[key])) {
+      throw new Error(`config: "custodian.${key}" must be a number`);
+    }
+  }
+  if ((c.activeFiscalYears as number) < 1) {
+    throw new Error('config: "custodian.activeFiscalYears" must be at least 1');
+  }
+  for (const key of ['alertItemId', 'annualSummaryBoardId'] as const) {
+    if (c[key] !== null && typeof c[key] !== 'number') {
+      throw new Error(`config: "custodian.${key}" must be a number or null`);
+    }
+  }
+  return {
+    activeFiscalYears: c.activeFiscalYears as number,
+    workspaceId: c.workspaceId as number,
+    capacityAlertPct: c.capacityAlertPct as number,
+    alertItemId: c.alertItemId as number | null,
+    annualSummaryBoardId: c.annualSummaryBoardId as number | null,
   };
 }

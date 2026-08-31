@@ -1,5 +1,6 @@
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
+import type { GiftsStore } from '../db/gifts';
 import type { DonationRollupsMondayClient } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage } from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
@@ -13,6 +14,7 @@ export interface QueueMessageLike<T> {
 export interface ProcessBatchDeps {
   pendingStore: PendingStore;
   linksStore: DonationLinksStore;
+  giftsStore: GiftsStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
   now?: Date; // injectable for tests; defaults to the real current time
@@ -78,6 +80,17 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     .filter((b) => linksByBoard.has(String(b.boardId)))
     .map((b) => mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns)));
   const donations = perBoard.flat();
+
+  // Ledger v2 (docs/20 §5.1): every recompute re-asserts the webhook-visible facts of every
+  // gift it just read, so the gifts table self-heals from the same fetch the rollup uses —
+  // a missed webhook can't leave the ledger stale past this owner's next recompute.
+  await deps.giftsStore.refreshFacts(
+    donations.map((d) => ({
+      mondayItemId: d.id, ownerItemId, ownerBoardId,
+      amountCents: Math.round(d.amount * 100),
+      giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
+    })),
+    'webhook', new Date().toISOString());
 
   const thisFY = currentFiscalYear(deps.now ?? new Date());
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);

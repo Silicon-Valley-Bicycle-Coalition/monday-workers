@@ -125,6 +125,38 @@ board `18428131791`** (17 anonymous gifts and 11,231 excluded-owner gifts skippe
 matters: without a TTY, wrangler's confirm prompt silently cancels with exit 0) after any fresh
 load, since item ids change between loads.
 
+## Ledger v2 + the custodian (docs/20 §5.1/§5.3)
+
+D1 is the **authoritative gift ledger**, not just a reverse index: `gifts` (one row per gift —
+amount in cents, date, fiscal year, status, provenance, archived state) and `annual_summaries`
+(one row per closed fiscal year, restatement-stamped). Monday stays the working surface; staff
+edits flow back via webhooks, and every recompute re-asserts the facts of every gift it reads,
+so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs` (37,286 gifts
+loaded 2026-08-31; 32,739 Received, 33,541 archived).
+
+The **custodian** runs four duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile}?secret=…`
+and `GET /custodian/status` (last run per duty, from `custodian_runs`):
+
+* **archive** (July 15 + on demand) — archives active gifts past the retention window
+  (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.
+* **capacity** (Mondays) — every board in the workspace vs its item limit; alerts at
+  `capacityAlertPct` (update posted to `custodian.alertItemId`). First live run immediately
+  flagged Activities v2 at 90% — a true positive.
+* **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
+  fiscal boundary (closes the staleness gap in Not-yet-done).
+* **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
+  comparison; Monday stores float noise) plus summaries vs fresh ledger totals. First full
+  pass 2026-08-31: 6,886 owners, zero mismatches.
+
+Duties that touch many items **slice themselves** and report `remaining` + a cursor (re-run to
+continue): the Workers Free plan caps subrequests at 50/invocation, Monday caps `items(ids:)`
+at 100 ids — and note `items(ids:)` **silently returns 25 items unless you pass `limit: 100`**
+(bit for real 2026-08-31: 75% of owners read back "missing"; the same default would silently
+under-roll any donor with >25 gifts on one board — every batched read in `monday/client.ts`
+now passes an explicit limit). When Workers Paid lands, the per-run slice constants in
+`custodian.ts` can grow.
+
 ## The Closed Won filter — read this before touching the Status column
 
 The rollup filters on `Status === 'Received'` **exactly** (config: `donationRollups.receivedStatusLabel`).

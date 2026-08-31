@@ -115,9 +115,13 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     // items(ids:) has a practical ceiling (Monday's complexity budget, not a documented
     // hard limit) — chunk defensively rather than assume any list size is safe.
     for (const chunk of chunksOf(itemIds, 100)) {
+      // limit: 100 is load-bearing — items(ids:) silently returns only 25 items by default
+      // even when handed 100 ids (verified live 2026-08-31; it surfaced as 75% of owners
+      // "missing" in reconciliation and would have silently under-rolled any donor with
+      // more than 25 gifts on one board).
       const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids) { id column_values(ids: $columnIds) { id text } }
+          items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text } }
         }`,
         { ids: chunk, columnIds },
       );
@@ -179,6 +183,53 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         }
       }`,
       { boardId, itemId, columnValues: JSON.stringify(columnValues) },
+    );
+  }
+
+  // --- Custodian surface (docs/20 §5.3) ---
+
+  async archiveItem(itemId: string): Promise<void> {
+    await this.graphql<{ archive_item: { id: string } }>(
+      `mutation ($itemId: ID!) { archive_item(item_id: $itemId) { id } }`,
+      { itemId },
+    );
+  }
+
+  async listWorkspaceBoards(workspaceId: number): Promise<{ id: string; name: string; itemsCount: number; itemsLimit: number | null }[]> {
+    const data = await this.graphql<{ boards: { id: string; name: string; items_count: number; items_limit: number | null }[] }>(
+      `query ($workspaceId: [ID!]) {
+        boards(workspace_ids: $workspaceId, limit: 100) { id name items_count items_limit }
+      }`,
+      { workspaceId: [workspaceId] },
+    );
+    return data.boards.map((b) => ({ id: b.id, name: b.name, itemsCount: b.items_count, itemsLimit: b.items_limit }));
+  }
+
+  async getItemsColumnNumber(itemIds: string[], columnId: string): Promise<Map<string, number | null>> {
+    const out = new Map<string, number | null>();
+    // 100 is a hard Monday API limit on items(ids:) — "Argument 'ids' exceeding the 100
+    // limit", verified live 2026-08-31 — so large reads can't be squeezed into fewer
+    // subrequests here; callers with big id sets must slice themselves (see runReconcile).
+    for (const chunk of chunksOf(itemIds, 100)) {
+      // limit: 100 — same silent-25 default as getDonationsByIds above.
+      const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
+        `query ($ids: [ID!], $columnIds: [String!]) {
+          items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text } }
+        }`,
+        { ids: chunk, columnIds: [columnId] },
+      );
+      for (const item of data.items) {
+        const text = item.column_values[0]?.text;
+        out.set(item.id, text === null || text === undefined || text === '' ? null : Number(text));
+      }
+    }
+    return out;
+  }
+
+  async createUpdate(itemId: number, body: string): Promise<void> {
+    await this.graphql<{ create_update: { id: string } }>(
+      `mutation ($itemId: ID!, $body: String!) { create_update(item_id: $itemId, body: $body) { id } }`,
+      { itemId: String(itemId), body },
     );
   }
 }
