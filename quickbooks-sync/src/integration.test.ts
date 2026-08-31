@@ -156,8 +156,8 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
       queue: ReturnType<typeof fakeQueue>;
     }
   ) {
-    const app = createMondayWebhookApp({ ...deps, config });
-    return app.request('/webhooks/monday', {
+    const app = createMondayWebhookApp({ ...deps, config, mondayWebhookSecret: 'integration-secret' });
+    return app.request('/webhooks/monday?secret=integration-secret', {
       method: 'POST',
       body: JSON.stringify({
         event: { pulseId, boardId: 789, columnValues: { text_col: 'New Org', email_col: 'hello@neworg.test' } },

@@ -4,6 +4,16 @@
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
   "upload_source_maps": true,
+  // Secrets (set with `wrangler secret put <NAME>`, never committed):
+  //   MONDAY_API_TOKEN          — Monday API token (dedicated integration user, least-privilege)
+  //   QB_CLIENT_ID              — QuickBooks OAuth2 app client id
+  //   QB_CLIENT_SECRET          — QuickBooks OAuth2 app client secret
+  //   QB_WEBHOOK_VERIFIER_TOKEN — QuickBooks webhook verifier token (HMAC signature check)
+  //   MONDAY_WEBHOOK_SECRET     — shared secret for the Monday webhook; the route fails closed
+  //                               (401s everything) until it's set. The Monday webhook
+  //                               subscription URL must include it: register the webhook as
+  //                               https://<worker>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>
+  //                               — re-register the subscription if the secret changes.
   "d1_databases": [
     {
       "binding": "DB",

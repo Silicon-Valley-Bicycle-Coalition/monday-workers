@@ -46,6 +46,9 @@ function fakeMapStore(overrides: Partial<MapStore> = {}): MapStore {
   };
 }
 
+const SECRET = 'test-webhook-secret';
+const WEBHOOK_URL = `/webhooks/monday?secret=${SECRET}`;
+
 describe('createMondayWebhookApp', () => {
   it('echoes the challenge on subscription verification', async () => {
     const app = createMondayWebhookApp({
@@ -53,9 +56,10 @@ describe('createMondayWebhookApp', () => {
       mapStore: fakeMapStore(),
       queue: { send: vi.fn() },
       config,
+      mondayWebhookSecret: SECRET,
     });
 
-    const res = await app.request('/webhooks/monday', {
+    const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
       body: JSON.stringify({ challenge: 'abc123' }),
       headers: { 'Content-Type': 'application/json' },
@@ -65,6 +69,97 @@ describe('createMondayWebhookApp', () => {
     expect(await res.json()).toEqual({ challenge: 'abc123' });
   });
 
+  it('rejects a request without the shared secret and enqueues nothing', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const queue = { send: vi.fn() };
+    const app = createMondayWebhookApp({
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      queue,
+      config,
+      mondayWebhookSecret: SECRET,
+    });
+
+    const res = await app.request('/webhooks/monday', {
+      method: 'POST',
+      body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(401);
+    expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
+    expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it('rejects a request with the wrong shared secret and enqueues nothing', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const queue = { send: vi.fn() };
+    const app = createMondayWebhookApp({
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      queue,
+      config,
+      mondayWebhookSecret: SECRET,
+    });
+
+    const res = await app.request('/webhooks/monday?secret=wrong', {
+      method: 'POST',
+      body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(401);
+    expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
+    expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the secret binding is unset or empty', async () => {
+    // An undeployed/forgotten MONDAY_WEBHOOK_SECRET must reject everything, never
+    // disable the check (no fail-open `!secret ||` shape).
+    for (const missingSecret of [undefined, ''] as const) {
+      const mondayEventStore = fakeMondayEventStore();
+      const queue = { send: vi.fn() };
+      const app = createMondayWebhookApp({
+        mondayEventStore,
+        mapStore: fakeMapStore(),
+        queue,
+        config,
+        mondayWebhookSecret: missingSecret as unknown as string,
+      });
+
+      const res = await app.request(`/webhooks/monday?secret=${missingSecret ?? ''}`, {
+        method: 'POST',
+        body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect(res.status, `secret binding ${JSON.stringify(missingSecret)}`).toBe(401);
+      expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not echo the challenge handshake without the correct shared secret', async () => {
+    // The secret is part of the URL Monday registers, so the one-time challenge arrives
+    // with it too — an unauthenticated challenge is an attacker probing the endpoint.
+    const app = createMondayWebhookApp({
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      queue: { send: vi.fn() },
+      config,
+      mondayWebhookSecret: SECRET,
+    });
+
+    const res = await app.request('/webhooks/monday?secret=wrong', {
+      method: 'POST',
+      body: JSON.stringify({ challenge: 'abc123' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(401);
+    expect(await res.text()).not.toContain('abc123');
+  });
+
   it('ignores an event from a board other than the configured Customers board', async () => {
     const mondayEventStore = fakeMondayEventStore();
     const app = createMondayWebhookApp({
@@ -72,9 +167,10 @@ describe('createMondayWebhookApp', () => {
       mapStore: fakeMapStore(),
       queue: { send: vi.fn() },
       config,
+      mondayWebhookSecret: SECRET,
     });
 
-    const res = await app.request('/webhooks/monday', {
+    const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
       body: JSON.stringify({ event: { pulseId: 1, boardId: 999 } }),
       headers: { 'Content-Type': 'application/json' },
@@ -96,9 +192,9 @@ describe('createMondayWebhookApp', () => {
       }),
     });
     const queue = { send: vi.fn() };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore, queue, config });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore, queue, config, mondayWebhookSecret: SECRET });
 
-    const res = await app.request('/webhooks/monday', {
+    const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
       body: JSON.stringify({ event: { pulseId: 1, boardId: 789 } }),
       headers: { 'Content-Type': 'application/json' },
@@ -112,9 +208,9 @@ describe('createMondayWebhookApp', () => {
   it('dedupes and enqueues a genuinely new Customer item', async () => {
     const mondayEventStore = fakeMondayEventStore();
     const queue = { send: vi.fn().mockResolvedValue(undefined) };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
 
-    const res = await app.request('/webhooks/monday', {
+    const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
       body: JSON.stringify({ event: { pulseId: 42, boardId: 789, columnValues: { text_col: 'New Co' } } }),
       headers: { 'Content-Type': 'application/json' },
@@ -137,9 +233,9 @@ describe('createMondayWebhookApp', () => {
       getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'queued' })),
     });
     const queue = { send: vi.fn() };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
 
-    const res = await app.request('/webhooks/monday', {
+    const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
       body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
       headers: { 'Content-Type': 'application/json' },
@@ -158,9 +254,9 @@ describe('createMondayWebhookApp', () => {
         getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status })),
       });
       const queue = { send: vi.fn().mockResolvedValue(undefined) };
-      const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
+      const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
 
-      const res = await app.request('/webhooks/monday', {
+      const res = await app.request(WEBHOOK_URL, {
         method: 'POST',
         body: JSON.stringify({ event: { pulseId: 42, boardId: 789 } }),
         headers: { 'Content-Type': 'application/json' },
@@ -176,9 +272,9 @@ describe('createMondayWebhookApp', () => {
   it('returns a recorded error at HTTP 200 for a malformed JSON body instead of crashing', async () => {
     const mondayEventStore = fakeMondayEventStore();
     const queue = { send: vi.fn() };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
 
-    const res = await app.request('/webhooks/monday', {
+    const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
       body: 'not json at all{',
       headers: { 'Content-Type': 'application/json' },

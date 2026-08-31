@@ -23,7 +23,8 @@ describe('worker entry point', () => {
   });
 
   it('routes /webhooks/monday through the composed app (challenge handshake)', async () => {
-    const request = new Request('http://localhost/webhooks/monday', {
+    // MONDAY_WEBHOOK_SECRET comes from vitest.config.ts's miniflare bindings.
+    const request = new Request('http://localhost/webhooks/monday?secret=test-monday-webhook-secret', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ challenge: 'test' }),
@@ -34,5 +35,18 @@ describe('worker entry point', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ challenge: 'test' });
+  });
+
+  it('rejects /webhooks/monday without the shared secret', async () => {
+    const request = new Request('http://localhost/webhooks/monday', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge: 'test' }),
+    });
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, env, ctx);
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(401);
   });
 });

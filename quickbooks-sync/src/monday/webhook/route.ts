@@ -10,12 +10,24 @@ export interface MondayWebhookDeps {
   mapStore: MapStore;
   queue: QueueLike;
   config: QuickbooksSyncConfig;
+  // Monday doesn't sign webhook payloads — the mitigation is a shared secret embedded in the
+  // webhook URL at subscription time (`?secret=...`), checked here. Same pattern as
+  // mailchimp-sync's Monday webhook, but fail-closed: an unset or empty binding rejects every
+  // delivery rather than disabling the check.
+  mondayWebhookSecret: string;
 }
 
 export function createMondayWebhookApp(deps: MondayWebhookDeps) {
   const app = new Hono();
 
   app.post('/webhooks/monday', async (c) => {
+    // Auth first — even the one-time challenge handshake stays behind the secret, since the
+    // secret is part of the URL Monday registers and so arrives with the challenge too. An
+    // unauthenticated caller learns nothing and enqueues nothing.
+    if (!deps.mondayWebhookSecret || c.req.query('secret') !== deps.mondayWebhookSecret) {
+      return c.json({ ok: false }, 401);
+    }
+
     // Read the body as text and parse it ourselves so a malformed payload — something that will
     // never parse no matter how often it's redelivered — returns a recorded error at HTTP 200
     // rather than crashing the request with an unhandled 500.

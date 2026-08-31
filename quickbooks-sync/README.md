@@ -46,6 +46,20 @@ final write just silently disappears.
 * **Webhooks** signal only that a record changed — the payload itself doesn't carry the changed
   data, so every webhook triggers a follow-up API read.
 
+## Secrets
+
+Set with `wrangler secret put <NAME>` (never commit them) — the full list with descriptions is in
+`wrangler.jsonc`'s comments: `MONDAY_API_TOKEN`, `QB_CLIENT_ID`, `QB_CLIENT_SECRET`,
+`QB_WEBHOOK_VERIFIER_TOKEN`, `MONDAY_WEBHOOK_SECRET`.
+
+Monday doesn't sign webhook payloads, so the Monday webhook is authenticated by
+`MONDAY_WEBHOOK_SECRET` embedded in the subscription URL (same pattern as `mailchimp-sync`, but
+fail-closed — the route 401s everything, including the challenge handshake, until the secret is
+set). Register the webhook subscription on the Customers board as
+`https://<worker>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>`, and **re-register the
+subscription whenever the secret rotates** — an existing subscription keeps the old URL and will
+be rejected.
+
 ## Open question before starting
 
 Confirm with Intuit whether a **single-company internal integration** (as opposed to a public
