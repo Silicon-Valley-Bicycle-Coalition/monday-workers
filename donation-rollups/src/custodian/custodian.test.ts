@@ -87,6 +87,66 @@ describe('dutiesForDate', () => {
     expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'))).toEqual(['reconcile', 'sweep']);
     expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'))).toEqual(['reconcile', 'archive']);
   });
+
+  it('continues an incomplete sweep on subsequent days while its last run reports remaining > 0', async () => {
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
+      report: { ok: true, summary: 'sliced', detail: { enqueued: 3500, remaining: 900, cursor: 'o3500' } } });
+    expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), await gifts.lastRuns()))
+      .toEqual(['reconcile', 'sweep']);
+  });
+
+  it('does not re-run a sweep whose last run completed (remaining === 0)', async () => {
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
+      report: { ok: true, summary: 'done', detail: { enqueued: 900, remaining: 0, cursor: 'o4400' } } });
+    expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), await gifts.lastRuns()))
+      .toEqual(['reconcile']);
+  });
+
+  it('only the MOST RECENT run of a duty counts — an old incomplete run superseded by a complete one stays finished', async () => {
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'archive', ranAt: '2026-07-15T09:00:00Z', ok: true,
+      report: { ok: true, summary: 'sliced', detail: { remaining: 5 } } });
+    await gifts.recordRun({ duty: 'archive', ranAt: '2026-07-16T09:00:00Z', ok: true,
+      report: { ok: true, summary: 'done', detail: { remaining: 0 } } });
+    expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), await gifts.lastRuns()))
+      .toEqual(['reconcile']);
+  });
+
+  it('never doubles a duty its start date already scheduled', async () => {
+    const gifts = new D1GiftsStore(env.DB);
+    await gifts.recordRun({ duty: 'sweep', ranAt: '2026-06-30T09:00:00Z', ok: true,
+      report: { ok: true, summary: 'sliced', detail: { remaining: 10 } } });
+    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), await gifts.lastRuns()))
+      .toEqual(['reconcile', 'sweep']);
+  });
+
+  it('archive continues daily until complete, and summaries materialize on the run that hits remaining 0', async () => {
+    // 41 archivable gifts with ARCHIVE_PER_RUN = 40: the July 15 run leaves remaining 1
+    // and no summaries; the daily cron must then keep scheduling archive until a run
+    // reports remaining 0 — which is the run that materializes the annual summaries.
+    for (let i = 0; i < 41; i++) await seedGift(env.DB, `c${String(i).padStart(2, '0')}`, { fy: 2015 });
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = deps(state, []);
+    const gifts = d.gifts;
+
+    const first = await runDuty('archive', d); // the July 15 start run
+    expect((first.detail as { remaining: number }).remaining).toBe(1);
+    expect(await gifts.getAnnualSummaries()).toEqual([]);
+
+    // July 16: the daily cron sees the incomplete run and continues it.
+    expect(dutiesForDate(new Date('2026-07-16T09:00:00Z'), await gifts.lastRuns()))
+      .toEqual(['reconcile', 'archive']);
+    d.now = new Date('2026-08-02T00:00:00Z'); // a later ran_at, so lastRuns sees THIS run as most recent
+    const second = await runDuty('archive', d);
+    expect((second.detail as { remaining: number }).remaining).toBe(0);
+    expect((await gifts.getAnnualSummaries()).map((s) => s.fiscalYear)).toEqual([2015]);
+
+    // July 17: complete — archive drops back out of the schedule.
+    expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), await gifts.lastRuns()))
+      .toEqual(['reconcile']);
+  });
 });
 
 describe('archive duty', () => {

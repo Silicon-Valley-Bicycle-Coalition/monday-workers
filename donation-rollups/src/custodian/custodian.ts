@@ -37,11 +37,24 @@ export type Duty = (typeof DUTIES)[number];
 // reconcile nightly; capacity every Monday; the July fiscal-year sweep on July 1 (docs/20:
 // first week — closes the This/Last Year staleness gap); the year-end archive run on July 15,
 // after the sweep's recomputes have settled the new fiscal-year splits.
-export function dutiesForDate(now: Date): Duty[] {
+//
+// Sweep and archive slice themselves under the Worker subrequest budget (see runSweep /
+// runArchive) and report remaining>0 when incomplete — so a duty whose *most recent* run
+// still reports remaining>0 is re-run on every subsequent daily trigger until it completes.
+// Without this, a start-date run that couldn't finish in one slice would never get its
+// continuation from cron (and the year-end summaries, gated on remaining === 0, would never
+// materialize). Cursor resume inside each duty picks up where the last slice stopped.
+export function dutiesForDate(now: Date, lastRuns: { duty: string; report: unknown }[] = []): Duty[] {
   const duties: Duty[] = ['reconcile'];
   if (now.getUTCDay() === 1) duties.push('capacity');
   if (now.getUTCMonth() === 6 && now.getUTCDate() === 1) duties.push('sweep');
   if (now.getUTCMonth() === 6 && now.getUTCDate() === 15) duties.push('archive');
+  for (const duty of ['sweep', 'archive'] as const) {
+    if (duties.includes(duty)) continue;
+    const last = lastRuns.find((r) => r.duty === duty)?.report as
+      { detail?: { remaining?: number } } | undefined;
+    if ((last?.detail?.remaining ?? 0) > 0) duties.push(duty);
+  }
   return duties;
 }
 
