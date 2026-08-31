@@ -6,15 +6,16 @@ import { dutiesForDate, runDuty, type CustodianDeps, type CustodianMondayClient,
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const OWNER_COLS = {
-  lifetimeGiving: 'col_lt', giftCount: 'col_gc', firstGift: 'col_fg',
+  giftLedgerJson: 'col_glj', lifetimeGiving: 'col_lt', giftCount: 'col_gc', firstGift: 'col_fg',
   thisYearAmount: 'c', thisYearCount: 'c', lastYearAmount: 'c', lastYearCount: 'c',
   largestGift: 'c', smallestGift: 'c', averageGift: 'c', lastGiftDate: 'c', lastGiftAmount: 'c',
 };
 
 function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): DonationRollupsConfig {
   return {
-    monday: { apiUrl: 'https://x' },
-    custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null, annualSummaryBoardId: null, ...over },
+    monday: { apiUrl: 'https://x', accountUrl: 'https://acme.monday.com' },
+    custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
+      annualSummaryBoardId: null, annualSummaryColumns: null, ...over },
     donationRollups: {
       donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy' } }],
       receivedStatusLabel: 'Received',
@@ -29,6 +30,8 @@ interface FakeClientState {
   boards?: BoardCapacity[];
   columnNumbers?: Map<string, number | null>;
   updates: { itemId: number; body: string }[];
+  createdItems?: { boardId: number; name: string; columnValues: Record<string, unknown> }[];
+  changedColumns?: { boardId: number; itemId: string; columnValues: Record<string, unknown> }[];
 }
 
 function fakeClient(state: FakeClientState): CustodianMondayClient {
@@ -40,6 +43,13 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     async listWorkspaceBoards() { return state.boards ?? []; },
     async getItemsColumnNumber() { return state.columnNumbers ?? new Map(); },
     async createUpdate(itemId, body) { state.updates.push({ itemId, body }); },
+    async createItem(boardId, name, columnValues) {
+      (state.createdItems ??= []).push({ boardId, name, columnValues });
+      return `summary-${name}`;
+    },
+    async changeColumnValues(boardId, itemId, columnValues) {
+      (state.changedColumns ??= []).push({ boardId, itemId, columnValues });
+    },
   };
 }
 
@@ -123,6 +133,40 @@ describe('archive duty', () => {
     const report = await runDuty('archive', d);
     expect(report.ok).toBe(false);
     expect(await d.gifts.getArchivable(2026)).toEqual([{ mondayItemId: 'f1', fiscalYear: 2015 }]);
+  });
+});
+
+describe('annual summary board sync', () => {
+  const SUMMARY_CFG = testConfig({
+    annualSummaryBoardId: 777,
+    annualSummaryColumns: { fiscalYear: 'c_fy', total: 'c_total', giftCount: 'c_n', byType: 'c_bt', restatedAt: 'c_re' },
+  });
+
+  it('creates one item per closed year, remembers ids, and only rewrites restated years', async () => {
+    await seedGift(env.DB, 'sb1', { fy: 2015, cents: 500 });
+    await seedGift(env.DB, 'sb2', { fy: 2016, cents: 700 });
+    const state: FakeClientState = { archived: [], updates: [] };
+    const d = deps(state, [], SUMMARY_CFG);
+
+    const first = await runDuty('archive', d);
+    expect((first.detail as { boardItemsWritten: number }).boardItemsWritten).toBe(2);
+    expect(state.createdItems!.map((c) => [c.boardId, c.name])).toEqual([[777, 'FY2015'], [777, 'FY2016']]);
+    expect(state.createdItems![0]!.columnValues).toMatchObject({ c_fy: '2015', c_total: '5', c_n: '1', c_re: null });
+    const stored = await d.gifts.getAnnualSummaries();
+    expect(stored.map((s) => s.mondayItemId)).toEqual(['summary-FY2015', 'summary-FY2016']);
+
+    // Idempotent re-run: nothing new created, nothing rewritten.
+    state.createdItems = [];
+    const again = await runDuty('archive', d);
+    expect((again.detail as { boardItemsWritten: number }).boardItemsWritten).toBe(0);
+
+    // An audit restatement (ledger changed for a closed year) rewrites just that item.
+    await env.DB.prepare(`UPDATE gifts SET amount_cents = 999 WHERE monday_item_id = 'sb1'`).run();
+    const restated = await runDuty('archive', d);
+    expect((restated.detail as { boardItemsWritten: number }).boardItemsWritten).toBe(1);
+    expect(state.changedColumns).toHaveLength(1);
+    expect(state.changedColumns![0]).toMatchObject({ boardId: 777, itemId: 'summary-FY2015' });
+    expect(state.changedColumns![0]!.columnValues).toMatchObject({ c_total: '9.99', c_re: { date: expect.any(String) } });
   });
 });
 

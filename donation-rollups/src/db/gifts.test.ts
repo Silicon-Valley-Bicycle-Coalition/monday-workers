@@ -76,6 +76,26 @@ describe('D1GiftsStore', () => {
     expect(rows[0]!.restatedAt).toBe('2026-01-03T00:00:00Z');
   });
 
+  it('giftsForOwner joins deep-link board ids and reports archived state', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([gift({ mondayItemId: 'j1', ownerItemId: 'oJ', giftType: 'Donation' })], 'import', 'now');
+    await store.markArchived(['j1'], 'now');
+    await env.DB.prepare(`INSERT INTO donation_links (donation_item_id, donation_board_id, owner_item_id, owner_board_id, updated_at)
+      VALUES ('j1', '100', 'oJ', 'b1', 'now')`).run();
+    const rows = await store.giftsForOwner('oJ');
+    expect(rows).toEqual([{
+      mondayItemId: 'j1', donationBoardId: '100', amountCents: 1000, giftDateISO: '2020-01-15',
+      fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: true,
+    }]);
+  });
+
+  it('setSummaryItemId records the board item backing a fiscal year', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.upsertAnnualSummaries([{ fiscalYear: 2019, totalCents: 1, giftCount: 1, byTypeJson: '{}' }], 'now');
+    await store.setSummaryItemId(2019, 'item-9');
+    expect((await store.getAnnualSummaries())[0]!.mondayItemId).toBe('item-9');
+  });
+
   it('records custodian runs and returns the latest per duty', async () => {
     const store = new D1GiftsStore(env.DB);
     await store.recordRun({ duty: 'reconcile', ranAt: '2026-01-01T00:00:00Z', ok: true, report: { n: 1 } });

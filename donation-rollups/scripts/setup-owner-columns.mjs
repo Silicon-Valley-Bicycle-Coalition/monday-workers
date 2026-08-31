@@ -24,6 +24,8 @@ if (boardIds.length === 0) {
 // see one consistent vocabulary everywhere.
 const CURRENCY = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
 const FIELDS = {
+  // Machine-readable gift-history projection (docs/20 §5.5) — plain text, no cap.
+  giftLedgerJson: { title: 'Gift Ledger (JSON)', type: 'text' },
   lifetimeGiving: { title: 'Lifetime Giving', type: 'numbers', defaults: CURRENCY },
   giftCount: { title: 'Gift Count', type: 'numbers' },
   firstGift: { title: 'First Gift', type: 'date' },

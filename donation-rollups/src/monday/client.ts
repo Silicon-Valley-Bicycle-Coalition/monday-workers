@@ -12,6 +12,7 @@ export interface DonationRecord {
   dateISO: string;
   fiscalYear: number;
   status: string;
+  giftType?: string | null; // present when the board's Gift Type column is configured
 }
 
 export interface DonationRollupsMondayClient {
@@ -28,8 +29,10 @@ export interface DonationRollupsMondayClient {
   // Donations board each id lives on, since column ids differ per board.
   getDonationsByIds(
     itemIds: string[],
-    columns: { amount: string; date: string; fiscalYear: string | null; status: string },
+    columns: { amount: string; date: string; fiscalYear: string | null; status: string; giftType?: string | null },
   ): Promise<DonationRecord[]>;
+  // Rewrites an owner item's description with the markdown gift-history projection.
+  setItemDescription(itemId: string, markdown: string): Promise<void>;
   // All items on one Donations board, each with its raw Donor-link value — used only
   // by the one-time bootstrap that populates donation_links, never by normal webhook
   // processing.
@@ -54,13 +57,13 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     private apiToken: string,
   ) {}
 
-  private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  private async graphql<T>(query: string, variables: Record<string, unknown>, apiVersion = MONDAY_API_VERSION): Promise<T> {
     const response = await fetch(this.apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: this.apiToken,
-        'API-Version': MONDAY_API_VERSION,
+        'API-Version': apiVersion,
       },
       body: JSON.stringify({ query, variables }),
     });
@@ -106,11 +109,12 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
 
   async getDonationsByIds(
     itemIds: string[],
-    columns: { amount: string; date: string; fiscalYear: string | null; status: string },
+    columns: { amount: string; date: string; fiscalYear: string | null; status: string; giftType?: string | null },
   ): Promise<DonationRecord[]> {
     if (itemIds.length === 0) return [];
     const columnIds = [columns.amount, columns.date, columns.status,
-      ...(columns.fiscalYear ? [columns.fiscalYear] : [])];
+      ...(columns.fiscalYear ? [columns.fiscalYear] : []),
+      ...(columns.giftType ? [columns.giftType] : [])];
     const donations: DonationRecord[] = [];
     // items(ids:) has a practical ceiling (Monday's complexity budget, not a documented
     // hard limit) — chunk defensively rather than assume any list size is safe.
@@ -136,7 +140,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         // rollups/compute.ts.
         const rawFY = columns.fiscalYear ? Number(byId.get(columns.fiscalYear) ?? '') : NaN;
         const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
-        donations.push({ id: item.id, amount, dateISO, fiscalYear, status });
+        const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
+        donations.push({ id: item.id, amount, dateISO, fiscalYear, status, giftType });
       }
     }
     return donations;
@@ -186,7 +191,29 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     );
   }
 
+  async setItemDescription(itemId: string, markdown: string): Promise<void> {
+    // set_item_description_content requires API 2026-04+ (the rest of this client pins
+    // 2026-01) — override the version for just this call.
+    await this.graphql<{ set_item_description_content: { success: boolean } }>(
+      `mutation ($itemId: ID!, $markdown: String!) {
+        set_item_description_content(item_id: $itemId, markdown: $markdown) { success }
+      }`,
+      { itemId, markdown },
+      '2026-04',
+    );
+  }
+
   // --- Custodian surface (docs/20 §5.3) ---
+
+  async createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string> {
+    const data = await this.graphql<{ create_item: { id: string } }>(
+      `mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) { id }
+      }`,
+      { boardId: String(boardId), itemName, columnValues: JSON.stringify(columnValues) },
+    );
+    return data.create_item.id;
+  }
 
   async archiveItem(itemId: string): Promise<void> {
     await this.graphql<{ archive_item: { id: string } }>(

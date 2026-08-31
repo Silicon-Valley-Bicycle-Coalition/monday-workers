@@ -149,6 +149,24 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
   comparison; Monday stores float noise) plus summaries vs fresh ledger totals. First full
   pass 2026-08-31: 6,886 owners, zero mismatches.
 
+**Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
+`Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
+`[itemId, date, cents, type, status]`, sourced from the D1 ledger so it includes archived gifts
+and their types — plus (where the account supports it) a markdown gift-history table in the
+item description with a deep link per gift. The description write is **deliberately non-fatal**:
+`set_item_description_content` 500s outright on this account (the item-description feature isn't
+enabled — even a trivial markdown fails, observed 2026-08-31), so a failure logs and moves on
+rather than burning queue retries over a redundant rendering of the JSON column. Provision the
+column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
+
+**The Annual Giving Summary board (docs/20 §5.4)** — created by
+`scripts/setup-annual-summary-board.mjs`, one item per closed fiscal year (Fiscal Year, Total
+Received, Gift Count, By Gift Type, Restated), written ONLY by the custodian's archive duty:
+new years created once, and a closed year rewritten only when the ledger's totals changed (an
+audit restatement — the Restated date is stamped). D1's `annual_summaries` stays authoritative;
+the board is its staff-facing projection, wired via `custodian.annualSummaryBoardId` +
+`annualSummaryColumns` in config.
+
 Duties that touch many items **slice themselves** and report `remaining` + a cursor (re-run to
 continue): the Workers Free plan caps subrequests at 50/invocation, Monday caps `items(ids:)`
 at 100 ids — and note `items(ids:)` **silently returns 25 items unless you pass `limit: 100`**

@@ -16,6 +16,8 @@ export interface CustodianMondayClient {
   // Numeric column value per item, batched by id — used to read owners' Lifetime Giving.
   getItemsColumnNumber(itemIds: string[], columnId: string): Promise<Map<string, number | null>>;
   createUpdate(itemId: number, body: string): Promise<void>;
+  createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
+  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
 }
 
 export interface CustodianDeps {
@@ -90,9 +92,11 @@ async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   // Summaries only once the year's archiving is complete — materializing mid-slice would
   // stamp restatements for totals that aren't final yet.
   let changed: number[] = [];
+  let boardItemsWritten = 0;
   if (remaining === 0 && failures.length === 0) {
     const totals = await deps.gifts.fiscalYearTotals(receivedStatusLabel, cutoffFY);
     changed = (await deps.gifts.upsertAnnualSummaries(totals, now.toISOString())).changed;
+    boardItemsWritten = await syncAnnualSummaryBoard(deps, new Set(changed));
   }
 
   return {
@@ -100,9 +104,45 @@ async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
     summary: `archived ${archived.length} gifts before FY${cutoffFY}` +
       (remaining > 0 ? `; ${remaining} remain — run archive again to continue` : '') +
       (failures.length > 0 ? `; ${failures.length} FAILED` : '') +
-      (changed.length > 0 ? `; summaries changed for FY ${changed.join(', ')}` : ''),
-    detail: { cutoffFY, archived: archived.length, remaining, failures: failures.slice(0, 20), summariesChanged: changed },
+      (changed.length > 0 ? `; summaries changed for FY ${changed.join(', ')}` : '') +
+      (boardItemsWritten > 0 ? `; ${boardItemsWritten} summary board item(s) written` : ''),
+    detail: { cutoffFY, archived: archived.length, remaining, failures: failures.slice(0, 20),
+      summariesChanged: changed, boardItemsWritten },
   };
+}
+
+// The Annual Giving Summary board (docs/20 §5.4): one item per closed fiscal year, written
+// only here — matching the requirement that the org/annual view changes only under the
+// year-end run or an audit restatement. D1's annual_summaries remains authoritative; the
+// board is its staff-facing projection. No-op until custodian.annualSummaryBoardId is set.
+async function syncAnnualSummaryBoard(deps: CustodianDeps, changedFYs: Set<number>): Promise<number> {
+  const { annualSummaryBoardId, annualSummaryColumns } = deps.config.custodian;
+  if (annualSummaryBoardId === null || annualSummaryColumns === null) return 0;
+  const summaries = await deps.gifts.getAnnualSummaries();
+  let written = 0;
+  for (const s of summaries) {
+    const needsCreate = s.mondayItemId === null;
+    if (!needsCreate && !changedFYs.has(s.fiscalYear)) continue;
+    const byType = Object.entries(JSON.parse(s.byTypeJson) as Record<string, number>)
+      .sort((a, b) => b[1] - a[1])
+      .map(([t, cents]) => `${t}: $${(cents / 100).toFixed(2)}`)
+      .join('\n');
+    const columnValues: Record<string, unknown> = {
+      [annualSummaryColumns.fiscalYear]: String(s.fiscalYear),
+      [annualSummaryColumns.total]: String(s.totalCents / 100),
+      [annualSummaryColumns.giftCount]: String(s.giftCount),
+      [annualSummaryColumns.byType]: byType,
+      [annualSummaryColumns.restatedAt]: s.restatedAt ? { date: s.restatedAt.slice(0, 10) } : null,
+    };
+    if (needsCreate) {
+      const itemId = await deps.mondayClient.createItem(annualSummaryBoardId, `FY${s.fiscalYear}`, columnValues);
+      await deps.gifts.setSummaryItemId(s.fiscalYear, itemId);
+    } else {
+      await deps.mondayClient.changeColumnValues(annualSummaryBoardId, s.mondayItemId!, columnValues);
+    }
+    written++;
+  }
+  return written;
 }
 
 // Capacity alarm: replaces all manual board-size monitoring, not just the Donations board —

@@ -6,6 +6,9 @@ export interface GiftFact {
   giftDateISO: string; // '' when unknown
   fiscalYear: number; // 0 when undated
   status: string;
+  // Present when the donation board's Gift Type column is configured — refreshes the
+  // bootstrap value; null/undefined leaves the stored value untouched.
+  giftType?: string | null;
 }
 
 export interface AnnualSummaryRow {
@@ -29,6 +32,10 @@ export interface GiftsStore {
   // bootstrap-only provenance (gift_type / funraise_id / sf_id) and archived_at, which the
   // webhook path can't see.
   refreshFacts(rows: GiftFact[], source: string, now: string): Promise<void>;
+  // Full gift history for one owner, deep-link board ids joined in — the projections' source.
+  giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
+  // Records which Monday item on the Annual Giving Summary board represents a fiscal year.
+  setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void>;
   // Active gifts older than the retention cutoff — the year-end archive run's work list.
   getArchivable(cutoffFY: number): Promise<{ mondayItemId: string; fiscalYear: number }[]>;
   markArchived(mondayItemIds: string[], now: string): Promise<void>;
@@ -58,8 +65,8 @@ export class D1GiftsStore implements GiftsStore {
       await this.db.batch(chunk.map((g) => this.db
         .prepare(
           `INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents,
-             gift_date, fiscal_year, status, source, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             gift_date, fiscal_year, status, gift_type, source, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
            ON CONFLICT (monday_item_id) DO UPDATE SET
              owner_item_id = excluded.owner_item_id,
              owner_board_id = excluded.owner_board_id,
@@ -67,12 +74,38 @@ export class D1GiftsStore implements GiftsStore {
              gift_date = excluded.gift_date,
              fiscal_year = excluded.fiscal_year,
              status = excluded.status,
+             gift_type = COALESCE(excluded.gift_type, gifts.gift_type),
              source = excluded.source,
              updated_at = excluded.updated_at`,
         )
         .bind(g.mondayItemId, g.ownerItemId, g.ownerBoardId, g.amountCents,
-          g.giftDateISO, g.fiscalYear, g.status, source, now)));
+          g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null, source, now)));
     }
+  }
+
+  async giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]> {
+    // donation_links supplies the board id the deep link needs — gifts deliberately doesn't
+    // duplicate it. LEFT JOIN so a link-less row still renders (without a link).
+    const res = await this.db
+      .prepare(`SELECT g.monday_item_id, l.donation_board_id, g.amount_cents, g.gift_date,
+                       g.fiscal_year, g.status, g.gift_type, g.archived_at
+                FROM gifts g LEFT JOIN donation_links l ON l.donation_item_id = g.monday_item_id
+                WHERE g.owner_item_id = ?1`)
+      .bind(ownerItemId)
+      .all<{ monday_item_id: string; donation_board_id: string | null; amount_cents: number;
+        gift_date: string; fiscal_year: number; status: string; gift_type: string | null; archived_at: string | null }>();
+    return res.results.map((r) => ({
+      mondayItemId: r.monday_item_id, donationBoardId: r.donation_board_id,
+      amountCents: r.amount_cents, giftDateISO: r.gift_date, fiscalYear: r.fiscal_year,
+      status: r.status, giftType: r.gift_type, archived: r.archived_at !== null,
+    }));
+  }
+
+  async setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE annual_summaries SET monday_item_id = ?2 WHERE fiscal_year = ?1`)
+      .bind(fiscalYear, mondayItemId)
+      .run();
   }
 
   async getArchivable(cutoffFY: number): Promise<{ mondayItemId: string; fiscalYear: number }[]> {

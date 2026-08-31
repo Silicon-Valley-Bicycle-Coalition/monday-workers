@@ -4,6 +4,7 @@ import type { GiftsStore } from '../db/gifts';
 import type { DonationRollupsMondayClient } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage } from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
+import { buildGiftLedgerJson, buildGiftHistoryMarkdown } from '../projections/giftHistory';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -89,14 +90,35 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
       mondayItemId: d.id, ownerItemId, ownerBoardId,
       amountCents: Math.round(d.amount * 100),
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
+      giftType: d.giftType ?? null,
     })),
     'webhook', new Date().toISOString());
 
   const thisFY = currentFiscalYear(deps.now ?? new Date());
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
-  const columnValues = rollupToColumnValues(rollup, ownerColumns);
+
+  // Gift-history projections (docs/20 §5.5) ride the same write: the JSON column goes into
+  // the one change_multiple_column_values call, the markdown description is its own call.
+  // Sourced from the ledger (not the Monday fetch) — it carries gift types and archived
+  // state for the full history, including gifts archived long before this webhook.
+  const history = await deps.giftsStore.giftsForOwner(ownerItemId);
+  const columnValues = {
+    ...rollupToColumnValues(rollup, ownerColumns),
+    [ownerColumns.giftLedgerJson]: buildGiftLedgerJson(history),
+  };
 
   await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
+  try {
+    await mondayClient.setItemDescription(ownerItemId,
+      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl));
+  } catch (err) {
+    // Non-fatal by design: the markdown description is a redundant human rendering of the
+    // Gift Ledger JSON column, and set_item_description_content 500s outright on accounts
+    // where the item-description feature isn't enabled (observed live 2026-08-31 — even a
+    // trivial markdown fails). The rollups and JSON projection above already landed; don't
+    // burn queue retries over the optional rendering.
+    console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),

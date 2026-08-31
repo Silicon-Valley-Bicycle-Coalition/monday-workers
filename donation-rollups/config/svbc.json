@@ -1,6 +1,7 @@
 {
   "monday": {
-    "apiUrl": "https://api.monday.com/v2"
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com"
   },
   "donationRollups": {
     "receivedStatusLabel": "Received",
@@ -12,12 +13,14 @@
           "amount": "numeric_mm6jkxrs",
           "date": "date_mm6jthpq",
           "status": "color_mm6jqdhn",
-          "fiscalYear": "numeric_mm6jm0g4"
+          "fiscalYear": "numeric_mm6jm0g4",
+          "giftType": "text_mm6j66w3"
         }
       }
     ],
     "ownerColumnsByBoard": {
       "18428131737": {
+        "giftLedgerJson": "text_mm6rxx8c",
         "lifetimeGiving": "numeric_mm6j7y8j",
         "giftCount": "numeric_mm6j9wxh",
         "firstGift": "date_mm6jgwmh",
@@ -32,6 +35,7 @@
         "lastGiftAmount": "numeric_mm6rtf0e"
       },
       "18428131744": {
+        "giftLedgerJson": "text_mm6r2dnp",
         "lifetimeGiving": "numeric_mm6jbx7d",
         "giftCount": "numeric_mm6jnr4e",
         "firstGift": "date_mm6j4xxn",
@@ -46,6 +50,7 @@
         "lastGiftAmount": "numeric_mm6rh3pw"
       },
       "18428131727": {
+        "giftLedgerJson": "text_mm6r9q6m",
         "lifetimeGiving": "numeric_mm6jkfnk",
         "giftCount": "numeric_mm6jypaf",
         "firstGift": "date_mm6jh48s",
@@ -66,6 +71,13 @@
     "workspaceId": 17141226,
     "capacityAlertPct": 80,
     "alertItemId": 12887692259,
-    "annualSummaryBoardId": null
+    "annualSummaryBoardId": 18429045784,
+    "annualSummaryColumns": {
+      "fiscalYear": "numeric_mm6r9er0",
+      "total": "numeric_mm6r1v6s",
+      "giftCount": "numeric_mm6rehes",
+      "byType": "long_text_mm6rqd1q",
+      "restatedAt": "date_mm6rw3g8"
+    }
   }
 }
