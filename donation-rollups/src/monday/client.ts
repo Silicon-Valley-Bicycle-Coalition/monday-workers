@@ -239,22 +239,27 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return data.boards.map((b) => ({ id: b.id, name: b.name, itemsCount: b.items_count, itemsLimit: b.items_limit }));
   }
 
-  async getItemsColumnNumber(itemIds: string[], columnId: string): Promise<Map<string, number | null>> {
-    const out = new Map<string, number | null>();
+  async getItemsColumnsText(itemIds: string[], columnIds: string[]): Promise<Map<string, Map<string, string | null>>> {
+    const out = new Map<string, Map<string, string | null>>();
     // 100 is a hard Monday API limit on items(ids:) — "Argument 'ids' exceeding the 100
     // limit", verified live 2026-08-31 — so large reads can't be squeezed into fewer
     // subrequests here; callers with big id sets must slice themselves (see runReconcile).
+    // Multiple columns per item DO share one subrequest, which is why reconciliation
+    // reads Lifetime Giving and the Gift Ledger JSON together instead of twice.
     for (const chunk of chunksOf(itemIds, 100)) {
       // limit: 100 — same silent-25 default as getDonationsByIds above.
       const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
           items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text } }
         }`,
-        { ids: chunk, columnIds: [columnId] },
+        { ids: chunk, columnIds },
       );
       for (const item of data.items) {
-        const text = item.column_values[0]?.text;
-        out.set(item.id, text === null || text === undefined || text === '' ? null : Number(text));
+        const cols = new Map<string, string | null>(columnIds.map((id) => [id, null]));
+        for (const cv of item.column_values) {
+          cols.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
+        }
+        out.set(item.id, cols);
       }
     }
     return out;

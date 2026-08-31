@@ -1,6 +1,7 @@
 import type { GiftsStore } from '../db/gifts';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 import { currentFiscalYear } from '../rollups/compute';
+import { parseGiftLedgerJson } from '../projections/giftHistory';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
 // keep the archive-in-place Donations board and its projections healthy. Each duty is pure
@@ -13,8 +14,10 @@ export interface BoardCapacity { id: string; name: string; itemsCount: number; i
 export interface CustodianMondayClient {
   archiveItem(itemId: string): Promise<void>;
   listWorkspaceBoards(workspaceId: number): Promise<BoardCapacity[]>;
-  // Numeric column value per item, batched by id — used to read owners' Lifetime Giving.
-  getItemsColumnNumber(itemIds: string[], columnId: string): Promise<Map<string, number | null>>;
+  // Raw column text per item, batched by id — several columns share one query, so
+  // reconciliation reads Lifetime Giving and the Gift Ledger JSON in the same
+  // subrequests. Blank cells come back as null.
+  getItemsColumnsText(itemIds: string[], columnIds: string[]): Promise<Map<string, Map<string, string | null>>>;
   createUpdate(itemId: number, body: string): Promise<void>;
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
@@ -206,13 +209,18 @@ async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
   };
 }
 
-// Nightly reconciliation: ledger vs Monday's Lifetime Giving column, and ledger vs the
-// materialized annual summaries. Mismatches alert; a human decides which side is right
-// (usually the ledger — unless a deliberate staff edit simply hasn't landed yet). Sliced
-// like the sweep: Monday caps items(ids:) at 100 and the Free plan caps subrequests at 50
-// per invocation, so each run covers RECONCILE_OWNERS_PER_RUN owners and the nightly cron
-// walks the full owner set across consecutive nights (2 nights at current volume), checking
-// the annual summaries on the wrap-around slice.
+// Nightly reconciliation — all four legs docs/20 promises:
+//   1. ledger vs Monday's Lifetime Giving column (per owner, sliced),
+//   2. ledger vs the Gift Ledger JSON projection column (per owner, same subrequests),
+//   3. ledger vs D1's materialized annual_summaries (final slice),
+//   4. annual_summaries vs the Annual Giving Summary board items (final slice).
+// Mismatches alert; a human decides which side is right (usually the ledger — unless a
+// deliberate staff edit simply hasn't landed yet). Sliced like the sweep: Monday caps
+// items(ids:) at 100 and the Free plan caps subrequests at 50 per invocation, so each run
+// covers RECONCILE_OWNERS_PER_RUN owners and the nightly cron walks the full owner set
+// across consecutive nights (2 nights at current volume). Both owner columns ride the
+// same batched query (getItemsColumnsText), so leg 2 adds no subrequests; leg 4 adds at
+// most one per 100 closed years, only on the final slice.
 const RECONCILE_OWNERS_PER_RUN = 4_000;
 async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
   const { receivedStatusLabel, ownerColumnsByBoard } = deps.config.donationRollups;
@@ -237,28 +245,67 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
   }
 
   const mismatches: { ownerItemId: string; ledgerCents: number; mondayCents: number | null }[] = [];
+  const projectionMismatches: { ownerItemId: string; ledgerCents: number; projectionCents: number | null }[] = [];
+  let truncatedProjections = 0;
   let compared = 0;
   for (const [boardId, ownerIds] of byBoard) {
     const columns = ownerColumnsByBoard[boardId];
     if (!columns) continue; // an owner board outside config would already fail recompute loudly
-    const monday = await deps.mondayClient.getItemsColumnNumber(ownerIds, columns.lifetimeGiving);
+    const monday = await deps.mondayClient.getItemsColumnsText(
+      ownerIds, [columns.lifetimeGiving, columns.giftLedgerJson]);
     for (const ownerId of ownerIds) {
       compared++;
-      const mondayValue = monday.get(ownerId);
-      // Monday stores floats (714.9300000000001) — compare in rounded cents.
-      const mondayCents = mondayValue === null || mondayValue === undefined ? null : Math.round(mondayValue * 100);
+      const cols = monday.get(ownerId);
       const ledgerCents = ledger.get(ownerId)!.cents;
+
+      // Leg 1: the Lifetime Giving column. Monday stores floats (714.9300000000001) —
+      // compare in rounded cents.
+      const lifetimeText = cols?.get(columns.lifetimeGiving) ?? null;
+      const mondayCents = lifetimeText === null ? null : Math.round(Number(lifetimeText) * 100);
       if (mondayCents !== ledgerCents) mismatches.push({ ownerItemId: ownerId, ledgerCents, mondayCents });
+
+      // Leg 2: the Gift Ledger JSON projection. Sum its Received entries the way
+      // ownerTotals does; an empty or unparseable column is drift too (projectionCents
+      // null), since every recompute rewrites it.
+      const ledgerText = cols?.get(columns.giftLedgerJson) ?? null;
+      const parsed = ledgerText === null ? null : parseGiftLedgerJson(ledgerText);
+      if (parsed === null) {
+        projectionMismatches.push({ ownerItemId: ownerId, ledgerCents, projectionCents: null });
+        continue;
+      }
+      const received = parsed.entries.filter((e) => e.status === receivedStatusLabel);
+      const projectionCents = received.reduce((sum, e) => sum + e.amountCents, 0);
+      if (!parsed.truncated) {
+        if (projectionCents !== ledgerCents) {
+          projectionMismatches.push({ ownerItemId: ownerId, ledgerCents, projectionCents });
+        }
+      } else {
+        // A truncated projection (Finding-1 marker) deliberately omits older gifts, so
+        // comparing its sum to the full ledger total would always false-positive.
+        // Instead compare the entries it DOES contain against D1's rows for those same
+        // gifts — one D1 read per truncated owner, and truncation is rare by design.
+        truncatedProjections++;
+        const d1ByItem = new Map((await deps.gifts.giftsForOwner(ownerId))
+          .filter((g) => g.status === receivedStatusLabel)
+          .map((g) => [g.mondayItemId, g.amountCents]));
+        const d1Cents = received.reduce((sum, e) => sum + (d1ByItem.get(e.mondayItemId) ?? 0), 0);
+        if (projectionCents !== d1Cents) {
+          projectionMismatches.push({ ownerItemId: ownerId, ledgerCents: d1Cents, projectionCents });
+        }
+      }
     }
   }
 
-  // Annual summaries drift only under audit edits that bypassed the archive run — checked
-  // once per full pass, on the final slice.
+  // Final-slice checks, once per full pass.
   const staleFYs: number[] = [];
+  const summaryBoardMismatches: { fiscalYear: number; ledgerCents: number; boardCents: number | null }[] = [];
   let summariesChecked = 0;
+  let summaryItemsChecked = 0;
   if (remaining === 0) {
     const summaries = await deps.gifts.getAnnualSummaries();
     summariesChecked = summaries.length;
+
+    // Leg 3: annual summaries drift only under audit edits that bypassed the archive run.
     if (summaries.length > 0) {
       const maxFY = Math.max(...summaries.map((s) => s.fiscalYear));
       const fresh = new Map(
@@ -268,17 +315,45 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
         if (!f || f.totalCents !== s.totalCents || f.giftCount !== s.giftCount) staleFYs.push(s.fiscalYear);
       }
     }
+
+    // Leg 4: the Annual Giving Summary board items themselves, fetched by the item ids
+    // annual_summaries recorded when syncAnnualSummaryBoard wrote them. Catches staff
+    // edits (or deletions) on the board that D1 knows nothing about.
+    const { annualSummaryBoardId, annualSummaryColumns } = deps.config.custodian;
+    const withItems = summaries.filter((s) => s.mondayItemId !== null);
+    if (annualSummaryBoardId !== null && annualSummaryColumns !== null && withItems.length > 0) {
+      const board = await deps.mondayClient.getItemsColumnsText(
+        withItems.map((s) => s.mondayItemId!), [annualSummaryColumns.total, annualSummaryColumns.giftCount]);
+      for (const s of withItems) {
+        summaryItemsChecked++;
+        const cols = board.get(s.mondayItemId!);
+        const totalText = cols?.get(annualSummaryColumns.total) ?? null;
+        const boardCents = totalText === null ? null : Math.round(Number(totalText) * 100);
+        const countText = cols?.get(annualSummaryColumns.giftCount) ?? null;
+        const boardCount = countText === null ? null : Number(countText);
+        if (boardCents !== s.totalCents || boardCount !== s.giftCount) {
+          summaryBoardMismatches.push({ fiscalYear: s.fiscalYear, ledgerCents: s.totalCents, boardCents });
+        }
+      }
+    }
   }
 
-  const ok = mismatches.length === 0 && staleFYs.length === 0;
+  const ok = mismatches.length === 0 && projectionMismatches.length === 0
+    && staleFYs.length === 0 && summaryBoardMismatches.length === 0;
   return {
     ok,
     summary: ok
       ? `${compared} owners reconciled clean` +
-        (remaining > 0 ? ` — ${remaining} remain, continuing next run` : `, ${summariesChecked} annual summaries current`)
-      : `${mismatches.length} owner mismatch(es), ${staleFYs.length} stale annual summary(ies)`,
+        (remaining > 0
+          ? ` — ${remaining} remain, continuing next run`
+          : `, ${summariesChecked} annual summaries and ${summaryItemsChecked} summary board item(s) current`)
+      : `${mismatches.length} owner mismatch(es), ${projectionMismatches.length} gift-ledger projection mismatch(es), ` +
+        `${staleFYs.length} stale annual summary(ies), ${summaryBoardMismatches.length} summary board mismatch(es)`,
     detail: { compared, remaining, cursor: slice.at(-1) ?? cursor,
-      mismatches: mismatches.slice(0, 20), mismatchCount: mismatches.length, staleFYs },
+      mismatches: mismatches.slice(0, 20), mismatchCount: mismatches.length,
+      projectionMismatches: projectionMismatches.slice(0, 20),
+      projectionMismatchCount: projectionMismatches.length, truncatedProjections,
+      staleFYs, summaryBoardMismatches, summaryItemsChecked },
   };
 }
 
