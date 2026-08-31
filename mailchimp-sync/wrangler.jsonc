@@ -4,6 +4,16 @@
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
   "upload_source_maps": true,
+  // Secrets (set with `wrangler secret put <NAME>`, never committed):
+  //   MONDAY_API_TOKEN         — Monday API token (dedicated integration user, least-privilege)
+  //   MAILCHIMP_API_KEY        — Mailchimp Marketing API key
+  //   MONDAY_WEBHOOK_SECRET    — shared secret for the Monday webhook; the route fails closed
+  //                              (401s everything) until it's set. Register the webhook as
+  //                              https://<worker>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>
+  //                              — re-register the subscription if the secret changes.
+  //   MAILCHIMP_WEBHOOK_SECRET — shared secret for the Mailchimp audience webhook; same
+  //                              fail-closed behavior. Register as
+  //                              https://<worker>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>
   "d1_databases": [
     {
       "binding": "DB",

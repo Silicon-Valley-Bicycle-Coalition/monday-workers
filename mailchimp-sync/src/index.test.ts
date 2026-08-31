@@ -9,7 +9,9 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
     OUTBOUND_QUEUE: { send: vi.fn().mockResolvedValue(undefined) } as unknown as Env['OUTBOUND_QUEUE'],
     INBOUND_QUEUE: { send: vi.fn().mockResolvedValue(undefined) } as unknown as Env['INBOUND_QUEUE'],
     MONDAY_API_TOKEN: 'token',
+    MONDAY_WEBHOOK_SECRET: 'test-monday-webhook-secret',
     MAILCHIMP_API_KEY: 'key',
+    MAILCHIMP_WEBHOOK_SECRET: 'test-mailchimp-webhook-secret',
     ...overrides,
   };
 }
@@ -31,7 +33,7 @@ describe('fetch', () => {
 
   it('mounts the outbound Monday webhook route', async () => {
     const res = await worker.fetch(
-      new Request('https://worker.example/webhooks/monday/donors', {
+      new Request('https://worker.example/webhooks/monday/donors?secret=test-monday-webhook-secret', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ challenge: 'abc' }),
@@ -41,6 +43,18 @@ describe('fetch', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ challenge: 'abc' });
   });
+
+  it('rejects the outbound Monday webhook route without the shared secret', async () => {
+    const res = await worker.fetch(
+      new Request('https://worker.example/webhooks/monday/donors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge: 'abc' }),
+      }),
+      fakeEnv(), {} as ExecutionContext,
+    );
+    expect(res.status).toBe(401);
+  });
 });
 
 describe('fetch — inbound', () => {
@@ -49,6 +63,18 @@ describe('fetch — inbound', () => {
       new Request('https://worker.example/webhooks/mailchimp/audience'), fakeEnv(), {} as ExecutionContext,
     );
     expect(res.status).toBe(200);
+  });
+
+  it('rejects the inbound Mailchimp webhook POST without the shared secret', async () => {
+    const res = await worker.fetch(
+      new Request('https://worker.example/webhooks/mailchimp/audience', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'type=unsubscribe&data%5Bemail%5D=a%40b.com',
+      }),
+      fakeEnv(), {} as ExecutionContext,
+    );
+    expect(res.status).toBe(401);
   });
 });
 

@@ -88,7 +88,9 @@ Three independent flows — see the design doc for full sequence diagrams:
 - `npm run dev` — run the Worker locally with `wrangler dev`
 - `npm run deploy` — deploy with `wrangler deploy`
 - `wrangler secret put MONDAY_API_TOKEN` / `MAILCHIMP_API_KEY` / `MONDAY_WEBHOOK_SECRET` /
-  `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them)
+  `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them). Neither webhook route works
+  without its secret: both fail closed, 401ing every delivery (including the Monday challenge
+  handshake) until the secret is set, rather than accepting unauthenticated requests.
 - `wrangler d1 create svbc-mailchimp-sync` — provision D1, then fill the real `database_id` into
   `wrangler.jsonc`
 

@@ -50,9 +50,9 @@ export interface Env {
   OUTBOUND_QUEUE: Queue<OutboundSyncMessage>;
   INBOUND_QUEUE: Queue<InboundSyncMessage>;
   MONDAY_API_TOKEN: string;
-  MONDAY_WEBHOOK_SECRET?: string;
+  MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
-  MAILCHIMP_WEBHOOK_SECRET?: string;
+  MAILCHIMP_WEBHOOK_SECRET: string;
 }
 
 export interface OutboundSyncMessage {

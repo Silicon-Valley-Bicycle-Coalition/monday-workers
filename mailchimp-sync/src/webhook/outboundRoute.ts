@@ -11,9 +11,9 @@ export interface OutboundAppDeps {
   pendingStore: PendingOutboundStore;
   queue: OutboundQueueLike;
   // Monday doesn't sign webhook payloads — the mitigation is a shared secret embedded
-  // in the webhook URL at subscription time, checked here. Unset disables the check;
-  // never leave it unset outside local dev.
-  webhookSecret?: string;
+  // in the webhook URL at subscription time, checked here. Fails closed: an unset or
+  // empty binding 401s every delivery rather than disabling the check.
+  webhookSecret: string;
   // Needed to recognize and skip this Worker's own self-inflicted events: the inbound
   // consumer writes to config.monday.columns.mailchimpCampaigns on this same Donors board,
   // which would otherwise re-trigger this webhook and risk a feedback loop with Mailchimp.
@@ -27,7 +27,10 @@ export function createOutboundApp(deps: OutboundAppDeps) {
   const app = new Hono();
 
   app.post('/webhooks/monday/donors', async (c) => {
-    if (deps.webhookSecret && c.req.query('secret') !== deps.webhookSecret) {
+    // Auth first — even the one-time challenge handshake stays behind the secret, since the
+    // secret is part of the URL Monday registers and so arrives with the challenge too. An
+    // unauthenticated caller learns nothing and enqueues nothing.
+    if (!deps.webhookSecret || c.req.query('secret') !== deps.webhookSecret) {
       return c.json({ ok: false }, 401);
     }
 
