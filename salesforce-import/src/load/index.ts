@@ -13,8 +13,10 @@ import { formatColumnValue } from './columnValues.js';
 // history active at once — Monday's 10k ceiling counts active items only, and archived items
 // reject all writes — so each fiscal year's items must be created, linked (in BOTH directions,
 // including event-registrations' Payment links pointing at them), and only then archived.
-// That's why event-registrations precede donations here.
-const ORDER = ['organizations', 'people-live', 'people-historical', 'campaigns',
+// That's why event-registrations precede donations here. Affiliations link to People and
+// Organizations (must exist first) and are linked *from* Event Registrations and Donations
+// (which load later), so this position is the only valid one.
+const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliations', 'campaigns',
   'recurring-gifts', 'events', 'event-registrations', 'donations', 'volunteers', 'activities'];
 
 function boardOrder(keys: string[]): string[] {

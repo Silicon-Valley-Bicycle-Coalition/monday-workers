@@ -7,10 +7,14 @@ import type { MondayClient } from './monday.js';
 // column with a thousands separator, so FY2025 displayed as "2,025" in the sandbox. A 4-digit
 // year sorts correctly as text, and the title says which end of SVBC's July–June year it names.
 export const COLUMN_TYPES: Record<string, string> = {
-  'Salesforce Debug': 'long_text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
+  'Salesforce Debug': 'long_text',
+  'Personal Email': 'email', 'Household Email': 'email', 'Work Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
-  'Email Consent': 'status', 'Secondary Email Consent': 'status',
+  'Personal Email Consent': 'status', 'Household Email Consent': 'status', 'Work Email Consent': 'status',
+  'Household Primary': 'checkbox', 'Primary': 'checkbox', 'Role': 'text', 'Attribution': 'status',
+  'Organizational Giving': 'numbers', 'Attributed Giving': 'numbers',
+  'Attributed Gift Count': 'numbers', 'Last Attributed Gift': 'date',
   'Membership Status': 'status', 'Membership Tier': 'status',
   'Member Since': 'date', 'Member Until': 'date',
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
@@ -29,14 +33,16 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Employer Name': 'text', 'Salesforce Owner': 'text',
 };
 export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
-  'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
+  'Attendee', 'Event', 'Payment', 'Volunteer', 'Person', 'Acting for', 'Affiliations']);
 // Closed-vocabulary status columns: passed as create_column `defaults` so Monday seeds the
 // column with exactly these labels. Without this, a new status column gets Monday's stock
 // "Working on it / Done / Stuck" set, which nothing ever clears — it just sits in the
 // dropdown forever alongside the real values written later.
 export const STATUS_LABELS: Record<string, string[]> = {
-  'Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
-  'Secondary Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Personal Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Household Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Work Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Attribution': ['Auto', 'Staff', 'Needs review', 'None'],
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
   'Activity Type': ['Task'],
@@ -48,9 +54,13 @@ export const STATUS_LABELS: Record<string, string[]> = {
 // Received/Failed/Pending in transform/donations.ts), so that one is closed and scoped by
 // board key rather than title alone.
 const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
+// The design spec adds a 'Draft' state for affiliations a later Worker proposes and staff have
+// not yet confirmed, alongside the two settled states.
+const AFFILIATION_STATUS_LABELS = ['Current', 'Former', 'Draft'];
 
 function statusLabelsFor(key: string, title: string): string[] | undefined {
   if (title === 'Status' && key === 'donations') return DONATION_STATUS_LABELS;
+  if (title === 'Status' && key === 'affiliations') return AFFILIATION_STATUS_LABELS;
   return STATUS_LABELS[title];
 }
 // Needed for debugging/reconciliation during the migration, deleted afterward — created
@@ -60,7 +70,8 @@ export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
 // Dollar-amount 'numbers' columns — created with currency (not plain float) formatting.
 // 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
 export const CURRENCY_COLUMNS = new Set(['Lifetime Giving', 'Amount', 'Installment Amount',
-  'Annualized Value', 'Pledge Amount', 'Received Amount', 'Ticket Amount', 'Deductible Amount']);
+  'Annualized Value', 'Pledge Amount', 'Received Amount', 'Ticket Amount', 'Deductible Amount',
+  'Organizational Giving', 'Attributed Giving']);
 const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
 
 // Which logical board(s) each connect column points at, so create_column can pass `defaults`
@@ -76,9 +87,20 @@ export const CONNECT_TARGETS: Record<string, string[]> = {
   'Payment': ['donations'],
   'Volunteer': ['people-live', 'people-historical'],
   'Person': ['people-live', 'people-historical'],
+  'Acting for': ['affiliations'], 'Affiliations': ['affiliations'],
 };
 
 export type BoardMap = Record<string, { boardId: number; columns: Record<string, string> }>;
+
+// Titles that changed meaning after the sandbox boards were first provisioned. Renaming keeps the
+// column id (and every value already on it) instead of leaving an orphan next to a fresh empty
+// column. Keyed by board so an unrelated board with an "Email" column is never touched.
+export const COLUMN_RENAMES: Record<string, Record<string, string>> = {
+  'people-live': { 'Email': 'Personal Email', 'Secondary Email': 'Household Email',
+    'Email Consent': 'Personal Email Consent', 'Secondary Email Consent': 'Household Email Consent' },
+  'people-historical': { 'Email': 'Personal Email', 'Secondary Email': 'Household Email',
+    'Email Consent': 'Personal Email Consent', 'Secondary Email Consent': 'Household Email Consent' },
+};
 
 const BOARD_LABELS: Record<string, string> = {
   'donations': 'Donations',
@@ -86,6 +108,7 @@ const BOARD_LABELS: Record<string, string> = {
   'organizations': 'Organizations', 'recurring-gifts': 'Recurring Gifts',
   'events': 'Events', 'event-registrations': 'Event Registrations',
   'campaigns': 'Campaigns', 'volunteers': 'Volunteers', 'activities': 'Activities',
+  'affiliations': 'Affiliations',
 };
 
 export async function ensureBoards(
@@ -146,6 +169,17 @@ export async function ensureBoards(
       `query ($ids: [ID!]) { boards (ids: $ids) { columns { id title type } } }`,
       { ids: [String(entry.boardId)] });
     for (const col of res.boards[0]?.columns ?? []) entry.columns[col.title] = col.id;
+
+    for (const [oldTitle, newTitle] of Object.entries(COLUMN_RENAMES[key] ?? {})) {
+      const id = entry.columns[oldTitle];
+      if (!id || entry.columns[newTitle]) continue;   // nothing to rename, or already done
+      await client.gql(
+        `mutation ($board: ID!, $columnId: String!, $title: String!) {
+           change_column_title (board_id: $board, column_id: $columnId, title: $title) { id } }`,
+        { board: String(entry.boardId), columnId: id, title: newTitle });
+      entry.columns[newTitle] = id;
+      delete entry.columns[oldTitle];
+    }
 
     // Debug columns go last so they land at the far right of the board — staff-facing
     // columns stay prominent, and Salesforce Debug is slated for deletion after the migration.

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureBoards, COLUMN_TYPES, CONNECT_TARGETS, CURRENCY_COLUMNS } from './boards.js';
+import { ensureBoards, COLUMN_TYPES, CONNECT_COLUMNS, CONNECT_TARGETS, CURRENCY_COLUMNS } from './boards.js';
 import { MondayClient } from './monday.js';
 import { loadConfig } from '../config.js';
 
@@ -135,18 +135,18 @@ describe('ensureBoards', () => {
     }) as typeof fetch;
     const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
 
-    await ensureBoards(client, loadConfig(), ['people-live'], new Map([
-      ['people-live', new Set(['Email Consent', 'Secondary Email Consent', 'Membership Status', 'Membership Tier'])],
+    await ensureBoards(client, loadConfig(), ['people-live', 'affiliations'], new Map([
+      ['people-live', new Set(['Personal Email Consent', 'Household Email Consent', 'Membership Status', 'Membership Tier'])],
+      ['affiliations', new Set(['Status', 'Work Email Consent', 'Attribution'])],
     ]));
-
-    expect(JSON.parse(defaultsByTitle['Email Consent']!).labels).toEqual(
-      { 0: 'Subscribed', 1: 'Unsubscribed', 2: 'Cleaned', 3: 'Not in Mailchimp' });
-    expect(JSON.parse(defaultsByTitle['Secondary Email Consent']!).labels).toEqual(
-      { 0: 'Subscribed', 1: 'Unsubscribed', 2: 'Cleaned', 3: 'Not in Mailchimp' });
-    expect(JSON.parse(defaultsByTitle['Membership Status']!).labels).toEqual(
-      { 0: 'Active', 1: 'Lapsed' });
-    expect(JSON.parse(defaultsByTitle['Membership Tier']!).labels).toEqual(
-      { 0: 'Lifetime', 1: 'Member' });
+    const consent = { 0: 'Subscribed', 1: 'Unsubscribed', 2: 'Cleaned', 3: 'Not in Mailchimp' };
+    expect(JSON.parse(defaultsByTitle['Personal Email Consent']!).labels).toEqual(consent);
+    expect(JSON.parse(defaultsByTitle['Household Email Consent']!).labels).toEqual(consent);
+    expect(JSON.parse(defaultsByTitle['Work Email Consent']!).labels).toEqual(consent);
+    expect(JSON.parse(defaultsByTitle['Status']!).labels).toEqual({ 0: 'Current', 1: 'Former', 2: 'Draft' });
+    expect(JSON.parse(defaultsByTitle['Attribution']!).labels).toEqual(
+      { 0: 'Auto', 1: 'Staff', 2: 'Needs review', 3: 'None' });
+    expect(JSON.parse(defaultsByTitle['Membership Status']!).labels).toEqual({ 0: 'Active', 1: 'Lapsed' });
   });
 
   it('donations "Status" gets its closed vocabulary, but the same title on other boards does not', async () => {
@@ -198,10 +198,48 @@ describe('ensureBoards', () => {
   it('every transform column title has a declared type', () => {
     // Guard: a new transform column without a COLUMN_TYPES entry must fail loudly here,
     // not silently at load time.
-    for (const title of ['Salesforce Debug', 'Email Consent', 'Secondary Email Consent', 'Term Start', 'Lifetime Giving',
+    for (const title of ['Salesforce Debug', 'Personal Email', 'Household Email', 'Work Email',
+      'Personal Email Consent', 'Household Email Consent', 'Work Email Consent', 'Household Primary',
+      'Role', 'Primary', 'Attribution', 'Organizational Giving', 'Attributed Giving',
+      'Attributed Gift Count', 'Last Attributed Gift', 'Term Start', 'Lifetime Giving',
       'Annualized Value', 'Historical']) {
       expect(COLUMN_TYPES[title], title).toBeDefined();
     }
+    for (const title of ['Acting for', 'Affiliations']) {
+      expect(CONNECT_COLUMNS.has(title), title).toBe(true);
+      expect(CONNECT_TARGETS[title], title).toEqual(['affiliations']);
+    }
+  });
+
+  it('renames the four People email columns in place instead of creating duplicates', async () => {
+    const renamed: { id: string; title: string }[] = [];
+    const created: string[] = [];
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [
+        { id: 'email_1', title: 'Email', type: 'email' }, { id: 'email_2', title: 'Secondary Email', type: 'email' },
+        { id: 'status_1', title: 'Email Consent', type: 'status' }, { id: 'status_2', title: 'Secondary Email Consent', type: 'status' },
+      ] }] } });
+      if (/change_column_title/.test(query)) {
+        renamed.push({ id: variables.columnId as string, title: variables.title as string });
+        return Response.json({ data: { change_column_title: { id: variables.columnId } } });
+      }
+      if (/create_column/.test(query)) { created.push(variables.title as string); return Response.json({ data: { create_column: { id: `col_${variables.title}` } } }); }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+    const cfg = loadConfig();
+    cfg.monday.boards['people-live'] = 4242;   // existing board, so no create_board
+    const map = await ensureBoards(client, cfg, ['people-live'], new Map([
+      ['people-live', new Set(['Personal Email', 'Household Email', 'Personal Email Consent', 'Household Email Consent', 'Household Primary'])],
+    ]));
+    expect(renamed).toEqual([
+      { id: 'email_1', title: 'Personal Email' }, { id: 'email_2', title: 'Household Email' },
+      { id: 'status_1', title: 'Personal Email Consent' }, { id: 'status_2', title: 'Household Email Consent' },
+    ]);
+    expect(created).toEqual(['Household Primary']);
+    expect(map['people-live']!.columns['Personal Email']).toBe('email_1');
+    expect('Email' in map['people-live']!.columns).toBe(false);
   });
 });
 
