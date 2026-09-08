@@ -100,8 +100,9 @@ supporter records for existing Contacts.
 plan's Decisions Needed): Sponsorship/Grants/Contracts Opportunity history (3,613 + 125 + 478
 records — the record-type count query proved these are real, not greenfield); volunteer history
 2014–2020 as historical records; the recent ~2-year slice of Tasks/EmailMessages onto the Donors'
-Activities board; `Secondary_Email__c` as its own labeled column on Person items; and a
-`ContactHistory` flat export (68,831 rows) into the backup archive.
+Activities board; `Secondary_Email__c` as its own labeled column on Person items, with its own
+**Secondary Email Consent** status (Mailchimp consent is tracked per email address, not per
+person); and a `ContactHistory` flat export (68,831 rows) into the backup archive.
 
 ## Data flow
 

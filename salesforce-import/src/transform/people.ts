@@ -51,7 +51,7 @@ export function contactToPayload(
     // monday-migration docs/05 §9 verified this (Account.OwnerId, not Contact.OwnerId).
     'Salesforce Owner': ownerAttribution(account?.Owner),
     'Employer Name': (c['dtd__company__c'] ?? '') as string,
-    ...consentColumns(email, deps.consent),
+    ...consentColumns(email, secondary, deps.consent),
     ...salesforceDebug(c),
   };
   if (deps.member) {

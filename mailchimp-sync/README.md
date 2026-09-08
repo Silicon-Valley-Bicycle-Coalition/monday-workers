@@ -70,6 +70,15 @@ Three independent flows — see the design doc for full sequence diagrams:
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
   (addr1/city/state/zip), Email — written by `salesforce-import`.
 * The Total Given / Last Gift rollup columns `donation-rollups` maintains.
+* **Subscription state is per email address, not per Donor** — and this Worker keys both
+  directions on the Donors board's single `email` column: outbound upserts that one address,
+  and inbound resolves a Mailchimp contact back to a Donor by matching that column only. A
+  Donor's **Secondary Email** (its own column since `salesforce-import`, with its own
+  **Secondary Email Consent** status there) is neither pushed to Mailchimp nor matched on the
+  way back, so an inbound webhook for a secondary address records as `skipped`. Covering the
+  second column — a second email column id in config, `findItemIdByEmail` across both, and
+  either a second connect column or a union of both addresses' interests — is a follow-up,
+  not built.
 * A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
   this Worker reconciles its *items* daily but does not create the board itself), plus a new
   connect-column on the Donors board pointed at it.

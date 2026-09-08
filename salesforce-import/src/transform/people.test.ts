@@ -44,7 +44,7 @@ describe('contactToPayload', () => {
         CreatedDate: '2012-01-01T00:00:00Z', CreatedBy: { Name: 'Ann' },
         LastModifiedDate: '2026-01-01T00:00:00Z', LastModifiedBy: { Name: 'Bob' } },
       'people-live',
-      { consent: new Map([['ada@x.co', 'subscribed']]), member,
+      { consent: new Map([['ada@x.co', 'subscribed'], ['work@x.co', 'unsubscribed']]), member,
         geo: { lat: 37.3, lng: -121.9, city: 'San Jose', zip: '95112', source: 'census' } });
     expect(p.board).toBe('people-live');
     expect(p.name).toBe('Ada Lovelace');
@@ -58,6 +58,7 @@ describe('contactToPayload', () => {
     expect(p.columns['Do Not Solicit Reason']).toBe('mail');
     expect(p.columns['Employer Name']).toBe('Acme Corp');
     expect(p.columns['Email Consent']).toEqual({ label: 'Subscribed' });
+    expect(p.columns['Secondary Email Consent']).toEqual({ label: 'Unsubscribed' });
     expect(p.columns['Salesforce Debug']).toEqual({ text: expect.stringContaining('SF ID: c1') });
   });
 

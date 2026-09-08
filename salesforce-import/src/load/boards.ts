@@ -7,7 +7,8 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Salesforce Debug': 'long_text', 'Email': 'email', 'Secondary Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
-  'Email Consent': 'status', 'Membership Status': 'status', 'Membership Tier': 'status',
+  'Email Consent': 'status', 'Secondary Email Consent': 'status',
+  'Membership Status': 'status', 'Membership Tier': 'status',
   'Member Since': 'date', 'Member Until': 'date',
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
   'Amount': 'numbers', 'Date': 'date', 'Fiscal Year': 'numbers', 'Status': 'status', 'Gift Type': 'text',
@@ -32,6 +33,7 @@ export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift
 // dropdown forever alongside the real values written later.
 export const STATUS_LABELS: Record<string, string[]> = {
   'Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Secondary Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
   'Activity Type': ['Task'],
