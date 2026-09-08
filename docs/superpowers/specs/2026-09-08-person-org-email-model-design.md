@@ -36,6 +36,13 @@ individual too. SVBC wants to track:
   same Household Email. Chosen over "one email, one person" (forces a spouse off the record) and
   a full Household entity (NPSP-style, the most structure to build). Matching on a shared
   address therefore produces candidates, not an answer — see Resolver.
+* **An unknown address with a familiar name is a proposal, not a link (added 2026-09-08,
+  Eventbrite ask).** A community member who registers in Eventbrite with a new address is
+  matched to People by name, the candidate is shown to staff on the worklist, and only a staff
+  confirmation links the record and attaches the address to the person. Chosen over "create a
+  new person for every unknown email" (what the `eb4sf` package did in Salesforce, and how
+  Funraise produced ~1,000 duplicates) and "auto-link on exact name" (a shared common name would
+  silently pool two people's impact).
 * **Approach: one new Affiliations board; emails stay on the record they belong to.** Chosen
   over an Emails board (fully normalized, but ~9,500 items for live people alone, against the
   10,000-item ceiling that already split People, and three boards to answer "what's their work
@@ -70,6 +77,7 @@ individual too. SVBC wants to track:
 | Household Email Consent | status | renamed from **Secondary Email Consent** |
 | Organization | connect → Organizations | kept, now **derived**: the set of organizations with a Current affiliation. Maintained by the `impact-attribution` Worker's daily reconciliation, not by hand |
 | Affiliations | connect → Affiliations | new; the mirror of Affiliations → Person |
+| Other Emails | text | new; semicolon-separated aliases attached by staff confirmation on the worklist (see Resolver, "Confirm"). Resolve to this person in `email_index`; carry no consent and are not sent to Mailchimp |
 | Household Primary | checkbox | new; on a shared Household Email, which person's merge fields the Mailchimp contact carries (see Consent). Defaults to the first person imported |
 | Organizational Giving | numbers | new rollup: sum of gifts attributed to this person acting for any organization |
 | Lifetime Impact (description) | — | the existing gift-history item description gains a per-affiliation section |
@@ -86,7 +94,7 @@ One item per person-at-organization tenure. Name: `<Person> @ <Organization>`.
 | Person | connect → People, People (Historical) | required |
 | Organization | connect → Organizations | required |
 | Role | text | from `npe5__Role__c`; free text today |
-| Status | status | Current / Former, from `npe5__Status__c` |
+| Status | status | Current / Former, from `npe5__Status__c`; plus **Draft** for an affiliation the resolver proposed from a confirmed work address and staff have not yet checked (see Resolver, "Confirm"). Draft affiliations are excluded from the derived Organization column and from rollups until staff set Current |
 | Start / End | date | from `npe5__StartDate__c` / `npe5__EndDate__c` (not extracted today — see Migration) |
 | Primary | checkbox | from `npe5__Primary__c`; which affiliation to show first |
 | Work Email | email | the address the person uses in this capacity. Unique across Affiliations |
@@ -109,6 +117,8 @@ Donations, Event Registrations, Volunteers, and Activities each gain:
 |---|---|---|
 | Acting for | connect → Affiliations | set by the resolver; staff may change it. Blank means "as themselves" |
 | Attribution | status | Auto / Staff / Needs review / None — how **Acting for** was set, so overrides survive re-resolution |
+| Suggested person | connect → People | set by the resolver when an unknown email carries a name that matches existing People; the person link stays blank until staff confirm. Cleared on confirmation |
+| Match reason | text | one line explaining the suggestion ("same name; different email"), so staff can judge it without opening the person |
 
 The existing person link on each board (Donor, Attendee, Volunteer, Person) is unchanged and
 remains the answer to "who." **Acting for** answers "in what capacity."
@@ -145,7 +155,11 @@ Queue consumer
   │                           several candidates → pick the one whose name matches the
   │                           record's name (Attendee Name / supporter name); no match →
   │                           Attribution = Needs review, add to worklist
-  │       unknown address   → Attribution = Needs review, add to worklist
+  │       unknown address   → look People up by normalized name (see Name matching):
+  │                             no candidate → create the Person, Attribution = None
+  │                             one or more  → person link stays BLANK, Suggested person =
+  │                                            the candidate(s), Match reason set,
+  │                                            Attribution = Needs review, add to worklist
   │       no email at all   → Attribution = Needs review only if the person link is also
   │                           blank; otherwise None (an invoiced sponsorship with a Donor
   │                           set by staff is complete as-is)
@@ -153,7 +167,26 @@ Queue consumer
   ▼
 Worklist: a "Needs attribution" view on each impact board, filtered on Attribution =
 Needs review. Staff set Acting for (or the person link) and flip Attribution to Staff.
+For Event Registrations this view, filtered to one event, is the post-event checklist.
 ```
+
+**Name matching (the unknown-address branch):** normalize first and last name the way
+`monday-migration/scripts/find-duplicate-contacts.mjs` does (lowercase, letters only) and look
+up People on the pair; skip candidates whose name is on that script's junk list (the 86
+"Eventbrite Your" contacts from `docs/10` are the canonical case). A name alone is never enough
+to link — the dedup script scores it 25 of 100 — so the resolver only ever *suggests*. The
+person link is left blank on purpose: a Person created optimistically and corrected later is a
+duplicate to merge, and this design has no merge path for staff.
+
+**Confirm (a Staff transition on a row that carried a suggestion):** the webhook on the
+Attribution column fires the resolver a second time. When it reads Staff and the person link is
+now set, it attaches the record's email to that person: Personal Email if empty, otherwise
+appended to Other Emails; a non-freemail domain instead creates a Draft Affiliation with the
+address as Work Email for staff to confirm the organization. It then patches `email_index`, so
+the next record from the same address resolves as personal (or work) without staff. Suggested
+person and Match reason are cleared. If staff cleared the suggestion and left the link blank,
+the resolver creates the Person as in the no-candidate case. This is the whole "merge": an
+address moves onto a person, no records combine.
 
 **`email_index` (D1):** address → { kind, person item ids, affiliation item id }. Rebuilt by a
 daily cron from the People (both boards) and Affiliations boards, and patched incrementally by
@@ -246,8 +279,15 @@ Monday and D1 failures only.
 Vitest with mocked Monday at the boundary, D1-backed via the repo's existing test setup:
 
 * Resolver: each branch of step 3 (work, personal, household-one, household-many-with-name-match,
-  household-many-no-match, unknown, no-email-with-person, no-email-without-person), plus
-  "Attribution = Staff is left alone."
+  household-many-no-match, unknown-no-candidate, unknown-with-candidates, no-email-with-person,
+  no-email-without-person), plus "Attribution = Staff is left alone."
+* Name matching: "Michael Smith" with two People candidates yields both as Suggested person and
+  no link; a junk-list name yields no candidate and a new Person; a candidate on the Historical
+  People board is offered the same as a live one.
+* Confirm: Staff with a link set attaches the email (Personal Email empty → filled; not empty →
+  Other Emails appended; work domain → Draft Affiliation) and the next resolve of that address
+  is Auto; Staff with the link blank creates a Person; a second Confirm on the same row is a
+  no-op.
 * `email_index` rebuild: a shared household address indexes to two people; a work address
   indexes to one affiliation; a renamed column id does not break the rebuild.
 * Rollups: affiliation totals recompute from scratch; a person's Organizational Giving equals the
