@@ -11,11 +11,20 @@ const STATUS: Record<string, string> = {
   Posted: 'Received', 'Closed Won': 'Received (Historical)', 'Closed Lost': 'Failed',
 };
 
+// Donor precedence, then re-pointed through `donorAlias` when the fallback AccountId is a
+// person-named Account folded into a Person (people.ts personNamedAccountIds) — otherwise
+// the Donor link would target an Organization item that is never created.
+const resolveDonor = (raw: unknown, donorAlias?: Map<string, string>): string | null => {
+  const id = raw as string | null;
+  return id ? (donorAlias?.get(id) ?? id) : null;
+};
+
 export function opportunityToPayload(
   o: Record<string, unknown>,
-  deps: { termCols: Map<string, Record<string, unknown>> },
+  deps: { termCols: Map<string, Record<string, unknown>>; donorAlias?: Map<string, string> },
 ): ItemPayload {
-  const donorId = (o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? o['AccountId']) as string | null;
+  const donorId = resolveDonor(o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? o['AccountId'],
+    deps.donorAlias);
   const links: ItemPayload['links'] = [];
   if (donorId) links.push({ column: 'Donor', targetSfIds: [donorId] });
   if (o['funraise__Subscription__c']) links.push({ column: 'Recurring Gift', targetSfIds: [o['funraise__Subscription__c'] as string] });
@@ -53,8 +62,8 @@ export function cnpOverlapCheck(
   return { duplicateTransactionIds, unique };
 }
 
-export function cnpToPayload(tx: Record<string, unknown>): ItemPayload {
-  const donorId = (tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c']) as string | null;
+export function cnpToPayload(tx: Record<string, unknown>, donorAlias?: Map<string, string>): ItemPayload {
+  const donorId = resolveDonor(tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c'], donorAlias);
   return {
     board: 'donations',
     sfId: tx['Id'] as string,

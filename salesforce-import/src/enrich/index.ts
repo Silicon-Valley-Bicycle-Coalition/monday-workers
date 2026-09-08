@@ -3,6 +3,7 @@ import { dataPath, readNdjson, appendNdjson } from '../artifacts.js';
 import { existsSync } from 'node:fs';
 import { searchPlace } from './places.js';
 import { nameConfidence, type NameConfidence } from './match.js';
+import { isOneToOneAccount, personNamedAccountIds } from '../transform/people.js';
 
 export interface EnrichmentRow {
   sfId: string;
@@ -31,6 +32,10 @@ export async function runEnrich(
   const sleepFn = deps.sleepFn ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
 
   const accounts = await readNdjson<Record<string, unknown>>(dataPath('extract', 'accounts.ndjson'));
+  const contactsPath = dataPath('extract', 'contacts.ndjson');
+  const contacts = existsSync(contactsPath) ? await readNdjson<Record<string, unknown>>(contactsPath) : [];
+  // Same person/org split as transform — a person-named Account is never an org to look up.
+  const personNamed = personNamedAccountIds(accounts, contacts);
   const path = dataPath('enrich', 'organizations.ndjson');
   const done = new Set<string>();
   if (existsSync(path)) {
@@ -38,7 +43,7 @@ export async function runEnrich(
   }
 
   const pending = accounts.filter((a) =>
-    a['npe01__SYSTEM_AccountType__c'] !== 'One-to-One Individual' &&
+    !isOneToOneAccount(a) && !personNamed.has(a['Id'] as string) &&
     !done.has(a['Id'] as string) &&
     (!a['Website'] || !hasBillingAddress(a)));
 

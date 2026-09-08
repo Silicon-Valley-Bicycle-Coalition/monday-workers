@@ -29,6 +29,11 @@ describe('runEnrich', () => {
       { Id: 'a2', Name: 'Recology Inc.', npe01__SYSTEM_AccountType__c: null, ...prov },
       { Id: 'a3', Name: 'Someone Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
       { Id: 'a4', Name: 'Morimoto Family Fund', npe01__SYSTEM_AccountType__c: null, ...prov },
+      // Blank-type but named after its sole Contact — a person, not an org; never queried.
+      { Id: 'a5', Name: 'Mike Klein', npe01__SYSTEM_AccountType__c: null, ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c5', FirstName: 'Mike', LastName: 'Klein', AccountId: 'a5', ...prov },
     ]);
   }
 
@@ -51,7 +56,7 @@ describe('runEnrich', () => {
     const fund = rows.find((r) => r['sfId'] === 'a4')!;
     expect(fund['confidence']).toBe('none');
 
-    // a1 has no gaps and a3 is an individual — neither queried.
+    // a1 has no gaps, a3 is an individual, a5 is a person-named Account — none queried.
     expect((fetchFn as any).mock.calls).toHaveLength(2);
 
     // Second run: everything already recorded, no new queries.
