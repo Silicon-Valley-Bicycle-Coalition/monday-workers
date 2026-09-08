@@ -75,18 +75,15 @@ export function consentLabel(email: string | null, consent: ReadonlyMap<string, 
   return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Not in Mailchimp';
 }
 
-// Mailchimp subscription state belongs to an email address, not a person: a Contact whose
-// personal address unsubscribed and whose work address is still subscribed is two different
-// answers, so each email column gets its own consent status rather than one flag per item.
-// The primary column is never blank ("Not in Mailchimp" also covers "no email at all") so the
-// "who's missing from Mailchimp" filter stays reliable; the secondary column is left blank
-// when there is no second address, since claiming a nonexistent address isn't in Mailchimp
-// would just be clutter.
+// Mailchimp subscription state belongs to an email address, not a person, so each email column
+// on People gets its own consent status. Personal Email Consent is never blank ("Not in
+// Mailchimp" also covers "no email at all") so the "who's missing from Mailchimp" filter stays
+// reliable; Household Email Consent is left blank when there is no household address.
 export function consentColumns(
-  email: string | null, secondary: string | null, consent: Map<string, string>,
+  personal: string | null, household: string | null, consent: ReadonlyMap<string, string>,
 ): Record<string, unknown> {
-  const columns: Record<string, unknown> = { 'Email Consent': { label: consentLabel(email, consent) } };
-  if (secondary) columns['Secondary Email Consent'] = { label: consentLabel(secondary, consent) };
+  const columns: Record<string, unknown> = { 'Personal Email Consent': { label: consentLabel(personal, consent) } };
+  if (household) columns['Household Email Consent'] = { label: consentLabel(household, consent) };
   return columns;
 }
 

@@ -128,7 +128,7 @@ describe('runTransform', () => {
     expect(await runTransform(['--no-consent'])).toBe(0);
     const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
     const ada = payloads.find((p) => p.sfId === 'c1')!;
-    expect(ada.columns['Email Consent']).toEqual({ label: 'Not in Mailchimp' });
+    expect(ada.columns['Personal Email Consent']).toEqual({ label: 'Not in Mailchimp' });
   });
 
   it('includes a C&P-only donor as People (historical for an old gift), with a resolving Donor link', async () => {

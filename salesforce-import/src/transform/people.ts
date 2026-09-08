@@ -30,15 +30,23 @@ const emailCol = (e: string | null) => (e ? { email: e, text: e } : null);
 
 export function contactToPayload(
   c: Record<string, unknown>, board: 'people-live' | 'people-historical',
-  deps: { consent: Map<string, string>; member?: MemberSummary; geo?: GeoResult },
+  deps: {
+    consent: Map<string, string>; member?: MemberSummary; geo?: GeoResult;
+    // From transform/emails.ts. Absent → the pre-affiliation behavior: primary address is
+    // Personal, Secondary_Email__c is Household, no work address is separated out.
+    emails?: { personal: string | null; household: string | null };
+    householdPrimary?: boolean;
+    affiliationSfIds?: string[];
+  },
 ): ItemPayload {
-  const email = collapseEmail(c);
-  const secondary = (c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null;
+  const personal = deps.emails ? deps.emails.personal : collapseEmail(c);
+  const household = deps.emails ? deps.emails.household
+    : ((c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null);
   const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string;
     Owner?: { Name?: string } } | null;
   const columns: Record<string, unknown> = {
-    'Email': emailCol(email),
-    'Secondary Email': emailCol(secondary),
+    'Personal Email': emailCol(personal),
+    'Household Email': emailCol(household),
     'Phone': (c['Phone'] ?? c['MobilePhone'] ?? '') as string,
     'Address': [c['MailingStreet'], c['MailingCity'], c['MailingState'], c['MailingPostalCode']]
       .filter(Boolean).join(', '),
@@ -51,20 +59,28 @@ export function contactToPayload(
     // monday-migration docs/05 §9 verified this (Account.OwnerId, not Contact.OwnerId).
     'Salesforce Owner': ownerAttribution(account?.Owner),
     'Employer Name': (c['dtd__company__c'] ?? '') as string,
-    ...consentColumns(email, secondary, deps.consent),
+    ...consentColumns(personal, household, deps.consent),
     ...salesforceDebug(c),
   };
+  // A shared household address is one Mailchimp contact; this flag says whose merge fields it
+  // carries (spec: "Consent and mailchimp-sync"). Only ever written as true.
+  if (deps.householdPrimary) columns['Household Primary'] = { checked: 'true' };
   if (deps.member) {
     columns['Membership Status'] = { label: deps.member.status };
     columns['Membership Tier'] = { label: deps.member.tier };
     columns['Member Since'] = dateCol(deps.member.sinceISO);
     columns['Member Until'] = dateCol(deps.member.untilISO);
   }
+  const links: ItemPayload['links'] = [];
+  if (c['AccountId']) links.push({ column: 'Organization', targetSfIds: [c['AccountId'] as string] });
+  if (deps.affiliationSfIds && deps.affiliationSfIds.length > 0) {
+    links.push({ column: 'Affiliations', targetSfIds: deps.affiliationSfIds });
+  }
   return {
     board, sfId: c['Id'] as string,
     name: [c['FirstName'], c['LastName']].filter(Boolean).join(' ') || '(no name)',
     columns,
-    links: c['AccountId'] ? [{ column: 'Organization', targetSfIds: [c['AccountId'] as string] }] : [],
+    links,
   };
 }
 
