@@ -43,7 +43,9 @@ export function assignEmails(
   overrides: ReadonlyMap<string, EmailOverride>,
 ): EmailAssignment {
   const primary = collapseEmail(contact);
-  const secondary = (contact['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null;
+  let secondary = (contact['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null;
+  // Ignore secondary if it's identical to primary (legacy CRM sync backfill common artifact)
+  if (secondary === primary) secondary = null;
   const candidateOrgIds = affiliations.map((a) => a.orgSfId);
 
   const place = (email: string): Placed => {

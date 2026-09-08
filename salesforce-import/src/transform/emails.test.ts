@@ -73,6 +73,24 @@ describe('assignEmails', () => {
     const a = assignEmails({}, [atAcme], orgDomains, consumer, none);
     expect(a).toEqual({ personal: null, household: null, work: new Map(), swapped: false, review: [] });
   });
+  it('secondary email identical to primary (case differs) → secondary ignored', () => {
+    const a = assignEmails({ Email: 'ada@gmail.com', Secondary_Email__c: 'Ada@Gmail.com' },
+      [atAcme], orgDomains, consumer, none);
+    expect(a.personal).toBe('ada@gmail.com');
+    expect(a.household).toBeNull();
+    expect(a.work.size).toBe(0);
+    expect(a.swapped).toBe(false);
+    expect(a.review).toEqual([]);
+  });
+  it('secondary identical to primary work domain → secondary ignored, primary stays personal', () => {
+    const a = assignEmails({ Email: 'ada@acme.example', Secondary_Email__c: 'ADA@acme.example' },
+      [atAcme], orgDomains, consumer, none);
+    expect(a.personal).toBe('ada@acme.example');
+    expect(a.work.size).toBe(0);
+    expect(a.household).toBeNull();
+    expect(a.swapped).toBe(false);
+    expect(a.review).toEqual([]);
+  });
 });
 
 describe('parseEmailKindOverrides', () => {
