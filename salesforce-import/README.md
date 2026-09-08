@@ -46,7 +46,8 @@ npm run cli -- geocode
 npm run cli -- transform            # fails on assertion violations; read data/transform/report.json
 #   transform also writes data/review/email-classification.csv (secondary addresses on a domain
 #   that is neither an affiliated org's nor a consumer mailbox — decide each one, copy rows into
-#   data/enrich/email-kinds.csv as email,kind,affiliationSfId, re-run transform) and
+#   data/enrich/email-kinds.csv as email,kind,affiliationSfId, re-run transform; a work override
+#   naming an affiliation that contact doesn't have is ignored with a warning in the report) and
 #   data/review/unaffiliated-org-gifts.csv (org gifts whose primary contact has no Affiliation at
 #   that org — create the Affiliation in Salesforce or accept the gift as organization-only).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
