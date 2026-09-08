@@ -149,6 +149,38 @@ describe('ensureBoards', () => {
       { 0: 'Lifetime', 1: 'Member' });
   });
 
+  it('seeds the shared Funraise/Eventbrite event vocabularies as closed status sets', async () => {
+    const defaultsByTitle: Record<string, string | undefined> = {};
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '980' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        defaultsByTitle[variables.title as string] = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    await ensureBoards(client, loadConfig(), ['events', 'event-registrations'], new Map([
+      ['events', new Set(['Source', 'Event Status', 'Program', 'Eventbrite ID', 'Eventbrite URL', 'Venue', 'Tickets Sold', 'Funraise Event ID'])],
+      ['event-registrations', new Set(['Source', 'Attendance', 'Role', 'Ticket Type', 'Eventbrite Attendee ID'])],
+    ]));
+
+    expect(JSON.parse(defaultsByTitle['Source']!).labels).toEqual({ 0: 'Funraise', 1: 'Eventbrite' });
+    expect(JSON.parse(defaultsByTitle['Event Status']!).labels).toEqual(
+      { 0: 'Upcoming', 1: 'Completed', 2: 'Canceled', 3: 'Draft' });
+    expect(JSON.parse(defaultsByTitle['Program']!).labels).toEqual(
+      { 0: 'Public', 1: 'Volunteering', 2: 'Bike Parking', 3: 'Group Rides', 4: 'Private', 5: 'Fundraiser' });
+    expect(JSON.parse(defaultsByTitle['Attendance']!).labels).toEqual(
+      { 0: 'Registered', 1: 'Attended', 2: 'No Show', 3: 'Canceled' });
+    expect(JSON.parse(defaultsByTitle['Role']!).labels).toEqual({ 0: 'Participant', 1: 'Volunteer' });
+    // Plain columns exist too (would throw "no COLUMN_TYPES entry" otherwise).
+    expect(defaultsByTitle).toHaveProperty('Eventbrite URL');
+    expect(defaultsByTitle).toHaveProperty('Tickets Sold');
+  });
+
   it('donations "Status" gets its closed vocabulary, but the same title on other boards does not', async () => {
     const defaultsByBoardAndTitle: Record<string, string | undefined> = {};
     const fetchFn = (async (_u: unknown, init: unknown) => {

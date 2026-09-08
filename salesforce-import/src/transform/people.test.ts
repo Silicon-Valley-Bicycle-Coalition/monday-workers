@@ -6,7 +6,8 @@ import { setStaffMatcher } from './fields.js';
 
 const emptyInc = (): InclusionInput => ({
   donorIds: new Set(), recentDonorIds: new Set(), memberSummaries: new Map(),
-  registrantIds: new Set(), volunteerIds: new Set(), affiliatedIds: new Set(), recentActivityIds: new Set(),
+  registrantIds: new Set(), recentRegistrantIds: new Set(), volunteerIds: new Set(), affiliatedIds: new Set(),
+  recentActivityIds: new Set(),
 });
 const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' }],
   defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
@@ -21,6 +22,11 @@ describe('classifyContact', () => {
   });
   it('recent donors are live, old donors historical', () => {
     const inc = emptyInc(); inc.donorIds.add('c1'); inc.donorIds.add('c2'); inc.recentDonorIds.add('c2');
+    expect(classifyContact({ Id: 'c1' }, inc, SINCE)).toBe('people-historical');
+    expect(classifyContact({ Id: 'c2' }, inc, SINCE)).toBe('people-live');
+  });
+  it('registrants for recent events are live, older registrants historical', () => {
+    const inc = emptyInc(); inc.registrantIds.add('c1'); inc.registrantIds.add('c2'); inc.recentRegistrantIds.add('c2');
     expect(classifyContact({ Id: 'c1' }, inc, SINCE)).toBe('people-historical');
     expect(classifyContact({ Id: 'c2' }, inc, SINCE)).toBe('people-live');
   });

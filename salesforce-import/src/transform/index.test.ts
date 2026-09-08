@@ -15,6 +15,40 @@ async function seed() {
     { Id: 'c2', FirstName: 'Eva', LastName: 'M', Email: 'e@b.c', ...prov }, // email-only → excluded
     // Affiliation-only inclusion: own org Account ∪ affiliation orgs, deduped, individual filtered.
     { Id: 'c3', FirstName: 'Uma', LastName: 'N', AccountId: 'a-org', ...prov },
+    // Eventbrite attendee of a 2026 class — included AND live purely through the eb4sf attendee row.
+    { Id: 'c-eb', FirstName: 'Quynh', LastName: 'P', ...prov },
+    // Funraise registrant of a 2015 event — included, but historical.
+    { Id: 'c-oldreg', FirstName: 'Old', LastName: 'R', ...prov },
+    // Eventbrite registrant who never checked in and has no other relationship — NOT a Person
+    // (decision D, 2026-09-08: a no-show for a free class is not a relationship).
+    { Id: 'c-noshow', FirstName: 'No', LastName: 'Show', ...prov },
+  ]);
+  await writeNdjson(dataPath('extract', 'events.ndjson'), [
+    { Id: 'fe1', Name: 'Gala 2015', funraise__fr_ID__c: '77', funraise__Start_Date__c: '2015-10-01T01:00:00.000+0000', ...prov },
+    { Id: 'fe2', Name: 'Test Event', funraise__Start_Date__c: '2023-10-29T17:30:00.000+0000', ...prov },
+  ]);
+  await writeNdjson(dataPath('extract', 'registrations.ndjson'), [
+    { Id: 'fr1', funraise__Registrant__c: 'c-oldreg', funraise__Fundraising_Event__c: 'fe1',
+      funraise__Ticket_Amount__c: 50, funraise__Attended__c: true, ...prov },
+  ]);
+  await writeNdjson(dataPath('extract', 'eb4sf_events.ndjson'), [
+    { Id: 'eb1', Name: '1999', eb4sf__Event_Name__c: 'Smart Cycling 1', eb4sf__Start__c: '2026-02-01T01:00:00.000+0000',
+      eb4sf__Status__c: 'completed', eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition', ...prov },
+    { Id: 'eb2', Name: '2000', eb4sf__Event_Name__c: 'Abandoned draft', eb4sf__Start__c: '2026-03-01T01:00:00.000+0000',
+      eb4sf__Status__c: 'draft', eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition', ...prov },
+    { Id: 'eb3', Name: '2001', eb4sf__Event_Name__c: 'Draft with a signup', eb4sf__Start__c: '2026-03-01T01:00:00.000+0000',
+      eb4sf__Status__c: 'draft', eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition (volunteering)', ...prov },
+  ]);
+  await writeNdjson(dataPath('extract', 'eb4sf_attendees.ndjson'), [
+    { Id: 'at1', Name: '5001', eb4sf__First_Name__c: 'Quynh', eb4sf__Last_Name__c: 'P', eb4sf__Email__c: 'q@b.c',
+      eb4sf__Status__c: 'Checked In', eb4sf__Checked_In__c: true, eb4sf__Cancelled__c: false,
+      eb4sf__Contact__c: 'c-eb', eb4sf__Eventbrite_Event__c: 'eb1', eb4sf__Base_Price__c: 0, ...prov },
+    { Id: 'at2', Name: '5002', eb4sf__First_Name__c: 'Vol', eb4sf__Last_Name__c: 'U', eb4sf__Email__c: 'v@b.c',
+      eb4sf__Status__c: 'Attending', eb4sf__Checked_In__c: false, eb4sf__Cancelled__c: false,
+      eb4sf__Contact__c: null, eb4sf__Eventbrite_Event__c: 'eb3', eb4sf__Base_Price__c: 0, ...prov },
+    { Id: 'at3', Name: '5003', eb4sf__First_Name__c: 'No', eb4sf__Last_Name__c: 'Show', eb4sf__Email__c: 'n@b.c',
+      eb4sf__Status__c: 'Attending', eb4sf__Checked_In__c: false, eb4sf__Cancelled__c: false,
+      eb4sf__Contact__c: 'c-noshow', eb4sf__Eventbrite_Event__c: 'eb1', eb4sf__Base_Price__c: 0, ...prov },
   ]);
   await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
     { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
@@ -40,7 +74,7 @@ async function seed() {
     { Id: 'af3', npe5__Contact__c: 'c3', npe5__Organization__c: 'a-ind', ...prov },
   ]);
   for (const empty of ['payments', 'relationships', 'subscriptions', 'pledges',
-    'events', 'registrations', 'campaigns', 'clickpledge_transactions', 'volunteer_hours',
+    'campaigns', 'clickpledge_transactions', 'volunteer_hours',
     'tasks_recent', 'emails_recent', 'consent']) {
     await writeNdjson(dataPath('extract', `${empty}.ndjson`), []);
   }
@@ -73,6 +107,23 @@ describe('runTransform', () => {
 
     const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
     expect(report.assertions.every((a) => a.violations.length === 0)).toBe(true);
+  });
+
+  it('lands Funraise and Eventbrite events on the same two boards and feeds People inclusion', async () => {
+    expect(await runTransform([])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+    const events = payloads.filter((p) => p.board === 'events').map((p) => p.sfId).sort();
+    expect(events).toEqual(['eb1', 'eb3', 'fe1']);                    // test event + empty draft dropped
+    expect(bySf.get('fe1')!.columns['Source']).toEqual({ label: 'Funraise' });
+    expect(bySf.get('eb1')!.columns['Source']).toEqual({ label: 'Eventbrite' });
+    const regs = payloads.filter((p) => p.board === 'event-registrations').map((p) => p.sfId).sort();
+    expect(regs).toEqual(['at1', 'at2', 'at3', 'fr1']);                // registration rows keep every attendee
+    expect(bySf.get('at2')!.columns['Role']).toEqual({ label: 'Volunteer' }); // organizer resolved via its event
+    expect(bySf.get('c-eb')!.board).toBe('people-live');               // 2026 Eventbrite attendee
+    expect(bySf.get('c-oldreg')!.board).toBe('people-historical');     // 2015 Funraise registrant
+    expect(bySf.get('c-noshow')).toBeUndefined();                      // never checked in → not a Person
+    expect(bySf.get('at3')!.links).toContainEqual({ column: 'Attendee', targetSfIds: ['c-noshow'] }); // link skipped at load
   });
 
   it('merges exact-confidence enrichment into blank org website/address and geocodes it', async () => {

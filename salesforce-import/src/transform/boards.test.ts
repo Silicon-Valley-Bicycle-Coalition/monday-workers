@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
-  registrationToPayload, campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
+  registrationToPayload, eventbriteEventToPayload, eventbriteAttendeeToPayload,
+  campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
 
 const prov = { CreatedDate: '2024-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
   LastModifiedDate: '2024-01-01T00:00:00Z', LastModifiedBy: { Name: 'X' } };
@@ -27,15 +28,29 @@ describe('pledgeColumnsBySubscription', () => {
 });
 
 describe('eventToPayload', () => {
-  const news = { rules: [{ cities: ['san jose'], url: 'https://sanjosespotlight.com/', name: 'San Jose Spotlight' }],
-    defaultUrl: 'https://localnewsmatters.org/', defaultName: 'Local News Matters' };
+  const CUTOVER = '2026-10-01';
   it('drops test events', () => {
-    expect(eventToPayload({ Id: 'e1', Name: 'Test Event', ...prov })).toBeNull();
+    expect(eventToPayload({ Id: 'e1', Name: 'Test Event', ...prov }, CUTOVER)).toBeNull();
   });
   it('emits no Local News column (removed 2026-08-23 — not useful yet)', () => {
     const p = eventToPayload({ Id: 'e2', Name: 'Gala', funraise__Start_Date__c: '2025-05-01',
-      ...prov })!;
+      ...prov }, CUTOVER)!;
     expect(p.columns['Local News']).toBeUndefined();
+  });
+  it('tags Funraise events with Source, Program and the Funraise event id', () => {
+    const p = eventToPayload({ Id: 'e2', Name: 'Gala', funraise__fr_ID__c: '4242',
+      funraise__Start_Date__c: '2025-05-01T14:00:00.000+0000', ...prov }, CUTOVER)!;
+    expect(p.board).toBe('events');
+    expect(p.columns['Source']).toEqual({ label: 'Funraise' });
+    expect(p.columns['Program']).toEqual({ label: 'Fundraiser' });
+    expect(p.columns['Funraise Event ID']).toBe('4242');
+    expect(p.columns['Date']).toEqual({ date: '2025-05-01' });
+  });
+  it('derives Event Status from the start date relative to cutover', () => {
+    const past = eventToPayload({ Id: 'e3', Name: 'Past', funraise__Start_Date__c: '2025-10-26', ...prov }, CUTOVER)!;
+    const future = eventToPayload({ Id: 'e4', Name: 'Next', funraise__Start_Date__c: '2026-10-26', ...prov }, CUTOVER)!;
+    expect(past.columns['Event Status']).toEqual({ label: 'Completed' });
+    expect(future.columns['Event Status']).toEqual({ label: 'Upcoming' });
   });
 });
 
@@ -46,7 +61,116 @@ describe('registrationToPayload', () => {
       funraise__Fundraising_Event__c: 'e2', funraise__Attended__c: true, ...prov });
     expect(p.links).toEqual([{ column: 'Event', targetSfIds: ['e2'] }]);
     expect(p.columns['Attendee Name']).toBe('Ada L');
-    expect(p.columns['Attended']).toEqual({ checked: 'true' });
+  });
+  it('maps Attended to the shared Attendance status and tags Source/Role/Ticket Type', () => {
+    const attended = registrationToPayload({ Id: 'r1', funraise__Fundraising_Event__c: 'e2',
+      funraise__Attended__c: true, funraise__Ticket_Name__c: 'General Admission', ...prov });
+    const registered = registrationToPayload({ Id: 'r2', funraise__Fundraising_Event__c: 'e2',
+      funraise__Attended__c: false, ...prov });
+    expect(attended.columns['Attendance']).toEqual({ label: 'Attended' });
+    expect(registered.columns['Attendance']).toEqual({ label: 'Registered' });
+    expect(attended.columns['Attended']).toBeUndefined();
+    expect(attended.columns['Source']).toEqual({ label: 'Funraise' });
+    expect(attended.columns['Role']).toEqual({ label: 'Participant' });
+    expect(attended.columns['Ticket Type']).toBe('General Admission');
+  });
+});
+
+describe('eventbriteEventToPayload', () => {
+  const venue = { eb4sf__Name__c: 'Stanford Stadium', eb4sf__City__c: 'Palo Alto',
+    eb4sf__Localized_Address_Display__c: '625 Nelson Rd, Palo Alto, CA 94305' };
+  const base = { Id: 'eb1', Name: '1999043957289', eb4sf__Event_Name__c: 'Bike Parking at Stanford Stadium',
+    eb4sf__Start__c: '2026-09-05T00:00:00.000+0000', eb4sf__End__c: '2026-09-05T02:00:00.000+0000',
+    eb4sf__Event_URL__c: 'https://www.eventbrite.com/e/x-tickets-1999043957289',
+    eb4sf__Status__c: 'completed', eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition (bike parking)',
+    eb4sf__Total_Tickets_Sold__c: 12, eb4sf__Eventbrite_Venue__r: venue, ...prov };
+  it('lands on the events board with the Eventbrite id, venue and program columns', () => {
+    const p = eventbriteEventToPayload(base, { hasAttendees: true })!;
+    expect(p.board).toBe('events');
+    expect(p.sfId).toBe('eb1');
+    expect(p.name).toBe('Bike Parking at Stanford Stadium');
+    expect(p.columns['Source']).toEqual({ label: 'Eventbrite' });
+    expect(p.columns['Eventbrite ID']).toBe('1999043957289');
+    expect(p.columns['Eventbrite URL']).toBe('https://www.eventbrite.com/e/x-tickets-1999043957289');
+    expect(p.columns['Date']).toEqual({ date: '2026-09-05' });
+    expect(p.columns['End']).toEqual({ date: '2026-09-05' });
+    expect(p.columns['Venue']).toBe('Stanford Stadium');
+    expect(p.columns['City']).toBe('Palo Alto');
+    expect(p.columns['Address']).toBe('625 Nelson Rd, Palo Alto, CA 94305');
+    expect(p.columns['Tickets Sold']).toBe('12');
+    expect(p.columns['Program']).toEqual({ label: 'Bike Parking' });
+    expect(p.columns['Event Status']).toEqual({ label: 'Completed' });
+  });
+  it('maps every Eventbrite status onto the closed Event Status set', () => {
+    const status = (s: string) => eventbriteEventToPayload({ ...base, eb4sf__Status__c: s }, { hasAttendees: true })!
+      .columns['Event Status'];
+    expect(status('live')).toEqual({ label: 'Upcoming' });
+    expect(status('started')).toEqual({ label: 'Upcoming' });
+    expect(status('canceled')).toEqual({ label: 'Canceled' });
+    expect(status('draft')).toEqual({ label: 'Draft' });
+  });
+  it('maps the organizer account suffix onto Program, defaulting to Public', () => {
+    const program = (o: string) => eventbriteEventToPayload({ ...base, eb4sf__Organizer_Name__c: o }, { hasAttendees: true })!
+      .columns['Program'];
+    expect(program('Silicon Valley Bicycle Coalition')).toEqual({ label: 'Public' });
+    expect(program('Silicon Valley Bicycle Coalition (volunteering)')).toEqual({ label: 'Volunteering' });
+    expect(program('Silicon Valley Bicycle Coalition (Group Rides)')).toEqual({ label: 'Group Rides' });
+    expect(program('Silicon Valley Bicycle Coalition (private)')).toEqual({ label: 'Private' });
+  });
+  it('drops unpublished drafts nobody registered for, keeps drafts with attendees', () => {
+    expect(eventbriteEventToPayload({ ...base, eb4sf__Status__c: 'draft' }, { hasAttendees: false })).toBeNull();
+    expect(eventbriteEventToPayload({ ...base, eb4sf__Status__c: 'draft' }, { hasAttendees: true })).not.toBeNull();
+    expect(eventbriteEventToPayload(base, { hasAttendees: false })).not.toBeNull();
+  });
+  it('tolerates a missing venue (online events)', () => {
+    const p = eventbriteEventToPayload({ ...base, eb4sf__Eventbrite_Venue__r: null }, { hasAttendees: true })!;
+    expect(p.columns['Venue']).toBe('');
+    expect(p.columns['City']).toBe('');
+  });
+});
+
+describe('eventbriteAttendeeToPayload', () => {
+  const volunteering = { eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition (volunteering)' };
+  const publicEvent = { eb4sf__Organizer_Name__c: 'Silicon Valley Bicycle Coalition' };
+  const base = { Id: 'at1', Name: '21571829423', eb4sf__First_Name__c: 'Quynh', eb4sf__Last_Name__c: 'Pham',
+    eb4sf__Email__c: 'q@example.com', eb4sf__Status__c: 'Attending', eb4sf__Checked_In__c: false,
+    eb4sf__Cancelled__c: false, eb4sf__Ticket_Class_Name__c: 'Smart Cycling 1', eb4sf__Base_Price__c: 0,
+    eb4sf__Contact__c: 'c1', eb4sf__Eventbrite_Event__c: 'eb1', ...prov };
+  it('lands on event-registrations linked to the Contact and the Eventbrite event', () => {
+    const p = eventbriteAttendeeToPayload(base, publicEvent)!;
+    expect(p.board).toBe('event-registrations');
+    expect(p.sfId).toBe('at1');
+    expect(p.name).toBe('Quynh Pham');
+    expect(p.links).toEqual([
+      { column: 'Attendee', targetSfIds: ['c1'] },
+      { column: 'Event', targetSfIds: ['eb1'] },
+    ]);
+    expect(p.columns['Source']).toEqual({ label: 'Eventbrite' });
+    expect(p.columns['Eventbrite Attendee ID']).toBe('21571829423');
+    expect(p.columns['Attendee Name']).toBe('Quynh Pham');
+    expect(p.columns['Attendee Email']).toBe('q@example.com');
+    expect(p.columns['Ticket Type']).toBe('Smart Cycling 1');
+    expect(p.columns['Ticket Amount']).toBe('0');
+    expect(p.columns['Role']).toEqual({ label: 'Participant' });
+  });
+  it('derives Attendance from check-in and cancellation', () => {
+    const attendance = (row: Record<string, unknown>) => eventbriteAttendeeToPayload({ ...base, ...row }, publicEvent)!
+      .columns['Attendance'];
+    expect(attendance({})).toEqual({ label: 'Registered' });
+    expect(attendance({ eb4sf__Status__c: 'Checked In', eb4sf__Checked_In__c: true })).toEqual({ label: 'Attended' });
+    expect(attendance({ eb4sf__Status__c: 'Not Attending', eb4sf__Cancelled__c: true })).toEqual({ label: 'Canceled' });
+  });
+  it('marks attendees of the volunteering organizer as Volunteers', () => {
+    expect(eventbriteAttendeeToPayload(base, volunteering)!.columns['Role']).toEqual({ label: 'Volunteer' });
+  });
+  it('drops attendees Eventbrite itself deleted', () => {
+    expect(eventbriteAttendeeToPayload({ ...base, eb4sf__Status__c: 'Deleted' }, publicEvent)).toBeNull();
+  });
+  it('skips the Contact link for the 21 unlinked attendees but still names them', () => {
+    const p = eventbriteAttendeeToPayload({ ...base, eb4sf__Contact__c: null }, undefined)!;
+    expect(p.links).toEqual([{ column: 'Event', targetSfIds: ['eb1'] }]);
+    expect(p.name).toBe('Quynh Pham');
+    expect(p.columns['Role']).toEqual({ label: 'Participant' });
   });
 });
 

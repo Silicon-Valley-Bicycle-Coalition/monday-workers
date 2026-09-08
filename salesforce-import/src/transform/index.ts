@@ -15,8 +15,9 @@ import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount,
 import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
-import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
-  registrationToPayload, campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
+import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
+  eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
+  taskToPayload } from './boards.js';
 
 type Row = Record<string, unknown>;
 const load = (name: string) => readNdjson<Row>(dataPath('extract', `${name}.ndjson`));
@@ -35,11 +36,11 @@ export async function runTransform(args: string[]): Promise<number> {
     '--no-consent (empty consent map, every contact will show "Not in Mailchimp")');
 
   const [contacts, accounts, opportunities, memberships, affiliations, subscriptions, pledges,
-    events, registrations, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
+    events, registrations, ebEvents, ebAttendees, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
     await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('memberships'),
       load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
-      load('registrations'), load('campaigns'), load('clickpledge_transactions'),
-      load('volunteer_hours'), load('tasks_recent'),
+      load('registrations'), load('eb4sf_events'), load('eb4sf_attendees'), load('campaigns'),
+      load('clickpledge_transactions'), load('volunteer_hours'), load('tasks_recent'),
       consentExists ? load('consent') : Promise.resolve([])]);
 
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
@@ -92,6 +93,27 @@ export async function runTransform(args: string[]): Promise<number> {
     .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
     .map(cnpDonorOf).filter((x): x is string => !!x));
 
+  // Event registrants from both platforms feed People inclusion: a Funraise registration (a paid
+  // ticket) or an Eventbrite CHECK-IN counts; an Eventbrite registration nobody showed up for does
+  // not — decision D, 2026-09-08: free-class no-shows and cancellations are email-list-grade
+  // contacts, and counting them (4,308 Contacts) pushed both People boards past the 10k ceiling.
+  // A counted registration for an event on/after peopleActiveSinceISO makes the Person live.
+  // Attendee rows themselves still land on event-registrations regardless (the Attendee link is
+  // simply skipped at load when the Contact isn't a Person).
+  const eventStart = new Map<string, string>([
+    ...events.map((e) => [e['Id'] as string, String(e['funraise__Start_Date__c'] ?? '')] as const),
+    ...ebEvents.map((e) => [e['Id'] as string, String(e['eb4sf__Start__c'] ?? '')] as const),
+  ]);
+  const registrantRows = [
+    ...registrations.map((r) => ({ contact: r['funraise__Registrant__c'] as string | null, event: r['funraise__Fundraising_Event__c'] as string | null })),
+    ...ebAttendees.filter((a) => a['eb4sf__Status__c'] !== 'Deleted' && a['eb4sf__Checked_In__c'] === true)
+      .map((a) => ({ contact: a['eb4sf__Contact__c'] as string | null, event: a['eb4sf__Eventbrite_Event__c'] as string | null })),
+  ].filter((r): r is { contact: string; event: string | null } => !!r.contact);
+  const registrantIds = new Set(registrantRows.map((r) => r.contact));
+  const recentRegistrantIds = new Set(registrantRows
+    .filter((r) => (r.event && eventStart.get(r.event) ? eventStart.get(r.event)! : '').slice(0, 10) >= cfg.peopleActiveSinceISO)
+    .map((r) => r.contact));
+
   // Inclusion sets.
   const donorOf = (o: Row) => ((o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c']) as string | null)
     ?? personNamed.get(o['AccountId'] as string) ?? null;
@@ -101,7 +123,7 @@ export async function runTransform(args: string[]): Promise<number> {
       .filter((o) => (o['CloseDate'] as string) >= cfg.peopleActiveSinceISO)
       .map(donorOf).filter((x): x is string => !!x), ...cnpRecentDonorIds]),
     memberSummaries,
-    registrantIds: new Set(registrations.map((r) => r['funraise__Registrant__c'] as string).filter(Boolean)),
+    registrantIds, recentRegistrantIds,
     volunteerIds: new Set(volunteerHours.map((v) => v['GW_Volunteers__Contact__c'] as string).filter(Boolean)),
     affiliatedIds: new Set(affiliations.map((a) => a['npe5__Contact__c'] as string).filter(Boolean)),
     recentActivityIds: new Set(tasksRecent.map((t) => t['WhoId'] as string).filter(Boolean)),
@@ -166,8 +188,18 @@ export async function runTransform(args: string[]): Promise<number> {
     const p = subscriptionToPayload(s);
     if (p) payloads.push({ ...p, columns: { ...p.columns, ...(pledgeCols.get(p.sfId) ?? {}) } });
   }
-  for (const e of events) { const p = eventToPayload(e); if (p) payloads.push(p); }
+  for (const e of events) { const p = eventToPayload(e, cfg.cutoverDateISO); if (p) payloads.push(p); }
   for (const r of registrations) payloads.push(registrationToPayload(r));
+  const ebEventById = new Map(ebEvents.map((e) => [e['Id'] as string, e]));
+  const ebEventsWithAttendees = new Set(ebAttendees.map((a) => a['eb4sf__Eventbrite_Event__c'] as string));
+  for (const e of ebEvents) {
+    const p = eventbriteEventToPayload(e, { hasAttendees: ebEventsWithAttendees.has(e['Id'] as string) });
+    if (p) payloads.push(p);
+  }
+  for (const a of ebAttendees) {
+    const p = eventbriteAttendeeToPayload(a, ebEventById.get(a['eb4sf__Eventbrite_Event__c'] as string));
+    if (p) payloads.push(p);
+  }
   for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));
   // Activities: person-linked Tasks only, newest-first, capped under the board ceiling
