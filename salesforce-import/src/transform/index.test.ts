@@ -19,6 +19,9 @@ async function seed() {
     { Id: 'c-eb', FirstName: 'Quynh', LastName: 'P', ...prov },
     // Funraise registrant of a 2015 event — included, but historical.
     { Id: 'c-oldreg', FirstName: 'Old', LastName: 'R', ...prov },
+    // Eventbrite registrant who never checked in and has no other relationship — NOT a Person
+    // (decision D, 2026-09-08: a no-show for a free class is not a relationship).
+    { Id: 'c-noshow', FirstName: 'No', LastName: 'Show', ...prov },
   ]);
   await writeNdjson(dataPath('extract', 'events.ndjson'), [
     { Id: 'fe1', Name: 'Gala 2015', funraise__fr_ID__c: '77', funraise__Start_Date__c: '2015-10-01T01:00:00.000+0000', ...prov },
@@ -43,6 +46,9 @@ async function seed() {
     { Id: 'at2', Name: '5002', eb4sf__First_Name__c: 'Vol', eb4sf__Last_Name__c: 'U', eb4sf__Email__c: 'v@b.c',
       eb4sf__Status__c: 'Attending', eb4sf__Checked_In__c: false, eb4sf__Cancelled__c: false,
       eb4sf__Contact__c: null, eb4sf__Eventbrite_Event__c: 'eb3', eb4sf__Base_Price__c: 0, ...prov },
+    { Id: 'at3', Name: '5003', eb4sf__First_Name__c: 'No', eb4sf__Last_Name__c: 'Show', eb4sf__Email__c: 'n@b.c',
+      eb4sf__Status__c: 'Attending', eb4sf__Checked_In__c: false, eb4sf__Cancelled__c: false,
+      eb4sf__Contact__c: 'c-noshow', eb4sf__Eventbrite_Event__c: 'eb1', eb4sf__Base_Price__c: 0, ...prov },
   ]);
   await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
     { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
@@ -112,10 +118,12 @@ describe('runTransform', () => {
     expect(bySf.get('fe1')!.columns['Source']).toEqual({ label: 'Funraise' });
     expect(bySf.get('eb1')!.columns['Source']).toEqual({ label: 'Eventbrite' });
     const regs = payloads.filter((p) => p.board === 'event-registrations').map((p) => p.sfId).sort();
-    expect(regs).toEqual(['at1', 'at2', 'fr1']);
+    expect(regs).toEqual(['at1', 'at2', 'at3', 'fr1']);                // registration rows keep every attendee
     expect(bySf.get('at2')!.columns['Role']).toEqual({ label: 'Volunteer' }); // organizer resolved via its event
     expect(bySf.get('c-eb')!.board).toBe('people-live');               // 2026 Eventbrite attendee
     expect(bySf.get('c-oldreg')!.board).toBe('people-historical');     // 2015 Funraise registrant
+    expect(bySf.get('c-noshow')).toBeUndefined();                      // never checked in → not a Person
+    expect(bySf.get('at3')!.links).toContainEqual({ column: 'Attendee', targetSfIds: ['c-noshow'] }); // link skipped at load
   });
 
   it('merges exact-confidence enrichment into blank org website/address and geocodes it', async () => {

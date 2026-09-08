@@ -81,15 +81,20 @@ export async function runTransform(args: string[]): Promise<number> {
     .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
     .map(cnpDonorOf).filter((x): x is string => !!x));
 
-  // Event registrants from both platforms: ever registered → included; registered for an event on
-  // or after peopleActiveSinceISO → live (docs/11 inclusion rule + the 2026-09-08 events addendum).
+  // Event registrants from both platforms feed People inclusion: a Funraise registration (a paid
+  // ticket) or an Eventbrite CHECK-IN counts; an Eventbrite registration nobody showed up for does
+  // not — decision D, 2026-09-08: free-class no-shows and cancellations are email-list-grade
+  // contacts, and counting them (4,308 Contacts) pushed both People boards past the 10k ceiling.
+  // A counted registration for an event on/after peopleActiveSinceISO makes the Person live.
+  // Attendee rows themselves still land on event-registrations regardless (the Attendee link is
+  // simply skipped at load when the Contact isn't a Person).
   const eventStart = new Map<string, string>([
     ...events.map((e) => [e['Id'] as string, String(e['funraise__Start_Date__c'] ?? '')] as const),
     ...ebEvents.map((e) => [e['Id'] as string, String(e['eb4sf__Start__c'] ?? '')] as const),
   ]);
   const registrantRows = [
     ...registrations.map((r) => ({ contact: r['funraise__Registrant__c'] as string | null, event: r['funraise__Fundraising_Event__c'] as string | null })),
-    ...ebAttendees.filter((a) => a['eb4sf__Status__c'] !== 'Deleted')
+    ...ebAttendees.filter((a) => a['eb4sf__Status__c'] !== 'Deleted' && a['eb4sf__Checked_In__c'] === true)
       .map((a) => ({ contact: a['eb4sf__Contact__c'] as string | null, event: a['eb4sf__Eventbrite_Event__c'] as string | null })),
   ].filter((r): r is { contact: string; event: string | null } => !!r.contact);
   const registrantIds = new Set(registrantRows.map((r) => r.contact));

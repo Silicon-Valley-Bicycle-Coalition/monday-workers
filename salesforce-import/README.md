@@ -148,7 +148,7 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   see `docs/20-donation-history-architecture.md` (private planning repo) for the full design,
   the verified archive-behavior facts, and what maintains the rollups post-migration.
   **(2) The People inclusion rule is written:** any contact with a
-  real relationship — ever a donor, member, event registrant (Funraise or Eventbrite), volunteer, Funraise supporter, or
+  real relationship — ever a donor, member, event registrant (Funraise, or checked in via Eventbrite), volunteer, Funraise supporter, or
   org-affiliated (~12–15k of 50,086) — split as People (live, active since ~2019) + People
   (Historical). Email-list-only contacts stay in Mailchimp (the consent system of record) and the
   backup archive, not Monday. Original sizing queries:
@@ -184,8 +184,13 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   Event Participation board; the import never sets No Show) and **Role** (Volunteer for the
   volunteering organizer's events, else Participant). Dropped: the two Funraise test events,
   Eventbrite drafts nobody registered for, and attendees Eventbrite itself deleted (`validate`
-  adds those back when reconciling `eventbriteAttendees`). Registering for an event on or after
-  `peopleActiveSinceISO` makes a Contact a *live* Person, not just an included one.
+  adds those back when reconciling `eventbriteAttendees`). **People inclusion counts a Funraise
+  registration or an Eventbrite check-in, not a bare Eventbrite registration** (decided 2026-09-08
+  after the real transform measured 4,308 Eventbrite Contacts pushing both People boards past the
+  10k ceiling — only 859 of them ever checked in; the rest are free-class no-shows and
+  cancellations, treated like email-list-only contacts). A counted registration for an event on or
+  after `peopleActiveSinceISO` makes the Person *live*, not just included. Attendee rows land on
+  Event Registrations either way; the Attendee link is skipped at load when the Contact isn't a Person.
 * **Field mapping** — Donations ← Opportunity, Recurring Gifts ← `funraise__Subscription__c`
   (Pledge folds in as columns — confirmed 1:1 duplicate, do not create a separate Pledges board),
   People ← Contact, Organizations ← Account, Events / Event Registrations ← both event platforms
