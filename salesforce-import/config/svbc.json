@@ -5,6 +5,12 @@
   "activitySliceSinceISO": "2024-08-01",
   "boardMaxItems": 9000,
   "donationsActiveFiscalYears": 2,
+  "consumerEmailDomains": [
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "hotmail.com", "outlook.com", "live.com",
+    "msn.com", "icloud.com", "me.com", "mac.com", "aol.com", "comcast.net", "sbcglobal.net",
+    "att.net", "pacbell.net", "earthlink.net", "protonmail.com", "proton.me", "verizon.net",
+    "sonic.net", "mindspring.com", "juno.com"
+  ],
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": " (sandbox v2)",
@@ -15,6 +21,7 @@
       "people-live": null,
       "people-historical": null,
       "organizations": null,
+      "affiliations": null,
       "recurring-gifts": null,
       "events": null,
       "event-registrations": null,

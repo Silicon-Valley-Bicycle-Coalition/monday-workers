@@ -15,4 +15,11 @@ describe('loadConfig', () => {
   it('throws a named error on missing required keys', () => {
     expect(() => loadConfig('config/nope.json')).toThrow(/config/i);
   });
+
+  it('ships a consumer-mail domain list and an affiliations board key', () => {
+    const cfg = loadConfig();
+    expect(cfg.consumerEmailDomains).toContain('gmail.com');
+    expect(cfg.consumerEmailDomains).toContain('comcast.net');
+    expect('affiliations' in cfg.monday.boards).toBe(true);
+  });
 });
