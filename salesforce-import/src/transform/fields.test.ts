@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution, consentLabel } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -147,5 +147,14 @@ describe('funraise links', () => {
   it('returns null for a blank id', () => {
     expect(funraiseTransactionLink('')).toBeNull();
     expect(funraiseSupporterLink(undefined)).toBeNull();
+  });
+});
+
+describe('consentLabel', () => {
+  const consent = new Map([['a@b.c', 'cleaned']]);
+  it('capitalizes the Mailchimp status and defaults to Not in Mailchimp', () => {
+    expect(consentLabel('a@b.c', consent)).toBe('Cleaned');
+    expect(consentLabel('x@y.z', consent)).toBe('Not in Mailchimp');
+    expect(consentLabel(null, consent)).toBe('Not in Mailchimp');
   });
 });

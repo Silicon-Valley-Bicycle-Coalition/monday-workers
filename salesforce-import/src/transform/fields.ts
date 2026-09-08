@@ -70,6 +70,11 @@ export function collapseEmail(c: Record<string, unknown>): string | null {
   return (prefField && val(prefField)) || val('Primary_Email__c') || val('Email');
 }
 
+export function consentLabel(email: string | null, consent: ReadonlyMap<string, string>): string {
+  const status = email ? consent.get(email) : undefined;
+  return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Not in Mailchimp';
+}
+
 // Mailchimp subscription state belongs to an email address, not a person: a Contact whose
 // personal address unsubscribed and whose work address is still subscribed is two different
 // answers, so each email column gets its own consent status rather than one flag per item.
@@ -80,12 +85,8 @@ export function collapseEmail(c: Record<string, unknown>): string | null {
 export function consentColumns(
   email: string | null, secondary: string | null, consent: Map<string, string>,
 ): Record<string, unknown> {
-  const labelFor = (e: string | null) => {
-    const status = e ? consent.get(e) : undefined;
-    return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Not in Mailchimp';
-  };
-  const columns: Record<string, unknown> = { 'Email Consent': { label: labelFor(email) } };
-  if (secondary) columns['Secondary Email Consent'] = { label: labelFor(secondary) };
+  const columns: Record<string, unknown> = { 'Email Consent': { label: consentLabel(email, consent) } };
+  if (secondary) columns['Secondary Email Consent'] = { label: consentLabel(secondary, consent) };
   return columns;
 }
 
