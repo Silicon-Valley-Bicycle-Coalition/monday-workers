@@ -32,11 +32,16 @@ describe('collapseEmail', () => {
 });
 
 describe('consentColumns', () => {
-  const consent = new Map([['a@b.c', 'unsubscribed']]);
-  it('labels from the Mailchimp map only', () => {
-    expect(consentColumns('a@b.c', consent)).toEqual({ 'Email Consent': { label: 'Unsubscribed' } });
-    expect(consentColumns('missing@x.y', consent)).toEqual({ 'Email Consent': { label: 'Not in Mailchimp' } });
-    expect(consentColumns(null, consent)).toEqual({ 'Email Consent': { label: 'Not in Mailchimp' } });
+  const consent = new Map([['a@b.c', 'unsubscribed'], ['w@b.c', 'subscribed']]);
+  it('labels each address from the Mailchimp map on its own — consent is per email, not per person', () => {
+    expect(consentColumns('a@b.c', 'w@b.c', consent)).toEqual({
+      'Email Consent': { label: 'Unsubscribed' }, 'Secondary Email Consent': { label: 'Subscribed' } });
+    expect(consentColumns('missing@x.y', 'a@b.c', consent)).toEqual({
+      'Email Consent': { label: 'Not in Mailchimp' }, 'Secondary Email Consent': { label: 'Unsubscribed' } });
+  });
+  it('keeps the primary column never blank, but leaves the secondary blank when there is no second address', () => {
+    expect(consentColumns(null, null, consent)).toEqual({ 'Email Consent': { label: 'Not in Mailchimp' } });
+    expect(consentColumns('a@b.c', null, consent)).toEqual({ 'Email Consent': { label: 'Unsubscribed' } });
   });
 });
 

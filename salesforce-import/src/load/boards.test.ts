@@ -136,10 +136,12 @@ describe('ensureBoards', () => {
     const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
 
     await ensureBoards(client, loadConfig(), ['people-live'], new Map([
-      ['people-live', new Set(['Email Consent', 'Membership Status', 'Membership Tier'])],
+      ['people-live', new Set(['Email Consent', 'Secondary Email Consent', 'Membership Status', 'Membership Tier'])],
     ]));
 
     expect(JSON.parse(defaultsByTitle['Email Consent']!).labels).toEqual(
+      { 0: 'Subscribed', 1: 'Unsubscribed', 2: 'Cleaned', 3: 'Not in Mailchimp' });
+    expect(JSON.parse(defaultsByTitle['Secondary Email Consent']!).labels).toEqual(
       { 0: 'Subscribed', 1: 'Unsubscribed', 2: 'Cleaned', 3: 'Not in Mailchimp' });
     expect(JSON.parse(defaultsByTitle['Membership Status']!).labels).toEqual(
       { 0: 'Active', 1: 'Lapsed' });
@@ -196,7 +198,7 @@ describe('ensureBoards', () => {
   it('every transform column title has a declared type', () => {
     // Guard: a new transform column without a COLUMN_TYPES entry must fail loudly here,
     // not silently at load time.
-    for (const title of ['Salesforce Debug', 'Email Consent', 'Term Start', 'Lifetime Giving',
+    for (const title of ['Salesforce Debug', 'Email Consent', 'Secondary Email Consent', 'Term Start', 'Lifetime Giving',
       'Annualized Value', 'Historical']) {
       expect(COLUMN_TYPES[title], title).toBeDefined();
     }

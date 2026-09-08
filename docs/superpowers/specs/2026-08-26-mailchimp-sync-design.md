@@ -355,6 +355,12 @@ tests). Cover:
 * **Any email content or send-timing logic in this repo.** That's the whole point of the design —
   it now lives in Mailchimp, staff-owned.
 * **The donor-portal preference UI itself** — see below.
+* **A Donor's second email address (added 2026-09-08).** Mailchimp subscription state belongs
+  to an address, not a person, and `salesforce-import` now writes one consent status per email
+  column on People (Email Consent, Secondary Email Consent). This design keys both directions on
+  the single `email` column only: the Secondary Email is neither pushed outbound nor matched
+  inbound (such a webhook records as `skipped`). Extending to it — second column id in config,
+  lookup across both, and a second connect column or a union of interests — is a follow-up.
 
 ## Related follow-on: donor-portal communication preferences (separate spec)
 
