@@ -132,14 +132,52 @@ describe('runTransform', () => {
       { Id: 'af1', npe5__Contact__c: 'c1', npe5__Organization__c: 'a-org', ...prov },
     ]);
     await mkdir(dataPath('enrich'), { recursive: true });
-    await writeFile(dataPath('enrich', 'email-kinds.csv'), 'email,kind,affiliationSfId\na@startup.io,work,af1\n');
+    // c2's override names an affiliation c2 doesn't have (af-nope) — must be ignored, with a
+    // warning, and b@mystery.org falls back to normal (unknown-domain → household + review).
+    await writeFile(dataPath('enrich', 'email-kinds.csv'),
+      'email,kind,affiliationSfId\na@startup.io,work,af1\nb@mystery.org,work,af-nope\n');
     expect(await runTransform(['--no-consent'])).toBe(0);
     const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
     const bySf = new Map(payloads.map((p) => [p.sfId, p]));
     expect(bySf.get('af1')!.columns['Work Email']).toEqual({ email: 'a@startup.io', text: 'a@startup.io' });
     expect(bySf.get('c2')!.columns['Household Email']).toEqual({ email: 'b@mystery.org', text: 'b@mystery.org' });
+    for (const p of payloads) {
+      if (p.board === 'affiliations') expect(p.columns['Work Email']).not.toEqual({ email: 'b@mystery.org', text: 'b@mystery.org' });
+    }
     const review = readFileSync(dataPath('review', 'email-classification.csv'), 'utf8');
     expect(review).toBe('contactSfId,name,email,domain,candidateAffiliations\nc2,Bo M,b@mystery.org,mystery.org,\n');
+    const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.warnings.some((w) =>
+      w.startsWith('emails: override for b@mystery.org names affiliation af-nope, which c2 does not have — ignored'))).toBe(true);
+  });
+
+  it('escapes commas and quotes in review CSV fields', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'ada@gmail.com', AccountId: 'a-ind', ...prov },
+      // Affiliated at the comma/quote-named org, but its secondary address is an unknown
+      // domain (neither the org's site nor a consumer domain) → review row.
+      { Id: 'c9', FirstName: 'Rae', LastName: 'P', Email: 'rae@gmail.com', Secondary_Email__c: 'rae@mystery.biz', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
+      { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+      { Id: 'a-org9', Name: 'Bike Shop, "The" Inc.', npe01__SYSTEM_AccountType__c: null, Type: 'Vendor', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), [
+      // Org gift whose Primary Contact (c1) has no affiliation at the comma/quote-named org.
+      { Id: 'o9', Name: 'Bike Shop gift', Amount: 75, CloseDate: '2024-03-03', StageName: 'Posted',
+        RecordType: { Name: 'Donation' }, npsp__Primary_Contact__c: 'c1', AccountId: 'a-org9', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'affiliations.ndjson'), [
+      { Id: 'af9', npe5__Contact__c: 'c9', npe5__Organization__c: 'a-org9', npe5__Status__c: 'Current', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'registrations.ndjson'), []);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+
+    const review = readFileSync(dataPath('review', 'unaffiliated-org-gifts.csv'), 'utf8');
+    expect(review).toContain('o9,c1,a-org9,"Bike Shop, ""The"" Inc.",75,2024-03-03');
+
+    const classification = readFileSync(dataPath('review', 'email-classification.csv'), 'utf8');
+    expect(classification).toContain('"af9:Bike Shop, ""The"" Inc."');
   });
 
   it('merges exact-confidence enrichment into blank org website/address and geocodes it', async () => {

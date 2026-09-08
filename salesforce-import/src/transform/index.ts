@@ -7,7 +7,7 @@ import { GeoCache } from '../geocode/cache.js';
 import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
 import type { EnrichmentRow } from '../enrich/index.js';
 import { normalizeAddress } from '../geocode/normalize.js';
-import { setStaffMatcher } from './fields.js';
+import { collapseEmail, setStaffMatcher } from './fields.js';
 import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
@@ -25,6 +25,12 @@ import { AffiliationIndex, attributeOpportunity, attributeRegistration, attribut
 
 type Row = Record<string, unknown>;
 const load = (name: string) => readNdjson<Row>(dataPath('extract', `${name}.ndjson`));
+
+// RFC 4180: quote a field when it holds a comma, quote, or newline; double any quotes inside.
+const csvField = (v: unknown): string => {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 
 export async function runTransform(args: string[]): Promise<number> {
   const cfg = loadConfig();
@@ -128,6 +134,8 @@ export async function runTransform(args: string[]): Promise<number> {
   const rollups = { map: donorRollups(opportunities, cnpUnique), cnpUnique,
     overlap: cnp.length - cnpUnique.length };
 
+  const warnings: string[] = [];
+
   // Pass A: classify every included contact's addresses. Sorted by Id so "first person with a
   // given Household Email" is deterministic run to run.
   const assignments = new Map<string, ReturnType<typeof assignEmails>>();
@@ -142,7 +150,21 @@ export async function runTransform(args: string[]): Promise<number> {
     boardOf.set(id, board);
     const refs: AffiliationRef[] = (affiliationsByContact.get(id) ?? []).map((a) => ({
       sfId: a['Id'] as string, orgSfId: a['npe5__Organization__c'] as string, primary: a['npe5__Primary__c'] === true }));
-    const asg = assignEmails(c, refs, orgDomainByOrgId, consumerDomains, overrides);
+    // An override naming an affiliation this contact doesn't have would otherwise be trusted
+    // verbatim by assignEmails, silently keying a work address to a tenure that never resolves
+    // it back on any payload (see the review finding). Reject it here, before classification.
+    const refSfIds = new Set(refs.map((ref) => ref.sfId));
+    let contactOverrides = overrides;
+    for (const email of [collapseEmail(c), (c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null]) {
+      if (!email) continue;
+      const o = overrides.get(email);
+      if (o?.kind === 'work' && o.affiliationSfId && !refSfIds.has(o.affiliationSfId)) {
+        warnings.push(`emails: override for ${email} names affiliation ${o.affiliationSfId}, which ${id} does not have — ignored`);
+        if (contactOverrides === overrides) contactOverrides = new Map(overrides);
+        contactOverrides.delete(email);
+      }
+    }
+    const asg = assignEmails(c, refs, orgDomainByOrgId, consumerDomains, contactOverrides);
     assignments.set(id, asg);
     emailStats.work += asg.work.size;
     if (asg.household) emailStats.household++;
@@ -151,7 +173,7 @@ export async function runTransform(args: string[]): Promise<number> {
       emailStats.review++;
       const name = [c['FirstName'], c['LastName']].filter(Boolean).join(' ');
       const candidates = refs.map((ref) => `${ref.sfId}:${accountById.get(ref.orgSfId)?.['Name'] ?? ''}`).join(';');
-      emailReviewRows.push([id, name, r.email, r.domain, candidates].join(','));
+      emailReviewRows.push([id, name, r.email, r.domain, candidates].map(csvField).join(','));
     }
   }
   const householdPrimaryOf = new Map<string, string>();   // household email → first contact Id
@@ -177,7 +199,8 @@ export async function runTransform(args: string[]): Promise<number> {
     if (att && 'affiliationSfId' in att) attributedOpps.set(o['Id'] as string, att.affiliationSfId);
     else if (att && 'unaffiliated' in att) {
       unaffiliatedRows.push([o['Id'], att.unaffiliated.contactSfId, att.unaffiliated.orgSfId,
-        accountById.get(att.unaffiliated.orgSfId)?.['Name'] ?? '', o['Amount'] ?? '', String(o['CloseDate'] ?? '').slice(0, 10)].join(','));
+        accountById.get(att.unaffiliated.orgSfId)?.['Name'] ?? '', o['Amount'] ?? '',
+        String(o['CloseDate'] ?? '').slice(0, 10)].map(csvField).join(','));
     }
   }
   const attributedRegs = new Map<string, string>();
@@ -292,7 +315,6 @@ export async function runTransform(args: string[]): Promise<number> {
       ? `donations peak active projected at ${plan.peakActive} items (> 10,000)`
       : `${board} projected at ${n} items (> 10,000)`);
 
-  const warnings: string[] = [];
   if (rollups.overlap > 0) {
     warnings.push(`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`);
   }
