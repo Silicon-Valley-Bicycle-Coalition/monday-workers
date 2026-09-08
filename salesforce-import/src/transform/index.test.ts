@@ -149,4 +149,40 @@ describe('runTransform', () => {
     const cnpPayload = bySf.get('cnp1')!;
     expect(cnpPayload.links).toEqual([{ column: 'Donor', targetSfIds: ['c4'] }]);
   });
+
+  it('folds a blank-type Account named after its sole Contact into that Person', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
+      // 2013-import shape: Account created first, Contact attached, no NPSP stamp.
+      { Id: 'c5', FirstName: 'Mike', LastName: 'Klein', AccountId: 'a-pn', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
+      { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+      { Id: 'a-org', Name: 'Acme', npe01__SYSTEM_AccountType__c: null, Type: 'Sponsor', ...prov },
+      { Id: 'a-pn', Name: 'Mike Klein', npe01__SYSTEM_AccountType__c: null,
+        RecordType: { Name: 'C&P Online' }, ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), [
+      // Gift booked against the Account with no primary contact — the only thing making c5 a donor.
+      { Id: 'o9', Name: 'Gift 2013', Amount: 30, CloseDate: '2013-06-01', StageName: 'Posted',
+        RecordType: { Name: 'Donation' }, npsp__Primary_Contact__c: null, AccountId: 'a-pn', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'affiliations.ndjson'), [
+      { Id: 'af9', npe5__Contact__c: 'c1', npe5__Organization__c: 'a-pn', ...prov }, // must not link
+    ]);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+
+    expect(bySf.get('a-pn')).toBeUndefined();                          // no Organization item
+    const mike = bySf.get('c5')!;
+    expect(mike.board).toBe('people-historical');                      // included as the donor
+    expect(mike.links).toEqual([]);                                    // no self-Organization link
+    expect(mike.columns['Lifetime Giving']).toBe('30');                // account gift credited to him
+    expect(bySf.get('o9')!.links).toContainEqual({ column: 'Donor', targetSfIds: ['c5'] });
+    expect(bySf.get('c1')!.links).toEqual([]);                         // affiliation to a-pn dropped
+
+    const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.warnings.some((w) => w.includes('1 person-named account'))).toBe(true);
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
+import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds,
+  type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
 import { setStaffMatcher } from './fields.js';
 
@@ -115,5 +116,55 @@ describe('accountToPayload', () => {
     const p = accountToPayload({ Id: 'a4', Name: 'NoAddr', npe01__SYSTEM_AccountType__c: null })!;
     expect(p.columns['Lat']).toBe('');
     expect(p.columns['City']).toBe('');
+  });
+});
+
+describe('personNamedAccountIds', () => {
+  // Blank-type Accounts whose only Contact(s) carry the Account's own name are people that
+  // NPSP never stamped — imported Account-first (2013 bulk load) or written by Click & Pledge.
+  // Live org 2026-09-08: 204 of the 2,090 blank-type Accounts; 172 carry the C&P Online record type.
+  const org = (Id: string, Name: string, type: string | null = null) =>
+    ({ Id, Name, npe01__SYSTEM_AccountType__c: type });
+  const contact = (Id: string, FirstName: string, LastName: string, AccountId: string) =>
+    ({ Id, FirstName, LastName, AccountId });
+
+  it('maps a blank-type Account named after its sole Contact to that Contact', () => {
+    const m = personNamedAccountIds([org('a1', 'Mike Klein')], [contact('c1', 'Mike', 'Klein', 'a1')]);
+    expect(m).toEqual(new Map([['a1', 'c1']]));
+  });
+
+  it('ignores case, punctuation, and spacing when comparing names', () => {
+    const m = personNamedAccountIds([org('a1', "cammie d'entremont partelow")],
+      [contact('c1', 'Cammie', "D'Entremont-Partelow", 'a1')]);
+    expect(m.get('a1')).toBe('c1');
+  });
+
+  it('still folds when every Contact on the Account is a same-named duplicate (first wins)', () => {
+    const m = personNamedAccountIds([org('a1', 'Anita Torres')],
+      [contact('c1', 'Anita', 'Torres', 'a1'), contact('c2', 'anita', 'torres', 'a1')]);
+    expect(m.get('a1')).toBe('c1');
+  });
+
+  it('leaves an Account alone when any attached Contact has a different name', () => {
+    const m = personNamedAccountIds([org('a1', 'Jason Lin')],
+      [contact('c1', 'Jason', 'Lin', 'a1'), contact('c2', 'Wei', 'Lin', 'a1')]);
+    expect(m.size).toBe(0);
+  });
+
+  it('leaves real organizations and contact-less Accounts alone', () => {
+    const m = personNamedAccountIds([org('a1', 'Acme'), org('a2', 'Nobody Here')],
+      [contact('c1', 'Ada', 'L', 'a1')]);
+    expect(m.size).toBe(0);
+  });
+
+  it('does not touch one-to-one Accounts — those already fold via the existing rule', () => {
+    const m = personNamedAccountIds([org('a1', 'Ada L', 'One-to-One Individual')],
+      [contact('c1', 'Ada', 'L', 'a1')]);
+    expect(m.size).toBe(0);
+  });
+
+  it('never matches on empty names', () => {
+    const m = personNamedAccountIds([org('a1', '')], [contact('c1', '', '', 'a1')]);
+    expect(m.size).toBe(0);
   });
 });

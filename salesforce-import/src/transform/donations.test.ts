@@ -46,9 +46,25 @@ describe('opportunityToPayload', () => {
     expect(p.columns['Anonymous Donor']).toEqual({ checked: 'true' });
     expect(p.links).toEqual([]);
   });
+
+  it('re-points an Account-only Donor link at the person the Account was folded into', () => {
+    const p = opportunityToPayload({ ...base, npsp__Primary_Contact__c: null, funraise__fr_Donor__c: null,
+      AccountId: 'a-pn' }, { termCols: new Map(), donorAlias: new Map([['a-pn', 'c7']]) });
+    expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c7'] });
+    expect(p.columns['Anonymous Donor']).toBeNull();
+  });
 });
 
 describe('click & pledge', () => {
+  it('re-points an Account-only Donor link at the person the Account was folded into', () => {
+    const p = cnpToPayload({ Id: 't3', Name: 'CP Gift', CnP_PaaS__TotalCharged__c: 25,
+      CnP_PaaS__TransactionDate__c: '2016-05-01T00:00:00Z', CnP_PaaS__Contact__c: null, CnP_PaaS__Account__c: 'a-pn',
+      CreatedDate: '2016-05-01T00:00:00Z', CreatedBy: { Name: 'X' },
+      LastModifiedDate: '2016-05-01T00:00:00Z', LastModifiedBy: { Name: 'X' } },
+      new Map([['a-pn', 'c7']]));
+    expect(p.links).toEqual([{ column: 'Donor', targetSfIds: ['c7'] }]);
+  });
+
   it('drops transactions whose ID matches an Opportunity CnP_PaaS__CnP_OrderNumber__c', () => {
     const { duplicateTransactionIds, unique } = cnpOverlapCheck(
       [{ Id: 't1', CnP_PaaS__TotalCharged__c: 25 }, { Id: 't2', CnP_PaaS__TotalCharged__c: 35 }],

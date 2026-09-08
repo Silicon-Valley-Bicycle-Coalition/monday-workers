@@ -30,3 +30,16 @@ describe('applyRollups', () => {
     expect(p.columns['Gift Count']).toBe('3');
   });
 });
+
+describe('donorRollups with account aliases', () => {
+  it('credits gifts booked against a person-named Account to that person', () => {
+    const r = donorRollups(
+      [{ Id: 'o1', npsp__Primary_Contact__c: null, AccountId: 'a-pn', Amount: 10, CloseDate: '2013-05-01', StageName: 'Posted' },
+       { Id: 'o2', npsp__Primary_Contact__c: 'c1', Amount: 5, CloseDate: '2020-01-01', StageName: 'Posted' }],
+      [{ Id: 't1', CnP_PaaS__Contact__c: null, CnP_PaaS__Account__c: 'a-pn', CnP_PaaS__TotalCharged__c: 7,
+         CnP_PaaS__TransactionDate__c: '2016-01-01T00:00:00Z' }],
+      new Map([['a-pn', 'c1']]));
+    expect(r.get('c1')).toEqual({ lifetimeGiving: 22, firstGiftISO: '2013-05-01', giftCount: 3 });
+    expect(r.has('a-pn')).toBe(false);
+  });
+});

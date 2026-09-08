@@ -126,6 +126,14 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
 * **Person/organization split** — `npe01__SYSTEM_AccountType__c`: `One-to-One Individual` (49,749)
   → People board, blank (2,090) → Organizations board. Ignore Account Record Type — unused, zero
   records. See `docs/03-monday-migration-mapping.md` §5 (private planning repo).
+  **Exception (2026-09-08):** NPSP only stamps that field when its own trigger creates the Account,
+  so blank-type Accounts created first and given a Contact afterwards — the 2013 bulk load and
+  Click & Pledge's Account-then-Contact writes — are people with no stamp. `transform` folds a
+  blank-type Account into its Contact when every attached Contact shares the Account's name
+  (`personNamedAccountIds`, 204 in the live org, 172 of them `C&P Online`): no Organization item,
+  and gifts/links booked against the Account re-point at the person. `enrich` skips them too.
+  Blank-type Accounts with no Contact, or a differently-named one ("Smith Family"), still land on
+  Organizations — a human review list is the follow-up if that residue matters.
 * **Partner-type reconciliation** — cascade `Type` → `Type_2__c` → `Industry`; ~1,212 organizations
   have none of the three set and need the Pre-Migration Deliverables' manual classification pass
   completed before the script can consume it.

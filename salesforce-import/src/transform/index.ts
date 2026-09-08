@@ -10,7 +10,8 @@ import { setStaffMatcher } from './fields.js';
 import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
-import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
+import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
+  type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
@@ -70,18 +71,30 @@ export async function runTransform(args: string[]): Promise<number> {
   const memberSummaries = deriveMembers(terms, cfg.cutoverDateISO);
   const { columns: termCols, ambiguous: termAmbiguous } = termColumnsByOpportunity(terms);
 
+  // Person/organization split. One-to-one Accounts are People by NPSP's own stamp; blank-type
+  // Accounts named after their sole Contact are People NPSP never stamped (Account-first imports,
+  // Click & Pledge) and fold into that Contact — no Organization item, and anything booked
+  // against the Account (gifts, links) re-points at the person.
+  const personNamed = personNamedAccountIds(accounts, contacts);
+  const orgAccountIds = new Set(accounts
+    .filter((a) => !isOneToOneAccount(a) && !personNamed.has(a['Id'] as string))
+    .map((a) => a['Id'] as string));
+
   // Click & Pledge dedup against Opportunities, computed FIRST — the deduped C&P set feeds both
   // the People inclusion sets below (a C&P-only donor must still become a Person) and the donor
   // rollups further down, so it must exist before `inc` is built.
   const { unique: cnpUnique } = cnpOverlapCheck(cnp, opportunities);
-  const cnpDonorOf = (t: Row) => t['CnP_PaaS__Contact__c'] as string | null; // Accounts aren't People — contacts only.
+  // Organizations aren't People, so only Contact-keyed (or person-folded Account) C&P gifts confer inclusion.
+  const cnpDonorOf = (t: Row) => (t['CnP_PaaS__Contact__c'] as string | null)
+    ?? personNamed.get(t['CnP_PaaS__Account__c'] as string) ?? null;
   const cnpDonorIds = new Set(cnpUnique.map(cnpDonorOf).filter((x): x is string => !!x));
   const cnpRecentDonorIds = new Set(cnpUnique
     .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
     .map(cnpDonorOf).filter((x): x is string => !!x));
 
   // Inclusion sets.
-  const donorOf = (o: Row) => (o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c']) as string | null;
+  const donorOf = (o: Row) => ((o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c']) as string | null)
+    ?? personNamed.get(o['AccountId'] as string) ?? null;
   const inc: InclusionInput = {
     donorIds: new Set([...opportunities.map(donorOf).filter((x): x is string => !!x), ...cnpDonorIds]),
     recentDonorIds: new Set([...opportunities
@@ -94,9 +107,6 @@ export async function runTransform(args: string[]): Promise<number> {
     recentActivityIds: new Set(tasksRecent.map((t) => t['WhoId'] as string).filter(Boolean)),
   };
 
-  const orgAccountIds = new Set(accounts
-    .filter((a) => a['npe01__SYSTEM_AccountType__c'] !== 'One-to-One Individual')
-    .map((a) => a['Id'] as string));
   const affiliationOrgsByContact = new Map<string, string[]>();
   for (const a of affiliations) {
     const contactId = a['npe5__Contact__c'] as string | null;
@@ -105,7 +115,7 @@ export async function runTransform(args: string[]): Promise<number> {
     if (!affiliationOrgsByContact.has(contactId)) affiliationOrgsByContact.set(contactId, []);
     affiliationOrgsByContact.get(contactId)!.push(orgId);
   }
-  const rollups = { map: donorRollups(opportunities, cnpUnique), cnpUnique,
+  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed), cnpUnique,
     overlap: cnp.length - cnpUnique.length };
 
   const payloads: ItemPayload[] = [];
@@ -133,6 +143,7 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(r ? applyRollups(p, r) : p);
   }
   for (const a of accounts) {
+    if (personNamed.has(a['Id'] as string)) continue; // folded into its Contact above
     const enriched = enrichment.get(a['Id'] as string);
     const billingKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
       state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
@@ -147,8 +158,8 @@ export async function runTransform(args: string[]): Promise<number> {
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
-  for (const o of opportunities) payloads.push(opportunityToPayload(o, { termCols }));
-  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t));
+  for (const o of opportunities) payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed }));
+  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 
   const pledgeCols = pledgeColumnsBySubscription(pledges);
   for (const s of subscriptions) {
@@ -189,6 +200,10 @@ export async function runTransform(args: string[]): Promise<number> {
       : `${board} projected at ${n} items (> 10,000)`);
 
   const warnings: string[] = [];
+  if (personNamed.size > 0) {
+    warnings.push(`people: ${personNamed.size} person-named account${personNamed.size === 1 ? '' : 's'} ` +
+      `(blank NPSP type, sole Contact shares the name) folded into their Contact instead of Organizations`);
+  }
   if (rollups.overlap > 0) {
     warnings.push(`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`);
   }

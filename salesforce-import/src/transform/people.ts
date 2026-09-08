@@ -68,8 +68,45 @@ export function contactToPayload(
   };
 }
 
+export const isOneToOneAccount = (a: Record<string, unknown>): boolean =>
+  a['npe01__SYSTEM_AccountType__c'] === 'One-to-One Individual';
+
+// Letters only, lower-cased — "D'Entremont-Partelow" and "d'entremont partelow" compare equal.
+const nameKey = (s: unknown): string => String(s ?? '').toLowerCase().replace(/[^\p{L}]/gu, '');
+
+/**
+ * Blank-type Accounts that are really one person: NPSP only stamps `One-to-One Individual`
+ * when its own trigger creates the Account, so Accounts created first (the 2013 bulk load,
+ * Click & Pledge's Account-then-Contact writes) and then given a Contact never get it and
+ * would otherwise land on the Organizations board. Rule: not one-to-one, at least one Contact,
+ * and every attached Contact's name equals the Account name. Returns accountId → the Contact
+ * the Account folds into (first of any same-named duplicates). Live org 2026-09-08: 204.
+ */
+export function personNamedAccountIds(
+  accounts: Record<string, unknown>[], contacts: Record<string, unknown>[],
+): Map<string, string> {
+  const byAccount = new Map<string, Record<string, unknown>[]>();
+  for (const c of contacts) {
+    const accountId = c['AccountId'] as string | null;
+    if (!accountId) continue;
+    if (!byAccount.has(accountId)) byAccount.set(accountId, []);
+    byAccount.get(accountId)!.push(c);
+  }
+  const out = new Map<string, string>();
+  for (const a of accounts) {
+    if (isOneToOneAccount(a)) continue;
+    const key = nameKey(a['Name']);
+    const attached = byAccount.get(a['Id'] as string);
+    if (!key || !attached) continue;
+    if (attached.every((c) => nameKey(`${c['FirstName'] ?? ''}${c['LastName'] ?? ''}`) === key)) {
+      out.set(a['Id'] as string, attached[0]!['Id'] as string);
+    }
+  }
+  return out;
+}
+
 export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): ItemPayload | null {
-  if (a['npe01__SYSTEM_AccountType__c'] === 'One-to-One Individual') return null;
+  if (isOneToOneAccount(a)) return null;
   return {
     board: 'organizations', sfId: a['Id'] as string, name: (a['Name'] as string) ?? '(no name)',
     columns: {

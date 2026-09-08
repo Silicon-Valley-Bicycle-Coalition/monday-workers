@@ -10,12 +10,19 @@ const RECEIVED = new Set(['Posted']);
 
 export interface DonorRollup { lifetimeGiving: number; firstGiftISO: string | null; giftCount: number }
 
+/**
+ * `donorAlias` re-keys gifts booked against an Account that folds into a Person (see
+ * people.ts personNamedAccountIds) so they land on that Person's rollup instead of a
+ * never-emitted Organization item.
+ */
 export function donorRollups(
   opportunities: Record<string, unknown>[], cnpUnique: Record<string, unknown>[],
+  donorAlias: Map<string, string> = new Map(),
 ): Map<string, DonorRollup> {
   const cents = new Map<string, number>(), first = new Map<string, string>(), count = new Map<string, number>();
-  const add = (donor: string | null, amount: unknown, dateISO: string | null) => {
-    if (!donor) return;
+  const add = (rawDonor: string | null, amount: unknown, dateISO: string | null) => {
+    if (!rawDonor) return;
+    const donor = donorAlias.get(rawDonor) ?? rawDonor;
     cents.set(donor, (cents.get(donor) ?? 0) + Math.round(Number(amount ?? 0) * 100));
     count.set(donor, (count.get(donor) ?? 0) + 1);
     const d = dateISO?.slice(0, 10);
