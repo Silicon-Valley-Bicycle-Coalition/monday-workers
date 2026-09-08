@@ -6,7 +6,9 @@ import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAtt
 export interface InclusionInput {
   donorIds: Set<string>; recentDonorIds: Set<string>;
   memberSummaries: Map<string, MemberSummary>;
-  registrantIds: Set<string>; volunteerIds: Set<string>;
+  // registrantIds: ever registered (Funraise or Eventbrite); recentRegistrantIds: for an event on or
+  // after peopleActiveSinceISO — attending a recent class or shift is current engagement.
+  registrantIds: Set<string>; recentRegistrantIds: Set<string>; volunteerIds: Set<string>;
   affiliatedIds: Set<string>; recentActivityIds: Set<string>;
 }
 
@@ -20,7 +22,7 @@ export function classifyContact(
     inc.volunteerIds.has(id) || inc.affiliatedIds.has(id);
   if (!included) return null;
   const live = !!c['funraise__fr_ID__c'] ||
-    inc.recentDonorIds.has(id) || inc.recentActivityIds.has(id) ||
+    inc.recentDonorIds.has(id) || inc.recentActivityIds.has(id) || inc.recentRegistrantIds.has(id) ||
     (member !== undefined && (member.status === 'Active' ||
       (member.untilISO !== null && member.untilISO >= activeSinceISO)));
   return live ? 'people-live' : 'people-historical';

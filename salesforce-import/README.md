@@ -148,7 +148,7 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   see `docs/20-donation-history-architecture.md` (private planning repo) for the full design,
   the verified archive-behavior facts, and what maintains the rollups post-migration.
   **(2) The People inclusion rule is written:** any contact with a
-  real relationship — ever a donor, member, event registrant, volunteer, Funraise supporter, or
+  real relationship — ever a donor, member, event registrant (Funraise or Eventbrite), volunteer, Funraise supporter, or
   org-affiliated (~12–15k of 50,086) — split as People (live, active since ~2019) + People
   (Historical). Email-list-only contacts stay in Mailchimp (the consent system of record) and the
   backup archive, not Monday. Original sizing queries:
@@ -171,10 +171,25 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   [sanjosespotlight.com](https://sanjosespotlight.com/); Santa Clara/Cupertino/Campbell/Saratoga →
   [civicdigest.org](https://civicdigest.org); everywhere else →
   [localnewsmatters.org](https://localnewsmatters.org/). Apply to both Donors and Events.
+* **Events from both platforms on one pair of boards** (2026-09-08, per `migration-plan.md`'s
+  Eventbrite addendum) — Events ← `funraise__Fundraising_Event__c` **and** `eb4sf__Eventbrite_Event__c`
+  (the "Events Made Easy" managed package, ~284 events since 2025); Event Registrations ←
+  `funraise__Fundraising_Event_Registration__c` **and** `eb4sf__Eventbrite_Attendee__c` (~6.3k). A
+  **Source** status column (Funraise / Eventbrite) tells the rows apart and the platform ids ride
+  along as text (**Funraise Event ID**, **Eventbrite ID**, **Eventbrite Attendee ID**) so the
+  post-migration Eventbrite Worker can upsert idempotently. Shared closed vocabularies: **Event
+  Status** (Upcoming / Completed / Canceled / Draft), **Program** from the Eventbrite organizer
+  account suffix (Public / Volunteering / Bike Parking / Group Rides / Private, Fundraiser for
+  Funraise), **Attendance** (Registered / Attended / No Show / Canceled — mirrors the production
+  Event Participation board; the import never sets No Show) and **Role** (Volunteer for the
+  volunteering organizer's events, else Participant). Dropped: the two Funraise test events,
+  Eventbrite drafts nobody registered for, and attendees Eventbrite itself deleted (`validate`
+  adds those back when reconciling `eventbriteAttendees`). Registering for an event on or after
+  `peopleActiveSinceISO` makes a Contact a *live* Person, not just an included one.
 * **Field mapping** — Donations ← Opportunity, Recurring Gifts ← `funraise__Subscription__c`
   (Pledge folds in as columns — confirmed 1:1 duplicate, do not create a separate Pledges board),
-  People ← Contact, Organizations ← Account, Event Registrations ←
-  `funraise__Fundraising_Event_Registration__c`. Full column-by-column mapping, status-value
+  People ← Contact, Organizations ← Account, Events / Event Registrations ← both event platforms
+  (previous bullet). Full column-by-column mapping, status-value
   mapping (`Posted` is the real success stage, not `Closed Won`), and the do-not-migrate list
   (payment-method PII, `funraise__Error__c`, `_Display__c` formula fields, test events, the
   `Redacted` subscription) are all in

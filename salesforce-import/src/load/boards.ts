@@ -22,7 +22,10 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Next Payment': 'date', 'Designation': 'text', 'Company Match': 'checkbox', 'Match Employer': 'text',
   'Pledge Amount': 'numbers', 'Received Amount': 'numbers',
   'Attendee Name': 'text', 'Attendee Email': 'text', 'Ticket Amount': 'numbers',
-  'Deductible Amount': 'numbers', 'Attended': 'checkbox',
+  'Deductible Amount': 'numbers', 'Ticket Type': 'text', 'Eventbrite Attendee ID': 'text',
+  'Source': 'status', 'Attendance': 'status', 'Role': 'status', 'Event Status': 'status', 'Program': 'status',
+  'Venue': 'text', 'Tickets Sold': 'numbers', 'Eventbrite ID': 'text', 'Eventbrite URL': 'link',
+  'Funraise Event ID': 'text',
   'Type': 'text', 'Start': 'date', 'End': 'date', 'Active': 'checkbox',
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
@@ -40,6 +43,15 @@ export const STATUS_LABELS: Record<string, string[]> = {
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
   'Activity Type': ['Task'],
+  // Events / Event Registrations — shared by the Funraise and Eventbrite transforms (boards.ts).
+  // Attendance mirrors the production Event Participation board's Attended/Registered/No Show,
+  // plus Canceled for Eventbrite's Not Attending; No Show is never set by the import (the data
+  // can't tell a no-show from a registrant at an event that never took check-in) — staff set it.
+  'Source': ['Funraise', 'Eventbrite'],
+  'Event Status': ['Upcoming', 'Completed', 'Canceled', 'Draft'],
+  'Program': ['Public', 'Volunteering', 'Bike Parking', 'Group Rides', 'Private', 'Fundraiser'],
+  'Attendance': ['Registered', 'Attended', 'No Show', 'Canceled'],
+  'Role': ['Participant', 'Volunteer'],
 };
 // "Status" isn't in STATUS_LABELS above because the title is reused across boards with
 // unrelated vocabularies: Recurring Gifts and Volunteers/Activities pass raw values through
