@@ -160,7 +160,7 @@ rather than burning queue retries over a redundant rendering of the JSON column.
 column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
 
 **The Annual Giving Summary board (docs/20 §5.4)** — created by
-`scripts/setup-annual-summary-board.mjs`, one item per closed fiscal year (Fiscal Year, Total
+`scripts/setup-annual-summary-board.mjs`, one item per closed fiscal year (Fiscal Year Ending, Total
 Received, Gift Count, By Gift Type, Restated), written ONLY by the custodian's archive duty:
 new years created once, and a closed year rewritten only when the ledger's totals changed (an
 audit restatement — the Restated date is stamped). D1's `annual_summaries` stays authoritative;
@@ -190,7 +190,7 @@ better, without re-deriving whether the two should really be merged) at the same
 ## Fiscal year, not calendar year
 
 `This Year` / `Last Year` bucket by SVBC's fiscal year (July–June, `Organization.FiscalYearStartMonth
-= 7`) via the `Fiscal Year` column `salesforce-import` already writes on every Donation
+= 7`) via the `Fiscal Year Ending` column `salesforce-import` already writes on every Donation
 (`transform/fields.ts`'s `fiscalYear()`), not a fresh date computation here. `currentFiscalYear()`
 in `src/rollups/compute.ts` reimplements the same July-rollover rule locally (this Worker doesn't
 share code with `salesforce-import` — each Worker is self-contained per the root README) so "this
@@ -204,7 +204,7 @@ sandbox gets rebuilt before cutover:
 
 * `donationRollups.donationBoards` — now a single entry: the archive-in-place Donations board
   (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
-  Status, and Fiscal Year — `null` still supported for boards without one; this Worker derives it
+  Status, and Fiscal Year Ending — `null` still supported for boards without one; this Worker derives it
   from Date instead in that case, see `fiscalYearFromDate` in `rollups/compute.ts`). The list
   stays an array on purpose — a second board (e.g. a future workspace split) is config + one
   `setup-webhooks.mjs` run, not code. **Every board id here needs its own webhook subscription**

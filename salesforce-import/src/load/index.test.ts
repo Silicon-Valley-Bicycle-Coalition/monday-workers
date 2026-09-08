@@ -127,9 +127,9 @@ describe('runLoad donations archive-in-place (phase 3)', () => {
       { board: 'event-registrations', sfId: 'r1', name: 'Reg', columns: {},
         links: [{ column: 'Attendee', targetSfIds: ['c1'] }, { column: 'Payment', targetSfIds: ['o-old'] }] },
       { board: 'donations', sfId: 'o-old', name: 'OldGift', archive: true,
-        columns: { 'Fiscal Year': '2015' }, links: [{ column: 'Donor', targetSfIds: ['c1'] }] },
+        columns: { 'Fiscal Year Ending': '2015' }, links: [{ column: 'Donor', targetSfIds: ['c1'] }] },
       { board: 'donations', sfId: 'o-new', name: 'NewGift',
-        columns: { 'Fiscal Year': '2027' }, links: [{ column: 'Donor', targetSfIds: ['c1'] }] },
+        columns: { 'Fiscal Year Ending': '2027' }, links: [{ column: 'Donor', targetSfIds: ['c1'] }] },
     ]);
   });
 

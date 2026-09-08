@@ -15,9 +15,9 @@ describe('opportunityToPayload', () => {
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
   });
 
-  it('computes Fiscal Year (July–June) from CloseDate', () => {
+  it('computes Fiscal Year Ending (July–June) from CloseDate', () => {
     const p = opportunityToPayload({ ...base, CloseDate: '2025-12-31' }, { termCols: new Map() });
-    expect(p.columns['Fiscal Year']).toBe('2026');
+    expect(p.columns['Fiscal Year Ending']).toBe('2026');
   });
 
   it('sets Salesforce Owner from Opportunity.Owner, bare when unmatched', () => {
@@ -35,7 +35,7 @@ describe('opportunityToPayload', () => {
       { termCols: new Map() });
     expect(p.board).toBe('donations');
     expect(p.columns['Status']).toEqual({ label: 'Failed' });
-    expect(p.columns['Fiscal Year']).toBe('2015');
+    expect(p.columns['Fiscal Year Ending']).toBe('2015');
   });
 
   it('merges membership term columns and marks donor-less gifts anonymous', () => {
@@ -65,7 +65,7 @@ describe('click & pledge', () => {
     expect(p.board).toBe('donations');
     expect(p.columns['Gift Type']).toBe('Click & Pledge (historical)');
     expect(p.columns['Status']).toEqual({ label: 'Received' });
-    expect(p.columns['Fiscal Year']).toBe('2016');
+    expect(p.columns['Fiscal Year Ending']).toBe('2016');
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c9'] });
   });
 });

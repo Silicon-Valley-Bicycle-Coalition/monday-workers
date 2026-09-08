@@ -34,7 +34,7 @@ export function buildGiftRows({ payloads, ledgerEntries, boards, now }) {
       ownerBoardId,
       amountCents: Math.round(Number(c['Amount'] || 0) * 100),
       giftDate: typeof c['Date'] === 'object' && c['Date'] !== null ? (c['Date'].date ?? '') : '',
-      fiscalYear: Number(c['Fiscal Year'] || 0),
+      fiscalYear: Number(c['Fiscal Year Ending'] || 0),
       status: typeof c['Status'] === 'object' && c['Status'] !== null ? (c['Status'].label ?? '') : '',
       giftType: c['Gift Type'] || null,
       funraiseId: typeof c['Funraise ID'] === 'object' && c['Funraise ID'] !== null

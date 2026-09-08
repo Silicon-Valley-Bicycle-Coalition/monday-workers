@@ -17,7 +17,7 @@ function payload(sfId, ownerSfId, over = {}) {
   return {
     board: 'donations', sfId,
     links: ownerSfId ? [{ column: 'Donor', targetSfIds: [ownerSfId] }] : [],
-    columns: { Amount: '50', Date: { date: '2020-01-15' }, 'Fiscal Year': '2020',
+    columns: { Amount: '50', Date: { date: '2020-01-15' }, 'Fiscal Year Ending': '2020',
       Status: { label: 'Received' }, 'Gift Type': 'Donation', ...over },
   };
 }

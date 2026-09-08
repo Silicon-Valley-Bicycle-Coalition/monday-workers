@@ -14,7 +14,7 @@ export interface ArchivePlan {
   peakActive: number; // max items active on the board at any point during the load
 }
 
-const payloadFY = (p: ItemPayload): string => String(p.columns['Fiscal Year'] ?? '');
+const payloadFY = (p: ItemPayload): string => String(p.columns['Fiscal Year Ending'] ?? '');
 
 export function donationArchivePlan(
   donations: ItemPayload[], cutoverDateISO: string, activeFiscalYears: number,
