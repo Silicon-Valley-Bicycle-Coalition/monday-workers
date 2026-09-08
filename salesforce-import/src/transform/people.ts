@@ -52,7 +52,9 @@ export function contactToPayload(
     // The one-to-one Account's owner, not a Contact-level owner field — matches how
     // monday-migration docs/05 §9 verified this (Account.OwnerId, not Contact.OwnerId).
     'Salesforce Owner': ownerAttribution(account?.Owner),
-    'Employer Name': (c['dtd__company__c'] ?? '') as string,
+    // Employer__c is the populated field (10,354 Contacts); dtd__company__c is 360MatchPro's
+    // lookup, empty on every record (plan: Benevity in Integrations). Kept as a fallback only.
+    'Employer Name': (c['Employer__c'] ?? c['dtd__company__c'] ?? '') as string,
     ...consentColumns(email, secondary, deps.consent),
     ...salesforceDebug(c),
   };

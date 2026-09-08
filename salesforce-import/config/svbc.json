@@ -5,6 +5,7 @@
   "activitySliceSinceISO": "2024-08-01",
   "boardMaxItems": 9000,
   "donationsActiveFiscalYears": 2,
+  "placeholderDonorSfIds": ["003i000001breKtAAI", "001i000001Esfc1AAB"],
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": " (sandbox v2)",

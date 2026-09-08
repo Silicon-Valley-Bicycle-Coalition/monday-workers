@@ -10,6 +10,10 @@ export interface Config {
   // How many fiscal years of donations stay active (unarchived) on the Donations board;
   // everything older is archived in place during load. 2 = current + previous FY.
   donationsActiveFiscalYears: number;
+  // Salesforce ids of placeholder donor records (SVBC: the "Anonymous Person" Contact and its
+  // household Account). Gifts pointing at them migrate as Anonymous Donor = checked with no
+  // Donor link, and the records themselves are not emitted as People/Organizations items.
+  placeholderDonorSfIds?: string[];
   monday: { apiUrl: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
   localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;

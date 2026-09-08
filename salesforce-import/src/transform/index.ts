@@ -142,8 +142,10 @@ export async function runTransform(args: string[]): Promise<number> {
 
   const payloads: ItemPayload[] = [];
   const includedContactIds = new Set<string>();
+  const placeholderDonorSfIds = new Set(cfg.placeholderDonorSfIds ?? []);
 
   for (const c of contacts) {
+    if (placeholderDonorSfIds.has(c['Id'] as string)) continue; // "Anonymous Person" is not a Person
     const board = classifyContact(c, inc, cfg.peopleActiveSinceISO);
     if (!board) continue;
     includedContactIds.add(c['Id'] as string);
@@ -166,6 +168,7 @@ export async function runTransform(args: string[]): Promise<number> {
   }
   for (const a of accounts) {
     if (personNamed.has(a['Id'] as string)) continue; // folded into its Contact above
+    if (placeholderDonorSfIds.has(a['Id'] as string)) continue;
     const enriched = enrichment.get(a['Id'] as string);
     const billingKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
       state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
@@ -180,7 +183,9 @@ export async function runTransform(args: string[]): Promise<number> {
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
-  for (const o of opportunities) payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed }));
+  for (const o of opportunities) {
+    payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds }));
+  }
   for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 
   const pledgeCols = pledgeColumnsBySubscription(pledges);

@@ -19,14 +19,36 @@ const resolveDonor = (raw: unknown, donorAlias?: Map<string, string>): string | 
   return id ? (donorAlias?.get(id) ?? id) : null;
 };
 
-export function opportunityToPayload(
-  o: Record<string, unknown>,
-  deps: { termCols: Map<string, Record<string, unknown>>; donorAlias?: Map<string, string> },
-): ItemPayload {
-  const donorId = resolveDonor(o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? o['AccountId'],
+export interface OpportunityDeps {
+  termCols: Map<string, Record<string, unknown>>;
+  donorAlias?: Map<string, string>;
+  // Accounts that become Organizations items (not One-to-One Individual, not person-named).
+  // Only these can be a gift's Matched By target — a matching gift filed under a household
+  // Account has no payer link.
+  orgAccountIds?: Set<string>;
+  // Placeholder donor records (config.placeholderDonorSfIds): a gift pointing at one is
+  // anonymous — no Donor link, checkbox on — and never falls back to the Account either.
+  placeholderDonorSfIds?: Set<string>;
+}
+
+const MATCHING_GIFT_TYPE = 'Matching Donation';
+
+export function opportunityToPayload(o: Record<string, unknown>, deps: OpportunityDeps): ItemPayload {
+  const orgAccountIds = deps.orgAccountIds ?? new Set<string>();
+  const placeholders = deps.placeholderDonorSfIds ?? new Set<string>();
+  const accountId = o['AccountId'] as string | null;
+  const rawDonorId = resolveDonor(o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? accountId,
     deps.donorAlias);
+  const donorId = rawDonorId && !placeholders.has(rawDonorId) ? rawDonorId : null;
+  const giftType = ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string;
   const links: ItemPayload['links'] = [];
   if (donorId) links.push({ column: 'Donor', targetSfIds: [donorId] });
+  // Employer matching gifts (Benevity): Donor is the employee the match is credited to (or the
+  // company, when Benevity disclosed none); Matched By is always the paying company. Before
+  // this, the company was dropped whenever a Primary Contact existed — 2,182 of 3,020 gifts.
+  if (giftType === MATCHING_GIFT_TYPE && accountId && orgAccountIds.has(accountId)) {
+    links.push({ column: 'Matched By', targetSfIds: [accountId] });
+  }
   if (o['funraise__Subscription__c']) links.push({ column: 'Recurring Gift', targetSfIds: [o['funraise__Subscription__c'] as string] });
   if (o['CampaignId']) links.push({ column: 'Campaign', targetSfIds: [o['CampaignId'] as string] });
   return {
@@ -39,9 +61,12 @@ export function opportunityToPayload(
       'Fiscal Year Ending': fiscalYear(o['CloseDate'] as string | null),
       'Salesforce Owner': ownerAttribution(o['Owner']),
       'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
-      'Gift Type': ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,
+      'Gift Type': giftType,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId ? null : { checked: 'true' },
+      // Salesforce never stored Benevity's transaction id, so this is blank on every migrated
+      // gift; declared here so load creates the column for the benevity-import Worker to fill.
+      'Benevity Transaction ID': '',
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
       ...salesforceDebug(o),
     },

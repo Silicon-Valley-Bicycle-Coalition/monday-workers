@@ -10,6 +10,8 @@ describe('loadConfig', () => {
     expect(cfg.monday.boards['donations']).toBeDefined();
     expect(cfg.monday.apiUrl).toMatch(/^https:/);
     expect(cfg.localNews.defaultUrl).toContain('localnewsmatters');
+    // The "Anonymous Person" Contact + its household Account (741 Opportunities point at them).
+    expect(cfg.placeholderDonorSfIds).toEqual(['003i000001breKtAAI', '001i000001Esfc1AAB']);
   });
 
   it('throws a named error on missing required keys', () => {
