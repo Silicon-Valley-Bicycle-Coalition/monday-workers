@@ -206,13 +206,14 @@ never a staff member's personal token.
 
 ## Related changes elsewhere
 
-* **`salesforce-import`, before cutover (blocking for the columns, not for this Worker):** add
+* **`salesforce-import`, before cutover — built 2026-09-08 on `feat/si-benevity-columns`:** add
   `Matched By` and `Benevity Transaction ID` to the Donations board definition; fill `Matched By`
   from `AccountId` whenever `RecordType.Name = 'Matching Donation'` (today the Donor link takes the
   Primary Contact and the paying company is dropped for the 2,182 matched gifts that have one);
   map Opportunities whose Primary Contact is the placeholder Contact "Anonymous Person" to
   Anonymous Donor = checked with **no** Donor link instead of linking a Person by that name (235
-  gifts).
+  gifts). That branch also fixes `Employer Name` on People, which read the empty 360MatchPro
+  lookup instead of `Employer__c` — the name-plus-employer fallback above depends on it.
 * **`donation-rollups`:** decide whether a `Matching Donation` linked to a Person counts toward
   that person's Lifetime Giving. Salesforce's rollups counted it (the employee was Primary
   Contact), so the import's validated totals include matches; keep that unless staff want a
