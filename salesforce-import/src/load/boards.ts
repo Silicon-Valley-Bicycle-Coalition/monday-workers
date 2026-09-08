@@ -38,10 +38,11 @@ export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift
 // column with exactly these labels. Without this, a new status column gets Monday's stock
 // "Working on it / Done / Stuck" set, which nothing ever clears — it just sits in the
 // dropdown forever alongside the real values written later.
+const CONSENT_LABELS = ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'];
 export const STATUS_LABELS: Record<string, string[]> = {
-  'Personal Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
-  'Household Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
-  'Work Email Consent': ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'],
+  'Personal Email Consent': CONSENT_LABELS,
+  'Household Email Consent': CONSENT_LABELS,
+  'Work Email Consent': CONSENT_LABELS,
   'Attribution': ['Auto', 'Staff', 'Needs review', 'None'],
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
@@ -92,14 +93,16 @@ export const CONNECT_TARGETS: Record<string, string[]> = {
 
 export type BoardMap = Record<string, { boardId: number; columns: Record<string, string> }>;
 
+const PEOPLE_EMAIL_RENAMES: Record<string, string> = {
+  'Email': 'Personal Email', 'Secondary Email': 'Household Email',
+  'Email Consent': 'Personal Email Consent', 'Secondary Email Consent': 'Household Email Consent',
+};
 // Titles that changed meaning after the sandbox boards were first provisioned. Renaming keeps the
 // column id (and every value already on it) instead of leaving an orphan next to a fresh empty
 // column. Keyed by board so an unrelated board with an "Email" column is never touched.
 export const COLUMN_RENAMES: Record<string, Record<string, string>> = {
-  'people-live': { 'Email': 'Personal Email', 'Secondary Email': 'Household Email',
-    'Email Consent': 'Personal Email Consent', 'Secondary Email Consent': 'Household Email Consent' },
-  'people-historical': { 'Email': 'Personal Email', 'Secondary Email': 'Household Email',
-    'Email Consent': 'Personal Email Consent', 'Secondary Email Consent': 'Household Email Consent' },
+  'people-live': PEOPLE_EMAIL_RENAMES,
+  'people-historical': PEOPLE_EMAIL_RENAMES,
 };
 
 const BOARD_LABELS: Record<string, string> = {
