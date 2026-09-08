@@ -21,7 +21,7 @@ function boardOrder(keys: string[]): string[] {
   return ORDER.filter((k) => keys.includes(k));
 }
 
-const payloadFY = (p: ItemPayload): string => String(p.columns['Fiscal Year'] ?? '');
+const payloadFY = (p: ItemPayload): string => String(p.columns['Fiscal Year Ending'] ?? '');
 
 // targetSfIds mirrors targetIds — the resolved TARGET items' Salesforce ids — so a failed
 // link can be ledgered against its targets too (the archive gate below must not archive a

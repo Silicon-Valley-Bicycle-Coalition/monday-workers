@@ -27,7 +27,8 @@ if (!workspaceId && !boardId) {
 
 const CURRENCY = JSON.stringify({ unit: { symbol: '$', direction: 'left', precision: 2 } });
 const FIELDS = {
-  fiscalYear: { title: 'Fiscal Year', type: 'numbers' },
+  // text, not numbers: a numbers column would render 2025 as "2,025"
+  fiscalYear: { title: 'Fiscal Year Ending', type: 'text' },
   total: { title: 'Total Received', type: 'numbers', defaults: CURRENCY },
   giftCount: { title: 'Gift Count', type: 'numbers' },
   byType: { title: 'By Gift Type', type: 'long_text' },

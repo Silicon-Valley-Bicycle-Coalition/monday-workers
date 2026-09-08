@@ -4,7 +4,7 @@ import type { ItemPayload } from './types.js';
 
 const gift = (fy: string | null): ItemPayload => ({
   board: 'donations', sfId: `o-${fy ?? 'x'}-${Math.floor(Math.random() * 1e9)}`, name: 'g',
-  columns: { 'Fiscal Year': fy ?? '' },
+  columns: { 'Fiscal Year Ending': fy ?? '' },
 });
 
 describe('donationArchivePlan', () => {
