@@ -188,9 +188,21 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   `Redacted` subscription) are all in
   `docs/03-monday-migration-mapping.md` (private planning repo) — treat
   that document as the authoritative field mapping for this script, not a summary of it.
-* **Double the Donation / 360MatchPro fields** — identify the actual custom fields 360MatchPro
-  created on Contact/Opportunity (company name, match status, likely match amount — unconfirmed)
-  and carry them into Donations/Donors as **Employer Match Status** and **Employer Name**.
+* **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
+  Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
+  Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and
+  `Employer Name` on People comes from `Employer__c` (10,354 populated), not `dtd__company__c`.
+  Three things this script does so the post-cutover `benevity-import` Worker has columns to
+  write into: (1) a **Matched By** connect column (→ Organizations) on Donations, filled from
+  `AccountId` on every Matching Donation whose Account is an organization — the Donor link takes
+  the Primary Contact, so before this the paying company was dropped on the 2,182 matched gifts
+  that have one; (2) the placeholder "Anonymous Person" Contact and its household Account
+  (`placeholderDonorSfIds` in config) are not emitted as items, and the 741 Opportunities that
+  point at them migrate as Anonymous Donor = checked with no Donor link (and no fallback to the
+  Account); (3) a blank **Benevity Transaction ID** text column, declared on every donation
+  payload so `load` creates it — Salesforce never stored the id, so the Worker's first upload
+  must be the first disbursement after the data freeze. See the plan's Benevity section and
+  `../benevity-import/README.md`.
 
 ## Write failures during the run
 

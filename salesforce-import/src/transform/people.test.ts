@@ -63,6 +63,14 @@ describe('contactToPayload', () => {
     expect(p.columns['Salesforce Debug']).toEqual({ text: expect.stringContaining('SF ID: c1') });
   });
 
+  it('prefers Employer__c over the empty 360MatchPro dtd__company__c for Employer Name', () => {
+    const p = contactToPayload({ Id: 'c1', FirstName: 'A', LastName: 'B', Employer__c: 'Google',
+      dtd__company__c: null, CreatedDate: '2020-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
+      LastModifiedDate: '2020-01-01T00:00:00Z', LastModifiedBy: { Name: 'X' } }, 'people-live',
+      { consent: new Map() });
+    expect(p.columns['Employer Name']).toBe('Google');
+  });
+
   it('takes Salesforce Owner from the one-to-one Account, not a Contact-level field', () => {
     setStaffMatcher((name) => (name === 'Felicia Ward' ? 'felicia@bikesiliconvalley.org' : null));
     try {

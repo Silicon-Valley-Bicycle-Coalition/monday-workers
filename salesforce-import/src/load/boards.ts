@@ -16,6 +16,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
   'Amount': 'numbers', 'Date': 'date', 'Fiscal Year Ending': 'text', 'Status': 'status', 'Gift Type': 'text',
   'Funraise ID': 'link', 'Funraise Profile': 'link', 'Anonymous Donor': 'checkbox',
+  'Benevity Transaction ID': 'text',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
   'Partner Type': 'text', 'Website': 'link',
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',
@@ -28,7 +29,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
   'Employer Name': 'text', 'Salesforce Owner': 'text',
 };
-export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
+export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Matched By', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person']);
 // Closed-vocabulary status columns: passed as create_column `defaults` so Monday seeds the
 // column with exactly these labels. Without this, a new status column gets Monday's stock
@@ -69,6 +70,7 @@ const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left
 export const CONNECT_TARGETS: Record<string, string[]> = {
   'Donor': ['people-live', 'people-historical', 'organizations'],
   'Organization': ['organizations'],
+  'Matched By': ['organizations'],
   'Recurring Gift': ['recurring-gifts'],
   'Campaign': ['campaigns'],
   'Attendee': ['people-live', 'people-historical'],

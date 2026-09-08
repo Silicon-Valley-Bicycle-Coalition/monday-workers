@@ -115,7 +115,7 @@ describe('ensureBoards', () => {
   });
 
   it('CONNECT_TARGETS declares a target for every connect column', () => {
-    for (const title of ['Donor', 'Organization', 'Recurring Gift', 'Campaign', 'Attendee',
+    for (const title of ['Donor', 'Organization', 'Matched By', 'Recurring Gift', 'Campaign', 'Attendee',
       'Event', 'Payment', 'Volunteer', 'Person']) {
       expect(CONNECT_TARGETS[title], title).toBeDefined();
     }

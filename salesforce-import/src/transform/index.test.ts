@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runTransform } from './index.js';
@@ -116,6 +116,38 @@ describe('runTransform', () => {
     const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
     const acts = payloads.filter((p) => p.board === 'activities');
     expect(acts.map((p) => p.sfId)).toEqual(['tk1']); // c2 is the excluded email-only contact
+  });
+
+  it('drops the Anonymous Person placeholder from People/Organizations and links matched gifts to the payer', async () => {
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c1', FirstName: 'Ada', LastName: 'L', Email: 'a@b.c', AccountId: 'a-ind', ...prov },
+      { Id: 'c-anon', FirstName: 'Anonymous', LastName: 'Person', AccountId: 'a-anon', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'accounts.ndjson'), [
+      { Id: 'a-ind', Name: 'Ada L Household', npe01__SYSTEM_AccountType__c: 'One-to-One Individual', ...prov },
+      { Id: 'a-anon', Name: 'Anonymous Person', npe01__SYSTEM_AccountType__c: null, ...prov },
+      { Id: 'a-google', Name: 'Google, LLC', npe01__SYSTEM_AccountType__c: null, ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'opportunities.ndjson'), [
+      { Id: 'o1', Name: 'Google, LLC - Employer Matching Ada L', Amount: 100, CloseDate: '2026-07-04',
+        StageName: 'Posted', RecordType: { Name: 'Matching Donation' }, npsp__Primary_Contact__c: 'c1',
+        AccountId: 'a-google', ...prov },
+      { Id: 'o2', Name: 'Google, LLC - Employer Matching Anonymous Person', Amount: 20, CloseDate: '2026-07-04',
+        StageName: 'Posted', RecordType: { Name: 'Matching Donation' }, npsp__Primary_Contact__c: 'c-anon',
+        AccountId: 'a-google', ...prov },
+    ]);
+    await writeJson('config/svbc.json', { ...JSON.parse(readFileSync(
+      new URL('../../config/svbc.json', import.meta.url), 'utf8')),
+      placeholderDonorSfIds: ['c-anon', 'a-anon'] });
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+    expect(bySf.get('c-anon')).toBeUndefined();
+    expect(bySf.get('a-anon')).toBeUndefined();
+    expect(bySf.get('o1')!.links).toEqual(expect.arrayContaining([
+      { column: 'Donor', targetSfIds: ['c1'] }, { column: 'Matched By', targetSfIds: ['a-google'] }]));
+    expect(bySf.get('o2')!.links).toEqual([{ column: 'Matched By', targetSfIds: ['a-google'] }]);
+    expect(bySf.get('o2')!.columns['Anonymous Donor']).toEqual({ checked: 'true' });
   });
 
   it('fails with a named remediation when consent.ndjson is missing and --no-consent is not passed', async () => {
