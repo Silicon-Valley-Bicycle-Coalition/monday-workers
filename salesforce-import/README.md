@@ -61,6 +61,10 @@ between full rehearsals. A run against a partial `payloads.ndjson` (e.g. a parti
 connect columns without board defaults if a link's target board has zero payloads that run, and a
 later full run does not retroactively patch them — run a full `--dry-run` first, and delete
 `data/load/` between sandbox rehearsals rather than layering partial runs on top of each other.
+The 2026-09 email-column rename (Email → Personal Email, etc.) makes this mandatory, not just
+recommended: a load that reuses an existing ledger after the rename only retitles the column going
+forward — it never rewrites pre-existing People items — so those items are left holding old-semantics
+values under the new title while newly created items hold new-semantics values under the same title.
 
 **Cutover:** freeze Funraise sync first (doc 03 §7), delete `data/load/` (boards.json + the
 ledger) — sandbox board ids and ledger entries left over from rehearsals would otherwise redirect

@@ -117,6 +117,7 @@ const BOARD_LABELS: Record<string, string> = {
 export async function ensureBoards(
   client: MondayClient, cfg: Config, boardKeys: string[],
   neededColumns: Map<string, Set<string>>,
+  onRename: (boardKey: string, oldTitle: string, newTitle: string) => void = () => {},
 ): Promise<BoardMap> {
   const path = dataPath('load', 'boards.json');
   const map: BoardMap = existsSync(path) ? await readJson<BoardMap>(path) : {};
@@ -182,6 +183,7 @@ export async function ensureBoards(
         { board: String(entry.boardId), columnId: id, title: newTitle });
       entry.columns[newTitle] = id;
       delete entry.columns[oldTitle];
+      onRename(key, oldTitle, newTitle);
     }
 
     // Debug columns go last so they land at the far right of the board — staff-facing

@@ -49,8 +49,10 @@ export function eventToPayload(e: Record<string, unknown>): ItemPayload | null {
   };
 }
 
-export function registrationToPayload(r: Record<string, unknown>, deps: { actingFor?: string | null } = {}): ItemPayload {
-  const attribution = attributionColumns(deps.actingFor ?? null);
+export function registrationToPayload(
+  r: Record<string, unknown>, deps: { actingFor?: string | null; attribution?: 'Auto' | 'Needs review' } = {},
+): ItemPayload {
+  const attribution = attributionColumns(deps.actingFor ?? null, deps.attribution);
   const links: ItemPayload['links'] = [...attribution.links];
   if (r['funraise__Registrant__c']) links.push({ column: 'Attendee', targetSfIds: [r['funraise__Registrant__c'] as string] });
   if (r['funraise__Fundraising_Event__c']) links.push({ column: 'Event', targetSfIds: [r['funraise__Fundraising_Event__c'] as string] });

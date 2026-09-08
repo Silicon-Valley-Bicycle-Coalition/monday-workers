@@ -4,8 +4,8 @@ import { DEFAULT_CONSUMER_DOMAINS } from './emailKind.js';
 
 const consumer = new Set(DEFAULT_CONSUMER_DOMAINS);
 const orgDomains = new Map([['org-acme', 'acme.example'], ['org-city', 'sanjoseca.gov']]);
-const atAcme: AffiliationRef = { sfId: 'af-acme', orgSfId: 'org-acme', primary: false };
-const atCity: AffiliationRef = { sfId: 'af-city', orgSfId: 'org-city', primary: true };
+const atAcme: AffiliationRef = { sfId: 'af-acme', orgSfId: 'org-acme', primary: false, status: 'Current' };
+const atCity: AffiliationRef = { sfId: 'af-city', orgSfId: 'org-city', primary: true, status: 'Current' };
 const none = new Map();
 
 describe('assignEmails', () => {
@@ -47,12 +47,21 @@ describe('assignEmails', () => {
   });
   it('a work match prefers the Primary-flagged affiliation', () => {
     const twice: AffiliationRef[] = [
-      { sfId: 'af-city-old', orgSfId: 'org-city', primary: false },
-      { sfId: 'af-city-new', orgSfId: 'org-city', primary: true },
+      { sfId: 'af-city-old', orgSfId: 'org-city', primary: false, status: 'Current' },
+      { sfId: 'af-city-new', orgSfId: 'org-city', primary: true, status: 'Current' },
     ];
     const a = assignEmails({ Email: 'ada@gmail.com', Secondary_Email__c: 'ada@sanjoseca.gov' },
       twice, orgDomains, consumer, none);
     expect([...a.work.keys()]).toEqual(['af-city-new']);
+  });
+  it('absent a Primary, a work match prefers a Current tenure over a Former one', () => {
+    const twice: AffiliationRef[] = [
+      { sfId: 'af-city-former', orgSfId: 'org-city', primary: false, status: 'Former' },
+      { sfId: 'af-city-current', orgSfId: 'org-city', primary: false, status: 'Current' },
+    ];
+    const a = assignEmails({ Email: 'ada@gmail.com', Secondary_Email__c: 'ada@sanjoseca.gov' },
+      twice, orgDomains, consumer, none);
+    expect([...a.work.keys()]).toEqual(['af-city-current']);
   });
   it('an override wins over domain classification', () => {
     const overrides = parseEmailKindOverrides(

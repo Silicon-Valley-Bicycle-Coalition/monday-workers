@@ -55,6 +55,13 @@ export class Ledger {
     }
   }
   has(sfId: string, board: string): boolean { return this.successes.get(sfId)?.board === board; }
+  // Whether ANY item has ever landed successfully on this board — used to detect a partial
+  // re-run after a column rename: a ledger that already has items for a just-renamed board means
+  // those pre-existing items still carry the old column's values under the new title.
+  hasAnyFor(board: string): boolean {
+    for (const s of this.successes.values()) if (s.board === board) return true;
+    return false;
+  }
   itemId(sfId: string): string | undefined { return this.successes.get(sfId)?.itemId; }
   failures(): { sfId: string; board: string; error: string; targetSfIds?: string[] }[] { return [...this.failuresMap.values()]; }
   linkDone(sfId: string, column: string): boolean { return this.links.has(`${sfId}|${column}`); }

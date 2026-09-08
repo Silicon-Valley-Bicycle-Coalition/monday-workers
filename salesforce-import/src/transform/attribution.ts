@@ -42,16 +42,27 @@ export function attributeOpportunity(
   return tenure ? { affiliationSfId: tenure.sfId } : { unaffiliated: { contactSfId, orgSfId } };
 }
 
-export function attributeRegistration(r: Record<string, unknown>, index: AffiliationIndex): string | null {
+export interface RegistrationAttribution { affiliationSfId: string; attribution: 'Auto' | 'Needs review' }
+
+// Matches the registration email against work addresses only — it never checks WHO registered.
+// If the registrant isn't the person that work address belongs to (e.g. X registers using Y's
+// work address), the match still resolves but is flagged Needs review instead of Auto so a human
+// confirms the "Acting for" link before it's trusted.
+export function attributeRegistration(r: Record<string, unknown>, index: AffiliationIndex): RegistrationAttribution | null {
   const email = r['funraise__Email__c'] as string | null;
-  return email ? (index.byWorkEmail(email)?.sfId ?? null) : null;
+  if (!email) return null;
+  const entry = index.byWorkEmail(email);
+  if (!entry) return null;
+  const registrantId = r['funraise__Registrant__c'] as string | null;
+  const attribution = registrantId && registrantId !== entry.contactSfId ? 'Needs review' : 'Auto';
+  return { affiliationSfId: entry.sfId, attribution };
 }
 
-export function attributionColumns(affiliationSfId: string | null): {
+export function attributionColumns(affiliationSfId: string | null, label: 'Auto' | 'Needs review' = 'Auto'): {
   columns: Record<string, unknown>; links: { column: string; targetSfIds: string[] }[];
 } {
   return affiliationSfId
-    ? { columns: { 'Attribution': { label: 'Auto' } }, links: [{ column: 'Acting for', targetSfIds: [affiliationSfId] }] }
+    ? { columns: { 'Attribution': { label } }, links: [{ column: 'Acting for', targetSfIds: [affiliationSfId] }] }
     : { columns: { 'Attribution': { label: 'None' } }, links: [] };
 }
 

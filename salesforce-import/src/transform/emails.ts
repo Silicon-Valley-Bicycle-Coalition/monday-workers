@@ -1,7 +1,7 @@
 import { collapseEmail } from './fields.js';
 import { classifyDomain, emailDomain } from './emailKind.js';
 
-export interface AffiliationRef { sfId: string; orgSfId: string; primary: boolean }
+export interface AffiliationRef { sfId: string; orgSfId: string; primary: boolean; status: 'Current' | 'Former' }
 export interface EmailOverride { email: string; kind: 'personal' | 'household' | 'work'; affiliationSfId: string | null }
 export interface EmailAssignment {
   personal: string | null;
@@ -30,9 +30,11 @@ export function parseEmailKindOverrides(csv: string): Map<string, EmailOverride>
 
 type Placed = { kind: 'work'; affiliationSfId: string } | { kind: 'personal' } | { kind: 'household' } | { kind: 'unknown' };
 
+// Primary wins outright; absent a Primary, a Current tenure beats a Former one (a stale mailbox
+// address shouldn't out-rank the person's present affiliation); otherwise the first.
 function pickAffiliationForOrg(affiliations: readonly AffiliationRef[], orgSfId: string): AffiliationRef | null {
   const atOrg = affiliations.filter((a) => a.orgSfId === orgSfId);
-  return atOrg.find((a) => a.primary) ?? atOrg[0] ?? null;
+  return atOrg.find((a) => a.primary) ?? atOrg.find((a) => a.status === 'Current') ?? atOrg[0] ?? null;
 }
 
 export function assignEmails(

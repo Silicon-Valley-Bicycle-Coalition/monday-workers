@@ -29,8 +29,17 @@ describe('attributeOpportunity', () => {
 });
 
 describe('attributeRegistration', () => {
-  it('matches the registration email against work addresses, case-insensitively', () => {
-    expect(attributeRegistration({ funraise__Email__c: 'Bo@SanJoseCA.gov' }, index)).toBe('af-city');
+  it('matches the registration email against work addresses, case-insensitively, Auto when the registrant matches', () => {
+    expect(attributeRegistration({ funraise__Email__c: 'Bo@SanJoseCA.gov', funraise__Registrant__c: 'c2' }, index))
+      .toEqual({ affiliationSfId: 'af-city', attribution: 'Auto' });
+  });
+  it('defaults to Auto when no registrant is set', () => {
+    expect(attributeRegistration({ funraise__Email__c: 'Bo@SanJoseCA.gov' }, index))
+      .toEqual({ affiliationSfId: 'af-city', attribution: 'Auto' });
+  });
+  it('is Needs review when the registrant differs from the matched affiliation\'s contact', () => {
+    expect(attributeRegistration({ funraise__Email__c: 'Bo@SanJoseCA.gov', funraise__Registrant__c: 'c-other' }, index))
+      .toEqual({ affiliationSfId: 'af-city', attribution: 'Needs review' });
   });
   it('is null for a personal or unknown address', () => {
     expect(attributeRegistration({ funraise__Email__c: 'bo@gmail.com' }, index)).toBeNull();
@@ -41,7 +50,8 @@ describe('attributeRegistration', () => {
       { sfId: 'af-mixed', contactSfId: 'c3', orgSfId: 'org-test', startISO: null, endISO: null, primary: true, workEmail: ' Bo@SanJoseCA.gov ' }
     ]);
     expect(mixed.byWorkEmail('bo@sanjoseca.gov')?.sfId).toBe('af-mixed');
-    expect(attributeRegistration({ funraise__Email__c: 'BO@sanjoseca.gov' }, mixed)).toBe('af-mixed');
+    expect(attributeRegistration({ funraise__Email__c: 'BO@sanjoseca.gov' }, mixed))
+      .toEqual({ affiliationSfId: 'af-mixed', attribution: 'Auto' });
   });
 });
 
@@ -51,6 +61,11 @@ describe('attributionColumns', () => {
       columns: { 'Attribution': { label: 'Auto' } },
       links: [{ column: 'Acting for', targetSfIds: ['af-new'] }] });
     expect(attributionColumns(null)).toEqual({ columns: { 'Attribution': { label: 'None' } }, links: [] });
+  });
+  it('writes the given label when passed one explicitly', () => {
+    expect(attributionColumns('af-new', 'Needs review')).toEqual({
+      columns: { 'Attribution': { label: 'Needs review' } },
+      links: [{ column: 'Acting for', targetSfIds: ['af-new'] }] });
   });
 });
 

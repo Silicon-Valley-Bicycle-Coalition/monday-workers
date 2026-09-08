@@ -214,6 +214,7 @@ describe('ensureBoards', () => {
   it('renames the four People email columns in place instead of creating duplicates', async () => {
     const renamed: { id: string; title: string }[] = [];
     const created: string[] = [];
+    const renameCallbacks: [string, string, string][] = [];
     const fetchFn = (async (_u: unknown, init: unknown) => {
       const { query, variables } = JSON.parse((init as { body: string }).body);
       if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [
@@ -232,7 +233,7 @@ describe('ensureBoards', () => {
     cfg.monday.boards['people-live'] = 4242;   // existing board, so no create_board
     const map = await ensureBoards(client, cfg, ['people-live'], new Map([
       ['people-live', new Set(['Personal Email', 'Household Email', 'Personal Email Consent', 'Household Email Consent', 'Household Primary'])],
-    ]));
+    ]), (boardKey, oldTitle, newTitle) => { renameCallbacks.push([boardKey, oldTitle, newTitle]); });
     expect(renamed).toEqual([
       { id: 'email_1', title: 'Personal Email' }, { id: 'email_2', title: 'Household Email' },
       { id: 'status_1', title: 'Personal Email Consent' }, { id: 'status_2', title: 'Household Email Consent' },
@@ -240,6 +241,12 @@ describe('ensureBoards', () => {
     expect(created).toEqual(['Household Primary']);
     expect(map['people-live']!.columns['Personal Email']).toBe('email_1');
     expect('Email' in map['people-live']!.columns).toBe(false);
+    expect(renameCallbacks).toEqual([
+      ['people-live', 'Email', 'Personal Email'],
+      ['people-live', 'Secondary Email', 'Household Email'],
+      ['people-live', 'Email Consent', 'Personal Email Consent'],
+      ['people-live', 'Secondary Email Consent', 'Household Email Consent'],
+    ]);
   });
 });
 

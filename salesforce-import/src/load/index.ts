@@ -75,7 +75,20 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
     needed.set(key, set);
   }
-  const boards = await ensureBoards(client, cfg, keys, needed);
+  // A column rename (e.g. the 2026-09 Email → Personal Email rename) only touches the column
+  // title, never rewrites pre-existing items — so a ledger that already has items for a
+  // just-renamed board is a partial re-run mixing old- and new-semantics data. Detect and warn;
+  // the only fix is a full re-create (delete data/load/).
+  const renamedBoardKeys = new Set<string>();
+  const boards = await ensureBoards(client, cfg, keys, needed,
+    (boardKey) => { renamedBoardKeys.add(boardKey); });
+  for (const key of renamedBoardKeys) {
+    if (ledger.hasAnyFor(key)) {
+      console.warn(`load: ${key} had a column renamed this run and the ledger already holds items ` +
+        `for it from a previous run — those items still carry the old column's values under the new ` +
+        `title (mixed semantics). Delete data/load/ and re-run a full re-create.`);
+    }
+  }
 
   const createItems = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;

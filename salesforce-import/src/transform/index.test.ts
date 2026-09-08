@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +17,8 @@ async function seed() {
     // Affiliation-only inclusion; secondary address is Beta Org's domain → work email on af1.
     { Id: 'c3', FirstName: 'Uma', LastName: 'N', AccountId: 'a-org', Email: 'uma@gmail.com',
       Secondary_Email__c: 'uma@beta.example', ...prov },
-    // Shared household address with c1 → c1 is Household Primary (first by Id), c4 is not.
+    // Shared address ada@gmail.com: c1's Personal Email, c4's Household Email → c4 is Household
+    // Primary (first by Id whose HOUSEHOLD Email is the address).
     { Id: 'c4', FirstName: 'Cal', LastName: 'L', Email: 'cal@gmail.com', Secondary_Email__c: 'ada@gmail.com',
       funraise__fr_ID__c: 'f4', ...prov },
   ]);
@@ -118,9 +119,45 @@ describe('runTransform', () => {
 
     const review = readFileSync(dataPath('review', 'unaffiliated-org-gifts.csv'), 'utf8');
     expect(review).toContain('o4,c1,a-org,Acme,75,2024-03-03');
-    expect(existsSync(dataPath('review', 'email-classification.csv'))).toBe(false);   // nothing unknown this run
+    // Always written, even with nothing to review, so a stale file from a prior run can't linger.
+    expect(readFileSync(dataPath('review', 'email-classification.csv'), 'utf8'))
+      .toBe('contactSfId,name,email,domain,candidateAffiliations\n');
     expect(report.warnings.some((w) => w.startsWith('emails: 1 work, 1 household, 0 review, 0 swapped'))).toBe(true);
     expect(report.warnings.some((w) => w.includes('1 org gifts have no affiliation'))).toBe(true);
+  });
+
+  it('excludes a work email shared by multiple affiliations from attribution matching, with a warning', async () => {
+    // Two different contacts at Beta Org whose secondary address is the same shared mailbox
+    // (e.g. info@) — each still gets a Work Email on their own Affiliation, but neither may
+    // resolve a registration back to an arbitrary one of the two tenures.
+    await writeNdjson(dataPath('extract', 'contacts.ndjson'), [
+      { Id: 'c10', FirstName: 'Deb', LastName: 'Q', Email: 'deb@gmail.com',
+        Secondary_Email__c: 'info@beta.example', ...prov },
+      { Id: 'c11', FirstName: 'Fay', LastName: 'R', Email: 'fay@gmail.com',
+        Secondary_Email__c: 'info@beta.example', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'affiliations.ndjson'), [
+      { Id: 'af10', npe5__Contact__c: 'c10', npe5__Organization__c: 'a-org2', npe5__Status__c: 'Current', ...prov },
+      { Id: 'af11', npe5__Contact__c: 'c11', npe5__Organization__c: 'a-org2', npe5__Status__c: 'Current', ...prov },
+    ]);
+    await writeNdjson(dataPath('extract', 'registrations.ndjson'), [
+      { Id: 'r-shared', funraise__Email__c: 'info@beta.example', ...prov },
+    ]);
+    expect(await runTransform(['--no-consent'])).toBe(0);
+    const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
+    const bySf = new Map(payloads.map((p) => [p.sfId, p]));
+
+    // The Affiliation board items still carry the address — humans see it.
+    expect(bySf.get('af10')!.columns['Work Email']).toEqual({ email: 'info@beta.example', text: 'info@beta.example' });
+    expect(bySf.get('af11')!.columns['Work Email']).toEqual({ email: 'info@beta.example', text: 'info@beta.example' });
+
+    // But the registration using that shared address is not attributed to either tenure.
+    expect(bySf.get('r-shared')!.columns['Attribution']).toEqual({ label: 'None' });
+    expect(bySf.get('r-shared')!.links).toEqual([]);
+
+    const report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.warnings).toContain(
+      'emails: work address info@beta.example is claimed by 2 affiliations (af10, af11) — excluded from attribution matching');
   });
 
   it('writes unknown-domain secondaries to the review file and honors email-kinds overrides', async () => {

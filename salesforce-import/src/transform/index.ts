@@ -142,14 +142,21 @@ export async function runTransform(args: string[]): Promise<number> {
   const boardOf = new Map<string, 'people-live' | 'people-historical'>();
   const emailStats = { work: 0, household: 0, review: 0, swapped: 0 };
   const emailReviewRows: string[] = [];
-  const sortedContacts = [...contacts].sort((x, y) => String(x['Id']).localeCompare(String(y['Id'])));
+  // Byte-stable comparison, not locale-aware collation — "first by Id" must be the same order on
+  // every machine regardless of ICU/locale settings.
+  const byId = (x: Row, y: Row): number => {
+    const a = String(x['Id']), b = String(y['Id']);
+    return a < b ? -1 : a > b ? 1 : 0;
+  };
+  const sortedContacts = [...contacts].sort(byId);
   for (const c of sortedContacts) {
     const board = classifyContact(c, inc, cfg.peopleActiveSinceISO);
     if (!board) continue;
     const id = c['Id'] as string;
     boardOf.set(id, board);
     const refs: AffiliationRef[] = (affiliationsByContact.get(id) ?? []).map((a) => ({
-      sfId: a['Id'] as string, orgSfId: a['npe5__Organization__c'] as string, primary: a['npe5__Primary__c'] === true }));
+      sfId: a['Id'] as string, orgSfId: a['npe5__Organization__c'] as string, primary: a['npe5__Primary__c'] === true,
+      status: affiliationStatus(a['npe5__Status__c']) }));
     // An override naming an affiliation this contact doesn't have would otherwise be trusted
     // verbatim by assignEmails, silently keying a work address to a tenure that never resolves
     // it back on any payload (see the review finding). Reject it here, before classification.
@@ -191,6 +198,24 @@ export async function runTransform(args: string[]): Promise<number> {
       startISO: (a['npe5__StartDate__c'] as string | null) ?? null, endISO: (a['npe5__EndDate__c'] as string | null) ?? null,
       primary: a['npe5__Primary__c'] === true,
       workEmail: assignments.get(a['npe5__Contact__c'] as string)?.work.get(a['Id'] as string) ?? null }));
+  // Work Email is spec'd unique across Affiliations, but two different contacts at one org can
+  // share a mailbox (e.g. info@) as their Secondary_Email__c, so both get a Work Email pointing
+  // at the same address. Picking one arbitrarily (extract order, no ORDER BY) would attribute
+  // registrations to the wrong tenure — so any address claimed by more than one affiliation is
+  // excluded from attribution matching entirely (byWorkEmail below). The Affiliation board items
+  // still carry the address on each item — only matching is affected.
+  const entriesByWorkEmail = new Map<string, AffiliationEntry[]>();
+  for (const e of affiliationEntries) {
+    if (!e.workEmail) continue;
+    const key = e.workEmail.trim().toLowerCase();
+    (entriesByWorkEmail.get(key) ?? entriesByWorkEmail.set(key, []).get(key)!).push(e);
+  }
+  for (const [emailKey, claimants] of entriesByWorkEmail) {
+    if (claimants.length <= 1) continue;
+    warnings.push(`emails: work address ${emailKey} is claimed by ${claimants.length} affiliations ` +
+      `(${claimants.map((e) => e.sfId).join(', ')}) — excluded from attribution matching`);
+    for (const e of claimants) e.workEmail = null;
+  }
   const affiliationIndex = new AffiliationIndex(affiliationEntries);
   const attributedOpps = new Map<string, string>();
   const unaffiliatedRows: string[] = [];
@@ -203,10 +228,10 @@ export async function runTransform(args: string[]): Promise<number> {
         String(o['CloseDate'] ?? '').slice(0, 10)].map(csvField).join(','));
     }
   }
-  const attributedRegs = new Map<string, string>();
+  const attributedRegs = new Map<string, { affiliationSfId: string; attribution: 'Auto' | 'Needs review' }>();
   for (const r of registrations) {
-    const af = attributeRegistration(r, affiliationIndex);
-    if (af) attributedRegs.set(r['Id'] as string, af);
+    const att = attributeRegistration(r, affiliationIndex);
+    if (att) attributedRegs.set(r['Id'] as string, att);
   }
   const attRollups = attributionRollups(opportunities, attributedOpps, affiliationIndex);
 
@@ -283,7 +308,10 @@ export async function runTransform(args: string[]): Promise<number> {
     if (p) payloads.push({ ...p, columns: { ...p.columns, ...(pledgeCols.get(p.sfId) ?? {}) } });
   }
   for (const e of events) { const p = eventToPayload(e); if (p) payloads.push(p); }
-  for (const r of registrations) payloads.push(registrationToPayload(r, { actingFor: attributedRegs.get(r['Id'] as string) ?? null }));
+  for (const r of registrations) {
+    const att = attributedRegs.get(r['Id'] as string);
+    payloads.push(registrationToPayload(r, { actingFor: att?.affiliationSfId ?? null, attribution: att?.attribution }));
+  }
   for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));
   // Activities: person-linked Tasks only, newest-first, capped under the board ceiling
@@ -329,10 +357,11 @@ export async function runTransform(args: string[]): Promise<number> {
     `(fiscal years before FY${plan.cutoffFY}); peak active ${plan.peakActive}`);
 
   await mkdir(dataPath('review'), { recursive: true });
-  if (emailReviewRows.length > 0) {
-    await writeFile(dataPath('review', 'email-classification.csv'),
-      ['contactSfId,name,email,domain,candidateAffiliations', ...emailReviewRows].join('\n') + '\n', 'utf8');
-  }
+  // Always written (header-only when nothing needs review), like unaffiliated-org-gifts.csv
+  // below — otherwise a file from a prior run with review rows lingers after a later run
+  // resolves them all, silently telling the operator there's still something to review.
+  await writeFile(dataPath('review', 'email-classification.csv'),
+    ['contactSfId,name,email,domain,candidateAffiliations', ...emailReviewRows].join('\n') + '\n', 'utf8');
   await writeFile(dataPath('review', 'unaffiliated-org-gifts.csv'),
     ['opportunitySfId,contactSfId,orgSfId,orgName,amount,closeDate', ...unaffiliatedRows].join('\n') + '\n', 'utf8');
   warnings.push(`emails: ${emailStats.work} work, ${emailStats.household} household, ${emailStats.review} review, ` +
