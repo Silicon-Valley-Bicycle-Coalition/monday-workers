@@ -46,6 +46,18 @@ describe('opportunityToPayload', () => {
     expect(p.columns['Anonymous Donor']).toEqual({ checked: 'true' });
     expect(p.links).toEqual([]);
   });
+
+  it('carries Acting for and Attribution when an affiliation is supplied', () => {
+    const base = { Id: 'o9', Name: 'Sponsorship', Amount: 5000, CloseDate: '2024-01-01', StageName: 'Posted',
+      AccountId: 'org-acme', npsp__Primary_Contact__c: 'c1' };
+    const with_ = opportunityToPayload(base, { termCols: new Map(), actingFor: 'af-new' });
+    expect(with_.columns['Attribution']).toEqual({ label: 'Auto' });
+    expect(with_.links).toContainEqual({ column: 'Acting for', targetSfIds: ['af-new'] });
+    expect(with_.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });   // unchanged
+    const without = opportunityToPayload(base, { termCols: new Map() });
+    expect(without.columns['Attribution']).toEqual({ label: 'None' });
+    expect(without.links!.some((l) => l.column === 'Acting for')).toBe(false);
+  });
 });
 
 describe('click & pledge', () => {

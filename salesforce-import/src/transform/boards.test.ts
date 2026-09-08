@@ -48,6 +48,13 @@ describe('registrationToPayload', () => {
     expect(p.columns['Attendee Name']).toBe('Ada L');
     expect(p.columns['Attended']).toEqual({ checked: 'true' });
   });
+
+  it('registrationToPayload carries Acting for and Attribution', () => {
+    const r = { Id: 'r1', funraise__Registrant__c: 'c2', funraise__Email__c: 'bo@sanjoseca.gov' };
+    expect(registrationToPayload(r, { actingFor: 'af-city' }).links).toContainEqual({ column: 'Acting for', targetSfIds: ['af-city'] });
+    expect(registrationToPayload(r, { actingFor: 'af-city' }).columns['Attribution']).toEqual({ label: 'Auto' });
+    expect(registrationToPayload(r).columns['Attribution']).toEqual({ label: 'None' });
+  });
 });
 
 describe('campaignToPayload', () => {
