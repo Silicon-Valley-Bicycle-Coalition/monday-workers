@@ -13,7 +13,9 @@ export class AffiliationIndex {
       const key = `${e.contactSfId}|${e.orgSfId}`;
       (this.contactOrg.get(key) ?? this.contactOrg.set(key, []).get(key)!).push(e);
       (this.contact.get(e.contactSfId) ?? this.contact.set(e.contactSfId, []).get(e.contactSfId)!).push(e);
-      if (e.workEmail && !this.email.has(e.workEmail)) this.email.set(e.workEmail, e);
+      // First-seen wins when two tenures share a work email address.
+      const emailKey = e.workEmail?.trim().toLowerCase();
+      if (emailKey && !this.email.has(emailKey)) this.email.set(emailKey, e);
     }
   }
   byContactOrg(contactSfId: string, orgSfId: string): AffiliationEntry[] { return this.contactOrg.get(`${contactSfId}|${orgSfId}`) ?? []; }

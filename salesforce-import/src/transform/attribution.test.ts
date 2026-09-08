@@ -36,6 +36,13 @@ describe('attributeRegistration', () => {
     expect(attributeRegistration({ funraise__Email__c: 'bo@gmail.com' }, index)).toBeNull();
     expect(attributeRegistration({}, index)).toBeNull();
   });
+  it('normalizes work email on insertion to match lookup normalization', () => {
+    const mixed = new AffiliationIndex([
+      { sfId: 'af-mixed', contactSfId: 'c3', orgSfId: 'org-test', startISO: null, endISO: null, primary: true, workEmail: ' Bo@SanJoseCA.gov ' }
+    ]);
+    expect(mixed.byWorkEmail('bo@sanjoseca.gov')?.sfId).toBe('af-mixed');
+    expect(attributeRegistration({ funraise__Email__c: 'BO@sanjoseca.gov' }, mixed)).toBe('af-mixed');
+  });
 });
 
 describe('attributionColumns', () => {
