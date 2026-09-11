@@ -7,7 +7,13 @@ import { triggerLetterSend } from './triggerLetterSend';
 export type RunLetterCronResult =
   | {
       kind: 'skipped';
-      reason: 'unconfigured' | 'letters-not-signed-off' | 'no-settings' | 'auto-send-off' | 'before-start-date';
+      reason:
+        | 'unconfigured'
+        | 'letters-not-signed-off'
+        | 'no-settings'
+        | 'auto-send-off'
+        | 'before-start-date'
+        | 'year-before-history-floor';
     }
   // A top-level Monday failure (settings read or donations sweep). Reported, never thrown — the
   // daily scheduled() invocation must not reject over a transient outage, and tomorrow's run is
@@ -59,6 +65,16 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
     return { kind: 'skipped', reason: 'letters-not-signed-off' };
   }
 
+  // Config-only check ahead of any Monday read: with the donation-history floor at or after
+  // the first day of the year *following* the target year, every gift the sweep could find is
+  // below the floor, so there is nothing to mail. (SVBC: a 2026-01-01 floor means the January
+  // 2026 run, which would target 2025, does nothing.) A floor inside the target year falls
+  // through — listDonorIdsWithDonationsInYear applies it per gift.
+  const targetYear = deps.now().getUTCFullYear() - 1;
+  const floor = config.donations.historyStartISO;
+  if (floor !== null && floor >= `${targetYear + 1}-01-01`) {
+    return { kind: 'skipped', reason: 'year-before-history-floor' };
+  }
   const settings = await deps.monday.getLetterSettings({
     boardId: config.letterCron.boardId,
     columns: config.letterCron.columns,
@@ -77,7 +93,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
     return { kind: 'skipped', reason: 'before-start-date' };
   }
 
-  const year = deps.now().getUTCFullYear() - 1;
+  const year = targetYear;
   const eligibleDonorIds = await deps.monday.listDonorIdsWithDonationsInYear(year);
   const handled = await deps.letterStore.listDonorItemIdsForYear(year);
   const pending = eligibleDonorIds.filter((id) => !handled.has(id));

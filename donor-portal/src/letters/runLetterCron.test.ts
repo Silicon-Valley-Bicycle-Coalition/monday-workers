@@ -146,6 +146,29 @@ describe('runLetterCron', () => {
     expect(result).toEqual({ kind: 'skipped', reason: 'before-start-date' });
   });
 
+  it('skips the sweep entirely when the target year ends before donations.historyStartISO', async () => {
+    // January 2026 with a 2026-01-01 floor: the target year is 2025, which the floor excludes
+    // wholesale, so no 2025 letters go out and Monday is never swept.
+    const monday = fakeMonday();
+    const floored = { ...config, donations: { ...config.donations, historyStartISO: '2026-01-01' } };
+    const jan2026 = () => new Date('2026-01-15T10:00:00.000Z');
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now: jan2026 });
+
+    expect(result).toEqual({ kind: 'skipped', reason: 'year-before-history-floor' });
+    expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
+  });
+
+  it('still sweeps when the target year straddles a mid-year floor (the sweep applies the floor per gift)', async () => {
+    const monday = fakeMonday();
+    const floored = { ...config, donations: { ...config.donations, historyStartISO: '2026-06-01' } };
+
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now });
+
+    expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026);
+    expect(result).toMatchObject({ kind: 'ran', year: 2026 });
+  });
+
   it('runs on the start date itself and queues a letter for every prior-year donor', async () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: true, startDate: '2027-01-15', bodyTemplate: '' }),
