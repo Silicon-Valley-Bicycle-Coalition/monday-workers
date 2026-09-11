@@ -89,7 +89,9 @@
     "completedStatuses": ["Completed"]
   },
   "donations": {
-    "countableStatuses": ["Received", "Received (Historical)"]
+    "countableStatuses": ["Received", "Received (Historical)"],
+    "historyStartISO": "2026-01-01",
+    "historyVisibleFromISO": "2027-01-01"
   },
   "eventRegistrations": {
     "boardId": null,

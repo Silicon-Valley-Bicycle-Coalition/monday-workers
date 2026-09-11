@@ -10,6 +10,7 @@ import {
   signedOffEin,
   configuredPrefFields,
   volunteerHistoryEnabled,
+  donationHistoryEnabled,
   eventsEnabled,
   letterCronConfigured,
 } from './config';
@@ -74,7 +75,11 @@ const validConfig = {
   },
   cardTokens: { retentionDays: 30 },
   volunteerHistory: { completedStatuses: ['Completed'] },
-  donations: { countableStatuses: ['Received', 'Received (Historical)'] },
+  donations: {
+    countableStatuses: ['Received', 'Received (Historical)'],
+    historyStartISO: '2026-01-01',
+    historyVisibleFromISO: '2027-01-01',
+  },
   eventRegistrations: {
     boardId: 456,
     columns: {
@@ -380,6 +385,40 @@ describe('donations config section', () => {
     const cfg = structuredClone(validConfig);
     cfg.donations.countableStatuses = [];
     expect(() => validateConfig(cfg)).toThrow(/countableStatuses/);
+  });
+
+  it('rejects a config missing donations.historyStartISO', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { donations: Record<string, unknown> }).donations.historyStartISO;
+    expect(() => validateConfig(cfg)).toThrow('donations.historyStartISO');
+  });
+
+  it('rejects a config missing donations.historyVisibleFromISO', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as { donations: Record<string, unknown> }).donations.historyVisibleFromISO;
+    expect(() => validateConfig(cfg)).toThrow('donations.historyVisibleFromISO');
+  });
+
+  it('accepts null for both donation-history dates', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.donations as { historyStartISO: string | null }).historyStartISO = null;
+    (cfg.donations as { historyVisibleFromISO: string | null }).historyVisibleFromISO = null;
+    expect(validateConfig(cfg).donations).toMatchObject({ historyStartISO: null, historyVisibleFromISO: null });
+  });
+
+  it('rejects a donation-history date that is not YYYY-MM-DD', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.donations.historyStartISO = '1/1/2026';
+    expect(() => validateConfig(cfg)).toThrow(/historyStartISO.*YYYY-MM-DD/);
+    const cfg2 = structuredClone(validConfig);
+    cfg2.donations.historyVisibleFromISO = '2027-1-1';
+    expect(() => validateConfig(cfg2)).toThrow(/historyVisibleFromISO.*YYYY-MM-DD/);
+  });
+
+  it('rejects a donation-history date that is not a real calendar date', () => {
+    const cfg = structuredClone(validConfig);
+    cfg.donations.historyStartISO = '2026-02-30';
+    expect(() => validateConfig(cfg)).toThrow(/historyStartISO/);
   });
 
   it('rejects a config missing monday.columns.donationStatus entirely', () => {
@@ -740,5 +779,26 @@ describe('letterCronConfigured', () => {
     const raw = structuredClone(validConfig);
     raw.letterCron.columns.startDate = 'REPLACE_WITH_COLUMN_ID';
     expect(letterCronConfigured(validateConfig(raw))).toBe(false);
+  });
+});
+
+describe('donationHistoryEnabled', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('is false before historyVisibleFromISO', () => {
+    const cfg = validateConfig(validConfig);
+    expect(donationHistoryEnabled(cfg, at('2026-12-31T23:59:59Z'))).toBe(false);
+  });
+
+  it('is true from the first UTC instant of historyVisibleFromISO onward', () => {
+    const cfg = validateConfig(validConfig);
+    expect(donationHistoryEnabled(cfg, at('2027-01-01T00:00:00Z'))).toBe(true);
+    expect(donationHistoryEnabled(cfg, at('2030-06-15T12:00:00Z'))).toBe(true);
+  });
+
+  it('is false when historyVisibleFromISO is null, regardless of the date', () => {
+    const raw = structuredClone(validConfig);
+    (raw.donations as { historyVisibleFromISO: string | null }).historyVisibleFromISO = null;
+    expect(donationHistoryEnabled(validateConfig(raw), at('2030-01-01T00:00:00Z'))).toBe(false);
   });
 });
