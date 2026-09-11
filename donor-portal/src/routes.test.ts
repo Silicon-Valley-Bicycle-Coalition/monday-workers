@@ -1052,9 +1052,33 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     expect(secondToken).toBe(firstToken);
   });
 
+  it('hides donation history on the dashboard until donations.historyVisibleFromISO, then shows it', async () => {
+    const monday = fakeMondayWithDonations();
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    // Visible from 2027-01-01; the deps clock is 2026-08-22.
+    const gatedConfig = structuredClone(config);
+    gatedConfig.donations.historyVisibleFromISO = '2027-01-01';
+
+    const before = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));
+    const cookie = await loginAndGetCookie(before, emailSender, 'donor@example.org');
+    const hiddenHtml = await (await before.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(hiddenHtml).toContain('Donor donor-1');
+    expect(hiddenHtml).not.toContain('$40.00');
+    expect(hiddenHtml).not.toContain('<td>gift</td>');
+    expect(monday.getDonorPortalData).toHaveBeenLastCalledWith('donor-1', { includeDonations: false });
+
+    const laterSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const after = createApp(makeDeps({ monday, emailSender: laterSender, config: gatedConfig, now: () => new Date('2027-01-01T00:00:00.000Z') }));
+    const laterCookie = await loginAndGetCookie(after, laterSender, 'donor@example.org');
+    const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
+    expect(shownHtml).toContain('$40.00');
+    expect(shownHtml).toContain('<td>gift</td>');
+  });
+
   it('omits the card widget, but still renders the rest of the dashboard, while the membership expiry column is unset', async () => {
     const gatedConfig = structuredClone(config);
     gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
+    gatedConfig.donations.historyVisibleFromISO = '2020-01-01'; // history gate open: this test is about the card
     const monday = fakeMondayWithDonations();
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender, config: gatedConfig }));

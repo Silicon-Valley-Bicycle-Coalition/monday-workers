@@ -278,6 +278,10 @@ export interface PortalView {
   // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
   // section for null, a missing key, and an empty shift list alike.
   volunteerHistory: Record<string, DonorVolunteerHistory> | null;
+  // false while donations.historyVisibleFromISO hasn't arrived (or is null): loadPortalData
+  // skipped the Donations read and views omit the Donations tab — every donor's `donations` is
+  // [] and `totalDonated` '' in that state, so rendering them would show a false empty-state.
+  donationHistoryEnabled: boolean;
 }
 
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for

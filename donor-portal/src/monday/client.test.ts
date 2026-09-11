@@ -217,6 +217,35 @@ describe('HttpMondayClient.getDonorPortalData', () => {
     });
   });
 
+  it('never queries the Donations board when includeDonations is false, returning an empty, unloaded history', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          items: [
+            {
+              id: 'donor-1',
+              name: 'Jane Donor',
+              column_values: [
+                { id: 'status_col', text: 'Active' },
+                { id: 'tier_col', text: 'Member' },
+                { id: 'donated_col', text: '500' },
+                { id: 'expiry_col', text: '2026-12-31' },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    const data = await client.getDonorPortalData('donor-1', { includeDonations: false });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(data).toMatchObject({ id: 'donor-1', name: 'Jane Donor', membershipStatus: 'Active', donations: [], totalDonated: '' });
+  });
+
   it('omits the placeholder membershipExpiry column id from the outgoing query', async () => {
     let captured: { query: string; variables: Record<string, unknown> } | null = null;
     const fetchMock = vi

@@ -48,7 +48,10 @@ function checkboxState(item: MondayItem, columnId: string): boolean | null {
 
 export interface MondayClient {
   findDonorsByEmail(email: string): Promise<DonorMatch[]>;
-  getDonorPortalData(donorItemId: string): Promise<DonorPortalData>;
+  // includeDonations false skips the Donations-board read entirely (donations: [], totalDonated:
+  // '') — for the portal home while donation history is gated off. Defaults to true so the
+  // letters and card paths, which always need gifts, are unchanged.
+  getDonorPortalData(donorItemId: string, options?: { includeDonations?: boolean }): Promise<DonorPortalData>;
   getDiscountOrganizations(): Promise<DiscountOrganization[]>;
   getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]>;
   getDonorContactInfo(donorItemId: string): Promise<DonorContactInfo>;
@@ -182,7 +185,7 @@ export class HttpMondayClient implements MondayClient {
     }));
   }
 
-  async getDonorPortalData(donorItemId: string): Promise<DonorPortalData> {
+  async getDonorPortalData(donorItemId: string, options: { includeDonations?: boolean } = {}): Promise<DonorPortalData> {
     // getDonorPortalData backs /portal and /portal/letters, which run for EVERY donor
     // regardless of whether the (gated, placeholder-tolerant) membership-card feature is
     // enabled. membershipExpiry only matters to that gated feature, so it's deliberately left
@@ -211,12 +214,14 @@ export class HttpMondayClient implements MondayClient {
       throw new Error(`monday: donor item "${donorItemId}" not found`);
     }
 
-    const donations = await this.getDonationsForDonor(donorItemId);
+    const includeDonations = options.includeDonations ?? true;
+    const donations = includeDonations ? await this.getDonationsForDonor(donorItemId) : [];
     // With a history floor, the Lifetime Giving rollup would exceed the rows the donor can see,
     // so the total becomes the sum of the kept gifts. Without one, the rollup column is the
-    // total, as before.
-    const totalDonated =
-      this.donations.historyStartISO === null
+    // total, as before. Not loaded at all → '' rather than a misleading zero.
+    const totalDonated = !includeDonations
+      ? ''
+      : this.donations.historyStartISO === null
         ? columnText(donorItem, this.columns.dollarDonated)
         : String(donations.reduce((sum, d) => sum + (parseAmountOrNull(d.amount) ?? 0), 0));
 

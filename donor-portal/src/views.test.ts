@@ -172,6 +172,7 @@ describe('portalView', () => {
       },
     ],
     discounts: [{ name: 'Local Bikes', discountOffered: '10% off' }],
+    donationHistoryEnabled: true,
     volunteerHistory: null,
   };
 
@@ -180,6 +181,19 @@ describe('portalView', () => {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership&a=1',
   };
+
+  it('omits the Donations tab and every gift figure while donation history is gated off', () => {
+    const hidden: PortalView = { ...data, donationHistoryEnabled: false };
+    const html = portalView(hidden, 'en', {}, noFunraise);
+    expect(html).not.toContain(t('en', 'portal.donationsTabLabel'));
+    expect(html).not.toContain('$100.00');
+    expect(html).not.toContain('$500.00');
+    expect(html).not.toContain(t('en', 'portal.totalLabel'));
+    expect(html).not.toContain(t('en', 'portal.donateButton'));
+    // The donor section itself still renders: name and membership line.
+    expect(html).toContain('Jane Donor');
+    expect(html).toContain(t('en', 'portal.membership', { status: 'Active', tier: 'Member' }));
+  });
 
   it('formats donation amounts and the running total as US currency', () => {
     const html = portalView(data, 'en', {}, noFunraise);
@@ -229,6 +243,7 @@ describe('portalView', () => {
         },
       ],
       discounts: [],
+      donationHistoryEnabled: true,
       volunteerHistory: null,
     };
     const html = portalView(maliciousData, 'en', {}, noFunraise);
@@ -388,6 +403,7 @@ describe('portalView', () => {
         },
       ],
       discounts: [],
+      donationHistoryEnabled: true,
       volunteerHistory: null,
     };
     const html = portalView(noDonations, 'en', {}, noFunraise);
@@ -420,6 +436,7 @@ describe('portalView events tab', () => {
       },
     ],
     discounts: [],
+    donationHistoryEnabled: true,
     volunteerHistory: null,
   };
   const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
@@ -486,9 +503,22 @@ describe('portalView tab structure', () => {
       },
     ],
     discounts: [],
+    donationHistoryEnabled: true,
     volunteerHistory: null,
   };
   const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+
+  it('keeps a Volunteer history heading when it is the only tab (donation history hidden), since no tab label names it', () => {
+    const volunteerOnly: PortalView = {
+      ...base,
+      donationHistoryEnabled: false,
+      volunteerHistory: { 'donor-1': { shifts: [{ date: '2026-02-01', job: 'Valet', hours: '2', status: 'Completed' }], totalHours: 2 } },
+    };
+    const html = portalView(volunteerOnly, 'en', {}, noFunraise);
+    expect(html).not.toContain('class="tabs"');
+    expect(html).toContain(`<h3>${t('en', 'portal.volunteerHeading')}</h3>`);
+    expect(html).toContain('Valet');
+  });
 
   it('renders donations content directly, with no tab UI, when it is the only applicable tab', () => {
     const html = portalView(base, 'en', {}, noFunraise);
@@ -526,6 +556,7 @@ describe('portalView tab structure', () => {
         },
       ],
       discounts: [],
+      donationHistoryEnabled: true,
       volunteerHistory: {
         'donor-1': { shifts: [{ date: '2026-03-05', hours: '1', job: 'Tabling', status: 'Completed' }], totalHours: 1 },
         'donor-2': { shifts: [{ date: '2026-03-05', hours: '1', job: 'Tabling', status: 'Completed' }], totalHours: 1 },
@@ -551,6 +582,7 @@ describe('portalView funraise deep links', () => {
       },
     ],
     discounts: [],
+    donationHistoryEnabled: true,
     volunteerHistory: null,
   };
 

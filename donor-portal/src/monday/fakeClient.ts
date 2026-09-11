@@ -134,15 +134,16 @@ export class FakeMondayClient implements MondayClient {
     }));
   }
 
-  async getDonorPortalData(donorItemId: string): Promise<DonorPortalData> {
+  async getDonorPortalData(donorItemId: string, options: { includeDonations?: boolean } = {}): Promise<DonorPortalData> {
     const donor = findDonor(donorItemId);
+    const includeDonations = options.includeDonations ?? true;
     return {
       id: donor.id,
       name: donor.name,
       membershipStatus: donor.membershipStatus,
       membershipTier: donor.membershipTier,
-      totalDonated: totalDonated(donor.donations),
-      donations: donor.donations,
+      totalDonated: includeDonations ? totalDonated(donor.donations) : '',
+      donations: includeDonations ? donor.donations : [],
       membershipExpiry: donor.membershipExpiry,
     };
   }
