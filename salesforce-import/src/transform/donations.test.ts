@@ -58,9 +58,72 @@ describe('opportunityToPayload', () => {
     expect(without.columns['Attribution']).toEqual({ label: 'None' });
     expect(without.links!.some((l) => l.column === 'Acting for')).toBe(false);
   });
+
+  it('re-points an Account-only Donor link at the person the Account was folded into', () => {
+    const p = opportunityToPayload({ ...base, npsp__Primary_Contact__c: null, funraise__fr_Donor__c: null,
+      AccountId: 'a-pn' }, { termCols: new Map(), donorAlias: new Map([['a-pn', 'c7']]) });
+    expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c7'] });
+    expect(p.columns['Anonymous Donor']).toBeNull();
+  });
+});
+
+describe('opportunityToPayload — Benevity matching gifts (plan: Benevity in Integrations)', () => {
+  const base = { Id: 'o9', Name: 'Google, LLC - Employer Matching Ada L 7/4/2026', Amount: 100,
+    CloseDate: '2026-07-04', StageName: 'Posted', RecordType: { Name: 'Matching Donation' },
+    npsp__Primary_Contact__c: 'c1', AccountId: 'a-google',
+    CreatedDate: '2026-07-04T00:00:00Z', CreatedBy: { Name: 'X' },
+    LastModifiedDate: '2026-07-04T00:00:00Z', LastModifiedBy: { Name: 'X' } };
+  const deps = { termCols: new Map(), orgAccountIds: new Set(['a-google']),
+    placeholderDonorSfIds: new Set(['c-anon', 'a-anon']) };
+
+  it('links the paying company as Matched By and keeps the employee as Donor', () => {
+    const p = opportunityToPayload(base, deps);
+    expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
+    expect(p.links).toContainEqual({ column: 'Matched By', targetSfIds: ['a-google'] });
+    expect(p.columns['Anonymous Donor']).toBeNull();
+  });
+
+  it('still fills Matched By when no employee is known (Donor falls back to the company)', () => {
+    const p = opportunityToPayload({ ...base, npsp__Primary_Contact__c: null }, deps);
+    expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['a-google'] });
+    expect(p.links).toContainEqual({ column: 'Matched By', targetSfIds: ['a-google'] });
+  });
+
+  it('does not set Matched By on a non-matching gift or when the Account is not an organization', () => {
+    const plain = opportunityToPayload({ ...base, RecordType: { Name: 'Donation' } }, deps);
+    expect(plain.links!.some((l) => l.column === 'Matched By')).toBe(false);
+    const household = opportunityToPayload({ ...base, AccountId: 'a-household' }, deps);
+    expect(household.links!.some((l) => l.column === 'Matched By')).toBe(false);
+  });
+
+  it('treats the "Anonymous Person" placeholder as no donor: checkbox on, no Donor link, company kept', () => {
+    const p = opportunityToPayload({ ...base, npsp__Primary_Contact__c: 'c-anon' }, deps);
+    expect(p.columns['Anonymous Donor']).toEqual({ checked: 'true' });
+    expect(p.links!.some((l) => l.column === 'Donor')).toBe(false);
+    expect(p.links).toContainEqual({ column: 'Matched By', targetSfIds: ['a-google'] });
+    // A plain gift on the placeholder's own household account: anonymous, no fallback to that account.
+    const plain = opportunityToPayload({ ...base, RecordType: { Name: 'Donation' },
+      npsp__Primary_Contact__c: 'c-anon', AccountId: 'a-anon' }, deps);
+    expect(plain.columns['Anonymous Donor']).toEqual({ checked: 'true' });
+    expect(plain.links).toEqual([]);
+  });
+
+  it('declares the Benevity Transaction ID column (blank on migrated history) so load creates it', () => {
+    const p = opportunityToPayload(base, deps);
+    expect(p.columns).toHaveProperty('Benevity Transaction ID', '');
+  });
 });
 
 describe('click & pledge', () => {
+  it('re-points an Account-only Donor link at the person the Account was folded into', () => {
+    const p = cnpToPayload({ Id: 't3', Name: 'CP Gift', CnP_PaaS__TotalCharged__c: 25,
+      CnP_PaaS__TransactionDate__c: '2016-05-01T00:00:00Z', CnP_PaaS__Contact__c: null, CnP_PaaS__Account__c: 'a-pn',
+      CreatedDate: '2016-05-01T00:00:00Z', CreatedBy: { Name: 'X' },
+      LastModifiedDate: '2016-05-01T00:00:00Z', LastModifiedBy: { Name: 'X' } },
+      new Map([['a-pn', 'c7']]));
+    expect(p.links).toEqual([{ column: 'Donor', targetSfIds: ['c7'] }]);
+  });
+
   it('drops transactions whose ID matches an Opportunity CnP_PaaS__CnP_OrderNumber__c', () => {
     const { duplicateTransactionIds, unique } = cnpOverlapCheck(
       [{ Id: 't1', CnP_PaaS__TotalCharged__c: 25 }, { Id: 't2', CnP_PaaS__TotalCharged__c: 35 }],

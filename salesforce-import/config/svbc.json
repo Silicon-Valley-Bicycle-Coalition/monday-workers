@@ -11,6 +11,7 @@
     "att.net", "pacbell.net", "earthlink.net", "protonmail.com", "proton.me", "verizon.net",
     "sonic.net", "mindspring.com", "juno.com"
   ],
+  "placeholderDonorSfIds": ["003i000001breKtAAI", "001i000001Esfc1AAB"],
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": " (sandbox v2)",
@@ -44,6 +45,7 @@
     "activeSubscriptions": 540,
     "subscriptionsAll": 604,
     "eventRegistrations": 616,
+    "eventbriteAttendees": 6307,
     "funraiseContacts": 1993,
     "organizations": 2090
   }

@@ -6,7 +6,7 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         MailingStreet, MailingCity, MailingState, MailingPostalCode,
         Email, Primary_Email__c, Secondary_Email__c, Email_3__c, Email_4__c,
         npe01__HomeEmail__c, npe01__WorkEmail__c, npe01__AlternateEmail__c, npe01__Preferred_Email__c,
-        Account.Do_Not_Solicit__c, Account.Do_Not_Solicit_What__c, dtd__company__c, funraise__fr_ID__c,
+        Account.Do_Not_Solicit__c, Account.Do_Not_Solicit_What__c, Employer__c, dtd__company__c, funraise__fr_ID__c,
         Account.Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Contact` },
     { name: 'accounts', paginate: true, soql: `SELECT Id, Name, npe01__SYSTEM_AccountType__c, Type, Type_2__c, Industry,
         BillingStreet, BillingCity, BillingState, BillingPostalCode, Website, Phone,
@@ -38,10 +38,23 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name
         FROM funraise__Fundraising_Event__c` },
     { name: 'registrations', soql: `SELECT Id, funraise__Registrant__c, funraise__First_Name__c,
-        funraise__Last_Name__c, funraise__Email__c, funraise__Fundraising_Event__c,
+        funraise__Last_Name__c, funraise__Email__c, funraise__Fundraising_Event__c, funraise__Ticket_Name__c,
         funraise__Ticket_Amount__c, funraise__Ticket_Tax_Deductible_Amount__c, funraise__Attended__c,
         funraise__Transaction__c, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name
         FROM funraise__Fundraising_Event_Registration__c` },
+    // Eventbrite history via the eb4sf ("Events Made Easy") managed package — promoted from
+    // backup-only on 2026-09-08 (migration-plan.md, Eventbrite addendum): both platforms' events
+    // land on the Events board, attendees on Event Registrations. ~284 events / ~6.3k attendees,
+    // well under the CLI's 50k truncation ceiling, so no pagination needed.
+    { name: 'eb4sf_events', soql: `SELECT Id, Name, eb4sf__Event_Name__c, eb4sf__Start__c, eb4sf__End__c,
+        eb4sf__Status__c, eb4sf__Event_URL__c, eb4sf__Organizer_Name__c, eb4sf__Total_Tickets_Sold__c,
+        eb4sf__Eventbrite_Venue__r.eb4sf__Name__c, eb4sf__Eventbrite_Venue__r.eb4sf__City__c,
+        eb4sf__Eventbrite_Venue__r.eb4sf__Localized_Address_Display__c,
+        CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM eb4sf__Eventbrite_Event__c` },
+    { name: 'eb4sf_attendees', soql: `SELECT Id, Name, eb4sf__First_Name__c, eb4sf__Last_Name__c, eb4sf__Email__c,
+        eb4sf__Status__c, eb4sf__Checked_In__c, eb4sf__Cancelled__c, eb4sf__Ticket_Class_Name__c, eb4sf__Base_Price__c,
+        eb4sf__Contact__c, eb4sf__Eventbrite_Event__c,
+        CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM eb4sf__Eventbrite_Attendee__c` },
     { name: 'campaigns', soql: `SELECT Id, Name, RecordType.Name, StartDate, EndDate, IsActive,
         Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Campaign` },
     { name: 'clickpledge_transactions', soql: `SELECT Id, Name, CnP_PaaS__Contact__c, CnP_PaaS__Account__c,
@@ -65,9 +78,5 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         CreatedDate FROM Task` },
     { name: 'emails_all', backupOnly: true, soql: `SELECT Id, Subject, MessageDate, FromAddress,
         ToAddress FROM EmailMessage` },
-    { name: 'eb4sf_attendees', backupOnly: true, soql: `SELECT Id, Name, eb4sf__Contact__c,
-        eb4sf__Eventbrite_Event__c, eb4sf__Checked_In__c, CreatedDate FROM eb4sf__Eventbrite_Attendee__c` },
-    { name: 'eb4sf_events', backupOnly: true, soql: `SELECT Id, Name, eb4sf__Start__c,
-        CreatedDate FROM eb4sf__Eventbrite_Event__c` },
   ];
 }

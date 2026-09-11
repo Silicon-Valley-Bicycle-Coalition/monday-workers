@@ -40,12 +40,36 @@ export function pledgeColumnsBySubscription(pledges: Record<string, unknown>[]):
 
 const TEST_EVENTS = new Set(['Test', 'Test Event']);
 
-export function eventToPayload(e: Record<string, unknown>): ItemPayload | null {
+// Both event platforms land on the same two boards (events, event-registrations) — see
+// migration-plan.md's Eventbrite addendum (2026-09-08). Source tells them apart; the platform ids
+// are kept as text columns for idempotent upserts by the post-migration Eventbrite Worker.
+type Label = { label: string };
+const label = (l: string): Label => ({ label: l });
+
+// Eventbrite's event lifecycle → the closed Event Status set shared with Funraise events.
+const EVENTBRITE_EVENT_STATUS: Record<string, string> = {
+  live: 'Upcoming', started: 'Upcoming', completed: 'Completed', canceled: 'Canceled', draft: 'Draft',
+};
+
+// SVBC runs one Eventbrite organizer account per program, distinguished only by a parenthesised
+// suffix on the organizer name ("Silicon Valley Bicycle Coalition (volunteering)").
+const ORGANIZER_PROGRAMS: Record<string, string> = {
+  volunteering: 'Volunteering', 'bike parking': 'Bike Parking', 'group rides': 'Group Rides', private: 'Private',
+};
+export function programFromOrganizer(organizer: unknown): string {
+  const suffix = /\(([^)]+)\)\s*$/.exec(String(organizer ?? ''))?.[1]?.trim().toLowerCase();
+  return (suffix && ORGANIZER_PROGRAMS[suffix]) || 'Public';
+}
+
+export function eventToPayload(e: Record<string, unknown>, cutoverISO: string): ItemPayload | null {
   if (TEST_EVENTS.has(e['Name'] as string)) return null;
+  const start = (e['funraise__Start_Date__c'] as string | null)?.slice(0, 10) ?? '';
   return {
     board: 'events', sfId: e['Id'] as string, name: (e['Name'] as string) ?? '(event)',
-    columns: { 'Date': dateCol(e['funraise__Start_Date__c'] as string),
-      'City': '', ...salesforceDebug(e) },
+    columns: { 'Source': label('Funraise'), 'Program': label('Fundraiser'),
+      'Event Status': label(start && start < cutoverISO ? 'Completed' : 'Upcoming'),
+      'Date': dateCol(e['funraise__Start_Date__c'] as string),
+      'City': '', 'Funraise Event ID': String(e['funraise__fr_ID__c'] ?? ''), ...salesforceDebug(e) },
   };
 }
 
@@ -61,12 +85,64 @@ export function registrationToPayload(
   return {
     board: 'event-registrations', sfId: r['Id'] as string, name: fallbackName || (r['Id'] as string),
     columns: {
+      'Source': label('Funraise'), 'Role': label('Participant'),
       'Attendee Name': fallbackName, 'Attendee Email': (r['funraise__Email__c'] ?? '') as string,
+      'Ticket Type': (r['funraise__Ticket_Name__c'] ?? '') as string,
       'Ticket Amount': String(r['funraise__Ticket_Amount__c'] ?? ''),
       'Deductible Amount': String(r['funraise__Ticket_Tax_Deductible_Amount__c'] ?? ''),
-      'Attended': r['funraise__Attended__c'] ? { checked: 'true' } : null,
+      'Attendance': label(r['funraise__Attended__c'] ? 'Attended' : 'Registered'),
       ...attribution.columns,
       ...salesforceDebug(r),
+    },
+    links,
+  };
+}
+
+type Venue = { eb4sf__Name__c?: string; eb4sf__City__c?: string; eb4sf__Localized_Address_Display__c?: string } | null;
+
+export function eventbriteEventToPayload(
+  e: Record<string, unknown>, opts: { hasAttendees: boolean },
+): ItemPayload | null {
+  const status = String(e['eb4sf__Status__c'] ?? '');
+  // Unpublished drafts nobody registered for are Eventbrite-side scratch, not SVBC history.
+  if (status === 'draft' && !opts.hasAttendees) return null;
+  const venue = (e['eb4sf__Eventbrite_Venue__r'] ?? null) as Venue;
+  return {
+    board: 'events', sfId: e['Id'] as string,
+    name: (e['eb4sf__Event_Name__c'] as string) || (e['Name'] as string) || '(event)',
+    columns: {
+      'Source': label('Eventbrite'), 'Program': label(programFromOrganizer(e['eb4sf__Organizer_Name__c'])),
+      'Event Status': label(EVENTBRITE_EVENT_STATUS[status] ?? 'Completed'),
+      'Date': dateCol(e['eb4sf__Start__c'] as string), 'End': dateCol(e['eb4sf__End__c'] as string),
+      'Venue': venue?.eb4sf__Name__c ?? '', 'City': venue?.eb4sf__City__c ?? '',
+      'Address': venue?.eb4sf__Localized_Address_Display__c ?? '',
+      'Tickets Sold': String(e['eb4sf__Total_Tickets_Sold__c'] ?? ''),
+      'Eventbrite ID': String(e['Name'] ?? ''), 'Eventbrite URL': (e['eb4sf__Event_URL__c'] ?? '') as string,
+      ...salesforceDebug(e),
+    },
+  };
+}
+
+export function eventbriteAttendeeToPayload(
+  a: Record<string, unknown>, event: Record<string, unknown> | undefined,
+): ItemPayload | null {
+  if (a['eb4sf__Status__c'] === 'Deleted') return null; // removed on the Eventbrite side
+  const links: ItemPayload['links'] = [];
+  if (a['eb4sf__Contact__c']) links.push({ column: 'Attendee', targetSfIds: [a['eb4sf__Contact__c'] as string] });
+  if (a['eb4sf__Eventbrite_Event__c']) links.push({ column: 'Event', targetSfIds: [a['eb4sf__Eventbrite_Event__c'] as string] });
+  const name = [a['eb4sf__First_Name__c'], a['eb4sf__Last_Name__c']].filter(Boolean).join(' ');
+  const attendance = a['eb4sf__Checked_In__c'] ? 'Attended'
+    : (a['eb4sf__Cancelled__c'] || a['eb4sf__Status__c'] === 'Not Attending') ? 'Canceled' : 'Registered';
+  const role = programFromOrganizer(event?.['eb4sf__Organizer_Name__c']) === 'Volunteering' ? 'Volunteer' : 'Participant';
+  return {
+    board: 'event-registrations', sfId: a['Id'] as string, name: name || (a['Id'] as string),
+    columns: {
+      'Source': label('Eventbrite'), 'Role': label(role), 'Attendance': label(attendance),
+      'Attendee Name': name, 'Attendee Email': (a['eb4sf__Email__c'] ?? '') as string,
+      'Ticket Type': (a['eb4sf__Ticket_Class_Name__c'] ?? '') as string,
+      'Ticket Amount': String(a['eb4sf__Base_Price__c'] ?? ''),
+      'Eventbrite Attendee ID': String(a['Name'] ?? ''),
+      ...salesforceDebug(a),
     },
     links,
   };

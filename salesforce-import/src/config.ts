@@ -14,6 +14,10 @@ export interface Config {
   // one of these becomes Household Email; anything else that isn't an affiliated org's domain
   // goes to the human review file (see transform/emails.ts).
   consumerEmailDomains?: string[];
+  // Salesforce ids of placeholder donor records (SVBC: the "Anonymous Person" Contact and its
+  // household Account). Gifts pointing at them migrate as Anonymous Donor = checked with no
+  // Donor link, and the records themselves are not emitted as People/Organizations items.
+  placeholderDonorSfIds?: string[];
   monday: { apiUrl: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
   localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;

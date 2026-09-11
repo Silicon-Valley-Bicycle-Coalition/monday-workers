@@ -11,12 +11,14 @@ import { collapseEmail, setStaffMatcher } from './fields.js';
 import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
-import { classifyContact, contactToPayload, accountToPayload, type InclusionInput } from './people.js';
+import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
+  type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
-import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
-  registrationToPayload, campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
+import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
+  eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
+  taskToPayload } from './boards.js';
 import { DEFAULT_CONSUMER_DOMAINS, websiteDomain } from './emailKind.js';
 import { assignEmails, parseEmailKindOverrides, type AffiliationRef, type EmailOverride } from './emails.js';
 import { affiliationToPayload, affiliationStatus } from './affiliations.js';
@@ -46,11 +48,11 @@ export async function runTransform(args: string[]): Promise<number> {
     '--no-consent (empty consent map, every contact will show "Not in Mailchimp")');
 
   const [contacts, accounts, opportunities, memberships, affiliations, subscriptions, pledges,
-    events, registrations, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
+    events, registrations, ebEvents, ebAttendees, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
     await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('memberships'),
       load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
-      load('registrations'), load('campaigns'), load('clickpledge_transactions'),
-      load('volunteer_hours'), load('tasks_recent'),
+      load('registrations'), load('eb4sf_events'), load('eb4sf_attendees'), load('campaigns'),
+      load('clickpledge_transactions'), load('volunteer_hours'), load('tasks_recent'),
       consentExists ? load('consent') : Promise.resolve([])]);
 
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
@@ -82,33 +84,63 @@ export async function runTransform(args: string[]): Promise<number> {
   const memberSummaries = deriveMembers(terms, cfg.cutoverDateISO);
   const { columns: termCols, ambiguous: termAmbiguous } = termColumnsByOpportunity(terms);
 
+  // Person/organization split. One-to-one Accounts are People by NPSP's own stamp; blank-type
+  // Accounts named after their sole Contact are People NPSP never stamped (Account-first imports,
+  // Click & Pledge) and fold into that Contact — no Organization item, and anything booked
+  // against the Account (gifts, links) re-points at the person.
+  const personNamed = personNamedAccountIds(accounts, contacts);
+  const orgAccountIds = new Set(accounts
+    .filter((a) => !isOneToOneAccount(a) && !personNamed.has(a['Id'] as string))
+    .map((a) => a['Id'] as string));
+
   // Click & Pledge dedup against Opportunities, computed FIRST — the deduped C&P set feeds both
   // the People inclusion sets below (a C&P-only donor must still become a Person) and the donor
   // rollups further down, so it must exist before `inc` is built.
   const { unique: cnpUnique } = cnpOverlapCheck(cnp, opportunities);
-  const cnpDonorOf = (t: Row) => t['CnP_PaaS__Contact__c'] as string | null; // Accounts aren't People — contacts only.
+  // Organizations aren't People, so only Contact-keyed (or person-folded Account) C&P gifts confer inclusion.
+  const cnpDonorOf = (t: Row) => (t['CnP_PaaS__Contact__c'] as string | null)
+    ?? personNamed.get(t['CnP_PaaS__Account__c'] as string) ?? null;
   const cnpDonorIds = new Set(cnpUnique.map(cnpDonorOf).filter((x): x is string => !!x));
   const cnpRecentDonorIds = new Set(cnpUnique
     .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
     .map(cnpDonorOf).filter((x): x is string => !!x));
 
+  // Event registrants from both platforms feed People inclusion: a Funraise registration (a paid
+  // ticket) or an Eventbrite CHECK-IN counts; an Eventbrite registration nobody showed up for does
+  // not — decision D, 2026-09-08: free-class no-shows and cancellations are email-list-grade
+  // contacts, and counting them (4,308 Contacts) pushed both People boards past the 10k ceiling.
+  // A counted registration for an event on/after peopleActiveSinceISO makes the Person live.
+  // Attendee rows themselves still land on event-registrations regardless (the Attendee link is
+  // simply skipped at load when the Contact isn't a Person).
+  const eventStart = new Map<string, string>([
+    ...events.map((e) => [e['Id'] as string, String(e['funraise__Start_Date__c'] ?? '')] as const),
+    ...ebEvents.map((e) => [e['Id'] as string, String(e['eb4sf__Start__c'] ?? '')] as const),
+  ]);
+  const registrantRows = [
+    ...registrations.map((r) => ({ contact: r['funraise__Registrant__c'] as string | null, event: r['funraise__Fundraising_Event__c'] as string | null })),
+    ...ebAttendees.filter((a) => a['eb4sf__Status__c'] !== 'Deleted' && a['eb4sf__Checked_In__c'] === true)
+      .map((a) => ({ contact: a['eb4sf__Contact__c'] as string | null, event: a['eb4sf__Eventbrite_Event__c'] as string | null })),
+  ].filter((r): r is { contact: string; event: string | null } => !!r.contact);
+  const registrantIds = new Set(registrantRows.map((r) => r.contact));
+  const recentRegistrantIds = new Set(registrantRows
+    .filter((r) => (r.event && eventStart.get(r.event) ? eventStart.get(r.event)! : '').slice(0, 10) >= cfg.peopleActiveSinceISO)
+    .map((r) => r.contact));
+
   // Inclusion sets.
-  const donorOf = (o: Row) => (o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c']) as string | null;
+  const donorOf = (o: Row) => ((o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c']) as string | null)
+    ?? personNamed.get(o['AccountId'] as string) ?? null;
   const inc: InclusionInput = {
     donorIds: new Set([...opportunities.map(donorOf).filter((x): x is string => !!x), ...cnpDonorIds]),
     recentDonorIds: new Set([...opportunities
       .filter((o) => (o['CloseDate'] as string) >= cfg.peopleActiveSinceISO)
       .map(donorOf).filter((x): x is string => !!x), ...cnpRecentDonorIds]),
     memberSummaries,
-    registrantIds: new Set(registrations.map((r) => r['funraise__Registrant__c'] as string).filter(Boolean)),
+    registrantIds, recentRegistrantIds,
     volunteerIds: new Set(volunteerHours.map((v) => v['GW_Volunteers__Contact__c'] as string).filter(Boolean)),
     affiliatedIds: new Set(affiliations.map((a) => a['npe5__Contact__c'] as string).filter(Boolean)),
     recentActivityIds: new Set(tasksRecent.map((t) => t['WhoId'] as string).filter(Boolean)),
   };
 
-  const orgAccountIds = new Set(accounts
-    .filter((a) => a['npe01__SYSTEM_AccountType__c'] !== 'One-to-One Individual')
-    .map((a) => a['Id'] as string));
   // ---- Affiliations: one item per person-at-organization tenure (spec: affiliation model) ----
   const orgAffiliations = affiliations.filter((a) =>
     a['npe5__Contact__c'] && a['npe5__Organization__c'] && orgAccountIds.has(a['npe5__Organization__c'] as string));
@@ -131,7 +163,7 @@ export async function runTransform(args: string[]): Promise<number> {
   const overrides: Map<string, EmailOverride> = existsSync(overridesPath)
     ? parseEmailKindOverrides(readFileSync(overridesPath, 'utf8')) : new Map();
 
-  const rollups = { map: donorRollups(opportunities, cnpUnique), cnpUnique,
+  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed), cnpUnique,
     overlap: cnp.length - cnpUnique.length };
 
   const warnings: string[] = [];
@@ -148,11 +180,13 @@ export async function runTransform(args: string[]): Promise<number> {
     const a = String(x['Id']), b = String(y['Id']);
     return a < b ? -1 : a > b ? 1 : 0;
   };
+  const placeholderDonorSfIds = new Set(cfg.placeholderDonorSfIds ?? []);
   const sortedContacts = [...contacts].sort(byId);
   for (const c of sortedContacts) {
+    const id = c['Id'] as string;
+    if (placeholderDonorSfIds.has(id)) continue; // "Anonymous Person" is not a Person
     const board = classifyContact(c, inc, cfg.peopleActiveSinceISO);
     if (!board) continue;
-    const id = c['Id'] as string;
     boardOf.set(id, board);
     const refs: AffiliationRef[] = (affiliationsByContact.get(id) ?? []).map((a) => ({
       sfId: a['Id'] as string, orgSfId: a['npe5__Organization__c'] as string, primary: a['npe5__Primary__c'] === true,
@@ -285,6 +319,8 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(p);
   }
   for (const a of accounts) {
+    if (personNamed.has(a['Id'] as string)) continue; // folded into its Contact above
+    if (placeholderDonorSfIds.has(a['Id'] as string)) continue;
     const enriched = enrichment.get(a['Id'] as string);
     const billingKey = normalizeAddress({ street: a['BillingStreet'] as string, city: a['BillingCity'] as string,
       state: a['BillingState'] as string, zip: a['BillingPostalCode'] as string });
@@ -299,18 +335,31 @@ export async function runTransform(args: string[]): Promise<number> {
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
-  for (const o of opportunities) payloads.push(opportunityToPayload(o, { termCols, actingFor: attributedOpps.get(o['Id'] as string) ?? null }));
-  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t));
+  for (const o of opportunities) {
+    payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
+      actingFor: attributedOpps.get(o['Id'] as string) ?? null }));
+  }
+  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 
   const pledgeCols = pledgeColumnsBySubscription(pledges);
   for (const s of subscriptions) {
     const p = subscriptionToPayload(s);
     if (p) payloads.push({ ...p, columns: { ...p.columns, ...(pledgeCols.get(p.sfId) ?? {}) } });
   }
-  for (const e of events) { const p = eventToPayload(e); if (p) payloads.push(p); }
+  for (const e of events) { const p = eventToPayload(e, cfg.cutoverDateISO); if (p) payloads.push(p); }
   for (const r of registrations) {
     const att = attributedRegs.get(r['Id'] as string);
     payloads.push(registrationToPayload(r, { actingFor: att?.affiliationSfId ?? null, attribution: att?.attribution }));
+  }
+  const ebEventById = new Map(ebEvents.map((e) => [e['Id'] as string, e]));
+  const ebEventsWithAttendees = new Set(ebAttendees.map((a) => a['eb4sf__Eventbrite_Event__c'] as string));
+  for (const e of ebEvents) {
+    const p = eventbriteEventToPayload(e, { hasAttendees: ebEventsWithAttendees.has(e['Id'] as string) });
+    if (p) payloads.push(p);
+  }
+  for (const a of ebAttendees) {
+    const p = eventbriteAttendeeToPayload(a, ebEventById.get(a['eb4sf__Eventbrite_Event__c'] as string));
+    if (p) payloads.push(p);
   }
   for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));
@@ -343,6 +392,10 @@ export async function runTransform(args: string[]): Promise<number> {
       ? `donations peak active projected at ${plan.peakActive} items (> 10,000)`
       : `${board} projected at ${n} items (> 10,000)`);
 
+  if (personNamed.size > 0) {
+    warnings.push(`people: ${personNamed.size} person-named account${personNamed.size === 1 ? '' : 's'} ` +
+      `(blank NPSP type, sole Contact shares the name) folded into their Contact instead of Organizations`);
+  }
   if (rollups.overlap > 0) {
     warnings.push(`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`);
   }

@@ -10,6 +10,9 @@ async function seed(recon: Record<string, number>) {
   await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
     { board: 'organizations', sfId: 'a1', name: 'Acme', columns: { 'SF ID': 'a1' } },
     { board: 'donations', sfId: 'o1', name: 'Gift', columns: { 'Funraise ID': 'f1', 'Amount': '10.10' } },
+    { board: 'event-registrations', sfId: 'fr1', name: 'Ada', columns: { 'Source': { label: 'Funraise' } } },
+    { board: 'event-registrations', sfId: 'at1', name: 'Quynh', columns: { 'Source': { label: 'Eventbrite' } } },
+    { board: 'event-registrations', sfId: 'at2', name: 'Vol', columns: { 'Source': { label: 'Eventbrite' } } },
   ]);
   await writeJson(dataPath('transform', 'report.json'), { payloadCounts: {}, assertions: [], warnings: [] });
   // config override for the test: write a local svbc.json copy with tiny recon figures
@@ -21,6 +24,9 @@ async function seed(recon: Record<string, number>) {
   const l = new Ledger(); await l.load();
   await l.recordSuccess({ sfId: 'a1', board: 'organizations', itemId: '1' });
   await l.recordSuccess({ sfId: 'o1', board: 'donations', itemId: '2' });
+  await l.recordSuccess({ sfId: 'fr1', board: 'event-registrations', itemId: '3' });
+  await l.recordSuccess({ sfId: 'at1', board: 'event-registrations', itemId: '4' });
+  await l.recordSuccess({ sfId: 'at2', board: 'event-registrations', itemId: '5' });
 }
 
 describe('runValidate', () => {
@@ -28,7 +34,7 @@ describe('runValidate', () => {
 
   it('passes when ledger covers payloads and reconciliation matches', async () => {
     await seed({ funraiseOpportunities: 1, funraiseTotalAmountCents: 1010,
-      subscriptionsAll: 0, eventRegistrations: 0, organizations: 1 });
+      subscriptionsAll: 0, eventRegistrations: 1, eventbriteAttendees: 2, organizations: 1 });
     expect(await runValidate([])).toBe(0);
     const result = await readJson<{ ok: boolean }>(dataPath('validate', 'result.json'));
     expect(result.ok).toBe(true);
@@ -37,8 +43,18 @@ describe('runValidate', () => {
 
   it('fails on a reconciliation mismatch, printing both figures', async () => {
     await seed({ funraiseOpportunities: 99, funraiseTotalAmountCents: 1010,
-      subscriptionsAll: 0, eventRegistrations: 0, organizations: 1 });
+      subscriptionsAll: 0, eventRegistrations: 1, eventbriteAttendees: 2, organizations: 1 });
     expect(await runValidate([])).toBe(1);
+  });
+
+  it('reconciles Funraise registrations and Eventbrite attendees separately on the shared board', async () => {
+    await seed({ funraiseOpportunities: 1, funraiseTotalAmountCents: 1010,
+      subscriptionsAll: 0, eventRegistrations: 3, eventbriteAttendees: 0, organizations: 1 });
+    expect(await runValidate([])).toBe(1);
+    const result = await readJson<{ checks: { name: string; ok: boolean }[] }>(dataPath('validate', 'result.json'));
+    const byName = new Map(result.checks.map((c) => [c.name, c.ok]));
+    expect(byName.get('recon-registrations')).toBe(false);
+    expect(byName.get('recon-eventbrite-attendees')).toBe(false);
   });
 
   it('fails on an un-written link to a migrated target, passes once the link is recorded', async () => {

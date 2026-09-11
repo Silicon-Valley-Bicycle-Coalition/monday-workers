@@ -22,7 +22,7 @@ describe('affiliationToPayload', () => {
     expect(p.board).toBe('affiliations');
     expect(p.sfId).toBe('af1');
     expect(p.name).toBe('Ada Lovelace @ Acme');
-    expect(p.columns['Role']).toBe('Sustainability Lead');
+    expect(p.columns['Affiliation Role']).toBe('Sustainability Lead');
     expect(p.columns['Status']).toEqual({ label: 'Current' });
     expect(p.columns['Start']).toEqual({ date: '2019-03-01' });
     expect(p.columns['End']).toBeNull();

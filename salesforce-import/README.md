@@ -111,7 +111,7 @@ plan's Decisions Needed): Sponsorship/Grants/Contracts Opportunity history (3,61
 records — the record-type count query proved these are real, not greenfield); volunteer history
 2014–2020 as historical records; the recent ~2-year slice of Tasks/EmailMessages onto the Donors'
 Activities board; `npe5__Affiliation__c` as its own **Affiliations** board (one item per
-person-at-organization tenure: Role, Status, Start/End, Primary, and the Work Email that
+person-at-organization tenure: Affiliation Role, Status, Start/End, Primary, and the Work Email that
 address-classification assigns to it, with its own consent status); People carry **Personal
 Email** and **Household Email**, each with its own consent status, plus **Household Primary** for a
 shared address; Donations and Event Registrations carry **Acting for** (→ Affiliations) and
@@ -142,6 +142,14 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
 * **Person/organization split** — `npe01__SYSTEM_AccountType__c`: `One-to-One Individual` (49,749)
   → People board, blank (2,090) → Organizations board. Ignore Account Record Type — unused, zero
   records. See `docs/03-monday-migration-mapping.md` §5 (private planning repo).
+  **Exception (2026-09-08):** NPSP only stamps that field when its own trigger creates the Account,
+  so blank-type Accounts created first and given a Contact afterwards — the 2013 bulk load and
+  Click & Pledge's Account-then-Contact writes — are people with no stamp. `transform` folds a
+  blank-type Account into its Contact when every attached Contact shares the Account's name
+  (`personNamedAccountIds`, 204 in the live org, 172 of them `C&P Online`): no Organization item,
+  and gifts/links booked against the Account re-point at the person. `enrich` skips them too.
+  Blank-type Accounts with no Contact, or a differently-named one ("Smith Family"), still land on
+  Organizations — a human review list is the follow-up if that residue matters.
 * **Partner-type reconciliation** — cascade `Type` → `Type_2__c` → `Industry`; ~1,212 organizations
   have none of the three set and need the Pre-Migration Deliverables' manual classification pass
   completed before the script can consume it.
@@ -164,7 +172,7 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   see `docs/20-donation-history-architecture.md` (private planning repo) for the full design,
   the verified archive-behavior facts, and what maintains the rollups post-migration.
   **(2) The People inclusion rule is written:** any contact with a
-  real relationship — ever a donor, member, event registrant, volunteer, Funraise supporter, or
+  real relationship — ever a donor, member, event registrant (Funraise, or checked in via Eventbrite), volunteer, Funraise supporter, or
   org-affiliated (~12–15k of 50,086) — split as People (live, active since ~2019) + People
   (Historical). Email-list-only contacts stay in Mailchimp (the consent system of record) and the
   backup archive, not Monday. Original sizing queries:
@@ -187,18 +195,50 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   [sanjosespotlight.com](https://sanjosespotlight.com/); Santa Clara/Cupertino/Campbell/Saratoga →
   [civicdigest.org](https://civicdigest.org); everywhere else →
   [localnewsmatters.org](https://localnewsmatters.org/). Apply to both Donors and Events.
+* **Events from both platforms on one pair of boards** (2026-09-08, per `migration-plan.md`'s
+  Eventbrite addendum) — Events ← `funraise__Fundraising_Event__c` **and** `eb4sf__Eventbrite_Event__c`
+  (the "Events Made Easy" managed package, ~284 events since 2025); Event Registrations ←
+  `funraise__Fundraising_Event_Registration__c` **and** `eb4sf__Eventbrite_Attendee__c` (~6.3k). A
+  **Source** status column (Funraise / Eventbrite) tells the rows apart and the platform ids ride
+  along as text (**Funraise Event ID**, **Eventbrite ID**, **Eventbrite Attendee ID**) so the
+  post-migration Eventbrite Worker can upsert idempotently. Shared closed vocabularies: **Event
+  Status** (Upcoming / Completed / Canceled / Draft), **Program** from the Eventbrite organizer
+  account suffix (Public / Volunteering / Bike Parking / Group Rides / Private, Fundraiser for
+  Funraise), **Attendance** (Registered / Attended / No Show / Canceled — mirrors the production
+  Event Participation board; the import never sets No Show) and **Role** (Volunteer for the
+  volunteering organizer's events, else Participant). Dropped: the two Funraise test events,
+  Eventbrite drafts nobody registered for, and attendees Eventbrite itself deleted (`validate`
+  adds those back when reconciling `eventbriteAttendees`). **People inclusion counts a Funraise
+  registration or an Eventbrite check-in, not a bare Eventbrite registration** (decided 2026-09-08
+  after the real transform measured 4,308 Eventbrite Contacts pushing both People boards past the
+  10k ceiling — only 859 of them ever checked in; the rest are free-class no-shows and
+  cancellations, treated like email-list-only contacts). A counted registration for an event on or
+  after `peopleActiveSinceISO` makes the Person *live*, not just included. Attendee rows land on
+  Event Registrations either way; the Attendee link is skipped at load when the Contact isn't a Person.
 * **Field mapping** — Donations ← Opportunity, Recurring Gifts ← `funraise__Subscription__c`
   (Pledge folds in as columns — confirmed 1:1 duplicate, do not create a separate Pledges board),
-  People ← Contact, Organizations ← Account, Event Registrations ←
-  `funraise__Fundraising_Event_Registration__c`. Full column-by-column mapping, status-value
+  People ← Contact, Organizations ← Account, Events / Event Registrations ← both event platforms
+  (previous bullet). Full column-by-column mapping, status-value
   mapping (`Posted` is the real success stage, not `Closed Won`), and the do-not-migrate list
   (payment-method PII, `funraise__Error__c`, `_Display__c` formula fields, test events, the
   `Redacted` subscription) are all in
   `docs/03-monday-migration-mapping.md` (private planning repo) — treat
   that document as the authoritative field mapping for this script, not a summary of it.
-* **Double the Donation / 360MatchPro fields** — identify the actual custom fields 360MatchPro
-  created on Contact/Opportunity (company name, match status, likely match amount — unconfirmed)
-  and carry them into Donations/Donors as **Employer Match Status** and **Employer Name**.
+* **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
+  Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
+  Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and
+  `Employer Name` on People comes from `Employer__c` (10,354 populated), not `dtd__company__c`.
+  Three things this script does so the post-cutover `benevity-import` Worker has columns to
+  write into: (1) a **Matched By** connect column (→ Organizations) on Donations, filled from
+  `AccountId` on every Matching Donation whose Account is an organization — the Donor link takes
+  the Primary Contact, so before this the paying company was dropped on the 2,182 matched gifts
+  that have one; (2) the placeholder "Anonymous Person" Contact and its household Account
+  (`placeholderDonorSfIds` in config) are not emitted as items, and the 741 Opportunities that
+  point at them migrate as Anonymous Donor = checked with no Donor link (and no fallback to the
+  Account); (3) a blank **Benevity Transaction ID** text column, declared on every donation
+  payload so `load` creates it — Salesforce never stored the id, so the Worker's first upload
+  must be the first disbursement after the data freeze. See the plan's Benevity section and
+  `../benevity-import/README.md`.
 
 ## Write failures during the run
 

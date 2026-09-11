@@ -12,7 +12,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
   'Personal Email Consent': 'status', 'Household Email Consent': 'status', 'Work Email Consent': 'status',
-  'Household Primary': 'checkbox', 'Primary': 'checkbox', 'Role': 'text', 'Attribution': 'status',
+  'Household Primary': 'checkbox', 'Primary': 'checkbox', 'Affiliation Role': 'text', 'Attribution': 'status',
   'Organizational Giving': 'numbers', 'Attributed Giving': 'numbers',
   'Attributed Gift Count': 'numbers', 'Last Attributed Gift': 'date',
   'Membership Status': 'status', 'Membership Tier': 'status',
@@ -20,19 +20,23 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
   'Amount': 'numbers', 'Date': 'date', 'Fiscal Year Ending': 'text', 'Status': 'status', 'Gift Type': 'text',
   'Funraise ID': 'link', 'Funraise Profile': 'link', 'Anonymous Donor': 'checkbox',
+  'Benevity Transaction ID': 'text',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
   'Partner Type': 'text', 'Website': 'link',
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',
   'Next Payment': 'date', 'Designation': 'text', 'Company Match': 'checkbox', 'Match Employer': 'text',
   'Pledge Amount': 'numbers', 'Received Amount': 'numbers',
   'Attendee Name': 'text', 'Attendee Email': 'text', 'Ticket Amount': 'numbers',
-  'Deductible Amount': 'numbers', 'Attended': 'checkbox',
+  'Deductible Amount': 'numbers', 'Ticket Type': 'text', 'Eventbrite Attendee ID': 'text',
+  'Source': 'status', 'Attendance': 'status', 'Role': 'status', 'Event Status': 'status', 'Program': 'status',
+  'Venue': 'text', 'Tickets Sold': 'numbers', 'Eventbrite ID': 'text', 'Eventbrite URL': 'link',
+  'Funraise Event ID': 'text',
   'Type': 'text', 'Start': 'date', 'End': 'date', 'Active': 'checkbox',
   'Job': 'text', 'Hours': 'numbers', 'Historical': 'checkbox',
   'Activity Type': 'status', 'Owner': 'text', 'From': 'text', 'To': 'text',
   'Employer Name': 'text', 'Salesforce Owner': 'text',
 };
-export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Recurring Gift', 'Campaign',
+export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Matched By', 'Recurring Gift', 'Campaign',
   'Attendee', 'Event', 'Payment', 'Volunteer', 'Person', 'Acting for', 'Affiliations']);
 // Closed-vocabulary status columns: passed as create_column `defaults` so Monday seeds the
 // column with exactly these labels. Without this, a new status column gets Monday's stock
@@ -47,6 +51,15 @@ export const STATUS_LABELS: Record<string, string[]> = {
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
   'Activity Type': ['Task'],
+  // Events / Event Registrations — shared by the Funraise and Eventbrite transforms (boards.ts).
+  // Attendance mirrors the production Event Participation board's Attended/Registered/No Show,
+  // plus Canceled for Eventbrite's Not Attending; No Show is never set by the import (the data
+  // can't tell a no-show from a registrant at an event that never took check-in) — staff set it.
+  'Source': ['Funraise', 'Eventbrite'],
+  'Event Status': ['Upcoming', 'Completed', 'Canceled', 'Draft'],
+  'Program': ['Public', 'Volunteering', 'Bike Parking', 'Group Rides', 'Private', 'Fundraiser'],
+  'Attendance': ['Registered', 'Attended', 'No Show', 'Canceled'],
+  'Role': ['Participant', 'Volunteer'],
 };
 // "Status" isn't in STATUS_LABELS above because the title is reused across boards with
 // unrelated vocabularies: Recurring Gifts and Volunteers/Activities pass raw values through
@@ -81,6 +94,7 @@ const CURRENCY_DEFAULTS = JSON.stringify({ unit: { symbol: '$', direction: 'left
 export const CONNECT_TARGETS: Record<string, string[]> = {
   'Donor': ['people-live', 'people-historical', 'organizations'],
   'Organization': ['organizations'],
+  'Matched By': ['organizations'],
   'Recurring Gift': ['recurring-gifts'],
   'Campaign': ['campaigns'],
   'Attendee': ['people-live', 'people-historical'],

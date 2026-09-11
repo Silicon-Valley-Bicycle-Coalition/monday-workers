@@ -15,7 +15,9 @@ const emailCol = (e: string | null) => (e ? { email: e, text: e } : null);
 
 export function affiliationToPayload(a: Record<string, unknown>, ctx: AffiliationContext): ItemPayload {
   const columns: Record<string, unknown> = {
-    'Role': (a['npe5__Role__c'] ?? '') as string,
+    // 'Affiliation Role', not 'Role': column titles are global in load/boards.ts, and Event
+    // Registrations already use 'Role' as a Participant / Volunteer status column.
+    'Affiliation Role': (a['npe5__Role__c'] ?? '') as string,
     'Status': { label: affiliationStatus(a['npe5__Status__c']) },
     'Start': dateCol(a['npe5__StartDate__c'] as string | null),
     'End': dateCol(a['npe5__EndDate__c'] as string | null),

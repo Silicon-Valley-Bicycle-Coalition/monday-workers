@@ -95,8 +95,18 @@ export async function runValidate(args: string[]): Promise<number> {
     : 0;
   recCheck('recon-subscriptions',
     payloads.filter((p) => p.board === 'recurring-gifts').length + redactedSkips, r['subscriptionsAll']);
+  // Both platforms share event-registrations; reconcile each against its own Salesforce object.
+  const sourceOf = (p: ItemPayload) => (p.columns['Source'] as { label?: string } | undefined)?.label;
+  const registrations = payloads.filter((p) => p.board === 'event-registrations');
   recCheck('recon-registrations',
-    payloads.filter((p) => p.board === 'event-registrations').length, r['eventRegistrations']);
+    registrations.filter((p) => sourceOf(p) === 'Funraise').length, r['eventRegistrations']);
+  // Transform drops attendees Eventbrite itself deleted; add them back so the figure matches the org.
+  const deletedAttendees = existsSync(dataPath('extract', 'eb4sf_attendees.ndjson'))
+    ? (await readNdjson<Record<string, unknown>>(dataPath('extract', 'eb4sf_attendees.ndjson')))
+        .filter((a) => a['eb4sf__Status__c'] === 'Deleted').length
+    : 0;
+  recCheck('recon-eventbrite-attendees',
+    registrations.filter((p) => sourceOf(p) === 'Eventbrite').length + deletedAttendees, r['eventbriteAttendees']);
   recCheck('recon-organizations',
     payloads.filter((p) => p.board === 'organizations').length, r['organizations']);
 
