@@ -1,7 +1,8 @@
 # donor-portal
 
 **Status:** Live — v1 deployed (login + read-only donation history and member discounts). v2 in
-development.
+development. Donation history is date-gated (see "v7 — Clean-start donation history"): hidden
+until 2027-01-01, and from then on showing only gifts dated 2026-01-01 or later.
 **Priority:** Post-migration, non-blocking on the October cutover.
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript, D1 (tokens/sessions and queued change requests — Monday stays the
@@ -508,6 +509,39 @@ before v6 code will serve any request. Copy them from this repo's `config/svbc.j
 placeholder values are fine; the feature then ships gated off) before deploying v6 code over an
 older config.
 
+## v7 — Clean-start donation history
+
+Decided 2026-09-11: rather than show migrated Salesforce giving history (which is already
+truncated at the Donations board's archive window — gifts before July 2025 are archived in place
+and invisible to the portal's board queries), the portal starts clean. Two calendar-date keys in
+the `donations` stanza, both required, each `"YYYY-MM-DD"` or `null`:
+
+* **`historyStartISO`** — the gift floor. Every donation read in the Monday client drops gifts
+  dated earlier, and undated gifts (they can't be shown to be on or after the floor), in the same
+  strict spirit as `countableStatuses`. So portal history, tax-letter year listings and totals,
+  the staff letter button, and the January letter sweep all agree without their own logic. With
+  a floor set, the dashboard's total is the sum of the gifts shown rather than the Lifetime
+  Giving rollup, so it never exceeds the rows under it. `null` means no floor. SVBC:
+  `"2026-01-01"`.
+* **`historyVisibleFromISO`** — the launch gate. The Donations tab renders only once the current
+  UTC date reaches it; until then the portal home never queries the Donations board at all, and
+  a donor's section shows name, membership, and whichever other tabs are enabled (a lone
+  Volunteer or Events tab gets a heading instead of a tab label). `null` means never shown —
+  the default for a fresh fork, and how this ships ahead of launch so the rest of the portal can
+  be tested. Date-gated rather than a boolean so January needs no deploy. SVBC: `"2027-01-01"`,
+  the first day of the first full calendar year after the clean start. `config/local.json` sets a
+  past date so the tab is visible in local testing.
+
+The January letter cron skips (`year-before-history-floor`) when the floor is at or after
+January 1 of the year following its target year — SVBC's first automatic letters are for 2026,
+sent January 2027. Letter routes stay reachable throughout; with the SVBC floor they simply list
+no completed years until 2027. Lifetime Giving, First Gift, and Gift Count on the Donor item are
+unaffected — they remain full-history stewardship rollups for staff.
+
+**Upgrading an existing deployment (forks included):** config validation requires both keys to
+*exist*. Copy them from this repo's `config/svbc.json` — `null` for both keeps the previous
+always-on, no-floor behavior... except that `historyVisibleFromISO: null` hides the tab, so a
+fork that wants history visible immediately should set it to any past date.
 
 ## Future candidates
 
