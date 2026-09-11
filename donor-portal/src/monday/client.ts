@@ -2,6 +2,7 @@ import type {
   ChangeRequestColumns,
   DiscountOrganization,
   DonationRecord,
+  DonationsConfig,
   DonorContactInfo,
   DonorMatch,
   DonorPortalData,
@@ -15,6 +16,7 @@ import type {
   VolunteerShift,
 } from '../types';
 import type { Locale } from '../i18n/locales';
+import { parseAmount as parseAmountOrNull } from '../amounts';
 
 // Pinned so Monday's quarterly rolling default can't change query semantics under a deployed
 // Worker — same pin as the other Workers in this repo (e.g. funraise-sync's client).
@@ -78,6 +80,8 @@ export interface MondayClient {
   listDonorIdsWithDonationsInYear(year: number): Promise<string[]>;
 }
 
+export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'historyStartISO'>;
+
 export class HttpMondayClient implements MondayClient {
   constructor(
     private apiUrl: string,
@@ -86,11 +90,13 @@ export class HttpMondayClient implements MondayClient {
     private donorsBoardId: number,
     private donationsBoardId: number,
     private organizationsBoardId: number,
-    // Donations-board status labels that count as real gifts (config donations.countableStatuses,
-    // e.g. ['Received', 'Received (Historical)']). Every donation read filters on these at this
-    // layer, so no consumer — portal history, letter totals, the letter-cron sweep — can ever see
-    // a Failed or Pending item as real giving.
-    private countableDonationStatuses: string[],
+    // countableStatuses: Donations-board status labels that count as real gifts (config
+    // donations.countableStatuses, e.g. ['Received', 'Received (Historical)']). historyStartISO:
+    // the calendar-date floor (config donations.historyStartISO), or null for none. Every
+    // donation read filters on both at this layer, so no consumer — portal history, letter
+    // totals, the letter-cron sweep — can ever see a Failed or Pending item, or a pre-floor
+    // gift, as real giving.
+    private donations: DonationReadOptions,
     // null until an operator configures pledges.boardId + columns (the feature is gated on
     // pledgesEnabled, so routes never call getPledgesForDonor while this is null).
     private pledges: { boardId: number; columns: PledgeColumns } | null = null,
@@ -206,13 +212,20 @@ export class HttpMondayClient implements MondayClient {
     }
 
     const donations = await this.getDonationsForDonor(donorItemId);
+    // With a history floor, the Lifetime Giving rollup would exceed the rows the donor can see,
+    // so the total becomes the sum of the kept gifts. Without one, the rollup column is the
+    // total, as before.
+    const totalDonated =
+      this.donations.historyStartISO === null
+        ? columnText(donorItem, this.columns.dollarDonated)
+        : String(donations.reduce((sum, d) => sum + (parseAmountOrNull(d.amount) ?? 0), 0));
 
     return {
       id: donorItem.id,
       name: donorItem.name,
       membershipStatus: columnText(donorItem, this.columns.membershipStatus),
       membershipTier: columnText(donorItem, this.columns.membershipTier),
-      totalDonated: columnText(donorItem, this.columns.dollarDonated),
+      totalDonated,
       donations,
       membershipExpiry: columnText(donorItem, this.columns.membershipExpiry),
     };
@@ -301,9 +314,13 @@ export class HttpMondayClient implements MondayClient {
     );
     // Only countable statuses (strict: an item with a blank/unknown status is dropped too —
     // for money that ends up on a tax letter, "not provably received" means "doesn't count").
-    const countable = new Set(this.countableDonationStatuses);
+    // Then the history floor, applied the same strict way: an undated gift can't be shown to
+    // be on or after the floor, so it's dropped whenever one is set.
+    const countable = new Set(this.donations.countableStatuses);
+    const floor = this.donations.historyStartISO;
     return items
       .filter((item) => countable.has(columnText(item, this.columns.donationStatus)))
+      .filter((item) => floor === null || columnText(item, this.columns.donationDate) >= floor)
       .map((item) => ({
         amount: columnText(item, this.columns.donationAmount),
         date: columnText(item, this.columns.donationDate),
@@ -674,9 +691,14 @@ export class HttpMondayClient implements MondayClient {
     const donorIds = new Set<string>();
     // Same status filter as getDonationsForDonor: a donor whose only gifts in the year are
     // Failed/Pending must not be swept into the letter run.
-    const countable = new Set(this.countableDonationStatuses);
+    const countable = new Set(this.donations.countableStatuses);
+    const floor = this.donations.historyStartISO;
     for (const item of allItems) {
-      if (!columnText(item, this.columns.donationDate).startsWith(`${year}-`)) continue;
+      const date = columnText(item, this.columns.donationDate);
+      if (!date.startsWith(`${year}-`)) continue;
+      // Same floor as getDonationsForDonor, so a mid-year floor can't earn a letter for gifts
+      // the donor's own letter page would omit.
+      if (floor !== null && date < floor) continue;
       if (!countable.has(columnText(item, this.columns.donationStatus))) continue;
       const link = (item.column_values ?? []).find((c) => c.id === this.columns.donationDonorLink);
       for (const donorId of link?.linked_item_ids ?? []) {
