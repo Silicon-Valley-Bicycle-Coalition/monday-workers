@@ -10,6 +10,10 @@ export interface Config {
   // How many fiscal years of donations stay active (unarchived) on the Donations board;
   // everything older is archived in place during load. 2 = current + previous FY.
   donationsActiveFiscalYears: number;
+  // Domains that mean "a person's own mailbox", never an organization's. A Secondary_Email__c on
+  // one of these becomes Household Email; anything else that isn't an affiliated org's domain
+  // goes to the human review file (see transform/emails.ts).
+  consumerEmailDomains?: string[];
   // Salesforce ids of placeholder donor records (SVBC: the "Anonymous Person" Contact and its
   // household Account). Gifts pointing at them migrate as Anonymous Donor = checked with no
   // Donor link, and the records themselves are not emitted as People/Organizations items.

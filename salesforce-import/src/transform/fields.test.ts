@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution, consentLabel } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -33,15 +33,15 @@ describe('collapseEmail', () => {
 
 describe('consentColumns', () => {
   const consent = new Map([['a@b.c', 'unsubscribed'], ['w@b.c', 'subscribed']]);
-  it('labels each address from the Mailchimp map on its own — consent is per email, not per person', () => {
+  it('labels each address on its own — consent is per email, not per person', () => {
     expect(consentColumns('a@b.c', 'w@b.c', consent)).toEqual({
-      'Email Consent': { label: 'Unsubscribed' }, 'Secondary Email Consent': { label: 'Subscribed' } });
+      'Personal Email Consent': { label: 'Unsubscribed' }, 'Household Email Consent': { label: 'Subscribed' } });
     expect(consentColumns('missing@x.y', 'a@b.c', consent)).toEqual({
-      'Email Consent': { label: 'Not in Mailchimp' }, 'Secondary Email Consent': { label: 'Unsubscribed' } });
+      'Personal Email Consent': { label: 'Not in Mailchimp' }, 'Household Email Consent': { label: 'Unsubscribed' } });
   });
-  it('keeps the primary column never blank, but leaves the secondary blank when there is no second address', () => {
-    expect(consentColumns(null, null, consent)).toEqual({ 'Email Consent': { label: 'Not in Mailchimp' } });
-    expect(consentColumns('a@b.c', null, consent)).toEqual({ 'Email Consent': { label: 'Unsubscribed' } });
+  it('keeps the personal column never blank, but leaves household blank when there is no household address', () => {
+    expect(consentColumns(null, null, consent)).toEqual({ 'Personal Email Consent': { label: 'Not in Mailchimp' } });
+    expect(consentColumns('a@b.c', null, consent)).toEqual({ 'Personal Email Consent': { label: 'Unsubscribed' } });
   });
 });
 
@@ -147,5 +147,14 @@ describe('funraise links', () => {
   it('returns null for a blank id', () => {
     expect(funraiseTransactionLink('')).toBeNull();
     expect(funraiseSupporterLink(undefined)).toBeNull();
+  });
+});
+
+describe('consentLabel', () => {
+  const consent = new Map([['a@b.c', 'cleaned']]);
+  it('capitalizes the Mailchimp status and defaults to Not in Mailchimp', () => {
+    expect(consentLabel('a@b.c', consent)).toBe('Cleaned');
+    expect(consentLabel('x@y.z', consent)).toBe('Not in Mailchimp');
+    expect(consentLabel(null, consent)).toBe('Not in Mailchimp');
   });
 });

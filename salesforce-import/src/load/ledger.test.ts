@@ -70,4 +70,13 @@ describe('Ledger', () => {
     expect(b.has('o1', 'donations')).toBe(true); // success untouched
     expect(b.failures().map((f) => f.board)).toEqual(['archive']);
   });
+
+  it('hasAnyFor reports whether any item has ever landed successfully on a board', async () => {
+    const a = new Ledger(); await a.load();
+    expect(a.hasAnyFor('people-live')).toBe(false);
+    await a.recordSuccess({ sfId: 'c1', board: 'people-live', itemId: '111' });
+    const b = new Ledger(); await b.load();
+    expect(b.hasAnyFor('people-live')).toBe(true);
+    expect(b.hasAnyFor('organizations')).toBe(false);
+  });
 });

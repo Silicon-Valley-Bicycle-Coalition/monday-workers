@@ -4,6 +4,16 @@ import { loadConfig } from '../config.js';
 
 describe('buildExtracts', () => {
   const byName = new Map(buildExtracts(loadConfig()).map((e) => [e.name, e]));
+  it('pulls the Affiliation fields the Affiliations board needs', () => {
+    const affil = buildExtracts(loadConfig()).find((e) => e.name === 'affiliations')!;
+    const soql = affil.soql.replace(/\s+/g, ' ');
+    for (const field of ['npe5__Role__c', 'npe5__Status__c', 'npe5__StartDate__c', 'npe5__EndDate__c',
+      'npe5__Primary__c', 'npe5__Description__c', 'CreatedDate', 'CreatedBy.Name',
+      'LastModifiedDate', 'LastModifiedBy.Name']) {
+      expect(soql, field).toContain(field);
+    }
+    expect(affil.backupOnly).toBeFalsy();
+  });
   it('promotes the Eventbrite (eb4sf) events and attendees to real extracts with the fields transform reads', () => {
     const events = byName.get('eb4sf_events')!;
     const attendees = byName.get('eb4sf_attendees')!;

@@ -30,6 +30,7 @@ const CATEGORY = (board: string): string | null =>
   : board.startsWith('people-') ? 'people'
   : board === 'donations' ? 'donations'
   : board === 'event-registrations' ? 'registrations'
+  : board === 'affiliations' ? 'affiliations'
   : null;
 
 export async function runValidate(args: string[]): Promise<number> {

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
 import { dataPath, readNdjson, writeJson, writeNdjson } from '../artifacts.js';
@@ -6,7 +7,7 @@ import { GeoCache } from '../geocode/cache.js';
 import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
 import type { EnrichmentRow } from '../enrich/index.js';
 import { normalizeAddress } from '../geocode/normalize.js';
-import { setStaffMatcher } from './fields.js';
+import { collapseEmail, setStaffMatcher } from './fields.js';
 import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
@@ -18,9 +19,20 @@ import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
   eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
   taskToPayload } from './boards.js';
+import { DEFAULT_CONSUMER_DOMAINS, websiteDomain } from './emailKind.js';
+import { assignEmails, parseEmailKindOverrides, type AffiliationRef, type EmailOverride } from './emails.js';
+import { affiliationToPayload, affiliationStatus } from './affiliations.js';
+import { AffiliationIndex, attributeOpportunity, attributeRegistration, attributionRollups,
+  type AffiliationEntry } from './attribution.js';
 
 type Row = Record<string, unknown>;
 const load = (name: string) => readNdjson<Row>(dataPath('extract', `${name}.ndjson`));
+
+// RFC 4180: quote a field when it holds a comma, quote, or newline; double any quotes inside.
+const csvField = (v: unknown): string => {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 
 export async function runTransform(args: string[]): Promise<number> {
   const cfg = loadConfig();
@@ -129,42 +141,182 @@ export async function runTransform(args: string[]): Promise<number> {
     recentActivityIds: new Set(tasksRecent.map((t) => t['WhoId'] as string).filter(Boolean)),
   };
 
-  const affiliationOrgsByContact = new Map<string, string[]>();
-  for (const a of affiliations) {
-    const contactId = a['npe5__Contact__c'] as string | null;
-    const orgId = a['npe5__Organization__c'] as string | null;
-    if (!contactId || !orgId || !orgAccountIds.has(orgId)) continue;
-    if (!affiliationOrgsByContact.has(contactId)) affiliationOrgsByContact.set(contactId, []);
-    affiliationOrgsByContact.get(contactId)!.push(orgId);
+  // ---- Affiliations: one item per person-at-organization tenure (spec: affiliation model) ----
+  const orgAffiliations = affiliations.filter((a) =>
+    a['npe5__Contact__c'] && a['npe5__Organization__c'] && orgAccountIds.has(a['npe5__Organization__c'] as string));
+  const affiliationsByContact = new Map<string, Record<string, unknown>[]>();
+  for (const a of orgAffiliations) {
+    const contactId = a['npe5__Contact__c'] as string;
+    (affiliationsByContact.get(contactId) ?? affiliationsByContact.set(contactId, []).get(contactId)!).push(a);
   }
+  const accountById = new Map(accounts.map((a) => [a['Id'] as string, a]));
+  const contactById = new Map(contacts.map((c) => [c['Id'] as string, c]));
+  const orgDomainByOrgId = new Map<string, string>();
+  for (const a of accounts) {
+    if (!orgAccountIds.has(a['Id'] as string)) continue;
+    const site = (a['Website'] as string | null) || enrichment.get(a['Id'] as string)?.website || null;
+    const domain = websiteDomain(site);
+    if (domain) orgDomainByOrgId.set(a['Id'] as string, domain);
+  }
+  const consumerDomains = new Set(cfg.consumerEmailDomains ?? DEFAULT_CONSUMER_DOMAINS);
+  const overridesPath = dataPath('enrich', 'email-kinds.csv');
+  const overrides: Map<string, EmailOverride> = existsSync(overridesPath)
+    ? parseEmailKindOverrides(readFileSync(overridesPath, 'utf8')) : new Map();
+
   const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed), cnpUnique,
     overlap: cnp.length - cnpUnique.length };
 
-  const payloads: ItemPayload[] = [];
-  const includedContactIds = new Set<string>();
-  const placeholderDonorSfIds = new Set(cfg.placeholderDonorSfIds ?? []);
+  const warnings: string[] = [];
 
-  for (const c of contacts) {
-    if (placeholderDonorSfIds.has(c['Id'] as string)) continue; // "Anonymous Person" is not a Person
+  // Pass A: classify every included contact's addresses. Sorted by Id so "first person with a
+  // given Household Email" is deterministic run to run.
+  const assignments = new Map<string, ReturnType<typeof assignEmails>>();
+  const boardOf = new Map<string, 'people-live' | 'people-historical'>();
+  const emailStats = { work: 0, household: 0, review: 0, swapped: 0 };
+  const emailReviewRows: string[] = [];
+  // Byte-stable comparison, not locale-aware collation — "first by Id" must be the same order on
+  // every machine regardless of ICU/locale settings.
+  const byId = (x: Row, y: Row): number => {
+    const a = String(x['Id']), b = String(y['Id']);
+    return a < b ? -1 : a > b ? 1 : 0;
+  };
+  const placeholderDonorSfIds = new Set(cfg.placeholderDonorSfIds ?? []);
+  const sortedContacts = [...contacts].sort(byId);
+  for (const c of sortedContacts) {
+    const id = c['Id'] as string;
+    if (placeholderDonorSfIds.has(id)) continue; // "Anonymous Person" is not a Person
     const board = classifyContact(c, inc, cfg.peopleActiveSinceISO);
     if (!board) continue;
-    includedContactIds.add(c['Id'] as string);
+    boardOf.set(id, board);
+    const refs: AffiliationRef[] = (affiliationsByContact.get(id) ?? []).map((a) => ({
+      sfId: a['Id'] as string, orgSfId: a['npe5__Organization__c'] as string, primary: a['npe5__Primary__c'] === true,
+      status: affiliationStatus(a['npe5__Status__c']) }));
+    // An override naming an affiliation this contact doesn't have would otherwise be trusted
+    // verbatim by assignEmails, silently keying a work address to a tenure that never resolves
+    // it back on any payload (see the review finding). Reject it here, before classification.
+    const refSfIds = new Set(refs.map((ref) => ref.sfId));
+    let contactOverrides = overrides;
+    for (const email of [collapseEmail(c), (c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null]) {
+      if (!email) continue;
+      const o = overrides.get(email);
+      if (o?.kind === 'work' && o.affiliationSfId && !refSfIds.has(o.affiliationSfId)) {
+        warnings.push(`emails: override for ${email} names affiliation ${o.affiliationSfId}, which ${id} does not have — ignored`);
+        if (contactOverrides === overrides) contactOverrides = new Map(overrides);
+        contactOverrides.delete(email);
+      }
+    }
+    const asg = assignEmails(c, refs, orgDomainByOrgId, consumerDomains, contactOverrides);
+    assignments.set(id, asg);
+    emailStats.work += asg.work.size;
+    if (asg.household) emailStats.household++;
+    if (asg.swapped) emailStats.swapped++;
+    for (const r of asg.review) {
+      emailStats.review++;
+      const name = [c['FirstName'], c['LastName']].filter(Boolean).join(' ');
+      const candidates = refs.map((ref) => `${ref.sfId}:${accountById.get(ref.orgSfId)?.['Name'] ?? ''}`).join(';');
+      emailReviewRows.push([id, name, r.email, r.domain, candidates].map(csvField).join(','));
+    }
+  }
+  const householdPrimaryOf = new Map<string, string>();   // household email → first contact Id
+  for (const c of sortedContacts) {
+    const asg = assignments.get(c['Id'] as string);
+    if (asg?.household && !householdPrimaryOf.has(asg.household)) householdPrimaryOf.set(asg.household, c['Id'] as string);
+  }
+
+  // Pass B: the affiliation index (work emails + tenures) drives attribution of gifts and
+  // registrations before any payload is built, so seed rollups can land on both sides.
+  const affiliationEntries: AffiliationEntry[] = orgAffiliations
+    .filter((a) => boardOf.has(a['npe5__Contact__c'] as string))
+    .map((a) => ({
+      sfId: a['Id'] as string, contactSfId: a['npe5__Contact__c'] as string, orgSfId: a['npe5__Organization__c'] as string,
+      startISO: (a['npe5__StartDate__c'] as string | null) ?? null, endISO: (a['npe5__EndDate__c'] as string | null) ?? null,
+      primary: a['npe5__Primary__c'] === true,
+      workEmail: assignments.get(a['npe5__Contact__c'] as string)?.work.get(a['Id'] as string) ?? null }));
+  // Work Email is spec'd unique across Affiliations, but two different contacts at one org can
+  // share a mailbox (e.g. info@) as their Secondary_Email__c, so both get a Work Email pointing
+  // at the same address. Picking one arbitrarily (extract order, no ORDER BY) would attribute
+  // registrations to the wrong tenure — so any address claimed by more than one affiliation is
+  // excluded from attribution matching entirely (byWorkEmail below). The Affiliation board items
+  // still carry the address on each item — only matching is affected.
+  const entriesByWorkEmail = new Map<string, AffiliationEntry[]>();
+  for (const e of affiliationEntries) {
+    if (!e.workEmail) continue;
+    const key = e.workEmail.trim().toLowerCase();
+    (entriesByWorkEmail.get(key) ?? entriesByWorkEmail.set(key, []).get(key)!).push(e);
+  }
+  for (const [emailKey, claimants] of entriesByWorkEmail) {
+    if (claimants.length <= 1) continue;
+    warnings.push(`emails: work address ${emailKey} is claimed by ${claimants.length} affiliations ` +
+      `(${claimants.map((e) => e.sfId).join(', ')}) — excluded from attribution matching`);
+    for (const e of claimants) e.workEmail = null;
+  }
+  const affiliationIndex = new AffiliationIndex(affiliationEntries);
+  const attributedOpps = new Map<string, string>();
+  const unaffiliatedRows: string[] = [];
+  for (const o of opportunities) {
+    const att = attributeOpportunity(o, affiliationIndex, orgAccountIds);
+    if (att && 'affiliationSfId' in att) attributedOpps.set(o['Id'] as string, att.affiliationSfId);
+    else if (att && 'unaffiliated' in att) {
+      unaffiliatedRows.push([o['Id'], att.unaffiliated.contactSfId, att.unaffiliated.orgSfId,
+        accountById.get(att.unaffiliated.orgSfId)?.['Name'] ?? '', o['Amount'] ?? '',
+        String(o['CloseDate'] ?? '').slice(0, 10)].map(csvField).join(','));
+    }
+  }
+  const attributedRegs = new Map<string, { affiliationSfId: string; attribution: 'Auto' | 'Needs review' }>();
+  for (const r of registrations) {
+    const att = attributeRegistration(r, affiliationIndex);
+    if (att) attributedRegs.set(r['Id'] as string, att);
+  }
+  const attRollups = attributionRollups(opportunities, attributedOpps, affiliationIndex);
+
+  const payloads: ItemPayload[] = [];
+  const includedContactIds = new Set<string>();
+
+  for (const c of sortedContacts) {
+    const id = c['Id'] as string;
+    const board = boardOf.get(id);
+    if (!board) continue;
+    includedContactIds.add(id);
+    const asg = assignments.get(id)!;
     const geoKey = normalizeAddress({ street: c['MailingStreet'] as string, city: c['MailingCity'] as string,
       state: c['MailingState'] as string, zip: c['MailingPostalCode'] as string });
-    let p = contactToPayload(c, board, { consent, member: memberSummaries.get(c['Id'] as string),
-      geo: geoKey ? geoCache.get(geoKey) : undefined });
-    // Organization link = the Contact's own org Account (if any) ∪ its Affiliation orgs (doc 05 §1b:
-    // all 6,349 Affiliations migrate onto this connect column — one Person, many Organizations).
-    const affilOrgs = affiliationOrgsByContact.get(c['Id'] as string) ?? [];
+    const myAffiliations = affiliationsByContact.get(id) ?? [];
+    let p = contactToPayload(c, board, { consent, member: memberSummaries.get(id),
+      geo: geoKey ? geoCache.get(geoKey) : undefined,
+      emails: { personal: asg.personal, household: asg.household },
+      householdPrimary: asg.household !== null && householdPrimaryOf.get(asg.household) === id,
+      affiliationSfIds: myAffiliations.map((a) => a['Id'] as string) });
+    // Organization link = the Contact's own org Account (if any) ∪ its CURRENT affiliation orgs.
+    // Former tenures live on the Affiliations board, not on the person's Organization column.
+    const currentOrgs = myAffiliations.filter((a) => affiliationStatus(a['npe5__Status__c']) === 'Current')
+      .map((a) => a['npe5__Organization__c'] as string);
     const ownOrg = (p.links ?? []).flatMap((l) => l.column === 'Organization' ? l.targetSfIds : [])
-      .filter((id) => orgAccountIds.has(id));
-    const orgTargets = [...new Set([...ownOrg, ...affilOrgs])];
+      .filter((oid) => orgAccountIds.has(oid));
+    const orgTargets = [...new Set([...ownOrg, ...currentOrgs])];
     p = { ...p, links: [
       ...(p.links ?? []).filter((l) => l.column !== 'Organization'),
       ...(orgTargets.length > 0 ? [{ column: 'Organization', targetSfIds: orgTargets }] : []),
     ] };
-    const r = rollups.map.get(c['Id'] as string);
+    const orgGiving = attRollups.organizationalGivingByContact.get(id);
+    if (orgGiving !== undefined) p.columns['Organizational Giving'] = String(orgGiving);
+    const r = rollups.map.get(id);
     payloads.push(r ? applyRollups(p, r) : p);
+  }
+  for (const a of orgAffiliations) {
+    const contactId = a['npe5__Contact__c'] as string;
+    if (!boardOf.has(contactId)) continue;   // contact not migrated → no dangling tenure
+    const c = contactById.get(contactId)!;
+    const p = affiliationToPayload(a, {
+      personName: [c['FirstName'], c['LastName']].filter(Boolean).join(' ') || '(no name)',
+      orgName: (accountById.get(a['npe5__Organization__c'] as string)?.['Name'] as string) ?? '(no name)',
+      workEmail: assignments.get(contactId)?.work.get(a['Id'] as string) ?? null, consent });
+    const ar = attRollups.byAffiliation.get(a['Id'] as string);
+    if (ar) {
+      p.columns['Attributed Giving'] = String(ar.giving);
+      p.columns['Attributed Gift Count'] = String(ar.giftCount);
+      p.columns['Last Attributed Gift'] = ar.lastGiftISO ? { date: ar.lastGiftISO } : null;
+    }
+    payloads.push(p);
   }
   for (const a of accounts) {
     if (personNamed.has(a['Id'] as string)) continue; // folded into its Contact above
@@ -184,7 +336,8 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(r ? applyRollups(p, r) : p);
   }
   for (const o of opportunities) {
-    payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds }));
+    payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
+      actingFor: attributedOpps.get(o['Id'] as string) ?? null }));
   }
   for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 
@@ -194,7 +347,10 @@ export async function runTransform(args: string[]): Promise<number> {
     if (p) payloads.push({ ...p, columns: { ...p.columns, ...(pledgeCols.get(p.sfId) ?? {}) } });
   }
   for (const e of events) { const p = eventToPayload(e, cfg.cutoverDateISO); if (p) payloads.push(p); }
-  for (const r of registrations) payloads.push(registrationToPayload(r));
+  for (const r of registrations) {
+    const att = attributedRegs.get(r['Id'] as string);
+    payloads.push(registrationToPayload(r, { actingFor: att?.affiliationSfId ?? null, attribution: att?.attribution }));
+  }
   const ebEventById = new Map(ebEvents.map((e) => [e['Id'] as string, e]));
   const ebEventsWithAttendees = new Set(ebAttendees.map((a) => a['eb4sf__Eventbrite_Event__c'] as string));
   for (const e of ebEvents) {
@@ -236,7 +392,6 @@ export async function runTransform(args: string[]): Promise<number> {
       ? `donations peak active projected at ${plan.peakActive} items (> 10,000)`
       : `${board} projected at ${n} items (> 10,000)`);
 
-  const warnings: string[] = [];
   if (personNamed.size > 0) {
     warnings.push(`people: ${personNamed.size} person-named account${personNamed.size === 1 ? '' : 's'} ` +
       `(blank NPSP type, sole Contact shares the name) folded into their Contact instead of Organizations`);
@@ -253,6 +408,20 @@ export async function runTransform(args: string[]): Promise<number> {
     `emails are backup-only`);
   warnings.push(`donations: ${archiveCount} of ${donationPayloads.length} flagged for archive ` +
     `(fiscal years before FY${plan.cutoffFY}); peak active ${plan.peakActive}`);
+
+  await mkdir(dataPath('review'), { recursive: true });
+  // Always written (header-only when nothing needs review), like unaffiliated-org-gifts.csv
+  // below — otherwise a file from a prior run with review rows lingers after a later run
+  // resolves them all, silently telling the operator there's still something to review.
+  await writeFile(dataPath('review', 'email-classification.csv'),
+    ['contactSfId,name,email,domain,candidateAffiliations', ...emailReviewRows].join('\n') + '\n', 'utf8');
+  await writeFile(dataPath('review', 'unaffiliated-org-gifts.csv'),
+    ['opportunitySfId,contactSfId,orgSfId,orgName,amount,closeDate', ...unaffiliatedRows].join('\n') + '\n', 'utf8');
+  warnings.push(`emails: ${emailStats.work} work, ${emailStats.household} household, ${emailStats.review} review, ` +
+    `${emailStats.swapped} swapped` + (emailStats.review > 0 ? ' — see data/review/email-classification.csv' : ''));
+  warnings.push(`attribution: ${attributedOpps.size} gifts and ${attributedRegs.size} registrations attributed; ` +
+    `${unaffiliatedRows.length} org gifts have no affiliation (see data/review/unaffiliated-org-gifts.csv)`);
+
   const report: TransformReport = {
     payloadCounts,
     assertions: [

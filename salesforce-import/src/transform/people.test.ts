@@ -55,8 +55,8 @@ describe('contactToPayload', () => {
         geo: { lat: 37.3, lng: -121.9, city: 'San Jose', zip: '95112', source: 'census' } });
     expect(p.board).toBe('people-live');
     expect(p.name).toBe('Ada Lovelace');
-    expect(p.columns['Email']).toEqual({ email: 'ada@x.co', text: 'ada@x.co' });
-    expect(p.columns['Secondary Email']).toEqual({ email: 'work@x.co', text: 'work@x.co' });
+    expect(p.columns['Personal Email']).toEqual({ email: 'ada@x.co', text: 'ada@x.co' });
+    expect(p.columns['Household Email']).toEqual({ email: 'work@x.co', text: 'work@x.co' });
     expect(p.columns['Membership Status']).toEqual({ label: 'Active' });
     expect(p.columns['Membership Tier']).toEqual({ label: 'Lifetime' });
     expect(p.columns['Member Until']).toBeNull();          // Lifetime: blank, never fires lapse automation
@@ -64,9 +64,25 @@ describe('contactToPayload', () => {
     expect(p.columns['Do Not Solicit']).toEqual({ checked: 'true' });
     expect(p.columns['Do Not Solicit Reason']).toBe('mail');
     expect(p.columns['Employer Name']).toBe('Acme Corp');
-    expect(p.columns['Email Consent']).toEqual({ label: 'Subscribed' });
-    expect(p.columns['Secondary Email Consent']).toEqual({ label: 'Unsubscribed' });
+    expect(p.columns['Personal Email Consent']).toEqual({ label: 'Subscribed' });
+    expect(p.columns['Household Email Consent']).toEqual({ label: 'Unsubscribed' });
+    expect('Household Primary' in p.columns).toBe(false);
     expect(p.columns['Salesforce Debug']).toEqual({ text: expect.stringContaining('SF ID: c1') });
+  });
+
+  it('takes an explicit email assignment, Household Primary, and the Affiliations link', () => {
+    const p = contactToPayload(
+      { Id: 'c9', FirstName: 'Ada', LastName: 'L', Email: 'ada@acme.example', Secondary_Email__c: 'ada@gmail.com' },
+      'people-live',
+      { consent: new Map([['ada@gmail.com', 'subscribed']]),
+        emails: { personal: 'ada@gmail.com', household: null },
+        householdPrimary: true, affiliationSfIds: ['af1', 'af2'] });
+    expect(p.columns['Personal Email']).toEqual({ email: 'ada@gmail.com', text: 'ada@gmail.com' });
+    expect(p.columns['Household Email']).toBeNull();
+    expect(p.columns['Personal Email Consent']).toEqual({ label: 'Subscribed' });
+    expect('Household Email Consent' in p.columns).toBe(false);
+    expect(p.columns['Household Primary']).toEqual({ checked: 'true' });
+    expect(p.links).toContainEqual({ column: 'Affiliations', targetSfIds: ['af1', 'af2'] });
   });
 
   it('prefers Employer__c over the empty 360MatchPro dtd__company__c for Employer Name', () => {

@@ -1,5 +1,6 @@
 import type { ItemPayload } from './types.js';
 import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
+import { attributionColumns } from './attribution.js';
 
 // Closed Won is a distinct label, not plain "Received", on purpose: it's the same
 // 438 stale-stage records docs/07 gotcha #4 found (IsWon = false, unlike Posted — see
@@ -29,6 +30,8 @@ export interface OpportunityDeps {
   // Placeholder donor records (config.placeholderDonorSfIds): a gift pointing at one is
   // anonymous — no Donor link, checkbox on — and never falls back to the Account either.
   placeholderDonorSfIds?: Set<string>;
+  // Affiliation the Primary Contact acted for (transform/attribution.ts); additive to Donor.
+  actingFor?: string | null;
 }
 
 const MATCHING_GIFT_TYPE = 'Matching Donation';
@@ -41,7 +44,8 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
     deps.donorAlias);
   const donorId = rawDonorId && !placeholders.has(rawDonorId) ? rawDonorId : null;
   const giftType = ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string;
-  const links: ItemPayload['links'] = [];
+  const attribution = attributionColumns(deps.actingFor ?? null);
+  const links: ItemPayload['links'] = [...attribution.links];
   if (donorId) links.push({ column: 'Donor', targetSfIds: [donorId] });
   // Employer matching gifts (Benevity): Donor is the employee the match is credited to (or the
   // company, when Benevity disclosed none); Matched By is always the paying company. Before
@@ -68,6 +72,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       // gift; declared here so load creates the column for the benevity-import Worker to fill.
       'Benevity Transaction ID': '',
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
+      ...attribution.columns,
       ...salesforceDebug(o),
     },
     links,

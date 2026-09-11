@@ -172,6 +172,20 @@ describe('eventbriteAttendeeToPayload', () => {
     expect(p.name).toBe('Quynh Pham');
     expect(p.columns['Role']).toEqual({ label: 'Participant' });
   });
+
+  it('registrationToPayload carries Acting for and Attribution', () => {
+    const r = { Id: 'r1', funraise__Registrant__c: 'c2', funraise__Email__c: 'bo@sanjoseca.gov' };
+    expect(registrationToPayload(r, { actingFor: 'af-city' }).links).toContainEqual({ column: 'Acting for', targetSfIds: ['af-city'] });
+    expect(registrationToPayload(r, { actingFor: 'af-city' }).columns['Attribution']).toEqual({ label: 'Auto' });
+    expect(registrationToPayload(r).columns['Attribution']).toEqual({ label: 'None' });
+  });
+
+  it('registrationToPayload emits Needs review when the registrant does not match the attributed affiliation', () => {
+    const r = { Id: 'r2', funraise__Registrant__c: 'c-other', funraise__Email__c: 'bo@sanjoseca.gov' };
+    const p = registrationToPayload(r, { actingFor: 'af-city', attribution: 'Needs review' });
+    expect(p.columns['Attribution']).toEqual({ label: 'Needs review' });
+    expect(p.links).toContainEqual({ column: 'Acting for', targetSfIds: ['af-city'] });
+  });
 });
 
 describe('campaignToPayload', () => {

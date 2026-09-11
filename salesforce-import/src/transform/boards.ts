@@ -1,5 +1,6 @@
 import type { ItemPayload } from './types.js';
 import { dateCol, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
+import { attributionColumns } from './attribution.js';
 
 const ANNUAL: Record<string, number> = { Yearly: 1, Quarterly: 4, Monthly: 12 };
 
@@ -72,8 +73,11 @@ export function eventToPayload(e: Record<string, unknown>, cutoverISO: string): 
   };
 }
 
-export function registrationToPayload(r: Record<string, unknown>): ItemPayload {
-  const links: ItemPayload['links'] = [];
+export function registrationToPayload(
+  r: Record<string, unknown>, deps: { actingFor?: string | null; attribution?: 'Auto' | 'Needs review' } = {},
+): ItemPayload {
+  const attribution = attributionColumns(deps.actingFor ?? null, deps.attribution);
+  const links: ItemPayload['links'] = [...attribution.links];
   if (r['funraise__Registrant__c']) links.push({ column: 'Attendee', targetSfIds: [r['funraise__Registrant__c'] as string] });
   if (r['funraise__Fundraising_Event__c']) links.push({ column: 'Event', targetSfIds: [r['funraise__Fundraising_Event__c'] as string] });
   if (r['funraise__Transaction__c']) links.push({ column: 'Payment', targetSfIds: [r['funraise__Transaction__c'] as string] });
@@ -87,6 +91,7 @@ export function registrationToPayload(r: Record<string, unknown>): ItemPayload {
       'Ticket Amount': String(r['funraise__Ticket_Amount__c'] ?? ''),
       'Deductible Amount': String(r['funraise__Ticket_Tax_Deductible_Amount__c'] ?? ''),
       'Attendance': label(r['funraise__Attended__c'] ? 'Attended' : 'Registered'),
+      ...attribution.columns,
       ...salesforceDebug(r),
     },
     links,

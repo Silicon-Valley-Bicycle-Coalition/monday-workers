@@ -44,6 +44,12 @@ no ongoing two-way-sync requirement to build for.
 npm run cli -- extract --consent path/to/mailchimp-export.csv   # refuses while Funraise sync errors exist
 npm run cli -- geocode
 npm run cli -- transform            # fails on assertion violations; read data/transform/report.json
+#   transform also writes data/review/email-classification.csv (secondary addresses on a domain
+#   that is neither an affiliated org's nor a consumer mailbox — decide each one, copy rows into
+#   data/enrich/email-kinds.csv as email,kind,affiliationSfId, re-run transform; a work override
+#   naming an affiliation that contact doesn't have is ignored with a warning in the report) and
+#   data/review/unaffiliated-org-gifts.csv (org gifts whose primary contact has no Affiliation at
+#   that org — create the Affiliation in Salesforce or accept the gift as organization-only).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only
 npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
@@ -55,6 +61,10 @@ between full rehearsals. A run against a partial `payloads.ndjson` (e.g. a parti
 connect columns without board defaults if a link's target board has zero payloads that run, and a
 later full run does not retroactively patch them — run a full `--dry-run` first, and delete
 `data/load/` between sandbox rehearsals rather than layering partial runs on top of each other.
+The 2026-09 email-column rename (Email → Personal Email, etc.) makes this mandatory, not just
+recommended: a load that reuses an existing ledger after the rename only retitles the column going
+forward — it never rewrites pre-existing People items — so those items are left holding old-semantics
+values under the new title while newly created items hold new-semantics values under the same title.
 
 **Cutover:** freeze Funraise sync first (doc 03 §7), delete `data/load/` (boards.json + the
 ledger) — sandbox board ids and ledger entries left over from rehearsals would otherwise redirect
@@ -100,9 +110,15 @@ supporter records for existing Contacts.
 plan's Decisions Needed): Sponsorship/Grants/Contracts Opportunity history (3,613 + 125 + 478
 records — the record-type count query proved these are real, not greenfield); volunteer history
 2014–2020 as historical records; the recent ~2-year slice of Tasks/EmailMessages onto the Donors'
-Activities board; `Secondary_Email__c` as its own labeled column on Person items, with its own
-**Secondary Email Consent** status (Mailchimp consent is tracked per email address, not per
-person); and a `ContactHistory` flat export (68,831 rows) into the backup archive.
+Activities board; `npe5__Affiliation__c` as its own **Affiliations** board (one item per
+person-at-organization tenure: Affiliation Role, Status, Start/End, Primary, and the Work Email that
+address-classification assigns to it, with its own consent status); People carry **Personal
+Email** and **Household Email**, each with its own consent status, plus **Household Primary** for a
+shared address; Donations and Event Registrations carry **Acting for** (→ Affiliations) and
+**Attribution** (Auto / Staff / Needs review / None), attributed at import from NPSP's org-gift
+shape and from registration emails; design in
+`docs/superpowers/specs/2026-09-08-person-org-email-model-design.md`; and a `ContactHistory`
+flat export (68,831 rows) into the backup archive.
 
 ## Data flow
 

@@ -13,8 +13,10 @@ import { formatColumnValue } from './columnValues.js';
 // history active at once — Monday's 10k ceiling counts active items only, and archived items
 // reject all writes — so each fiscal year's items must be created, linked (in BOTH directions,
 // including event-registrations' Payment links pointing at them), and only then archived.
-// That's why event-registrations precede donations here.
-const ORDER = ['organizations', 'people-live', 'people-historical', 'campaigns',
+// That's why event-registrations precede donations here. Affiliations link to People and
+// Organizations (must exist first) and are linked *from* Event Registrations and Donations
+// (which load later), so this position is the only valid one.
+const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliations', 'campaigns',
   'recurring-gifts', 'events', 'event-registrations', 'donations', 'volunteers', 'activities'];
 
 function boardOrder(keys: string[]): string[] {
@@ -73,7 +75,20 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
     needed.set(key, set);
   }
-  const boards = await ensureBoards(client, cfg, keys, needed);
+  // A column rename (e.g. the 2026-09 Email → Personal Email rename) only touches the column
+  // title, never rewrites pre-existing items — so a ledger that already has items for a
+  // just-renamed board is a partial re-run mixing old- and new-semantics data. Detect and warn;
+  // the only fix is a full re-create (delete data/load/).
+  const renamedBoardKeys = new Set<string>();
+  const boards = await ensureBoards(client, cfg, keys, needed,
+    (boardKey) => { renamedBoardKeys.add(boardKey); });
+  for (const key of renamedBoardKeys) {
+    if (ledger.hasAnyFor(key)) {
+      console.warn(`load: ${key} had a column renamed this run and the ledger already holds items ` +
+        `for it from a previous run — those items still carry the old column's values under the new ` +
+        `title (mixed semantics). Delete data/load/ and re-run a full re-create.`);
+    }
+  }
 
   const createItems = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;

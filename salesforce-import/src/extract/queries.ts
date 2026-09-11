@@ -21,7 +21,8 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
     { name: 'memberships', soql: `SELECT Id, Contact__c, Opportunity__c, Type__c, Start_Date__c,
         WEC_End_Date_Manual__c, CreatedDate FROM Membership__c` },
     { name: 'affiliations', soql: `SELECT Id, npe5__Contact__c, npe5__Organization__c, npe5__Role__c,
-        npe5__Status__c FROM npe5__Affiliation__c` },
+        npe5__Status__c, npe5__StartDate__c, npe5__EndDate__c, npe5__Primary__c, npe5__Description__c,
+        CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM npe5__Affiliation__c` },
     { name: 'relationships', backupOnly: true, soql: `SELECT Id, npe4__Contact__c, npe4__RelatedContact__c,
         npe4__Type__c, npe4__Status__c FROM npe4__Relationship__c` },
     // ^ npe4 person↔person relationships (722 rows) have no decided Monday destination (docs 05/11
