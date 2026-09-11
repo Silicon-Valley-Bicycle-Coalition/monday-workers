@@ -163,9 +163,6 @@ export async function runTransform(args: string[]): Promise<number> {
   const overrides: Map<string, EmailOverride> = existsSync(overridesPath)
     ? parseEmailKindOverrides(readFileSync(overridesPath, 'utf8')) : new Map();
 
-  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed), cnpUnique,
-    overlap: cnp.length - cnpUnique.length };
-
   const warnings: string[] = [];
 
   // Pass A: classify every included contact's addresses. Sorted by Id so "first person with a
@@ -268,6 +265,10 @@ export async function runTransform(args: string[]): Promise<number> {
     if (att) attributedRegs.set(r['Id'] as string, att);
   }
   const attRollups = attributionRollups(opportunities, attributedOpps, affiliationIndex);
+  // Personal / organization rollups follow the Donor link, which follows attribution — so
+  // they are computed only now that attributedOpps exists (see donations.ts giftDonorSfId).
+  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed, { orgAccountIds, attributed: attributedOpps }),
+    cnpUnique, overlap: cnp.length - cnpUnique.length };
 
   const payloads: ItemPayload[] = [];
   const includedContactIds = new Set<string>();

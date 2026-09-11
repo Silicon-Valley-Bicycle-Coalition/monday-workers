@@ -21,6 +21,27 @@ describe('donorRollups', () => {
   });
 });
 
+describe('donorRollups with attribution', () => {
+  it('credits an attributed org gift to the organization, and an unattributed one to the person', () => {
+    const r = donorRollups(
+      [{ Id: 'o1', npsp__Primary_Contact__c: 'c1', AccountId: 'org-acme', Amount: 500, CloseDate: '2024-02-02', StageName: 'Posted' },
+       { Id: 'o2', npsp__Primary_Contact__c: 'c1', AccountId: 'org-beta', Amount: 75, CloseDate: '2024-03-03', StageName: 'Posted' },
+       { Id: 'o3', npsp__Primary_Contact__c: 'c1', AccountId: 'a-household', Amount: 10, CloseDate: '2020-01-01', StageName: 'Posted' }],
+      [], new Map(), { orgAccountIds: new Set(['org-acme', 'org-beta']), attributed: new Map([['o1', 'af-acme']]) });
+    expect(r.get('org-acme')).toEqual({ lifetimeGiving: 500, firstGiftISO: '2024-02-02', giftCount: 1 });
+    expect(r.get('c1')).toEqual({ lifetimeGiving: 85, firstGiftISO: '2020-01-01', giftCount: 2 });
+    expect(r.has('org-beta')).toBe(false);
+  });
+  it('leaves a matching gift on the employee even when it appears in the attributed map', () => {
+    const r = donorRollups(
+      [{ Id: 'm1', npsp__Primary_Contact__c: 'c1', AccountId: 'a-google', Amount: 100, CloseDate: '2026-07-04',
+         StageName: 'Posted', RecordType: { Name: 'Matching Donation' } }],
+      [], new Map(), { orgAccountIds: new Set(['a-google']), attributed: new Map([['m1', 'af-g']]) });
+    expect(r.get('c1')?.lifetimeGiving).toBe(100);
+    expect(r.has('a-google')).toBe(false);
+  });
+});
+
 describe('applyRollups', () => {
   it('adds the three columns', () => {
     const p = applyRollups({ board: 'people-live', sfId: 'c1', name: 'A', columns: {} },

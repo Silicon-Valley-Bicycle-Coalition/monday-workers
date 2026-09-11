@@ -136,7 +136,13 @@ describe('runTransform', () => {
 
     expect(bySf.get('o3')!.links).toContainEqual({ column: 'Acting for', targetSfIds: ['af1'] });
     expect(bySf.get('o3')!.columns['Attribution']).toEqual({ label: 'Auto' });
+    // Attributed org gift: the organization gave it (Donor), the person drove it (Acting for).
+    expect(bySf.get('o3')!.links).toContainEqual({ column: 'Donor', targetSfIds: ['a-org2'] });
+    expect(bySf.get('a-org2')!.columns['Lifetime Giving']).toBe('500');
+    expect('Lifetime Giving' in uma.columns).toBe(false);              // no personal giving of her own
+    // Unattributed org gift: Donor stays on the person until staff resolve the review row.
     expect(bySf.get('o4')!.columns['Attribution']).toEqual({ label: 'None' });
+    expect(bySf.get('o4')!.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
     expect(bySf.get('r1')!.links).toContainEqual({ column: 'Acting for', targetSfIds: ['af1'] });
 
     // Shared address: ada@gmail.com is c1's Personal Email and c4's Household Email. Household

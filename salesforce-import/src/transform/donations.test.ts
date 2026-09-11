@@ -47,16 +47,33 @@ describe('opportunityToPayload', () => {
     expect(p.links).toEqual([]);
   });
 
-  it('carries Acting for and Attribution when an affiliation is supplied', () => {
+  it('points Donor at the organization when the gift is attributed to an affiliation there', () => {
     const base = { Id: 'o9', Name: 'Sponsorship', Amount: 5000, CloseDate: '2024-01-01', StageName: 'Posted',
-      AccountId: 'org-acme', npsp__Primary_Contact__c: 'c1' };
-    const with_ = opportunityToPayload(base, { termCols: new Map(), actingFor: 'af-new' });
+      RecordType: { Name: 'Sponsorship' }, AccountId: 'org-acme', npsp__Primary_Contact__c: 'c1' };
+    const orgs = new Set(['org-acme']);
+    const with_ = opportunityToPayload(base, { termCols: new Map(), orgAccountIds: orgs, actingFor: 'af-new' });
     expect(with_.columns['Attribution']).toEqual({ label: 'Auto' });
     expect(with_.links).toContainEqual({ column: 'Acting for', targetSfIds: ['af-new'] });
-    expect(with_.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });   // unchanged
-    const without = opportunityToPayload(base, { termCols: new Map() });
+    expect(with_.links).toContainEqual({ column: 'Donor', targetSfIds: ['org-acme'] });   // the org gave it
+    expect(with_.links!.some((l) => l.column === 'Donor' && l.targetSfIds.includes('c1'))).toBe(false);
+    expect(with_.columns['Anonymous Donor']).toBeNull();
+  });
+
+  it('keeps Donor on the person when an org gift is not attributed (nothing is lost before review)', () => {
+    const base = { Id: 'o9', Name: 'Sponsorship', Amount: 5000, CloseDate: '2024-01-01', StageName: 'Posted',
+      RecordType: { Name: 'Sponsorship' }, AccountId: 'org-acme', npsp__Primary_Contact__c: 'c1' };
+    const without = opportunityToPayload(base, { termCols: new Map(), orgAccountIds: new Set(['org-acme']) });
     expect(without.columns['Attribution']).toEqual({ label: 'None' });
+    expect(without.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
     expect(without.links!.some((l) => l.column === 'Acting for')).toBe(false);
+  });
+
+  it('never re-points a matching gift: Donor stays the employee even if actingFor is supplied', () => {
+    const match = { Id: 'o9', Name: 'Google, LLC - Employer Matching Ada L', Amount: 100, CloseDate: '2026-07-04',
+      StageName: 'Posted', RecordType: { Name: 'Matching Donation' }, AccountId: 'a-google', npsp__Primary_Contact__c: 'c1' };
+    const p = opportunityToPayload(match, { termCols: new Map(), orgAccountIds: new Set(['a-google']), actingFor: 'af-x' });
+    expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
+    expect(p.links).toContainEqual({ column: 'Matched By', targetSfIds: ['a-google'] });
   });
 
   it('re-points an Account-only Donor link at the person the Account was folded into', () => {

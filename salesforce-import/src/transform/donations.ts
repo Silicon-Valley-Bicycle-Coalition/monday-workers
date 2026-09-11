@@ -1,6 +1,6 @@
 import type { ItemPayload } from './types.js';
 import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
-import { attributionColumns } from './attribution.js';
+import { attributionColumns, MATCHING_GIFT_TYPE } from './attribution.js';
 
 // Closed Won is a distinct label, not plain "Received", on purpose: it's the same
 // 438 stale-stage records docs/07 gotcha #4 found (IsWon = false, unlike Posted — see
@@ -20,37 +20,54 @@ const resolveDonor = (raw: unknown, donorAlias?: Map<string, string>): string | 
   return id ? (donorAlias?.get(id) ?? id) : null;
 };
 
-export interface OpportunityDeps {
-  termCols: Map<string, Record<string, unknown>>;
+export interface DonorResolution {
   donorAlias?: Map<string, string>;
   // Accounts that become Organizations items (not One-to-One Individual, not person-named).
   // Only these can be a gift's Matched By target — a matching gift filed under a household
   // Account has no payer link.
-  orgAccountIds?: Set<string>;
+  orgAccountIds?: ReadonlySet<string>;
   // Placeholder donor records (config.placeholderDonorSfIds): a gift pointing at one is
   // anonymous — no Donor link, checkbox on — and never falls back to the Account either.
-  placeholderDonorSfIds?: Set<string>;
-  // Affiliation the Primary Contact acted for (transform/attribution.ts); additive to Donor.
+  placeholderDonorSfIds?: ReadonlySet<string>;
+  // Affiliation the Primary Contact acted for (transform/attribution.ts).
   actingFor?: string | null;
 }
 
-const MATCHING_GIFT_TYPE = 'Matching Donation';
+export interface OpportunityDeps extends DonorResolution {
+  termCols: Map<string, Record<string, unknown>>;
+}
+
+export const giftType = (o: Record<string, unknown>): string =>
+  ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string;
+
+// Who a gift's Donor link points at. Decided 2026-09-11 (affiliation model, Plan 2 entry):
+// an organization gift the Primary Contact drove for that organization (Acting for set) is
+// the ORGANIZATION's gift — Donor is the org, the person stays reachable through Acting for,
+// and Lifetime Giving means personal giving while Organizational Giving means driven giving.
+// An org gift nobody has attributed yet keeps the person as Donor (nothing is lost before
+// staff resolve data/review/unaffiliated-org-gifts.csv), and a matching gift is the
+// employee's own gift the company matched — never re-pointed (Matched By carries the payer).
+export function giftDonorSfId(o: Record<string, unknown>, deps: DonorResolution): string | null {
+  const accountId = o['AccountId'] as string | null;
+  if (deps.actingFor && accountId && deps.orgAccountIds?.has(accountId) && giftType(o) !== MATCHING_GIFT_TYPE) {
+    return accountId;
+  }
+  const raw = resolveDonor(o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? accountId, deps.donorAlias);
+  return raw && !deps.placeholderDonorSfIds?.has(raw) ? raw : null;
+}
 
 export function opportunityToPayload(o: Record<string, unknown>, deps: OpportunityDeps): ItemPayload {
   const orgAccountIds = deps.orgAccountIds ?? new Set<string>();
-  const placeholders = deps.placeholderDonorSfIds ?? new Set<string>();
   const accountId = o['AccountId'] as string | null;
-  const rawDonorId = resolveDonor(o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? accountId,
-    deps.donorAlias);
-  const donorId = rawDonorId && !placeholders.has(rawDonorId) ? rawDonorId : null;
-  const giftType = ((o['RecordType'] as { Name?: string } | null)?.Name ?? '') as string;
+  const donorId = giftDonorSfId(o, deps);
+  const type = giftType(o);
   const attribution = attributionColumns(deps.actingFor ?? null);
   const links: ItemPayload['links'] = [...attribution.links];
   if (donorId) links.push({ column: 'Donor', targetSfIds: [donorId] });
   // Employer matching gifts (Benevity): Donor is the employee the match is credited to (or the
   // company, when Benevity disclosed none); Matched By is always the paying company. Before
   // this, the company was dropped whenever a Primary Contact existed — 2,182 of 3,020 gifts.
-  if (giftType === MATCHING_GIFT_TYPE && accountId && orgAccountIds.has(accountId)) {
+  if (type === MATCHING_GIFT_TYPE && accountId && orgAccountIds.has(accountId)) {
     links.push({ column: 'Matched By', targetSfIds: [accountId] });
   }
   if (o['funraise__Subscription__c']) links.push({ column: 'Recurring Gift', targetSfIds: [o['funraise__Subscription__c'] as string] });
@@ -65,7 +82,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Fiscal Year Ending': fiscalYear(o['CloseDate'] as string | null),
       'Salesforce Owner': ownerAttribution(o['Owner']),
       'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
-      'Gift Type': giftType,
+      'Gift Type': type,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId ? null : { checked: 'true' },
       // Salesforce never stored Benevity's transaction id, so this is blank on every migrated

@@ -1,5 +1,6 @@
 import type { ItemPayload } from './types.js';
 import { dateCol } from './fields.js';
+import { giftDonorSfId } from './donations.js';
 
 // Posted only, not Closed Won — matches Salesforce's own IsWon flag (Posted: true,
 // Closed Won: false, per monday-migration docs/07 gotcha #10), which is what its legacy
@@ -18,6 +19,9 @@ export interface DonorRollup { lifetimeGiving: number; firstGiftISO: string | nu
 export function donorRollups(
   opportunities: Record<string, unknown>[], cnpUnique: Record<string, unknown>[],
   donorAlias: Map<string, string> = new Map(),
+  // Attributed org gifts (transform/attribution.ts) credit the organization, exactly as their
+  // Donor link does — see giftDonorSfId. Omit for the pre-attribution rule.
+  attribution?: { orgAccountIds: ReadonlySet<string>; attributed: ReadonlyMap<string, string> },
 ): Map<string, DonorRollup> {
   const cents = new Map<string, number>(), first = new Map<string, string>(), count = new Map<string, number>();
   const add = (rawDonor: string | null, amount: unknown, dateISO: string | null) => {
@@ -30,7 +34,8 @@ export function donorRollups(
   };
   for (const o of opportunities) {
     if (!RECEIVED.has(o['StageName'] as string)) continue;
-    add((o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? o['AccountId']) as string | null,
+    add(giftDonorSfId(o, { donorAlias, orgAccountIds: attribution?.orgAccountIds,
+      actingFor: attribution?.attributed.get(o['Id'] as string) ?? null }),
       o['Amount'], o['CloseDate'] as string | null);
   }
   for (const t of cnpUnique) {

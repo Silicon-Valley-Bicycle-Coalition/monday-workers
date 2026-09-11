@@ -21,6 +21,10 @@ describe('attributeOpportunity', () => {
     expect(attributeOpportunity({ AccountId: 'org-city', npsp__Primary_Contact__c: 'c1', CloseDate: '2024-01-01' }, index, orgs))
       .toEqual({ unaffiliated: { contactSfId: 'c1', orgSfId: 'org-city' } });
   });
+  it('never attributes a Benevity matching gift — the employee did not act for the company', () => {
+    expect(attributeOpportunity({ AccountId: 'org-acme', npsp__Primary_Contact__c: 'c1', CloseDate: '2024-05-05',
+      RecordType: { Name: 'Matching Donation' } }, index, orgs)).toBeNull();
+  });
   it('is null for individual gifts, org gifts with no contact, and Funraise-only donors', () => {
     expect(attributeOpportunity({ AccountId: 'a-household', npsp__Primary_Contact__c: 'c1' }, index, orgs)).toBeNull();
     expect(attributeOpportunity({ AccountId: 'org-acme' }, index, orgs)).toBeNull();
