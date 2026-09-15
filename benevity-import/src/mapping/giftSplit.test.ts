@@ -58,6 +58,20 @@ describe('splitRowIntoGifts', () => {
     expect(gifts.map((g) => g.transactionId)).toEqual(['TXN001', 'TXN001-match']);
   });
 
+  it('writes each gift\'s OWN (correctly suffixed) transaction id to the Benevity Transaction ID column — not just the lookup key', () => {
+    // The lookup key (GiftSpec.transactionId, asserted above) and the WRITTEN column value are
+    // two different things; a bug that gets the key right but writes row.transactionId to both
+    // gifts' columns would pass the test above while breaking the consumer's per-gift pre-create
+    // lookup for the match gift (spec: Idempotency, "<id>-match").
+    const config = fakeConfig();
+    const [employeeGift, matchGift] = splitRowIntoGifts(
+      { row: fakeRow(), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },
+      config
+    ) as [GiftSpec, GiftSpec];
+    expect(employeeGift.columnValues[config.benevityImport.donationsColumns.transactionId]).toBe('TXN001');
+    expect(matchGift.columnValues[config.benevityImport.donationsColumns.transactionId]).toBe('TXN001-match');
+  });
+
   it('produces only the employee gift when there is no match amount', () => {
     const gifts = splitRowIntoGifts(
       { row: fakeRow({ matchAmount: 0 }), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },

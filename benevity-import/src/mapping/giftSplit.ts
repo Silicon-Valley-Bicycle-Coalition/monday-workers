@@ -22,14 +22,20 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
   const donorLabel = personItemId ? `${row.donorFirstName} ${row.donorLastName}`.trim() : 'Anonymous';
   const fyEnding = fiscalYearEnding(row.donationDate);
 
-  const baseColumns = (amount: number): Record<string, unknown> => ({
+  // The gift's OWN id (row.transactionId for the employee gift, `${row.transactionId}-match`
+  // for the match gift) must be threaded in and written to the column, not closed over from
+  // `row.transactionId` — otherwise both gifts would carry the SAME unsuffixed id in
+  // `Benevity Transaction ID`, breaking the spec's per-gift idempotency guarantee (the match
+  // gift's pre-create lookup in the consumer would never find a match, re-creating it on every
+  // retry, while the employee-gift lookup would start returning two items).
+  const baseColumns = (amount: number, transactionId: string): Record<string, unknown> => ({
     [cols.amount]: amount,
     [cols.date]: { date: row.donationDate },
     [cols.disbursementDate]: { date: disbursementPeriodEnding },
     [cols.fiscalYearEnding]: { date: fyEnding },
     [cols.status]: { label: 'Received' },
     [cols.anonymousDonor]: { checked: personItemId ? 'false' : 'true' },
-    [cols.transactionId]: row.transactionId,
+    [cols.transactionId]: transactionId,
     ...(personItemId ? { [cols.donor]: { item_ids: [Number(personItemId)] } } : {}),
   });
 
@@ -40,7 +46,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
       transactionId: row.transactionId,
       itemName: `${donorLabel} - Donation ${row.donationDate} (Benevity)`,
       columnValues: {
-        ...baseColumns(row.totalDonationToBeAcknowledged),
+        ...baseColumns(row.totalDonationToBeAcknowledged, row.transactionId),
         [cols.giftType]: { label: 'Donation' },
       },
     });
@@ -51,7 +57,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
       transactionId: `${row.transactionId}-match`,
       itemName: `${row.company} - Employer Matching ${donorLabel} ${row.donationDate}`,
       columnValues: {
-        ...baseColumns(row.matchAmount),
+        ...baseColumns(row.matchAmount, `${row.transactionId}-match`),
         [cols.giftType]: { label: 'Matching Donation' },
         [cols.matchedBy]: { item_ids: [Number(organizationItemId)] },
       },
