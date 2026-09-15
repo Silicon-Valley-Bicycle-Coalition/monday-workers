@@ -3,7 +3,8 @@ import { env } from 'cloudflare:test';
 import { D1GiftsStore } from '../db/gifts';
 import { D1DonationLinksStore } from '../db/links';
 import { D1PendingStore } from '../db/pending';
-import { dutiesForDate, runDuty, type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
+import { dutiesForDate, runDuty, RECONCILE_AFFILIATIONS_PER_RUN,
+  type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const OWNER_COLS = {
@@ -37,6 +38,9 @@ interface FakeClientState {
   updates: { itemId: number; body: string }[];
   createdItems?: { boardId: number; name: string; columnValues: Record<string, unknown> }[];
   changedColumns?: { boardId: number; itemId: string; columnValues: Record<string, unknown> }[];
+  // Every getItemsColumnsText call this client saw, in order — lets tests assert which
+  // columns (and so which legs) actually spent a Monday subrequest in a given run.
+  calls?: { itemIds: string[]; columnIds: string[] }[];
 }
 
 function fakeClient(state: FakeClientState): CustodianMondayClient {
@@ -47,6 +51,7 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     },
     async listWorkspaceBoards() { return state.boards ?? []; },
     async getItemsColumnsText(itemIds, columnIds) {
+      (state.calls ??= []).push({ itemIds: [...itemIds], columnIds: [...columnIds] });
       const out = new Map<string, Map<string, string | null>>();
       for (const id of itemIds) {
         const rec = state.columnText?.get(id);
@@ -459,6 +464,10 @@ describe('reconcile duty', () => {
       ['p-1', { col_og: '525' }],
     ]) };
     const d = deps(state, [], AFFIL_CFG);
+    // Legs 5/6 only run in an invocation whose owner slice is empty — simulate the owner
+    // walk having already completed (parked at the only owner, 'oA') on a prior run.
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true,
+      report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
 
     const report = await runDuty('reconcile', d);
     expect(report.ok).toBe(true);
@@ -476,6 +485,10 @@ describe('reconcile duty', () => {
       ['p-1', { col_og: '524' }],
     ]) };
     const d = deps(state, [], AFFIL_CFG);
+    // Legs 5/6 only run in an invocation whose owner slice is empty — simulate the owner
+    // walk having already completed (parked at the only owner, 'oA') on a prior run.
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true,
+      report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
 
     const report = await runDuty('reconcile', d);
     expect(report.ok).toBe(false);
@@ -501,6 +514,67 @@ describe('reconcile duty', () => {
     expect(detail.affiliationMismatchCount).toBe(0);
     expect(detail.organizationalMismatchCount).toBe(0);
   });
+
+  // Seeds RECONCILE_AFFILIATIONS_PER_RUN + 1 affiliations (each with its own gift, all
+  // acting for the same single person 'p-1' so leg 6 stays a one-item, one-call leg) via a
+  // raw batch insert — seedGift's per-row helper would be far too slow at this volume.
+  async function seedAffiliationOverflow(db: D1Database, count: number) {
+    const affiliationStmts = [];
+    const giftStmts = [];
+    for (let i = 0; i < count; i++) {
+      const afId = `af-${String(i).padStart(4, '0')}`;
+      affiliationStmts.push(db.prepare(`INSERT INTO affiliations VALUES (?1, 'p-1', 'b1', ?2, 'now')`)
+        .bind(afId, `Person ${i}`));
+      giftStmts.push(db.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id,
+          amount_cents, gift_date, fiscal_year, status, archived_at, acting_for_item_id, source, updated_at)
+        VALUES (?1, 'o1', 'b1', 100, '2020-01-01', 2020, 'Received', NULL, ?2, 'import', 'now')`)
+        .bind(`g-${afId}`, afId));
+    }
+    const all = [...affiliationStmts, ...giftStmts];
+    for (let i = 0; i < all.length; i += 500) await db.batch(all.slice(i, i + 500));
+  }
+
+  it('slices legs 5/6 across runs under the subrequest cap, never sharing an invocation with an owner slice', async () => {
+    const total = RECONCILE_AFFILIATIONS_PER_RUN + 1;
+    await seedAffiliationOverflow(env.DB, total);
+    const sortedIds = Array.from({ length: total }, (_, i) => `af-${String(i).padStart(4, '0')}`).sort();
+    const columnText = new Map<string, Record<string, string | null>>();
+    for (const id of sortedIds) columnText.set(id, { n_ag: '1' }); // 100 cents == $1.00
+    columnText.set('p-1', { col_og: String(total) }); // total * 100 cents == $total.00
+    const state: FakeClientState = { archived: [], updates: [], columnText, calls: [] };
+    const d = deps(state, [], AFFIL_CFG);
+    d.now = new Date('2026-08-01T00:00:00Z');
+
+    // Run 0: the owner walk itself — a single owner ('o1'), consumed in one slice since
+    // RECONCILE_OWNERS_PER_RUN comfortably covers it. Legs 5/6 must spend zero Monday
+    // subrequests here, even though ownerRemaining reaches 0 in this same run.
+    const before0 = state.calls!.length;
+    await runDuty('reconcile', d);
+    const run0Calls = state.calls!.slice(before0);
+    expect(run0Calls.some((c) => c.columnIds.includes('n_ag') || c.columnIds.includes('col_og'))).toBe(false);
+
+    // Run 1: the owner slice is now empty (parked on the just-completed owner walk) — leg 5
+    // spends its RECONCILE_AFFILIATIONS_PER_RUN-per-run cap (20 getItemsColumnsText calls)
+    // and leaves exactly 1 affiliation outstanding; leg 6 must not run yet.
+    d.now = new Date('2026-08-02T00:00:00Z');
+    const before1 = state.calls!.length;
+    const run1 = await runDuty('reconcile', d);
+    const run1Calls = state.calls!.slice(before1);
+    const detail1 = run1.detail as { affiliationRemaining: number; affiliationCursor: string };
+    expect(detail1.affiliationRemaining).toBe(1);
+    expect(detail1.affiliationCursor).toBe(sortedIds[RECONCILE_AFFILIATIONS_PER_RUN - 1]);
+    expect(run1Calls.some((c) => c.columnIds.includes('col_og'))).toBe(false);
+    expect(run1Calls.length).toBeLessThanOrEqual(20);
+
+    // Run 2: leg 5 finishes its last affiliation, which lets leg 6 run in the same
+    // invocation — both fully catch up and the combined remaining drops to 0.
+    d.now = new Date('2026-08-03T00:00:00Z');
+    const run2 = await runDuty('reconcile', d);
+    const detail2 = run2.detail as { affiliationRemaining: number; personRemaining: number; remaining: number };
+    expect(detail2.affiliationRemaining).toBe(0);
+    expect(detail2.personRemaining).toBe(0);
+    expect(detail2.remaining).toBe(0);
+  }, 30_000);
 });
 
 // Fix 5: rows the queue never finished (messages expired unconsumed, or a batch that died

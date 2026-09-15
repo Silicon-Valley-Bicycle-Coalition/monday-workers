@@ -242,32 +242,47 @@ async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   };
 }
 
-// Nightly reconciliation — all four legs docs/20 promises:
+// Nightly reconciliation — all six legs docs/20 promises:
 //   1. ledger vs Monday's Lifetime Giving column (per owner, sliced),
 //   2. ledger vs the Gift Ledger JSON projection column (per owner, same subrequests),
-//   3. ledger vs D1's materialized annual_summaries (final slice),
-//   4. annual_summaries vs the Annual Giving Summary board items (final slice).
+//   3. ledger vs D1's materialized annual_summaries (once the owner walk is caught up),
+//   4. annual_summaries vs the Annual Giving Summary board items (same),
+//   5. per-affiliation attributed giving vs its board's column (sliced separately, only
+//      once the owner walk is caught up AND idle — see below),
+//   6. per-person Organizational Giving vs each person board's column (same, after leg 5).
 // Mismatches alert; a human decides which side is right (usually the ledger — unless a
 // deliberate staff edit simply hasn't landed yet). Sliced like the sweep: Monday caps
 // items(ids:) at 100 and the Free plan caps subrequests at 50 per invocation, so each run
 // covers RECONCILE_OWNERS_PER_RUN owners and the nightly cron walks the full owner set
 // across consecutive nights (2 nights at current volume). Both owner columns ride the
 // same batched query (getItemsColumnsText), so leg 2 adds no subrequests; leg 4 adds at
-// most one per 100 closed years, only on the final slice.
+// most one per 100 closed years, only once the owner walk is caught up. Legs 5/6 are
+// sliced and cursored independently of the owner walk and only ever run in an invocation
+// whose owner slice is empty (never stacked on an owner slice's own subrequests) — see the
+// comment above the legs 5/6 block for why.
 const RECONCILE_OWNERS_PER_RUN = 4_000;
+// Legs 5/6 are sliced separately from the owner walk (see below) — each covers 20
+// getItemsColumnsText calls per run, well inside the Free plan's 50-subrequest cap even
+// stacked together, but NOT stacked on top of an owner slice (up to 40 calls for legs 1/2).
+export const RECONCILE_AFFILIATIONS_PER_RUN = 2_000;
+export const RECONCILE_PERSONS_PER_RUN = 2_000;
 async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
   const { receivedStatusLabel, ownerColumnsByBoard } = deps.config.donationRollups;
   const ledger = await deps.gifts.ownerTotals(receivedStatusLabel);
 
   const lastRuns = await deps.gifts.lastRuns();
   const last = lastRuns.find((r) => r.duty === 'reconcile')?.report as
-    { detail?: { cursor?: string; remaining?: number } } | undefined;
+    { detail?: {
+        cursor?: string; remaining?: number;
+        affiliationCursor?: string; affiliationRemaining?: number;
+        personCursor?: string; personRemaining?: number;
+      } } | undefined;
   const cursor = (last?.detail?.remaining ?? 0) > 0 ? (last?.detail?.cursor ?? '') : '';
 
   const allOwners = [...ledger.keys()].sort();
   const startIdx = cursor === '' ? 0 : allOwners.findIndex((o) => o > cursor);
   const slice = startIdx < 0 ? [] : allOwners.slice(startIdx, startIdx + RECONCILE_OWNERS_PER_RUN);
-  const remaining = startIdx < 0 ? 0 : allOwners.length - startIdx - slice.length;
+  const ownerRemaining = startIdx < 0 ? 0 : allOwners.length - startIdx - slice.length;
 
   const byBoard = new Map<string, string[]>();
   for (const ownerId of slice) {
@@ -336,7 +351,11 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
   const organizationalMismatches: { personItemId: string; ledgerCents: number; mondayCents: number | null }[] = [];
   let summariesChecked = 0;
   let summaryItemsChecked = 0;
-  if (remaining === 0) {
+  let affiliationRemaining = 0;
+  let affiliationCursor = '';
+  let personRemaining = 0;
+  let personCursor = '';
+  if (ownerRemaining === 0) {
     const summaries = await deps.gifts.getAnnualSummaries();
     summariesChecked = summaries.length;
 
@@ -374,49 +393,87 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
 
     // Legs 5/6: attributed giving per affiliation and Organizational Giving per person,
     // against the affiliation model's own columns — only meaningful once config.affiliations
-    // is set up, and only worth the extra subrequests on the final slice like legs 3/4.
+    // is set up. Unlike legs 3/4 (small: D1-only or one summary-board call), legs 5/6 run
+    // tens of getItemsColumnsText calls each at production volume, so — unlike legs 3/4 —
+    // they never run in the same invocation as an owner slice (up to 40 calls for legs 1/2
+    // alone; see the task-8 review finding). They're sliced/cursored across runs like the
+    // owner walk itself, and only spend Monday subrequests once `slice` (the owner slice) is
+    // empty, i.e. the run AFTER the owner walk already finished. The run that finishes the
+    // owner walk itself (ownerRemaining hits 0 but `slice` is still non-empty this run) still
+    // reports accurate outstanding counts via the cheap D1 reads below (cap 0 → no Monday
+    // calls) — that keeps affiliationRemaining/personRemaining > 0, which keeps the combined
+    // `remaining` below > 0, which parks the owner cursor (see `cursor` above) until legs 5/6
+    // catch up on later runs.
     if (deps.config.affiliations !== null) {
       const { columns } = deps.config.affiliations;
 
-      // Leg 5: every affiliation's attributed total vs its board's attributedGiving column.
+      // Leg 5: every affiliation's attributed total vs its board's attributedGiving column,
+      // resumed from affiliationCursor when the last run left work outstanding.
       const ledgerByAffiliation = await deps.gifts.attributedTotalsAll(receivedStatusLabel);
       const affiliationIds = [...ledgerByAffiliation.keys()].sort();
-      const affResults = await compareCents(
-        deps.mondayClient, affiliationIds, columns.attributedGiving,
-        (id) => ledgerByAffiliation.get(id)!.cents);
-      affiliationMismatches.push(...affResults.map((m) =>
-        ({ affiliationItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+      const affiliationCursorIn = (last?.detail?.affiliationRemaining ?? 0) > 0
+        ? (last?.detail?.affiliationCursor ?? '') : '';
+      const affSliced = sliceByCursor(affiliationIds, affiliationCursorIn,
+        slice.length === 0 ? RECONCILE_AFFILIATIONS_PER_RUN : 0);
+      affiliationRemaining = affSliced.remaining;
+      affiliationCursor = affSliced.cursorOut;
+      if (affSliced.slice.length > 0) {
+        const affResults = await compareCents(
+          deps.mondayClient, affSliced.slice, columns.attributedGiving,
+          (id) => ledgerByAffiliation.get(id)!.cents);
+        affiliationMismatches.push(...affResults.map((m) =>
+          ({ affiliationItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+      }
 
       // Leg 6: every person's Organizational Giving vs their own board's organizationalGiving
       // column — grouped by board since that column id (and its existence) is per-board.
+      // Only spends Monday subrequests once leg 5 has fully caught up THIS run; otherwise it
+      // waits for a later run (same subrequest-budget reasoning as above).
       const ledgerByPerson = await deps.gifts.organizationalGivingAll(receivedStatusLabel);
-      const personIdsByBoard = new Map<string, string[]>();
-      for (const [personId, t] of ledgerByPerson) {
-        const list = personIdsByBoard.get(t.personBoardId) ?? [];
-        list.push(personId);
-        personIdsByBoard.set(t.personBoardId, list);
-      }
-      for (const [personBoardId, personIds] of personIdsByBoard) {
-        const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
-        if (!column) continue; // e.g. an Organizations board, which has no driven-giving concept
-        const results = await compareCents(
-          deps.mondayClient, personIds.sort(), column, (id) => ledgerByPerson.get(id)!.cents);
-        organizationalMismatches.push(...results.map((m) =>
-          ({ personItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+      const personIds = [...ledgerByPerson.keys()].sort();
+      const personCursorIn = (last?.detail?.personRemaining ?? 0) > 0
+        ? (last?.detail?.personCursor ?? '') : '';
+      const personSliced = sliceByCursor(personIds, personCursorIn,
+        affiliationRemaining === 0 ? RECONCILE_PERSONS_PER_RUN : 0);
+      personRemaining = personSliced.remaining;
+      personCursor = personSliced.cursorOut;
+      if (personSliced.slice.length > 0) {
+        const personIdsByBoard = new Map<string, string[]>();
+        for (const personId of personSliced.slice) {
+          const boardId = ledgerByPerson.get(personId)!.personBoardId;
+          const list = personIdsByBoard.get(boardId) ?? [];
+          list.push(personId);
+          personIdsByBoard.set(boardId, list);
+        }
+        for (const [personBoardId, personIdsForBoard] of personIdsByBoard) {
+          const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
+          if (!column) continue; // e.g. an Organizations board, which has no driven-giving concept
+          const results = await compareCents(
+            deps.mondayClient, personIdsForBoard, column, (id) => ledgerByPerson.get(id)!.cents);
+          organizationalMismatches.push(...results.map((m) =>
+            ({ personItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+        }
       }
     }
   }
 
+  // The combined remaining across all three sliced legs — this, not ownerRemaining alone, is
+  // what next run's owner-cursor decision (above) reads back, so the owner walk stays parked
+  // until legs 5/6 finish too (see the comment on the legs 5/6 block).
+  const remaining = ownerRemaining + affiliationRemaining + personRemaining;
+  const legsFiveSixIncomplete = affiliationRemaining > 0 || personRemaining > 0;
   const ok = mismatches.length === 0 && projectionMismatches.length === 0
     && staleFYs.length === 0 && summaryBoardMismatches.length === 0
     && affiliationMismatches.length === 0 && organizationalMismatches.length === 0;
   return {
     ok,
     summary: ok
-      ? `${compared} owners reconciled clean` +
-        (remaining > 0
-          ? ` — ${remaining} remain, continuing next run`
-          : `, ${summariesChecked} annual summaries and ${summaryItemsChecked} summary board item(s) current`)
+      ? ownerRemaining > 0
+        ? `${compared} owners reconciled clean — ${ownerRemaining} remain, continuing next run`
+        : legsFiveSixIncomplete
+          ? `${compared} owners reconciled clean, ${summariesChecked} annual summaries and ${summaryItemsChecked} summary board item(s) current` +
+            ` — ${affiliationRemaining} affiliations and ${personRemaining} people remain, continuing next run`
+          : `${compared} owners reconciled clean, ${summariesChecked} annual summaries and ${summaryItemsChecked} summary board item(s) current`
       : `${mismatches.length} owner mismatch(es), ${projectionMismatches.length} gift-ledger projection mismatch(es), ` +
         `${staleFYs.length} stale annual summary(ies), ${summaryBoardMismatches.length} summary board mismatch(es), ` +
         `${affiliationMismatches.length} affiliation mismatch(es), ${organizationalMismatches.length} organizational giving mismatch(es)`,
@@ -426,8 +483,21 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
       projectionMismatchCount: projectionMismatches.length, truncatedProjections,
       staleFYs, summaryBoardMismatches, summaryItemsChecked,
       affiliationMismatches: affiliationMismatches.slice(0, 20), affiliationMismatchCount: affiliationMismatches.length,
-      organizationalMismatches: organizationalMismatches.slice(0, 20), organizationalMismatchCount: organizationalMismatches.length },
+      affiliationRemaining, affiliationCursor,
+      organizationalMismatches: organizationalMismatches.slice(0, 20), organizationalMismatchCount: organizationalMismatches.length,
+      personRemaining, personCursor },
   };
+}
+
+// Shared by legs 5 and 6: page through a sorted id list by cursor, capped at `cap` ids this
+// run. cap === 0 reports the true outstanding count (and leaves the cursor untouched) without
+// consuming any of it — used when the owner slice wasn't empty this run, so legs 5/6 must not
+// spend Monday subrequests yet (see runReconcile).
+function sliceByCursor(ids: string[], cursorIn: string, cap: number): { slice: string[]; remaining: number; cursorOut: string } {
+  const startIdx = cursorIn === '' ? 0 : ids.findIndex((id) => id > cursorIn);
+  const available = startIdx < 0 ? [] : ids.slice(startIdx);
+  const slice = available.slice(0, cap);
+  return { slice, remaining: available.length - slice.length, cursorOut: slice.at(-1) ?? cursorIn };
 }
 
 // Shared by legs 5 and 6: read one Monday column for a batch of item ids (chunked at 100,
