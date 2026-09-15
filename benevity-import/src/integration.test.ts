@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { env } from 'cloudflare:test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { env, reset } from 'cloudflare:test';
 import { createApp, type AppDeps } from './webhook/route';
 import { processBenevityQueueBatch, type BenevityQueueMessage } from './consumer/processBatch';
 import { D1UploadStore } from './db/uploads';
@@ -78,6 +78,17 @@ describe('benevity-import integration', () => {
     };
   });
 
+  // This version of @cloudflare/vitest-plugin does not auto-isolate D1 (and other binding)
+  // storage between `it()` blocks — `reset()` must be called explicitly (see its doc comment
+  // in node_modules/@cloudflare/vitest-plugin/types/cloudflare-test.d.ts). Without this, the two
+  // tests below — which intentionally reuse the same upload asset id and transaction id to prove
+  // the same webhook→D1→queue→consumer path under different resolution outcomes — collide with
+  // this Worker's own upload-redelivery idempotency check (webhook/route.ts) and the second test
+  // sees the first test's already-`needs-review` row instead of processing its own upload.
+  afterEach(async () => {
+    await reset();
+  });
+
   it('ingests an upload, enqueues its row, and the consumer resolves and writes it (anonymous — no email/name match rigged), worklisting the person', async () => {
     const config = fakeConfig();
     const routeDeps: AppDeps = {
@@ -120,6 +131,51 @@ describe('benevity-import integration', () => {
     const row = await new D1RowStore(env.DB).getRow('TXN001');
     expect(row?.status).toBe('needs-review');
     expect(mondayClient.createItem).toHaveBeenCalledWith(777, expect.any(String), expect.any(Object), 'review');
+  });
+
+  it('writes both gifts when the person also resolves, and marks the row written', async () => {
+    const config = fakeConfig();
+    (mondayClient.findItemsByColumnValue as ReturnType<typeof vi.fn>).mockImplementation(
+      (boardId: number, columnId: string) =>
+        boardId === 333 && columnId === 'personal_email_c'
+          ? Promise.resolve([{ id: '5', name: 'Jordan Rivera' }])
+          : Promise.resolve([])
+    );
+    const routeDeps: AppDeps = {
+      mondayClient,
+      uploadStore: new D1UploadStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      rowStore: new D1RowStore(env.DB),
+      config,
+      queue: { send: async (m) => { sentMessages.push(m); } },
+      webhookSecret: SECRET,
+      fetchCsv: async () => validReport(),
+      now: () => '2026-09-15T00:00:00Z',
+    };
+    const app = createApp(routeDeps);
+    await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+    });
+
+    await processBenevityQueueBatch(
+      sentMessages.map((body) => ({ body, ack: vi.fn(), retry: vi.fn() })),
+      {
+        rowStore: new D1RowStore(env.DB),
+        disbursementStore: new D1DisbursementStore(env.DB),
+        aliasStore: new D1AliasStore(env.DB),
+        mondayClient,
+        config,
+        now: () => '2026-09-15T01:00:00Z',
+      }
+    );
+
+    const row = await new D1RowStore(env.DB).getRow('TXN001');
+    expect(row?.status).toBe('written');
+    expect(row?.mondayEmployeeItemId).toBe('501');
+    expect(row?.mondayMatchItemId).toBe('501');
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(2);
   });
 
   it('rejects webhook requests without the correct secret', async () => {

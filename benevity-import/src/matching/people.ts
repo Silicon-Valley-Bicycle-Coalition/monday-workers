@@ -53,7 +53,7 @@ export async function resolvePerson(
       ...workEmailPersonIds,
     ]);
     if (candidateIds.size === 1) {
-      return { status: 'resolved', personItemId: [...candidateIds][0] };
+      return { status: 'resolved', personItemId: [...candidateIds][0]! }; // guarded by candidateIds.size === 1 above
     }
     if (candidateIds.size > 1) {
       return {
@@ -83,7 +83,7 @@ export async function resolvePerson(
       (item) => affiliatedPersonIds.has(item.id) || employerTextIds.has(item.id)
     );
     if (employerConfirmed.length === 1) {
-      return { status: 'resolved', personItemId: employerConfirmed[0].id };
+      return { status: 'resolved', personItemId: employerConfirmed[0]!.id }; // guarded by employerConfirmed.length === 1 above
     }
     if (employerConfirmed.length > 1) {
       return {

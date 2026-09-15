@@ -119,7 +119,7 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
     const existing = await deps.mondayClient.findItemsByColumnValue(donationsBoardId, txnIdColumn, gift.transactionId);
     let itemId: string;
     if (existing.length > 0) {
-      itemId = existing[0].id;
+      itemId = existing[0]!.id; // guarded by existing.length > 0 above
       await deps.mondayClient.changeColumnValues(donationsBoardId, itemId, gift.columnValues);
     } else {
       const created = await deps.mondayClient.createItem(donationsBoardId, gift.itemName, gift.columnValues);

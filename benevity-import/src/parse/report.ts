@@ -95,8 +95,9 @@ function parseBlockOrThrow(lines: string[]): ParsedBlock {
   i++;
 
   const preamble: Record<string, string> = {};
-  while (i < lines.length && !lines[i].startsWith('"#')) {
-    const [key, ...rest] = parseCsvLine(lines[i]);
+  while (i < lines.length && !lines[i]!.startsWith('"#')) {
+    // i < lines.length checked by the while condition
+    const [key, ...rest] = parseCsvLine(lines[i]!);
     preamble[(key ?? '').trim()] = rest.join(',').trim();
     i++;
   }
@@ -105,11 +106,11 @@ function parseBlockOrThrow(lines: string[]): ParsedBlock {
   }
   i++; // skip closing separator
 
-  while (i < lines.length && lines[i].trim() === '') i++;
+  while (i < lines.length && lines[i]!.trim() === '') i++; // i < lines.length checked by the while condition
   if (i >= lines.length) {
     throw new Error('report: no header row found');
   }
-  const header = parseCsvLine(lines[i]);
+  const header = parseCsvLine(lines[i]!); // i < lines.length guaranteed by the throw above
   i++;
   for (const column of REQUIRED_HEADER_COLUMNS) {
     if (!header.includes(column)) {
@@ -119,8 +120,9 @@ function parseBlockOrThrow(lines: string[]): ParsedBlock {
   const colIndex = (name: string): number => header.indexOf(name);
 
   const rows: ParsedRow[] = [];
-  while (i < lines.length && !/^totals\b/i.test(lines[i])) {
-    const fields = parseCsvLine(lines[i]);
+  while (i < lines.length && !/^totals\b/i.test(lines[i]!)) {
+    // i < lines.length checked by the while condition
+    const fields = parseCsvLine(lines[i]!);
     const field = (name: string): string => (fields[colIndex(name)] ?? '').trim();
     rows.push({
       company: field('Company'),
@@ -140,10 +142,11 @@ function parseBlockOrThrow(lines: string[]): ParsedBlock {
 
   let reportedGrossTotal = 0;
   let reportedNetTotal = 0;
-  if (i < lines.length && /^totals\b/i.test(lines[i])) {
+  if (i < lines.length && /^totals\b/i.test(lines[i]!)) {
+    // i < lines.length checked above
     i++;
     while (i < lines.length) {
-      const [label, value] = parseCsvLine(lines[i]);
+      const [label, value] = parseCsvLine(lines[i]!); // i < lines.length checked by the while condition
       if (/Total Donations \(Gross\)/i.test(label ?? '')) reportedGrossTotal = parseAmount(value ?? '');
       if (/Net Total Payment/i.test(label ?? '')) reportedNetTotal = parseAmount(value ?? '');
       i++;
@@ -185,11 +188,12 @@ function parsePeriodEnding(raw: string): string {
   // Benevity's preamble format, verified 2026-09-15: "Tue 16 Dec 2025 0:00:00"
   // (weekday name, day, three-letter month, 4-digit year, time — time discarded).
   const match = /^\w{3}\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\b/.exec(raw.trim());
-  const month = match ? MONTHS[match[2]] : undefined;
+  // match[2] is a mandatory (non-optional) capture group, so it's present whenever match itself is
+  const month = match ? MONTHS[match[2]!] : undefined;
   if (!match || !month) {
     throw new Error(`report: "Period Ending" value "${raw}" doesn't match the expected format`);
   }
-  const day = match[1].padStart(2, '0');
+  const day = match[1]!.padStart(2, '0'); // guarded by the !match check above; group 1 is mandatory
   return `${match[3]}-${month}-${day}`;
 }
 

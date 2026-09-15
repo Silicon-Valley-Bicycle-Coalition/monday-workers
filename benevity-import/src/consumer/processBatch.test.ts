@@ -80,6 +80,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
       id: 1, uploadId: 1, disbursementId: 'ABC123', periodEnding: '2026-03-16', currency: 'USD',
       rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null,
     }),
+    listByUpload: vi.fn().mockResolvedValue([]),
   };
   const aliasStore: AliasStore = { getAlias: vi.fn().mockResolvedValue(null), learnAlias: vi.fn() };
   const mondayClient = {

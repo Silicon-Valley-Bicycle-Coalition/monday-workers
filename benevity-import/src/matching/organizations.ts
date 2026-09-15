@@ -8,7 +8,7 @@ export type OrganizationResolution =
 
 function exactlyOne(items: { id: string; name: string }[], expectedName: string): string | null {
   const matches = items.filter((item) => item.name.toLowerCase() === expectedName.toLowerCase());
-  return matches.length === 1 ? matches[0].id : null;
+  return matches.length === 1 ? matches[0]!.id : null; // guarded by matches.length === 1 above
 }
 
 export async function resolveOrganization(

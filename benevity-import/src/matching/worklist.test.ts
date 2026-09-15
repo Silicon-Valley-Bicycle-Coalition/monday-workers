@@ -65,6 +65,6 @@ describe('createWorklistItem', () => {
       date: '2025-12-06',
     });
 
-    expect(createItem.mock.calls[0][1]).toBe('Acme Co');
+    expect(createItem.mock.calls[0]![1]).toBe('Acme Co'); // createWorklistItem calls monday.createItem exactly once, above
   });
 });

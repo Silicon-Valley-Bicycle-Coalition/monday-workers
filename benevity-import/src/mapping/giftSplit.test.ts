@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitRowIntoGifts } from './giftSplit';
+import { splitRowIntoGifts, type GiftSpec } from './giftSplit';
 import type { ParsedRow } from '../parse/report';
 import type { BenevityImportConfig } from '../types';
 
@@ -64,7 +64,7 @@ describe('splitRowIntoGifts', () => {
       fakeConfig()
     );
     expect(gifts).toHaveLength(1);
-    expect(gifts[0].transactionId).toBe('TXN001');
+    expect(gifts[0]!.transactionId).toBe('TXN001'); // guarded by toHaveLength(1) above
   });
 
   it('produces only the company match when there is no employee amount', () => {
@@ -78,15 +78,17 @@ describe('splitRowIntoGifts', () => {
       fakeConfig()
     );
     expect(gifts).toHaveLength(1);
-    expect(gifts[0].transactionId).toBe('TXN001-match');
+    expect(gifts[0]!.transactionId).toBe('TXN001-match'); // guarded by toHaveLength(1) above
   });
 
   it('sets exact Gift Type and Status labels, and Matched By only on the match gift', () => {
     const config = fakeConfig();
+    // fakeRow() defaults both amounts positive, so both the employee and match gift are produced
+    // (see "produces both an employee gift and a company match" above)
     const [employeeGift, matchGift] = splitRowIntoGifts(
       { row: fakeRow(), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },
       config
-    );
+    ) as [GiftSpec, GiftSpec];
     expect(employeeGift.columnValues[config.benevityImport.donationsColumns.giftType]).toEqual({ label: 'Donation' });
     expect(employeeGift.columnValues[config.benevityImport.donationsColumns.status]).toEqual({ label: 'Received' });
     expect(employeeGift.columnValues[config.benevityImport.donationsColumns.matchedBy]).toBeUndefined();
@@ -96,20 +98,22 @@ describe('splitRowIntoGifts', () => {
 
   it('writes the disbursement Period Ending separately from the row Donation Date', () => {
     const config = fakeConfig();
+    // fakeRow() defaults both amounts positive, so the employee gift is always produced first
     const [gift] = splitRowIntoGifts(
       { row: fakeRow(), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },
       config
-    );
+    ) as [GiftSpec, ...GiftSpec[]];
     expect(gift.columnValues[config.benevityImport.donationsColumns.date]).toEqual({ date: '2025-12-06' });
     expect(gift.columnValues[config.benevityImport.donationsColumns.disbursementDate]).toEqual({ date: '2025-12-16' });
   });
 
   it('checks Anonymous Donor and omits Donor when no person is resolved', () => {
     const config = fakeConfig();
+    // fakeRow() defaults both amounts positive, so the employee gift is always produced first
     const [gift] = splitRowIntoGifts(
       { row: fakeRow(), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: null },
       config
-    );
+    ) as [GiftSpec, ...GiftSpec[]];
     expect(gift.columnValues[config.benevityImport.donationsColumns.anonymousDonor]).toEqual({ checked: 'true' });
     expect(gift.columnValues[config.benevityImport.donationsColumns.donor]).toBeUndefined();
     expect(gift.itemName).toContain('Anonymous');
@@ -117,6 +121,7 @@ describe('splitRowIntoGifts', () => {
 
   it('computes Fiscal Year Ending from the Donation Date', () => {
     const config = fakeConfig();
+    // fakeRow() defaults both amounts positive, so the employee gift is always produced first
     const [gift] = splitRowIntoGifts(
       {
         row: fakeRow({ donationDate: '2026-08-01' }),
@@ -125,7 +130,7 @@ describe('splitRowIntoGifts', () => {
         personItemId: '5',
       },
       config
-    );
+    ) as [GiftSpec, ...GiftSpec[]];
     expect(gift.columnValues[config.benevityImport.donationsColumns.fiscalYearEnding]).toEqual({ date: '2027-06-30' });
   });
 });

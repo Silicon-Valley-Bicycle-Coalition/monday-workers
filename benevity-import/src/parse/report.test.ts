@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBenevityReport } from './report';
+import { parseBenevityReport, type ParsedBlock } from './report';
 
 // Structure matches a real SVBC export verified 2026-09-15 (see benevity-import/README.md,
 // Input format) — all names/amounts below are synthetic.
@@ -43,7 +43,8 @@ function block(opts: {
 
 describe('parseBenevityReport', () => {
   it('parses a single-disbursement block', () => {
-    const [result] = parseBenevityReport(block());
+    // block() always yields exactly one block (one "Donations Report" line)
+    const [result] = parseBenevityReport(block()) as [ParsedBlock];
     expect(result.headerError).toBeNull();
     expect(result.disbursementId).toBe('ABC123');
     expect(result.periodEnding).toBe('2025-12-16');
@@ -68,9 +69,10 @@ describe('parseBenevityReport', () => {
       ],
       grossTotal: '25.00',
     });
-    const [result] = parseBenevityReport(csv);
-    expect(result.rows[0].donorFirstName).toBe('Not shared by donor');
-    expect(result.rows[0].email).toBe('Not shared by donor');
+    // csv's rows fixture above has exactly one row
+    const [result] = parseBenevityReport(csv) as [ParsedBlock];
+    expect(result.rows[0]!.donorFirstName).toBe('Not shared by donor');
+    expect(result.rows[0]!.email).toBe('Not shared by donor');
   });
 
   it('parses a row reported in a non-USD currency without rejecting it', () => {
@@ -80,24 +82,28 @@ describe('parseBenevityReport', () => {
       ],
       grossTotal: '360.00',
     });
-    const [result] = parseBenevityReport(csv);
-    expect(result.rows[0].currency).toBe('EUR');
+    // csv's rows fixture above has exactly one row
+    const [result] = parseBenevityReport(csv) as [ParsedBlock];
+    expect(result.rows[0]!.currency).toBe('EUR');
   });
 
   it('flags a block whose row totals do not match its reported gross total', () => {
     const csv = block({ grossTotal: '999.00' });
-    const [result] = parseBenevityReport(csv);
+    // block() always yields exactly one block
+    const [result] = parseBenevityReport(csv) as [ParsedBlock];
     expect(result.sumMismatch).toBe(true);
   });
 
   it('does not flag a block whose row totals match its reported gross total', () => {
-    const [result] = parseBenevityReport(block());
+    // block() always yields exactly one block
+    const [result] = parseBenevityReport(block()) as [ParsedBlock];
     expect(result.sumMismatch).toBe(false);
   });
 
   it('records a header error without throwing, for a block missing a required column', () => {
     const csv = block().replace('Transaction ID,', 'Txn Id Renamed,');
-    const [result] = parseBenevityReport(csv);
+    // block() always yields exactly one block
+    const [result] = parseBenevityReport(csv) as [ParsedBlock];
     expect(result.headerError).toMatch(/Transaction ID/);
     expect(result.rows).toEqual([]);
   });
@@ -113,9 +119,10 @@ describe('parseBenevityReport', () => {
     const bad = block({ disbursementId: 'BAD01' }).replace('Transaction ID,', 'Txn Id Renamed,');
     const good = block({ disbursementId: 'GOOD02' });
     const results = parseBenevityReport(bad + good);
-    expect(results[0].headerError).not.toBeNull();
-    expect(results[1].headerError).toBeNull();
-    expect(results[1].disbursementId).toBe('GOOD02');
+    // bad + good always yields exactly 2 blocks (two "Donations Report" lines)
+    expect(results[0]!.headerError).not.toBeNull();
+    expect(results[1]!.headerError).toBeNull();
+    expect(results[1]!.disbursementId).toBe('GOOD02');
   });
 
   it('throws if the file contains no "Donations Report" block at all', () => {
