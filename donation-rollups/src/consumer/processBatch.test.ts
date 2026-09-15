@@ -167,7 +167,7 @@ describe('gift-history projections in the recompute path', () => {
       { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
     const written = changeColumnValues.mock.calls[0]![2] as Record<string, unknown>;
-    expect(JSON.parse(written['glj'] as string)).toEqual([['dn1', '2020-01-15', 5000, 'Donation', 'Received']]);
+    expect(JSON.parse(written['glj'] as string)).toEqual([['dn1', '2020-01-15', 5000, 'Donation', 'Received', '']]);
     expect(setItemDescription).toHaveBeenCalledWith('donor-1',
       expect.stringContaining('https://acme.monday.com/boards/1/pulses/dn1'));
     expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
@@ -238,14 +238,14 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
   it('alerts (without truncating) already at the 48KB planning threshold', async () => {
     const createUpdate = vi.fn().mockResolvedValue(undefined);
     const giftsStore = fakeGiftsStore();
-    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory.slice(0, 1_000)); // ~50KB
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory.slice(0, 900)); // ~56KB with the acting-for element
     const mondayClient = fakeMondayClient({ createUpdate });
     await processRecomputeBatch([fakeMessage('dn1')],
       { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
 
     expect(createUpdate).toHaveBeenCalledTimes(1);
     const written = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<string, unknown>;
-    expect(JSON.parse(written['glj'] as string)).toHaveLength(1_000); // still the full projection
+    expect(JSON.parse(written['glj'] as string)).toHaveLength(900); // still the full projection
   });
 
   it('a failing alert post never kills the rollup write', async () => {
@@ -854,6 +854,18 @@ describe('consumer phase 2 — affiliation rollups', () => {
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500' });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
     warn.mockRestore();
+  });
+
+  it('gift-history description gains a "Driven for organizations" section when the owner drives affiliated giving', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      affiliationsStore: { forPerson: vi.fn().mockResolvedValue([
+        { affiliationItemId: 'af-1', personItemId: 'donor-1', personBoardId: '2', name: 'Uma @ Beta Org' },
+      ]) },
+    });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(affiliationsStore.forPerson).toHaveBeenCalledWith('donor-1');
+    expect(mondayClient.setItemDescription).toHaveBeenCalledWith('donor-1', expect.stringContaining('Driven for organizations'));
   });
 
   it('does nothing extra when affiliations is null (gate off)', async () => {

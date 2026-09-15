@@ -239,9 +239,17 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   for (const w of giftTermWrites) {
     await mondayClient.changeColumnValues(w.boardId, w.itemId, w.values);
   }
+  // Gift-history's own "Driven for organizations" section (docs/20 §5.5 addendum): when this
+  // owner is a Person who drives giving for one or more organizations, show what their acting-for
+  // attribution has produced — sourced fresh from the ledger, same as the rest of this projection.
+  // Gated on affiliations being configured at all; a zero-total affiliation is omitted, not
+  // shown as a $0 row.
+  const driven = affiliationsCfg !== null
+    ? await drivenForOrganizations(deps, ownerItemId, receivedStatusLabel)
+    : undefined;
   try {
     await mondayClient.setItemDescription(ownerItemId,
-      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl));
+      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
     // Gift Ledger JSON column, and set_item_description_content 500s outright on accounts
@@ -337,6 +345,18 @@ async function alertOversizedLedger(
   } catch (err) {
     console.error(`donation-rollups: posting oversized-ledger alert to Monday item ${alertItemId} failed: ${String(err)}`);
   }
+}
+
+async function drivenForOrganizations(
+  deps: ProcessBatchDeps, ownerItemId: string, statusLabel: string,
+): Promise<{ affiliationName: string; cents: number; count: number }[]> {
+  const mine = await deps.affiliationsStore.forPerson(ownerItemId);
+  const driven: { affiliationName: string; cents: number; count: number }[] = [];
+  for (const a of mine) {
+    const totals = await deps.giftsStore.attributedTotals(a.affiliationItemId, statusLabel);
+    if (totals.cents > 0) driven.push({ affiliationName: a.name, cents: totals.cents, count: totals.count });
+  }
+  return driven;
 }
 
 function numCol(n: number | null): string {
