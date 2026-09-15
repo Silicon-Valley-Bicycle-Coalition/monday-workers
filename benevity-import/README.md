@@ -1,6 +1,9 @@
 # benevity-import
 
-**Status:** Spec finalized 2026-09-15, verified against a real disbursement export. Not built.
+**Status:** Built (`feat/benevity-import`) — not deployed; needs D1 provisioning, real Monday
+board/column ids (`config/svbc.json`'s `REPLACE_*` placeholders), the two `salesforce-import`
+Donations-board columns it depends on (see Related changes elsewhere), and Monday webhook +
+integration-user token setup.
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.
@@ -119,7 +122,7 @@ PII):
 | Total Donation to be Acknowledged | Employee gift amount (gross) |
 | Match Amount | Company match amount (gross) |
 | Cause Support Fee, Merchant Fee | Not written to the CRM (finance/QuickBooks concern) |
-| Comment / Reason / Source / Activity / Project / Project Remote ID | Written to the item's Updates or description if non-empty; never parsed |
+| Comment / Reason / Source / Activity / Project / Project Remote ID | Parsed and concatenated into `ParsedRow.notes`, retained for a future Updates-post feature — **not currently written to Monday** (see Known gaps in this build) |
 
 **Anonymous rows.** Donors choose what to share; withheld fields read the literal string `Not
 shared by donor` (confirmed in the verification export — not merely blank). Treat either form in
@@ -260,6 +263,23 @@ never a staff member's personal token.
 * **Staff process guide (`docs/06`, private repo):** the Donations section gains "Benevity
   disbursements: drop the report on the Benevity Uploads board; work the review group" once this
   ships.
+
+## Known gaps in this build
+
+Two places where the spec above describes more than what shipped:
+
+* **Alias learning has no caller.** `db/aliases.ts`'s `learnAlias` exists and is tested, and
+  Company → Organizations resolution reads from the alias table it feeds — but nothing in the
+  shipped pipeline ever *writes* to it. The Resolution section's "the Worker then learns the
+  alias by appending it to a D1 `aliases` table" describes a capability this build doesn't have:
+  there's no "resolve this worklist item" trigger/webhook at all (same underlying gap as the
+  worklist "re-run the row" flow under Resolution — staff resolving a worklist item today means
+  fixing it directly on the board and manually re-triggering the upload, not a built-in re-run
+  action). Today, teaching an alias means a manual D1 `aliases` table insert.
+* **Comment/Reason/Source/Activity/Project fields are parsed but never posted anywhere.** See the
+  Input format table above, corrected to say so — `ParsedRow.notes` carries the concatenated text
+  through parsing and is retained for a future Updates-post feature, but nothing in this build
+  writes it to Monday.
 
 ## Open questions
 
