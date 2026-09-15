@@ -20,10 +20,11 @@ const config: DonationRollupsConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', accountUrl: 'https://acme.monday.com' },
   custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
     annualSummaryBoardId: null, annualSummaryColumns: null },
+  affiliations: null,
   donationRollups: {
     donationBoards: [
-      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1' } },
-      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null } },
+      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1', actingForLink: null } },
+      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null, actingForLink: null } },
     ],
     receivedStatusLabel: 'Received',
     ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns },

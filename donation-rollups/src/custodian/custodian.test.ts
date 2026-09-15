@@ -17,8 +17,9 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
     monday: { apiUrl: 'https://x', accountUrl: 'https://acme.monday.com' },
     custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
       annualSummaryBoardId: null, annualSummaryColumns: null, ...over },
+    affiliations: null,
     donationRollups: {
-      donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy' } }],
+      donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy', actingForLink: null } }],
       receivedStatusLabel: 'Received',
       ownerColumnsByBoard: { 'b1': OWNER_COLS },
       membership: null,
