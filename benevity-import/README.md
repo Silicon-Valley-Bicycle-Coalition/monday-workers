@@ -1,6 +1,9 @@
 # benevity-import
 
-**Status:** Requirements only (drafted 2026-09-08). Not built.
+**Status:** Built (`feat/benevity-import`) — not deployed; needs D1 provisioning, real Monday
+board/column ids (`config/svbc.json`'s `REPLACE_*` placeholders), the two `salesforce-import`
+Donations-board columns it depends on (see Related changes elsewhere), and Monday webhook +
+integration-user token setup.
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.
@@ -32,16 +35,22 @@ can't resolve on a worklist instead of guessing.
 
 ```
 Benevity Causes Portal
-  │  staff download the disbursement report (CSV), roughly monthly
+  │  staff download the disbursement report (CSV), roughly monthly — may bundle
+  │  several disbursements in one file (see Input format)
   ▼
 Monday "Benevity Uploads" board — staff drop the file in a file column          (see Trigger)
   │  Monday webhook on item create/file change
   ▼
 Cloudflare Worker (webhook handler)
-  │  1. fetch the asset via Monday's GraphQL API, parse rows, validate the header
-  │  2. upsert each row into D1 `rows` keyed on Benevity Transaction ID
+  │  1. fetch the asset via Monday's GraphQL API
+  │  2. split the file into one or more preamble+rows+footer blocks; parse each
+  │     independently into D1 `disbursements`, validating its own header and its
+  │     footer's reported total against the sum of its own rows
+  │  3. upsert each row into D1 `rows` keyed on Benevity Transaction ID — globally,
+  │     not per file or per block, so the same gift arriving in two different
+  │     bundles is still one row
   │     (a re-upload of an overlapping file is a no-op for rows already written)
-  │  3. enqueue one Cloudflare Queue message per row not yet written
+  │  4. enqueue one Cloudflare Queue message per row not yet written
   ▼
 Cloudflare Queue → consumer Worker, per row
   │  1. resolve the paying company → Organizations item (exact name, then config aliases)
@@ -59,7 +68,9 @@ Ingestion, resolution, and the Monday write are separate, independently testable
 shape as `funraise-sync`. The D1 row status only advances to `written` after Monday confirms the
 item exists with its Transaction ID set, so a crash between "create item" and "record success"
 is caught on retry by the pre-create lookup (search Donations for the Transaction ID before
-creating), never by a duplicate.
+creating), never by a duplicate. A block that fails its own header or total-sum validation is
+recorded but contributes zero rows, so one bad block in a bundled file doesn't lose the good ones
+around it.
 
 ### Trigger
 
@@ -78,33 +89,47 @@ SFTP-pull front end can replace the manual drop later without touching the rest.
 
 ## Input format
 
-The Benevity disbursement ("Donation") report is a CSV with a preamble block (charity name,
-disbursement id, period, totals) above the column header row, then one row per donation or match.
-**The column set below is from Benevity's current report as understood at drafting time — verify
-it against a real export before building, and keep the header-to-field mapping in
-`config/svbc.json` so a renamed column is a config change, not a code change.** Columns this
-Worker cares about:
+The Benevity disbursement ("Donation") report is a CSV with a preamble block above the column
+header row, then one row per donation or match, then a trailer. **Verified against a real SVBC
+export 2026-09-15** (structure only — the sample is not stored anywhere in this repo, real donor
+PII):
+
+* **Preamble:** a `Donations Report` line, a `#---...` separator, then one `key,value` line each
+  for `Charity Name`, `Charity ID`, `Period Ending`, `Currency` (the disbursement's own currency,
+  distinct from the per-row `Currency` column below), `Payment Method`, `Disbursement ID`, `Note`,
+  another separator, then a blank line before the header row.
+* **Trailer:** after the last data row, a `Totals,...` row (column totals, blank Company/Donor/etc.
+  fields — must not be parsed as a data row), then three summary lines: `Total Donations (Gross)`,
+  `Check Fee`, `Net Total Payment`.
+* **A file may contain more than one preamble+rows+trailer block** — the redesigned Causes Portal
+  can bundle several disbursements into one download. The parser splits on repeated `Donations
+  Report` lines and treats each block independently (its own header validation, its own
+  total-sum check against its own trailer).
+* The header row's 23 columns are read **by name**, so column order doesn't matter; this Worker
+  uses:
 
 | Benevity column | Used for |
 |---|---|
 | Company | Organization resolution (paying company; may be a foundation name) |
 | Donor First Name, Donor Last Name | Person resolution fallback; item name |
 | Email | Person resolution, primary key when disclosed |
-| Address / City / State / Postal Code | Not written to Monday (see PII); may inform a worklist proposal |
-| Donation Date | Donations `Date` (not the disbursement date) |
+| Address / City / State/Province / Postal Code | Not written to Monday (see PII); may inform a worklist proposal |
+| Donation Date | Donations `Date` |
+| *(preamble)* Period Ending | Donations `Benevity Disbursement Date`, on every item the block produces — distinct from `Donation Date`, since one disbursement covers donations made on different dates |
 | Transaction ID | Idempotency key → `Benevity Transaction ID` column |
 | Donation Frequency | One-time vs recurring payroll giving — informational, written to item description |
-| Currency | Must be USD; anything else goes to the worklist |
+| Currency (row-level) | Must be USD; anything else goes to the worklist. Confirmed non-hypothetical: the verification export's one data row was reported in EUR |
 | Total Donation to be Acknowledged | Employee gift amount (gross) |
 | Match Amount | Company match amount (gross) |
 | Cause Support Fee, Merchant Fee | Not written to the CRM (finance/QuickBooks concern) |
-| Comment / Reason / Source / Activity / Project | Written to the item's Updates or description if non-empty; never parsed |
+| Comment / Reason / Source / Activity / Project / Project Remote ID | Parsed and concatenated into `ParsedRow.notes`, retained for a future Updates-post feature — **not currently written to Monday** (see Known gaps in this build) |
 
-**Anonymous rows.** Donors choose what to share; withheld fields read "Not shared by donor" (or
-blank). Treat any of those in the name or email columns as *no person*: the row still produces its
-Donations items, with Anonymous Donor checked and no Donor link. Roughly a third of SVBC's history
-is like this and always will be. Some companies also elect to appear under an alias — that's still
-the Company string, resolved through the alias table like any other.
+**Anonymous rows.** Donors choose what to share; withheld fields read the literal string `Not
+shared by donor` (confirmed in the verification export — not merely blank). Treat either form in
+the name or email columns as *no person*: the row still produces its Donations items, with
+Anonymous Donor checked and no Donor link. Roughly a third of SVBC's history is like this and
+always will be. Some companies also elect to appear under an alias — that's still the Company
+string, resolved through the alias table like any other.
 
 ## Splitting a row into gifts
 
@@ -117,6 +142,7 @@ own Donations item:
 | Name | `<Donor> - Donation <date> (Benevity)` | `<Company> - Employer Matching <Donor or Anonymous> <date>` |
 | Amount | employee amount, gross | match amount, gross |
 | Date | Donation Date | Donation Date |
+| Benevity Disbursement Date | block's Period Ending | block's Period Ending |
 | Gift Type | `Donation` | `Matching Donation` |
 | Status | `Received` | `Received` |
 | Donor (connect → People) | the Person, if resolved | the Person, if resolved (the employee the match is credited to) |
@@ -166,9 +192,21 @@ of current employment (foundation payers, retirees' programs, spouse matches all
 
 ## Idempotency and the migrated history
 
-* D1 `rows` (Transaction ID, upload id, status: `ingested` / `written` / `needs-review` /
-  `skipped`, Monday item ids, raw row) is the ledger. `uploads` records each file (Monday asset id,
-  disbursement id from the preamble, row count, outcome counts).
+Three D1 tables, reflecting file → disbursement-block → row now that a single upload can bundle
+several disbursements:
+
+* **`uploads`** — one row per Monday file asset: id, Monday asset id, uploaded-at, status
+  (`parsing` / `parsed` / `error`), block count.
+* **`disbursements`** — one row per preamble block found in a file: id, upload id (FK), Benevity's
+  own `Disbursement ID` (not assumed unique across files — a redelivered file repeats it), `Period
+  Ending`, disbursement-level currency, row count, and the trailer's reported gross/net totals. On
+  parse, the sum of the block's own rows is checked against its own reported gross total; a
+  mismatch marks the whole block `needs-review` rather than writing partial data from a block the
+  parser may have mis-split.
+* **`rows`** — one row per data row across all blocks/files: Transaction ID (the true idempotency
+  key — global, not scoped to a file or block, so the same gift arriving in two overlapping
+  uploads is still one row), disbursement id (FK), status (`ingested` / `written` / `needs-review`
+  / `skipped`), Monday item ids (employee gift and/or match), raw row.
 * Every Donations item this Worker creates carries `Benevity Transaction ID`; the consumer looks
   it up before creating, so a retry after a lost status update adopts the existing item.
 * **The migrated history has no Transaction IDs** — Salesforce never stored them — so the ledger
@@ -194,7 +232,7 @@ All ids in `config/svbc.json`, validated at startup, none hardcoded:
 | Board / column | Purpose |
 |---|---|
 | Donations board | writes |
-| Donations: Donor (connect → People), Matched By (connect → Organizations), Amount, Date, Fiscal Year Ending, Status, Gift Type, Anonymous Donor, Benevity Transaction ID | columns written |
+| Donations: Donor (connect → People), Matched By (connect → Organizations), Amount, Date, Benevity Disbursement Date, Fiscal Year Ending, Status, Gift Type, Anonymous Donor, Benevity Transaction ID | columns written |
 | People board: Personal Email, Household Email, Employer | person resolution |
 | Affiliations board: Person, Organization, Work Email | person resolution |
 | Organizations board: name | company resolution |
@@ -206,6 +244,9 @@ never a staff member's personal token.
 
 ## Related changes elsewhere
 
+* **Donations board:** provision a new `Benevity Disbursement Date` column before this Worker's
+  first write. Unlike `Matched By`/`Benevity Transaction ID` below, this one needs no historical
+  backfill — only this Worker ever writes it.
 * **`salesforce-import`, before cutover — built 2026-09-08 on `feat/si-benevity-columns`:** add
   `Matched By` and `Benevity Transaction ID` to the Donations board definition; fill `Matched By`
   from `AccountId` whenever `RecordType.Name = 'Matching Donation'` (today the Donor link takes the
@@ -223,12 +264,29 @@ never a staff member's personal token.
   disbursements: drop the report on the Benevity Uploads board; work the review group" once this
   ships.
 
+## Known gaps in this build
+
+Two places where the spec above describes more than what shipped:
+
+* **Alias learning has no caller.** `db/aliases.ts`'s `learnAlias` exists and is tested, and
+  Company → Organizations resolution reads from the alias table it feeds — but nothing in the
+  shipped pipeline ever *writes* to it. The Resolution section's "the Worker then learns the
+  alias by appending it to a D1 `aliases` table" describes a capability this build doesn't have:
+  there's no "resolve this worklist item" trigger/webhook at all (same underlying gap as the
+  worklist "re-run the row" flow under Resolution — staff resolving a worklist item today means
+  fixing it directly on the board and manually re-triggering the upload, not a built-in re-run
+  action). Today, teaching an alias means a manual D1 `aliases` table insert.
+* **Comment/Reason/Source/Activity/Project fields are parsed but never posted anywhere.** See the
+  Input format table above, corrected to say so — `ParsedRow.notes` carries the concatenated text
+  through parsing and is retained for a future Updates-post feature, but nothing in this build
+  writes it to Monday.
+
 ## Open questions
 
 1. **Report delivery.** Ask Benevity support whether disbursement reports can be emailed as
    attachments or pulled by SFTP. Either removes the manual download; neither is required.
-2. **Exact column names and preamble shape** of the current report — confirm against a real
-   export before writing the parser; put the mapping in config.
+2. ~~Exact column names and preamble shape~~ — resolved 2026-09-15 against a real export; see
+   Input format.
 3. **Gross vs net.** The CRM records the gross gift (what the donor gave and is acknowledged
    for); fees are finance's concern in QuickBooks. Confirm that matches how finance reconciles
    Benevity deposits today, so the CRM and the books agree on the same number per gift.

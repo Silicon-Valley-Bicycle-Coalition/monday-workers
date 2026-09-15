@@ -12,7 +12,7 @@ default:
 # One job per Worker subdirectory — this repo has no root package.json, each
 # Worker is self-contained (see root README/CLAUDE.md). A job only runs when
 # its own directory changes, so an MR touching one Worker doesn't wait on the
-# others. Add a new job here once a requirements-only Worker gets built out.
+# others.
 .worker_job:
   stage: test
   cache:
@@ -27,6 +27,11 @@ default:
     - npm ci
     - npm test
     - npm run typecheck
+
+benevity-import:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: benevity-import
 
 donation-rollups:
   extends: .worker_job
