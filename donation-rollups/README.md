@@ -408,9 +408,11 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 
 **Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
-`[itemId, date, cents, type, status]`, sourced from the D1 ledger so it includes archived gifts
-and their types — plus (where the account supports it) a markdown gift-history table in the
-item description with a deep link per gift. The description write is **deliberately non-fatal**:
+`[itemId, dateISO, cents, type, status, actingForItemId|'']` (the sixth element is the
+affiliation model's — see below — empty string for a gift with no Acting for), sourced from the
+D1 ledger so it includes archived gifts and their types — plus (where the account supports it) a
+markdown gift-history table in the item description with a deep link per gift. The description
+write is **deliberately non-fatal**:
 `set_item_description_content` 500s outright on this account (the item-description feature isn't
 enabled — even a trivial markdown fails, observed 2026-08-31), so a failure logs and moves on
 rather than burning queue retries over a redundant rendering of the JSON column. Provision the
@@ -431,6 +433,87 @@ at 100 ids — and note `items(ids:)` **silently returns 25 items unless you pas
 under-roll any donor with >25 gifts on one board — every batched read in `monday/client.ts`
 now passes an explicit limit). When Workers Paid lands, the per-run slice constants in
 `custodian.ts` can grow.
+
+## Affiliation model (Plan 2)
+
+A gift a Primary Contact drove **for an organization** — rather than personally — carries an
+"Acting for" attribution to an Affiliation item (Person + Organization, on its own Affiliations
+board). This model adds two new money rollups on top of phase 1's per-owner ones, gated entirely
+behind `config.affiliations`: `null` (the default) turns off every behavior described here — the
+consumer skips phase 2 outright, and the custodian skips reconcile legs 5/6. The one exception is
+the bootstrap script, which populates the `affiliations` table from artifacts unconditionally
+(it's not gated on this config flag) — see Bootstrap below.
+
+**What phase 2 writes and reads.** After the phase 1 owner write, the consumer
+(`src/consumer/processBatch.ts`) recomputes:
+
+* **Attributed Giving / Attributed Gift Count / Last Attributed Gift** on the affiliation(s) a
+  gift is tied to — its own affiliation, and, if the gift's "Acting for" just changed, the
+  affiliation it moved away from too, so the old tenure's totals don't stay stale
+  (`affectedAffiliations`). Lifetime totals, not fiscal-year split — there's no This/Last Year
+  for an affiliation.
+* **Organizational Giving** on every Person those affiliations belong to — the sum, across all
+  of a person's affiliations, of what they've driven for every organization they're linked to
+  (computed from the D1 ledger, like the attributed totals above). Which Person an affiliation
+  currently belongs to is re-read fresh from Monday each time (`getAffiliationSummary`), since
+  the Affiliation → Person link can be re-pointed on Monday directly; D1's `affiliations` table
+  remembers the *previous* person for exactly that case, so a re-point still zeroes out the
+  person who lost the tenure instead of leaving their total stuck at its last value.
+
+Both are full recomputes from the D1 `gifts` ledger (via the new `acting_for_item_id` column and
+the `affiliations` table, migration `0005_affiliations.sql`), the same self-healing design as
+phase 1's owner rollups. The gift-history markdown gains a "Driven for organizations" section for
+a Person who drives giving for one or more organizations (non-fatal like the rest of the
+description write, and omitted — not shown as a $0 row — for an affiliation with no gifts). The
+`Gift Ledger (JSON)` tuple format above already carries the affiliation this gift was attributed
+to, so the ledger and the Attributed/Organizational rollups always agree on provenance.
+
+**Archived-gift rule.** `gifts.acting_for_item_id` is kept unchanged for archived gifts — an
+archived item's `board_relation` columns read empty on Monday (see "Why a D1 reverse index"
+above), so re-deriving "Acting for" from a live fetch would silently blank out every archived
+gift's attribution. The recompute path only refreshes `acting_for_item_id` from a Donation it can
+still read the column on.
+
+**Bootstrap.** `scripts/bootstrap-gifts-from-artifacts.mjs` now writes two SQL files — gifts
+(`--out`, default `bootstrap-gifts.sql`) and affiliations (`--out-affiliations`, default
+`bootstrap-affiliations.sql`) — both applied the same way:
+`wrangler d1 execute svbc-donation-rollups --remote --file <file> -y` (see "Bootstrap history"
+above for the exact commands). It refuses, without `--force`, when a gift's "Acting for" target
+or an affiliation's Person isn't a migrated People item — a superseded or incomplete artifact set,
+the same guardrail reasoning as the existing owner/board checks.
+
+**Provisioning.** `scripts/setup-affiliation-columns.mjs` (same shape as
+`scripts/setup-owner-columns.mjs`) ensures the Affiliations board has `Attributed Giving`
+(numbers, currency), `Attributed Gift Count` (numbers), and `Last Attributed Gift` (date),
+locates its existing `Person` board_relation column (this one it never creates — it must already
+exist, and the script errors if it's missing or the wrong column type), and ensures
+`Organizational Giving` (numbers, currency) on every People board passed to it. It also reads the
+Donations board id out of `config/svbc.json` and looks up that board's `Acting for` column, so
+the printed output is ready to paste straight into config — `affiliations`,
+`organizationalGivingByBoard`, and a reminder with the `actingForLink` column id.
+
+**Reconcile legs 5/6.** The custodian's nightly reconcile duty gained two more legs once
+`config.affiliations` is set: leg 5 compares every affiliation's ledger total against its
+`Attributed Giving` column, leg 6 compares every person's ledger total against their board's
+`Organizational Giving` column. Both are sliced and cursored like the owner walk
+(`affiliationCursor`/`personCursor` in the run's `detail`, 2,000 ids — 20 `getItemsColumnsText`
+calls — per leg per run), and — unlike legs 3/4, which are cheap enough to ride along with an
+owner slice — they only spend Monday subrequests in an invocation whose owner slice came back
+empty, to stay under the Workers Free plan's 50-subrequest cap. At current volume a full
+reconcile cycle (owners + both new legs) takes roughly 6 nights.
+
+**Subrequest budget in the consumer.** `getAffiliationSummary` costs two Monday subrequests per
+affiliation touched. A single gift touches at most two affiliations (its own, plus one it moved
+away from), so this is nowhere near the Free plan's 50-subrequest cap — but a bulk re-point
+(many gifts changing "Acting for" in one deploy) could approach it if it ever landed in one
+consumer invocation. `wrangler.jsonc`'s consumer `max_batch_size: 2` keeps that bounded (phase 2
+adds ~3 Monday calls per affected affiliation on top of phase 1's ~5 per message); revisit if
+Workers Paid changes the batch size.
+
+**Deferred.** Non-money rollups — registrations, volunteer hours, activities — are out of scope
+for this plan; a Person's or Organization's non-giving activity isn't touched here. Also
+deferred: re-pointing a gift's Donor link after cutover (bulk corrections), which belongs to the
+resolver Worker in Plan 3, not this one.
 
 ## The Closed Won filter — read this before touching the Status column
 
@@ -567,6 +650,14 @@ necessarily match) — don't assume sandbox and production share ids just becaus
   on its own — a small annual cron sweep (recompute every owner once, first week of July) would
   close this gap if it turns out to matter in practice; docs/20's custodian duties list already
   includes it alongside the year-end archive run.
+* **Affiliation model shipped but not turned on.** `config/svbc.json`'s `affiliations` is still
+  `null` — the Affiliations board and its columns haven't been provisioned in the sandbox yet.
+  Run `scripts/setup-affiliation-columns.mjs`, paste its output into config, and set
+  `donationRollups.donationBoards[].columns.actingForLink`; see "Affiliation model (Plan 2)"
+  above.
+* **Non-money rollups (registrations, volunteer hours, activities) and post-cutover Donor
+  re-pointing are out of scope for this plan** — the latter belongs to the resolver Worker in
+  Plan 3.
 
 ## Sources
 
