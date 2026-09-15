@@ -97,8 +97,14 @@ export function buildAffiliationRows({ payloads, ledgerEntries, boards }) {
 // - board ids outside config: the artifacts belong to a different board generation
 //   than the one this Worker is configured against.
 // - skippedNotPerson > 0: an affiliation Person is not on a People board.
+// - 0 affiliation rows: same stale-artifact reasoning as 0 gift rows, for the affiliations table.
+// - skippedNoPerson > 0: an affiliation's Person sfId doesn't resolve to a migrated item, so
+//   that affiliation's attributed gifts would land on nobody's Organizational Giving.
 // Returns a list of human-readable refusal reasons; empty means safe to proceed.
-export function checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, ownerBoardIds, config, skippedNotPerson = 0 }) {
+export function checkArtifactGuards({
+  rows, skippedActingFor, donationBoardIds, ownerBoardIds, config,
+  skippedNotPerson = 0, affiliationRows = [], skippedNoPerson = 0,
+}) {
   const errors = [];
   if (rows.length === 0) {
     errors.push(
@@ -113,6 +119,15 @@ export function checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, 
   if (skippedNotPerson > 0) {
     errors.push(
       `${skippedNotPerson} affiliation(s) link a Person that is not on a People board (an Organization, or a board missing from boards.json) — refusing to run.`);
+  }
+  if (affiliationRows.length === 0) {
+    errors.push(
+      'artifacts produced 0 affiliation rows — bootstrapping would replace the entire affiliations table with nothing. ' +
+      'These artifacts are likely from a superseded board generation; refusing to run.');
+  }
+  if (skippedNoPerson > 0) {
+    errors.push(
+      `${skippedNoPerson} affiliation(s) have a Person link that does not resolve to a migrated item — their attributed gifts would reach no one's Organizational Giving; refusing to run.`);
   }
   const configuredDonationBoards = [...new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId)))];
   const configuredOwnerBoards = Object.keys(config.donationRollups.ownerColumnsByBoard);

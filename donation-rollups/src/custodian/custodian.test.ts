@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1GiftsStore } from '../db/gifts';
 import { D1DonationLinksStore } from '../db/links';
@@ -498,6 +498,33 @@ describe('reconcile duty', () => {
     };
     expect(detail.affiliationMismatches).toEqual([{ affiliationItemId: 'af-1', ledgerCents: 52500, mondayCents: 52400 }]);
     expect(detail.organizationalMismatches).toEqual([{ personItemId: 'p-1', ledgerCents: 52500, mondayCents: 52400 }]);
+  });
+
+  it('warns (review finding 13) when leg 6 skips a person whose board has no organizationalGiving column', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cfgNoOgColumn: DonationRollupsConfig = {
+      ...AFFIL_CFG,
+      donationRollups: {
+        ...AFFIL_CFG.donationRollups,
+        // b2 is a configured owner board, but — like an Organizations board — carries no
+        // organizationalGiving column at all.
+        ownerColumnsByBoard: { ...AFFIL_CFG.donationRollups.ownerColumnsByBoard, b2: OWNER_COLS },
+      },
+    };
+    await seedGift(env.DB, 'ag2b', { owner: 'oA', cents: 5000, actingFor: 'af-2' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-2','p-2','b2','Zed @ Co','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '50', col_glj: glj([['ag2b', 5000]]) }],
+      ['af-2', { n_ag: '50' }],
+    ]) };
+    const d = deps(state, [], cfgNoOgColumn);
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true,
+      report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true); // a missing column is a skip, not a mismatch
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "b2"'));
+    warn.mockRestore();
   });
 
   it('skips legs 5/6 entirely when config.affiliations is not configured', async () => {

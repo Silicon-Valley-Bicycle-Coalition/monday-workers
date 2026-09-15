@@ -57,7 +57,10 @@ const { rows, skippedNoOwner, skippedActingFor, donationBoardIds, ownerBoardIds 
 const { rows: affRows, skippedNoPerson, skippedNotPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards });
 
 const config = JSON.parse(readFileSync(new URL('../config/svbc.json', import.meta.url), 'utf8'));
-const errors = checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, ownerBoardIds, config, skippedNotPerson });
+const errors = checkArtifactGuards({
+  rows, skippedActingFor, donationBoardIds, ownerBoardIds, config, skippedNotPerson,
+  affiliationRows: affRows, skippedNoPerson,
+});
 if (errors.length > 0) {
   for (const e of errors) console.error(`bootstrap-gifts-from-artifacts: ${e}`);
   if (!force) {

@@ -135,4 +135,16 @@ describe('buildGiftHistoryMarkdown', () => {
     const md = buildGiftHistoryMarkdown([], 'https://acme.monday.com', [{ affiliationName: 'Acme | Beta', cents: 50000, count: 1 }]);
     expect(md).toContain('| Acme \\| Beta | $500.00 | 1 |');
   });
+
+  // Review finding 7: a loop-local `cell` shadowed the module-level cell() escaper, so the
+  // gift table's Type/Status cells rendered unescaped while the driven table's names didn't.
+  it('escapes pipes in the gift Type and Status cells too (finding 7)', () => {
+    const md = buildGiftHistoryMarkdown([
+      row({ mondayItemId: 'a', giftDateISO: '2020-01-01', giftType: 'A|B', status: 'C|D' }),
+    ], 'https://acme.monday.com');
+    expect(md).toContain('A\\|B');
+    expect(md).toContain('C\\|D');
+    expect(md).not.toContain('A|B');
+    expect(md).not.toContain('C|D');
+  });
 });

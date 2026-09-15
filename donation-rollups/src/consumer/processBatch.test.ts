@@ -764,6 +764,25 @@ describe('affectedAffiliations', () => {
       'dn1')].sort())
       .toEqual(['af-new', 'af-old', 'af-trigger']);
   });
+
+  // Review finding 1: donation_links includes archived gifts, and D1 preserves an archived
+  // gift's acting_for_item_id forever while Monday reads its board_relation back as null —
+  // without the null-current guard, previous !== current fires on every recompute for every
+  // archived attributed gift, fanning out to every affiliation an org owner ever had.
+  it('a non-triggering archived gift whose fetched value reads back null contributes nothing (finding 1)', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-archived']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      'dn1')])
+      .toEqual(['af-trigger']);
+  });
+
+  it('the same previous/current-null shape on the TRIGGERING gift is still a genuine clear (finding 1)', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-archived']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      'dn1')])
+      .toEqual(['af-archived']);
+  });
 });
 
 describe('consumer phase 2 — affiliation rollups', () => {
@@ -881,6 +900,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
   });
 
   it('driven computation D1 failure is non-fatal — rollups and markdown land, message acks', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { giftsStore, mondayClient, affiliationsStore } = setup({
       affiliationsStore: { forPerson: vi.fn().mockRejectedValue(new Error('D1 hiccup')) },
     });
@@ -892,6 +912,11 @@ describe('consumer phase 2 — affiliation rollups', () => {
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything());
+    // Review finding 12: driven's own D1 hiccup must not cost the gift-history description
+    // write — it still lands, just without the "Driven for organizations" section.
+    expect(mondayClient.setItemDescription).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('driven-for-organizations skipped'));
+    warn.mockRestore();
   });
 
   it('a phase-2 Monday failure retries the message (owner write is idempotent)', async () => {

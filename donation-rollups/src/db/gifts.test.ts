@@ -213,22 +213,40 @@ describe('D1GiftsStore — acting_for', () => {
       env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','2026-01-01T00:00:00Z')`),
       env.DB.prepare(`INSERT INTO affiliations VALUES ('af-2','p-1','b1','Ada @ Beta','2026-01-01T00:00:00Z')`),
       env.DB.prepare(`INSERT INTO affiliations VALUES ('af-9','p-9','b1','Bo @ Acme','2026-01-01T00:00:00Z')`),
+      // Review finding 2: an affiliation with no gifts at all (its owner never gave, or every
+      // gift moved off it) must still show up with a zero — not be silently absent.
+      env.DB.prepare(`INSERT INTO affiliations VALUES ('af-empty','p-9','b1','Bo @ Empty','2026-01-01T00:00:00Z')`),
     ]);
     await store.refreshFacts([
       gift({ mondayItemId: 'o1', actingForItemId: 'af-1', amountCents: 50000 }),
       gift({ mondayItemId: 'o2', actingForItemId: 'af-2', amountCents: 7500 }),
       gift({ mondayItemId: 'o3', actingForItemId: 'af-9', amountCents: 100 }),
       gift({ mondayItemId: 'o4', actingForItemId: 'af-1', amountCents: 5, status: 'Failed' }),
+      // A gift whose acting_for_item_id isn't in `affiliations` at all — a bootstrap gap, not
+      // a ledger fact (see checkArtifactGuards) — must not appear on either side.
+      gift({ mondayItemId: 'o5', actingForItemId: 'af-unknown', amountCents: 999999 }),
     ], 'import', '2026-01-01T00:00:00Z');
 
     expect(await store.attributedTotalsAll('Received')).toEqual(new Map([
       ['af-1', { cents: 50000, count: 1 }],
       ['af-2', { cents: 7500, count: 1 }],
       ['af-9', { cents: 100, count: 1 }],
+      ['af-empty', { cents: 0, count: 0 }],
     ]));
+    // p-9 has one gift-bearing affiliation (af-9) and one empty one (af-empty) — its total
+    // is unaffected by the empty affiliation, but that affiliation still appears on its own
+    // in attributedTotalsAll above.
     expect(await store.organizationalGivingAll('Received')).toEqual(new Map([
       ['p-1', { cents: 57500, personBoardId: 'b1' }],
       ['p-9', { cents: 100, personBoardId: 'b1' }],
+    ]));
+  });
+
+  it('a person whose affiliation(s) have no attributed gifts still appears with cents: 0 (finding 2)', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-lonely','p-lonely','b1','Lonely @ Org','2026-01-01T00:00:00Z')`).run();
+    expect(await store.organizationalGivingAll('Received')).toEqual(new Map([
+      ['p-lonely', { cents: 0, personBoardId: 'b1' }],
     ]));
   });
 });

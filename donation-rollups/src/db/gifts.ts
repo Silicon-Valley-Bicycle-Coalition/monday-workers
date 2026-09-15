@@ -206,23 +206,34 @@ export class D1GiftsStore implements GiftsStore {
     return { cents: r?.cents ?? 0, count: r?.n ?? 0 };
   }
 
+  // Review finding 2: built FROM affiliations (LEFT JOIN gifts), not from gifts — so an
+  // affiliation whose ledger total dropped to 0 (its gifts moved off it, or it never had
+  // any) still appears with a zero, and reconcile leg 5 catches a stale non-zero column on
+  // Monday instead of silently skipping it. A gift whose acting_for_item_id isn't in
+  // affiliations (a bootstrap gap, not a ledger fact — see checkArtifactGuards) is excluded
+  // by construction; it was never reachable from an affiliation row to begin with.
   async attributedTotalsAll(statusLabel: string): Promise<Map<string, { cents: number; count: number }>> {
     const res = await this.db
-      .prepare(`SELECT acting_for_item_id, SUM(amount_cents) AS cents, COUNT(*) AS n
-                FROM gifts WHERE acting_for_item_id IS NOT NULL AND status = ?1
-                GROUP BY acting_for_item_id`)
+      .prepare(`SELECT a.affiliation_item_id,
+                       COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents,
+                       COUNT(CASE WHEN g.status = ?1 THEN 1 END) AS n
+                FROM affiliations a LEFT JOIN gifts g ON g.acting_for_item_id = a.affiliation_item_id
+                GROUP BY a.affiliation_item_id`)
       .bind(statusLabel)
-      .all<{ acting_for_item_id: string; cents: number; n: number }>();
+      .all<{ affiliation_item_id: string; cents: number; n: number }>();
     const out = new Map<string, { cents: number; count: number }>();
-    for (const r of res.results) out.set(r.acting_for_item_id, { cents: r.cents, count: r.n });
+    for (const r of res.results) out.set(r.affiliation_item_id, { cents: r.cents, count: r.n });
     return out;
   }
 
+  // Same reasoning as attributedTotalsAll, grouped by person instead: a person whose
+  // affiliation(s) currently have no attributed gifts still appears with cents: 0, so
+  // reconcile leg 6 catches a stale non-zero Organizational Giving column.
   async organizationalGivingAll(statusLabel: string): Promise<Map<string, { cents: number; personBoardId: string }>> {
     const res = await this.db
-      .prepare(`SELECT a.person_item_id, a.person_board_id, SUM(g.amount_cents) AS cents
-                FROM gifts g JOIN affiliations a ON a.affiliation_item_id = g.acting_for_item_id
-                WHERE g.status = ?1
+      .prepare(`SELECT a.person_item_id, a.person_board_id,
+                       COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents
+                FROM affiliations a LEFT JOIN gifts g ON g.acting_for_item_id = a.affiliation_item_id
                 GROUP BY a.person_item_id, a.person_board_id`)
       .bind(statusLabel)
       .all<{ person_item_id: string; person_board_id: string; cents: number }>();

@@ -474,7 +474,13 @@ above), so re-deriving "Acting for" from a live fetch would silently blank out e
 gift's attribution. The recompute path only refreshes `acting_for_item_id` from a Donation it can
 still read the column on.
 
-**Bootstrap.** `scripts/bootstrap-gifts-from-artifacts.mjs` now writes two SQL files — gifts
+**Bootstrap.** Before merging the branch that adds this affiliation model, apply migration
+`0005_affiliations.sql` to the remote D1 database **first**:
+`wrangler d1 migrations apply svbc-donation-rollups --remote`. Workers Builds deploys on merge, and
+the consumer's `refreshFacts` names the `acting_for_item_id` column unconditionally (phase 1 or
+not) — an unmigrated remote D1 breaks every consumer message the moment the new build goes live,
+not just the affiliation-specific ones. Once the migration is applied,
+`scripts/bootstrap-gifts-from-artifacts.mjs` writes two SQL files — gifts
 (`--out`, default `bootstrap-gifts.sql`) and affiliations (`--out-affiliations`, default
 `bootstrap-affiliations.sql`) — both applied the same way:
 `wrangler d1 execute svbc-donation-rollups --remote --file <file> -y` (see "Bootstrap history"
@@ -509,9 +515,10 @@ When Workers Paid lands, the per-run slice constants (`RECONCILE_AFFILIATIONS_PE
 affiliation touched. A single gift touches at most two affiliations (its own, plus one it moved
 away from), so this is nowhere near the Free plan's 50-subrequest cap — but a bulk re-point
 (many gifts changing "Acting for" in one deploy) could approach it if it ever landed in one
-consumer invocation. `wrangler.jsonc`'s consumer `max_batch_size: 2` keeps that bounded (phase 2
-adds ~3 Monday calls per affected affiliation on top of phase 1's ~5 per message); revisit if
-Workers Paid changes the batch size.
+consumer invocation. `wrangler.jsonc`'s consumer `max_batch_size: 2` keeps that bounded — phase 1
+costs `4 + ceil(gifts / 100)` Monday subrequests per message, plus phase 2 adds 3 calls per
+affected affiliation and 1 call per affected person; revisit if Workers Paid changes the batch
+size.
 
 **Deferred.** Non-money rollups — registrations, volunteer hours, activities — are out of scope
 for this plan; a Person's or Organization's non-giving activity isn't touched here. Also

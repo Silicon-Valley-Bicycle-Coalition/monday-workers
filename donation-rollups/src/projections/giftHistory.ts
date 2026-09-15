@@ -126,10 +126,10 @@ export function buildGiftHistoryMarkdown(
   ];
   for (const r of sorted(rows)) {
     const date = r.giftDateISO || '(undated)';
-    const cell = r.donationBoardId
+    const dateCell = r.donationBoardId
       ? `[${date}](${accountUrl}/boards/${r.donationBoardId}/pulses/${r.mondayItemId})`
       : date;
-    lines.push(`| ${cell} | ${dollars(r.amountCents)} | ${r.giftType ?? ''} | ${r.status} |`);
+    lines.push(`| ${dateCell} | ${dollars(r.amountCents)} | ${cell(r.giftType ?? '')} | ${cell(r.status)} |`);
   }
   lines.push('', `_${rows.length} gifts. Maintained automatically by donation-rollups — edits here are overwritten._`);
   if (driven && driven.length > 0) {

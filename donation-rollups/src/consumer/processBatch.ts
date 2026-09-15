@@ -244,10 +244,18 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   // attribution has produced — sourced fresh from the ledger, same as the rest of this projection.
   // Gated on affiliations being configured at all; a zero-total affiliation is omitted, not
   // shown as a $0 row.
+  // Review finding 12: driven-for-organizations gets its own try, separate from the
+  // description write below — a D1 hiccup computing it must not cost the whole gift-history
+  // markdown (the description write has its own non-fatal handling for its own failure modes).
+  let driven: { affiliationName: string; cents: number; count: number }[] | undefined;
+  if (affiliationsCfg !== null) {
+    try {
+      driven = await drivenForOrganizations(deps, ownerItemId, receivedStatusLabel);
+    } catch (err) {
+      console.warn(`donation-rollups consumer: driven-for-organizations skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   try {
-    const driven = affiliationsCfg !== null
-      ? await drivenForOrganizations(deps, ownerItemId, receivedStatusLabel)
-      : undefined;
     await mondayClient.setItemDescription(ownerItemId,
       buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
   } catch (err) {
@@ -399,7 +407,13 @@ export function affectedAffiliations(
     if (d.id === triggeringDonationId) {
       add(previousActingFor);
       add(currentActingFor);
-    } else if (previousActingFor !== currentActingFor) {
+    } else if (currentActingFor !== null && previousActingFor !== currentActingFor) {
+      // Review finding 1: a null CURRENT value on a non-triggering gift is Monday reading an
+      // archived item's board_relation as empty, not a real clear — D1 preserves the archived
+      // gift's acting_for_item_id forever, so without this guard previous !== current would
+      // fire on every recompute for every archived attributed gift this owner ever had,
+      // fanning out to every affiliation across the owner's full tenure history. A genuine
+      // clear on the TRIGGERING gift (the one just written) is still caught above.
       add(previousActingFor);
       add(currentActingFor);
     }

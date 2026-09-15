@@ -55,14 +55,17 @@ describe('buildGiftRows', () => {
 
 describe('checkArtifactGuards', () => {
   const built = () => buildGiftRows({ payloads: [payload('sf-d1', 'sf-owner')], ledgerEntries: LEDGER, boards: BOARDS, now: NOW });
+  // A non-empty dummy affiliationRows — only .length matters to checkArtifactGuards — so tests
+  // unrelated to the affiliations guards (findings 3/4) don't spuriously trip them.
+  const SOME_AFF_ROWS = [{ affiliationItemId: 'aff-x', personItemId: 'p-x', personBoardId: '555', name: 'X' }];
 
   it('passes for artifacts matching the configured boards', () => {
-    expect(checkArtifactGuards({ ...built(), config: CONFIG })).toEqual([]);
+    expect(checkArtifactGuards({ ...built(), config: CONFIG, affiliationRows: SOME_AFF_ROWS })).toEqual([]);
   });
 
   it('refuses when the artifacts produce 0 gift rows — the stale-artifact wipe scenario', () => {
     const empty = buildGiftRows({ payloads: [], ledgerEntries: [], boards: BOARDS, now: NOW });
-    const errors = checkArtifactGuards({ ...empty, config: CONFIG });
+    const errors = checkArtifactGuards({ ...empty, config: CONFIG, affiliationRows: SOME_AFF_ROWS });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('0 gift rows');
   });
@@ -71,7 +74,7 @@ describe('checkArtifactGuards', () => {
     const staleConfig = {
       donationRollups: { donationBoards: [{ boardId: 999 }], ownerColumnsByBoard: { '888': {} } },
     };
-    const errors = checkArtifactGuards({ ...built(), config: staleConfig });
+    const errors = checkArtifactGuards({ ...built(), config: staleConfig, affiliationRows: SOME_AFF_ROWS });
     expect(errors).toHaveLength(2);
     expect(errors[0]).toContain('[100]');
     expect(errors[0]).toContain('[999]');
@@ -80,10 +83,28 @@ describe('checkArtifactGuards', () => {
   });
 
   it('refuses when an affiliation Person is not on a People board', () => {
-    const errors = checkArtifactGuards({ ...built(), config: CONFIG, skippedNotPerson: 1 });
+    const errors = checkArtifactGuards({ ...built(), config: CONFIG, skippedNotPerson: 1, affiliationRows: SOME_AFF_ROWS });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('1 affiliation(s)');
     expect(errors[0]).toContain('Person that is not on a People board');
+  });
+
+  // Review finding 3: a 0-row affiliations bootstrap (stale/superseded artifacts) must refuse,
+  // parallel to the existing 0-gift-rows guard.
+  it('refuses when the artifacts produce 0 affiliation rows — the stale-artifact wipe scenario for affiliations', () => {
+    const errors = checkArtifactGuards({ ...built(), config: CONFIG, affiliationRows: [] });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('0 affiliation rows');
+  });
+
+  // Review finding 4: skippedNoPerson drops rows silently today — it must refuse like
+  // skippedNotPerson does, since those attributed gifts would reach nobody's Organizational
+  // Giving.
+  it('refuses when an affiliation Person sfId does not resolve to a migrated item', () => {
+    const errors = checkArtifactGuards({ ...built(), config: CONFIG, affiliationRows: SOME_AFF_ROWS, skippedNoPerson: 1 });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('1 affiliation(s)');
+    expect(errors[0]).toContain('does not resolve to a migrated item');
   });
 });
 
@@ -138,7 +159,8 @@ describe('buildGiftRows — acting_for', () => {
     expect(built.rows[0].actingForItemId).toBeNull();
     expect(built.skippedActingFor).toBe(1);
 
-    const errors = checkArtifactGuards({ ...built, config: CONFIG });
+    const errors = checkArtifactGuards({ ...built, config: CONFIG,
+      affiliationRows: [{ affiliationItemId: 'aff-x', personItemId: 'p-x', personBoardId: '555', name: 'X' }] });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('1');
   });

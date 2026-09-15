@@ -447,7 +447,13 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
         }
         for (const [personBoardId, personIdsForBoard] of personIdsByBoard) {
           const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
-          if (!column) continue; // e.g. an Organizations board, which has no driven-giving concept
+          if (!column) {
+            // e.g. an Organizations board, which has no driven-giving concept — warn once per
+            // run rather than silently skipping, matching the consumer's own warning for the
+            // same condition (processBatch.ts recomputeAffiliations).
+            console.warn(`donation-rollups custodian: no organizationalGiving column for board "${personBoardId}" — reconcile leg 6 skipped it`);
+            continue;
+          }
           const results = await compareCents(
             deps.mondayClient, personIdsForBoard, column, (id) => ledgerByPerson.get(id)!.cents);
           organizationalMismatches.push(...results.map((m) =>
