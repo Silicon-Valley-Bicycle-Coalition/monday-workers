@@ -126,12 +126,10 @@ export class D1GiftsStore implements GiftsStore {
              fiscal_year = excluded.fiscal_year,
              status = excluded.status,
              gift_type = COALESCE(excluded.gift_type, gifts.gift_type),
-             -- ?12 = 1 when the caller supplied acting_for (even null): active gifts take the new
-             -- value verbatim (staff may clear it); archived gifts keep D1's, since an archived
-             -- item's board_relation always reads back empty on Monday.
+             -- ?12 = 1 when the caller supplied acting_for (even null). Active gifts take the new value verbatim (staff may clear it); archived gifts always keep D1's — an archived item's board_relation reads back empty on Monday, and nothing else may rewrite history.
              acting_for_item_id = CASE
                WHEN ?12 = 0 THEN gifts.acting_for_item_id
-               WHEN gifts.archived_at IS NOT NULL THEN COALESCE(excluded.acting_for_item_id, gifts.acting_for_item_id)
+               WHEN gifts.archived_at IS NOT NULL THEN gifts.acting_for_item_id
                ELSE excluded.acting_for_item_id END,
              source = excluded.source,
              updated_at = excluded.updated_at`,

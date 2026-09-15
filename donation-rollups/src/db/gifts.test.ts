@@ -169,6 +169,10 @@ describe('D1GiftsStore — acting_for', () => {
       gift({ mondayItemId: 'g-archived', actingForItemId: null }),
     ], 'webhook', '2026-01-03T00:00:00Z');
     expect(await store.actingForByIds(['g-active', 'g-archived'])).toEqual(new Map([['g-active', null], ['g-archived', 'af-1']]));
+    // A later refreshFacts with a non-null value for an archived row is rejected: archived items
+    // never rewrite their history, even when a new value is supplied.
+    await store.refreshFacts([gift({ mondayItemId: 'g-archived', actingForItemId: 'af-other' })], 'webhook', '2026-01-03T00:00:00Z');
+    expect((await store.actingForByIds(['g-archived'])).get('g-archived')).toBe('af-1');
     // undefined (column not configured) never touches the stored value.
     await store.refreshFacts([gift({ mondayItemId: 'g-archived' })], 'webhook', '2026-01-04T00:00:00Z');
     expect((await store.actingForByIds(['g-archived'])).get('g-archived')).toBe('af-1');
