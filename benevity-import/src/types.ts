@@ -1,0 +1,82 @@
+import type { BenevityQueueMessage } from './consumer/processBatch';
+
+export interface MondayBoards {
+  donations: number | null;
+  organizations: number | null;
+  people: number | null;
+  affiliations: number | null;
+  benevityUploads: number | null;
+}
+
+export interface DonationsColumns {
+  donor: string;
+  matchedBy: string;
+  amount: string;
+  date: string;
+  disbursementDate: string;
+  fiscalYearEnding: string;
+  status: string;
+  giftType: string;
+  anonymousDonor: string;
+  transactionId: string;
+}
+
+export interface WorklistColumns {
+  reason: string;
+  name: string;
+  email: string;
+  company: string;
+  amount: string;
+  date: string;
+}
+
+export interface UploadsBoardConfig {
+  fileColumn: string;
+  worklistGroupId: string;
+  worklistColumns: WorklistColumns;
+}
+
+export interface BenevityImportConfig {
+  monday: {
+    apiUrl: string;
+    boards: MondayBoards;
+  };
+  benevityImport: {
+    // ISO date (YYYY-MM-DD). Rows with Donation Date before this are skipped, never backfilled —
+    // the migrated Salesforce history has no Transaction IDs to dedupe against.
+    minDonationDate: string;
+    donationsColumns: DonationsColumns;
+    // Monday's item-name pseudo-column id, used for name-based lookups. Almost always "name".
+    organizationsNameColumn: string;
+    peopleColumns: {
+      personalEmail: string;
+      householdEmail: string;
+      employer: string;
+    };
+    affiliationsColumns: {
+      person: string;
+      organization: string;
+      workEmail: string;
+    };
+    uploadsBoard: UploadsBoardConfig;
+    // Raw Benevity "Company" string -> canonical Organizations item name, e.g.
+    // {"Google, LLC": "Google"}. A hit here is retried through the same name lookup as an
+    // exact match, so it must be case-and-spelling-exact to the target Organization's name.
+    organizationAliases: Record<string, string>;
+    rawRowRetentionDays: number;
+    unresolvedRowRetentionDays: number;
+  };
+}
+
+// Bindings (DB, queues) come from the generated Cloudflare.Env
+// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// only secrets and narrowed queue message types are declared here.
+export interface Env extends Cloudflare.Env {
+  WRITE_QUEUE: Queue<BenevityQueueMessage>;
+  MONDAY_API_TOKEN: string;
+  // Shared secret required as `?secret=...` on the registered Monday webhook URL
+  // (`wrangler secret put BENEVITY_WEBHOOK_SECRET`). Optional in the type because secrets
+  // aren't declared in wrangler.jsonc — the webhook route fails closed (401 on every
+  // delivery) until it is set, same convention as funraise-sync.
+  BENEVITY_WEBHOOK_SECRET?: string;
+}
