@@ -96,7 +96,7 @@ const REQUIRED_LETTER_CRON_KEYS = ['boardId', 'columns', 'maxTriggersPerRun'] as
 const DEFAULT_LETTER_SETTINGS_ITEM_NAME = 'Letter emails';
 const REQUIRED_LETTER_CRON_COLUMNS = ['autoSend', 'startDate', 'bodyTemplate'] as const;
 const REQUIRED_VOLUNTEER_HISTORY_KEYS = ['completedStatuses'] as const;
-const REQUIRED_DONATIONS_KEYS = ['countableStatuses'] as const;
+const REQUIRED_DONATIONS_KEYS = ['countableStatuses', 'historyStartISO', 'historyVisibleFromISO'] as const;
 // Presence-checked only, never placeholder-checked: event registrations are gated
 // (eventsEnabled), not deploy-blocking — same treatment as changeRequests' columns.
 const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumnId'] as const;
@@ -230,6 +230,8 @@ export function validateConfig(raw: unknown): Config {
   ) {
     throw new Error('config: "donations.countableStatuses" must be a non-empty array of strings');
   }
+  requireISODateOrNull(donations, 'donations', 'historyStartISO');
+  requireISODateOrNull(donations, 'donations', 'historyVisibleFromISO');
   const eventRegistrations = requireObject(cfg, 'eventRegistrations');
   requireKeys(eventRegistrations, 'eventRegistrations', REQUIRED_EVENT_REGISTRATION_KEYS);
   const erColumns = requireObject(eventRegistrations, 'columns', 'eventRegistrations.columns');
@@ -262,6 +264,32 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(matchingGifts, 'matchingGifts', REQUIRED_MATCHING_GIFTS_KEYS);
 
   return cfg as unknown as Config;
+}
+
+// A date key that is either null (feature off / no floor) or a real YYYY-MM-DD calendar date.
+// Both donation-history dates compare against Monday date-column text and Date.toISOString()
+// slices as plain strings, so anything but the canonical form would silently misorder.
+function requireISODateOrNull(obj: Record<string, unknown>, path: string, key: string): void {
+  const value = obj[key];
+  if (value === null) return;
+  const valid =
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  if (!valid) {
+    throw new Error(`config: "${path}.${key}" must be null or a YYYY-MM-DD calendar date`);
+  }
+}
+
+// Donation history is date-gated rather than a boolean so the tab appears on its own once the
+// clock passes donations.historyVisibleFromISO (SVBC: the first day of the first full calendar
+// year after the clean start), with no January deploy. null means never shown — the safe
+// default for a fresh fork and for shipping ahead of launch. `now` is a parameter so tests can
+// pin the clock; compared as UTC date strings to match how the floor is applied.
+export function donationHistoryEnabled(config: Config, now: Date): boolean {
+  const from = config.donations.historyVisibleFromISO;
+  if (from === null) return false;
+  return now.toISOString().slice(0, 10) >= from;
 }
 
 export function lettersEnabled(config: Config): boolean {

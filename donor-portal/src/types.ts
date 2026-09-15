@@ -106,6 +106,14 @@ export interface DonationsConfig {
   // Unlike volunteerHistory.completedStatuses, an empty array is a config error, not
   // "include everything": silently counting Failed gifts would overstate deductible totals.
   countableStatuses: string[];
+  // Calendar-date floor (YYYY-MM-DD) for every donation read — portal history, tax letters,
+  // the letter cron. Gifts dated earlier, or undated, are dropped. null means no floor. SVBC
+  // starts clean at 2026-01-01 rather than showing migrated Salesforce history.
+  historyStartISO: string | null;
+  // The UTC date from which the portal shows the Donations tab at all; null means never (see
+  // donationHistoryEnabled in config.ts). Independent of the floor: the floor shapes what the
+  // reads return, this gate decides whether the portal home asks for them.
+  historyVisibleFromISO: string | null;
 }
 
 export interface VolunteerHistoryConfig {
@@ -270,6 +278,10 @@ export interface PortalView {
   // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
   // section for null, a missing key, and an empty shift list alike.
   volunteerHistory: Record<string, DonorVolunteerHistory> | null;
+  // false while donations.historyVisibleFromISO hasn't arrived (or is null): loadPortalData
+  // skipped the Donations read and views omit the Donations tab — every donor's `donations` is
+  // [] and `totalDonated` '' in that state, so rendering them would show a false empty-state.
+  donationHistoryEnabled: boolean;
 }
 
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for

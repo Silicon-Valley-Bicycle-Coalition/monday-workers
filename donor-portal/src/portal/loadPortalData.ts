@@ -25,7 +25,10 @@ export function buildVolunteerHistory(shifts: VolunteerShift[], completedStatuse
 export async function loadPortalData(
   donorItemIds: string[],
   monday: MondayClient,
-  volunteerOptions?: VolunteerHistoryOptions
+  volunteerOptions?: VolunteerHistoryOptions,
+  // routes.ts passes donationHistoryEnabled(config, now). Defaults to true so callers that
+  // predate the gate keep the always-on behavior.
+  donationHistoryEnabled = true
 ): Promise<PortalView> {
   // The volunteer read degrades instead of failing the page: a Volunteers-board error (the
   // integration user not yet granted access, a Monday 429, an unverified query shape) should
@@ -38,7 +41,7 @@ export async function loadPortalData(
     : Promise.resolve(null);
 
   const [donors, discounts, shiftsPerDonor] = await Promise.all([
-    Promise.all(donorItemIds.map((id) => monday.getDonorPortalData(id))),
+    Promise.all(donorItemIds.map((id) => monday.getDonorPortalData(id, { includeDonations: donationHistoryEnabled }))),
     monday.getDiscountOrganizations(),
     volunteerLeg,
   ]);
@@ -51,5 +54,5 @@ export async function loadPortalData(
       ? null
       : Object.fromEntries(donors.map((donor, index) => [donor.id, buildVolunteerHistory(shiftsPerDonor[index] ?? [], completedStatuses)]));
 
-  return { donors, discounts, volunteerHistory };
+  return { donors, discounts, volunteerHistory, donationHistoryEnabled };
 }

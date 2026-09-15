@@ -36,6 +36,28 @@ describe('loadPortalData', () => {
     expect(monday.getDiscountOrganizations).toHaveBeenCalledTimes(1);
   });
 
+  it('marks donation history enabled and asks Monday for donations by default', async () => {
+    const monday = fakeMonday();
+
+    const result = await loadPortalData(['donor-1'], monday);
+
+    expect(result.donationHistoryEnabled).toBe(true);
+    expect(monday.getDonorPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: true });
+  });
+
+  it('skips the donations read and marks the view hidden when donation history is gated off', async () => {
+    const monday = fakeMonday();
+
+    const result = await loadPortalData(['donor-1', 'donor-2'], monday, undefined, false);
+
+    expect(result.donationHistoryEnabled).toBe(false);
+    expect(monday.getDonorPortalData).toHaveBeenCalledWith('donor-1', { includeDonations: false });
+    expect(monday.getDonorPortalData).toHaveBeenCalledWith('donor-2', { includeDonations: false });
+    // The rest of the dashboard still loads.
+    expect(result.donors.map((d) => d.name)).toEqual(['Jane', 'Jane Also']);
+    expect(result.discounts).toHaveLength(1);
+  });
+
   it('leaves volunteerHistory null (and never queries Monday for shifts) when the feature is off', async () => {
     const monday = fakeMonday();
 

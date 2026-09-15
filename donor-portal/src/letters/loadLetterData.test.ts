@@ -176,7 +176,7 @@ describe('loadLetterData with the real client (status filtering)', () => {
       999,
       1,
       2,
-      ['Received', 'Received (Historical)'],
+      { countableStatuses: ['Received', 'Received (Historical)'], historyStartISO: null },
       null,
       null,
       fetchMock

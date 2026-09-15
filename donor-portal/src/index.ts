@@ -85,7 +85,7 @@ export default {
         config.monday.donorsBoardId,
         config.monday.donationsBoardId,
         config.monday.organizationsBoardId,
-        config.donations.countableStatuses,
+        config.donations,
         // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
         // non-null assertion below can't fire on a placeholder config.
         pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
@@ -124,7 +124,7 @@ export default {
       config.monday.donorsBoardId ?? 0,
       config.monday.donationsBoardId ?? 0,
       config.monday.organizationsBoardId ?? 0,
-      config.donations.countableStatuses,
+      config.donations,
       null,
       // Same treatment as pledges above: no queue consumer reads volunteer history, and
       // getVolunteerShiftsForDonor throws its own config error on a null board id.
@@ -181,7 +181,7 @@ export default {
         config.monday.donorsBoardId ?? 0,
         config.monday.donationsBoardId ?? 0,
         config.monday.organizationsBoardId ?? 0,
-        config.donations.countableStatuses
+        config.donations
       ),
       letterStore: new D1LetterSendStore(env.DB),
       queue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },

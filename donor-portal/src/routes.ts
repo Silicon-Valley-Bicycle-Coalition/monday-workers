@@ -32,6 +32,7 @@ import {
   matchingGiftsSearchEnabled,
   signedOffEin,
   volunteerHistoryEnabled,
+  donationHistoryEnabled,
 } from './config';
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
@@ -297,10 +298,15 @@ export function createApp(deps: AppDeps) {
       return c.redirect('/');
     }
 
-    const data = await loadPortalData(donorItemIds, deps.monday, {
-      enabled: volunteerHistoryEnabled(deps.config),
-      completedStatuses: deps.config.volunteerHistory.completedStatuses,
-    });
+    const data = await loadPortalData(
+      donorItemIds,
+      deps.monday,
+      {
+        enabled: volunteerHistoryEnabled(deps.config),
+        completedStatuses: deps.config.volunteerHistory.completedStatuses,
+      },
+      donationHistoryEnabled(deps.config, deps.now())
+    );
     c.header('Cache-Control', NO_STORE);
 
     // Same degrade-instead-of-fail treatment as volunteer history above: a Monday read failure

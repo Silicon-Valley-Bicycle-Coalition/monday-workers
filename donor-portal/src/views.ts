@@ -475,6 +475,10 @@ function donationRow(donation: PortalView['donors'][number]['donations'][number]
 interface DonorTab {
   label: string;
   content: string;
+  // When this is the only tab, the tab strip (and so its label) is skipped — render the label
+  // as a heading instead. Off for donations, whose table is self-explanatory as the section's
+  // sole content; on for volunteer/events, which read as an unlabeled table without it.
+  headingWhenAlone?: boolean;
 }
 
 // A single tab (today's overwhelmingly common case — most donors have neither volunteered nor
@@ -484,7 +488,10 @@ interface DonorTab {
 // cover every combination.
 function renderTabs(tabs: DonorTab[], groupName: string): string {
   const only = tabs[0];
-  if (tabs.length <= 1) return only?.content ?? '';
+  if (!only) return '';
+  if (tabs.length === 1) {
+    return only.headingWhenAlone ? `<h3>${escapeHtml(only.label)}</h3>${only.content}` : only.content;
+  }
   const safeGroup = escapeHtml(groupName);
   const inputs = tabs
     .map(
@@ -641,18 +648,24 @@ function donorSection(
   locale: Locale,
   card: PortalCard | undefined,
   volunteerHistory: DonorVolunteerHistory | undefined,
-  events: EventRegistrationListing | undefined
+  events: EventRegistrationListing | undefined,
+  donationHistoryEnabled: boolean
 ): string {
-  // Donations always applies. Volunteer/Events tabs appear only when that feature is enabled at
-  // all (an undefined donor entry means the whole feature is off or its Monday read failed —
-  // see loadPortalData/routes.ts) — independent of whether *this* donor has any entries, which
-  // is instead handled inside each panel as an empty-state CTA.
-  const tabs: DonorTab[] = [{ label: t(locale, 'portal.donationsTabLabel'), content: donationsPanel(donor, locale) }];
+  // Each tab appears only when its feature is enabled at all — donations once the history
+  // date gate has passed (see donationHistoryEnabled in config.ts), volunteer/events when
+  // configured (an undefined donor entry means the whole feature is off or its Monday read
+  // failed — see loadPortalData/routes.ts) — independent of whether *this* donor has any
+  // entries, which is instead handled inside each panel as an empty-state CTA. With every tab
+  // off, renderTabs yields nothing and the section is just the name + membership line.
+  const tabs: DonorTab[] = [];
+  if (donationHistoryEnabled) {
+    tabs.push({ label: t(locale, 'portal.donationsTabLabel'), content: donationsPanel(donor, locale) });
+  }
   if (volunteerHistory) {
-    tabs.push({ label: t(locale, 'portal.volunteerHeading'), content: volunteerPanel(volunteerHistory, locale) });
+    tabs.push({ label: t(locale, 'portal.volunteerHeading'), content: volunteerPanel(volunteerHistory, locale), headingWhenAlone: true });
   }
   if (events) {
-    tabs.push({ label: t(locale, 'events.tabLabel'), content: eventsPanel(events, locale) });
+    tabs.push({ label: t(locale, 'events.tabLabel'), content: eventsPanel(events, locale), headingWhenAlone: true });
   }
   return `
     <section>
@@ -701,7 +714,7 @@ export function portalView(
 ): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
-    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id])).join('')}
+    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id], data.donationHistoryEnabled)).join('')}
     ${funraiseSection(funraise, locale)}
     <section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
