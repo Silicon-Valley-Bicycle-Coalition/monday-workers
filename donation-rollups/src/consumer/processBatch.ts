@@ -3,9 +3,10 @@ import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
 import type { MembershipBaselineStore } from '../db/membershipBaseline';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
+import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
 import type {
-  DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
+  AffiliationsConfig, DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns,
 } from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
@@ -18,6 +19,7 @@ import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipState,
 } from '../membership/derive';
+import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -34,6 +36,7 @@ export interface ProcessBatchDeps {
   giftsStore: GiftsStore;
   baselineStore: MembershipBaselineStore;
   recomputesStore: OwnerRecomputesStore;
+  affiliationsStore: AffiliationsStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
   now?: Date; // injectable for tests; defaults to the real current time
@@ -168,6 +171,13 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns) })));
   const donations = perBoard.flatMap((p) => p.items);
 
+  // Affiliations phase 2 (spec "Rollups"): capture the ledger's acting_for *before* this
+  // fetch overwrites it, so a gift that moved to a different affiliation still recomputes
+  // the one it left — see affectedAffiliations below.
+  const affiliationsCfg = config.affiliations;
+  const fetchedIds = donations.map((d) => d.id);
+  const previousActingFor = affiliationsCfg ? await deps.giftsStore.actingForByIds(fetchedIds) : new Map<string, string | null>();
+
   // Ledger v2 (docs/20 §5.1): every recompute re-asserts the webhook-visible facts of every
   // gift it just read, so the gifts table self-heals from the same fetch the rollup uses —
   // a missed webhook can't leave the ledger stale past this owner's next recompute. The store
@@ -179,6 +189,7 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
       amountCents: Math.round(d.amount * 100),
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
       giftType: d.giftType ?? null,
+      actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
     })),
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
@@ -238,6 +249,10 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     // trivial markdown fails). The rollups and JSON projection above already landed; don't
     // burn queue retries over the optional rendering.
     console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (affiliationsCfg !== null) {
+    await recomputeAffiliations(deps, affiliationsCfg, affectedAffiliations(previousActingFor, donations));
   }
 
   // Recorded only now — after the owner write AND the gift term stamps — so a recompute that
@@ -347,4 +362,47 @@ export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<s
     [columns.lastGiftDate]: dateCol(r.lastGiftDate),
     [columns.lastGiftAmount]: numCol(r.lastGiftAmount),
   };
+}
+
+export function affectedAffiliations(previous: Map<string, string | null>, donations: DonationRecord[]): Set<string> {
+  const out = new Set<string>();
+  for (const v of previous.values()) if (v) out.add(v);
+  for (const d of donations) if (d.actingForItemId) out.add(d.actingForItemId);
+  return out;
+}
+
+// Phase 2 (spec "Rollups"): the affiliations this batch of gifts touches get their attributed
+// totals rewritten, and every person those affiliations belong to — now, or before a re-point —
+// gets Organizational Giving rewritten. Full recompute from the ledger, like phase 1.
+async function recomputeAffiliations(deps: ProcessBatchDeps, cfg: AffiliationsConfig, affiliationIds: Set<string>): Promise<void> {
+  const { mondayClient, giftsStore, affiliationsStore, config } = deps;
+  const { receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
+  const now = new Date().toISOString();
+  const persons = new Map<string, string>(); // person item id -> board id
+  for (const affiliationId of affiliationIds) {
+    const previous = await affiliationsStore.get(affiliationId);
+    if (previous) persons.set(previous.personItemId, previous.personBoardId);
+    const summary = await mondayClient.getAffiliationSummary(affiliationId, cfg.columns.personLink);
+    if (summary === null) {
+      console.warn(`donation-rollups consumer: affiliation "${affiliationId}" no longer exists on Monday — skipped`);
+      continue;
+    }
+    if (summary.personItemId !== null && summary.personBoardId !== null) {
+      await affiliationsStore.upsert({ affiliationItemId: affiliationId, personItemId: summary.personItemId,
+        personBoardId: summary.personBoardId, name: summary.name }, now);
+      persons.set(summary.personItemId, summary.personBoardId);
+    }
+    const totals = await giftsStore.attributedTotals(affiliationId, receivedStatusLabel);
+    await mondayClient.changeColumnValues(cfg.boardId, affiliationId,
+      attributedToColumnValues(attributedRollupFromTotals(totals), cfg.columns));
+  }
+  for (const [personItemId, personBoardId] of persons) {
+    const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
+    if (!column) {
+      console.warn(`donation-rollups consumer: no organizationalGiving column for board "${personBoardId}" — Organizational Giving for "${personItemId}" not written`);
+      continue;
+    }
+    const totals = await giftsStore.organizationalGivingTotals(personItemId, receivedStatusLabel);
+    await mondayClient.changeColumnValues(Number(personBoardId), personItemId, { [column]: organizationalGivingColumnValue(totals.cents) });
+  }
 }

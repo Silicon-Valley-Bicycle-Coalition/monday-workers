@@ -77,11 +77,16 @@ interface StoredFacts {
   fiscal_year: number;
   status: string;
   gift_type: string | null;
+  acting_for_item_id: string | null;
+  archived_at: string | null;
 }
 
 // A gift needs writing when it's new or any webhook-visible fact differs. giftType is the one
 // field the webhook path may not know: null/undefined means "leave stored", so only a present,
-// different value counts (mirrors the COALESCE in the upsert below).
+// different value counts (mirrors the COALESCE in the upsert below). actingForItemId follows the
+// upsert's CASE: undefined never counts, and an archived gift keeps D1's value whatever Monday
+// says now, so only an active gift with a supplied, different value (including a clear to null)
+// is a change.
 function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
   if (stored === undefined) return true;
   return stored.owner_item_id !== g.ownerItemId
@@ -90,7 +95,8 @@ function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
     || stored.gift_date !== g.giftDateISO
     || stored.fiscal_year !== g.fiscalYear
     || stored.status !== g.status
-    || (g.giftType != null && g.giftType !== stored.gift_type);
+    || (g.giftType != null && g.giftType !== stored.gift_type)
+    || (g.actingForItemId !== undefined && stored.archived_at === null && g.actingForItemId !== stored.acting_for_item_id);
 }
 
 export class D1GiftsStore implements GiftsStore {
@@ -102,7 +108,8 @@ export class D1GiftsStore implements GiftsStore {
       const ids = rows.slice(i, i + READ_CHUNK).map((g) => g.mondayItemId);
       const res = await this.db
         .prepare(
-          `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type
+          `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type,
+             acting_for_item_id, archived_at
            FROM gifts WHERE monday_item_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`,
         )
         .bind(...ids)

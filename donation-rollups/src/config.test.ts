@@ -128,4 +128,5 @@ describe('validateConfig — affiliations block', () => {
     expect(() => validateConfig(raw)).toThrow(/affiliations\.columns\.lastAttributedGift/);
     raw.affiliations.columns.lastAttributedGift = 'd_lag';
     expect(() => validateConfig(raw)).toThrow(/actingForLink.*required when affiliations is set/);
+  });
 });
