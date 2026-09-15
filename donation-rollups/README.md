@@ -499,8 +499,11 @@ the printed output is ready to paste straight into config — `affiliations`,
 (`affiliationCursor`/`personCursor` in the run's `detail`, 2,000 ids — 20 `getItemsColumnsText`
 calls — per leg per run), and — unlike legs 3/4, which are cheap enough to ride along with an
 owner slice — they only spend Monday subrequests in an invocation whose owner slice came back
-empty, to stay under the Workers Free plan's 50-subrequest cap. At current volume a full
-reconcile cycle (owners + both new legs) takes roughly 6 nights.
+empty, to stay under the Workers Free plan's 50-subrequest cap. Each run's `detail` report
+carries `affiliationRemaining` and `personRemaining` to show progress; how many nights a full
+cycle takes depends on the board sizes and is visible in `custodian_runs`, not a fixed number here.
+When Workers Paid lands, the per-run slice constants (`RECONCILE_AFFILIATIONS_PER_RUN` and
+`RECONCILE_PERSONS_PER_RUN` in `src/custodian/custodian.ts`) can grow to complete cycles faster.
 
 **Subrequest budget in the consumer.** `getAffiliationSummary` costs two Monday subrequests per
 affiliation touched. A single gift touches at most two affiliations (its own, plus one it moved
@@ -587,6 +590,8 @@ sandbox gets rebuilt before cutover:
   `ownerColumnsByBoard`, and the Donations board's `termStart`/`termEnd`/`membershipType` column
   ids together configure the membership renewal write path — see "Membership renewal write path"
   above.
+* `affiliations` — `null` until the Affiliations board exists (every affiliation-model behavior is off); otherwise `{ boardId, columns: { personLink, attributedGiving, attributedGiftCount, lastAttributedGift } }` — the Person connect column and the three rollup columns on the Affiliations board (`scripts/setup-affiliation-columns.mjs` prints the block). When set, every `donationBoards[]` entry must have `columns.actingForLink` (the Donations board's "Acting for" connect column).
+* `donationRollups.ownerColumnsByBoard["<board id>"].organizationalGiving` — optional, People boards only; an owner board without it (Organizations, or a People board before the setup script has run) is skipped with a `console.warn` naming the board — the consumer never retries over it, and reconcile leg 6 skips those persons.
 
 ## APIs & auth
 
