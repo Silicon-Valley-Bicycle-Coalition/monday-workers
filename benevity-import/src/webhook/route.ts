@@ -212,6 +212,16 @@ async function ingestBlock(
     });
     if (result === 'inserted') {
       await deps.queue.send({ transactionId: row.transactionId });
+    } else {
+      // 'duplicate': this row already exists from an earlier attempt. If it's still sitting at
+      // 'ingested', that attempt's own queue.send never went through (it upserted the row, then
+      // threw before or during send) — nothing else will ever retry it, so send it now. A row
+      // already 'written'/'needs-review'/'skipped' is a genuinely completed outcome and must NOT
+      // be re-sent.
+      const existingRow = await deps.rowStore.getRow(row.transactionId);
+      if (existingRow?.status === 'ingested') {
+        await deps.queue.send({ transactionId: row.transactionId });
+      }
     }
   }
 }

@@ -147,6 +147,57 @@ describe('webhook route', () => {
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
   });
 
+  it('re-enqueues a row stuck at "ingested" from a prior attempt whose queue.send never went through', async () => {
+    // upsertRow returns 'duplicate' (the row already exists in D1 from an earlier attempt), and
+    // getRow shows it's still sitting at 'ingested' — proof that attempt upserted the row but
+    // threw before or during queue.send, so nothing else will ever retry it.
+    const deps = fakeDeps({
+      rowStore: {
+        ...fakeDeps().rowStore,
+        upsertRow: vi.fn().mockResolvedValue('duplicate'),
+        getRow: vi.fn().mockResolvedValue({
+          transactionId: 'TXN001',
+          disbursementId: 10,
+          status: 'ingested',
+          mondayEmployeeItemId: null,
+          mondayMatchItemId: null,
+          rawRow: '{}',
+          error: null,
+          ingestedAt: '2026-09-15T00:00:00Z',
+          writtenAt: null,
+        }),
+      },
+    });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(200);
+    expect(deps.queue.send).toHaveBeenCalledWith({ transactionId: 'TXN001' });
+  });
+
+  it('does not re-enqueue a duplicate row whose earlier attempt already completed (status "written")', async () => {
+    const deps = fakeDeps({
+      rowStore: {
+        ...fakeDeps().rowStore,
+        upsertRow: vi.fn().mockResolvedValue('duplicate'),
+        getRow: vi.fn().mockResolvedValue({
+          transactionId: 'TXN001',
+          disbursementId: 10,
+          status: 'written',
+          mondayEmployeeItemId: '123',
+          mondayMatchItemId: null,
+          rawRow: '{}',
+          error: null,
+          ingestedAt: '2026-09-15T00:00:00Z',
+          writtenAt: '2026-09-15T00:00:01Z',
+        }),
+      },
+    });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(200);
+    expect(deps.queue.send).not.toHaveBeenCalled();
+  });
+
   it('is a no-op for an asset already ingested', async () => {
     const deps = fakeDeps({ uploadStore: { ...fakeDeps().uploadStore, getUploadByAssetId: vi.fn().mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsed', blockCount: 1 }) } });
     const app = createApp(deps);
