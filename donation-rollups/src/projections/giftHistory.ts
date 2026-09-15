@@ -112,6 +112,8 @@ export function parseGiftLedgerJson(text: string): ParsedGiftLedger | null {
 const dollars = (cents: number): string =>
   (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
+const cell = (text: string): string => text.replace(/\|/g, '\\|');
+
 export function buildGiftHistoryMarkdown(
   rows: GiftHistoryRow[], accountUrl: string,
   driven?: { affiliationName: string; cents: number; count: number }[],
@@ -132,7 +134,7 @@ export function buildGiftHistoryMarkdown(
   lines.push('', `_${rows.length} gifts. Maintained automatically by donation-rollups — edits here are overwritten._`);
   if (driven && driven.length > 0) {
     lines.push('', '## Driven for organizations', '', '| Affiliation | Attributed giving | Gifts |', '| --- | --- | --- |');
-    for (const d of driven) lines.push(`| ${d.affiliationName} | ${dollars(d.cents)} | ${d.count} |`);
+    for (const d of driven) lines.push(`| ${cell(d.affiliationName)} | ${dollars(d.cents)} | ${d.count} |`);
   }
   return lines.join('\n');
 }

@@ -130,4 +130,9 @@ describe('buildGiftHistoryMarkdown', () => {
     expect(md).toContain('| Uma @ Beta Org | $500.00 | 1 |');
     expect(buildGiftHistoryMarkdown([], 'https://acme.monday.com')).not.toContain('Driven for');
   });
+
+  it('escapes pipes in affiliation names to protect the markdown table', () => {
+    const md = buildGiftHistoryMarkdown([], 'https://acme.monday.com', [{ affiliationName: 'Acme | Beta', cents: 50000, count: 1 }]);
+    expect(md).toContain('| Acme \\| Beta | $500.00 | 1 |');
+  });
 });

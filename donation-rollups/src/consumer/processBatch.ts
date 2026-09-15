@@ -244,10 +244,10 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   // attribution has produced — sourced fresh from the ledger, same as the rest of this projection.
   // Gated on affiliations being configured at all; a zero-total affiliation is omitted, not
   // shown as a $0 row.
-  const driven = affiliationsCfg !== null
-    ? await drivenForOrganizations(deps, ownerItemId, receivedStatusLabel)
-    : undefined;
   try {
+    const driven = affiliationsCfg !== null
+      ? await drivenForOrganizations(deps, ownerItemId, receivedStatusLabel)
+      : undefined;
     await mondayClient.setItemDescription(ownerItemId,
       buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
   } catch (err) {

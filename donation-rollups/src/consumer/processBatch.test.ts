@@ -874,7 +874,22 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config, now: new Date('2026-01-01') });
     expect(mondayClient.getAffiliationSummary).not.toHaveBeenCalled();
     expect(giftsStore.actingForByIds).not.toHaveBeenCalled();
+    expect(affiliationsStore.forPerson).not.toHaveBeenCalled();
     expect(mondayClient.changeColumnValues).toHaveBeenCalledTimes(1);   // the owner write only
+  });
+
+  it('driven computation D1 failure is non-fatal — rollups and markdown land, message acks', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      affiliationsStore: { forPerson: vi.fn().mockRejectedValue(new Error('D1 hiccup')) },
+    });
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(),
+      giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything());
   });
 
   it('a phase-2 Monday failure retries the message (owner write is idempotent)', async () => {
