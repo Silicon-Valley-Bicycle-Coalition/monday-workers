@@ -99,6 +99,8 @@ function fakeGiftsStore(): GiftsStore {
     actingForByIds: vi.fn().mockResolvedValue(new Map()),
     attributedTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0, lastGiftDateISO: null }),
     organizationalGivingTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0 }),
+    attributedTotalsAll: vi.fn().mockResolvedValue(new Map()),
+    organizationalGivingAll: vi.fn().mockResolvedValue(new Map()),
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
     markArchived: vi.fn().mockResolvedValue(undefined),

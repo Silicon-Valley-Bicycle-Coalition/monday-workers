@@ -206,4 +206,29 @@ describe('D1GiftsStore — acting_for', () => {
     expect(await store.organizationalGivingTotals('p-1', 'Received')).toEqual({ cents: 57500, count: 2 });
     expect(await store.organizationalGivingTotals('p-none', 'Received')).toEqual({ cents: 0, count: 0 });
   });
+
+  it('attributedTotalsAll and organizationalGivingAll aggregate every affiliation/person in one pass — reconcile legs 5/6', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','2026-01-01T00:00:00Z')`),
+      env.DB.prepare(`INSERT INTO affiliations VALUES ('af-2','p-1','b1','Ada @ Beta','2026-01-01T00:00:00Z')`),
+      env.DB.prepare(`INSERT INTO affiliations VALUES ('af-9','p-9','b1','Bo @ Acme','2026-01-01T00:00:00Z')`),
+    ]);
+    await store.refreshFacts([
+      gift({ mondayItemId: 'o1', actingForItemId: 'af-1', amountCents: 50000 }),
+      gift({ mondayItemId: 'o2', actingForItemId: 'af-2', amountCents: 7500 }),
+      gift({ mondayItemId: 'o3', actingForItemId: 'af-9', amountCents: 100 }),
+      gift({ mondayItemId: 'o4', actingForItemId: 'af-1', amountCents: 5, status: 'Failed' }),
+    ], 'import', '2026-01-01T00:00:00Z');
+
+    expect(await store.attributedTotalsAll('Received')).toEqual(new Map([
+      ['af-1', { cents: 50000, count: 1 }],
+      ['af-2', { cents: 7500, count: 1 }],
+      ['af-9', { cents: 100, count: 1 }],
+    ]));
+    expect(await store.organizationalGivingAll('Received')).toEqual(new Map([
+      ['p-1', { cents: 57500, personBoardId: 'b1' }],
+      ['p-9', { cents: 100, personBoardId: 'b1' }],
+    ]));
+  });
 });

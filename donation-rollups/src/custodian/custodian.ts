@@ -332,6 +332,8 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
   // Final-slice checks, once per full pass.
   const staleFYs: number[] = [];
   const summaryBoardMismatches: { fiscalYear: number; ledgerCents: number; boardCents: number | null }[] = [];
+  const affiliationMismatches: { affiliationItemId: string; ledgerCents: number; mondayCents: number | null }[] = [];
+  const organizationalMismatches: { personItemId: string; ledgerCents: number; mondayCents: number | null }[] = [];
   let summariesChecked = 0;
   let summaryItemsChecked = 0;
   if (remaining === 0) {
@@ -369,10 +371,45 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
         }
       }
     }
+
+    // Legs 5/6: attributed giving per affiliation and Organizational Giving per person,
+    // against the affiliation model's own columns — only meaningful once config.affiliations
+    // is set up, and only worth the extra subrequests on the final slice like legs 3/4.
+    if (deps.config.affiliations !== null) {
+      const { columns } = deps.config.affiliations;
+
+      // Leg 5: every affiliation's attributed total vs its board's attributedGiving column.
+      const ledgerByAffiliation = await deps.gifts.attributedTotalsAll(receivedStatusLabel);
+      const affiliationIds = [...ledgerByAffiliation.keys()].sort();
+      const affResults = await compareCents(
+        deps.mondayClient, affiliationIds, columns.attributedGiving,
+        (id) => ledgerByAffiliation.get(id)!.cents);
+      affiliationMismatches.push(...affResults.map((m) =>
+        ({ affiliationItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+
+      // Leg 6: every person's Organizational Giving vs their own board's organizationalGiving
+      // column — grouped by board since that column id (and its existence) is per-board.
+      const ledgerByPerson = await deps.gifts.organizationalGivingAll(receivedStatusLabel);
+      const personIdsByBoard = new Map<string, string[]>();
+      for (const [personId, t] of ledgerByPerson) {
+        const list = personIdsByBoard.get(t.personBoardId) ?? [];
+        list.push(personId);
+        personIdsByBoard.set(t.personBoardId, list);
+      }
+      for (const [personBoardId, personIds] of personIdsByBoard) {
+        const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
+        if (!column) continue; // e.g. an Organizations board, which has no driven-giving concept
+        const results = await compareCents(
+          deps.mondayClient, personIds.sort(), column, (id) => ledgerByPerson.get(id)!.cents);
+        organizationalMismatches.push(...results.map((m) =>
+          ({ personItemId: m.id, ledgerCents: m.ledgerCents, mondayCents: m.mondayCents })));
+      }
+    }
   }
 
   const ok = mismatches.length === 0 && projectionMismatches.length === 0
-    && staleFYs.length === 0 && summaryBoardMismatches.length === 0;
+    && staleFYs.length === 0 && summaryBoardMismatches.length === 0
+    && affiliationMismatches.length === 0 && organizationalMismatches.length === 0;
   return {
     ok,
     summary: ok
@@ -381,13 +418,38 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
           ? ` — ${remaining} remain, continuing next run`
           : `, ${summariesChecked} annual summaries and ${summaryItemsChecked} summary board item(s) current`)
       : `${mismatches.length} owner mismatch(es), ${projectionMismatches.length} gift-ledger projection mismatch(es), ` +
-        `${staleFYs.length} stale annual summary(ies), ${summaryBoardMismatches.length} summary board mismatch(es)`,
+        `${staleFYs.length} stale annual summary(ies), ${summaryBoardMismatches.length} summary board mismatch(es), ` +
+        `${affiliationMismatches.length} affiliation mismatch(es), ${organizationalMismatches.length} organizational giving mismatch(es)`,
     detail: { compared, remaining, cursor: slice.at(-1) ?? cursor,
       mismatches: mismatches.slice(0, 20), mismatchCount: mismatches.length,
       projectionMismatches: projectionMismatches.slice(0, 20),
       projectionMismatchCount: projectionMismatches.length, truncatedProjections,
-      staleFYs, summaryBoardMismatches, summaryItemsChecked },
+      staleFYs, summaryBoardMismatches, summaryItemsChecked,
+      affiliationMismatches: affiliationMismatches.slice(0, 20), affiliationMismatchCount: affiliationMismatches.length,
+      organizationalMismatches: organizationalMismatches.slice(0, 20), organizationalMismatchCount: organizationalMismatches.length },
   };
+}
+
+// Shared by legs 5 and 6: read one Monday column for a batch of item ids (chunked at 100,
+// Monday's items(ids:) cap) and diff it in rounded cents against the ledger side.
+async function compareCents(
+  mondayClient: CustodianMondayClient,
+  ids: string[],
+  columnId: string,
+  ledgerCentsOf: (id: string) => number,
+): Promise<{ id: string; ledgerCents: number; mondayCents: number | null }[]> {
+  const mismatches: { id: string; ledgerCents: number; mondayCents: number | null }[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const monday = await mondayClient.getItemsColumnsText(chunk, [columnId]);
+    for (const id of chunk) {
+      const text = monday.get(id)?.get(columnId) ?? null;
+      const mondayCents = text === null ? null : Math.round(Number(text) * 100);
+      const ledgerCents = ledgerCentsOf(id);
+      if (mondayCents !== ledgerCents) mismatches.push({ id, ledgerCents, mondayCents });
+    }
+  }
+  return mismatches;
 }
 
 async function alert(deps: CustodianDeps, message: string): Promise<void> {

@@ -44,6 +44,11 @@ export interface GiftsStore {
   attributedTotals(affiliationItemId: string, statusLabel: string): Promise<{ cents: number; count: number; lastGiftDateISO: string | null }>;
   // Organizational Giving: totals across every affiliation belonging to a person.
   organizationalGivingTotals(personItemId: string, statusLabel: string): Promise<{ cents: number; count: number }>;
+  // Reconciliation's ledger side for legs 5/6: every affiliation's attributed total (leg 5)
+  // and every person's Organizational Giving total (leg 6), in one pass each rather than
+  // one query per affiliation/person.
+  attributedTotalsAll(statusLabel: string): Promise<Map<string, { cents: number; count: number }>>;
+  organizationalGivingAll(statusLabel: string): Promise<Map<string, { cents: number; personBoardId: string }>>;
   // Records which Monday item on the Annual Giving Summary board represents a fiscal year.
   setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void>;
   // Active gifts older than the retention cutoff — the year-end archive run's work list.
@@ -199,6 +204,31 @@ export class D1GiftsStore implements GiftsStore {
       .bind(personItemId, statusLabel)
       .first<{ cents: number; n: number }>();
     return { cents: r?.cents ?? 0, count: r?.n ?? 0 };
+  }
+
+  async attributedTotalsAll(statusLabel: string): Promise<Map<string, { cents: number; count: number }>> {
+    const res = await this.db
+      .prepare(`SELECT acting_for_item_id, SUM(amount_cents) AS cents, COUNT(*) AS n
+                FROM gifts WHERE acting_for_item_id IS NOT NULL AND status = ?1
+                GROUP BY acting_for_item_id`)
+      .bind(statusLabel)
+      .all<{ acting_for_item_id: string; cents: number; n: number }>();
+    const out = new Map<string, { cents: number; count: number }>();
+    for (const r of res.results) out.set(r.acting_for_item_id, { cents: r.cents, count: r.n });
+    return out;
+  }
+
+  async organizationalGivingAll(statusLabel: string): Promise<Map<string, { cents: number; personBoardId: string }>> {
+    const res = await this.db
+      .prepare(`SELECT a.person_item_id, a.person_board_id, SUM(g.amount_cents) AS cents
+                FROM gifts g JOIN affiliations a ON a.affiliation_item_id = g.acting_for_item_id
+                WHERE g.status = ?1
+                GROUP BY a.person_item_id, a.person_board_id`)
+      .bind(statusLabel)
+      .all<{ person_item_id: string; person_board_id: string; cents: number }>();
+    const out = new Map<string, { cents: number; personBoardId: string }>();
+    for (const r of res.results) out.set(r.person_item_id, { cents: r.cents, personBoardId: r.person_board_id });
+    return out;
   }
 
   async setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void> {

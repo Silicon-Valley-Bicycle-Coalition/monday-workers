@@ -85,14 +85,15 @@ beforeEach(async () => {
     env.DB.prepare('DELETE FROM custodian_runs'),
     env.DB.prepare('DELETE FROM donation_links'),
     env.DB.prepare('DELETE FROM pending_recomputes'),
+    env.DB.prepare('DELETE FROM affiliations'),
   ]);
 });
 
-const seedGift = (db: D1Database, id: string, over: Partial<{ owner: string; fy: number; cents: number; status: string; archivedAt: string | null }> = {}) =>
+const seedGift = (db: D1Database, id: string, over: Partial<{ owner: string; fy: number; cents: number; status: string; archivedAt: string | null; actingFor: string | null }> = {}) =>
   db.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,
-    fiscal_year, status, archived_at, source, updated_at)
-    VALUES (?1, ?2, 'b1', ?3, '2020-01-01', ?4, ?5, ?6, 'import', 'now')`)
-    .bind(id, over.owner ?? 'o1', over.cents ?? 1000, over.fy ?? 2020, over.status ?? 'Received', over.archivedAt ?? null)
+    fiscal_year, status, archived_at, acting_for_item_id, source, updated_at)
+    VALUES (?1, ?2, 'b1', ?3, '2020-01-01', ?4, ?5, ?6, ?7, 'import', 'now')`)
+    .bind(id, over.owner ?? 'o1', over.cents ?? 1000, over.fy ?? 2020, over.status ?? 'Received', over.archivedAt ?? null, over.actingFor ?? null)
     .run();
 
 describe('dutiesForDate', () => {
@@ -438,6 +439,67 @@ describe('reconcile duty', () => {
     expect(detail.summaryBoardMismatches).toEqual([
       { fiscalYear: 2015, ledgerCents: 5000, boardCents: null },
     ]);
+  });
+
+  const AFFIL_CFG: DonationRollupsConfig = {
+    ...testConfig(),
+    affiliations: { boardId: 500, columns: { personLink: 'pl', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } },
+    donationRollups: {
+      ...testConfig().donationRollups,
+      ownerColumnsByBoard: { b1: { ...OWNER_COLS, organizationalGiving: 'col_og' } },
+    },
+  };
+
+  it('reconciles attributed giving and Organizational Giving cleanly when Monday matches the ledger', async () => {
+    await seedGift(env.DB, 'ag1', { owner: 'oA', cents: 52500, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '525', col_glj: glj([['ag1', 52500]]) }],
+      ['af-1', { n_ag: '525' }],
+      ['p-1', { col_og: '525' }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true);
+    const detail = report.detail as { affiliationMismatchCount: number; organizationalMismatchCount: number };
+    expect(detail.affiliationMismatchCount).toBe(0);
+    expect(detail.organizationalMismatchCount).toBe(0);
+  });
+
+  it('flags affiliation and Organizational Giving mismatches against the ledger', async () => {
+    await seedGift(env.DB, 'ag2', { owner: 'oA', cents: 52500, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '525', col_glj: glj([['ag2', 52500]]) }],
+      ['af-1', { n_ag: '524' }],
+      ['p-1', { col_og: '524' }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(false);
+    const detail = report.detail as {
+      affiliationMismatches: { affiliationItemId: string; ledgerCents: number; mondayCents: number | null }[];
+      organizationalMismatches: { personItemId: string; ledgerCents: number; mondayCents: number | null }[];
+    };
+    expect(detail.affiliationMismatches).toEqual([{ affiliationItemId: 'af-1', ledgerCents: 52500, mondayCents: 52400 }]);
+    expect(detail.organizationalMismatches).toEqual([{ personItemId: 'p-1', ledgerCents: 52500, mondayCents: 52400 }]);
+  });
+
+  it('skips legs 5/6 entirely when config.affiliations is not configured', async () => {
+    await seedGift(env.DB, 'ag3', { owner: 'oA', cents: 5000, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '50', col_glj: glj([['ag3', 5000]]) }],
+    ]) };
+    const d = deps(state, []); // default testConfig(): affiliations: null
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true);
+    const detail = report.detail as { affiliationMismatchCount: number; organizationalMismatchCount: number };
+    expect(detail.affiliationMismatchCount).toBe(0);
+    expect(detail.organizationalMismatchCount).toBe(0);
   });
 });
 
