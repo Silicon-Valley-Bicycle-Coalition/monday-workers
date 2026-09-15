@@ -304,10 +304,12 @@ wasn't worth the added complexity of a per-owner dedup layer for v1.
 (37,278 links, 9 boards, 7,893 owners; Dan King spot-check exact). 2026-08-31: re-bootstrapped
 for the single v2 board from the archive-in-place rehearsal's artifacts — **37,286 links, all on
 board `18428131791`** (17 anonymous gifts and 11,231 excluded-owner gifts skipped by design),
-`pending_recomputes` cleared. Re-run `bootstrap-links-from-artifacts.mjs` (then
-`wrangler d1 execute svbc-donation-rollups --remote --file bootstrap.sql -y` — the `-y`
-matters: without a TTY, wrangler's confirm prompt silently cancels with exit 0) after any fresh
-load, since item ids change between loads.
+`pending_recomputes` cleared. Re-run `bootstrap-gifts-from-artifacts.mjs` (it writes both
+`bootstrap-gifts.sql` and `bootstrap-affiliations.sql`), then
+`wrangler d1 execute svbc-donation-rollups --remote --file bootstrap-gifts.sql -y` and
+`wrangler d1 execute svbc-donation-rollups --remote --file bootstrap-affiliations.sql -y` — the
+`-y` matters: without a TTY, wrangler's confirm prompt silently cancels with exit 0 — after any
+fresh load, since item ids change between loads.
 
 ## Membership renewal write path (spec `docs/superpowers/specs/2026-09-15-membership-renewal-write-path-design.md`)
 
