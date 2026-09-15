@@ -83,15 +83,21 @@ export function createApp(deps: AppDeps) {
 
 async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
   const existing = await deps.uploadStore.getUploadByAssetId(assetId);
-  if (existing !== null) {
-    // Redelivery of an already-ingested asset — a fast no-op. Per-row dedup on Transaction ID
-    // in D1 `rows` is the real safety net even if this check is ever bypassed.
+  if (existing !== null && existing.status === 'parsed') {
+    // Redelivery of an already-FULLY-ingested asset — a fast no-op. Per-row dedup on
+    // Transaction ID in D1 `rows` is the real safety net even if this check is ever bypassed.
+    // Deliberately NOT short-circuiting on mere existence: an upload stuck at 'parsing' (a
+    // prior attempt died partway through the block loop below) or 'error' (a prior parse
+    // failure) must still be retried on redelivery, or a transient failure on block 2 of a
+    // 3-block file would silently and permanently drop blocks 2-3 forever, while still
+    // answering Monday's redelivery with 200. Reusing `existing.id` here (never calling
+    // createUpload twice) avoids violating uploads.monday_asset_id's UNIQUE constraint.
     return;
   }
 
   const asset = await deps.mondayClient.fetchAsset(assetId);
   const csvText = await deps.fetchCsv(asset.publicUrl);
-  const upload = await deps.uploadStore.createUpload(assetId, deps.now());
+  const upload = existing ?? (await deps.uploadStore.createUpload(assetId, deps.now()));
 
   let blocks: ParsedBlock[];
   try {
@@ -102,8 +108,16 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
     return;
   }
 
-  for (const block of blocks) {
-    await ingestBlock(block, upload.id, deps);
+  try {
+    for (const block of blocks) {
+      await ingestBlock(block, upload.id, deps);
+    }
+  } catch (err) {
+    // Mark it visibly failed (not stuck silently at 'parsing') and rethrow so the webhook
+    // handler's outer catch returns 500 — Monday redelivers, and this same asset id resumes
+    // processing above instead of no-op'ing past it.
+    await deps.uploadStore.markError(upload.id);
+    throw err;
   }
 
   await deps.uploadStore.markParsed(upload.id, blocks.length);

@@ -180,4 +180,36 @@ describe('webhook route', () => {
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs-review' }));
     expect(deps.queue.send).not.toHaveBeenCalled();
   });
+
+  it('retries an asset stuck at "parsing" from a failed prior attempt, instead of no-op-ing past it', async () => {
+    const deps = fakeDeps({
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+    });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(200);
+    // Must still fetch and process — a 'parsing' upload is not "done," unlike 'parsed'.
+    expect(deps.mondayClient.fetchAsset).toHaveBeenCalled();
+    expect(deps.uploadStore.createUpload).not.toHaveBeenCalled(); // reuses existing.id, never double-creates
+    expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {
+    const deps = fakeDeps({
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        createDisbursement: vi.fn().mockRejectedValue(new Error('D1 write failed')),
+      },
+    });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(500);
+    expect(deps.uploadStore.markError).toHaveBeenCalledWith(1);
+    expect(deps.uploadStore.markParsed).not.toHaveBeenCalled();
+  });
 });
