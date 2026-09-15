@@ -8,5 +8,46 @@
       "affiliations": null,
       "benevityUploads": null
     }
+  },
+  "benevityImport": {
+    "minDonationDate": "2026-09-15",
+    "donationsColumns": {
+      "donor": "REPLACE_donor_connect_column_id",
+      "matchedBy": "REPLACE_matched_by_connect_column_id",
+      "amount": "REPLACE_amount_column_id",
+      "date": "REPLACE_date_column_id",
+      "disbursementDate": "REPLACE_benevity_disbursement_date_column_id",
+      "fiscalYearEnding": "REPLACE_fiscal_year_ending_column_id",
+      "status": "REPLACE_status_column_id",
+      "giftType": "REPLACE_gift_type_column_id",
+      "anonymousDonor": "REPLACE_anonymous_donor_column_id",
+      "transactionId": "REPLACE_benevity_transaction_id_column_id"
+    },
+    "organizationsNameColumn": "name",
+    "peopleColumns": {
+      "personalEmail": "REPLACE_personal_email_column_id",
+      "householdEmail": "REPLACE_household_email_column_id",
+      "employer": "REPLACE_employer_column_id"
+    },
+    "affiliationsColumns": {
+      "person": "REPLACE_person_connect_column_id",
+      "organization": "REPLACE_organization_connect_column_id",
+      "workEmail": "REPLACE_work_email_column_id"
+    },
+    "uploadsBoard": {
+      "fileColumn": "REPLACE_file_column_id",
+      "worklistGroupId": "REPLACE_review_group_id",
+      "worklistColumns": {
+        "reason": "REPLACE_reason_column_id",
+        "name": "REPLACE_name_column_id",
+        "email": "REPLACE_email_column_id",
+        "company": "REPLACE_company_column_id",
+        "amount": "REPLACE_amount_column_id",
+        "date": "REPLACE_date_column_id"
+      }
+    },
+    "organizationAliases": {},
+    "rawRowRetentionDays": 90,
+    "unresolvedRowRetentionDays": 365
   }
 }
