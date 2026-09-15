@@ -125,6 +125,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
     setItemDescription: vi.fn().mockResolvedValue(undefined),
     createUpdate: vi.fn().mockResolvedValue(undefined),
+    getAffiliationSummary: vi.fn().mockResolvedValue(null),
     ...overrides,
   };
 }

@@ -16,8 +16,21 @@ function itemsResponse(items: { id: string; cells: Record<string, string | null>
 }
 
 function clientReturning(body: unknown): HttpMondayClient {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-    new Response(JSON.stringify(body), { status: 200 })));
+  // A fresh Response per call — a Response body can only be read once, and some callers
+  // (getDonationsByIds, getAffiliationSummary) invoke fetch more than once against one client.
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(
+    () => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))));
+  return new HttpMondayClient('https://api.monday.test/v2', 'token');
+}
+
+// Like clientReturning, but scripts successive fetch calls to resolve each body in turn —
+// for methods (like getAffiliationSummary) that make more than one GraphQL request.
+function clientReturningSequence(bodies: unknown[]): HttpMondayClient {
+  const fetchMock = vi.fn();
+  for (const body of bodies) {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
+  }
+  vi.stubGlobal('fetch', fetchMock);
   return new HttpMondayClient('https://api.monday.test/v2', 'token');
 }
 
@@ -139,5 +152,38 @@ describe('getOwnerMembership', () => {
       { id: 'o1', cells: { ms: 'Active', mt: 'Member', msince: '2015-01-01 09:00', muntil: '2027-04-11 00:00' } },
     ]));
     expect(await client.getOwnerMembership('o1', OWNER)).toMatchObject({ since: '2015-01-01', until: '2027-04-11' });
+  });
+});
+
+describe('HttpMondayClient — affiliation model reads', () => {
+  it('getDonationsByIds returns actingForItemId from the board_relation when configured, undefined otherwise', async () => {
+    const respond = { items: [{ id: 'dn1', column_values: [
+      { id: 'amount_1', text: '50' }, { id: 'date_1', text: '2024-02-02' }, { id: 'status_1', text: 'Received' },
+      { id: 'af_1', text: 'Ada @ Acme', linked_item_ids: ['af-1'] } ] }] };
+    const client = clientReturning({ data: respond });
+    const [withAf] = await client.getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null, actingForLink: 'af_1' });
+    expect(withAf!.actingForItemId).toBe('af-1');
+    const [without] = await client.getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null });
+    expect(without!.actingForItemId).toBeUndefined();
+  });
+  it('getDonationsByIds reports null when the configured Acting for column is empty', async () => {
+    const respond = { items: [{ id: 'dn1', column_values: [
+      { id: 'amount_1', text: '50' }, { id: 'date_1', text: '2024-02-02' }, { id: 'status_1', text: 'Received' },
+      { id: 'af_1', text: '', linked_item_ids: [] } ] }] };
+    const [d] = await clientReturning({ data: respond }).getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null, actingForLink: 'af_1' });
+    expect(d!.actingForItemId).toBeNull();
+  });
+  it('getAffiliationSummary returns the item name and its Person link + board', async () => {
+    const calls = [
+      { items: [{ id: 'af-1', name: 'Ada @ Acme', column_values: [{ id: 'br_p', linked_item_ids: ['p-1'] }] }] },
+      { items: [{ board: { id: '18428131737' } }] },
+    ];
+    const client = clientReturningSequence(calls.map((c) => ({ data: c })));
+    expect(await client.getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'Ada @ Acme', personItemId: 'p-1', personBoardId: '18428131737' });
+  });
+  it('getAffiliationSummary: no Person link → nulls; deleted item → null', async () => {
+    expect(await clientReturningSequence([{ data: { items: [{ id: 'af-1', name: 'X @ Y', column_values: [{ id: 'br_p', linked_item_ids: [] }] }] } }])
+      .getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'X @ Y', personItemId: null, personBoardId: null });
+    expect(await clientReturningSequence([{ data: { items: [] } }]).getAffiliationSummary('af-gone', 'br_p')).toBeNull();
   });
 });
