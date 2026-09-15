@@ -108,8 +108,18 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
     return;
   }
 
+  // Resume, don't restart: a retry of a stuck upload re-fetches and re-parses the SAME asset,
+  // which is a pure function of its bytes, so block order is stable across attempts. Each
+  // ingestBlock call creates exactly one `disbursements` row and runs to completion before
+  // returning (no partial state), so the count of disbursement rows already recorded for this
+  // upload is exactly how many leading blocks were already fully handled — skip those, and
+  // only process what's left. Without this, a retry would re-run every already-succeeded block
+  // too: another `disbursements` row per block, and for a needs-review block, another
+  // duplicate worklist item.
+  const alreadyProcessedCount = (await deps.disbursementStore.listByUpload(upload.id)).length;
+
   try {
-    for (const block of blocks) {
+    for (const block of blocks.slice(alreadyProcessedCount)) {
       await ingestBlock(block, upload.id, deps);
     }
   } catch (err) {

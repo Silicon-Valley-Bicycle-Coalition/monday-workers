@@ -61,4 +61,21 @@ describe('D1DisbursementStore', () => {
     const store = new D1DisbursementStore(env.DB);
     expect(await store.getDisbursement(999999)).toBeNull();
   });
+
+  it('lists disbursements for an upload in creation order, empty for an upload with none', async () => {
+    const uploads = new D1UploadStore(env.DB);
+    const uploadId = (await uploads.createUpload('asset-3', '2026-09-15T00:00:00Z')).id;
+
+    const store = new D1DisbursementStore(env.DB);
+    const first = await store.createDisbursement({
+      uploadId, disbursementId: 'FIRST', periodEnding: '2025-12-16', currency: 'USD',
+      rowCount: 1, reportedGrossTotal: 50, reportedNetTotal: 50, needsReview: false, reviewReason: null,
+    });
+    const second = await store.createDisbursement({
+      uploadId, disbursementId: 'SECOND', periodEnding: '2025-12-16', currency: 'USD',
+      rowCount: 1, reportedGrossTotal: 60, reportedNetTotal: 60, needsReview: false, reviewReason: null,
+    });
+    expect((await store.listByUpload(uploadId)).map((d) => d.id)).toEqual([first.id, second.id]);
+    expect(await store.listByUpload(999999)).toEqual([]);
+  });
 });

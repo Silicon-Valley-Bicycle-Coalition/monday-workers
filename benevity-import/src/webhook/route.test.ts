@@ -29,7 +29,8 @@ function fakeConfig(): BenevityImportConfig {
   };
 }
 
-function validReport(): string {
+function validReport(opts: { disbursementId?: string; transactionId?: string } = {}): string {
+  const { disbursementId = 'ABC123', transactionId = 'TXN001' } = opts;
   return [
     'Donations Report,',
     '"#---",',
@@ -38,12 +39,12 @@ function validReport(): string {
     'Period Ending,Tue 16 Dec 2026 0:00:00',
     'Currency,USD',
     'Payment Method,EFT',
-    'Disbursement ID,ABC123',
+    `Disbursement ID,${disbursementId}`,
     'Note,',
     '"#---",',
     '',
     'Company,Project,Donation Date,Donor First Name,Donor Last Name,Email,Address,City,State/Province,Postal Code,Activity,Comment,Transaction ID,Donation Frequency,Currency,Project Remote ID,Source,Reason,Total Donation to be Acknowledged,Match Amount,Cause Support Fee,Merchant Fee,Fee Comment',
-    '"Acme, Inc.",Project,2026-12-06T00:00:00Z,Jordan,Rivera,jordan@acme.example,x,x,x,94043,,,TXN001,One Time,USD,,BlueSnap,User Donation,50.00,0.00,0.00,0.00,',
+    `"Acme, Inc.",Project,2026-12-06T00:00:00Z,Jordan,Rivera,jordan@acme.example,x,x,x,94043,,,${transactionId},One Time,USD,,BlueSnap,User Donation,50.00,0.00,0.00,0.00,`,
     'Totals,,,,,,,,,,,,,,,,,,50.00,0.00,0.00,0.00',
     'Total Donations (Gross),50.00',
     'Check Fee,0.00',
@@ -62,6 +63,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   const disbursementStore: DisbursementStore = {
     createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 10, ...input })),
     getDisbursement: vi.fn(),
+    listByUpload: vi.fn().mockResolvedValue([]),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
@@ -197,6 +199,36 @@ describe('webhook route', () => {
     expect(deps.mondayClient.fetchAsset).toHaveBeenCalled();
     expect(deps.uploadStore.createUpload).not.toHaveBeenCalled(); // reuses existing.id, never double-creates
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('resumes a stuck retry from the first never-completed block, without reprocessing a block that already succeeded', async () => {
+    // Two-block file; block 1 already has a disbursement row from a prior attempt (it
+    // succeeded before block 2 failed and the upload got stuck at 'parsing').
+    const bundled =
+      validReport({ disbursementId: 'FIRST01', transactionId: 'TXN001' }) +
+      validReport({ disbursementId: 'SECOND02', transactionId: 'TXN002' });
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(bundled),
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        listByUpload: vi.fn().mockResolvedValue([{ id: 10, disbursementId: 'FIRST01' } as never]), // 1 block already done
+        createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 11, ...input })),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    // Only the second (never-completed) block creates a new disbursement row.
+    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledTimes(1);
+    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledWith(
+      expect.objectContaining({ disbursementId: 'SECOND02' })
+    );
+    expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 2);
   });
 
   it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {

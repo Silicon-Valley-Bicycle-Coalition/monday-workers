@@ -16,6 +16,11 @@ export type NewDisbursement = Omit<DisbursementRow, 'id'>;
 export interface DisbursementStore {
   createDisbursement(input: NewDisbursement): Promise<DisbursementRow>;
   getDisbursement(id: number): Promise<DisbursementRow | null>;
+  // Added during Task 16's fix round 1: lets a webhook redelivery resume a stuck upload from
+  // the first block that was never fully processed, instead of reprocessing blocks that
+  // already ran to completion (which would otherwise insert a duplicate disbursement row, and
+  // for a needs-review block, a duplicate worklist item).
+  listByUpload(uploadId: number): Promise<DisbursementRow[]>;
 }
 
 interface D1DisbursementRecord {
@@ -87,5 +92,17 @@ export class D1DisbursementStore implements DisbursementStore {
       .bind(id)
       .first<D1DisbursementRecord>();
     return record === null ? null : toDisbursementRow(record);
+  }
+
+  async listByUpload(uploadId: number): Promise<DisbursementRow[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT id, upload_id, disbursement_id, period_ending, currency, row_count,
+                reported_gross_total, reported_net_total, needs_review, review_reason
+         FROM disbursements WHERE upload_id = ?1 ORDER BY id ASC`
+      )
+      .bind(uploadId)
+      .all<D1DisbursementRecord>();
+    return results.map(toDisbursementRow);
   }
 }
