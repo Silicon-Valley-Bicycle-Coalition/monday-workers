@@ -2873,6 +2873,20 @@ describe('splitRowIntoGifts', () => {
     expect(gifts.map((g) => g.transactionId)).toEqual(['TXN001', 'TXN001-match']);
   });
 
+  it('writes each gift\'s OWN (correctly suffixed) transaction id to the Benevity Transaction ID column — not just the lookup key', () => {
+    // The lookup key (GiftSpec.transactionId, asserted above) and the WRITTEN column value are
+    // two different things; a bug that gets the key right but writes row.transactionId to both
+    // gifts' columns would pass the test above while breaking the consumer's per-gift pre-create
+    // lookup for the match gift (spec: Idempotency, "<id>-match").
+    const config = fakeConfig();
+    const [employeeGift, matchGift] = splitRowIntoGifts(
+      { row: fakeRow(), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },
+      config
+    );
+    expect(employeeGift.columnValues[config.benevityImport.donationsColumns.transactionId]).toBe('TXN001');
+    expect(matchGift.columnValues[config.benevityImport.donationsColumns.transactionId]).toBe('TXN001-match');
+  });
+
   it('produces only the employee gift when there is no match amount', () => {
     const gifts = splitRowIntoGifts(
       { row: fakeRow({ matchAmount: 0 }), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },
@@ -2978,14 +2992,20 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
   const donorLabel = personItemId ? `${row.donorFirstName} ${row.donorLastName}`.trim() : 'Anonymous';
   const fyEnding = fiscalYearEnding(row.donationDate);
 
-  const baseColumns = (amount: number): Record<string, unknown> => ({
+  // The gift's OWN id (row.transactionId for the employee gift, `${row.transactionId}-match`
+  // for the match gift) must be threaded in and written to the column, not closed over from
+  // `row.transactionId` — otherwise both gifts would carry the SAME unsuffixed id in
+  // `Benevity Transaction ID`, breaking the spec's per-gift idempotency guarantee (the match
+  // gift's pre-create lookup in the consumer would never find a match, re-creating it on every
+  // retry, while the employee-gift lookup would start returning two items).
+  const baseColumns = (amount: number, transactionId: string): Record<string, unknown> => ({
     [cols.amount]: amount,
     [cols.date]: { date: row.donationDate },
     [cols.disbursementDate]: { date: disbursementPeriodEnding },
     [cols.fiscalYearEnding]: { date: fyEnding },
     [cols.status]: { label: 'Received' },
     [cols.anonymousDonor]: { checked: personItemId ? 'false' : 'true' },
-    [cols.transactionId]: row.transactionId,
+    [cols.transactionId]: transactionId,
     ...(personItemId ? { [cols.donor]: { item_ids: [Number(personItemId)] } } : {}),
   });
 
@@ -2996,7 +3016,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
       transactionId: row.transactionId,
       itemName: `${donorLabel} - Donation ${row.donationDate} (Benevity)`,
       columnValues: {
-        ...baseColumns(row.totalDonationToBeAcknowledged),
+        ...baseColumns(row.totalDonationToBeAcknowledged, row.transactionId),
         [cols.giftType]: { label: 'Donation' },
       },
     });
@@ -3007,7 +3027,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
       transactionId: `${row.transactionId}-match`,
       itemName: `${row.company} - Employer Matching ${donorLabel} ${row.donationDate}`,
       columnValues: {
-        ...baseColumns(row.matchAmount),
+        ...baseColumns(row.matchAmount, `${row.transactionId}-match`),
         [cols.giftType]: { label: 'Matching Donation' },
         [cols.matchedBy]: { item_ids: [Number(organizationItemId)] },
       },
@@ -3021,7 +3041,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npm test -- src/mapping/giftSplit.test.ts`
-Expected: PASS (7 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 5: Commit**
 
