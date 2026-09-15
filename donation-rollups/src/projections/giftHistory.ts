@@ -16,6 +16,7 @@ export interface GiftHistoryRow {
   fiscalYear: number;
   status: string;
   giftType: string | null;
+  actingForItemId: string | null;
   archived: boolean;
 }
 

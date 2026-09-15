@@ -9,6 +9,7 @@ export interface GiftFact {
   // Present when the donation board's Gift Type column is configured — refreshes the
   // bootstrap value; null/undefined leaves the stored value untouched.
   giftType?: string | null;
+  actingForItemId?: string | null; // undefined = column not configured, leave stored value
 }
 
 export interface AnnualSummaryRow {
@@ -37,6 +38,12 @@ export interface GiftsStore {
   refreshFacts(rows: GiftFact[], source: string, now: string): Promise<{ changed: number }>;
   // Full gift history for one owner, deep-link board ids joined in — the projections' source.
   giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
+  // acting_for_item_id per gift, for the affiliation recompute path.
+  actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>>;
+  // Attributed totals for one affiliation: Received gifts whose acting_for_item_id matches it.
+  attributedTotals(affiliationItemId: string, statusLabel: string): Promise<{ cents: number; count: number; lastGiftDateISO: string | null }>;
+  // Organizational Giving: totals across every affiliation belonging to a person.
+  organizationalGivingTotals(personItemId: string, statusLabel: string): Promise<{ cents: number; count: number }>;
   // Records which Monday item on the Annual Giving Summary board represents a fiscal year.
   setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void>;
   // Active gifts older than the retention cutoff — the year-end archive run's work list.
@@ -109,8 +116,8 @@ export class D1GiftsStore implements GiftsStore {
       await this.db.batch(chunk.map((g) => this.db
         .prepare(
           `INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents,
-             gift_date, fiscal_year, status, gift_type, source, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             gift_date, fiscal_year, status, gift_type, acting_for_item_id, source, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
            ON CONFLICT (monday_item_id) DO UPDATE SET
              owner_item_id = excluded.owner_item_id,
              owner_board_id = excluded.owner_board_id,
@@ -119,11 +126,19 @@ export class D1GiftsStore implements GiftsStore {
              fiscal_year = excluded.fiscal_year,
              status = excluded.status,
              gift_type = COALESCE(excluded.gift_type, gifts.gift_type),
+             -- ?12 = 1 when the caller supplied acting_for (even null): active gifts take the new
+             -- value verbatim (staff may clear it); archived gifts keep D1's, since an archived
+             -- item's board_relation always reads back empty on Monday.
+             acting_for_item_id = CASE
+               WHEN ?12 = 0 THEN gifts.acting_for_item_id
+               WHEN gifts.archived_at IS NOT NULL THEN COALESCE(excluded.acting_for_item_id, gifts.acting_for_item_id)
+               ELSE excluded.acting_for_item_id END,
              source = excluded.source,
              updated_at = excluded.updated_at`,
         )
         .bind(g.mondayItemId, g.ownerItemId, g.ownerBoardId, g.amountCents,
-          g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null, source, now)));
+          g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null,
+          g.actingForItemId ?? null, source, now, g.actingForItemId === undefined ? 0 : 1)));
     }
     return { changed: changed.length };
   }
@@ -133,17 +148,52 @@ export class D1GiftsStore implements GiftsStore {
     // duplicate it. LEFT JOIN so a link-less row still renders (without a link).
     const res = await this.db
       .prepare(`SELECT g.monday_item_id, l.donation_board_id, g.amount_cents, g.gift_date,
-                       g.fiscal_year, g.status, g.gift_type, g.archived_at
+                       g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.archived_at
                 FROM gifts g LEFT JOIN donation_links l ON l.donation_item_id = g.monday_item_id
                 WHERE g.owner_item_id = ?1`)
       .bind(ownerItemId)
       .all<{ monday_item_id: string; donation_board_id: string | null; amount_cents: number;
-        gift_date: string; fiscal_year: number; status: string; gift_type: string | null; archived_at: string | null }>();
+        gift_date: string; fiscal_year: number; status: string; gift_type: string | null;
+        acting_for_item_id: string | null; archived_at: string | null }>();
     return res.results.map((r) => ({
       mondayItemId: r.monday_item_id, donationBoardId: r.donation_board_id,
       amountCents: r.amount_cents, giftDateISO: r.gift_date, fiscalYear: r.fiscal_year,
-      status: r.status, giftType: r.gift_type, archived: r.archived_at !== null,
+      status: r.status, giftType: r.gift_type, actingForItemId: r.acting_for_item_id,
+      archived: r.archived_at !== null,
     }));
+  }
+
+  async actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    for (let i = 0; i < mondayItemIds.length; i += CHUNK) {
+      const chunk = mondayItemIds.slice(i, i + CHUNK);
+      const res = await this.db
+        .prepare(`SELECT monday_item_id, acting_for_item_id FROM gifts
+                  WHERE monday_item_id IN (${chunk.map((_, j) => `?${j + 1}`).join(',')})`)
+        .bind(...chunk)
+        .all<{ monday_item_id: string; acting_for_item_id: string | null }>();
+      for (const r of res.results) out.set(r.monday_item_id, r.acting_for_item_id);
+    }
+    return out;
+  }
+
+  async attributedTotals(affiliationItemId: string, statusLabel: string): Promise<{ cents: number; count: number; lastGiftDateISO: string | null }> {
+    const r = await this.db
+      .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS n, MAX(gift_date) AS last
+                FROM gifts WHERE acting_for_item_id = ?1 AND status = ?2`)
+      .bind(affiliationItemId, statusLabel)
+      .first<{ cents: number; n: number; last: string | null }>();
+    return { cents: r?.cents ?? 0, count: r?.n ?? 0, lastGiftDateISO: r?.last || null };
+  }
+
+  async organizationalGivingTotals(personItemId: string, statusLabel: string): Promise<{ cents: number; count: number }> {
+    const r = await this.db
+      .prepare(`SELECT COALESCE(SUM(g.amount_cents), 0) AS cents, COUNT(*) AS n
+                FROM gifts g JOIN affiliations a ON a.affiliation_item_id = g.acting_for_item_id
+                WHERE a.person_item_id = ?1 AND g.status = ?2`)
+      .bind(personItemId, statusLabel)
+      .first<{ cents: number; n: number }>();
+    return { cents: r?.cents ?? 0, count: r?.n ?? 0 };
   }
 
   async setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void> {

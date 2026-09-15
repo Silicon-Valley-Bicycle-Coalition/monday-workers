@@ -7,7 +7,7 @@ import {
 
 const row = (over: Partial<GiftHistoryRow>): GiftHistoryRow => ({
   mondayItemId: 'g1', donationBoardId: '100', amountCents: 5000, giftDateISO: '2020-01-15',
-  fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: true, ...over,
+  fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, archived: true, ...over,
 });
 
 // Enough rows to overflow any byte budget: each tuple serializes to ~50 bytes.

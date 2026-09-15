@@ -95,6 +95,9 @@ function fakeGiftsStore(): GiftsStore {
   return {
     refreshFacts: vi.fn().mockResolvedValue({ changed: 0 }),
     giftsForOwner: vi.fn().mockResolvedValue([]),
+    actingForByIds: vi.fn().mockResolvedValue(new Map()),
+    attributedTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0, lastGiftDateISO: null }),
+    organizationalGivingTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0 }),
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
     markArchived: vi.fn().mockResolvedValue(undefined),
@@ -130,7 +133,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
 const oversizedHistory = Array.from({ length: 2_000 }, (_, i) => ({
   mondayItemId: `18427756${String(i).padStart(6, '0')}`, donationBoardId: '1',
   amountCents: 5000, giftDateISO: `${2000 + (i % 26)}-01-15`, fiscalYear: 2000 + (i % 26),
-  status: 'Received', giftType: 'Donation', archived: false,
+  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false,
 }));
 
 const configWithAlert: DonationRollupsConfig = {
