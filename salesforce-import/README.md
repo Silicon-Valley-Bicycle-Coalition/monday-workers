@@ -116,7 +116,9 @@ address-classification assigns to it, with its own consent status); People carry
 Email** and **Household Email**, each with its own consent status, plus **Household Primary** for a
 shared address; Donations and Event Registrations carry **Acting for** (→ Affiliations) and
 **Attribution** (Auto / Staff / Needs review / None), attributed at import from NPSP's org-gift
-shape and from registration emails; design in
+shape and from registration emails — and an attributed org gift's **Donor** is the organization
+(the person stays reachable through Acting for), so Lifetime Giving is personal giving and
+Organizational Giving is driven giving, with no overlap; design in
 `docs/superpowers/specs/2026-09-08-person-org-email-model-design.md`; and a `ContactHistory`
 flat export (68,831 rows) into the backup archive.
 

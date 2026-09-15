@@ -32,9 +32,14 @@ export type OpportunityAttribution =
 // NPSP's org-gift shape: AccountId is the organization and Primary Contact is the person who
 // drove it. An individual's own gift carries their One-to-One household Account instead, so
 // the org-Account check is what separates "acting for" from "as themselves".
+export const MATCHING_GIFT_TYPE = 'Matching Donation';
+
 export function attributeOpportunity(
   o: Record<string, unknown>, index: AffiliationIndex, orgAccountIds: ReadonlySet<string>,
 ): OpportunityAttribution {
+  // A Benevity matching gift is the employee's own gift the company matched — the employee
+  // did not act for the company, so it is never "Acting for" (Matched By carries the payer).
+  if (((o['RecordType'] as { Name?: string } | null)?.Name ?? '') === MATCHING_GIFT_TYPE) return null;
   const orgSfId = o['AccountId'] as string | null;
   const contactSfId = o['npsp__Primary_Contact__c'] as string | null;
   if (!orgSfId || !contactSfId || !orgAccountIds.has(orgSfId)) return null;

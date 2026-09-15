@@ -64,6 +64,14 @@ individual too. SVBC wants to track:
 * **Kept:** Donations link to one Donor item (person or organization), and the organization's
   own rollups keep computing across every Donation linked to it. This design adds attribution on
   top; it does not re-point organizational gifts at people.
+* **Decided 2026-09-11 (Plan 2 entry):** an organization gift that is attributed to an
+  affiliation has the **organization** as its Donor; the person who drove it is reachable through
+  Acting for. So Lifetime Giving means personal giving, Organizational Giving means driven giving,
+  and the Organizations rollups mean what the section below says, with no overlap. An org gift
+  nobody has attributed yet keeps the person as Donor until staff resolve the review row, and a
+  Benevity matching gift is never attributed or re-pointed (its Donor is the employee, Matched By
+  the company). Implemented in `salesforce-import` (`giftDonorSfId`); `donation-rollups` reads the
+  Donor link as written, so no Worker-side special case is needed.
 
 ## Data model
 
