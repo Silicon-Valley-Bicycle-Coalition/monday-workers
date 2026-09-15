@@ -4012,8 +4012,14 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
 }
 
 describe('processBenevityQueueBatch', () => {
-  it('resolves company and (absent) person, writes both gifts, and marks the row written', async () => {
-    const parsed = fakeParsedRow();
+  it('resolves company, finds no person, writes both gifts with no Donor link, and marks the row written', async () => {
+    // Withheld name AND email (the codebase's own "Not shared by donor" sentinel, same as
+    // people.test.ts's anonymousRow) is what actually drives resolvePerson to `{status:
+    // 'anonymous'}` — a real disclosed name/email with everything unmatched instead resolves
+    // to `{status: 'unresolved'}`, which routes to the worklist and returns *before* any gift
+    // is written (see Task 13). This is the only fixture shape that genuinely exercises the
+    // "gifts still get written, with no Donor link" code path.
+    const parsed = fakeParsedRow({ donorFirstName: 'Not shared by donor', donorLastName: 'Not shared by donor', email: 'Not shared by donor' });
     const deps = fakeDeps();
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
 
@@ -4021,6 +4027,9 @@ describe('processBenevityQueueBatch', () => {
     await processBenevityQueueBatch([msg], deps);
 
     expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(2); // employee gift + match gift
+    const [, , employeeColumnValues] = (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(employeeColumnValues.donor_c).toBeUndefined();
+    expect(employeeColumnValues.anon_c).toEqual({ checked: 'true' });
     expect(deps.rowStore.updateStatus).toHaveBeenCalledWith(
       'TXN001',
       'written',
