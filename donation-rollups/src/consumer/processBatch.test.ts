@@ -732,11 +732,35 @@ const configWithAffiliations: DonationRollupsConfig = {
 };
 
 describe('affectedAffiliations', () => {
-  it('unions previous and current acting-for ids, ignoring nulls', () => {
+  it('unions the triggering donation\'s previous and current acting-for ids, ignoring nulls', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-old'], ['dn2', null]]),
       [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }])].sort())
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      'dn1')].sort())
       .toEqual(['af-new', 'af-old']);
+  });
+
+  it('an unchanged non-triggering gift contributes nothing', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-unchanged']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-unchanged' }],
+      'dn1')])
+      .toEqual(['af-trigger']);
+  });
+
+  it('the triggering gift\'s affiliation is included even when unchanged', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-same']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-same' }],
+      'dn1')])
+      .toEqual(['af-same']);
+  });
+
+  it('a changed non-triggering gift contributes both its old and new affiliation', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-old']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' }],
+      'dn1')].sort())
+      .toEqual(['af-new', 'af-old', 'af-trigger']);
   });
 });
 
@@ -800,6 +824,38 @@ describe('consumer phase 2 — affiliation rollups', () => {
     expect(gone.mondayClient.changeColumnValues).not.toHaveBeenCalledWith(555, expect.anything(), expect.anything());
   });
 
+  it('a fresh summary for one affiliation wins over a stale D1 row for the same person held by another (finding 2)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const giftsStore = fakeGiftsStore();
+    // Order matters here: affectedAffiliations walks donations in order (dn1 then dn2), so
+    // aff-a is processed — and its fresh summary written to `persons` — before aff-b, whose
+    // unconditional `persons.set(previous...)` at the top of its own iteration is the thing
+    // under test: it must not clobber aff-a's fresh entry for the same person.
+    (giftsStore.actingForByIds as ReturnType<typeof vi.fn>).mockResolvedValue(new Map([['dn1', 'aff-a'], ['dn2', 'aff-b']]));
+    (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
+    (giftsStore.organizationalGivingTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1 });
+    const donations = [
+      { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'aff-a' },
+      { id: 'dn2', amount: 100, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
+    ];
+    const mondayClient = fakeMondayClient({
+      getDonationsByIds: vi.fn().mockResolvedValue(donations),
+      // aff-a resolves person p-shared to board 2 (fresh); aff-b is deleted on Monday.
+      getAffiliationSummary: vi.fn().mockImplementation(async (id: string) =>
+        id === 'aff-a' ? { name: 'A name', personItemId: 'p-shared', personBoardId: '2' } : null),
+    });
+    const affiliationsStore = fakeAffiliationsStore({
+      // aff-b's stale D1 row says p-shared lived on board 3.
+      get: vi.fn().mockImplementation(async (id: string) =>
+        id === 'aff-b' ? { affiliationItemId: 'aff-b', personItemId: 'p-shared', personBoardId: '3', name: 'Stale @ Org' } : null),
+    });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500' });
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
+    warn.mockRestore();
+  });
+
   it('does nothing extra when affiliations is null (gate off)', async () => {
     const { giftsStore, mondayClient, affiliationsStore } = setup();
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
@@ -813,8 +869,10 @@ describe('consumer phase 2 — affiliation rollups', () => {
     const { giftsStore, mondayClient, affiliationsStore } = setup({
       monday: { changeColumnValues: vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('monday API: HTTP 500')) } });
     const message = fakeMessage('dn1');
-    await processRecomputeBatch([message], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+    const pendingStore = fakePendingStore();
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(),
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(message.retry).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dn1', 'written', expect.anything());
   });
 });

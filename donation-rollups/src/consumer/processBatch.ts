@@ -252,7 +252,7 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   }
 
   if (affiliationsCfg !== null) {
-    await recomputeAffiliations(deps, affiliationsCfg, affectedAffiliations(previousActingFor, donations));
+    await recomputeAffiliations(deps, affiliationsCfg, affectedAffiliations(previousActingFor, donations, donationItemId));
   }
 
   // Recorded only now — after the owner write AND the gift term stamps — so a recompute that
@@ -364,10 +364,26 @@ export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<s
   };
 }
 
-export function affectedAffiliations(previous: Map<string, string | null>, donations: DonationRecord[]): Set<string> {
+// Bounded fan-out (review finding 1): only the triggering gift and gifts whose acting_for
+// actually changed contribute affiliations to recompute — not every gift this owner has, which
+// for an organization owner holding all attributed gifts (the common case after the Donor-link
+// decision) would be unbounded amplification against Monday's per-invocation subrequest budget.
+export function affectedAffiliations(
+  previous: Map<string, string | null>, donations: DonationRecord[], triggeringDonationId: string,
+): Set<string> {
   const out = new Set<string>();
-  for (const v of previous.values()) if (v) out.add(v);
-  for (const d of donations) if (d.actingForItemId) out.add(d.actingForItemId);
+  const add = (v: string | null | undefined) => { if (v) out.add(v); };
+  for (const d of donations) {
+    const previousActingFor = previous.get(d.id) ?? null;
+    const currentActingFor = d.actingForItemId ?? null;
+    if (d.id === triggeringDonationId) {
+      add(previousActingFor);
+      add(currentActingFor);
+    } else if (previousActingFor !== currentActingFor) {
+      add(previousActingFor);
+      add(currentActingFor);
+    }
+  }
   return out;
 }
 
@@ -378,10 +394,11 @@ async function recomputeAffiliations(deps: ProcessBatchDeps, cfg: AffiliationsCo
   const { mondayClient, giftsStore, affiliationsStore, config } = deps;
   const { receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
   const now = new Date().toISOString();
-  const persons = new Map<string, string>(); // person item id -> board id
+  const persons = new Map<string, string>(); // person item id -> board id, from a fresh Monday summary
+  const previousPersons = new Map<string, string>(); // person item id -> board id, from a (possibly stale) D1 row
   for (const affiliationId of affiliationIds) {
     const previous = await affiliationsStore.get(affiliationId);
-    if (previous) persons.set(previous.personItemId, previous.personBoardId);
+    if (previous) previousPersons.set(previous.personItemId, previous.personBoardId);
     const summary = await mondayClient.getAffiliationSummary(affiliationId, cfg.columns.personLink);
     if (summary === null) {
       console.warn(`donation-rollups consumer: affiliation "${affiliationId}" no longer exists on Monday — skipped`);
@@ -395,6 +412,12 @@ async function recomputeAffiliations(deps: ProcessBatchDeps, cfg: AffiliationsCo
     const totals = await giftsStore.attributedTotals(affiliationId, receivedStatusLabel);
     await mondayClient.changeColumnValues(cfg.boardId, affiliationId,
       attributedToColumnValues(attributedRollupFromTotals(totals), cfg.columns));
+  }
+  // Review finding 2: a stale D1 row for one affiliation must never clobber a fresh summary
+  // written by another affiliation for the same person — so previous rows only fill in persons
+  // no affiliation this pass resolved fresh (e.g. the affiliation was deleted on Monday).
+  for (const [personItemId, personBoardId] of previousPersons) {
+    if (!persons.has(personItemId)) persons.set(personItemId, personBoardId);
   }
   for (const [personItemId, personBoardId] of persons) {
     const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
