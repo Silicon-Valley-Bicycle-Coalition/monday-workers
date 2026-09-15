@@ -83,20 +83,8 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
   };
   const aliasStore: AliasStore = { getAlias: vi.fn().mockResolvedValue(null), learnAlias: vi.fn() };
   const mondayClient = {
-    findItemsByColumnValue: vi.fn().mockImplementation(async (boardId, column, value) => {
-      // Email lookup for people — match jordan@acme.example
-      if (boardId === 333 && (column === 'personal_email_c' || column === 'household_email_c') && value === 'jordan@acme.example') {
-        return [{ id: '100', name: 'Jordan Rivera' }];
-      }
-      return [];
-    }),
-    findItemsByName: vi.fn().mockImplementation(async (boardId, name) => {
-      // Organizations board
-      if (boardId === 222 && name.toLowerCase() === 'acme, inc.') {
-        return [{ id: '99', name: 'Acme, Inc.' }];
-      }
-      return [];
-    }),
+    findItemsByColumnValue: vi.fn().mockResolvedValue([]),
+    findItemsByName: vi.fn().mockResolvedValue([{ id: '99', name: 'Acme, Inc.' }]),
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
     createItem: vi.fn().mockResolvedValue({ id: '501', name: 'x' }),
     changeColumnValues: vi.fn(),
@@ -115,7 +103,16 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
 
 describe('processBenevityQueueBatch', () => {
   it('resolves company and (absent) person, writes both gifts, and marks the row written', async () => {
-    const parsed = fakeParsedRow();
+    // Donor identity withheld (Benevity's "Not shared by donor" sentinel, per people.test.ts's
+    // `anonymousRow`) so resolvePerson short-circuits to 'anonymous' before any Monday lookup —
+    // the only production-code path where personItemId ends up null and processOne still writes
+    // the gifts (an 'unresolved' person is a business failure that goes to the worklist instead;
+    // see people.ts's isWithheld/hasEmail/hasName gate and processBatch.ts's status checks).
+    const parsed = fakeParsedRow({
+      donorFirstName: 'Not shared by donor',
+      donorLastName: 'Not shared by donor',
+      email: 'Not shared by donor',
+    });
     const deps = fakeDeps();
     (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
 
@@ -129,6 +126,14 @@ describe('processBenevityQueueBatch', () => {
       expect.objectContaining({ mondayEmployeeItemId: '501', mondayMatchItemId: '501', writtenAt: '2026-09-15T00:00:00Z' })
     );
     expect(msg.ack).toHaveBeenCalled();
+
+    // No person resolved: no Donor link, and the Anonymous Donor checkbox is set, on both gifts.
+    const createItem = deps.mondayClient.createItem as ReturnType<typeof vi.fn>;
+    for (const call of createItem.mock.calls) {
+      const columnValues = call[2] as Record<string, unknown>;
+      expect(columnValues).not.toHaveProperty('donor_c');
+      expect(columnValues.anon_c).toEqual({ checked: 'true' });
+    }
   });
 
   it('updates an existing Donations item instead of creating a duplicate, when one is already stamped with the Transaction ID', async () => {
