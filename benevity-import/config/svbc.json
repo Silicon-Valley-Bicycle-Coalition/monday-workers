@@ -1,0 +1,12 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boards": {
+      "donations": null,
+      "organizations": null,
+      "people": null,
+      "affiliations": null,
+      "benevityUploads": null
+    }
+  }
+}

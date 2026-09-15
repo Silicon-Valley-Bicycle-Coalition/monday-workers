@@ -1,0 +1,36 @@
+{
+  "name": "svbc-benevity-import",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-benevity-import",
+      // Replace after running: wrangler d1 create svbc-benevity-import
+      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [{ "queue": "benevity-import-writes", "binding": "WRITE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "benevity-import-writes",
+        "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain (same reasoning as funraise-sync).
+        "max_concurrency": 1,
+        "dead_letter_queue": "benevity-import-writes-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    // Daily raw_row retention purge — window set by benevityImport.rawRowRetentionDays / unresolvedRowRetentionDays.
+    "crons": ["15 9 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
