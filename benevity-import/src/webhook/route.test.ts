@@ -231,6 +231,65 @@ describe('webhook route', () => {
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 2);
   });
 
+  it('resuming a needs-review block that already has a disbursement row does not re-post its worklist item, but still (re-)upserts its rows', async () => {
+    // Simulates a block that failed AFTER its worklist item posted but BEFORE its row upsert
+    // finished — the narrower gap a coarser count-only resume check would miss.
+    const badCsv = validReport().replace('Transaction ID,', 'Txn Id Renamed,'); // -> headerError, needsReview
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(badCsv),
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        listByUpload: vi.fn().mockResolvedValue([
+          { id: 10, uploadId: 1, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
+            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x' } as never,
+        ]),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    // Reused the existing row — never created a second one, never re-posted the worklist item.
+    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    // A header-error block has zero rows to upsert, so this only proves the code path taken
+    // (existingDisbursement !== null -> skip worklist post) without needing row-level fixtures;
+    // the sum-mismatch case below covers the "rows still get upserted" half.
+  });
+
+  it('resuming a needs-review block from a sum mismatch still (re-)upserts its rows even though its disbursement row already exists', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        listByUpload: vi.fn().mockResolvedValue([
+          { id: 10, uploadId: 1, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x' } as never,
+        ]),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled(); // no re-posted worklist item
+    // The row IS still upserted against the reused disbursement id — proves a row upsert a
+    // partial prior attempt never reached still gets recorded on this retry.
+    expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionId: 'TXN001', disbursementId: 10, status: 'needs-review' })
+    );
+  });
+
   it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {
     const deps = fakeDeps({
       disbursementStore: {
