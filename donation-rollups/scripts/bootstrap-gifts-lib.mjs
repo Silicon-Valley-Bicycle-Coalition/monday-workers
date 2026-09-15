@@ -2,6 +2,9 @@
 // row-building, safety guards, and SQL rendering are unit-testable (scripts/
 // bootstrap-gifts-lib.test.mjs) and the CLI wrapper stays a thin shell.
 
+// Affiliation Person links must resolve to one of the People boards, not organizations or unknown boards.
+const PEOPLE_BOARD_KEYS = new Set(['people-live', 'people-historical']);
+
 // Turns salesforce-import run artifacts into structured gift rows, tracking which board
 // ids the artifacts actually reference so the guards below can compare them to config.
 export function buildGiftRows({ payloads, ledgerEntries, boards, now }) {
@@ -55,7 +58,7 @@ export function buildGiftRows({ payloads, ledgerEntries, boards, now }) {
 // a `Person` link to the contact) into rows for the `affiliations` table (migration 0005):
 // affiliation item -> the Person it belongs to, so Organizational Giving can be summed from D1.
 // Mirrors buildGiftRows's ledger-resolution shape; each payload needs both its own ledger
-// success entry (for affiliationItemId) and a resolvable Person link.
+// success entry (for affiliationItemId) and a resolvable Person link on a People board.
 export function buildAffiliationRows({ payloads, ledgerEntries, boards }) {
   const itemBySfId = new Map();
   for (const e of ledgerEntries) {
@@ -65,6 +68,7 @@ export function buildAffiliationRows({ payloads, ledgerEntries, boards }) {
 
   const rows = [];
   let skippedNoPerson = 0;
+  let skippedNotPerson = 0;
   for (const p of payloads) {
     if (p.board !== 'affiliations') continue;
     const affiliation = itemBySfId.get(p.sfId);
@@ -72,6 +76,11 @@ export function buildAffiliationRows({ payloads, ledgerEntries, boards }) {
     const personLink = (p.links ?? []).find((l) => l.column === 'Person');
     const person = personLink ? itemBySfId.get(personLink.targetSfIds[0]) : undefined;
     if (!person) { skippedNoPerson++; continue; }
+    // Person must be on a People board and that board must be in boards.json
+    if (!PEOPLE_BOARD_KEYS.has(person.board) || boardIdByKey[person.board] === undefined) {
+      skippedNotPerson++;
+      continue;
+    }
     rows.push({
       affiliationItemId: String(affiliation.itemId),
       personItemId: String(person.itemId),
@@ -79,7 +88,7 @@ export function buildAffiliationRows({ payloads, ledgerEntries, boards }) {
       name: String(p.name),
     });
   }
-  return { rows, skippedNoPerson };
+  return { rows, skippedNoPerson, skippedNotPerson };
 }
 
 // Refuse-to-run guards (each overridable only with an explicit --force):
@@ -87,8 +96,9 @@ export function buildAffiliationRows({ payloads, ledgerEntries, boards }) {
 //   swap the authoritative ~37k-row ledger for nothing.
 // - board ids outside config: the artifacts belong to a different board generation
 //   than the one this Worker is configured against.
+// - skippedNotPerson > 0: an affiliation Person is not on a People board.
 // Returns a list of human-readable refusal reasons; empty means safe to proceed.
-export function checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, ownerBoardIds, config }) {
+export function checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, ownerBoardIds, config, skippedNotPerson = 0 }) {
   const errors = [];
   if (rows.length === 0) {
     errors.push(
@@ -99,6 +109,10 @@ export function checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, 
     errors.push(
       `${skippedActingFor} gift(s) reference an "Acting for" affiliation the ledger lacks — ` +
       'bootstrapping would silently drop that attribution. Refusing to run.');
+  }
+  if (skippedNotPerson > 0) {
+    errors.push(
+      `${skippedNotPerson} affiliation(s) link a Person that is not on a People board (an Organization, or a board missing from boards.json) — refusing to run.`);
   }
   const configuredDonationBoards = [...new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId)))];
   const configuredOwnerBoards = Object.keys(config.donationRollups.ownerColumnsByBoard);

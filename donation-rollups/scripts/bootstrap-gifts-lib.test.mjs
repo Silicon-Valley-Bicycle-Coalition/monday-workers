@@ -16,7 +16,7 @@ const CONFIG = {
 
 const BOARDS = {
   donations: { boardId: 100 }, donors: { boardId: 200 }, orgs: { boardId: 201 },
-  affiliations: { boardId: 300 },
+  affiliations: { boardId: 300 }, 'people-live': { boardId: 555 }, 'people-historical': { boardId: 556 },
 };
 
 function payload(sfId, ownerSfId, over = {}) {
@@ -77,6 +77,13 @@ describe('checkArtifactGuards', () => {
     expect(errors[0]).toContain('[999]');
     expect(errors[1]).toContain('[200]');
     expect(errors[1]).toContain('[888]');
+  });
+
+  it('refuses when an affiliation Person is not on a People board', () => {
+    const errors = checkArtifactGuards({ ...built(), config: CONFIG, skippedNotPerson: 1 });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('1 affiliation(s)');
+    expect(errors[0]).toContain('Person that is not on a People board');
   });
 });
 
@@ -164,6 +171,51 @@ describe('buildAffiliationRows', () => {
     const { rows, skippedNoPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards: BOARDS });
     expect(rows).toHaveLength(0);
     expect(skippedNoPerson).toBe(1);
+  });
+
+  it('skips an affiliation whose Person resolves to the organizations board, not a People board', () => {
+    const payloads = [{
+      board: 'affiliations', sfId: 'aff3', name: 'Wrong Org',
+      columns: {}, links: [{ column: 'Person', targetSfIds: ['org1'] }],
+    }];
+    const ledgerEntries = [
+      { kind: 'success', sfId: 'aff3', board: 'affiliations', itemId: '7004' },
+      { kind: 'success', sfId: 'org1', board: 'organizations', itemId: '5001' },
+    ];
+    const { rows, skippedNotPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards: BOARDS });
+    expect(rows).toHaveLength(0);
+    expect(skippedNotPerson).toBe(1);
+  });
+
+  it('skips an affiliation whose Person resolves to a board missing from boards.json', () => {
+    const payloads = [{
+      board: 'affiliations', sfId: 'aff4', name: 'Missing Board',
+      columns: {}, links: [{ column: 'Person', targetSfIds: ['c4'] }],
+    }];
+    const ledgerEntries = [
+      { kind: 'success', sfId: 'aff4', board: 'affiliations', itemId: '7005' },
+      { kind: 'success', sfId: 'c4', board: 'unknown-board', itemId: '6004' },
+    ];
+    const { rows, skippedNotPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards: BOARDS });
+    expect(rows).toHaveLength(0);
+    expect(skippedNotPerson).toBe(1);
+  });
+
+  it('accepts a Person on the people-historical board', () => {
+    const payloads = [{
+      board: 'affiliations', sfId: 'aff5', name: 'Historical Person',
+      columns: {}, links: [{ column: 'Person', targetSfIds: ['c5'] }],
+    }];
+    const ledgerEntries = [
+      { kind: 'success', sfId: 'aff5', board: 'affiliations', itemId: '7006' },
+      { kind: 'success', sfId: 'c5', board: 'people-historical', itemId: '6005' },
+    ];
+    const { rows, skippedNotPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards: BOARDS });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      affiliationItemId: '7006', personItemId: '6005', personBoardId: '556', name: 'Historical Person',
+    });
+    expect(skippedNotPerson).toBe(0);
   });
 });
 

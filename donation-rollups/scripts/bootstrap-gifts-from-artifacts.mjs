@@ -54,10 +54,10 @@ const boards = JSON.parse(readFileSync(boardsPath, 'utf8'));
 const { rows, skippedNoOwner, skippedActingFor, donationBoardIds, ownerBoardIds } = buildGiftRows({
   payloads, ledgerEntries, boards, now,
 });
-const { rows: affRows, skippedNoPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards });
+const { rows: affRows, skippedNoPerson, skippedNotPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards });
 
 const config = JSON.parse(readFileSync(new URL('../config/svbc.json', import.meta.url), 'utf8'));
-const errors = checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, ownerBoardIds, config });
+const errors = checkArtifactGuards({ rows, skippedActingFor, donationBoardIds, ownerBoardIds, config, skippedNotPerson });
 if (errors.length > 0) {
   for (const e of errors) console.error(`bootstrap-gifts-from-artifacts: ${e}`);
   if (!force) {
@@ -72,4 +72,4 @@ writeFileSync(OUT_AFF, renderAffiliationsSql(affRows, now), 'utf8');
 console.error(`bootstrap-gifts-from-artifacts: ${rows.length} gifts → ${OUT} ` +
   `(${skippedNoOwner} without a migrated owner skipped)`);
 console.error(`bootstrap-gifts-from-artifacts: ${affRows.length} affiliations → ${OUT_AFF} ` +
-  `(${skippedNoPerson} without a migrated person skipped)`);
+  `(${skippedNoPerson} without a migrated person skipped, ${skippedNotPerson} on non-People boards skipped)`);
