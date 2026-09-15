@@ -1478,6 +1478,20 @@ describe('D1DisbursementStore', () => {
     const store = new D1DisbursementStore(env.DB);
     expect(await store.getDisbursement(999999)).toBeNull();
   });
+
+  it('lists disbursements for an upload in creation order, empty for an upload with none', async () => {
+    const store = new D1DisbursementStore(env.DB);
+    const first = await store.createDisbursement({
+      uploadId, disbursementId: 'FIRST', periodEnding: '2025-12-16', currency: 'USD',
+      rowCount: 1, reportedGrossTotal: 50, reportedNetTotal: 50, needsReview: false, reviewReason: null,
+    });
+    const second = await store.createDisbursement({
+      uploadId, disbursementId: 'SECOND', periodEnding: '2025-12-16', currency: 'USD',
+      rowCount: 1, reportedGrossTotal: 60, reportedNetTotal: 60, needsReview: false, reviewReason: null,
+    });
+    expect((await store.listByUpload(uploadId)).map((d) => d.id)).toEqual([first.id, second.id]);
+    expect(await store.listByUpload(999999)).toEqual([]);
+  });
 });
 ```
 
@@ -1507,6 +1521,11 @@ export type NewDisbursement = Omit<DisbursementRow, 'id'>;
 export interface DisbursementStore {
   createDisbursement(input: NewDisbursement): Promise<DisbursementRow>;
   getDisbursement(id: number): Promise<DisbursementRow | null>;
+  // Added during Task 16's fix round 1: lets a webhook redelivery resume a stuck upload from
+  // the first block that was never fully processed, instead of reprocessing blocks that
+  // already ran to completion (which would otherwise insert a duplicate disbursement row, and
+  // for a needs-review block, a duplicate worklist item).
+  listByUpload(uploadId: number): Promise<DisbursementRow[]>;
 }
 
 interface D1DisbursementRecord {
@@ -1579,13 +1598,25 @@ export class D1DisbursementStore implements DisbursementStore {
       .first<D1DisbursementRecord>();
     return record === null ? null : toDisbursementRow(record);
   }
+
+  async listByUpload(uploadId: number): Promise<DisbursementRow[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT id, upload_id, disbursement_id, period_ending, currency, row_count,
+                reported_gross_total, reported_net_total, needs_review, review_reason
+         FROM disbursements WHERE upload_id = ?1 ORDER BY id ASC`
+      )
+      .bind(uploadId)
+      .all<D1DisbursementRecord>();
+    return results.map(toDisbursementRow);
+  }
 }
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npm test -- src/db/disbursements.test.ts`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -3322,7 +3353,8 @@ function fakeConfig(): BenevityImportConfig {
   };
 }
 
-function validReport(): string {
+function validReport(opts: { disbursementId?: string; transactionId?: string } = {}): string {
+  const { disbursementId = 'ABC123', transactionId = 'TXN001' } = opts;
   return [
     'Donations Report,',
     '"#---",',
@@ -3331,12 +3363,12 @@ function validReport(): string {
     'Period Ending,Tue 16 Dec 2026 0:00:00',
     'Currency,USD',
     'Payment Method,EFT',
-    'Disbursement ID,ABC123',
+    `Disbursement ID,${disbursementId}`,
     'Note,',
     '"#---",',
     '',
     'Company,Project,Donation Date,Donor First Name,Donor Last Name,Email,Address,City,State/Province,Postal Code,Activity,Comment,Transaction ID,Donation Frequency,Currency,Project Remote ID,Source,Reason,Total Donation to be Acknowledged,Match Amount,Cause Support Fee,Merchant Fee,Fee Comment',
-    '"Acme, Inc.",Project,2026-12-06T00:00:00Z,Jordan,Rivera,jordan@acme.example,x,x,x,94043,,,TXN001,One Time,USD,,BlueSnap,User Donation,50.00,0.00,0.00,0.00,',
+    `"Acme, Inc.",Project,2026-12-06T00:00:00Z,Jordan,Rivera,jordan@acme.example,x,x,x,94043,,,${transactionId},One Time,USD,,BlueSnap,User Donation,50.00,0.00,0.00,0.00,`,
     'Totals,,,,,,,,,,,,,,,,,,50.00,0.00,0.00,0.00',
     'Total Donations (Gross),50.00',
     'Check Fee,0.00',
@@ -3355,6 +3387,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   const disbursementStore: DisbursementStore = {
     createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 10, ...input })),
     getDisbursement: vi.fn(),
+    listByUpload: vi.fn().mockResolvedValue([]),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
@@ -3473,6 +3506,127 @@ describe('webhook route', () => {
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs-review' }));
     expect(deps.queue.send).not.toHaveBeenCalled();
   });
+
+  it('retries an asset stuck at "parsing" from a failed prior attempt, instead of no-op-ing past it', async () => {
+    const deps = fakeDeps({
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+    });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(200);
+    // Must still fetch and process — a 'parsing' upload is not "done," unlike 'parsed'.
+    expect(deps.mondayClient.fetchAsset).toHaveBeenCalled();
+    expect(deps.uploadStore.createUpload).not.toHaveBeenCalled(); // reuses existing.id, never double-creates
+    expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('resumes a stuck retry from the first never-completed block, without reprocessing a block that already succeeded', async () => {
+    // Two-block file; block 1 already has a disbursement row from a prior attempt (it
+    // succeeded before block 2 failed and the upload got stuck at 'parsing').
+    const bundled =
+      validReport({ disbursementId: 'FIRST01', transactionId: 'TXN001' }) +
+      validReport({ disbursementId: 'SECOND02', transactionId: 'TXN002' });
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(bundled),
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        listByUpload: vi.fn().mockResolvedValue([{ id: 10, disbursementId: 'FIRST01' } as never]), // 1 block already done
+        createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 11, ...input })),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    // Only the second (never-completed) block creates a new disbursement row.
+    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledTimes(1);
+    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledWith(
+      expect.objectContaining({ disbursementId: 'SECOND02' })
+    );
+    expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 2);
+  });
+
+  it('resuming a needs-review block that already has a disbursement row does not re-post its worklist item, but still (re-)upserts its rows', async () => {
+    // Simulates a block that failed AFTER its worklist item posted but BEFORE its row upsert
+    // finished — the narrower gap a coarser count-only resume check would miss.
+    const badCsv = validReport().replace('Transaction ID,', 'Txn Id Renamed,'); // -> headerError, needsReview
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(badCsv),
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        listByUpload: vi.fn().mockResolvedValue([
+          { id: 10, uploadId: 1, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
+            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x' } as never,
+        ]),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    // Reused the existing row — never created a second one, never re-posted the worklist item.
+    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    // A header-error block has zero rows to upsert, so this only proves the code path taken
+    // (existingDisbursement !== null -> skip worklist post) without needing row-level fixtures;
+    // the sum-mismatch case below covers the "rows still get upserted" half.
+  });
+
+  it('resuming a needs-review block from a sum mismatch still (re-)upserts its rows even though its disbursement row already exists', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      uploadStore: {
+        ...fakeDeps().uploadStore,
+        getUploadByAssetId: vi
+          .fn()
+          .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
+      },
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        listByUpload: vi.fn().mockResolvedValue([
+          { id: 10, uploadId: 1, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x' } as never,
+        ]),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled(); // no re-posted worklist item
+    // The row IS still upserted against the reused disbursement id — proves a row upsert a
+    // partial prior attempt never reached still gets recorded on this retry.
+    expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(
+      expect.objectContaining({ transactionId: 'TXN001', disbursementId: 10, status: 'needs-review' })
+    );
+  });
+
+  it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {
+    const deps = fakeDeps({
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        createDisbursement: vi.fn().mockRejectedValue(new Error('D1 write failed')),
+      },
+    });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(500);
+    expect(deps.uploadStore.markError).toHaveBeenCalledWith(1);
+    expect(deps.uploadStore.markParsed).not.toHaveBeenCalled();
+  });
 });
 ```
 
@@ -3487,7 +3641,7 @@ Expected: FAIL — `./route` module doesn't exist yet.
 import { Hono } from 'hono';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
-import type { DisbursementStore, NewDisbursement } from '../db/disbursements';
+import type { DisbursementStore, DisbursementRow } from '../db/disbursements';
 import type { RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import { parseBenevityReport, type ParsedBlock } from '../parse/report';
@@ -3569,15 +3723,21 @@ export function createApp(deps: AppDeps) {
 
 async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
   const existing = await deps.uploadStore.getUploadByAssetId(assetId);
-  if (existing !== null) {
-    // Redelivery of an already-ingested asset — a fast no-op. Per-row dedup on Transaction ID
-    // in D1 `rows` is the real safety net even if this check is ever bypassed.
+  if (existing !== null && existing.status === 'parsed') {
+    // Redelivery of an already-FULLY-ingested asset — a fast no-op. Per-row dedup on
+    // Transaction ID in D1 `rows` is the real safety net even if this check is ever bypassed.
+    // Deliberately NOT short-circuiting on mere existence: an upload stuck at 'parsing' (a
+    // prior attempt died partway through the block loop below) or 'error' (a prior parse
+    // failure) must still be retried on redelivery, or a transient failure on block 2 of a
+    // 3-block file would silently and permanently drop blocks 2-3 forever, while still
+    // answering Monday's redelivery with 200. Reusing `existing.id` here (never calling
+    // createUpload twice) avoids violating uploads.monday_asset_id's UNIQUE constraint.
     return;
   }
 
   const asset = await deps.mondayClient.fetchAsset(assetId);
   const csvText = await deps.fetchCsv(asset.publicUrl);
-  const upload = await deps.uploadStore.createUpload(assetId, deps.now());
+  const upload = existing ?? (await deps.uploadStore.createUpload(assetId, deps.now()));
 
   let blocks: ParsedBlock[];
   try {
@@ -3588,43 +3748,77 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
     return;
   }
 
-  for (const block of blocks) {
-    await ingestBlock(block, upload.id, deps);
+  // Resume, don't restart — but resume at the RIGHT granularity. A retry re-fetches and
+  // re-parses the SAME asset (a pure function of its bytes), so block order and content are
+  // stable across attempts: `existingDisbursements[i]` (if present) IS block `i`'s own row from
+  // a prior attempt, by construction (blocks are always created via a single sequential,
+  // awaited loop). Passed into `ingestBlock`, it lets that block skip re-creating its
+  // `disbursements` row and re-posting its worklist item (neither is safe to repeat — no
+  // dedup), while ALWAYS re-running its row-upsert loop regardless (row upserts ARE safe to
+  // repeat — `rows.upsertRow`'s `ON CONFLICT (transaction_id) DO NOTHING` makes an already-
+  // written row a no-op). That combination is what closes the gap a coarser
+  // "already-has-a-disbursement-row = fully done" check left open: a block that fails
+  // *mid*-processing (after its disbursement row commits, before every row is upserted or, for
+  // a needs-review block, before its worklist item posts) resumes exactly where it left off on
+  // retry instead of being silently skipped as "done" or fully re-run as "not started."
+  const existingDisbursements = await deps.disbursementStore.listByUpload(upload.id);
+
+  try {
+    for (let i = 0; i < blocks.length; i++) {
+      await ingestBlock(blocks[i], upload.id, deps, existingDisbursements[i] ?? null);
+    }
+  } catch (err) {
+    // Mark it visibly failed (not stuck silently at 'parsing') and rethrow so the webhook
+    // handler's outer catch returns 500 — Monday redelivers, and this same asset id resumes
+    // processing above instead of no-op'ing past it.
+    await deps.uploadStore.markError(upload.id);
+    throw err;
   }
 
   await deps.uploadStore.markParsed(upload.id, blocks.length);
 }
 
-async function ingestBlock(block: ParsedBlock, uploadId: number, deps: AppDeps): Promise<void> {
+async function ingestBlock(
+  block: ParsedBlock,
+  uploadId: number,
+  deps: AppDeps,
+  existingDisbursement: DisbursementRow | null
+): Promise<void> {
   const needsReview = block.headerError !== null || block.sumMismatch;
   const reviewReason =
     block.headerError ?? (block.sumMismatch ? 'row totals do not match the reported gross total' : null);
 
-  const newDisbursement: NewDisbursement = {
-    uploadId,
-    disbursementId: block.disbursementId,
-    periodEnding: block.periodEnding,
-    currency: block.currency,
-    rowCount: block.rows.length,
-    reportedGrossTotal: block.reportedGrossTotal,
-    reportedNetTotal: block.reportedNetTotal,
-    needsReview,
-    reviewReason,
-  };
-  const disbursement = await deps.disbursementStore.createDisbursement(newDisbursement);
+  const disbursement =
+    existingDisbursement ??
+    (await deps.disbursementStore.createDisbursement({
+      uploadId,
+      disbursementId: block.disbursementId,
+      periodEnding: block.periodEnding,
+      currency: block.currency,
+      rowCount: block.rows.length,
+      reportedGrossTotal: block.reportedGrossTotal,
+      reportedNetTotal: block.reportedNetTotal,
+      needsReview,
+      reviewReason,
+    }));
 
   if (needsReview) {
-    await createWorklistItem(deps.mondayClient, deps.config, {
-      reason: reviewReason ?? 'block needs review',
-      name: `Disbursement ${block.disbursementId || '(unknown)'}`,
-      email: '',
-      company: block.charityName,
-      amount: block.reportedGrossTotal,
-      date: block.periodEnding || deps.now().slice(0, 10),
-    });
-    // Every row is recorded so nothing is silently lost, but none are enqueued — spec: "a
+    if (existingDisbursement === null) {
+      // Only post the worklist item the first time this block is attempted — createItem has no
+      // dedup of its own, so re-posting it on every redelivery would spam duplicate items onto
+      // the live board.
+      await createWorklistItem(deps.mondayClient, deps.config, {
+        reason: reviewReason ?? 'block needs review',
+        name: `Disbursement ${block.disbursementId || '(unknown)'}`,
+        email: '',
+        company: block.charityName,
+        amount: block.reportedGrossTotal,
+        date: block.periodEnding || deps.now().slice(0, 10),
+      });
+    }
+    // Every row is (re-)recorded so nothing is silently lost, but none are enqueued — spec: "a
     // mismatch marks the whole block needs-review rather than writing partial data from a
-    // block the parser may have mis-split."
+    // block the parser may have mis-split." Idempotent even on a retry of this exact block.
     for (const row of block.rows) {
       await deps.rowStore.upsertRow({
         transactionId: row.transactionId,
@@ -3666,7 +3860,7 @@ async function ingestBlock(block: ParsedBlock, uploadId: number, deps: AppDeps):
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npm test -- src/webhook/route.test.ts`
-Expected: PASS (10 tests)
+Expected: PASS (15 tests)
 
 - [ ] **Step 5: Commit**
 
