@@ -129,6 +129,15 @@ This Worker does **not** need to compute the $200-and-up "major gift" tier — t
 Monday status automation on the Donations board (`Amount ≥ $200 → Acknowledgment Tier: Major`),
 independent of write source. Just don't overwrite that column on create/update.
 
+## Gift Type
+
+**Every transaction item is stamped `giftTypeValue` (default `Donation`) in `giftTypeColumn` on its
+first write, never on updates.** `donation-rollups`' membership rule (spec
+`docs/superpowers/specs/2026-09-15-membership-renewal-write-path-design.md`) only counts gifts whose
+Gift Type is in its eligible list, so without this stamp a Funraise renewal would never extend a
+membership. Staff can reclassify a gift afterwards (e.g. to `Matching Donation`) and this Worker will
+not undo it.
+
 ## Related, not yet in scope here
 
 * **Double the Donation / 360MatchPro** — a *third*, independent pipeline (Salesforce AppExchange

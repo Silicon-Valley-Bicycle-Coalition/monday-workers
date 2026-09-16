@@ -136,6 +136,18 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     );
   }
 
+  if (
+    !('giftTypeColumn' in funraiseSync) ||
+    (funraiseSync.giftTypeColumn !== null &&
+      (typeof funraiseSync.giftTypeColumn !== 'string' || funraiseSync.giftTypeColumn === ''))
+  ) {
+    throw new Error('config: "funraiseSync.giftTypeColumn" must be a Monday column id string, or null to disable');
+  }
+  if (funraiseSync.giftTypeColumn !== null
+    && (typeof funraiseSync.giftTypeValue !== 'string' || funraiseSync.giftTypeValue === '')) {
+    throw new Error('config: "funraiseSync.giftTypeValue" must be a non-empty Gift Type label when giftTypeColumn is set');
+  }
+
   for (const key of ['rawPayloadRetentionDays', 'unresolvedPayloadRetentionDays'] as const) {
     if (typeof funraiseSync[key] !== 'number' || (funraiseSync[key] as number) <= 0) {
       throw new Error(`config: "funraiseSync.${key}" must be a positive number of days`);

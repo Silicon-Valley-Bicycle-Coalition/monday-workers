@@ -38,6 +38,8 @@
     },
     "entityIdColumn": "text_funraise_entity_id_column",
     "thankYouSentColumn": "thank_you_sent_column_id",
+    "giftTypeColumn": "text_mm6j66w3",
+    "giftTypeValue": "Donation",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "donor.contactId",
