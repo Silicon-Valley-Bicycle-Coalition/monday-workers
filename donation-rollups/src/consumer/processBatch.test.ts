@@ -24,6 +24,7 @@ const config: DonationRollupsConfig = {
     ],
     receivedStatusLabel: 'Received',
     ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns },
+    membership: null,
   },
 };
 

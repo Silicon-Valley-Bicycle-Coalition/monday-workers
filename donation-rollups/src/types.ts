@@ -13,6 +13,11 @@ export interface DonationBoardConfig {
     status: string;
     // Optional: refreshes the gifts ledger's gift_type from Monday when configured.
     giftType?: string | null;
+    // Membership term columns on the gift (spec "Writes and idempotency"). Required, and
+    // giftType required, whenever donationRollups.membership is configured.
+    termStart?: string | null;
+    termEnd?: string | null;
+    membershipType?: string | null;
   };
 }
 
@@ -46,6 +51,7 @@ export interface DonationRollupsConfig {
     // even for identically-named/purposed fields. Every board a Donation can link an
     // owner to needs an entry here.
     ownerColumnsByBoard: Record<string, OwnerColumns>;
+    membership: MembershipConfig | null;
   };
 }
 
@@ -64,6 +70,29 @@ export interface OwnerColumns {
   averageGift: string;
   lastGiftDate: string;
   lastGiftAmount: string;
+  // The four membership columns on a People-type owner board. Absent on Organizations: an
+  // owner whose board has no entry never gets a membership write (spec "The rule").
+  membership?: OwnerMembershipColumns;
+}
+
+// The four membership columns on a People-type owner board. Absent on Organizations: an
+// owner whose board has no entry never gets a membership write (spec "The rule").
+export interface OwnerMembershipColumns {
+  status: string;
+  tier: string;
+  since: string;
+  until: string;
+}
+
+// donationRollups.membership — the Create_members rule, in Monday terms. null = feature off.
+export interface MembershipConfig {
+  fromISO: string;
+  eligibleGiftTypes: string[];
+  termMonths: number;
+  lifetimeThresholdCents: number;
+  statusLabels: { active: string; lapsed: string };
+  tierLabels: { member: string; lifetime: string };
+  typeLabels: { new: string; renewal: string; reacquire: string; lifetime: string };
 }
 
 export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
