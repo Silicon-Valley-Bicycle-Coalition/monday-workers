@@ -477,6 +477,18 @@ describe('membership step (spec 2026-09-15)', () => {
     expect(d.changeColumnValues.mock.calls[1]![2]).toMatchObject({ mty_1: 'Renewal', te_1: { date: '2027-11-05' } });
   });
 
+  it('extend-only merge against a stale baseline: a later board Until survives, and the term type still comes from the baseline', async () => {
+    // Baseline says this owner lapsed 2026-03-01; staff have since hand-extended the board to 2029-01-01.
+    const baseline: BaselineRow = { ownerItemId: 'donor-1', ownerBoardId: '2', since: '2015-01-01', until: '2026-03-01', tier: 'member', capturedAt: 'x' };
+    const d = deps({ baseline, board: { statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: '2029-01-01' } });
+    await d.run();
+    // Derived Until would be 2027-11-05; the board's 2029-01-01 is later and must be kept, so no Until write.
+    expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty('muntil');
+    expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty('ms');
+    // Type is derived from the baseline (lapsed before the gift), not from the board (active).
+    expect(d.changeColumnValues.mock.calls[1]![2]).toMatchObject({ mty_1: 'Reacquire', te_1: { date: '2027-11-05' } });
+  });
+
   it('an Organizations owner (no membership columns) gets no membership writes and no baseline', async () => {
     const d = deps({ ownerBoard: '3' });
     await d.run();
