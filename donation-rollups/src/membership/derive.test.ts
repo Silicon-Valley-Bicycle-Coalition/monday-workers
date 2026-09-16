@@ -84,7 +84,7 @@ describe('deriveMembership', () => {
     const d = deriveMembership(EMPTY_STATE, gifts, config, RECEIVED);
     expect(d.terms.get('a')!.type).toBe('new');
     expect(d.terms.get('b')!.type).toBe('renewal');
-    expect(d.terms.get('later')!.type).toBe('renewal');
+    expect(d.terms.get('later')!.type).toBe('reacquire');
     expect(d.state.until).toBe('2028-12-01');
   });
 
