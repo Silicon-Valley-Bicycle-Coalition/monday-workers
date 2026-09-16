@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig } from './config';
+import rawConfig from '../config/svbc.json';
 
 const ownerColumns = {
   giftLedgerJson: 'glj', lifetimeGiving: 'lg', giftCount: 'gc', firstGift: 'fg',
@@ -80,5 +81,9 @@ describe('validateConfig — membership block', () => {
     const bad = { ...base, donationRollups: { ...base.donationRollups,
       ownerColumnsByBoard: { '2': { ...ownerColumns, membership: { status: 'ms', tier: 'mt', since: 'msince' } } } } };
     expect(() => validateConfig(bad)).toThrow(/membership\.until/);
+  });
+
+  it('the shipped config/svbc.json validates with membership on', () => {
+    expect(validateConfig(rawConfig).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
   });
 });
