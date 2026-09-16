@@ -61,3 +61,54 @@ describe('getDonationsByIds', () => {
     expect(result.map((d) => [d.id, d.amount])).toEqual([['zero', 0]]);
   });
 });
+
+describe('getDonationsByIds — membership term columns', () => {
+  const TERM_COLUMNS = { ...COLUMNS, giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1' };
+
+  it('reads the three term columns when configured, blank as null', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2026-11-05', status_1: 'Received', gt_1: 'Donation',
+        ts_1: '2026-11-05', te_1: '', mty_1: 'Lifetime' } },
+    ]));
+    const [d] = await client.getDonationsByIds(['dn1'], TERM_COLUMNS);
+    expect(d).toMatchObject({ giftType: 'Donation', termStart: '2026-11-05', termEnd: null, membershipType: 'Lifetime' });
+  });
+
+  it('leaves the term fields undefined when the board has no term columns', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2026-11-05', status_1: 'Received' } },
+    ]));
+    const [d] = await client.getDonationsByIds(['dn1'], COLUMNS);
+    expect(d!.termStart).toBeUndefined();
+    expect(d!.termEnd).toBeUndefined();
+    expect(d!.membershipType).toBeUndefined();
+  });
+
+  it('requests the term column ids from Monday', async () => {
+    const client = clientReturning(itemsResponse([]));
+    await client.getDonationsByIds(['dn1'], TERM_COLUMNS);
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).toEqual(expect.arrayContaining(['ts_1', 'te_1', 'mty_1']));
+  });
+});
+
+describe('getOwnerMembership', () => {
+  const OWNER = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' };
+  it('returns the four values, blanks as null', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'o1', cells: { ms: 'Active', mt: 'Member', msince: '2015-01-01', muntil: '' } },
+    ]));
+    expect(await client.getOwnerMembership('o1', OWNER))
+      .toEqual({ statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: null });
+  });
+  it('a never-member reads as all null', async () => {
+    const client = clientReturning(itemsResponse([{ id: 'o1', cells: { ms: null, mt: null, msince: null, muntil: null } }]));
+    expect(await client.getOwnerMembership('o1', OWNER))
+      .toEqual({ statusLabel: null, tierLabel: null, since: null, until: null });
+  });
+  it('a missing item reads as all null rather than throwing', async () => {
+    const client = clientReturning(itemsResponse([]));
+    expect(await client.getOwnerMembership('gone', OWNER))
+      .toEqual({ statusLabel: null, tierLabel: null, since: null, until: null });
+  });
+});

@@ -1,4 +1,5 @@
 import { fiscalYearFromDate } from '../rollups/compute';
+import type { OwnerMembershipColumns } from '../types';
 
 function chunksOf<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -13,7 +14,16 @@ export interface DonationRecord {
   fiscalYear: number;
   status: string;
   giftType?: string | null; // present when the board's Gift Type column is configured
+  // Present when the board's membership term columns are configured; '' reads as null.
+  termStart?: string | null;
+  termEnd?: string | null;
+  membershipType?: string | null;
 }
+
+export type DonationReadColumns = {
+  amount: string; date: string; fiscalYear: string | null; status: string;
+  giftType?: string | null; termStart?: string | null; termEnd?: string | null; membershipType?: string | null;
+};
 
 export interface DonationRollupsMondayClient {
   // Which board an item lives on — used to tell a Donor-owner from an Organization-owner
@@ -29,8 +39,13 @@ export interface DonationRollupsMondayClient {
   // Donations board each id lives on, since column ids differ per board.
   getDonationsByIds(
     itemIds: string[],
-    columns: { amount: string; date: string; fiscalYear: string | null; status: string; giftType?: string | null },
+    columns: DonationReadColumns,
   ): Promise<DonationRecord[]>;
+  // The four membership columns on a People-type owner, as label/date text — the membership
+  // step's "what does the board hold" read (spec §"Merge with the board"). A missing item
+  // reads as all-null so a deleted owner degrades to "never a member", not a thrown recompute.
+  getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns):
+    Promise<{ statusLabel: string | null; tierLabel: string | null; since: string | null; until: string | null }>;
   // Rewrites an owner item's description with the markdown gift-history projection.
   setItemDescription(itemId: string, markdown: string): Promise<void>;
   // All items on one Donations board, each with its raw Donor-link value — used only
@@ -112,12 +127,15 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
 
   async getDonationsByIds(
     itemIds: string[],
-    columns: { amount: string; date: string; fiscalYear: string | null; status: string; giftType?: string | null },
+    columns: DonationReadColumns,
   ): Promise<DonationRecord[]> {
     if (itemIds.length === 0) return [];
     const columnIds = [columns.amount, columns.date, columns.status,
       ...(columns.fiscalYear ? [columns.fiscalYear] : []),
-      ...(columns.giftType ? [columns.giftType] : [])];
+      ...(columns.giftType ? [columns.giftType] : []),
+      ...(columns.termStart ? [columns.termStart] : []),
+      ...(columns.termEnd ? [columns.termEnd] : []),
+      ...(columns.membershipType ? [columns.membershipType] : [])];
     const donations: DonationRecord[] = [];
     // items(ids:) has a practical ceiling (Monday's complexity budget, not a documented
     // hard limit) — chunk defensively rather than assume any list size is safe.
@@ -148,10 +166,24 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const rawFY = columns.fiscalYear ? Number(byId.get(columns.fiscalYear) ?? '') : NaN;
         const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
         const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
-        donations.push({ id: item.id, amount, dateISO, fiscalYear, status, giftType });
+        const optionalText = (id: string | null | undefined): string | null | undefined =>
+          id ? (byId.get(id) || null) : undefined;
+        donations.push({
+          id: item.id, amount, dateISO, fiscalYear, status, giftType,
+          termStart: optionalText(columns.termStart),
+          termEnd: optionalText(columns.termEnd),
+          membershipType: optionalText(columns.membershipType),
+        });
       }
     }
     return donations;
+  }
+
+  async getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns) {
+    const ids = [columns.status, columns.tier, columns.since, columns.until];
+    const cols = (await this.getItemsColumnsText([ownerItemId], ids)).get(ownerItemId);
+    const text = (id: string): string | null => cols?.get(id) ?? null;
+    return { statusLabel: text(columns.status), tierLabel: text(columns.tier), since: text(columns.since), until: text(columns.until) };
   }
 
   async listDonationOwnerLinks(
