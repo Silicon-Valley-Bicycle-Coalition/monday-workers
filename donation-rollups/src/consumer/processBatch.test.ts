@@ -526,6 +526,16 @@ describe('membership step (spec 2026-09-15)', () => {
     for (const key of ['ms', 'mt', 'msince', 'muntil']) expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty(key);
   });
 
+  it('caps gift term stamps per recompute and continues on later recomputes', async () => {
+    const many = Array.from({ length: 13 }, (_, i) => ({ ...renewalGift, id: `g${String(i).padStart(2, '0')}`,
+      dateISO: `2026-11-${String(i + 1).padStart(2, '0')}` }));
+    const d = deps({ donations: many });
+    await d.run();
+    // 1 owner write + 10 gift writes, oldest gifts first
+    expect(d.changeColumnValues).toHaveBeenCalledTimes(11);
+    expect(d.changeColumnValues.mock.calls.slice(1).map((c) => c[1])).toEqual(many.slice(0, 10).map((g) => g.id));
+  });
+
   it('the owner write precedes the gift writes, and a failing gift write still retries the message', async () => {
     const d = deps();
     d.changeColumnValues.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('monday API: HTTP 500'));

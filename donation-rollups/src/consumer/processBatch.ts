@@ -38,6 +38,12 @@ export interface ProcessBatchDeps {
 // retries and land in the DLQ on every future delivery for the same owner.
 class NonRetryableError extends Error {}
 
+// A first run after enabling the membership feature, or a widened eligibleGiftTypes, can leave
+// dozens of unstamped gifts on one owner; each stamp is one Monday mutation and the Free plan's
+// subrequest cap is 50 per invocation. The design converges (spec "Writes and idempotency"), so
+// stamp the first N per recompute and let the stamped gifts' own webhooks recompute and continue.
+const MAX_GIFT_TERM_WRITES_PER_RECOMPUTE = 10;
+
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
@@ -210,16 +216,26 @@ async function planMembershipWrites(
   const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO),
     { ...boardState, statusLabel: board.statusLabel }, columns, membership);
 
-  const giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
-  for (const { board: b, items } of perBoard) {
+  // Fold order — sort by dateISO then id, same comparator deriveMembership uses — so a capped
+  // batch always stamps the oldest gifts first, matching the order the state was folded in.
+  const candidates = perBoard.flatMap(({ board: b, items }) => {
     const cols = b.columns;
-    if (!cols.termStart || !cols.termEnd || !cols.membershipType) continue; // validated present when membership is on
-    for (const d of items) {
-      const values = termColumnValues(derived.terms.get(d.id),
-        { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null },
-        { termStart: cols.termStart, termEnd: cols.termEnd, membershipType: cols.membershipType }, membership);
-      if (Object.keys(values).length > 0) giftWrites.push({ boardId: b.boardId, itemId: d.id, values });
-    }
+    if (!cols.termStart || !cols.termEnd || !cols.membershipType) return []; // validated present when membership is on
+    return items.map((d) => ({ board: b, d, cols: { termStart: cols.termStart!, termEnd: cols.termEnd!, membershipType: cols.membershipType! } }));
+  }).sort((a, b) => (a.d.dateISO < b.d.dateISO ? -1 : a.d.dateISO > b.d.dateISO ? 1
+    : a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0));
+
+  const giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
+  for (const { board: b, d, cols } of candidates) {
+    const values = termColumnValues(derived.terms.get(d.id),
+      { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null },
+      cols, membership);
+    if (Object.keys(values).length > 0) giftWrites.push({ boardId: b.boardId, itemId: d.id, values });
+  }
+  if (giftWrites.length > MAX_GIFT_TERM_WRITES_PER_RECOMPUTE) {
+    const remaining = giftWrites.length - MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
+    console.log(`donation-rollups: owner ${ownerItemId} has ${remaining} more gift term stamps pending; continuing on the next recompute`);
+    giftWrites.length = MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
   }
   return { ownerValues, giftWrites };
 }
