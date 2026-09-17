@@ -137,9 +137,10 @@ writes are compare-before-write, so the gift stamp's own webhook triggers one id
 stops. The merge with the board is **extend-only** — a staff-granted comp or Lifetime is never
 shortened or downgraded; shorten by hand if you mean to.
 
-* **Enabling — order matters.** The shipped config has `membership: null`, so a deploy is safe
-  at any time. Turn the feature on only after the baseline table exists:
-  1. `wrangler d1 migrations apply svbc-donation-rollups --remote`
+* **Enabling — order matters.** The block is **on** in the shipped config because migration
+  0005 was applied to the CRM Sandbox database on 2026-09-17. For any other database (a fresh
+  fork, the production cutover), set `donationRollups.membership` to `null` first, then:
+  1. `CI=1 wrangler d1 migrations apply svbc-donation-rollups --remote`
   2. set `donationRollups.membership` in `config/svbc.json` to the block below and deploy.
   Deploying with the block set before step 1 makes every People-board recompute throw on
   `membership_baseline`, which stops **rollups** for those owners too, not just membership.

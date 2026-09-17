@@ -91,8 +91,8 @@ describe('validateConfig — membership block', () => {
     expect(() => validateConfig(bad)).toThrow(/membership\.until/);
   });
 
-  it('the shipped config/svbc.json validates with membership OFF (deploy is safe before migration 0005)', () => {
-    expect(validateConfig(rawConfig).donationRollups.membership).toBeNull();
+  it('the shipped config/svbc.json validates (the membership block may be on or off — see README "Enabling")', () => {
+    expect(() => validateConfig(rawConfig)).not.toThrow();
   });
 
   it('the shipped config validates with the documented membership block switched on', () => {
