@@ -90,6 +90,15 @@ describe('getDonationsByIds — membership term columns', () => {
     const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
     expect(body.variables.columnIds).toEqual(expect.arrayContaining(['ts_1', 'te_1', 'mty_1']));
   });
+
+  it('normalizes term dates that carry a time component to YYYY-MM-DD', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2026-11-05', status_1: 'Received', gt_1: 'Donation',
+        ts_1: '2026-11-05 00:00', te_1: '2027-11-05 13:30', mty_1: 'Renewal' } },
+    ]));
+    const [d] = await client.getDonationsByIds(['dn1'], TERM_COLUMNS);
+    expect(d).toMatchObject({ termStart: '2026-11-05', termEnd: '2027-11-05', membershipType: 'Renewal' });
+  });
 });
 
 describe('getOwnerMembership', () => {
@@ -110,5 +119,11 @@ describe('getOwnerMembership', () => {
     const client = clientReturning(itemsResponse([]));
     expect(await client.getOwnerMembership('gone', OWNER))
       .toEqual({ statusLabel: null, tierLabel: null, since: null, until: null });
+  });
+  it('normalizes since/until that carry a time component', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'o1', cells: { ms: 'Active', mt: 'Member', msince: '2015-01-01 09:00', muntil: '2027-04-11 00:00' } },
+    ]));
+    expect(await client.getOwnerMembership('o1', OWNER)).toMatchObject({ since: '2015-01-01', until: '2027-04-11' });
   });
 });

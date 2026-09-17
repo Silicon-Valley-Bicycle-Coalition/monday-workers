@@ -137,6 +137,14 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       ...(columns.termEnd ? [columns.termEnd] : []),
       ...(columns.membershipType ? [columns.membershipType] : [])];
     const donations: DonationRecord[] = [];
+    const optionalText = (byId: Map<string, string>, id: string | null | undefined): string | null | undefined =>
+      id ? (byId.get(id) || null) : undefined;
+    // Term dates are compared as YYYY-MM-DD, but Monday's `text` for a date column can carry a
+    // time component (e.g. '2026-11-05 00:00') — normalize before it ever reaches a comparison.
+    const optionalDate = (byId: Map<string, string>, id: string | null | undefined): string | null | undefined => {
+      const t = optionalText(byId, id);
+      return t ? t.slice(0, 10) : t;
+    };
     // items(ids:) has a practical ceiling (Monday's complexity budget, not a documented
     // hard limit) — chunk defensively rather than assume any list size is safe.
     for (const chunk of chunksOf(itemIds, 100)) {
@@ -166,13 +174,11 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const rawFY = columns.fiscalYear ? Number(byId.get(columns.fiscalYear) ?? '') : NaN;
         const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
         const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
-        const optionalText = (id: string | null | undefined): string | null | undefined =>
-          id ? (byId.get(id) || null) : undefined;
         donations.push({
           id: item.id, amount, dateISO, fiscalYear, status, giftType,
-          termStart: optionalText(columns.termStart),
-          termEnd: optionalText(columns.termEnd),
-          membershipType: optionalText(columns.membershipType),
+          termStart: optionalDate(byId, columns.termStart),
+          termEnd: optionalDate(byId, columns.termEnd),
+          membershipType: optionalText(byId, columns.membershipType),
         });
       }
     }
@@ -183,7 +189,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     const ids = [columns.status, columns.tier, columns.since, columns.until];
     const cols = (await this.getItemsColumnsText([ownerItemId], ids)).get(ownerItemId);
     const text = (id: string): string | null => cols?.get(id) ?? null;
-    return { statusLabel: text(columns.status), tierLabel: text(columns.tier), since: text(columns.since), until: text(columns.until) };
+    const date = (id: string): string | null => text(id)?.slice(0, 10) ?? null;
+    return { statusLabel: text(columns.status), tierLabel: text(columns.tier), since: date(columns.since), until: date(columns.until) };
   }
 
   async listDonationOwnerLinks(
