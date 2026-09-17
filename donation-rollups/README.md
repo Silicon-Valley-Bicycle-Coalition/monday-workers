@@ -26,6 +26,130 @@ be re-derived from Monday — the importer's artifacts are their only source (do
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queue (`npm create cloudflare@latest`).
 
+## Status and verification — operational findings, 2026-09-17
+
+Two problems were investigated read-only on 2026-09-17 (D1 via `wrangler d1 execute --remote`,
+Cloudflare GraphQL analytics via the wrangler OAuth token, Monday `activity_logs`). Findings and
+the proposed fixes; nothing on the sandbox was changed.
+
+### 1. 2,865 `pending_recomputes` rows stuck in `queued` — D1 Free-tier daily write cap
+
+**What the rows are.** They are not one flood but two, and neither is the migration load you'd
+guess from the timestamps:
+
+| Window (UTC) | Monday events on the Donations board | Pending rows | Outcome |
+| --- | --- | --- | --- |
+| 2026-09-03 19:19–19:21 | 3,753 `update_column_value` on a temporary text column (`text_mm6v2fvg`, created then deleted the same minute — a throwaway bulk write, not a rollup input) | 3,427 (602 written, 3 failed, 2,822 queued) | consumer stalled 20:09 |
+| 2026-09-09 01:34–01:45 | 402 items: 77 `create_pulse` + 325 `board_relation` updates (the sandbox v2 load) | 401 (358 written, 43 queued) | consumer stalled 01:58 |
+
+Every queued row has `owner_item_id NULL` and no `written_at`: the consumer never got far enough
+to record anything, not even `failed`. The 3 `failed` rows carry
+"Too many subrequests by single Worker invocation" (the 50/invocation Free-plan budget, shared by
+every message in a batch).
+
+**Root cause — D1's Free-tier daily row-write limit, enforced since 2026-09-01.** Cloudflare began
+failing D1 queries on Workers Free accounts that exceed 100,000 rows written per day on
+2026-09-01 (changelog "D1 enforces free tier daily query limits"; error text "Your account has
+exceeded D1's free tier daily row write limit… wait until tomorrow (midnight UTC)"). This
+account is on Workers Free. D1 analytics for this database:
+
+| Day | Rows written | Write queries | Consumer invocations |
+| --- | --- | --- | --- |
+| 2026-08-31 (bootstrap, pre-enforcement) | 298,611 | 149 | fine |
+| 2026-09-03 | 133,084 | 49,022 | 4,618 ok · 74 exceededResources · 1,437 threw |
+| 2026-09-09 | 139,070 | 47,499 | 629 ok · 108 threw |
+
+The minute-level signature is unambiguous on both days: rows written run at 1–5k/min while the
+consumer works, then drop to **zero** (09-03 at 20:09, 09-09 at 01:58) while every queue
+invocation flips to `scriptThrewException` at 25–50/min until the backlog has burned its
+retries (09-03 20:09–20:39; 09-09 01:58–02:01). Once D1 rejects writes, `processRecomputeBatch`'s
+catch block calls `pendingStore.updateStatus(…, 'failed')`, which is itself a D1 write, so the
+exception escapes the loop, the whole batch is retried, and after `max_retries: 3` the messages
+land in `donation-rollups-recompute-dlq`. The DLQ has **no consumer**, so those messages expired
+after the queue's 4-day retention — there is nothing left to read or replay from it
+(`wrangler queues info donation-rollups-recompute-dlq`: 0 producers, 0 consumers). The D1 rows
+were never touched again.
+
+**Why one flood writes 100k+ rows.** Nothing else wrote to D1 on either day (every 09-03/09-09
+row in `gifts` and `donation_links` has `source = 'webhook'`). The volume is the consumer's own
+amplification: `giftsStore.refreshFacts` upserts **every** gift of the owner on every recompute
+(~3 rows written per gift: row + `idx_gifts_owner` + `idx_gifts_fy`), and a bulk edit that
+touches all of a big owner's donations recomputes that same owner once per donation. The top
+owners hold 619 and 557 gifts, so one of their recomputes is ~1,800 rows written; the 09-03
+flood repeated that dozens of times per owner. The 2,865 stuck rows map (via `donation_links`)
+to 1,349 owners.
+
+**Secondary cause, same days:** 74 consumer invocations on 09-03 died with `exceededResources`
+(Free-plan CPU/memory limit) between 19:45 and 20:08, each after its D1 writes landed but before
+the status update — the same big-owner recomputes. Those messages also retried into the DLQ.
+
+**Impact on rollups: none detected.** The 09-03 bulk write was to a column this Worker does not
+read, and the nightly reconcile (`custodian_runs`, every night 09-08 → 09-17) reports zero
+Lifetime Giving or Gift Ledger JSON mismatches across all 6,887 owners. The stuck rows are
+bookkeeping debt, and a warning that the next real flood (production cutover, a Funraise
+backfill) would silently lose recomputes the same way.
+
+**Proposed fix (not yet applied):**
+
+1. **Workers Paid ($5/mo) is the decisive fix** and is already on the infrastructure wishlist for
+   `funraise-sync`/`quickbooks-sync`: D1 goes to 50M rows written/day, CPU to 30 s, subrequests
+   to 1,000/invocation. Everything below is hardening that is worth doing regardless.
+2. **Stop rewriting unchanged gifts.** `refreshFacts` should compare against the rows
+   `giftsForOwner` already reads on the same recompute and upsert only gifts whose facts changed
+   — turns O(gifts) writes per recompute into O(changed gifts), which for a flood is ~1.
+3. **Coalesce redundant recomputes per owner.** Record `owner_recomputed_at` (on
+   `donation_links` or a small owners table) when a recompute lands; when a message resolves to
+   an owner whose last recompute completed after the pending row's `received_at`, mark the row
+   `written` without recomputing. A 3,700-webhook flood then costs ~1 recompute per owner.
+4. **Make D1 outages retry later instead of burning the DLQ.** In the consumer's catch, wrap the
+   `failed` status write in its own try/catch (a D1 error there must not escape the batch loop),
+   and when the error text is D1's "exceeded … daily row write limit", call
+   `message.retry({ delaySeconds })` with the seconds until midnight UTC (Queues allows up to
+   12 h) so the flood drains itself the next day. Also set `max_batch_size` low enough that a full
+   batch fits the 50-subrequest budget (~3 messages at today's ~12–15 subrequests each — D1
+   queries count too) instead of the default 10.
+5. **Give the DLQ a consumer** (or at least a `queue()` branch keyed on `batch.queue`) that marks
+   the pending row `failed` with the reason, so a dead message is visible in D1 instead of
+   silently expiring. Add a custodian duty `requeue-stuck` that re-enqueues `queued` rows older
+   than N hours in slices — that is also how the current 2,865 rows get repaired once fixes 2–4
+   (or Paid) are in place. Do **not** re-enqueue them before that: 1,349 owners including the
+   biggest would reproduce the 100k-row day.
+
+### 2. "No pending row since 09-09" — webhooks are delivering; the evidence was cleaned up
+
+The two subscriptions (`630667357` create_item, `630667362` change_column_value) **are working.**
+Correlating Monday's activity log with Cloudflare analytics for the 2026-09-17 test:
+
+| UTC | Source | What happened |
+| --- | --- | --- |
+| 17:36:24 | wrangler deployments | membership-enabled build deployed (version `a4d2d379`, same D1 binding) |
+| 17:37:00–17:38:44 | Monday activity_logs | item 13071939814 created, then 8 column edits (Amount, Term Start/End, Membership Type ×2, Salesforce Owner ×2) |
+| 17:37–17:38 | Workers analytics | 12 invocations, all `success`, 50 Monday subrequests |
+| 17:37:12 | Monday activity_logs | Term Start / Term End / Membership Type stamped on the new item — a write only this Worker's membership path makes |
+| 17:37–17:38 | D1 analytics | 64 write queries, 131 rows written; `gifts` rows for donor 12895278456 refreshed at 17:38:52 with `source = 'webhook'` (the consumer's recompute path, reachable only via a queue message, which the webhook route only sends after inserting the pending row) |
+| 17:40:18 | Monday activity_logs | item 13071939814 deleted |
+| 17:40 | D1 analytics | 4 write queries, 4 rows, **with no Worker invocation that minute** — a hand `wrangler d1 execute` cleanup (one row each from `pending_recomputes`, `donation_links`, `gifts`, `membership_baseline` fits exactly) |
+
+So the row was created and written, then deleted along with the test item's other D1 traces at
+17:40, which is why a later status count shows nothing after 09-09. The secret rotation on 08-31
+did not orphan the subscriptions (they were recreated after it), and Monday did not disable them.
+The 19:27 synthetic POST that "worked" was the same path the real webhooks had taken two hours
+earlier. **No `setup-webhooks.mjs` re-run is needed.**
+
+Two things worth knowing from this exercise:
+
+* Monday under-delivered on 09-03: 3,753 events on the board produced 3,427 pending rows (~9 %
+  short). Whether Monday dropped them or the Worker 5xx'd is not recoverable now (Workers Logs
+  retention is 3 days on Free). Expect some loss under a burst; the owner-coalescing in fix 3
+  plus the reconcile duty are what make that tolerable.
+* **How to verify delivery without trusting D1 row counts:** Cloudflare GraphQL
+  `workersInvocationsAdaptive` grouped by `datetimeMinute` for `svbc-donation-rollups`, compared
+  against the board's `activity_logs` for the same minute. It works with the local wrangler
+  OAuth token (the Workers Observability log API does not — that token lacks the
+  `workers_observability` scope, and `wrangler tail` is live-only). For a live check, run
+  `npx wrangler tail` while creating one throwaway item, confirm the `POST /webhooks/monday/donations`
+  and the queue invocation, then check `pending_recomputes` **before** cleaning up.
+
 ## The ask
 
 `salesforce-import` computes `Lifetime Giving`, `First Gift`, and `Gift Count` once, at migration
@@ -353,6 +477,10 @@ necessarily match) — don't assume sandbox and production share ids just becaus
   v2 item with values matching the importer's independent computation (Lifetime $714.93 / 15
   gifts, average exact). Note: the `webhooks` API query only returns subscriptions created by
   the SAME token/app — another client seeing an empty list doesn't mean none exist.
+* **2,865 `pending_recomputes` rows stuck in `queued` (09-03 and 09-09 floods)** — root cause and
+  the five-part fix are in "Status and verification — operational findings, 2026-09-17" above.
+  Repair (re-enqueue in slices) only after the write-amplification fixes or Workers Paid.
+* **DLQ has no consumer** — dead messages expire unseen after 4 days; see the same section.
 * **Dedicated least-privilege API token — scheduled for production cutover, not before** (see
   "APIs & auth" above). Scope, once minted: read-only on the Donations board, read/write on
   People/People Historical/Organizations.
