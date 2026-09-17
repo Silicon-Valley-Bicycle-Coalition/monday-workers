@@ -291,7 +291,15 @@ sandbox gets rebuilt before cutover:
   (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
   Status, and Fiscal Year Ending — `null` still supported for boards without one; this Worker derives it
   from Date instead in that case, and also whenever the cell is blank, see `fiscalYearFromDate`
-  in `rollups/compute.ts` and "Fiscal year, not calendar year" above). The list
+  in `rollups/compute.ts` and "Fiscal year, not calendar year" above). `fiscalYear` must be
+  the **text** column titled `Fiscal Year Ending` (`text_mm70czyd` on the sandbox v2 board),
+  not the older numbers column titled `Fiscal Year` (`numeric_mm6jm0g4`) that `salesforce-import`
+  stopped writing when it switched the title/type (its commit `219b47d`). The two coexisted on
+  the board as of 2026-09-17 with the numeric one stamped only on pre-switch loads, so pointing
+  here at the numeric column would leave every newer gift on the Date fallback. Either column
+  type parses the same way — `getDonationsByIds` reads the cell's `text`, not its typed value.
+  Whether the stale numeric column should be deleted from the board is an open question (see
+  "Not yet done"), not something this Worker or its scripts do. The list
   stays an array on purpose — a second board (e.g. a future workspace split) is config + one
   `setup-webhooks.mjs` run, not code. **Every board id here needs its own webhook subscription**
   — Monday webhooks are board-scoped.
@@ -350,6 +358,15 @@ necessarily match) — don't assume sandbox and production share ids just becaus
   People/People Historical/Organizations.
 * ~~`owner_board_id` in `donation_links` is written blank by the bootstrap script.~~ Fixed
   2026-08-31: `bootstrap-links-from-artifacts.mjs` populates it from the importer's ledger.
+* **Retire the stale numeric `Fiscal Year` column (`numeric_mm6jm0g4`) on the Donations board?**
+  Open question, not done. As of 2026-09-17 the sandbox v2 board carries both it and the text
+  `Fiscal Year Ending` column (`text_mm70czyd`) this Worker now reads: the numeric one is set on
+  every pre-`219b47d` load and on none of the newest gifts, the text one the reverse, so staff
+  views grouped by either column show a partial picture. Deleting it is a board change (Monday
+  UI, or `delete_column` — an irreversible mutation this Worker's read-only token can't and
+  shouldn't make), and the next sandbox rebuild from `salesforce-import` creates only the text
+  column anyway, so the cheapest answer may be to let the rebuild retire it. Decide before
+  production cutover; nothing here depends on it.
 * **This/Last Year go stale exactly once a year, on the fiscal-year boundary, if nothing else
   triggers a recompute.** A donor with no new gifts near July 1st keeps last fiscal year's
   This/Last Year split until their next Donation changes. Not a bug this Worker's design can fix
