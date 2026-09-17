@@ -263,6 +263,23 @@ in `src/rollups/compute.ts` reimplements the same July-rollover rule locally (th
 share code with `salesforce-import` — each Worker is self-contained per the root README) so "this
 year" always means the fiscal year, matching the reporting basis decided for gotcha #1.
 
+**A blank Fiscal Year Ending cell is treated as missing, not as year 0.** `getDonationsByIds`
+falls back to `fiscalYearFromDate(Date)` whenever the column is unconfigured *or* the cell is
+blank/whitespace — checked as text, the same way Amount is, because `Number('')` is `0` and a
+gift bucketed into fiscal year 0 silently vanished from This Year / Last Year (observed live on
+the CRM Sandbox 2026-09-17: a hand-created gift with no Fiscal Year cell wrote This Year Amount
+$0 on its donor). This matters post-cutover, not just for hand entry: `funraise-sync` doesn't set
+the column on create, so every Funraise gift would have hit it.
+
+**Decision (2026-09-17): this Worker does not backfill the column.** Deriving from Date is
+enough for correct rollups, and writing back to the Donations board it subscribes to would mean
+a write-scoped token plus a `change_column_value` webhook re-triggered by our own write on every
+new gift. The column exists for staff (board views/filters grouped by fiscal year, and the
+`Fiscal Year Ending` grouping `salesforce-import` already stamps on every migrated gift), so
+**the writer that creates the item should stamp it** — `funraise-sync` on create, from the
+donation date with the same July rule (see its README, "Field mapping"). Until it does, Funraise
+gifts roll up correctly but show a blank Fiscal Year Ending on the board.
+
 ## Config
 
 `config/svbc.json` holds real ids verified against the CRM Sandbox v2 boards (2026-08-31), not
@@ -272,7 +289,8 @@ sandbox gets rebuilt before cutover:
 * `donationRollups.donationBoards` — now a single entry: the archive-in-place Donations board
   (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
   Status, and Fiscal Year Ending — `null` still supported for boards without one; this Worker derives it
-  from Date instead in that case, see `fiscalYearFromDate` in `rollups/compute.ts`). The list
+  from Date instead in that case, and also whenever the cell is blank, see `fiscalYearFromDate`
+  in `rollups/compute.ts` and "Fiscal year, not calendar year" above). The list
   stays an array on purpose — a second board (e.g. a future workspace split) is config + one
   `setup-webhooks.mjs` run, not code. **Every board id here needs its own webhook subscription**
   — Monday webhooks are board-scoped.

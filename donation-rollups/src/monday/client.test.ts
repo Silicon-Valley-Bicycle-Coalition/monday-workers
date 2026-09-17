@@ -53,6 +53,20 @@ describe('getDonationsByIds', () => {
     expect(await client.getDonationsByIds(['nodate', 'nan'], COLUMNS)).toEqual([]);
   });
 
+  it('derives fiscal year from Date when the configured Fiscal Year cell is blank — Number("") is 0, not NaN, which would bucket the gift into fiscal year 0 and drop it from This/Last Year', async () => {
+    const withFY = { ...COLUMNS, fiscalYear: 'text_fy' };
+    const client = clientReturning(itemsResponse([
+      { id: 'blank', cells: { amount_1: '50', date_1: '2020-01-15', text_fy: '', status_1: 'Received' } },
+      { id: 'nullcell', cells: { amount_1: '50', date_1: '2020-08-15', text_fy: null, status_1: 'Received' } },
+      { id: 'spaces', cells: { amount_1: '50', date_1: '2020-08-15', text_fy: '   ', status_1: 'Received' } },
+      { id: 'stamped', cells: { amount_1: '50', date_1: '2020-08-15', text_fy: '2022', status_1: 'Received' } },
+    ]));
+    const result = await client.getDonationsByIds(['blank', 'nullcell', 'spaces', 'stamped'], withFY);
+    expect(result.map((d) => [d.id, d.fiscalYear])).toEqual([
+      ['blank', 2020], ['nullcell', 2021], ['spaces', 2021], ['stamped', 2022],
+    ]);
+  });
+
   it('an explicit $0 amount is kept — only blank is malformed', async () => {
     const client = clientReturning(itemsResponse([
       { id: 'zero', cells: { amount_1: '0', date_1: '2020-01-15', status_1: 'Received' } },

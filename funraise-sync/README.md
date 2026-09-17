@@ -104,6 +104,17 @@ fields collapse to one** with precedence `npe01__Preferred_Email__c` → `Primar
 `Email`; **payment-method fields (last four, expiration) are PII and must never be written to
 Monday**.
 
+**Open: stamp `Fiscal Year Ending` on create.** The Donations board has a text `Fiscal Year
+Ending` column that `salesforce-import` writes on every migrated gift (SVBC's July–June fiscal
+year, so a 2026-08-15 gift is FY 2027). `columnMap.transaction` doesn't map it — it's a derived
+value, not a Funraise field, so `mapToMondayColumns` can't produce it from config alone. Decided
+2026-09-17 (see `donation-rollups`'s README, "Fiscal year, not calendar year"): `donation-rollups`
+now treats a blank cell as missing and derives the year from Date, so rollups are correct either
+way, and it will *not* backfill the column. The writer that creates the item should stamp it, so
+this Worker owes a small derived-column step on the transaction create path (fiscal year from
+`createdAt`, same July rule) once the column ids in `config/svbc.json` are wired to the real
+board. Until then Funraise gifts show a blank Fiscal Year Ending in board views grouped by year.
+
 ## Acknowledgment / receipting
 
 **Decided (private planning repo, `migration-plan.md` Decisions Needed, 2026-08-24, Option 2):**

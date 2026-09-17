@@ -169,9 +169,14 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const status = byId.get(columns.status) ?? '';
         if (!dateISO || amountText === '' || Number.isNaN(amount)) continue; // malformed or deleted item, skip
         // Fall back to deriving from the Date column when this board has no Fiscal
-        // Year column yet (or the cell is blank) — see fiscalYearFromDate in
-        // rollups/compute.ts.
-        const rawFY = columns.fiscalYear ? Number(byId.get(columns.fiscalYear) ?? '') : NaN;
+        // Year column yet, or the cell is blank — see fiscalYearFromDate in
+        // rollups/compute.ts. Blank has to be checked as text, same as Amount above:
+        // Number('') is 0, and a fiscalYear of 0 never matches This/Last Year, so a
+        // gift with an unstamped cell (hand-created, or funraise-sync's create path,
+        // which doesn't set the column) silently dropped out of both buckets
+        // (observed live on the CRM Sandbox 2026-09-17).
+        const fyText = columns.fiscalYear ? (byId.get(columns.fiscalYear) ?? '').trim() : '';
+        const rawFY = fyText === '' ? NaN : Number(fyText);
         const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
         const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
         donations.push({
