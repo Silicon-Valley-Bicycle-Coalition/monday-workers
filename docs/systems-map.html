@@ -1,0 +1,527 @@
+<title>SVBC Systems Map</title>
+<style>
+  :root {
+    --bg: #faf9f4;
+    --surface: #ffffff;
+    --surface-2: #f1efe6;
+    --ink: #1c1e1a;
+    --ink-dim: #6d6a5f;
+    --line: #d9d5c6;
+    --green: #2e6f52;
+    --orange: #c2600a;
+    --blue: #2b5b8c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171a;
+      --surface: #1d2023;
+      --surface-2: #23272b;
+      --ink: #eae8e0;
+      --ink-dim: #9b988d;
+      --line: #34383c;
+      --green: #5cb98c;
+      --orange: #e3903f;
+      --blue: #7aa8d6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171a;
+    --surface: #1d2023;
+    --surface-2: #23272b;
+    --ink: #eae8e0;
+    --ink-dim: #9b988d;
+    --line: #34383c;
+    --green: #5cb98c;
+    --orange: #e3903f;
+    --blue: #7aa8d6;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
+    padding: 32px 20px 60px;
+    max-width: 1040px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.7rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .lede {
+    color: var(--ink-dim);
+    font-size: 0.98rem;
+    max-width: 65ch;
+    line-height: 1.5;
+    margin: 0 0 4px;
+  }
+  .meta {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 14px 0 28px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    margin-bottom: 28px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+  }
+  .legend .item { display: flex; align-items: center; gap: 6px; color: var(--ink-dim); }
+  .swatch {
+    width: 12px; height: 12px; border-radius: 3px; flex: none;
+  }
+
+  figure { margin: 0 0 40px; }
+  .diagram-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 8px 0;
+  }
+  .diagram-scroll svg { display: block; height: auto; }
+  #map-svg { width: 1060px; max-width: none; }
+  #pattern-svg { width: 900px; max-width: none; }
+  figcaption {
+    margin-top: 10px;
+    font-size: 0.82rem;
+    color: var(--ink-dim);
+    line-height: 1.45;
+    max-width: 70ch;
+  }
+
+  svg text { fill: var(--ink); font-family: "IBM Plex Sans", sans-serif; }
+  svg .mono { font-family: "IBM Plex Mono", monospace; }
+  svg .dim { fill: var(--ink-dim); }
+  svg .label { font-size: 11.5px; }
+  svg .arrow-label { font-size: 10.5px; fill: var(--ink-dim); }
+  svg .title-text { font-weight: 650; font-size: 13.5px; }
+  svg line, svg path.conn { stroke: var(--ink-dim); stroke-width: 1.4; fill: none; }
+  svg .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+  svg .box-muted { fill: var(--surface-2); stroke: var(--line); stroke-dasharray: 4 3; }
+  svg .box-worker { fill: var(--surface); stroke: var(--orange); stroke-width: 1.6; }
+  svg .box-hub { fill: var(--surface-2); stroke: var(--green); stroke-width: 1.8; }
+  svg .box-output { fill: var(--surface); stroke: var(--blue); stroke-width: 1.6; }
+  svg .chip { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+
+  .badge { font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: 0.02em; }
+  .badge-queue rect { fill: color-mix(in srgb, var(--orange) 16%, transparent); stroke: var(--orange); }
+  .badge-queue text { fill: var(--orange); }
+  .badge-cron rect { fill: color-mix(in srgb, var(--blue) 16%, transparent); stroke: var(--blue); }
+  .badge-cron text { fill: var(--blue); }
+  .badge-batch rect { fill: color-mix(in srgb, var(--ink-dim) 18%, transparent); stroke: var(--ink-dim); }
+  .badge-batch text { fill: var(--ink-dim); }
+  .badge-ro rect { fill: color-mix(in srgb, var(--green) 16%, transparent); stroke: var(--green); }
+  .badge-ro text { fill: var(--green); }
+
+  .status {
+    margin-top: 8px;
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.82rem;
+  }
+  .status th, .status td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .status th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-dim);
+    font-weight: 500;
+  }
+  .status td.worker { font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; white-space: nowrap; }
+  .pill {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+  }
+  .pill-live { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+  .pill-pending { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
+
+  footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 0.76rem;
+    color: var(--ink-dim);
+  }
+  footer a { color: var(--ink-dim); }
+  h2 { font-size: 1.05rem; margin: 0 0 4px; }
+</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;650&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<h1>SVBC Systems Map</h1>
+<p class="lede">How Silicon Valley Bicycle Coalition's Monday.com CRM and its Cloudflare Workers fit together once Salesforce retires in October 2026. Monday.com becomes the single system of record; every Worker either feeds it once, keeps it current, or reads from it.</p>
+<div class="meta">as of 2026-09-17 &middot; most integrations below are built but not yet deployed &mdash; see status table</div>
+
+<div class="legend">
+  <span class="item"><span class="swatch" style="background:var(--orange)"></span>Cloudflare Worker</span>
+  <span class="item"><span class="swatch" style="background:var(--green)"></span>Monday.com</span>
+  <span class="item"><span class="swatch" style="background:var(--blue)"></span>public-facing output</span>
+  <span class="item"><span class="swatch" style="border:1.5px dashed var(--ink-dim); background:transparent"></span>retiring / external</span>
+</div>
+
+<figure>
+  <div class="diagram-scroll">
+    <svg id="map-svg" viewBox="0 0 1060 1200" role="img" aria-label="Diagram showing Salesforce, Funraise, QuickBooks, Benevity, Mailchimp, and Monday.com itself each feeding a dedicated Cloudflare Worker, most of which write into a central Monday.com hub of boards; monday-backup and donor-portal read out of that hub to Google Drive and to donors; svbc-calendars is a separate, unrelated pipeline serving public calendar feeds.">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="arrowRev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- HUB (spans rows 0-5) -->
+      <g>
+        <rect class="box-hub" x="700" y="70" width="250" height="694" rx="14"/>
+        <text x="825" y="98" text-anchor="middle" class="title-text" style="fill:var(--green)">Monday.com</text>
+        <text x="825" y="114" text-anchor="middle" class="mono dim" font-size="9.5px">bikesiliconvalley.monday.com</text>
+        <line x1="716" y1="128" x2="934" y2="128" stroke="var(--line)"/>
+
+        <!-- Section: People & Orgs -->
+        <text x="716" y="150" class="mono dim" font-size="9.5px" letter-spacing="0.05em">PEOPLE &amp; ORGS</text>
+        <rect class="chip" x="716" y="160" width="218" height="34" rx="8"/>
+        <text x="825" y="181" text-anchor="middle" class="label">Donors / People</text>
+        <rect class="chip" x="716" y="200" width="218" height="34" rx="8"/>
+        <text x="825" y="221" text-anchor="middle" class="label">People (Historical)</text>
+        <rect class="chip" x="716" y="240" width="218" height="34" rx="8"/>
+        <text x="825" y="261" text-anchor="middle" class="label">Organizations</text>
+
+        <!-- Section: Giving -->
+        <text x="716" y="290" class="mono dim" font-size="9.5px" letter-spacing="0.05em">GIVING</text>
+        <rect class="chip" x="716" y="300" width="218" height="34" rx="8"/>
+        <text x="825" y="321" text-anchor="middle" class="label">Donations (single board, archive-in-place)</text>
+        <rect class="chip" x="716" y="340" width="218" height="34" rx="8"/>
+        <text x="825" y="361" text-anchor="middle" class="label">Annual Giving Summary</text>
+        <rect class="chip" x="716" y="380" width="218" height="34" rx="8"/>
+        <text x="825" y="401" text-anchor="middle" class="label">Recurring Gifts / Registration</text>
+
+        <!-- Section: Operations -->
+        <text x="716" y="430" class="mono dim" font-size="9.5px" letter-spacing="0.05em">OPERATIONS</text>
+        <rect class="chip" x="716" y="440" width="218" height="34" rx="8"/>
+        <text x="825" y="461" text-anchor="middle" class="label">Benevity Uploads</text>
+        <rect class="chip" x="716" y="480" width="218" height="34" rx="8"/>
+        <text x="825" y="501" text-anchor="middle" class="label">Mailchimp Campaigns</text>
+        <rect class="chip" x="716" y="520" width="218" height="34" rx="8"/>
+        <text x="825" y="541" text-anchor="middle" class="label">IT Requests</text>
+
+        <line x1="716" y1="570" x2="934" y2="570" stroke="var(--line)"/>
+        <text x="825" y="592" text-anchor="middle" class="dim" font-size="10.5px">10 boards &middot; one workspace</text>
+        <text x="825" y="610" text-anchor="middle" class="dim" font-size="10.5px">D1 gift ledger is the</text>
+        <text x="825" y="626" text-anchor="middle" class="dim" font-size="10.5px">authoritative donation total,</text>
+        <text x="825" y="642" text-anchor="middle" class="dim" font-size="10.5px">projected onto board columns</text>
+      </g>
+
+      <!-- ROW 0: salesforce-import -->
+      <g>
+        <rect class="box-muted" x="30" y="90" width="220" height="74" rx="10"/>
+        <text x="140" y="120" text-anchor="middle" class="label" style="font-weight:600">Salesforce (NPSP)</text>
+        <text x="140" y="137" text-anchor="middle" class="dim" font-size="10px">svbc org, Enterprise Edition</text>
+        <text x="140" y="153" text-anchor="middle" class="dim mono" font-size="9.5px">retiring Oct 2026</text>
+
+        <line x1="250" y1="127" x2="316" y2="127" marker-end="url(#arrow)"/>
+        <text x="283" y="119" text-anchor="middle" class="arrow-label">read-only export</text>
+
+        <rect class="box-worker" x="320" y="90" width="240" height="74" rx="10"/>
+        <text x="440" y="114" text-anchor="middle" class="title-text">salesforce-import</text>
+        <g class="badge badge-batch" transform="translate(370,122)">
+          <rect x="0" y="0" width="140" height="16" rx="8"/>
+          <text x="70" y="11.5" text-anchor="middle">BATCH &middot; ONE-TIME</text>
+        </g>
+        <text x="440" y="154" text-anchor="middle" class="dim" font-size="10px">dedup, geocode, relational link</text>
+
+        <line x1="560" y1="127" x2="694" y2="127" marker-end="url(#arrow)"/>
+        <text x="627" y="119" text-anchor="middle" class="arrow-label">write once, Oct cutover</text>
+      </g>
+
+      <!-- ROW 1: funraise-sync -->
+      <g>
+        <rect class="box" x="30" y="206" width="220" height="74" rx="10"/>
+        <text x="140" y="238" text-anchor="middle" class="label" style="font-weight:600">Funraise</text>
+        <text x="140" y="255" text-anchor="middle" class="dim" font-size="10px">online donation platform</text>
+
+        <line x1="250" y1="243" x2="316" y2="243" marker-end="url(#arrow)"/>
+        <text x="283" y="235" text-anchor="middle" class="arrow-label">webhook</text>
+
+        <rect class="box-worker" x="320" y="206" width="240" height="74" rx="10"/>
+        <text x="440" y="230" text-anchor="middle" class="title-text">funraise-sync</text>
+        <g class="badge badge-queue" transform="translate(365,238)">
+          <rect x="0" y="0" width="150" height="16" rx="8"/>
+          <text x="75" y="11.5" text-anchor="middle">WEBHOOK + QUEUE</text>
+        </g>
+        <text x="440" y="270" text-anchor="middle" class="dim" font-size="10px">D1 dedupe by entity id</text>
+
+        <line x1="560" y1="243" x2="694" y2="248.5" marker-end="url(#arrow)"/>
+        <text x="627" y="235" text-anchor="middle" class="arrow-label">create / update gift</text>
+      </g>
+
+      <!-- ROW 2: quickbooks-sync -->
+      <g>
+        <rect class="box" x="30" y="322" width="220" height="74" rx="10"/>
+        <text x="140" y="354" text-anchor="middle" class="label" style="font-weight:600">QuickBooks Online</text>
+        <text x="140" y="371" text-anchor="middle" class="dim" font-size="10px">customers &amp; invoices</text>
+
+        <line x1="250" y1="359" x2="316" y2="359" marker-end="url(#arrow)"/>
+        <text x="283" y="351" text-anchor="middle" class="arrow-label">webhook (notice only)</text>
+
+        <rect class="box-worker" x="320" y="322" width="240" height="74" rx="10"/>
+        <text x="440" y="346" text-anchor="middle" class="title-text">quickbooks-sync</text>
+        <g class="badge badge-queue" transform="translate(365,354)">
+          <rect x="0" y="0" width="150" height="16" rx="8"/>
+          <text x="75" y="11.5" text-anchor="middle">WEBHOOK + QUEUE</text>
+        </g>
+        <text x="440" y="386" text-anchor="middle" class="dim" font-size="10px">fetches record, then writes</text>
+
+        <line x1="560" y1="359" x2="694" y2="360.8" marker-end="url(#arrow)"/>
+        <text x="627" y="351" text-anchor="middle" class="arrow-label">write record</text>
+      </g>
+
+      <!-- ROW 3: benevity-import -->
+      <g>
+        <rect class="box" x="30" y="438" width="220" height="74" rx="10"/>
+        <text x="140" y="466" text-anchor="middle" class="label" style="font-weight:600">Benevity CSV</text>
+        <text x="140" y="483" text-anchor="middle" class="dim" font-size="10px">disbursement report,</text>
+        <text x="140" y="497" text-anchor="middle" class="dim" font-size="10px">staff downloads monthly</text>
+
+        <line x1="250" y1="475" x2="316" y2="475" marker-end="url(#arrow)"/>
+        <text x="283" y="467" text-anchor="middle" class="arrow-label">upload &rarr; webhook</text>
+
+        <rect class="box-worker" x="320" y="438" width="240" height="74" rx="10"/>
+        <text x="440" y="462" text-anchor="middle" class="title-text">benevity-import</text>
+        <g class="badge badge-queue" transform="translate(365,470)">
+          <rect x="0" y="0" width="150" height="16" rx="8"/>
+          <text x="75" y="11.5" text-anchor="middle">WEBHOOK + QUEUE</text>
+        </g>
+        <text x="440" y="502" text-anchor="middle" class="dim" font-size="10px">dedupes by Transaction ID</text>
+
+        <line x1="560" y1="475" x2="694" y2="473.2" marker-end="url(#arrow)"/>
+        <text x="627" y="467" text-anchor="middle" class="arrow-label">link Org + Person</text>
+      </g>
+
+      <!-- ROW 4: donation-rollups -->
+      <g>
+        <rect class="box-muted" x="30" y="554" width="220" height="74" rx="10"/>
+        <text x="140" y="582" text-anchor="middle" class="label" style="font-weight:600">Monday.com</text>
+        <text x="140" y="599" text-anchor="middle" class="dim" font-size="10px">Donations board itself</text>
+        <text x="140" y="613" text-anchor="middle" class="dim mono" font-size="9.5px">(self-triggered)</text>
+
+        <line x1="250" y1="591" x2="316" y2="591" marker-end="url(#arrow)"/>
+        <text x="283" y="583" text-anchor="middle" class="arrow-label">webhook: gift changed</text>
+
+        <rect class="box-worker" x="320" y="554" width="240" height="74" rx="10"/>
+        <text x="440" y="578" text-anchor="middle" class="title-text">donation-rollups</text>
+        <g class="badge badge-queue" transform="translate(365,586)">
+          <rect x="0" y="0" width="150" height="16" rx="8"/>
+          <text x="75" y="11.5" text-anchor="middle">WEBHOOK + QUEUE</text>
+        </g>
+        <text x="440" y="618" text-anchor="middle" class="dim" font-size="10px">D1 ledger + nightly custodian</text>
+
+        <line x1="560" y1="591" x2="694" y2="585.5" marker-end="url(#arrow)"/>
+        <text x="627" y="583" text-anchor="middle" class="arrow-label">recompute + write rollups</text>
+      </g>
+
+      <!-- ROW 5: mailchimp-sync (bidirectional) -->
+      <g>
+        <rect class="box" x="30" y="670" width="220" height="74" rx="10"/>
+        <text x="140" y="702" text-anchor="middle" class="label" style="font-weight:600">Mailchimp</text>
+        <text x="140" y="719" text-anchor="middle" class="dim" font-size="10px">newsletter + journeys</text>
+
+        <line x1="250" y1="707" x2="316" y2="707" marker-start="url(#arrowRev)" marker-end="url(#arrow)"/>
+        <text x="283" y="699" text-anchor="middle" class="arrow-label">merge fields &amp; tags</text>
+
+        <rect class="box-worker" x="320" y="670" width="240" height="74" rx="10"/>
+        <text x="440" y="694" text-anchor="middle" class="title-text">mailchimp-sync</text>
+        <g class="badge badge-queue" transform="translate(365,702)">
+          <rect x="0" y="0" width="150" height="16" rx="8"/>
+          <text x="75" y="11.5" text-anchor="middle">WEBHOOK + QUEUE</text>
+        </g>
+        <text x="440" y="734" text-anchor="middle" class="dim" font-size="10px">bidirectional, D1 idempotency</text>
+
+        <line x1="560" y1="707" x2="694" y2="697.8" marker-start="url(#arrowRev)" marker-end="url(#arrow)"/>
+        <text x="627" y="699" text-anchor="middle" class="arrow-label">donor &harr; campaign interests</text>
+      </g>
+
+      <!-- ROW 6: monday-backup -->
+      <g>
+        <rect class="box-muted" x="30" y="822" width="220" height="74" rx="10"/>
+        <text x="140" y="850" text-anchor="middle" class="label" style="font-weight:600">Monday.com</text>
+        <text x="140" y="867" text-anchor="middle" class="dim" font-size="10px">every board + every Doc</text>
+        <text x="140" y="881" text-anchor="middle" class="dim mono" font-size="9.5px">(self-triggered)</text>
+
+        <line x1="250" y1="859" x2="316" y2="859" marker-end="url(#arrow)"/>
+        <text x="283" y="851" text-anchor="middle" class="arrow-label">cron: daily read</text>
+
+        <rect class="box-worker" x="320" y="822" width="240" height="74" rx="10"/>
+        <text x="440" y="846" text-anchor="middle" class="title-text">monday-backup</text>
+        <g class="badge badge-cron" transform="translate(400,854)">
+          <rect x="0" y="0" width="80" height="16" rx="8"/>
+          <text x="40" y="11.5" text-anchor="middle">CRON</text>
+        </g>
+        <text x="440" y="886" text-anchor="middle" class="dim" font-size="10px">full snapshot, not point-restore</text>
+
+        <line x1="560" y1="859" x2="694" y2="859" marker-end="url(#arrow)"/>
+        <text x="627" y="851" text-anchor="middle" class="arrow-label">daily snapshot</text>
+
+        <rect class="box-output" x="700" y="822" width="250" height="74" rx="10"/>
+        <text x="825" y="850" text-anchor="middle" class="label" style="font-weight:600">Google Drive</text>
+        <text x="825" y="867" text-anchor="middle" class="dim" font-size="10px">archival snapshots, boards + Docs</text>
+      </g>
+
+      <!-- ROW 7: donor-portal -->
+      <g>
+        <rect class="box-muted" x="30" y="938" width="220" height="74" rx="10"/>
+        <text x="140" y="966" text-anchor="middle" class="label" style="font-weight:600">Monday.com</text>
+        <text x="140" y="983" text-anchor="middle" class="dim" font-size="10px">Donors, Donations, Membership</text>
+        <text x="140" y="997" text-anchor="middle" class="dim mono" font-size="9.5px">(self-triggered)</text>
+
+        <line x1="250" y1="975" x2="316" y2="975" marker-end="url(#arrow)"/>
+        <text x="283" y="967" text-anchor="middle" class="arrow-label">live GraphQL read</text>
+
+        <rect class="box-worker" x="320" y="938" width="240" height="74" rx="10"/>
+        <text x="440" y="962" text-anchor="middle" class="title-text">donor-portal</text>
+        <g class="badge badge-ro" transform="translate(390,970)">
+          <rect x="0" y="0" width="100" height="16" rx="8"/>
+          <text x="50" y="11.5" text-anchor="middle">READ-ONLY</text>
+        </g>
+        <text x="440" y="1002" text-anchor="middle" class="dim" font-size="10px">magic-link email, no password</text>
+
+        <line x1="560" y1="975" x2="694" y2="975" marker-end="url(#arrow)"/>
+        <text x="627" y="967" text-anchor="middle" class="arrow-label">scoped to own record</text>
+
+        <rect class="box-output" x="700" y="938" width="250" height="74" rx="10"/>
+        <text x="825" y="966" text-anchor="middle" class="label" style="font-weight:600">Donor</text>
+        <text x="825" y="983" text-anchor="middle" class="dim" font-size="10px">portal.bikesiliconvalley.org</text>
+      </g>
+
+      <!-- divider -->
+      <line x1="20" y1="1044" x2="1040" y2="1044" stroke="var(--line)" stroke-dasharray="2 4"/>
+      <text x="20" y="1032" class="dim mono" font-size="9.5px" letter-spacing="0.03em">NOT PART OF THE CRM MIGRATION &mdash; PREDATES THIS REPO, SHARES THE CLOUDFLARE ACCOUNT ONLY</text>
+
+      <!-- ROW 8: svbc-calendars (separate, unrelated to Monday) -->
+      <g>
+        <rect class="box" x="30" y="1064" width="250" height="86" rx="10"/>
+        <text x="155" y="1088" text-anchor="middle" class="label" style="font-weight:600">Eventbrite API</text>
+        <text x="155" y="1105" text-anchor="middle" class="dim" font-size="10px">+ Legistar / CivicPlus /</text>
+        <text x="155" y="1119" text-anchor="middle" class="dim" font-size="10px">Caltrain BATAC calendars</text>
+        <text x="155" y="1136" text-anchor="middle" class="dim" font-size="10px">(9 sources total)</text>
+
+        <line x1="280" y1="1107" x2="346" y2="1107" marker-end="url(#arrow)"/>
+        <text x="313" y="1099" text-anchor="middle" class="arrow-label">fetch per request</text>
+
+        <rect class="box-worker" x="350" y="1064" width="230" height="86" rx="10"/>
+        <text x="465" y="1090" text-anchor="middle" class="title-text">svbc-calendars</text>
+        <g class="badge badge-cron" transform="translate(400,1098)">
+          <rect x="0" y="0" width="130" height="16" rx="8"/>
+          <text x="65" y="11.5" text-anchor="middle">CRON + KV CACHE</text>
+        </g>
+        <text x="465" y="1132" text-anchor="middle" class="dim" font-size="10px">KV last-known-good fallback</text>
+
+        <line x1="580" y1="1107" x2="646" y2="1107" marker-end="url(#arrow)"/>
+        <text x="613" y="1099" text-anchor="middle" class="arrow-label">serve widget + ICS</text>
+
+        <rect class="box-output" x="650" y="1064" width="360" height="86" rx="10"/>
+        <text x="830" y="1090" text-anchor="middle" class="label" style="font-weight:600">events. / committees.bikesiliconvalley.org</text>
+        <text x="830" y="1108" text-anchor="middle" class="dim" font-size="10px">embedded widget on the Squarespace site,</text>
+        <text x="830" y="1124" text-anchor="middle" class="dim" font-size="10px">9 subscribable public calendar feeds</text>
+      </g>
+    </svg>
+  </div>
+  <figcaption>Each row is one integration: an upstream system, the Cloudflare Worker that mediates it, and where the data ends up. Rows marked <span class="mono">(self-triggered)</span> have no upstream system of their own &mdash; Monday.com is both the trigger and, for two of them, the destination. <span class="mono">svbc-calendars</span>, below the divider, shares the Cloudflare account but has no connection to Monday.com at all.</figcaption>
+</figure>
+
+<h2>The shared reliability pattern</h2>
+<p class="lede" style="margin-bottom:16px;">Five of the Workers above (funraise-sync, quickbooks-sync, benevity-import, donation-rollups, mailchimp-sync) share one shape, added after an outside reviewer found that a bare <span class="mono" style="font-size:0.85em">fetch()</span> to Monday's API has no retry of its own &mdash; a rate limit or a transient 5xx just silently drops the write.</p>
+<figure>
+  <div class="diagram-scroll">
+    <svg id="pattern-svg" viewBox="0 0 900 250" role="img" aria-label="Diagram of the shared webhook reliability pattern: a webhook event is deduplicated into D1, enqueued onto a Cloudflare Queue, and written to Monday by a separate consumer; on repeated failure the Queue automatically retries three times before routing the message to a Dead Letter Queue instead of dropping it.">
+      <defs>
+        <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect class="box" x="20" y="70" width="120" height="60" rx="9"/>
+      <text x="80" y="96" text-anchor="middle" class="label" style="font-weight:600">webhook</text>
+      <text x="80" y="112" text-anchor="middle" class="dim" font-size="9.5px">event arrives</text>
+
+      <line x1="140" y1="100" x2="196" y2="100" marker-end="url(#arrow2)"/>
+
+      <rect class="box-worker" x="200" y="70" width="130" height="60" rx="9"/>
+      <text x="265" y="93" text-anchor="middle" class="label" style="font-weight:600">Worker</text>
+      <text x="265" y="109" text-anchor="middle" class="dim" font-size="9.5px">verify + dedupe</text>
+      <text x="265" y="122" text-anchor="middle" class="dim" font-size="9.5px">by entity id</text>
+
+      <line x1="330" y1="100" x2="386" y2="100" marker-end="url(#arrow2)"/>
+      <text x="358" y="92" text-anchor="middle" class="arrow-label">upsert</text>
+
+      <rect class="box" x="390" y="70" width="90" height="60" rx="9"/>
+      <text x="435" y="96" text-anchor="middle" class="label" style="font-weight:600">D1</text>
+      <text x="435" y="112" text-anchor="middle" class="dim" font-size="9.5px">idempotency</text>
+
+      <line x1="480" y1="100" x2="536" y2="100" marker-end="url(#arrow2)"/>
+      <text x="508" y="92" text-anchor="middle" class="arrow-label">enqueue</text>
+
+      <rect class="box" x="540" y="70" width="120" height="60" rx="9"/>
+      <text x="600" y="96" text-anchor="middle" class="label" style="font-weight:600">Cloudflare</text>
+      <text x="600" y="112" text-anchor="middle" class="dim" font-size="9.5px">Queue</text>
+
+      <line x1="660" y1="100" x2="716" y2="100" marker-end="url(#arrow2)"/>
+
+      <rect class="box-worker" x="720" y="70" width="130" height="60" rx="9"/>
+      <text x="785" y="93" text-anchor="middle" class="label" style="font-weight:600">consumer</text>
+      <text x="785" y="109" text-anchor="middle" class="dim" font-size="9.5px">writes to</text>
+      <text x="785" y="122" text-anchor="middle" class="dim" font-size="9.5px" style="fill:var(--green)">Monday.com</text>
+
+      <line x1="600" y1="130" x2="600" y2="176" stroke-dasharray="3 3" marker-end="url(#arrow2)"/>
+      <text x="612" y="155" class="arrow-label">3 auto-retries,</text>
+      <text x="612" y="168" class="arrow-label">then routes here</text>
+
+      <rect class="box-muted" x="480" y="180" width="240" height="50" rx="9"/>
+      <text x="600" y="202" text-anchor="middle" class="label" style="font-weight:600">Dead Letter Queue</text>
+      <text x="600" y="218" text-anchor="middle" class="dim" font-size="9.5px">visible, replayable backlog</text>
+    </svg>
+  </div>
+  <figcaption>The write to Monday only counts as durable once it survives this path. Cloudflare Queues shipped on the Workers Free plan in Feb 2026 &mdash; SVBC's real event volume (a few hundred Funraise transactions a month) is far under the 10,000 free operations/day, so this costs nothing extra.</figcaption>
+</figure>
+
+<h2>What's actually live today</h2>
+<p class="lede" style="margin-bottom:6px;">Built does not mean deployed. Only <span class="mono" style="font-size:0.85em">salesforce-import</span> has been run (against the CRM sandbox); everything else is merged code waiting on D1/board provisioning.</p>
+<table class="status">
+  <thead>
+    <tr><th>Worker</th><th>State</th><th>Blocking on</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="worker">salesforce-import</td><td><span class="pill pill-live">rehearsed</span></td><td>time budget for the real load/validate/cutover run</td></tr>
+    <tr><td class="worker">funraise-sync</td><td><span class="pill pill-pending">built</span></td><td>D1 provisioning, real board ids, Funraise webhooks</td></tr>
+    <tr><td class="worker">quickbooks-sync</td><td><span class="pill pill-pending">built</span></td><td>D1 provisioning, Intuit app review</td></tr>
+    <tr><td class="worker">svbc-calendars</td><td><span class="pill pill-pending">code-complete</span></td><td>KV + secrets provisioning, domain cutover</td></tr>
+    <tr><td class="worker">donor-portal</td><td><span class="pill pill-pending">code-complete</span></td><td>domain verification, dedicated integration token</td></tr>
+    <tr><td class="worker">mailchimp-sync</td><td><span class="pill pill-pending">built</span></td><td>Donors board existing, Mailchimp audience setup</td></tr>
+    <tr><td class="worker">donation-rollups</td><td><span class="pill pill-pending">built</span></td><td>D1 + board ids, live webhook subscription</td></tr>
+    <tr><td class="worker">monday-backup</td><td><span class="pill pill-pending">built</span></td><td>D1, backup integration user, Google service account</td></tr>
+    <tr><td class="worker">benevity-import</td><td><span class="pill pill-pending">built</span></td><td>D1 + board ids, two salesforce-import column changes</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Source: <span class="mono">monday-workers</span> (public, MIT) + <span class="mono">monday-migration</span> (private planning repo). All Workers deploy to SVBC's Cloudflare account via Workers Builds on merge to <span class="mono">main</span>.
+</footer>
