@@ -24,6 +24,7 @@ const config: FunraiseSyncConfig = {
     thankYouSentColumn: null,
     giftTypeColumn: null,
     giftTypeValue: 'Donation',
+    fiscalYearColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     itemNameField: {

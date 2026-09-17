@@ -57,6 +57,12 @@ export interface FunraiseSyncConfig {
     // touch it. null disables the stamp.
     giftTypeColumn: string | null;
     giftTypeValue: string;
+    // Text column on the Donations board holding the SVBC fiscal year (July–June, named for the
+    // calendar year it ends in) that the gift falls in, derived from the transaction's
+    // `createdAt` on first write only — it isn't a Funraise field, so columnMap can't map it.
+    // salesforce-import stamps the same column on every migrated gift; donation-rollups reads it
+    // and derives from Date when blank but never backfills (decision 2026-09-17). null disables it.
+    fiscalYearColumn: string | null;
     rawPayloadRetentionDays: number;
     unresolvedPayloadRetentionDays: number;
     donorExternalIdField: string;

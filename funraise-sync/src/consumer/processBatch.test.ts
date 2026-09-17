@@ -29,6 +29,7 @@ const config: FunraiseSyncConfig = {
     thankYouSentColumn: null,
     giftTypeColumn: null,
     giftTypeValue: 'Donation',
+    fiscalYearColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
@@ -402,5 +403,155 @@ describe('Gift Type stamp (membership renewal write path, spec 2026-09-15)', () 
     const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
     await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
     expect(createItem).toHaveBeenCalledWith(111, expect.any(String), expect.not.objectContaining({ gt_col: expect.anything() }));
+  });
+});
+
+describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
+  const fiscalYearConfig: FunraiseSyncConfig = {
+    ...config,
+    funraiseSync: { ...config.funraiseSync, fiscalYearColumn: 'fiscal_year_col' },
+  };
+
+  function transactionRow(createdAt: unknown, overrides: Partial<EventRow> = {}): EventRow {
+    return eventRow({
+      matchedDonorItemId: '7',
+      rawPayload: JSON.stringify({ amount: 100, createdAt, donor: { contactId: 'fr-1' } }),
+      ...overrides,
+    });
+  }
+
+  function clientForCreate(createItem: MondayClient['createItem']): MondayClient {
+    return {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem,
+      changeColumnValues: vi.fn(),
+    };
+  }
+
+  it('stamps the fiscal year (July rule) as a string when creating a Donations item', async () => {
+    const eventStore = fakeStore(transactionRow('2026-08-15T18:30:12.000Z'));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+
+    await processFunraiseQueueBatch([fakeMessage()], {
+      eventStore,
+      mondayClient: clientForCreate(createItem),
+      config: fiscalYearConfig,
+    });
+
+    expect(createItem).toHaveBeenCalledWith(
+      111,
+      expect.any(String),
+      expect.objectContaining({ fiscal_year_col: '2027' })
+    );
+  });
+
+  it('keeps a June gift in the fiscal year that ends that month', async () => {
+    const eventStore = fakeStore(transactionRow('2026-06-30T12:00:00.000Z'));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+
+    await processFunraiseQueueBatch([fakeMessage()], {
+      eventStore,
+      mondayClient: clientForCreate(createItem),
+      config: fiscalYearConfig,
+    });
+
+    expect(createItem).toHaveBeenCalledWith(
+      111,
+      expect.any(String),
+      expect.objectContaining({ fiscal_year_col: '2026' })
+    );
+  });
+
+  it('stamps the fiscal year when adopting an orphaned Donations item', async () => {
+    const eventStore = fakeStore(transactionRow('2026-08-15T18:30:12.000Z'));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'item-orphan' }),
+      createItem: vi.fn(),
+      changeColumnValues,
+    };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: fiscalYearConfig });
+
+    expect(changeColumnValues).toHaveBeenCalledWith(
+      111,
+      'item-orphan',
+      expect.objectContaining({ fiscal_year_col: '2027' })
+    );
+  });
+
+  it('never touches the fiscal year on a later update to an already-written item', async () => {
+    const eventStore = fakeStore(transactionRow('2026-08-15T18:30:12.000Z', { mondayItemId: 'item-existing' }));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem: vi.fn(), changeColumnValues };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: fiscalYearConfig });
+
+    expect(changeColumnValues).toHaveBeenCalledWith(
+      111,
+      'item-existing',
+      expect.not.objectContaining({ fiscal_year_col: expect.anything() })
+    );
+  });
+
+  it('never stamps the fiscal year for recurring gifts or registrations', async () => {
+    const eventStore = fakeStore(
+      transactionRow('2026-08-15T18:30:12.000Z', { entityType: 'pledge', entityId: 'sub-1' })
+    );
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-pledge' });
+
+    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], {
+      eventStore,
+      mondayClient: clientForCreate(createItem),
+      config: fiscalYearConfig,
+    });
+
+    expect(createItem).toHaveBeenCalledWith(
+      222,
+      expect.any(String),
+      expect.not.objectContaining({ fiscal_year_col: expect.anything() })
+    );
+  });
+
+  it('leaves the column out (and still creates) when createdAt is missing or unparseable', async () => {
+    for (const createdAt of [undefined, 'not a date']) {
+      const eventStore = fakeStore(transactionRow(createdAt));
+      const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+
+      await processFunraiseQueueBatch([fakeMessage()], {
+        eventStore,
+        mondayClient: clientForCreate(createItem),
+        config: fiscalYearConfig,
+      });
+
+      expect(createItem).toHaveBeenCalledWith(
+        111,
+        expect.any(String),
+        expect.not.objectContaining({ fiscal_year_col: expect.anything() })
+      );
+      expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith(
+        'transaction',
+        'txn-1',
+        'written',
+        expect.objectContaining({ mondayItemId: 'item-new' })
+      );
+    }
+  });
+
+  it('does nothing when fiscalYearColumn is not configured', async () => {
+    const eventStore = fakeStore(transactionRow('2026-08-15T18:30:12.000Z'));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+
+    await processFunraiseQueueBatch([fakeMessage()], {
+      eventStore,
+      mondayClient: clientForCreate(createItem),
+      config,
+    });
+
+    expect(createItem).toHaveBeenCalledWith(111, expect.any(String), {
+      numeric_col: 100,
+      connect_col: { item_ids: [7] },
+      entity_col: 'txn-1',
+    });
   });
 });

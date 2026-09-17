@@ -2,6 +2,7 @@ import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
 import type { EntityType, EventRow, FunraiseSyncConfig } from '../types';
 import { mapToMondayColumns, ENTITY_MAP_KEY } from '../mapping/fieldMap';
+import { fiscalYearEnding } from '../mapping/fiscalYear';
 import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
 import { errorMessage } from '../util/errorMessage';
@@ -24,6 +25,11 @@ export interface ProcessBatchDeps {
 }
 
 type BoardKey = keyof FunraiseSyncConfig['monday']['boards'];
+
+// The Funraise transaction field the Donations board's Date column is mapped from
+// (`columnMap.transaction.createdAt` in config/svbc.json); Fiscal Year Ending is derived from
+// the same value so the two columns can never disagree.
+const TRANSACTION_DATE_FIELD = 'createdAt';
 
 const BOARD_FOR_ENTITY: Record<EntityType, BoardKey> = {
   transaction: 'donations:live',
@@ -77,7 +83,8 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     });
   }
 
-  const { donorLinkColumn, entityIdColumn, thankYouSentColumn, giftTypeColumn, giftTypeValue } = deps.config.funraiseSync;
+  const { donorLinkColumn, entityIdColumn, thankYouSentColumn, giftTypeColumn, giftTypeValue, fiscalYearColumn } =
+    deps.config.funraiseSync;
   const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
   if (donorItemId) {
     columnValues[donorLinkColumn] = {
@@ -112,6 +119,21 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   // First write only, transactions only — same reasoning as Thank You Sent above.
   if (giftTypeColumn && entityType === 'transaction') {
     columnValues[giftTypeColumn] = giftTypeValue;
+  }
+
+  // Fiscal Year Ending is derived (SVBC's July–June year), not a Funraise field, so columnMap
+  // can't produce it; salesforce-import stamps it on every migrated gift and donation-rollups
+  // deliberately never backfills it (decision 2026-09-17, both READMEs), so the writer that
+  // creates the item owns it. Same first-write-only rule as Thank You Sent, for the same reason.
+  if (fiscalYearColumn && entityType === 'transaction') {
+    const fiscalYear = fiscalYearEnding(getPath(rawPayload, TRANSACTION_DATE_FIELD));
+    if (fiscalYear !== null) {
+      columnValues[fiscalYearColumn] = fiscalYear;
+    } else {
+      console.warn(
+        `funraise-sync consumer: transaction "${entityId}" has no parseable "${TRANSACTION_DATE_FIELD}"; leaving Fiscal Year Ending blank`
+      );
+    }
   }
 
   // The D1 update recording mondayItemId can fail after a successful create, leaving

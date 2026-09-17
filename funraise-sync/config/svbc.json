@@ -40,6 +40,7 @@
     "thankYouSentColumn": "thank_you_sent_column_id",
     "giftTypeColumn": "text_mm6j66w3",
     "giftTypeValue": "Donation",
+    "fiscalYearColumn": "fiscal_year_ending_column_id",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "donor.contactId",
