@@ -201,6 +201,10 @@ async function planMembershipWrites(
   })));
   const derived = deriveMembership({ since: baseline.since, until: baseline.until, tier: baseline.tier },
     gifts, membership, config.donationRollups.receivedStatusLabel);
+  // The rule is about gifts creating or extending terms: an owner touched only by an unrelated
+  // Donations edit (or one whose only gifts are ineligible) must not have Status rewritten or a
+  // hand-set Until cleared — Status on the calendar is the native automation's job, not ours.
+  if (derived.terms.size === 0) return { ownerValues: {}, giftWrites: [] };
   const merged = mergeWithBoard(derived.state, boardState);
   const todayISO = (deps.now ?? new Date()).toISOString().slice(0, 10);
   const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO),

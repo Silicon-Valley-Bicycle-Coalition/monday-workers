@@ -515,6 +515,17 @@ describe('membership step (spec 2026-09-15)', () => {
     expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty('ms');
   });
 
+  it('an owner with no eligible gifts: baseline is captured but nothing membership-related is written, even when the board is stale', async () => {
+    // Lifetime owner whose board still carries a Member Until (staff edit) and a Lapsed status:
+    // with no eligible gift there is nothing to do — the merge must not clear Until or flip Status.
+    const d = deps({ board: { statusLabel: 'Lapsed', tierLabel: 'Lifetime', since: '2015-01-01', until: '2027-01-01' },
+      donations: [{ ...renewalGift, dateISO: '2026-09-30' }] });
+    await d.run();
+    expect(d.baselineStore.captureIfAbsent).toHaveBeenCalledTimes(1);
+    expect(d.changeColumnValues).toHaveBeenCalledTimes(1);
+    for (const key of ['ms', 'mt', 'msince', 'muntil']) expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty(key);
+  });
+
   it('the owner write precedes the gift writes, and a failing gift write still retries the message', async () => {
     const d = deps();
     d.changeColumnValues.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('monday API: HTTP 500'));
