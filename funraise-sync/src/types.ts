@@ -51,6 +51,12 @@ export interface FunraiseSyncConfig {
     // Funraise's own transaction-time donor receipt already covers acknowledgment (migration-plan.md
     // Decisions Needed, Option 2). null disables it. Never set for recurring gifts or registrations.
     thankYouSentColumn: string | null;
+    // Text column on the Donations board stamped with giftTypeValue on a transaction's first
+    // write only — donation-rollups' membership rule only counts gifts whose Gift Type is in its
+    // eligible list (spec 2026-09-15), and staff may later reclassify a gift, so updates never
+    // touch it. null disables the stamp.
+    giftTypeColumn: string | null;
+    giftTypeValue: string;
     rawPayloadRetentionDays: number;
     unresolvedPayloadRetentionDays: number;
     donorExternalIdField: string;

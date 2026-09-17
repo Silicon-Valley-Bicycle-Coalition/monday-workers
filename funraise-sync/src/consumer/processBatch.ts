@@ -77,7 +77,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     });
   }
 
-  const { donorLinkColumn, entityIdColumn, thankYouSentColumn } = deps.config.funraiseSync;
+  const { donorLinkColumn, entityIdColumn, thankYouSentColumn, giftTypeColumn, giftTypeValue } = deps.config.funraiseSync;
   const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
   if (donorItemId) {
     columnValues[donorLinkColumn] = {
@@ -107,6 +107,11 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   // registrations aren't in scope.
   if (thankYouSentColumn && entityType === 'transaction') {
     columnValues[thankYouSentColumn] = { checked: 'true' };
+  }
+
+  // First write only, transactions only — same reasoning as Thank You Sent above.
+  if (giftTypeColumn && entityType === 'transaction') {
+    columnValues[giftTypeColumn] = giftTypeValue;
   }
 
   // The D1 update recording mondayItemId can fail after a successful create, leaving

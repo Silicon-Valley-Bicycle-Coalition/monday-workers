@@ -20,6 +20,7 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
       donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy' } }],
       receivedStatusLabel: 'Received',
       ownerColumnsByBoard: { 'b1': OWNER_COLS },
+      membership: null,
     },
   };
 }

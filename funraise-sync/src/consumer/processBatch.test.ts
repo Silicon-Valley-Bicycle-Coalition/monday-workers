@@ -27,6 +27,8 @@ const config: FunraiseSyncConfig = {
     },
     entityIdColumn: 'entity_col',
     thankYouSentColumn: null,
+    giftTypeColumn: null,
+    giftTypeValue: 'Donation',
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
@@ -353,5 +355,52 @@ describe('Thank You Sent (acknowledgment decision, Option 2)', () => {
       expect.any(String),
       expect.not.objectContaining({ thank_you_col: expect.anything() })
     );
+  });
+});
+
+describe('Gift Type stamp (membership renewal write path, spec 2026-09-15)', () => {
+  const giftTypeConfig: FunraiseSyncConfig = {
+    ...config,
+    funraiseSync: { ...config.funraiseSync, giftTypeColumn: 'gt_col', giftTypeValue: 'Donation' },
+  };
+
+  it('stamps Gift Type when creating a Donations item', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: giftTypeConfig });
+    expect(createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({ gt_col: 'Donation' }));
+  });
+
+  it('stamps Gift Type when adopting an orphaned Donations item', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'item-orphan' }), createItem: vi.fn(), changeColumnValues };
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: giftTypeConfig });
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-orphan', expect.objectContaining({ gt_col: 'Donation' }));
+  });
+
+  it('never touches Gift Type on a later update — staff may have reclassified the gift', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7', mondayItemId: 'item-existing' }));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem: vi.fn(), changeColumnValues };
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: giftTypeConfig });
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', expect.not.objectContaining({ gt_col: expect.anything() }));
+  });
+
+  it('never stamps recurring gifts or registrations', async () => {
+    const eventStore = fakeStore(eventRow({ entityType: 'pledge', entityId: 'sub-1', matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-pledge' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
+    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], { eventStore, mondayClient, config: giftTypeConfig });
+    expect(createItem).toHaveBeenCalledWith(222, expect.any(String), expect.not.objectContaining({ gt_col: expect.anything() }));
+  });
+
+  it('does nothing when giftTypeColumn is null', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
+    expect(createItem).toHaveBeenCalledWith(111, expect.any(String), expect.not.objectContaining({ gt_col: expect.anything() }));
   });
 });

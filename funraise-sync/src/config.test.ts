@@ -29,6 +29,8 @@ const validConfig = {
     },
     entityIdColumn: null,
     thankYouSentColumn: null,
+    giftTypeColumn: null,
+    giftTypeValue: 'Donation',
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
@@ -141,5 +143,24 @@ describe('validateConfig deep checks', () => {
 
   it('throws when a donor field key is an empty string', () => {
     expect(() => validateConfig(withFunraiseSync({ donorLinkColumn: '' }))).toThrow(/donorLinkColumn/);
+  });
+});
+
+describe('validateConfig — giftTypeColumn / giftTypeValue', () => {
+  it('throws when giftTypeColumn is missing', () => {
+    const { giftTypeColumn, ...funraiseSync } = validConfig.funraiseSync;
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/giftTypeColumn/);
+  });
+  it('throws when giftTypeColumn is an empty string', () => {
+    const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: '' };
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/giftTypeColumn/);
+  });
+  it('throws when giftTypeValue is empty', () => {
+    const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: 'gt_col', giftTypeValue: '' };
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/giftTypeValue/);
+  });
+  it('accepts a configured column and value', () => {
+    const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: 'gt_col', giftTypeValue: 'Donation' };
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).not.toThrow();
   });
 });

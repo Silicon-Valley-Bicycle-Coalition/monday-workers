@@ -125,6 +125,73 @@ board `18428131791`** (17 anonymous gifts and 11,231 excluded-owner gifts skippe
 matters: without a TTY, wrangler's confirm prompt silently cancels with exit 0) after any fresh
 load, since item ids change between loads.
 
+## Membership renewal write path (spec `docs/superpowers/specs/2026-09-15-membership-renewal-write-path-design.md`)
+
+Salesforce's `Create_members` flow turned every won Donation-type gift into a one-year
+membership term (and a $1,000+ gift into a Lifetime one). This Worker replicates that rule as
+one more step of the recompute: after the rollups, it folds the owner's eligible post-cutover
+gifts (Status = Received, Gift Type in `membership.eligibleGiftTypes`, date ≥
+`membership.fromISO`) into Membership Status / Tier / Member Since / Member Until on the owner's
+People item, and stamps Term Start / Term End / Membership Type on each eligible gift. Both
+writes are compare-before-write, so the gift stamp's own webhook triggers one idle recompute and
+stops. The merge with the board is **extend-only** — a staff-granted comp or Lifetime is never
+shortened or downgraded; shorten by hand if you mean to.
+
+* **Enabling — order matters.** The block is **on** in the shipped config because migration
+  0005 was applied to the CRM Sandbox database on 2026-09-17. For any other database (a fresh
+  fork, the production cutover), set `donationRollups.membership` to `null` first, then:
+  1. `CI=1 wrangler d1 migrations apply svbc-donation-rollups --remote`
+  2. set `donationRollups.membership` in `config/svbc.json` to the block below and deploy.
+  Deploying with the block set before step 1 makes every People-board recompute throw on
+  `membership_baseline`, which stops **rollups** for those owners too, not just membership.
+
+  ```json
+  "membership": {
+    "fromISO": "2026-10-01",
+    "eligibleGiftTypes": ["Donation"],
+    "termMonths": 12,
+    "lifetimeThresholdCents": 100000,
+    "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
+    "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
+    "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
+  }
+  ```
+  `fromISO` is the cutover date; set it to the real one when fixed.
+* **Gated** on `donationRollups.membership` (null = off) and on an owner board having a
+  `membership` column block; Organizations never get a term.
+* **Baseline.** `membership_baseline` (migration 0005) holds each owner's pre-feature state,
+  captured from the board on the first recompute that touches them, so New/Renewal/Reacquire
+  stays stable across re-runs. It is never updated. To re-seed one owner after correcting their
+  migrated history in the UI:
+  `wrangler d1 execute svbc-donation-rollups --remote --command "DELETE FROM membership_baseline WHERE owner_item_id='<id>'" -y`
+  — the next recompute recaptures it.
+* **Auto-lapse** stays a native board automation ("When Member Until arrives … set Membership
+  Status to Lapsed"); this Worker agrees with it by construction. `mailchimp-sync` picks up the
+  People changes through its own webhook; the donor portal reads the same columns.
+* **Funraise gifts** qualify only because `funraise-sync` stamps Gift Type = Donation on the
+  items it creates (see that README) and only once its Date column transform lands — a gift
+  with an empty Date never starts a term.
+* Not replicated: Salesforce's inconsistent Lifetime firing, and the Matching Donation terms
+  staff created by cloning gifts. Add `"Matching Donation"` to `eligibleGiftTypes` if that
+  practice should continue.
+* **Recurring donors:** every recurring charge is a Received Donation, so a monthly donor
+  accrues a term per charge, as in Salesforce; their Member Until is always about a year past
+  the latest charge.
+* **Expiry-day boundary:** the Worker counts Member Until = today as Active; the native
+  automation lapses on that day. A recompute on the expiry date can flip Lapsed back to Active
+  for that one day. The Worker's "today" is UTC, the automation's is the account timezone.
+* **Lifetime Term End:** post-cutover Lifetime gifts have a blank Term End; migrated Lifetime
+  history carries 2122-01-01. Sorting "Membership payments" by Term End mixes the two.
+* **Refunds:** a gift flipped to Failed drops out of the fold but keeps its stamped term columns,
+  and the owner keeps their Until — same as Salesforce. Shorten by hand if intended.
+* **Concurrent gifts:** two gifts for one owner recomputing at once can each write a merge of
+  what it read; the later writer wins and the stamped gifts' webhooks re-converge on the next
+  pass. Not atomic.
+* **Baseline with Since but no Until:** treated as Renewal, matching the Salesforce formula
+  (a null end date is not "before today").
+* Qualify the "idle recompute" sentence above: the recompute still performs the owner rollup and
+  description writes; only the membership keys and gift stamps are compared away.
+
 ## Ledger v2 + the custodian (docs/20 §5.1/§5.3)
 
 D1 is the **authoritative gift ledger**, not just a reverse index: `gifts` (one row per gift —
@@ -216,6 +283,10 @@ sandbox gets rebuilt before cutover:
   Count, First Gift, This/Last Year amount+count, Largest/Smallest/Average, Last Gift date+amount).
   A donor whose owner board isn't a key in this map fails loudly (retried via the queue), not
   silently skipped — add the board before donors can land there, don't wait for the failure.
+* `donationRollups.membership` (null = off), the per-board `membership` column ids under
+  `ownerColumnsByBoard`, and the Donations board's `termStart`/`termEnd`/`membershipType` column
+  ids together configure the membership renewal write path — see "Membership renewal write path"
+  above.
 
 ## APIs & auth
 

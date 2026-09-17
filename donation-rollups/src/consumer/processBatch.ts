@@ -1,13 +1,21 @@
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
-import type { DonationRollupsMondayClient } from '../monday/client';
-import type { DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage } from '../types';
+import type { MembershipBaselineStore } from '../db/membershipBaseline';
+import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
+import type {
+  DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
+  DonationBoardConfig, MembershipConfig, OwnerMembershipColumns,
+} from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
 } from '../projections/giftHistory';
+import {
+  deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
+  membershipColumnValues, termColumnValues, type MembershipState,
+} from '../membership/derive';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -19,6 +27,7 @@ export interface ProcessBatchDeps {
   pendingStore: PendingStore;
   linksStore: DonationLinksStore;
   giftsStore: GiftsStore;
+  baselineStore: MembershipBaselineStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
   now?: Date; // injectable for tests; defaults to the real current time
@@ -28,6 +37,12 @@ export interface ProcessBatchDeps {
 // marked failed for the operator, but the message is acked so it doesn't burn three
 // retries and land in the DLQ on every future delivery for the same owner.
 class NonRetryableError extends Error {}
+
+// A first run after enabling the membership feature, or a widened eligibleGiftTypes, can leave
+// dozens of unstamped gifts on one owner; each stamp is one Monday mutation and the Free plan's
+// subrequest cap is 50 per invocation. The design converges (spec "Writes and idempotency"), so
+// stamp the first N per recompute and let the stamped gifts' own webhooks recompute and continue.
+const MAX_GIFT_TERM_WRITES_PER_RECOMPUTE = 10;
 
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
@@ -98,8 +113,8 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
   const perBoard = await Promise.all(donationBoards
     .filter((b) => linksByBoard.has(String(b.boardId)))
-    .map((b) => mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns)));
-  const donations = perBoard.flat();
+    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns) })));
+  const donations = perBoard.flatMap((p) => p.items);
 
   // Ledger v2 (docs/20 §5.1): every recompute re-asserts the webhook-visible facts of every
   // gift it just read, so the gifts table self-heals from the same fetch the rollup uses —
@@ -115,6 +130,19 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
 
   const thisFY = currentFiscalYear(deps.now ?? new Date());
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
+
+  // Membership renewal write path (spec 2026-09-15): only for owners on a board with the four
+  // membership columns, and only when the feature block is configured. Organizations and a
+  // null block both skip silently — neither is a fault.
+  const membership = config.donationRollups.membership;
+  const membershipColumns = ownerColumns.membership;
+  let membershipValues: Record<string, unknown> = {};
+  const giftTermWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
+  if (membership !== null && membershipColumns !== undefined) {
+    const step = await planMembershipWrites(deps, ownerItemId, ownerBoardId, membershipColumns, membership, perBoard);
+    membershipValues = step.ownerValues;
+    giftTermWrites.push(...step.giftWrites);
+  }
 
   // Gift-history projections (docs/20 §5.5) ride the same write: the JSON column goes into
   // the one change_multiple_column_values call, the markdown description is its own call.
@@ -133,9 +161,16 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   const columnValues = {
     ...rollupToColumnValues(rollup, ownerColumns),
     [ownerColumns.giftLedgerJson]: ledgerProjection.json,
+    ...membershipValues,
   };
 
   await mondayClient.changeColumnValues(Number(ownerBoardId), ownerItemId, columnValues);
+  // Gift term columns, owner first (spec §"Writes and idempotency"): if one of these fails the
+  // owner is already right and the retry re-derives the missing stamps. Each write fires this
+  // Worker's own webhook; the resulting recompute finds nothing changed and writes nothing.
+  for (const w of giftTermWrites) {
+    await mondayClient.changeColumnValues(w.boardId, w.itemId, w.values);
+  }
   try {
     await mondayClient.setItemDescription(ownerItemId,
       buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl));
@@ -151,6 +186,58 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
   });
+}
+
+async function planMembershipWrites(
+  deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string,
+  columns: OwnerMembershipColumns, membership: MembershipConfig,
+  perBoard: { board: DonationBoardConfig; items: DonationRecord[] }[],
+): Promise<{ ownerValues: Record<string, unknown>; giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] }> {
+  const { mondayClient, baselineStore, config } = deps;
+  const board = await mondayClient.getOwnerMembership(ownerItemId, columns);
+  const boardState: MembershipState = { since: board.since, until: board.until, tier: tierFromLabel(board.tierLabel, membership) };
+
+  // Captured before this Worker's first membership write to the owner — by construction,
+  // since the capture happens on the same recompute that would make that write.
+  const baseline = (await baselineStore.get(ownerItemId))
+    ?? (await baselineStore.captureIfAbsent({ ownerItemId, ownerBoardId, ...boardState, capturedAt: new Date().toISOString() }));
+
+  const gifts = perBoard.flatMap((p) => p.items.map((d) => ({
+    id: d.id, dateISO: d.dateISO, amountCents: Math.round(d.amount * 100), status: d.status, giftType: d.giftType ?? null,
+  })));
+  const derived = deriveMembership({ since: baseline.since, until: baseline.until, tier: baseline.tier },
+    gifts, membership, config.donationRollups.receivedStatusLabel);
+  // The rule is about gifts creating or extending terms: an owner touched only by an unrelated
+  // Donations edit (or one whose only gifts are ineligible) must not have Status rewritten or a
+  // hand-set Until cleared — Status on the calendar is the native automation's job, not ours.
+  if (derived.terms.size === 0) return { ownerValues: {}, giftWrites: [] };
+  const merged = mergeWithBoard(derived.state, boardState);
+  const todayISO = (deps.now ?? new Date()).toISOString().slice(0, 10);
+  const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO),
+    { ...boardState, statusLabel: board.statusLabel }, columns, membership);
+
+  // Fold order — sort by dateISO then id, same comparator deriveMembership uses — so a capped
+  // batch always stamps the oldest gifts first, matching the order the state was folded in.
+  const candidates = perBoard.flatMap(({ board: b, items }) => {
+    const cols = b.columns;
+    if (!cols.termStart || !cols.termEnd || !cols.membershipType) return []; // validated present when membership is on
+    return items.map((d) => ({ board: b, d, cols: { termStart: cols.termStart!, termEnd: cols.termEnd!, membershipType: cols.membershipType! } }));
+  }).sort((a, b) => (a.d.dateISO < b.d.dateISO ? -1 : a.d.dateISO > b.d.dateISO ? 1
+    : a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0));
+
+  const giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
+  for (const { board: b, d, cols } of candidates) {
+    const values = termColumnValues(derived.terms.get(d.id),
+      { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null },
+      cols, membership);
+    if (Object.keys(values).length > 0) giftWrites.push({ boardId: b.boardId, itemId: d.id, values });
+  }
+  if (giftWrites.length > MAX_GIFT_TERM_WRITES_PER_RECOMPUTE) {
+    const remaining = giftWrites.length - MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
+    console.log(`donation-rollups: owner ${ownerItemId} has ${remaining} more gift term stamps pending; continuing on the next recompute`);
+    giftWrites.length = MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
+  }
+  return { ownerValues, giftWrites };
 }
 
 // Same alerting path as the custodian's failed duties (custodian/custodian.ts alert()):

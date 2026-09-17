@@ -14,7 +14,10 @@
           "date": "date_mm6jthpq",
           "status": "color_mm6jqdhn",
           "fiscalYear": "numeric_mm6jm0g4",
-          "giftType": "text_mm6j66w3"
+          "giftType": "text_mm6j66w3",
+          "termStart": "date_mm6jyeva",
+          "termEnd": "date_mm6jnna5",
+          "membershipType": "text_mm6jas1b"
         }
       }
     ],
@@ -32,7 +35,13 @@
         "smallestGift": "numeric_mm6r4bp",
         "averageGift": "numeric_mm6r24vk",
         "lastGiftDate": "date_mm6rm3t",
-        "lastGiftAmount": "numeric_mm6rtf0e"
+        "lastGiftAmount": "numeric_mm6rtf0e",
+        "membership": {
+          "status": "color_mm6jbkns",
+          "tier": "color_mm6jhs7g",
+          "since": "date_mm6jv5gt",
+          "until": "date_mm6jq0va"
+        }
       },
       "18428131744": {
         "giftLedgerJson": "text_mm6r2dnp",
@@ -47,7 +56,13 @@
         "smallestGift": "numeric_mm6rmwn5",
         "averageGift": "numeric_mm6rmqtn",
         "lastGiftDate": "date_mm6rt5fm",
-        "lastGiftAmount": "numeric_mm6rh3pw"
+        "lastGiftAmount": "numeric_mm6rh3pw",
+        "membership": {
+          "status": "color_mm6j5hbd",
+          "tier": "color_mm6jfgr9",
+          "since": "date_mm6j6p7b",
+          "until": "date_mm6jpvx8"
+        }
       },
       "18428131727": {
         "giftLedgerJson": "text_mm6r9q6m",
@@ -64,6 +79,15 @@
         "lastGiftDate": "date_mm6rkf7c",
         "lastGiftAmount": "numeric_mm6rckjb"
       }
+    },
+    "membership": {
+      "fromISO": "2026-10-01",
+      "eligibleGiftTypes": ["Donation"],
+      "termMonths": 12,
+      "lifetimeThresholdCents": 100000,
+      "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
+      "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
+      "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
     }
   },
   "custodian": {
