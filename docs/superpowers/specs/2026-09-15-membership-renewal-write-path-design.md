@@ -319,8 +319,8 @@ are filled in at cutover, same as every other id in this file.
   The alert path (`custodian.alertItemId`) already covers DLQ'd donors.
 * Baseline capture failure (D1 error) is thrown before any write, so the recompute retries whole;
   a partial state cannot be persisted.
-* A gift with an unparseable or empty date is not eligible and is logged at `warn` once per
-  recompute, never thrown — the rollup write must still land.
+* A gift with an empty or unparseable Date is dropped by the client read (`getDonationsByIds`)
+  before the membership step sees it, exactly as for rollups; no separate log.
 * The Organizations skip and the "already Lifetime" skip are silent: neither is a fault.
 
 ## Testing

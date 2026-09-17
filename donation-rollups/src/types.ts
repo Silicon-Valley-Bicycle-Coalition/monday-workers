@@ -70,8 +70,6 @@ export interface OwnerColumns {
   averageGift: string;
   lastGiftDate: string;
   lastGiftAmount: string;
-  // The four membership columns on a People-type owner board. Absent on Organizations: an
-  // owner whose board has no entry never gets a membership write (spec "The rule").
   membership?: OwnerMembershipColumns;
 }
 

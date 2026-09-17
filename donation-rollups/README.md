@@ -173,6 +173,23 @@ shortened or downgraded; shorten by hand if you mean to.
 * Not replicated: Salesforce's inconsistent Lifetime firing, and the Matching Donation terms
   staff created by cloning gifts. Add `"Matching Donation"` to `eligibleGiftTypes` if that
   practice should continue.
+* **Recurring donors:** every recurring charge is a Received Donation, so a monthly donor
+  accrues a term per charge, as in Salesforce; their Member Until is always about a year past
+  the latest charge.
+* **Expiry-day boundary:** the Worker counts Member Until = today as Active; the native
+  automation lapses on that day. A recompute on the expiry date can flip Lapsed back to Active
+  for that one day. The Worker's "today" is UTC, the automation's is the account timezone.
+* **Lifetime Term End:** post-cutover Lifetime gifts have a blank Term End; migrated Lifetime
+  history carries 2122-01-01. Sorting "Membership payments" by Term End mixes the two.
+* **Refunds:** a gift flipped to Failed drops out of the fold but keeps its stamped term columns,
+  and the owner keeps their Until — same as Salesforce. Shorten by hand if intended.
+* **Concurrent gifts:** two gifts for one owner recomputing at once can each write a merge of
+  what it read; the later writer wins and the stamped gifts' webhooks re-converge on the next
+  pass. Not atomic.
+* **Baseline with Since but no Until:** treated as Renewal, matching the Salesforce formula
+  (a null end date is not "before today").
+* Qualify the "idle recompute" sentence above: the recompute still performs the owner rollup and
+  description writes; only the membership keys and gift stamps are compared away.
 
 ## Ledger v2 + the custodian (docs/20 §5.1/§5.3)
 
@@ -265,6 +282,10 @@ sandbox gets rebuilt before cutover:
   Count, First Gift, This/Last Year amount+count, Largest/Smallest/Average, Last Gift date+amount).
   A donor whose owner board isn't a key in this map fails loudly (retried via the queue), not
   silently skipped — add the board before donors can land there, don't wait for the failure.
+* `donationRollups.membership` (null = off), the per-board `membership` column ids under
+  `ownerColumnsByBoard`, and the Donations board's `termStart`/`termEnd`/`membershipType` column
+  ids together configure the membership renewal write path — see "Membership renewal write path"
+  above.
 
 ## APIs & auth
 
