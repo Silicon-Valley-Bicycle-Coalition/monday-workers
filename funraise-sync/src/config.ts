@@ -18,6 +18,15 @@ const REQUIRED_FUNRAISE_SYNC_KEYS = [
 
 const REQUIRED_COLUMN_MAP_KEYS = ['transaction', 'recurringGift', 'registration'] as const;
 
+// Column ids the consumer stamps itself (not via columnMap). Each must be present so a fork
+// opts out deliberately with null rather than by forgetting the key.
+const NULLABLE_COLUMN_KEYS = {
+  entityIdColumn: 'orphan recovery',
+  thankYouSentColumn: 'the Thank You Sent stamp',
+  giftTypeColumn: 'the Gift Type stamp',
+  fiscalYearColumn: 'the Fiscal Year Ending stamp',
+} as const;
+
 export function validateConfig(raw: unknown): FunraiseSyncConfig {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -118,33 +127,18 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     throw new Error('config: "funraiseSync.doNotMigrateFields" must be an array of field paths');
   }
 
-  if (
-    !('entityIdColumn' in funraiseSync) ||
-    (funraiseSync.entityIdColumn !== null &&
-      (typeof funraiseSync.entityIdColumn !== 'string' || funraiseSync.entityIdColumn === ''))
-  ) {
-    throw new Error('config: "funraiseSync.entityIdColumn" must be a Monday column id string, or null to disable orphan recovery');
+  // Optional derived-column ids: a Monday column id string, or an explicit null to disable.
+  for (const [key, purpose] of Object.entries(NULLABLE_COLUMN_KEYS)) {
+    const value = funraiseSync[key];
+    if (!(key in funraiseSync) || (value !== null && (typeof value !== 'string' || value === ''))) {
+      throw new Error(`config: "funraiseSync.${key}" must be a Monday column id string, or null to disable ${purpose}`);
+    }
   }
 
   if (
-    !('thankYouSentColumn' in funraiseSync) ||
-    (funraiseSync.thankYouSentColumn !== null &&
-      (typeof funraiseSync.thankYouSentColumn !== 'string' || funraiseSync.thankYouSentColumn === ''))
+    funraiseSync.giftTypeColumn !== null &&
+    (typeof funraiseSync.giftTypeValue !== 'string' || funraiseSync.giftTypeValue === '')
   ) {
-    throw new Error(
-      'config: "funraiseSync.thankYouSentColumn" must be a Monday column id string, or null to disable'
-    );
-  }
-
-  if (
-    !('giftTypeColumn' in funraiseSync) ||
-    (funraiseSync.giftTypeColumn !== null &&
-      (typeof funraiseSync.giftTypeColumn !== 'string' || funraiseSync.giftTypeColumn === ''))
-  ) {
-    throw new Error('config: "funraiseSync.giftTypeColumn" must be a Monday column id string, or null to disable');
-  }
-  if (funraiseSync.giftTypeColumn !== null
-    && (typeof funraiseSync.giftTypeValue !== 'string' || funraiseSync.giftTypeValue === '')) {
     throw new Error('config: "funraiseSync.giftTypeValue" must be a non-empty Gift Type label when giftTypeColumn is set');
   }
 

@@ -268,17 +268,18 @@ falls back to `fiscalYearFromDate(Date)` whenever the column is unconfigured *or
 blank/whitespace — checked as text, the same way Amount is, because `Number('')` is `0` and a
 gift bucketed into fiscal year 0 silently vanished from This Year / Last Year (observed live on
 the CRM Sandbox 2026-09-17: a hand-created gift with no Fiscal Year cell wrote This Year Amount
-$0 on its donor). This matters post-cutover, not just for hand entry: `funraise-sync` doesn't set
-the column on create, so every Funraise gift would have hit it.
+$0 on its donor). This mattered post-cutover, not just for hand entry: until `funraise-sync`
+stamped the column on create (same day), every Funraise gift would have hit it.
 
 **Decision (2026-09-17): this Worker does not backfill the column.** Deriving from Date is
 enough for correct rollups, and writing back to the Donations board it subscribes to would mean
 a write-scoped token plus a `change_column_value` webhook re-triggered by our own write on every
 new gift. The column exists for staff (board views/filters grouped by fiscal year, and the
 `Fiscal Year Ending` grouping `salesforce-import` already stamps on every migrated gift), so
-**the writer that creates the item should stamp it** — `funraise-sync` on create, from the
-donation date with the same July rule (see its README, "Field mapping"). Until it does, Funraise
-gifts roll up correctly but show a blank Fiscal Year Ending on the board.
+**the writer that creates the item should stamp it** — `funraise-sync` does, on create, from the
+transaction's `createdAt` with the same July rule (see its README, "Field mapping"). Hand-entered
+gifts, and any Funraise gift whose `createdAt` couldn't be parsed, roll up correctly via this
+fallback but show a blank Fiscal Year Ending on the board.
 
 ## Config
 

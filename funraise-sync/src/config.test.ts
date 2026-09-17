@@ -31,6 +31,7 @@ const validConfig = {
     thankYouSentColumn: null,
     giftTypeColumn: null,
     giftTypeValue: 'Donation',
+    fiscalYearColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'donor.contactId',
@@ -162,5 +163,32 @@ describe('validateConfig — giftTypeColumn / giftTypeValue', () => {
   it('accepts a configured column and value', () => {
     const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: 'gt_col', giftTypeValue: 'Donation' };
     expect(() => validateConfig({ ...validConfig, funraiseSync })).not.toThrow();
+  });
+});
+
+describe('validateConfig fiscalYearColumn', () => {
+  function withFunraiseSync(patch: Record<string, unknown>) {
+    return { ...validConfig, funraiseSync: { ...validConfig.funraiseSync, ...patch } };
+  }
+
+  it('throws when fiscalYearColumn is missing', () => {
+    const { fiscalYearColumn, ...funraiseSync } = validConfig.funraiseSync;
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/fiscalYearColumn/);
+  });
+
+  it('throws when fiscalYearColumn is an empty string', () => {
+    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: '' }))).toThrow(/fiscalYearColumn/);
+  });
+
+  it('throws when fiscalYearColumn is not a string', () => {
+    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: 2027 }))).toThrow(/fiscalYearColumn/);
+  });
+
+  it('accepts null (board has no Fiscal Year Ending column)', () => {
+    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: null }))).not.toThrow();
+  });
+
+  it('accepts a configured fiscalYearColumn', () => {
+    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: 'fiscal_year_col' }))).not.toThrow();
   });
 });

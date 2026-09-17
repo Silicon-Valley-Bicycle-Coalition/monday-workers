@@ -104,16 +104,25 @@ fields collapse to one** with precedence `npe01__Preferred_Email__c` → `Primar
 `Email`; **payment-method fields (last four, expiration) are PII and must never be written to
 Monday**.
 
-**Open: stamp `Fiscal Year Ending` on create.** The Donations board has a text `Fiscal Year
-Ending` column that `salesforce-import` writes on every migrated gift (SVBC's July–June fiscal
-year, so a 2026-08-15 gift is FY 2027). `columnMap.transaction` doesn't map it — it's a derived
-value, not a Funraise field, so `mapToMondayColumns` can't produce it from config alone. Decided
-2026-09-17 (see `donation-rollups`'s README, "Fiscal year, not calendar year"): `donation-rollups`
-now treats a blank cell as missing and derives the year from Date, so rollups are correct either
-way, and it will *not* backfill the column. The writer that creates the item should stamp it, so
-this Worker owes a small derived-column step on the transaction create path (fiscal year from
-`createdAt`, same July rule) once the column ids in `config/svbc.json` are wired to the real
-board. Until then Funraise gifts show a blank Fiscal Year Ending in board views grouped by year.
+**`Fiscal Year Ending` is stamped on create (derived, not mapped).** The Donations board has a
+text `Fiscal Year Ending` column that `salesforce-import` writes on every migrated gift (SVBC's
+July–June fiscal year, named for the year it ends in, so a 2026-08-15 gift is FY 2027 and a
+2026-06-30 gift is FY 2026). It isn't a Funraise field, so `columnMap.transaction` can't map it;
+instead the consumer derives it from the transaction's `createdAt` — the same value
+`columnMap.transaction.createdAt` writes to the Date column, so the two never disagree — with
+`fiscalYearEnding()` in `src/mapping/fiscalYear.ts` (same July rule as `salesforce-import`'s
+`fiscalYear()` and `donation-rollups`' `fiscalYearFromDate`) and writes it as a string to
+`funraiseSync.fiscalYearColumn`. Decided 2026-09-17 (see `donation-rollups`'s README, "Fiscal
+year, not calendar year"): `donation-rollups` treats a blank cell as missing and derives from
+Date, but will *not* backfill the column, so the writer that creates the item owns it. Rules,
+matching `Thank You Sent`: transactions only (never recurring gifts or registrations); first
+write only, including adoption of an orphaned item, never a later update that could clobber a
+staff correction; a missing or unparseable `createdAt` logs a warning and leaves the cell blank
+rather than failing the write (rollups still derive from Date). Set `fiscalYearColumn` to `null`
+for a board without the column. Like the other column ids in `config/svbc.json`, the shipped
+value is a placeholder until the ids are wired to the real board. Known edge: the year is read
+from the UTC date in `createdAt`, the same way the Date column is read, so a gift made between
+5 pm and midnight Pacific on June 30 lands in the new fiscal year on both columns.
 
 ## Acknowledgment / receipting
 
