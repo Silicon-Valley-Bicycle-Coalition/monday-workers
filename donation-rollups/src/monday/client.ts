@@ -162,7 +162,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
         // A blank Amount must be treated as malformed like a blank Date — Number('') is 0,
         // not NaN, and letting it through would refresh the ledger's real (bootstrap-loaded)
-        // amount down to $0 on the next recompute (refreshFacts upserts unconditionally).
+        // amount down to $0 on the next recompute (refreshFacts would see a changed amount and write it).
         const amountText = (byId.get(columns.amount) ?? '').trim();
         const amount = Number(amountText);
         const dateISO = byId.get(columns.date) ?? '';
