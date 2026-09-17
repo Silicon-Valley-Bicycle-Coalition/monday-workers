@@ -30,9 +30,9 @@ export function currentFiscalYear(now: Date): number {
 }
 
 // Same rule, applied to a plain "YYYY-MM-DD" date rather than "now" — used when a
-// Donations board doesn't have its own Fiscal Year column yet (confirmed missing on
-// every board in the CRM Sandbox as of 2026-08-24) so this Worker isn't hard-blocked
-// on that column existing everywhere before it can compute This/Last Year splits.
+// Donations board has no Fiscal Year Ending column configured, or the cell is blank
+// (hand-entered gifts, or gifts stamped into a column config no longer points at), so
+// this Worker isn't hard-blocked on that column before it can compute This/Last Year.
 export function fiscalYearFromDate(dateISO: string): number {
   const [y, m] = dateISO.slice(0, 10).split('-').map(Number);
   return (m ?? 0) >= 7 ? (y ?? 0) + 1 : (y ?? 0);
