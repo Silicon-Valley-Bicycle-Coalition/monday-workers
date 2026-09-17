@@ -137,6 +137,25 @@ writes are compare-before-write, so the gift stamp's own webhook triggers one id
 stops. The merge with the board is **extend-only** — a staff-granted comp or Lifetime is never
 shortened or downgraded; shorten by hand if you mean to.
 
+* **Enabling — order matters.** The shipped config has `membership: null`, so a deploy is safe
+  at any time. Turn the feature on only after the baseline table exists:
+  1. `wrangler d1 migrations apply svbc-donation-rollups --remote`
+  2. set `donationRollups.membership` in `config/svbc.json` to the block below and deploy.
+  Deploying with the block set before step 1 makes every People-board recompute throw on
+  `membership_baseline`, which stops **rollups** for those owners too, not just membership.
+
+  ```json
+  "membership": {
+    "fromISO": "2026-10-01",
+    "eligibleGiftTypes": ["Donation"],
+    "termMonths": 12,
+    "lifetimeThresholdCents": 100000,
+    "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
+    "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
+    "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
+  }
+  ```
+  `fromISO` is the cutover date; set it to the real one when fixed.
 * **Gated** on `donationRollups.membership` (null = off) and on an owner board having a
   `membership` column block; Organizations never get a term.
 * **Baseline.** `membership_baseline` (migration 0005) holds each owner's pre-feature state,

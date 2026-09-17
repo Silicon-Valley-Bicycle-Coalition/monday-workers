@@ -31,6 +31,14 @@ const base = {
   },
 };
 
+// The block the README tells the operator to paste in AFTER migration 0005 is applied.
+const documentedMembershipBlock = {
+  fromISO: '2026-10-01', eligibleGiftTypes: ['Donation'], termMonths: 12, lifetimeThresholdCents: 100000,
+  statusLabels: { active: 'Active', lapsed: 'Lapsed' },
+  tierLabels: { member: 'Member', lifetime: 'Lifetime' },
+  typeLabels: { new: 'New', renewal: 'Renewal', reacquire: 'Reacquire', lifetime: 'Lifetime' },
+};
+
 describe('validateConfig — membership block', () => {
   it('accepts a full membership config and passes it through', () => {
     const cfg = validateConfig(base);
@@ -83,7 +91,12 @@ describe('validateConfig — membership block', () => {
     expect(() => validateConfig(bad)).toThrow(/membership\.until/);
   });
 
-  it('the shipped config/svbc.json validates with membership on', () => {
-    expect(validateConfig(rawConfig).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
+  it('the shipped config/svbc.json validates with membership OFF (deploy is safe before migration 0005)', () => {
+    expect(validateConfig(rawConfig).donationRollups.membership).toBeNull();
+  });
+
+  it('the shipped config validates with the documented membership block switched on', () => {
+    const enabled = { ...rawConfig, donationRollups: { ...rawConfig.donationRollups, membership: documentedMembershipBlock } };
+    expect(validateConfig(enabled).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
   });
 });

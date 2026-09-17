@@ -80,15 +80,7 @@
         "lastGiftAmount": "numeric_mm6rckjb"
       }
     },
-    "membership": {
-      "fromISO": "2026-10-01",
-      "eligibleGiftTypes": ["Donation"],
-      "termMonths": 12,
-      "lifetimeThresholdCents": 100000,
-      "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
-      "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
-      "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
-    }
+    "membership": null
   },
   "custodian": {
     "activeFiscalYears": 2,
