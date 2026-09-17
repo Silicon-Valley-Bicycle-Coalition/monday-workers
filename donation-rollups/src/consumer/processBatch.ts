@@ -118,8 +118,10 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
 
   // Ledger v2 (docs/20 §5.1): every recompute re-asserts the webhook-visible facts of every
   // gift it just read, so the gifts table self-heals from the same fetch the rollup uses —
-  // a missed webhook can't leave the ledger stale past this owner's next recompute.
-  await deps.giftsStore.refreshFacts(
+  // a missed webhook can't leave the ledger stale past this owner's next recompute. The store
+  // diffs before writing, so an owner whose history is already right costs no D1 rows written
+  // (the 09-03/09-09 floods rewrote big owners' whole histories dozens of times each).
+  const refreshed = await deps.giftsStore.refreshFacts(
     donations.map((d) => ({
       mondayItemId: d.id, ownerItemId, ownerBoardId,
       amountCents: Math.round(d.amount * 100),
@@ -127,6 +129,9 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
       giftType: d.giftType ?? null,
     })),
     'webhook', new Date().toISOString());
+  if (refreshed.changed > 0) {
+    console.log(`donation-rollups consumer: owner ${ownerItemId}: ${refreshed.changed} of ${donations.length} gift facts changed`);
+  }
 
   const thisFY = currentFiscalYear(deps.now ?? new Date());
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);

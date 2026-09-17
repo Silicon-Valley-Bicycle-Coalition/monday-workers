@@ -30,8 +30,11 @@ export interface CustodianRun {
 export interface GiftsStore {
   // Recompute-path refresh: re-asserts the webhook-visible facts of a gift while PRESERVING
   // bootstrap-only provenance (gift_type / funraise_id / sf_id) and archived_at, which the
-  // webhook path can't see.
-  refreshFacts(rows: GiftFact[], source: string, now: string): Promise<void>;
+  // webhook path can't see. Diff-only: reads the stored facts first and writes only the gifts
+  // whose facts differ (or are new), so re-asserting an unchanged history costs reads, not
+  // rows written — D1's Free-tier daily row-write cap is what stalled the consumer on
+  // 2026-09-03 and 09-09 (README "operational findings"). Returns how many rows it wrote.
+  refreshFacts(rows: GiftFact[], source: string, now: string): Promise<{ changed: number }>;
   // Full gift history for one owner, deep-link board ids joined in — the projections' source.
   giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
   // Records which Monday item on the Annual Giving Summary board represents a fiscal year.
@@ -55,13 +58,54 @@ export interface GiftsStore {
 }
 
 const CHUNK = 50;
+// D1 caps bound parameters at 100 per statement — the diff read binds one id each.
+const READ_CHUNK = 100;
+
+interface StoredFacts {
+  monday_item_id: string;
+  owner_item_id: string;
+  owner_board_id: string;
+  amount_cents: number;
+  gift_date: string;
+  fiscal_year: number;
+  status: string;
+  gift_type: string | null;
+}
+
+// A gift needs writing when it's new or any webhook-visible fact differs. giftType is the one
+// field the webhook path may not know: null/undefined means "leave stored", so only a present,
+// different value counts (mirrors the COALESCE in the upsert below).
+function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
+  if (stored === undefined) return true;
+  return stored.owner_item_id !== g.ownerItemId
+    || stored.owner_board_id !== g.ownerBoardId
+    || stored.amount_cents !== g.amountCents
+    || stored.gift_date !== g.giftDateISO
+    || stored.fiscal_year !== g.fiscalYear
+    || stored.status !== g.status
+    || (g.giftType != null && g.giftType !== stored.gift_type);
+}
 
 export class D1GiftsStore implements GiftsStore {
   constructor(private db: D1Database) {}
 
-  async refreshFacts(rows: GiftFact[], source: string, now: string): Promise<void> {
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const chunk = rows.slice(i, i + CHUNK);
+  async refreshFacts(rows: GiftFact[], source: string, now: string): Promise<{ changed: number }> {
+    const stored = new Map<string, StoredFacts>();
+    for (let i = 0; i < rows.length; i += READ_CHUNK) {
+      const ids = rows.slice(i, i + READ_CHUNK).map((g) => g.mondayItemId);
+      const res = await this.db
+        .prepare(
+          `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type
+           FROM gifts WHERE monday_item_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`,
+        )
+        .bind(...ids)
+        .all<StoredFacts>();
+      for (const r of res.results) stored.set(r.monday_item_id, r);
+    }
+    const changed = rows.filter((g) => factsDiffer(stored.get(g.mondayItemId), g));
+
+    for (let i = 0; i < changed.length; i += CHUNK) {
+      const chunk = changed.slice(i, i + CHUNK);
       await this.db.batch(chunk.map((g) => this.db
         .prepare(
           `INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents,
@@ -81,6 +125,7 @@ export class D1GiftsStore implements GiftsStore {
         .bind(g.mondayItemId, g.ownerItemId, g.ownerBoardId, g.amountCents,
           g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null, source, now)));
     }
+    return { changed: changed.length };
   }
 
   async giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]> {

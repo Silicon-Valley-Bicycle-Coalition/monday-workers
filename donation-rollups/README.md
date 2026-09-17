@@ -94,9 +94,12 @@ backfill) would silently lose recomputes the same way.
 1. **Workers Paid ($5/mo) is the decisive fix** and is already on the infrastructure wishlist for
    `funraise-sync`/`quickbooks-sync`: D1 goes to 50M rows written/day, CPU to 30 s, subrequests
    to 1,000/invocation. Everything below is hardening that is worth doing regardless.
-2. **Stop rewriting unchanged gifts.** `refreshFacts` should compare against the rows
-   `giftsForOwner` already reads on the same recompute and upsert only gifts whose facts changed
-   — turns O(gifts) writes per recompute into O(changed gifts), which for a flood is ~1.
+2. ~~**Stop rewriting unchanged gifts.**~~ **Done (branch `fix/rollups-diff-only-refresh-facts`):**
+   `refreshFacts` now reads the stored facts for the gifts it was handed (one `IN (…)` query per
+   100 ids) and upserts only the new or changed ones, returning `{ changed }`; the consumer logs
+   "N of M gift facts changed" when N > 0. A recompute of an owner whose history is already
+   right costs reads, not rows written — O(changed gifts) instead of O(gifts). An absent
+   `giftType` still means "keep stored" and is not a change.
 3. **Coalesce redundant recomputes per owner.** Record `owner_recomputed_at` (on
    `donation_links` or a small owners table) when a recompute lands; when a message resolves to
    an owner whose last recompute completed after the pending row's `received_at`, mark the row

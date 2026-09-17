@@ -30,6 +30,50 @@ describe('D1GiftsStore', () => {
     expect(row).toEqual({ amount_cents: 2000, gift_type: 'Membership', sf_id: '006x', archived_at: '2026-01-02T00:00:00Z' });
   });
 
+  // Diff-only refresh (README "operational findings, 2026-09-17", fix 2): a recompute
+  // re-asserts every gift of its owner, and a bulk edit recomputes a big owner once per
+  // donation — writing every gift every time is what pushed D1 past the Free-tier daily
+  // row-write cap on 09-03 and 09-09. Unchanged facts must cost zero writes.
+  it('refreshFacts leaves a gift whose facts are unchanged untouched — no write, updated_at kept', async () => {
+    const store = new D1GiftsStore(env.DB);
+    const g = gift({ mondayItemId: 'g-same' });
+    await store.refreshFacts([g], 'webhook', '2026-01-01T00:00:00Z');
+
+    const result = await store.refreshFacts([g], 'webhook', '2026-01-02T00:00:00Z');
+
+    expect(result).toEqual({ changed: 0 });
+    const row = await env.DB.prepare(`SELECT updated_at FROM gifts WHERE monday_item_id='g-same'`).first();
+    expect(row).toEqual({ updated_at: '2026-01-01T00:00:00Z' });
+  });
+
+  it('refreshFacts writes only the gifts whose facts changed', async () => {
+    const store = new D1GiftsStore(env.DB);
+    const a = gift({ mondayItemId: 'g-a', amountCents: 100 });
+    const b = gift({ mondayItemId: 'g-b', amountCents: 200 });
+    await store.refreshFacts([a, b], 'webhook', '2026-01-01T00:00:00Z');
+
+    const result = await store.refreshFacts([{ ...a, status: 'Failed' }, b], 'webhook', '2026-01-02T00:00:00Z');
+
+    expect(result).toEqual({ changed: 1 });
+    const rows = await env.DB.prepare(`SELECT monday_item_id, status, updated_at FROM gifts ORDER BY monday_item_id`).all();
+    expect(rows.results).toEqual([
+      { monday_item_id: 'g-a', status: 'Failed', updated_at: '2026-01-02T00:00:00Z' },
+      { monday_item_id: 'g-b', status: 'Received', updated_at: '2026-01-01T00:00:00Z' },
+    ]);
+  });
+
+  it('refreshFacts treats an absent giftType as "keep stored" — not a change — but a different one as a change', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([gift({ mondayItemId: 'g-type', giftType: 'Membership' })], 'import', '2026-01-01T00:00:00Z');
+
+    expect(await store.refreshFacts([gift({ mondayItemId: 'g-type' })], 'webhook', '2026-01-02T00:00:00Z')).toEqual({ changed: 0 });
+    expect(await store.refreshFacts([gift({ mondayItemId: 'g-type', giftType: null })], 'webhook', '2026-01-02T00:00:00Z')).toEqual({ changed: 0 });
+
+    expect(await store.refreshFacts([gift({ mondayItemId: 'g-type', giftType: 'Donation' })], 'webhook', '2026-01-03T00:00:00Z')).toEqual({ changed: 1 });
+    const row = await env.DB.prepare(`SELECT gift_type, source, updated_at FROM gifts WHERE monday_item_id='g-type'`).first();
+    expect(row).toEqual({ gift_type: 'Donation', source: 'webhook', updated_at: '2026-01-03T00:00:00Z' });
+  });
+
   it('getArchivable lists only active gifts before the cutoff; markArchived removes them', async () => {
     const store = new D1GiftsStore(env.DB);
     await store.refreshFacts([

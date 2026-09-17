@@ -85,7 +85,7 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
 
 function fakeGiftsStore(): GiftsStore {
   return {
-    refreshFacts: vi.fn().mockResolvedValue(undefined),
+    refreshFacts: vi.fn().mockResolvedValue({ changed: 0 }),
     giftsForOwner: vi.fn().mockResolvedValue([]),
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
