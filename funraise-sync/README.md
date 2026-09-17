@@ -119,8 +119,10 @@ matching `Thank You Sent`: transactions only (never recurring gifts or registrat
 write only, including adoption of an orphaned item, never a later update that could clobber a
 staff correction; a missing or unparseable `createdAt` logs a warning and leaves the cell blank
 rather than failing the write (rollups still derive from Date). Set `fiscalYearColumn` to `null`
-for a board without the column. Like the other column ids in `config/svbc.json`, the shipped
-value is a placeholder until the ids are wired to the real board. Known edge: the year is read
+for a board without the column. `config/svbc.json` points it at `text_mm70czyd`, the text column
+titled "Fiscal Year Ending" on the sandbox v2 Donations board (`18428131791`, verified live
+2026-09-17) — the same one `donation-rollups` reads — not the older numbers column titled "Fiscal
+Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. Known edge: the year is read
 from the UTC date in `createdAt`, the same way the Date column is read, so a gift made between
 5 pm and midnight Pacific on June 30 lands in the new fiscal year on both columns.
 
