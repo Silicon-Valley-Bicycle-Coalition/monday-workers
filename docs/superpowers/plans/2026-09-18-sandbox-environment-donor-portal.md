@@ -1321,7 +1321,7 @@ describe('wrangler.jsonc env.sandbox', () => {
 ```
 
 Run: `npm test -- config/split.test.ts`
-Expected: PASS, 12 tests. A failure here is a real finding, not a test bug — read the assertion:
+Expected: PASS, 15 tests. A failure here is a real finding, not a test bug — read the assertion:
 it means a sink or id is shared between the two environments.
 
 - [ ] **Step 6: Full suite and typecheck**
