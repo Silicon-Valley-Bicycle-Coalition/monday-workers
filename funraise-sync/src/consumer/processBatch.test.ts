@@ -3,46 +3,9 @@ import { processFunraiseQueueBatch, type QueueMessageLike, type FunraiseQueueMes
 import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
 import type { EventRow, FunraiseSyncConfig } from '../types';
+import { testConfig } from '../test/testConfig';
 
-const config: FunraiseSyncConfig = {
-  monday: {
-    apiUrl: 'https://api.monday.com/v2',
-    boards: { 'donations:live': 111, 'recurring-gifts': 222, 'event-registrations': 333, 'people-live': 42 },
-  },
-  funraiseSync: {
-    columnMap: {
-      transaction: { amount: 'numeric_col' },
-      recurringGift: { amount: 'numeric_col' },
-      registration: { eventName: 'text_col' },
-    },
-    itemNameField: {
-      transaction: 'description',
-      recurringGift: 'description',
-      registration: 'eventName',
-    },
-    entityIdField: {
-      transaction: 'id',
-      recurringGift: 'id',
-      registration: 'id',
-    },
-    entityIdColumn: 'entity_col',
-    thankYouSentColumn: null,
-    giftTypeColumn: null,
-    giftTypeValue: 'Donation',
-    fiscalYearColumn: null,
-    rawPayloadRetentionDays: 90,
-    unresolvedPayloadRetentionDays: 365,
-    donorExternalIdField: 'donor.contactId',
-    donorExternalIdColumn: 'funraise_id_col',
-    donorEmailColumn: 'email_col',
-    donorNameField: 'donor.name',
-    donorLinkColumn: 'connect_col',
-    emailFieldPrecedence: ['donor.email'],
-    statusField: 'status',
-    statusValueMap: {},
-    doNotMigrateFields: [],
-  },
-};
+const config: FunraiseSyncConfig = testConfig({ entityIdColumn: 'entity_col' });
 
 function eventRow(overrides: Partial<EventRow> = {}): EventRow {
   return {
@@ -181,16 +144,6 @@ describe('processFunraiseQueueBatch', () => {
     expect(message.retry).toHaveBeenCalled();
   });
 
-  it('routes subscription and pledge to the recurring-gifts board', async () => {
-    const eventStore = fakeStore(eventRow({ entityType: 'pledge', entityId: 'sub-1', matchedDonorItemId: '7' }));
-    const createItem = vi.fn().mockResolvedValue({ id: 'item-3' });
-    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem, changeColumnValues: vi.fn() };
-
-    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], { eventStore, mondayClient, config });
-
-    expect(createItem).toHaveBeenCalledWith(222, expect.any(String), expect.any(Object));
-  });
-
   it('uses the description field as the item name when present', async () => {
     const eventStore = fakeStore(
       eventRow({ matchedDonorItemId: '7', rawPayload: JSON.stringify({ amount: 50, description: 'Monthly gift' }) })
@@ -322,24 +275,6 @@ describe('Thank You Sent (acknowledgment decision, Option 2)', () => {
     );
   });
 
-  it('never sets Thank You Sent for recurring gifts or registrations', async () => {
-    const eventStore = fakeStore(eventRow({ entityType: 'pledge', entityId: 'sub-1', matchedDonorItemId: '7' }));
-    const createItem = vi.fn().mockResolvedValue({ id: 'item-pledge' });
-    const mondayClient: MondayClient = {
-      findItemByColumnValue: vi.fn().mockResolvedValue(null),
-      createItem,
-      changeColumnValues: vi.fn(),
-    };
-
-    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], { eventStore, mondayClient, config: thankYouConfig });
-
-    expect(createItem).toHaveBeenCalledWith(
-      222,
-      expect.any(String),
-      expect.not.objectContaining({ thank_you_col: expect.anything() })
-    );
-  });
-
   it('does nothing when thankYouSentColumn is not configured', async () => {
     const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
     const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
@@ -389,14 +324,6 @@ describe('Gift Type stamp (membership renewal write path, spec 2026-09-15)', () 
     expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', expect.not.objectContaining({ gt_col: expect.anything() }));
   });
 
-  it('never stamps recurring gifts or registrations', async () => {
-    const eventStore = fakeStore(eventRow({ entityType: 'pledge', entityId: 'sub-1', matchedDonorItemId: '7' }));
-    const createItem = vi.fn().mockResolvedValue({ id: 'item-pledge' });
-    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
-    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], { eventStore, mondayClient, config: giftTypeConfig });
-    expect(createItem).toHaveBeenCalledWith(222, expect.any(String), expect.not.objectContaining({ gt_col: expect.anything() }));
-  });
-
   it('does nothing when giftTypeColumn is null', async () => {
     const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
     const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
@@ -435,7 +362,7 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
       ...fiscalYearConfig,
       funraiseSync: {
         ...fiscalYearConfig.funraiseSync,
-        columnMap: { ...fiscalYearConfig.funraiseSync.columnMap, transaction: { amount: 'numeric_col', donationDate: 'date_col' } },
+        columnMap: { amount: 'numeric_col', donationDate: 'date_col' },
       },
     };
     // 2026-08-15T18:30:12Z — August, so fiscal year 2027.
@@ -456,7 +383,7 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
       ...fiscalYearConfig,
       funraiseSync: {
         ...fiscalYearConfig.funraiseSync,
-        columnMap: { ...fiscalYearConfig.funraiseSync.columnMap, transaction: { donationDate: 'date_col' } },
+        columnMap: { donationDate: 'date_col' },
       },
     };
     const eventStore = fakeStore(transactionRow('not a date'));
@@ -533,25 +460,6 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
     expect(changeColumnValues).toHaveBeenCalledWith(
       111,
       'item-existing',
-      expect.not.objectContaining({ fiscal_year_col: expect.anything() })
-    );
-  });
-
-  it('never stamps the fiscal year for recurring gifts or registrations', async () => {
-    const eventStore = fakeStore(
-      transactionRow('2026-08-15T18:30:12.000Z', { entityType: 'pledge', entityId: 'sub-1' })
-    );
-    const createItem = vi.fn().mockResolvedValue({ id: 'item-pledge' });
-
-    await processFunraiseQueueBatch([fakeMessage('pledge', 'sub-1')], {
-      eventStore,
-      mondayClient: clientForCreate(createItem),
-      config: fiscalYearConfig,
-    });
-
-    expect(createItem).toHaveBeenCalledWith(
-      222,
-      expect.any(String),
       expect.not.objectContaining({ fiscal_year_col: expect.anything() })
     );
   });

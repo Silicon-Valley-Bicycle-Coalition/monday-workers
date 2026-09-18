@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import type { EventStore } from '../db/events';
-import type { FunraiseSyncConfig } from '../types';
+import type { EntityType, FunraiseSyncConfig } from '../types';
+
+const ENTITY_TYPE: EntityType = 'transaction';
 import { validateEnvelope, extractEntityId } from './validate';
 import { stripDenylistedFields } from '../util/stripFields';
 import { errorMessage } from '../util/errorMessage';
@@ -30,17 +32,18 @@ export function createApp(deps: AppDeps) {
 
   app.get('/health', (c) => c.json({ ok: true }));
 
-  app.post('/webhooks/funraise/:entityType', async (c) => {
+  // Funraise has one webhook per organization and it fires only for transactions (decided
+  // 2026-09-18; see README "Recurring gifts and registrations"). This is the registered URL.
+  app.post('/webhooks/funraise/transaction', async (c) => {
     if (deps.webhookSecret === undefined || c.req.query('secret') !== deps.webhookSecret) {
       return c.json({ ok: false }, 401);
     }
 
-    const entityTypeParam = c.req.param('entityType');
     const hookSecretHeader = c.req.header('x-hook-secret');
     let envelope;
     try {
       const body = await c.req.json();
-      envelope = validateEnvelope(entityTypeParam, body);
+      envelope = validateEnvelope(body);
     } catch (err) {
       // REST-Hooks subscribe handshake: echo x-hook-secret back — but only for a
       // body that isn't a real event (empty or non-event shape). A valid event is
@@ -53,7 +56,7 @@ export function createApp(deps: AppDeps) {
       // Funraise ignores the response body, so this log line is the only place a
       // payload-shape change (renamed id field, new entity type) becomes visible.
       const errMsg = errorMessage(err);
-      console.error(`funraise-sync webhook: rejected ${entityTypeParam} delivery: ${errMsg}`);
+      console.error(`funraise-sync webhook: rejected delivery: ${errMsg}`);
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
@@ -63,7 +66,7 @@ export function createApp(deps: AppDeps) {
     const upsertResult = await deps.eventStore.upsertEvent({
       eventId: envelope.eventId,
       sentAt: envelope.sentAt,
-      entityType: envelope.entityType,
+      entityType: ENTITY_TYPE,
       entityId,
       rawPayload: JSON.stringify(stripped),
       receivedAt: new Date().toISOString(),
@@ -74,19 +77,19 @@ export function createApp(deps: AppDeps) {
       // into the queue. A row stuck at 'failed' (enqueue threw, we returned 5xx) or
       // 'received' (crashed between insert and send) is stranded — this redelivery is
       // its recovery path, so fall through and enqueue it.
-      const existing = await deps.eventStore.getEventByEntity(envelope.entityType, entityId);
+      const existing = await deps.eventStore.getEventByEntity(ENTITY_TYPE, entityId);
       if (existing === null || (existing.status !== 'failed' && existing.status !== 'received')) {
         return c.json({ ok: true, duplicate: true }, 200);
       }
     }
 
     try {
-      await deps.queue.send({ entityType: envelope.entityType, entityId });
-      await deps.eventStore.updateStatusByEntity(envelope.entityType, entityId, 'queued');
+      await deps.queue.send({ entityType: ENTITY_TYPE, entityId });
+      await deps.eventStore.updateStatusByEntity(ENTITY_TYPE, entityId, 'queued');
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`funraise-sync webhook: enqueue failed for ${envelope.entityType} "${entityId}": ${errMsg}`);
-      await deps.eventStore.updateStatusByEntity(envelope.entityType, entityId, 'failed', {
+      console.error(`funraise-sync webhook: enqueue failed for ${ENTITY_TYPE} "${entityId}": ${errMsg}`);
+      await deps.eventStore.updateStatusByEntity(ENTITY_TYPE, entityId, 'failed', {
         error: errMsg,
       });
       // A 5xx gives Funraise the chance to redeliver; the entity-keyed upsert

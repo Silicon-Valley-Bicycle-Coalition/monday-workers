@@ -1,43 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createApp } from './route';
 import type { EventStore } from '../db/events';
-import type { FunraiseSyncConfig } from '../types';
+import { testConfig } from '../test/testConfig';
 
-const config: FunraiseSyncConfig = {
-  monday: {
-    apiUrl: 'https://api.monday.com/v2',
-    boards: { 'donations:live': 1, 'recurring-gifts': null, 'event-registrations': null, 'people-live': 42 },
-  },
-  funraiseSync: {
-    columnMap: { transaction: {}, recurringGift: {}, registration: {} },
-    itemNameField: {
-      transaction: 'description',
-      recurringGift: 'description',
-      registration: 'eventName',
-    },
-    entityIdField: {
-      transaction: 'transactionId',
-      recurringGift: 'id',
-      registration: 'id',
-    },
-    entityIdColumn: null,
-    thankYouSentColumn: null,
-    giftTypeColumn: null,
-    giftTypeValue: 'Donation',
-    fiscalYearColumn: null,
-    rawPayloadRetentionDays: 90,
-    unresolvedPayloadRetentionDays: 365,
-    donorExternalIdField: 'donor.contactId',
-    donorExternalIdColumn: 'funraise_id_col',
-    donorEmailColumn: 'email_col',
-    donorNameField: 'donor.name',
-    donorLinkColumn: 'connect_col',
-    emailFieldPrecedence: ['donor.email'],
-    statusField: 'status',
-    statusValueMap: {},
-    doNotMigrateFields: ['paymentMethod.lastFour'],
-  },
-};
+const config = testConfig(
+  { columnMap: {}, entityIdField: 'transactionId', doNotMigrateFields: ['paymentMethod.lastFour'] },
+  { 'donations:live': 1 }
+);
 
 function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore {
   return {
@@ -52,8 +21,8 @@ function fakeEventStore(overrides: Partial<EventStore> = {}): EventStore {
 
 const SECRET = 'test-secret';
 
-function postEvent(app: ReturnType<typeof createApp>, body: unknown, entityType = 'transaction') {
-  return app.request(`/webhooks/funraise/${entityType}?secret=${SECRET}`, {
+function postEvent(app: ReturnType<typeof createApp>, body: unknown, path = 'transaction') {
+  return app.request(`/webhooks/funraise/${path}?secret=${SECRET}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -84,14 +53,16 @@ describe('createApp', () => {
     expect(eventStore.upsertEvent).not.toHaveBeenCalled();
   });
 
-  it('rejects an unknown entity type without inserting', async () => {
+  // Funraise has one webhook, for transactions; the former subscription/pledge/registration
+  // paths are gone (decided 2026-09-18), so anything else is simply not a route.
+  it('404s any path other than /transaction without touching the store', async () => {
     const eventStore = fakeEventStore();
     const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { data: { id: 'evt-1' } }, 'donation');
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: false, error: expect.stringContaining('unknown entity type') });
+    for (const path of ['subscription', 'pledge', 'registration', 'donation']) {
+      const res = await postEvent(app, { data: { id: 'evt-1' } }, path);
+      expect(res.status, path).toBe(404);
+    }
     expect(eventStore.upsertEvent).not.toHaveBeenCalled();
   });
 

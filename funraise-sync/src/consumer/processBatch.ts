@@ -1,7 +1,10 @@
 import type { EventStore } from '../db/events';
+import type { SubscriptionStore } from '../db/subscriptions';
+import type { FunraiseClient } from '../funraise/client';
 import type { MondayClient } from '../monday/client';
 import type { EntityType, EventRow, FunraiseSyncConfig } from '../types';
-import { mapToMondayColumns, ENTITY_MAP_KEY } from '../mapping/fieldMap';
+import { upsertSubscription } from '../subscriptions/upsert';
+import { mapToMondayColumns } from '../mapping/fieldMap';
 import { fiscalYearEnding } from '../mapping/fiscalYear';
 import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
@@ -23,22 +26,23 @@ export interface ProcessBatchDeps {
   eventStore: EventStore;
   mondayClient: MondayClient;
   config: FunraiseSyncConfig;
+  // Both needed to link an installment to its Recurring Gifts item (spec 2026-09-18 "Webhook
+  // side"); optional so a fork without the subscriptions poller still runs, minus the link.
+  subscriptionStore?: SubscriptionStore;
+  funraiseClient?: FunraiseClient;
 }
 
-type BoardKey = keyof FunraiseSyncConfig['monday']['boards'];
-
 // The Funraise transaction field the Donations board's Date column is mapped from
-// (`columnMap.transaction.donationDate` in config/svbc.json). Funraise sends it as epoch
+// (`columnMap.donationDate` in config/svbc.json). Funraise sends it as epoch
 // milliseconds, so it's normalized to YYYY-MM-DD before the write, and Fiscal Year Ending is
 // derived from that same normalized value so the two columns can never disagree.
 const TRANSACTION_DATE_FIELD = 'donationDate';
+// A recurring installment is a transaction carrying its subscription (`data.subscription.id`,
+// `data.subscription.sequence`); a paid event ticket carries `data.fundraisingEvent`. Both are
+// Funraise facts, not per-deployment choices, hence constants.
+const SUBSCRIPTION_ID_FIELD = 'subscription.id';
+const EVENT_FIELD = 'fundraisingEvent';
 
-const BOARD_FOR_ENTITY: Record<EntityType, BoardKey> = {
-  transaction: 'donations:live',
-  subscription: 'recurring-gifts',
-  pledge: 'recurring-gifts',
-  registration: 'event-registrations',
-};
 
 export async function processFunraiseQueueBatch(
   messages: QueueMessageLike<FunraiseQueueMessage>[],
@@ -66,10 +70,11 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     throw new Error(`funraise-sync consumer: no event row for ${entityType} "${entityId}"`);
   }
 
-  const boardKey = BOARD_FOR_ENTITY[event.entityType];
-  const boardId = deps.config.monday.boards[boardKey];
+  // Every delivery is a transaction (Funraise's only webhook), so every write lands on the
+  // Donations board; Recurring Gifts is fed by the subscriptions poller instead.
+  const boardId = deps.config.monday.boards['donations:live'];
   if (boardId === null) {
-    throw new Error(`config: monday.boards["${boardKey}"] is not configured`);
+    throw new Error('config: monday.boards["donations:live"] is not configured');
   }
 
   const rawPayload = JSON.parse(event.rawPayload) as Record<string, unknown>;
@@ -85,15 +90,23 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     });
   }
 
-  const { donorLinkColumn, entityIdColumn, thankYouSentColumn, giftTypeColumn, giftTypeValue, fiscalYearColumn } =
-    deps.config.funraiseSync;
-  const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
+  const {
+    donorLinkColumn,
+    entityIdColumn,
+    thankYouSentColumn,
+    giftTypeColumn,
+    giftTypeValue,
+    eventGiftTypeValue,
+    fiscalYearColumn,
+    recurringGiftLinkColumn,
+  } = deps.config.funraiseSync;
+  const columnValues = mapToMondayColumns(rawPayload, deps.config);
 
   // columnMap writes values verbatim, which is wrong for the date: Funraise sends epoch
   // milliseconds and Monday's date column wants { date: 'YYYY-MM-DD' }. Replace the mapped
   // value with the normalized one, or drop the column rather than write a raw number.
   const transactionDate = entityType === 'transaction' ? toISODate(getPath(rawPayload, TRANSACTION_DATE_FIELD)) : null;
-  const dateColumn = deps.config.funraiseSync.columnMap.transaction[TRANSACTION_DATE_FIELD];
+  const dateColumn = deps.config.funraiseSync.columnMap[TRANSACTION_DATE_FIELD];
   if (entityType === 'transaction' && dateColumn) {
     if (transactionDate !== null) columnValues[dateColumn] = { date: transactionDate };
     else delete columnValues[dateColumn];
@@ -103,6 +116,15 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     columnValues[donorLinkColumn] = {
       item_ids: [Number(donorItemId)],
     };
+  }
+
+  // An installment links to its Recurring Gifts item on every write, create and update alike —
+  // it is a fact about the gift, not a first-write stamp.
+  if (recurringGiftLinkColumn) {
+    const recurringGiftItemId = await resolveRecurringGiftItem(rawPayload, deps);
+    if (recurringGiftItemId !== null) {
+      columnValues[recurringGiftLinkColumn] = { item_ids: [Number(recurringGiftItemId)] };
+    }
   }
   if (entityIdColumn) {
     columnValues[entityIdColumn] = entityId;
@@ -129,9 +151,12 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     columnValues[thankYouSentColumn] = { checked: 'true' };
   }
 
-  // First write only, transactions only — same reasoning as Thank You Sent above.
+  // First write only — same reasoning as Thank You Sent above. A paid event ticket (the
+  // transaction carries `fundraisingEvent`) gets its own label so donation-rollups' membership
+  // rule, which counts only its eligible Gift Types, never treats a ticket as a renewal.
   if (giftTypeColumn && entityType === 'transaction') {
-    columnValues[giftTypeColumn] = giftTypeValue;
+    const isEventTicket = getPath(rawPayload, EVENT_FIELD) != null;
+    columnValues[giftTypeColumn] = isEventTicket ? eventGiftTypeValue : giftTypeValue;
   }
 
   // Fiscal Year Ending is derived (SVBC's July–June year), not a Funraise field, so columnMap
@@ -176,8 +201,49 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   });
 }
 
+/**
+ * The Recurring Gifts item for the installment's subscription, or null when the transaction is
+ * a one-time gift. Ledger first; a never-seen subscription is fetched from Funraise and written
+ * through the same upsert the poller uses, so a brand-new monthly donor's first installment links
+ * immediately instead of waiting for the next poll. Anything that stops the link is logged and
+ * the gift is still written — the link is worth having, never worth failing a donation for.
+ */
+async function resolveRecurringGiftItem(rawPayload: Record<string, unknown>, deps: ProcessBatchDeps): Promise<string | null> {
+  const raw = getPath(rawPayload, SUBSCRIPTION_ID_FIELD);
+  const subscriptionId = typeof raw === 'number' && Number.isFinite(raw) ? String(raw) : typeof raw === 'string' && raw !== '' ? raw : null;
+  if (subscriptionId === null) return null;
+
+  const { subscriptionStore, funraiseClient, mondayClient, config } = deps;
+  if (!subscriptionStore || !funraiseClient) {
+    console.warn(
+      `funraise-sync consumer: recurringGiftLinkColumn is set but the subscriptions ledger or Funraise client is not wired; leaving the link unset`
+    );
+    return null;
+  }
+
+  try {
+    const known = await subscriptionStore.getByFunraiseId(subscriptionId);
+    if (known) return known.mondayItemId;
+
+    const row = await funraiseClient.getSubscription(subscriptionId);
+    if (row === null) {
+      console.warn(`funraise-sync consumer: subscription "${subscriptionId}" not found in Funraise; leaving the Recurring Gift link unset`);
+      return null;
+    }
+    const result = await upsertSubscription(row, { subscriptionStore, mondayClient, config });
+    return result.mondayItemId;
+  } catch (err) {
+    // A Funraise outage, a Monday failure creating the Recurring Gifts item, or an unconfigured
+    // board must not fail (and retry) the donation itself; the hourly poll will create or repair
+    // the Recurring Gifts item, and the next edit of this gift picks the link up.
+    console.warn(
+      `funraise-sync consumer: could not resolve Recurring Gift for subscription "${subscriptionId}"; leaving the link unset: ${errorMessage(err)}`
+    );
+    return null;
+  }
+}
+
 function describeItemName(entityType: EntityType, rawPayload: Record<string, unknown>, config: FunraiseSyncConfig): string {
-  const fieldPath = config.funraiseSync.itemNameField[ENTITY_MAP_KEY[entityType]];
-  const value = getPath(rawPayload, fieldPath);
+  const value = getPath(rawPayload, config.funraiseSync.itemNameField);
   return typeof value === 'string' && value.length > 0 ? value : `Funraise ${entityType}`;
 }

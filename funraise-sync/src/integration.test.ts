@@ -5,35 +5,26 @@ import { D1EventStore } from './db/events';
 import { processFunraiseQueueBatch, type FunraiseQueueMessage } from './consumer/processBatch';
 import type { MondayClient } from './monday/client';
 import type { FunraiseSyncConfig } from './types';
+import { testConfig } from './test/testConfig';
 
 const config: FunraiseSyncConfig = {
   monday: {
     apiUrl: 'https://api.monday.com/v2',
-    boards: { 'donations:live': 8845443596, 'recurring-gifts': 111222, 'event-registrations': 333444, 'people-live': 555666 },
+    boards: { 'donations:live': 8845443596, 'recurring-gifts': 111222, 'people-live': 555666 },
   },
   funraiseSync: {
     // Field paths follow Funraise's documented webhook payload (the entity under `data`, which
     // the route unwraps): amount and status under `transaction`, the donor under `supporter`.
-    columnMap: {
-      transaction: { 'transaction.amount': 'numeric_col', 'transaction.status': 'status_col', donationDate: 'date_col' },
-      recurringGift: { amount: 'numeric_col' },
-      registration: { eventName: 'text_col' },
-    },
-    itemNameField: {
-      transaction: 'description',
-      recurringGift: 'description',
-      registration: 'eventName',
-    },
-    entityIdField: {
-      transaction: 'id',
-      recurringGift: 'id',
-      registration: 'id',
-    },
+    columnMap: { 'transaction.amount': 'numeric_col', 'transaction.status': 'status_col', donationDate: 'date_col' },
+    itemNameField: 'description',
+    entityIdField: 'id',
     entityIdColumn: null,
     thankYouSentColumn: null,
     giftTypeColumn: null,
     giftTypeValue: 'Donation',
+    eventGiftTypeValue: 'Event Ticket',
     fiscalYearColumn: 'fiscal_year_col',
+    recurringGiftLinkColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
     donorExternalIdField: 'supporter.id',
@@ -46,6 +37,7 @@ const config: FunraiseSyncConfig = {
     statusValueMap: { Complete: 'Received' },
     doNotMigrateFields: ['transaction.lastFour', 'transaction.expirationDate'],
   },
+  subscriptionsPoll: testConfig().subscriptionsPoll,
 };
 
 // The example delivery from help.funraise.io "Webhooks", trimmed to the fields this Worker reads

@@ -29,33 +29,44 @@ trusted; a handful of individual records still need human follow-up, tracked in 
 
 ```
 Funraise (SaaS)
-  │  webhook, on new/updated Transaction/Subscription/Pledge/Registration
+  │  the one webhook, on a Transaction created or edited        (Funraise has no other)
   ▼
-Cloudflare Worker (webhook handler)
-  │  1. verify webhook, strip do-not-migrate PII fields, upsert into D1 `events`
-  │     (keyed on the *entity* — a later event for a known Transaction/Subscription/
-  │     Pledge/Registration replaces its payload instead of being dropped as a duplicate)
-  │  2. enqueue a Cloudflare Queue message referencing the entity
+Cloudflare Worker (webhook handler)   POST /webhooks/funraise/transaction?secret=…
+  │  1. verify the shared secret, unwrap `data`, strip do-not-migrate PII fields, upsert
+  │     into D1 `events` keyed on the transaction id — a later edit (newer sentAt) replaces
+  │     the payload, an identical or older redelivery is a duplicate
+  │  2. enqueue a Cloudflare Queue message referencing the transaction
   ▼
-Cloudflare Queue → consumer Worker
-  │  1. resolve donor → Donors-board item (matching step)
-  │  2. write to Monday via GraphQL: create the item on first sight, update it in place
-  │     on later events for the same entity
-  │  on failure at either step, Queues retries automatically and, once exhausted, routes
+Cloudflare Queue → consumer
+  │  1. resolve donor → People-board item (match by Funraise supporter id, then email; create)
+  │  2. an installment (`data.subscription.id`) → its Recurring Gifts item, from the ledger,
+  │     or fetched from Funraise and created on the spot if never seen
+  │  3. write to Monday via GraphQL: create the Donations item on first sight, update it in
+  │     place on later events; first-write stamps (Thank You Sent, Gift Type, Fiscal Year)
+  │  on failure at any step, Queues retries automatically and, once exhausted, routes
   │  to a Dead Letter Queue instead of the match or write silently disappearing
   ▼
-Donations board / Recurring Gifts board / Registration board (ids in config/svbc.json)
+Donations board (+ Donor and Recurring Gift links)
+
+Cloudflare cron, hourly ("0 * * * *")
+  │  GET /api/v1/crm/subscription?q=updtime >= <cursor> order by updtime asc&page=N …
+  │  each row → Recurring Gifts item (adopt by Funraise ID, else create; update in place);
+  │  D1 `subscriptions` ledger + `poll_cursors`; cursor advances after each full page
+  ▼
+Recurring Gifts board (+ Donor link)
 ```
 
 Ingestion, matching, and the Monday write are separate, independently testable steps. Matching
 runs in the queue consumer — not the webhook handler — so a transient Monday API failure during
 *matching or writing* gets the Queue's retries and DLQ instead of dying inside the webhook
-request. A daily cron empties `raw_payload` for events written more than
-`funraiseSync.rawPayloadRetentionDays` (default 90) days ago, and for events that never completed
-their write once they're older than `unresolvedPayloadRetentionDays` (default 365), so raw donor
-PII doesn't accumulate in D1 indefinitely on either path. Created items are stamped with the
-Funraise entity id (`funraiseSync.entityIdColumn`), which the consumer checks before every create
-so a retry after a lost status update adopts the existing item instead of duplicating it. See `../README.md`'s Reliability section for why the Queue shape is standard
+request. The subscriptions poll is its own retry: a failed run leaves its cursor where it was and
+the next hour re-reads the page. A daily cron ("0 9 * * *") empties `raw_payload` for events
+written more than `funraiseSync.rawPayloadRetentionDays` (default 90) days ago, and for events
+that never completed their write once they're older than `unresolvedPayloadRetentionDays`
+(default 365), so raw donor PII doesn't accumulate in D1 indefinitely on either path. Created
+Donations items can be stamped with the Funraise transaction id (`funraiseSync.entityIdColumn`)
+for orphan recovery before every create — `null` on the sandbox, see "Monday targets". See
+`../README.md`'s Reliability section for why the Queue shape is standard
 across every webhook-driven Worker in this plan.
 
 ## APIs & auth
@@ -72,7 +83,7 @@ across every webhook-driven Worker in this plan.
   1. `wrangler secret put FUNRAISE_WEBHOOK_SECRET` (generate a long random value, e.g.
      `openssl rand -hex 32`).
   2. Register the webhook URL in Funraise **with that secret embedded**:
-     `https://<worker-host>/webhooks/funraise/<entityType>?secret=<value>`.
+     `https://<worker-host>/webhooks/funraise/transaction?secret=<value>`.
 
   The route **fails closed**: any POST whose `secret` query param doesn't match — including
   every POST while the secret is unset — is rejected with 401. The `x-hook-secret` handshake is
@@ -94,6 +105,10 @@ across every webhook-driven Worker in this plan.
   (transaction id `-1`, supporter "Lorem Ipsum", `donor@example.com`, amount 123.12, status
   Complete); the Worker treats it like any gift, so expect a donor and a Donations item to clean
   up afterwards (see "Deployed and verified").
+* **Funraise REST API key** — `wrangler secret put FUNRAISE_API_KEY`, sent as `X-Api-Key` to
+  `https://api.funraise.io` by the subscriptions poller and the consumer's never-seen-subscription
+  lookup only (read-only use; nothing here writes to Funraise). Rate limit 3,000 requests/month
+  on the base plan — see "Recurring gifts and registrations" for the budget.
 * **Monday.com GraphQL API** — standard API token, same pattern as every other Worker here.
 
 ## Donor matching
@@ -125,49 +140,47 @@ board schemas via the Monday API on 2026-09-17.
 
 | Config key | Board / column | Id | Notes |
 |---|---|---|---|
-| `monday.boards["donations:live"]` | Donations (sandbox v2) | `18428131791` | |
-| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | |
-| `monday.boards["event-registrations"]` | Event Registrations (sandbox v2) | `18428131782` | |
+| `monday.boards["donations:live"]` | Donations (sandbox v2) | `18428131791` | webhook consumer's only target |
+| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | subscriptions poller's target |
 | `monday.boards["people-live"]` | People (sandbox v2) | `18428131737` | People (Historical) is not a match target |
-| `columnMap.transaction["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
-| `columnMap.transaction["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending; `Complete → Received` via `statusValueMap` |
-| `columnMap.transaction.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
-| `columnMap.recurringGift.amount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm6jg878` | per-installment, per docs/03 |
-| `columnMap.recurringGift.frequency` | Recurring Gifts → Frequency (status) | `color_mm6jc24s` | labels: Monthly / Yearly / Quarterly — a **status**, not text; the raw value must equal a label |
-| `columnMap.recurringGift.status` | Recurring Gifts → Status (status) | `color_mm6j1tk1` | labels: Redacted / Active / Cancelled / Failed |
-| `columnMap.registration` | Event Registrations | `{}` | see below |
+| `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
+| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending; `Complete → Received` via `statusValueMap` |
+| `columnMap.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
 | `entityIdColumn` | — | `null` | see below |
 | `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm78nf5s` | |
-| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm6j66w3` | |
+| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm6j66w3` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
 | `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm70czyd` | |
-| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm6j7djp` | lookup works; create-write shape is a code gap |
-| `donorEmailColumn` | People → Personal Email (email) | `email_mm6j5e9q` | same |
-| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm6jf5jb` | Donations only; see below |
+| `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm6jbjtd` | set on every write of an installment |
+| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm6j7djp` | lookup by bare id; create writes `{url, text}` |
+| `donorEmailColumn` | People → Personal Email (email) | `email_mm6j5e9q` | lookup by address; create writes `{email, text}` |
+| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm6jf5jb` | |
+| `subscriptionsPoll.columns.funraiseId` | Recurring Gifts → Funraise ID (link) | `link_mm6jryz2` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
+| `subscriptionsPoll.columns.donor` | Recurring Gifts → Donor (connect) | `board_relation_mm6j443g` | |
+| `subscriptionsPoll.columns.installmentAmount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm6jg878` | per-installment, per docs/03 |
+| `subscriptionsPoll.columns.annualizedValue` | Recurring Gifts → Annualized Value (numbers) | `numeric_mm6jt3sp` | computed: amount × `frequencyMultiplier[frequency]` (Monthly 12, Quarterly 4, Yearly 1) |
+| `subscriptionsPoll.columns.frequency` | Recurring Gifts → Frequency (status) | `color_mm6jc24s` | labels: Monthly / Yearly / Quarterly; a frequency missing from `frequencyMultiplier` leaves this and Annualized Value unset, with a warning |
+| `subscriptionsPoll.columns.status` | Recurring Gifts → Status (status) | `color_mm6j1tk1` | labels: Redacted / Active / Cancelled / Failed; via `statusLabelMap`, unmapped → unset with a warning |
+| `subscriptionsPoll.columns.nextPayment` | Recurring Gifts → Next Payment (date) | `date_mm6j20p6` | epoch ms in; cleared when the subscription has none (cancelled) |
+| `subscriptionsPoll.columns.designation` | Recurring Gifts → Designation (text) | `text_mm6jvmje` | from the subscription's `form.name` |
+| `subscriptionsPoll.columns.companyMatch` / `.matchEmployer` | Recurring Gifts → Company Match (checkbox) / Match Employer (text) | `boolean_mm6jbmvy` / `text_mm6jma3d` | from `companyMatch.companyName` |
 
-Three placeholders became something other than an id, on purpose:
+Two ids are deliberately absent:
 
-* **`columnMap.transaction.description` is gone.** The Donations board has no description text
-  column; `description` is already the item name via `itemNameField`. The importer's
-  `Salesforce Debug` long-text is provenance, not a description, and stays untouched.
-* **`columnMap.registration` is empty.** Event Registrations has no text column for an event
-  name and no date column for a registration time: `Event` is a connect column to the Events
-  board (`board_relation_mm6jatgp`, needs an Events item id, not a name), and the remaining
-  columns (Attendee Name/Email, Ticket Amount, Deductible Amount, Ticket Type, Attendance, Role,
-  Source) map to Funraise registration fields this Worker has never seen a payload for. Mapping
-  those needs a verified payload, not a guess. `itemNameField.registration` still names the item.
-* **`entityIdColumn` is `null`.** The column it was meant to be — a text id "on every target
-  board" — doesn't exist on these boards. Donations and Recurring Gifts carry the Funraise id in
-  a **link** column (`link_mm6jhcj8` and `link_mm6jryz2`, transaction URL + bare id as text, the
-  same shape as `Funraise Profile`), Event Registrations has none, and the ids differ per board
-  while the config key is a single string. The lookup half would work (bare-id search on the
-  Donations link column found its item, verified live), but the consumer writes `entityId` as a
-  bare string, which Monday rejects on a link column, so every create would fail. `null`
-  disables orphan recovery (a retry after a lost status update can duplicate an item) rather
-  than break creates. Fix is code: per-board ids plus link-shaped values, tracked below.
-* **`donorLinkColumn` is the Donations board's `Donor` column only.** Recurring Gifts' `Donor`
-  is `board_relation_mm6j443g` and Event Registrations' `Attendee` is `board_relation_mm6j98ft`;
-  the config key is a single string, so subscription/pledge/registration items would be written
-  with a column id that doesn't exist on their board. Same per-board fix as `entityIdColumn`.
+* **No `description` column.** The Donations board has no description text column; `description`
+  is already the item name via `itemNameField`. The importer's `Salesforce Debug` long-text is
+  provenance, not a description, and stays untouched.
+* **`entityIdColumn` is `null`.** It was meant to be a text column holding the transaction id
+  for orphan recovery. The Donations board carries the Funraise id in a **link** column
+  (`link_mm6jhcj8`, transaction URL + bare id as text); the lookup half would work (bare-id
+  search matches, verified live), but the consumer writes `entityId` as a bare string, which
+  Monday rejects on a link column, so every create would fail. `null` disables orphan recovery
+  (a retry after a lost status update can duplicate a Donations item) rather than break creates.
+  Fix, if wanted: write the same `{url, text}` shape the donor and subscription paths use.
+
+Gone with the registration path (2026-09-18): the `event-registrations` board key, the
+per-entity `columnMap.recurringGift` / `.registration` maps, and the per-board column-id
+question — the webhook consumer writes only the Donations board and the poller has its own
+column block.
 
 ## Field mapping
 
@@ -191,7 +204,7 @@ Monday**.
 **`Fiscal Year Ending` is stamped on create (derived, not mapped).** The Donations board has a
 text `Fiscal Year Ending` column that `salesforce-import` writes on every migrated gift (SVBC's
 July–June fiscal year, named for the year it ends in, so a 2026-08-15 gift is FY 2027 and a
-2026-06-30 gift is FY 2026). It isn't a Funraise field, so `columnMap.transaction` can't map it;
+2026-06-30 gift is FY 2026). It isn't a Funraise field, so `columnMap` can't map it;
 instead the consumer derives it from the transaction's `donationDate` (Funraise sends epoch
 milliseconds; `toISODate` in `src/util/isoDate.ts` normalizes it to a UTC `YYYY-MM-DD`, which is
 also the value written to the Date column as `{ date }`, so the two never disagree) with
@@ -330,9 +343,37 @@ subscriptions on an hourly cron inside this Worker, link each webhook installmen
 Recurring Gift item, and **drop the registration path** along with the never-called subscription
 and pledge routes. A paid Funraise ticket still lands on Donations via the webhook and gets its
 own Gift Type so it never counts toward membership. Full design, mapping, config, budget and
-tests: `docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md`. Until that
-ships, the extra routes stay routable but unused, and `columnMap.recurringGift` /
-`columnMap.registration` are dead config.
+tests: `docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md`.
+
+**Built 2026-09-18** (`src/subscriptions/`, `src/funraise/client.ts`, `src/db/subscriptions.ts`,
+migration `0004`, `src/scheduled.ts`). How it runs:
+
+* **Hourly cron** `0 * * * *` → `pollSubscriptions`: `GET /api/v1/crm/subscription` with
+  `q = updtime >= <cursor> order by updtime asc`, pages of 10 via `page=N`, until a short page.
+  Every row goes through `upsertSubscription`; the cursor (`poll_cursors.subscriptions`, the
+  page's max `updtime`) advances only after the whole page is written, so a failed run re-reads
+  the page next hour and the ledger's per-row `updtime` makes already-landed rows no-ops. `>=`
+  re-reads the boundary row on purpose. Idle cost: one request per run.
+* **Adopt before create.** A subscription the ledger doesn't know is looked up on the board by
+  bare id in the Funraise ID link column; found → updated and recorded, not found → created.
+  **The first run on a board `salesforce-import` has loaded therefore adopts its ~600 existing
+  Recurring Gifts items** (expect `adopted ≈ board count, created ≈ 0` in the run's log line)
+  instead of duplicating them. A row older than the ledger is a no-op, so nothing regresses.
+* **Never-seen subscription on the webhook side.** An installment whose subscription isn't in
+  the ledger triggers one `GET /api/v1/crm/subscription/{id}` and the same upsert, then the
+  Donations item gets its Recurring Gift link — a new monthly donor's first gift links at once.
+* **Secret:** `wrangler secret put FUNRAISE_API_KEY` (the key used for the 2026-08-24 and
+  2026-09-18 probes lives locally in `funraise-sync/.env` under the misspelled name
+  `FUNRISE_API_KEY`; rename when storing). Unset → the poll logs and skips; the webhook path
+  still writes gifts, minus the Recurring Gift link. `subscriptionsPoll.enabled: false` also
+  skips.
+* **Budget:** hourly idle 744 requests/month + one page per ten changed subscriptions + one
+  request per never-seen subscription on the webhook side; under 900 of the base plan's 3,000.
+* **Verify after deploy** (not yet done): run the hourly job once by hand
+  (`npx wrangler cron trigger --cron "0 * * * *"` or wait for the top of the hour), read the log
+  line, confirm the ledger count matches the board, then re-run and expect one request and
+  `unchanged` = the boundary row only. Funraise's webhook Test payload has no `subscription`, so
+  its Donations item must show an empty Recurring Gift column.
 
 ## Open
 
@@ -341,8 +382,12 @@ ships, the extra routes stay routable but unused, and `columnMap.recurringGift` 
    subscription routes are gone the webhook consumer writes only the Donations board, and the
    poller carries its own column block.
 3. ~~Register the webhook at `/webhooks/funraise/transaction?secret=…`~~ **Done 2026-09-18**
-   (see "APIs & auth"); the other three entity paths stay routable but will never be called by
-   Funraise.
+   (see "APIs & auth"). The former subscription / pledge / registration paths are gone; any
+   other path 404s.
+4. **Deploy the poller build and run the first poll** (see "Recurring gifts and registrations",
+   "Verify after deploy"): `FUNRAISE_API_KEY` secret, migration `0004`, then one hourly run.
+5. **Gift Type vocabulary for tickets.** `eventGiftTypeValue` ships as `Event Ticket`; confirm
+   the label staff want on the Donations board before the first paid Funraise ticket arrives.
 
 ## Related, not yet in scope here
 

@@ -2,42 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { matchDonor } from './donors';
 import type { MondayClient, MondayItem } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
+import { testConfig } from '../test/testConfig';
 
-const config: FunraiseSyncConfig = {
-  monday: {
-    apiUrl: 'https://api.monday.com/v2',
-    boards: { 'donations:live': 1, 'recurring-gifts': null, 'event-registrations': null, 'people-live': 42 },
-  },
-  funraiseSync: {
-    columnMap: { transaction: {}, recurringGift: {}, registration: {} },
-    entityIdField: {
-      transaction: 'id',
-      recurringGift: 'id',
-      registration: 'id',
-    },
-    entityIdColumn: null,
-    thankYouSentColumn: null,
-    giftTypeColumn: null,
-    giftTypeValue: 'Donation',
-    fiscalYearColumn: null,
-    rawPayloadRetentionDays: 90,
-    unresolvedPayloadRetentionDays: 365,
-    itemNameField: {
-      transaction: 'description',
-      recurringGift: 'description',
-      registration: 'eventName',
-    },
-    donorExternalIdField: 'donor.contactId',
-    donorExternalIdColumn: 'funraise_id_col',
-    donorEmailColumn: 'email_col',
-    donorNameField: 'donor.name',
-    donorLinkColumn: 'connect_col',
-    emailFieldPrecedence: ['donor.email'],
-    statusField: 'status',
-    statusValueMap: {},
-    doNotMigrateFields: [],
-  },
-};
+const config = testConfig({ columnMap: {} }, { 'donations:live': 1 });
 
 function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
   return {
