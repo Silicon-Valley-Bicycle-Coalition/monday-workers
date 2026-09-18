@@ -2,48 +2,48 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations": null,
-      "organizations": null,
-      "people": null,
-      "affiliations": null,
-      "benevityUploads": null
+      "donations": 18428131791,
+      "organizations": 18428131727,
+      "people": 18428131737,
+      "affiliations": 18431270120,
+      "benevityUploads": 18431270204
     }
   },
   "benevityImport": {
-    "minDonationDate": "2026-09-15",
+    "minDonationDate": "2026-09-16",
     "donationsColumns": {
-      "donor": "REPLACE_donor_connect_column_id",
-      "matchedBy": "REPLACE_matched_by_connect_column_id",
-      "amount": "REPLACE_amount_column_id",
-      "date": "REPLACE_date_column_id",
-      "disbursementDate": "REPLACE_benevity_disbursement_date_column_id",
-      "fiscalYearEnding": "REPLACE_fiscal_year_ending_column_id",
-      "status": "REPLACE_status_column_id",
-      "giftType": "REPLACE_gift_type_column_id",
-      "anonymousDonor": "REPLACE_anonymous_donor_column_id",
-      "transactionId": "REPLACE_benevity_transaction_id_column_id"
+      "donor": "board_relation_mm6jf5jb",
+      "matchedBy": "board_relation_mm70ek0z",
+      "amount": "numeric_mm6jkxrs",
+      "date": "date_mm6jthpq",
+      "disbursementDate": "date_mm789k7q",
+      "fiscalYearEnding": "text_mm70czyd",
+      "status": "color_mm6jqdhn",
+      "giftType": "text_mm6j66w3",
+      "anonymousDonor": "boolean_mm6jb6ym",
+      "transactionId": "text_mm7035h1"
     },
     "organizationsNameColumn": "name",
     "peopleColumns": {
-      "personalEmail": "REPLACE_personal_email_column_id",
-      "householdEmail": "REPLACE_household_email_column_id",
-      "employer": "REPLACE_employer_column_id"
+      "personalEmail": "email_mm6j5e9q",
+      "householdEmail": "email_mm6j919c",
+      "employer": "text_mm6jsgh2"
     },
     "affiliationsColumns": {
-      "person": "REPLACE_person_connect_column_id",
-      "organization": "REPLACE_organization_connect_column_id",
-      "workEmail": "REPLACE_work_email_column_id"
+      "person": "board_relation_mm78wgab",
+      "organization": "board_relation_mm78azxs",
+      "workEmail": "email_mm78ve2q"
     },
     "uploadsBoard": {
-      "fileColumn": "REPLACE_file_column_id",
-      "worklistGroupId": "REPLACE_review_group_id",
+      "fileColumn": "file_mm78enz6",
+      "worklistGroupId": "group_mm789n24",
       "worklistColumns": {
-        "reason": "REPLACE_reason_column_id",
-        "name": "REPLACE_name_column_id",
-        "email": "REPLACE_email_column_id",
-        "company": "REPLACE_company_column_id",
-        "amount": "REPLACE_amount_column_id",
-        "date": "REPLACE_date_column_id"
+        "reason": "long_text_mm78n744",
+        "name": "name",
+        "email": "email_mm78a3wy",
+        "company": "text_mm78gr6a",
+        "amount": "numeric_mm78bqmd",
+        "date": "date_mm78e4yc"
       }
     },
     "organizationAliases": {},

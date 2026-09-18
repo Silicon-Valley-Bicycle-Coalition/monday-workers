@@ -8,8 +8,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-benevity-import",
-      // Replace after running: wrangler d1 create svbc-benevity-import
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "0f52790b-9707-4160-9cbf-54e8a560198e",
       "migrations_dir": "migrations"
     }
   ],
