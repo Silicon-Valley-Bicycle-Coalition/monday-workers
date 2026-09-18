@@ -70,6 +70,15 @@ describe('sandboxEmailBinding', () => {
     expect(sent.headers).toEqual({ 'X-Existing': '1', [SANDBOX_ORIGINAL_RECIPIENT_HEADER]: 'donor@example.org' });
   });
 
+  it('drops replyTo so a human reply from the sandbox inbox cannot reach the original recipient', async () => {
+    const inner = fakeInner();
+    await sandboxEmailBinding(inner, SINK).send(loginMessage({ replyTo: 'donor@example.org' }));
+
+    const sent = inner.send.mock.calls[0]![0] as EmailMessageBuilder;
+    expect(sent.replyTo).toBeUndefined();
+    expect(JSON.stringify([sent.to, sent.cc, sent.bcc, sent.replyTo])).not.toContain('donor@example.org');
+  });
+
   it('lists every original recipient — to, cc, bcc, strings and EmailAddress objects', async () => {
     const inner = fakeInner();
     await sandboxEmailBinding(inner, SINK).send(

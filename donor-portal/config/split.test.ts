@@ -36,6 +36,9 @@ describe('config split: sinks', () => {
   });
 });
 
+// Latent until production boards exist: every production board id is null and every production
+// column id is the placeholder today, so these assertions cannot yet catch a production id copied
+// into sandbox.json. They start biting the moment svbc.json is filled in at cutover.
 describe('config split: board and column ids', () => {
   it.each(['monday.donorsBoardId', 'monday.donationsBoardId', 'monday.organizationsBoardId', 'letterCron.boardId'])(
     '%s is a real sandbox id and production is null or different',
@@ -107,5 +110,17 @@ describe('wrangler.jsonc env.sandbox', () => {
   it('is not served on workers.dev or preview URLs (login portal)', () => {
     expect(sandboxEnv.workers_dev).toBe(false);
     expect(sandboxEnv.preview_urls).toBe(false);
+  });
+
+  it('never sets ENVIRONMENT at the top level — production must not load sandbox config', () => {
+    expect((wrangler.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
+    expect((wrangler.vars as Json | undefined)?.SANDBOX_EMAIL_SINK).toBeUndefined();
+  });
+
+  it('uses its own rate-limit namespace', () => {
+    const prodLimiter = (wrangler.ratelimits as Json[])[0]!;
+    const sbLimiter = (sandboxEnv.ratelimits as Json[])[0]!;
+    expect(sbLimiter.name).toBe(prodLimiter.name);
+    expect(sbLimiter.namespace_id).not.toBe(prodLimiter.namespace_id);
   });
 });

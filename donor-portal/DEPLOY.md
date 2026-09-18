@@ -117,6 +117,11 @@ namespace, cron — and can only email `sandbox@bikesiliconvalley.org`. Provisio
 2. A Monday integration user with a Work Management member seat whose only board access is the
    CRM Sandbox workspace (`17141226`); mint its API token. One shared sandbox user serves every
    sandbox Worker (see the design doc §4).
+3. Add `sandbox@bikesiliconvalley.org` as a **verified destination address** in the Cloudflare
+   dashboard (Compute → Email Service → Email Routing → Destination Addresses) and click the
+   verification link that lands in the group inbox. Sends to verified destination addresses
+   are free and quota-exempt on every plan, and on Workers Free they are the only sends
+   allowed — without this step the first sandbox send is rejected.
 
 **Cloudflare, from `donor-portal/`:**
 
@@ -133,6 +138,12 @@ wrangler secret put LETTER_WEBHOOK_SECRET --env sandbox # any fresh random strin
 
 Phase 3 (Email Sending on `mail.bikesiliconvalley.org`) must already be done — the sandbox
 sends from the same onboarded domain. Commit the `database_id`, then:
+
+Before deploying, open the sandbox "Donor Portal Letter Settings (sandbox)" board
+(`18428114991`) and confirm **Auto-send is unchecked** on the "Letter emails" item. The sandbox
+config arms the letter cron (`letterCron` filled, `taxLetter` test text present), so a checked
+box with a past start date would queue up to `maxTriggersPerRun` (200) letter emails into the
+`sandbox@` group on the first 09:00 UTC run. Re-check after any sandbox board reshuffle.
 
 ```sh
 npm test && npm run typecheck

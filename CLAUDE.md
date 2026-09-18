@@ -137,7 +137,8 @@ Monday (`donor-portal` today; `mailchimp-sync`, `quickbooks-sync`, `monday-backu
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
 `send_email` binding's `allowed_destination_addresses`) and by a per-Worker
-`config/split.test.ts` that fails if the two configs share a sink or an id. When adding the
+`config/split.test.ts` that fails if the two configs ever share a sink or an id (the id checks
+are latent until production ids exist). When adding the
 environment to another Worker, copy `donor-portal`'s `environment.ts`, split test, and
 `env.sandbox` shape rather than re-deriving them. Design:
 `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.

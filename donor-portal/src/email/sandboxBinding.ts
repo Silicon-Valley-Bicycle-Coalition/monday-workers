@@ -41,8 +41,9 @@ export function sandboxEmailBinding(inner: SendEmail, sink: string): SendEmail {
 
       console.log(JSON.stringify({ sandboxOutbound: 'email', originalTo: originalRecipients, subject: message.subject }));
 
-      // cc/bcc are dropped, not rewritten: one copy to the sink is the whole point.
-      const { cc: _cc, bcc: _bcc, ...rest } = message;
+      // cc/bcc/replyTo are dropped, not rewritten: one copy to the sink is the whole point, and a
+      // replyTo pointing at the donor would let a human reply from the sandbox inbox reach them.
+      const { cc: _cc, bcc: _bcc, replyTo: _replyTo, ...rest } = message;
       return inner.send({
         ...rest,
         to: sink,

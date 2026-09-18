@@ -352,7 +352,8 @@ These are not code and gate the corresponding rollout step:
 * **Google Workspace group `sandbox@bikesiliconvalley.org`**, members: staff who test. Its
   posting policy must accept mail from `login@mail.bikesiliconvalley.org` (an external sender),
   or every redirected send bounces. Verify with the `wrangler email sending send` test from
-  `donor-portal/DEPLOY.md` Phase 3 before the first sandbox deploy.
+  `donor-portal/DEPLOY.md` Phase 3 before the first sandbox deploy. Then add that address as a
+  verified destination in Cloudflare Email Service (see Open items).
 * **`portal-sandbox.bikesiliconvalley.org`** DNS on the Cloudflare zone (a custom domain the
   sandbox deploy attaches).
 * **Monday:** the shared sandbox integration user with a member seat and access to workspace
@@ -372,9 +373,16 @@ These are not code and gate the corresponding rollout step:
 * **Rate-limit namespace scope.** Whether `ratelimits[].namespace_id` must be unique per
   account or per Worker is not stated clearly in the docs read for this design; the sandbox
   uses `1002` either way, which is safe under both readings.
-* **Email Service pricing for non-verified recipients.** The sink is a single verified address,
-  so the sandbox is inside the free tier regardless; noted only because production sends are
-  not.
+* **Confirmed 2026-09-18:** a `wrangler deploy --env sandbox --dry-run` on Wrangler 4.125
+  accepted `ratelimits` and `routes` inside `env.sandbox` with no warning, and the production
+  dry-run was unaffected. This confirms the config shape, not the namespace-scope question above,
+  which stays open but is moot while the sandbox is a separate script.
+* **Sink must be a verified destination address.** Sends to verified destination addresses are
+  free and quota-exempt on every plan, and on Workers Free (SVBC's current plan) they are the
+  only sends allowed. `sandbox@bikesiliconvalley.org` must therefore be added and verified under
+  Email Service → Email Routing → Destination Addresses before the first sandbox deploy —
+  `donor-portal/DEPLOY.md` lists it as a staff prerequisite. Production sends to donors are
+  not verified-destination sends and need the Workers Paid plan.
 
 ## Decision history
 

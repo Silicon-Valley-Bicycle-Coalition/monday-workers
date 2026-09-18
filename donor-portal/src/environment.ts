@@ -2,7 +2,7 @@
 // or sandbox (`wrangler deploy --env sandbox`, which sets the ENVIRONMENT var). The sandbox is a
 // permanent parallel environment that runs against the CRM Sandbox boards and must never emit
 // data to a donor or a vendor's production account — see
-// docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+// ../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
 export type Environment = 'production' | 'sandbox';
 
 // The one var this module reads. Declared as its own interface so the entrypoint's full Env can
@@ -34,8 +34,7 @@ export function createConfigSelector<T>(sources: ConfigSources<T>): (env: Enviro
   const memo = new Map<Environment, T>();
   return (env) => {
     const environment = environmentOf(env);
-    const cached = memo.get(environment);
-    if (cached !== undefined) return cached;
+    if (memo.has(environment)) return memo.get(environment) as T;
     const config = sources.validate(environment === 'sandbox' ? sources.sandbox : sources.production);
     memo.set(environment, config);
     return config;

@@ -143,8 +143,12 @@ nowhere else, two ways at once: the `EMAIL` binding is declared with
 with `E_RECIPIENT_NOT_ALLOWED`; and `src/email/sandboxBinding.ts` rewrites every recipient to
 it, prefixing the subject with `[sandbox → <original recipient>]` and prepending a notice. Staff
 can therefore request a login link as any real donor to test the portal end to end. The
-production and sandbox configs are kept apart by `config/split.test.ts`, which fails if they
-share a sink, a board id, or a column id. Design:
+production and sandbox configs are kept apart by `config/split.test.ts`, which fails if they ever
+share a sink, a board id, or a column id (the id checks are latent until production boards exist
+and start biting at cutover). What the sandbox cannot exercise today, because the CRM Sandbox has
+no board or column for it: change requests (no Change Requests board, so the `CHANGE_QUEUE`
+consumer idles), volunteer history, event registrations, pledges, and the
+communication-preference checkboxes — each stays hidden by its own config gate. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 ## Data model dependencies
