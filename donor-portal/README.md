@@ -134,6 +134,19 @@ A dedicated sending subdomain (`mail.bikesiliconvalley.org`) with its own SPF/DK
 kept separate from the main domain's mail flow, is standard practice for transactional email — see
 `DEPLOY.md` Phase 3 for the onboarding steps.
 
+**Sandbox environment — inbound only, no outbound data.** `npm run deploy:sandbox` deploys
+`svbc-donor-portal-sandbox` (`wrangler.jsonc` `env.sandbox`) against the CRM Sandbox boards
+(`config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var — see
+`src/environment.ts`). In the sandbox every email goes to `sandbox@bikesiliconvalley.org`, and
+nowhere else, two ways at once: the `EMAIL` binding is declared with
+`allowed_destination_addresses` of that one address, so Cloudflare rejects any other recipient
+with `E_RECIPIENT_NOT_ALLOWED`; and `src/email/sandboxBinding.ts` rewrites every recipient to
+it, prefixing the subject with `[sandbox → <original recipient>]` and prepending a notice. Staff
+can therefore request a login link as any real donor to test the portal end to end. The
+production and sandbox configs are kept apart by `config/split.test.ts`, which fails if they
+share a sink, a board id, or a column id. Design:
+`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
+
 ## Data model dependencies
 
 * **Membership Status + Tier** on the Donors board (or a linked Membership board, once designed) —

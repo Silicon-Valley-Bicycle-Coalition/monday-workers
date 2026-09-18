@@ -88,6 +88,7 @@ npm test -- -t "test name"         # single test by name
 npm run typecheck           # tsc --noEmit
 npm run dev                 # wrangler dev — local Worker + D1 + queue simulation
 npm run deploy               # wrangler deploy
+npm run deploy:sandbox       # wrangler deploy --env sandbox — Workers that have an env.sandbox block (donor-portal so far)
 ```
 
 `salesforce-import` is a one-time batch CLI, not a deployed Worker, so it has no `dev`/`deploy`
@@ -129,6 +130,17 @@ instead of a queue.
 **Config, not hardcoding:** SVBC-specific values (board IDs, field names, city lists) live in each
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
+
+**Sandbox environment — inbound only, no outbound data.** Workers that can emit data outside
+Monday (`donor-portal` today; `mailchimp-sync`, `quickbooks-sync`, `monday-backup` next) carry a
+`sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
+secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
+(`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
+`send_email` binding's `allowed_destination_addresses`) and by a per-Worker
+`config/split.test.ts` that fails if the two configs share a sink or an id. When adding the
+environment to another Worker, copy `donor-portal`'s `environment.ts`, split test, and
+`env.sandbox` shape rather than re-deriving them. Design:
+`docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
 per exposure class (the public-facing `donor-portal` gets its own user with access to only the
