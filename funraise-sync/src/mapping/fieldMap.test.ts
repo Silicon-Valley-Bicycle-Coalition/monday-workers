@@ -76,14 +76,23 @@ describe('mapToMondayColumns', () => {
   // set silently drops the donation from rollups.
   const DONATIONS_STATUS_VOCABULARY = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
 
-  it("maps Funraise's Posted success state to 'Received' in the shipped SVBC config", () => {
+  // Funraise's documented webhook payload carries the status at data.transaction.status with
+  // the value "Complete" for a successful gift — "Posted" was the Salesforce stage name.
+  it("maps Funraise's Complete success state to 'Received' in the shipped SVBC config", () => {
     const svbcConfig = validateConfig(rawSvbcConfig);
 
-    const result = mapToMondayColumns('transaction', { status: 'Posted' }, svbcConfig);
+    const result = mapToMondayColumns('transaction', { transaction: { status: 'Complete' } }, svbcConfig);
 
-    const statusColumn = svbcConfig.funraiseSync.columnMap.transaction.status;
+    const statusColumn = svbcConfig.funraiseSync.columnMap.transaction['transaction.status'];
     expect(statusColumn).toBeDefined();
     expect(result[statusColumn as string]).toBe('Received');
+  });
+
+  it('denylists the card and billing PII where Funraise actually puts it, so the strip is not a no-op', () => {
+    const svbcConfig = validateConfig(rawSvbcConfig);
+    for (const path of ['transaction.lastFour', 'transaction.expirationDate', 'transaction.billingZip']) {
+      expect(svbcConfig.funraiseSync.doNotMigrateFields).toContain(path);
+    }
   });
 
   it('only maps to labels that exist in the Donations board status vocabulary', () => {

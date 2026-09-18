@@ -5,6 +5,7 @@ import { mapToMondayColumns, ENTITY_MAP_KEY } from '../mapping/fieldMap';
 import { fiscalYearEnding } from '../mapping/fiscalYear';
 import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
+import { toISODate } from '../util/isoDate';
 import { errorMessage } from '../util/errorMessage';
 
 export interface QueueMessageLike<T> {
@@ -27,9 +28,10 @@ export interface ProcessBatchDeps {
 type BoardKey = keyof FunraiseSyncConfig['monday']['boards'];
 
 // The Funraise transaction field the Donations board's Date column is mapped from
-// (`columnMap.transaction.createdAt` in config/svbc.json); Fiscal Year Ending is derived from
-// the same value so the two columns can never disagree.
-const TRANSACTION_DATE_FIELD = 'createdAt';
+// (`columnMap.transaction.donationDate` in config/svbc.json). Funraise sends it as epoch
+// milliseconds, so it's normalized to YYYY-MM-DD before the write, and Fiscal Year Ending is
+// derived from that same normalized value so the two columns can never disagree.
+const TRANSACTION_DATE_FIELD = 'donationDate';
 
 const BOARD_FOR_ENTITY: Record<EntityType, BoardKey> = {
   transaction: 'donations:live',
@@ -86,6 +88,17 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   const { donorLinkColumn, entityIdColumn, thankYouSentColumn, giftTypeColumn, giftTypeValue, fiscalYearColumn } =
     deps.config.funraiseSync;
   const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
+
+  // columnMap writes values verbatim, which is wrong for the date: Funraise sends epoch
+  // milliseconds and Monday's date column wants { date: 'YYYY-MM-DD' }. Replace the mapped
+  // value with the normalized one, or drop the column rather than write a raw number.
+  const transactionDate = entityType === 'transaction' ? toISODate(getPath(rawPayload, TRANSACTION_DATE_FIELD)) : null;
+  const dateColumn = deps.config.funraiseSync.columnMap.transaction[TRANSACTION_DATE_FIELD];
+  if (entityType === 'transaction' && dateColumn) {
+    if (transactionDate !== null) columnValues[dateColumn] = { date: transactionDate };
+    else delete columnValues[dateColumn];
+  }
+
   if (donorItemId) {
     columnValues[donorLinkColumn] = {
       item_ids: [Number(donorItemId)],
@@ -126,7 +139,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
   // deliberately never backfills it (decision 2026-09-17, both READMEs), so the writer that
   // creates the item owns it. Same first-write-only rule as Thank You Sent, for the same reason.
   if (fiscalYearColumn && entityType === 'transaction') {
-    const fiscalYear = fiscalYearEnding(getPath(rawPayload, TRANSACTION_DATE_FIELD));
+    const fiscalYear = fiscalYearEnding(transactionDate);
     if (fiscalYear !== null) {
       columnValues[fiscalYearColumn] = fiscalYear;
     } else {

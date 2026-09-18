@@ -412,10 +412,12 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
     funraiseSync: { ...config.funraiseSync, fiscalYearColumn: 'fiscal_year_col' },
   };
 
-  function transactionRow(createdAt: unknown, overrides: Partial<EventRow> = {}): EventRow {
+  // Funraise's transaction date field is `donationDate`, sent as epoch milliseconds; an ISO
+  // string is accepted too (see toISODate), which keeps these fixtures readable.
+  function transactionRow(donationDate: unknown, overrides: Partial<EventRow> = {}): EventRow {
     return eventRow({
       matchedDonorItemId: '7',
-      rawPayload: JSON.stringify({ amount: 100, createdAt, donor: { contactId: 'fr-1' } }),
+      rawPayload: JSON.stringify({ amount: 100, donationDate, donor: { contactId: 'fr-1' } }),
       ...overrides,
     });
   }
@@ -427,6 +429,47 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
       changeColumnValues: vi.fn(),
     };
   }
+
+  it('writes the mapped Date column as a YYYY-MM-DD date object from the epoch-ms donationDate, and the fiscal year from the same date', async () => {
+    const dateConfig: FunraiseSyncConfig = {
+      ...fiscalYearConfig,
+      funraiseSync: {
+        ...fiscalYearConfig.funraiseSync,
+        columnMap: { ...fiscalYearConfig.funraiseSync.columnMap, transaction: { amount: 'numeric_col', donationDate: 'date_col' } },
+      },
+    };
+    // 2026-08-15T18:30:12Z — August, so fiscal year 2027.
+    const eventStore = fakeStore(transactionRow(1786818612000));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient: clientForCreate(createItem), config: dateConfig });
+
+    expect(createItem).toHaveBeenCalledWith(
+      111,
+      expect.any(String),
+      expect.objectContaining({ date_col: { date: '2026-08-15' }, fiscal_year_col: '2027' })
+    );
+  });
+
+  it('leaves the mapped Date column out when donationDate is unparseable, instead of writing a raw number', async () => {
+    const dateConfig: FunraiseSyncConfig = {
+      ...fiscalYearConfig,
+      funraiseSync: {
+        ...fiscalYearConfig.funraiseSync,
+        columnMap: { ...fiscalYearConfig.funraiseSync.columnMap, transaction: { donationDate: 'date_col' } },
+      },
+    };
+    const eventStore = fakeStore(transactionRow('not a date'));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient: clientForCreate(createItem), config: dateConfig });
+
+    expect(createItem).toHaveBeenCalledWith(
+      111,
+      expect.any(String),
+      expect.not.objectContaining({ date_col: expect.anything() })
+    );
+  });
 
   it('stamps the fiscal year (July rule) as a string when creating a Donations item', async () => {
     const eventStore = fakeStore(transactionRow('2026-08-15T18:30:12.000Z'));
@@ -513,9 +556,9 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
     );
   });
 
-  it('leaves the column out (and still creates) when createdAt is missing or unparseable', async () => {
-    for (const createdAt of [undefined, 'not a date']) {
-      const eventStore = fakeStore(transactionRow(createdAt));
+  it('leaves the column out (and still creates) when donationDate is missing or unparseable', async () => {
+    for (const donationDate of [undefined, 'not a date']) {
+      const eventStore = fakeStore(transactionRow(donationDate));
       const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
 
       await processFunraiseQueueBatch([fakeMessage()], {

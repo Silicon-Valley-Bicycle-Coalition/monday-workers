@@ -5,6 +5,9 @@ export interface NewEvent {
   entityType: EntityType;
   entityId: string;
   rawPayload: string;
+  // Delivery send time (epoch ms) from the Funraise envelope; null when it had none. Orders
+  // deliveries for the same entity — see upsertEvent.
+  sentAt: number | null;
   receivedAt: string;
 }
 
@@ -70,19 +73,26 @@ export class D1EventStore implements EventStore {
       .bind(row.entityType, row.entityId)
       .first<{ event_id: string }>();
 
+    // A delivery for a known entity replaces the row only if it isn't older than what's stored:
+    // at-least-once delivery can replay an earlier edit after a later one was written, and
+    // applying it would push stale columns back onto the Monday item. Ordering is by the
+    // envelope's send time; a NULL on either side means the order is unknown, so it updates.
+    // A stale delivery hits the WHERE, changes nothing, and is reported as a duplicate.
     const result = await this.db
       .prepare(
-        `INSERT INTO events (event_id, entity_type, entity_id, raw_payload, status, received_at)
-         VALUES (?1, ?2, ?3, ?4, 'received', ?5)
+        `INSERT INTO events (event_id, entity_type, entity_id, raw_payload, sent_at, status, received_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'received', ?6)
          ON CONFLICT (event_id) DO NOTHING
          ON CONFLICT (entity_type, entity_id) DO UPDATE SET
            event_id = excluded.event_id,
            raw_payload = excluded.raw_payload,
+           sent_at = excluded.sent_at,
            status = 'received',
            error = NULL,
-           received_at = excluded.received_at`
+           received_at = excluded.received_at
+         WHERE excluded.sent_at IS NULL OR events.sent_at IS NULL OR excluded.sent_at >= events.sent_at`
       )
-      .bind(row.eventId, row.entityType, row.entityId, row.rawPayload, row.receivedAt)
+      .bind(row.eventId, row.entityType, row.entityId, row.rawPayload, row.sentAt, row.receivedAt)
       .run();
 
     if (result.meta.changes === 0) return 'duplicate';

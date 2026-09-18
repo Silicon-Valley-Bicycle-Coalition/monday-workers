@@ -8,6 +8,7 @@ function newEvent(overrides: Partial<Parameters<D1EventStore['upsertEvent']>[0]>
     entityType: 'transaction' as const,
     entityId: 'txn-1',
     rawPayload: '{"amount":100}',
+    sentAt: null,
     receivedAt: '2026-08-22T00:00:00.000Z',
     ...overrides,
   };
@@ -61,6 +62,44 @@ describe('D1EventStore', () => {
     expect(row?.receivedAt).toBe('2026-08-22T02:00:00.000Z');
     // The Monday item id must survive the update — it's what tells the consumer to update, not create.
     expect(row?.mondayItemId).toBe('item-1');
+  });
+
+  // Funraise sends no delivery id, only a send time; at-least-once delivery can replay an older
+  // delivery after a newer one was stored and written. Ordering is by sentAt, not arrival.
+  describe('out-of-order deliveries for the same entity', () => {
+    it('reports duplicate and leaves the row untouched when the incoming sentAt is older than the stored one', async () => {
+      const store = new D1EventStore(env.DB);
+      await store.upsertEvent(newEvent({ eventId: '9:2000', entityId: 'txn-9', sentAt: 2000, rawPayload: '{"status":"Refunded"}' }));
+      await store.updateStatusByEntity('transaction', 'txn-9', 'written', { mondayItemId: 'item-9' });
+
+      const result = await store.upsertEvent(
+        newEvent({ eventId: '9:1000', entityId: 'txn-9', sentAt: 1000, rawPayload: '{"status":"Complete"}' })
+      );
+      expect(result).toBe('duplicate');
+
+      const row = await store.getEventByEntity('transaction', 'txn-9');
+      expect(row?.eventId).toBe('9:2000');
+      expect(row?.rawPayload).toBe('{"status":"Refunded"}');
+      expect(row?.status).toBe('written');
+    });
+
+    it('reports updated when the incoming sentAt is newer', async () => {
+      const store = new D1EventStore(env.DB);
+      await store.upsertEvent(newEvent({ eventId: '10:1000', entityId: 'txn-10', sentAt: 1000 }));
+
+      const result = await store.upsertEvent(newEvent({ eventId: '10:2000', entityId: 'txn-10', sentAt: 2000, rawPayload: '{"amount":5}' }));
+      expect(result).toBe('updated');
+      expect((await store.getEventByEntity('transaction', 'txn-10'))?.rawPayload).toBe('{"amount":5}');
+    });
+
+    it('still updates when either side has no sentAt, since their order is unknown', async () => {
+      const store = new D1EventStore(env.DB);
+      await store.upsertEvent(newEvent({ eventId: '11:a', entityId: 'txn-11', sentAt: 5000 }));
+      expect(await store.upsertEvent(newEvent({ eventId: '11:b', entityId: 'txn-11', sentAt: null }))).toBe('updated');
+
+      await store.upsertEvent(newEvent({ eventId: '12:a', entityId: 'txn-12', sentAt: null }));
+      expect(await store.upsertEvent(newEvent({ eventId: '12:b', entityId: 'txn-12', sentAt: 1 }))).toBe('updated');
+    });
   });
 
   it('same entity id under a different entity type is a separate entity', async () => {

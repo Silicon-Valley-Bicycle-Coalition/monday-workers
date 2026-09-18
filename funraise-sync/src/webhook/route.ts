@@ -62,6 +62,7 @@ export function createApp(deps: AppDeps) {
 
     const upsertResult = await deps.eventStore.upsertEvent({
       eventId: envelope.eventId,
+      sentAt: envelope.sentAt,
       entityType: envelope.entityType,
       entityId,
       rawPayload: JSON.stringify(stripped),

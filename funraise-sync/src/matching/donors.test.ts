@@ -82,9 +82,30 @@ describe('matchDonor', () => {
     });
 
     expect(result).toEqual({ donorItemId: 'donor-new', created: true });
+    // Monday rejects bare strings on email and link columns: the People board's Personal
+    // Email is an email column and Funraise Profile is a link column (the supporter URL with
+    // the bare id as its text, the same shape salesforce-import writes).
     expect(createItem).toHaveBeenCalledWith(42, 'Casey Donor', {
-      email_col: 'c@example.com',
-      funraise_id_col: 'fr-3',
+      email_col: { email: 'c@example.com', text: 'c@example.com' },
+      funraise_id_col: { url: 'https://platform.funraise.io/supporter/fr-3', text: 'fr-3' },
+    });
+  });
+
+  it('matches and creates on a numeric supporter id, as Funraise sends it', async () => {
+    const supporterConfig: FunraiseSyncConfig = {
+      ...config,
+      funraiseSync: { ...config.funraiseSync, donorExternalIdField: 'supporter.id', emailFieldPrecedence: ['supporter.email'] },
+    };
+    const findItemByColumnValue = vi.fn().mockResolvedValue(null);
+    const createItem = vi.fn().mockResolvedValue({ id: 'donor-new' });
+    const client = fakeMondayClient({ findItemByColumnValue, createItem });
+
+    await matchDonor(client, supporterConfig, { supporter: { id: 7276, email: 'debbie@example.com' } });
+
+    expect(findItemByColumnValue).toHaveBeenNthCalledWith(1, 42, 'funraise_id_col', '7276');
+    expect(createItem).toHaveBeenCalledWith(42, 'Unknown Donor', {
+      email_col: { email: 'debbie@example.com', text: 'debbie@example.com' },
+      funraise_id_col: { url: 'https://platform.funraise.io/supporter/7276', text: '7276' },
     });
   });
 

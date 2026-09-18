@@ -11,9 +11,9 @@
   "funraiseSync": {
     "columnMap": {
       "transaction": {
-        "amount": "numeric_mm6jkxrs",
-        "status": "color_mm6jqdhn",
-        "createdAt": "date_mm6jthpq"
+        "transaction.amount": "numeric_mm6jkxrs",
+        "transaction.status": "color_mm6jqdhn",
+        "donationDate": "date_mm6jthpq"
       },
       "recurringGift": {
         "amount": "numeric_mm6jg878",
@@ -39,16 +39,24 @@
     "fiscalYearColumn": "text_mm70czyd",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
-    "donorExternalIdField": "donor.contactId",
+    "donorExternalIdField": "supporter.id",
     "donorExternalIdColumn": "link_mm6j7djp",
     "donorEmailColumn": "email_mm6j5e9q",
-    "donorNameField": "donor.name",
+    "donorNameField": "supporter.name",
     "donorLinkColumn": "board_relation_mm6jf5jb",
-    "emailFieldPrecedence": ["donor.email"],
-    "statusField": "status",
+    "emailFieldPrecedence": ["supporter.email"],
+    "statusField": "transaction.status",
     "statusValueMap": {
-      "Posted": "Received"
+      "Complete": "Received"
     },
-    "doNotMigrateFields": ["paymentMethod.lastFour", "paymentMethod.expiration"]
+    "doNotMigrateFields": [
+      "transaction.lastFour",
+      "transaction.expirationDate",
+      "transaction.cardType",
+      "transaction.billingFirstName",
+      "transaction.billingLastName",
+      "transaction.billingZip",
+      "transaction.errors"
+    ]
   }
 }
