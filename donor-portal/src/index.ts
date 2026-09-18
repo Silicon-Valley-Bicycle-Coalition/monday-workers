@@ -1,4 +1,7 @@
-import rawConfig from '../config/svbc.json';
+import productionConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
+import { createConfigSelector, environmentOf, queueBaseName } from './environment';
+import { sandboxEmailBinding } from './email/sandboxBinding';
 import { validateConfig, pledgesEnabled } from './config';
 import { createApp } from './routes';
 import { D1MagicLinkTokenStore } from './db/tokens';
@@ -21,6 +24,26 @@ import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
 import { purgeExpiredCardTokens } from './card/purgeExpiredTokens';
 
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate. Production's config/svbc.json still ships with placeholder ids until an operator
+// fills them in, so validation cannot run at import time — see validateConfig's placeholder check.
+const configFor = createConfigSelector<Config>({
+  production: productionConfig,
+  sandbox: sandboxConfig,
+  validate: validateConfig,
+});
+
+// In the sandbox every email is redirected to the sink; in production the binding is used as
+// is. Exported for tests. The platform-side guard (the binding's allowed_destination_addresses
+// in wrangler.jsonc) holds even if this function were wrong.
+export function emailBindingFor(env: Env): SendEmail {
+  if (environmentOf(env) !== 'sandbox') return env.EMAIL;
+  if (!env.SANDBOX_EMAIL_SINK) {
+    throw new Error('SANDBOX_EMAIL_SINK var must be set when ENVIRONMENT is "sandbox" (see wrangler.jsonc env.sandbox.vars)');
+  }
+  return sandboxEmailBinding(env.EMAIL, env.SANDBOX_EMAIL_SINK);
+}
+
 export interface QueueRouterDeps {
   changeStore: ChangeRequestStore;
   letterStore: LetterSendStore;
@@ -40,7 +63,9 @@ export async function routeQueueBatch(
   batch: MessageBatch<ChangeQueueMessage> | MessageBatch<LetterSendQueueMessage>,
   deps: QueueRouterDeps
 ): Promise<void> {
-  if (batch.queue === 'donor-portal-change-requests') {
+  const queueName = queueBaseName(batch.queue);
+
+  if (queueName === 'donor-portal-change-requests') {
     await processChangeQueueBatch([...(batch as MessageBatch<ChangeQueueMessage>).messages], {
       store: deps.changeStore,
       monday: deps.monday,
@@ -49,7 +74,7 @@ export async function routeQueueBatch(
     return;
   }
 
-  if (batch.queue === 'donor-portal-letter-emails') {
+  if (queueName === 'donor-portal-letter-emails') {
     await processLetterSendBatch([...(batch as MessageBatch<LetterSendQueueMessage>).messages], {
       store: deps.letterStore,
       monday: deps.monday,
@@ -66,13 +91,8 @@ export async function routeQueueBatch(
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    // Validated lazily, per request, rather than at module scope: config/svbc.json ships with
-    // placeholder board ids and column ids until an operator fills in the real ones (see
-    // validateConfig's placeholder check in ./config), so a throwing validation call can't sit at
-    // import time without also breaking every test file the Workers test runtime loads this
-    // module for. Deferring it here keeps the "fail loudly on bad config" behavior (any request
-    // throws immediately) without that side effect at import.
-    const config = validateConfig(rawConfig);
+    // Validated lazily and memoized per environment — see configFor above.
+    const config = configFor(env);
     if (config.monday.donorsBoardId === null || config.monday.donationsBoardId === null || config.monday.organizationsBoardId === null) {
       throw new Error('config: monday board ids must be set before this Worker can serve requests');
     }
@@ -96,7 +116,7 @@ export default {
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),
       attemptStore: new D1LoginAttemptStore(env.DB),
-      emailSender: new CloudflareEmailSender(env.EMAIL, config.email.fromAddress, config.email.fromName),
+      emailSender: new CloudflareEmailSender(emailBindingFor(env), config.email.fromAddress, config.email.fromName),
       ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
       config,
       now: () => new Date(),
@@ -111,9 +131,8 @@ export default {
   },
 
   async queue(batch: MessageBatch<ChangeQueueMessage> | MessageBatch<LetterSendQueueMessage>, env: Env): Promise<void> {
-    // Same lazy-validation rationale as fetch() above: config/svbc.json ships with placeholder
-    // board/column ids until an operator fills them in, so validation can't happen at import time.
-    const config = validateConfig(rawConfig);
+    // Validated lazily and memoized per environment — see configFor above.
+    const config = configFor(env);
     // No pledges config passed (7th arg defaults to null): no queue consumer reads pledges, so
     // getPledgesForDonor throws on this client by design. If a future consumer needs pledges,
     // wire the config here the way fetch() does — don't debug the throw first.
@@ -136,7 +155,7 @@ export default {
       letterStore: new D1LetterSendStore(env.DB),
       monday,
       tokenStore: new D1MagicLinkTokenStore(env.DB),
-      emailSender: new CloudflareEmailSender(env.EMAIL, config.email.fromAddress, config.email.fromName),
+      emailSender: new CloudflareEmailSender(emailBindingFor(env), config.email.fromAddress, config.email.fromName),
       config,
       now: () => new Date(),
     });
@@ -146,8 +165,8 @@ export default {
   // 'queued' rows are left alone; see purgeExpiredCardTokens for why revoked card_tokens rows
   // are deleted and active ones are left alone.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    // Same lazy-validation rationale as fetch()/queue() above.
-    const config = validateConfig(rawConfig);
+    // Validated lazily and memoized per environment — see configFor above.
+    const config = configFor(env);
     const purgedChangeRequests = await purgeExpiredChangeRequests({
       store: new D1ChangeRequestStore(env.DB),
       retentionDays: config.changeRequests.retentionDays,

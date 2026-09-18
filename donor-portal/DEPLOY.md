@@ -101,6 +101,80 @@ npm test && npm run typecheck
 npm run deploy
 ```
 
+## Sandbox environment (independent of Phases 1–5)
+
+The sandbox is a permanent parallel deployment, `svbc-donor-portal-sandbox`, defined by
+`wrangler.jsonc`'s `env.sandbox` and `config/sandbox.json` (CRM Sandbox board ids, filled in
+2026-09-18). It shares nothing with production — name, D1, queues, secrets, rate-limit
+namespace, cron — and can only email `sandbox@bikesiliconvalley.org`. Provision it once:
+
+**Staff prerequisites (not Cloudflare):**
+
+1. Google Workspace group `sandbox@bikesiliconvalley.org`, members = staff who test the portal.
+   Its posting policy must accept mail from `login@mail.bikesiliconvalley.org` (an external
+   sender to the group) or every redirected send bounces. Test before deploying:
+   `wrangler email sending send --from "login@mail.bikesiliconvalley.org" --to "sandbox@bikesiliconvalley.org" --subject "Sandbox sink test" --text "Test."`
+2. A Monday integration user with a Work Management member seat whose only board access is the
+   CRM Sandbox workspace (`17141226`); mint its API token. One shared sandbox user serves every
+   sandbox Worker (see the design doc §4).
+3. Add `sandbox@bikesiliconvalley.org` as a **verified destination address** in the Cloudflare
+   dashboard (Compute → Email Service → Email Routing → Destination Addresses) and click the
+   verification link that lands in the group inbox. Sends to verified destination addresses
+   are free and quota-exempt on every plan, and on Workers Free they are the only sends
+   allowed — without this step the first sandbox send is rejected.
+
+**Cloudflare, from `donor-portal/`:**
+
+```sh
+wrangler d1 create svbc-donor-portal-sandbox           # paste the id into env.sandbox.d1_databases[0].database_id
+wrangler d1 migrations apply svbc-donor-portal-sandbox --remote --env sandbox
+wrangler queues create donor-portal-change-requests-sandbox
+wrangler queues create donor-portal-change-requests-sandbox-dlq
+wrangler queues create donor-portal-letter-emails-sandbox
+wrangler queues create donor-portal-letter-emails-sandbox-dlq
+wrangler secret put MONDAY_API_TOKEN --env sandbox      # the sandbox integration user's token
+wrangler secret put LETTER_WEBHOOK_SECRET --env sandbox # any fresh random string
+```
+
+Phase 3 (Email Sending on `mail.bikesiliconvalley.org`) must already be done — the sandbox
+sends from the same onboarded domain. Commit the `database_id`, then:
+
+Before deploying, open the sandbox "Donor Portal Letter Settings (sandbox)" board
+(`18428114991`) and confirm **Auto-send is unchecked** on the "Letter emails" item. The sandbox
+config arms the letter cron (`letterCron` filled, `taxLetter` test text present), so a checked
+box with a past start date would queue up to `maxTriggersPerRun` (200) letter emails into the
+`sandbox@` group on the first 09:00 UTC run. Re-check after any sandbox board reshuffle.
+
+```sh
+npm test && npm run typecheck
+npm run deploy:sandbox
+```
+
+The deploy attaches the custom domain `portal-sandbox.bikesiliconvalley.org` (declared in
+`env.sandbox.routes`; the zone is on Cloudflare, so no manual DNS).
+
+**Verify the rule holds, both layers:**
+
+1. From `https://portal-sandbox.bikesiliconvalley.org`, request a login link for a real donor
+   email that exists on the sandbox People board. It must arrive **only** at `sandbox@`, with
+   subject `[sandbox → <that address>] Your SVBC donor portal login link`. Follow the link;
+   the portal renders that donor's sandbox data.
+2. `wrangler tail --env sandbox` shows one `{"sandboxOutbound":"email",…}` line per send.
+3. Platform layer alone: in a scratch copy of `src/index.ts` make `emailBindingFor` return
+   `env.EMAIL` unconditionally (do not commit), run `wrangler dev --env sandbox --remote`,
+   POST the same login request to the local URL, and confirm the dev log shows
+   `E_RECIPIENT_NOT_ALLOWED` and nothing arrives anywhere. Revert the scratch edit
+   (`git checkout src/index.ts`). If remote dev refuses to attach the Email binding, use
+   `wrangler versions upload --env sandbox` of the scratch edit and test the uploaded version's
+   URL instead, then upload the reverted code.
+
+**Workers Builds:** connect a second Worker, `svbc-donor-portal-sandbox`, to this repo with root
+directory `/donor-portal`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to a GitLab CI job on `main`
+that runs `npm ci && npx wrangler deploy --env sandbox` from `donor-portal/` with a
+`CLOUDFLARE_API_TOKEN` CI variable.
+
 ## Phase 5 — Pre-launch verification (staff-only, before announcing)
 
 1. **GraphQL shape checks** — the three NOTE-flagged, unverified-against-live shapes in

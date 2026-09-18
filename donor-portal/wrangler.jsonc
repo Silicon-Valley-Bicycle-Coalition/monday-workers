@@ -57,5 +57,69 @@
   },
   "observability": {
     "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-donor-portal-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Rule: inbound data only, no outbound data — the EMAIL binding below may only deliver to the
+  // one sink address, enforced by Cloudflare (E_RECIPIENT_NOT_ALLOWED otherwise); the code
+  // layer in src/email/sandboxBinding.ts rewrites recipients to the same address. Everything
+  // here is non-inheritable in Wrangler and deliberately restated: the sandbox shares nothing
+  // with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`.
+  "env": {
+    "sandbox": {
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        // Must equal allowed_destination_addresses[0] below — config/split.test.ts checks.
+        "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org"
+      },
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "portal-sandbox.bikesiliconvalley.org", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-donor-portal-sandbox",
+          // Replace after running: wrangler d1 create svbc-donor-portal-sandbox
+          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "LOGIN_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 10, "period": 60 }
+        }
+      ],
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
+      "queues": {
+        "producers": [
+          { "queue": "donor-portal-change-requests-sandbox", "binding": "CHANGE_QUEUE" },
+          { "queue": "donor-portal-letter-emails-sandbox", "binding": "LETTER_SEND_QUEUE" }
+        ],
+        "consumers": [
+          {
+            "queue": "donor-portal-change-requests-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "donor-portal-change-requests-sandbox-dlq"
+          },
+          {
+            "queue": "donor-portal-letter-emails-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "donor-portal-letter-emails-sandbox-dlq"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": ["0 9 * * *"]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }
