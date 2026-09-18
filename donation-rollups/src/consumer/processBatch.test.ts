@@ -871,7 +871,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
         id === 'aff-b' ? { affiliationItemId: 'aff-b', personItemId: 'p-shared', personBoardId: '3', name: 'Stale @ Org' } : null),
     });
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
-      giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500' });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
     warn.mockRestore();
@@ -884,7 +884,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
       ]) },
     });
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
-      giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(affiliationsStore.forPerson).toHaveBeenCalledWith('donor-1');
     expect(mondayClient.setItemDescription).toHaveBeenCalledWith('donor-1', expect.stringContaining('Driven for organizations'));
   });
@@ -907,7 +907,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn1');
     await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(),
-      giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());

@@ -461,7 +461,7 @@ the bootstrap script, which populates the `affiliations` table from artifacts un
   person who lost the tenure instead of leaving their total stuck at its last value.
 
 Both are full recomputes from the D1 `gifts` ledger (via the new `acting_for_item_id` column and
-the `affiliations` table, migration `0005_affiliations.sql`), the same self-healing design as
+the `affiliations` table, migration `0007_affiliations.sql`), the same self-healing design as
 phase 1's owner rollups. The gift-history markdown gains a "Driven for organizations" section for
 a Person who drives giving for one or more organizations (non-fatal like the rest of the
 description write, and omitted — not shown as a $0 row — for an affiliation with no gifts). The
@@ -475,7 +475,7 @@ gift's attribution. The recompute path only refreshes `acting_for_item_id` from 
 still read the column on.
 
 **Bootstrap.** Before merging the branch that adds this affiliation model, apply migration
-`0005_affiliations.sql` to the remote D1 database **first**:
+`0007_affiliations.sql` to the remote D1 database **first**:
 `wrangler d1 migrations apply svbc-donation-rollups --remote`. Workers Builds deploys on merge, and
 the consumer's `refreshFacts` names the `acting_for_item_id` column unconditionally (phase 1 or
 not) — an unmigrated remote D1 breaks every consumer message the moment the new build goes live,

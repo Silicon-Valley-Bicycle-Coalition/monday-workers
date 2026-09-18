@@ -55,7 +55,7 @@ export function buildGiftRows({ payloads, ledgerEntries, boards, now }) {
 }
 
 // Turns salesforce-import's affiliation payloads (board: 'affiliations', name '<Person> @ <Org>',
-// a `Person` link to the contact) into rows for the `affiliations` table (migration 0005):
+// a `Person` link to the contact) into rows for the `affiliations` table (migration 0007):
 // affiliation item -> the Person it belongs to, so Organizational Giving can be summed from D1.
 // Mirrors buildGiftRows's ledger-resolution shape; each payload needs both its own ledger
 // success entry (for affiliationItemId) and a resolvable Person link on a People board.
@@ -183,7 +183,7 @@ export function renderSql(rows, now) {
 
 const AFFILIATION_COLUMNS = 'affiliation_item_id, person_item_id, person_board_id, name, updated_at';
 
-// Same staged-swap pattern as renderSql, into the `affiliations` table (migration 0005).
+// Same staged-swap pattern as renderSql, into the `affiliations` table (migration 0007).
 export function renderAffiliationsSql(rows, now) {
   const esc = (s) => String(s).replace(/'/g, "''");
   const tuple = (r) =>

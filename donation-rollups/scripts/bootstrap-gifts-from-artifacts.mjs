@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Populates the gifts ledger (migrations/0004_gifts.sql, docs/20 §5.1) and the affiliations
-// table (migrations/0005_affiliations.sql) from salesforce-import's run artifacts — the only
+// table (migrations/0007_affiliations.sql) from salesforce-import's run artifacts — the only
 // complete record of gift and affiliation history under archive-in-place, for the same reason
 // as bootstrap-links-from-artifacts.mjs: archived items are invisible to items_page and
 // unreadable via board_relation. Carries the full provenance the webhook path can never see
