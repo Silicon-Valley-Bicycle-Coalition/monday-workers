@@ -70,6 +70,10 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     if (!(key in monday.boards)) {
       throw new Error(`config: missing required key "monday.boards.${key}"`);
     }
+    const id = monday.boards[key];
+    if (id !== null && (typeof id !== 'number' || !Number.isInteger(id))) {
+      throw new Error(`config: "monday.boards.${key}" must be a Monday board id number, or null when unconfigured`);
+    }
   }
 
   if (!isObject(cfg.funraiseSync)) {

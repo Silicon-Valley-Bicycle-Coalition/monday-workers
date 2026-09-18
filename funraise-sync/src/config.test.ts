@@ -83,6 +83,13 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/donations:live/);
   });
 
+  it('throws when a board id is neither a number nor null, naming the key', () => {
+    for (const bad of ['18428131768', '', {}]) {
+      const boards = { ...validConfig.monday.boards, 'recurring-gifts': bad };
+      expect(() => validateConfig({ ...validConfig, monday: { ...validConfig.monday, boards } })).toThrow(/monday.boards.recurring-gifts/);
+    }
+  });
+
   it('no longer requires an event-registrations board — Funraise has no registration source', () => {
     const boards = { ...validConfig.monday.boards, 'event-registrations': 999 };
     expect(() => validateConfig({ ...validConfig, monday: { ...validConfig.monday, boards } })).not.toThrow();

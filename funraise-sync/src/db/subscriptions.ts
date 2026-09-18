@@ -3,8 +3,9 @@ export interface SubscriptionRow {
   mondayItemId: string;
   donorItemId: string | null;
   status: string;
-  // Funraise `updtime` (epoch ms) last written to Monday; null for an item adopted from the
-  // board and not yet rewritten by the poller.
+  // Funraise `updtime` (epoch ms) of the row last written to Monday — adopted items included,
+  // since adoption rewrites every column from that row. Null only when Funraise sent no
+  // updtime; a null here never blocks an update.
   updtime: number | null;
   writtenAt: string;
 }

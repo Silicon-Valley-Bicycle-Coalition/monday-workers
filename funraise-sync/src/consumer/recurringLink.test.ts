@@ -181,6 +181,46 @@ describe('Recurring Gift link on installments', () => {
   });
 });
 
+describe('Recurring Gift link never fails the donation', () => {
+  it('still writes the gift, without the link, when Funraise errors while fetching the subscription', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const monday = fakeMonday();
+      const funraise: FunraiseClient = { listSubscriptionsUpdatedSince: vi.fn(), getSubscription: vi.fn().mockRejectedValue(new Error('funraise api: HTTP 503')) };
+      const eventStore = fakeStore(eventRow(installment));
+
+      await processFunraiseQueueBatch([message], { eventStore, mondayClient: monday, config, subscriptionStore: fakeSubscriptionStore(null), funraiseClient: funraise });
+
+      expect(monday.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.not.objectContaining({ rg_link_col: expect.anything() }));
+      expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', '123', 'written', expect.any(Object));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('HTTP 503'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('still writes the gift, without the link, when creating the Recurring Gifts item fails in Monday', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const monday = fakeMonday();
+      (monday.createItem as ReturnType<typeof vi.fn>).mockImplementation(async (boardId: number) => {
+        if (boardId === 222) throw new Error('monday 500');
+        return { id: '5570' };
+      });
+      const funraise = fakeFunraise({ id: 26, name: 'Debbie Donor - Monthly', status: 'Active', frequency: 'Monthly', sourceAmount: 25, updtime: 5, supporter: installment.supporter });
+      const eventStore = fakeStore(eventRow(installment));
+
+      await processFunraiseQueueBatch([message], { eventStore, mondayClient: monday, config, subscriptionStore: fakeSubscriptionStore(null), funraiseClient: funraise });
+
+      expect(monday.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.not.objectContaining({ rg_link_col: expect.anything() }));
+      expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', '123', 'written', expect.any(Object));
+      expect(eventStore.updateStatusByEntity).not.toHaveBeenCalledWith('transaction', '123', 'failed', expect.any(Object));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe('Gift Type for event-tagged transactions', () => {
   it('stamps eventGiftTypeValue instead of giftTypeValue when the transaction carries a fundraisingEvent', async () => {
     const ticket = { ...installment, subscription: null, fundraisingEvent: { id: 9, name: 'Bike Summit' } };

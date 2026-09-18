@@ -221,16 +221,26 @@ async function resolveRecurringGiftItem(rawPayload: Record<string, unknown>, dep
     return null;
   }
 
-  const known = await subscriptionStore.getByFunraiseId(subscriptionId);
-  if (known) return known.mondayItemId;
+  try {
+    const known = await subscriptionStore.getByFunraiseId(subscriptionId);
+    if (known) return known.mondayItemId;
 
-  const row = await funraiseClient.getSubscription(subscriptionId);
-  if (row === null) {
-    console.warn(`funraise-sync consumer: subscription "${subscriptionId}" not found in Funraise; leaving the Recurring Gift link unset`);
+    const row = await funraiseClient.getSubscription(subscriptionId);
+    if (row === null) {
+      console.warn(`funraise-sync consumer: subscription "${subscriptionId}" not found in Funraise; leaving the Recurring Gift link unset`);
+      return null;
+    }
+    const result = await upsertSubscription(row, { subscriptionStore, mondayClient, config });
+    return result.mondayItemId;
+  } catch (err) {
+    // A Funraise outage, a Monday failure creating the Recurring Gifts item, or an unconfigured
+    // board must not fail (and retry) the donation itself; the hourly poll will create or repair
+    // the Recurring Gifts item, and the next edit of this gift picks the link up.
+    console.warn(
+      `funraise-sync consumer: could not resolve Recurring Gift for subscription "${subscriptionId}"; leaving the link unset: ${errorMessage(err)}`
+    );
     return null;
   }
-  const result = await upsertSubscription(row, { subscriptionStore, mondayClient, config });
-  return result.mondayItemId;
 }
 
 function describeItemName(entityType: EntityType, rawPayload: Record<string, unknown>, config: FunraiseSyncConfig): string {

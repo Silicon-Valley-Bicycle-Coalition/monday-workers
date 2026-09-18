@@ -1,8 +1,9 @@
 -- Subscriptions poller ledger (spec 2026-09-18-funraise-subscriptions-poller-design.md).
 -- One row per Funraise subscription this Worker has written to the Recurring Gifts board:
--- the Monday item it maps to, the donor it was linked to, and the Funraise updtime last
--- written so a re-read of the same row is a no-op. updtime is NULL for an item adopted from
--- the board by Funraise ID (the importer created it) until the poller rewrites it once.
+-- the Monday item it maps to (created here, or adopted from the board by Funraise ID when the
+-- importer created it), the donor it was linked to, and the Funraise updtime of the row last
+-- written so a re-read of the same row is a no-op. updtime is NULL only when Funraise sent
+-- none; a NULL never blocks an update.
 CREATE TABLE subscriptions (
   funraise_id TEXT PRIMARY KEY,
   monday_item_id TEXT NOT NULL,
