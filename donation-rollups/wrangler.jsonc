@@ -31,6 +31,16 @@
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
         "max_concurrency": 1,
         "dead_letter_queue": "donation-rollups-recompute-dlq"
+      },
+      {
+        // Fix 5: dead messages mark their pending row failed and raise one alert per batch
+        // (src/consumer/processDeadLetters.ts) instead of expiring unseen. Two D1 ops per
+        // message, so a fuller batch is fine; no further dead-letter queue — after these
+        // retries the row simply keeps its last consumer-recorded error.
+        "queue": "donation-rollups-recompute-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
       }
     ]
   },

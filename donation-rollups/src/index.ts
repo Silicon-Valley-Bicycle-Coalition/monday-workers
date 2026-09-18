@@ -8,15 +8,20 @@ import { D1MembershipBaselineStore } from './db/membershipBaseline';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
 import { HttpMondayClient } from './monday/client';
 import { processRecomputeBatch } from './consumer/processBatch';
+import { processDeadLetters } from './consumer/processDeadLetters';
 import { runDuty, dutiesForDate, type CustodianDeps } from './custodian/custodian';
 import { createCustodianApp } from './custodian/routes';
 import type { Env, RecomputeQueueMessage } from './types';
 
 const config = validateConfig(rawConfig);
 
+// Must match the dead_letter_queue name in wrangler.jsonc.
+const DEAD_LETTER_QUEUE = 'donation-rollups-recompute-dlq';
+
 function custodianDeps(env: Env): CustodianDeps {
   return {
     gifts: new D1GiftsStore(env.DB),
+    pending: new D1PendingStore(env.DB),
     mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
     queue: {
       sendBatch: (messages: RecomputeQueueMessage[]) =>
@@ -48,7 +53,16 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
+  // Both queues are consumed by this one Worker; wrangler.jsonc's consumers list names them.
   async queue(batch: MessageBatch<RecomputeQueueMessage>, env: Env): Promise<void> {
+    if (batch.queue === DEAD_LETTER_QUEUE) {
+      await processDeadLetters([...batch.messages], {
+        pendingStore: new D1PendingStore(env.DB),
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+        config,
+      });
+      return;
+    }
     await processRecomputeBatch([...batch.messages], {
       pendingStore: new D1PendingStore(env.DB),
       linksStore: new D1DonationLinksStore(env.DB),

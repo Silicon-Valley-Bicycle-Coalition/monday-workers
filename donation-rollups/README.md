@@ -124,12 +124,21 @@ backfill) would silently lose recomputes the same way.
    queries count against the 50-subrequest budget and a full recompute costs ~16–26, so two
    worst-case recomputes fit and three don't (the default 10 is what produced the three
    "Too many subrequests" rows). Raise it on Workers Paid.
-5. **Give the DLQ a consumer** (or at least a `queue()` branch keyed on `batch.queue`) that marks
-   the pending row `failed` with the reason, so a dead message is visible in D1 instead of
-   silently expiring. Add a custodian duty `requeue-stuck` that re-enqueues `queued` rows older
-   than N hours in slices — that is also how the current 2,865 rows get repaired once fixes 2–4
-   (or Paid) are in place. Do **not** re-enqueue them before that: 1,349 owners including the
-   biggest would reproduce the 100k-row day.
+5. ~~**Give the DLQ a consumer … add a custodian duty `requeue-stuck`.**~~ **Done (branch
+   `feat/rollups-dlq-requeue`):** the Worker now also consumes `donation-rollups-recompute-dlq`
+   (`src/consumer/processDeadLetters.ts`): a dead message marks its pending row `failed` with
+   `dead-lettered after retries: <last consumer error>` and each batch posts one alert on
+   `custodian.alertItemId` naming the donations, so a dead message is visible in D1 and on
+   Monday instead of expiring unseen. Nothing is re-driven from there — a dead-lettered row is a
+   human's signal; `scripts/redrive-pending.mjs --status failed` is the tool once the cause is
+   fixed. The nightly custodian duty **`requeue`** (also `POST /custodian/run/requeue`)
+   re-enqueues `queued`/`received` rows older than 24 h, oldest first, up to 3,500 per run in
+   batches of 100, with `received_at` left alone so fix 3's coalescing turns every message after
+   the first per owner into a two-read skip — a flood's worth of stuck rows costs ~one recompute
+   per owner, with no per-owner planning or bookkeeping SQL. It reports `ok: false` (one alert)
+   whenever it found anything, because stuck rows mean the consumer lost work earlier. The
+   2,865 rows this was designed to repair were drained by hand first (below), so the duty is
+   preventative: it should report "no stuck recomputes" every night.
 
 **Update — drained 2026-09-17 20:24–22:15 UTC, ahead of fixes 4–5.** The 2,865 rows were
 re-driven by what became `scripts/redrive-pending.mjs`: one synthetic
@@ -368,8 +377,8 @@ edits flow back via webhooks, and every recompute re-asserts the facts of every 
 so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs` (37,286 gifts
 loaded 2026-08-31; 32,739 Received, 33,541 archived).
 
-The **custodian** runs four duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
-and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile}?secret=…`
+The **custodian** runs five duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue}?secret=…`
 and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
@@ -382,6 +391,9 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
   comparison; Monday stores float noise) plus summaries vs fresh ledger totals. First full
   pass 2026-08-31: 6,886 owners, zero mismatches.
+* **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
+  older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
+  verification" above).
 
 **Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples

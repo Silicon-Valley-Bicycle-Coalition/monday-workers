@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1GiftsStore } from '../db/gifts';
 import { D1DonationLinksStore } from '../db/links';
+import { D1PendingStore } from '../db/pending';
 import { dutiesForDate, runDuty, type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
@@ -67,6 +68,7 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
 function deps(state: FakeClientState, sent: RecomputeQueueMessage[], config = testConfig()): CustodianDeps {
   return {
     gifts: new D1GiftsStore(env.DB),
+    pending: new D1PendingStore(env.DB),
     mondayClient: fakeClient(state),
     queue: { sendBatch: async (msgs) => { sent.push(...msgs); } },
     config,
@@ -81,6 +83,7 @@ beforeEach(async () => {
     env.DB.prepare('DELETE FROM annual_summaries'),
     env.DB.prepare('DELETE FROM custodian_runs'),
     env.DB.prepare('DELETE FROM donation_links'),
+    env.DB.prepare('DELETE FROM pending_recomputes'),
   ]);
 });
 
@@ -93,10 +96,11 @@ const seedGift = (db: D1Database, id: string, over: Partial<{ owner: string; fy:
 
 describe('dutiesForDate', () => {
   it('reconciles daily, checks capacity Mondays, sweeps July 1, archives July 15', () => {
-    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'))).toEqual(['reconcile']); // a Wednesday
-    expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'))).toEqual(['reconcile', 'capacity']); // a Monday
-    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'))).toEqual(['reconcile', 'sweep']);
-    expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'))).toEqual(['reconcile', 'archive']);
+    // requeue (fix 5) rides every night with reconcile.
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'))).toEqual(['reconcile', 'requeue']); // a Wednesday
+    expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'))).toEqual(['reconcile', 'requeue', 'capacity']); // a Monday
+    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'))).toEqual(['reconcile', 'requeue', 'sweep']);
+    expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'))).toEqual(['reconcile', 'requeue', 'archive']);
   });
 
   it('continues an incomplete sweep on subsequent days while its last run reports remaining > 0', async () => {
@@ -104,7 +108,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
       report: { ok: true, summary: 'sliced', detail: { enqueued: 3500, remaining: 900, cursor: 'o3500' } } });
     expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), await gifts.lastRuns()))
-      .toEqual(['reconcile', 'sweep']);
+      .toEqual(['reconcile', 'requeue', 'sweep']);
   });
 
   it('does not re-run a sweep whose last run completed (remaining === 0)', async () => {
@@ -112,7 +116,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
       report: { ok: true, summary: 'done', detail: { enqueued: 900, remaining: 0, cursor: 'o4400' } } });
     expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), await gifts.lastRuns()))
-      .toEqual(['reconcile']);
+      .toEqual(['reconcile', 'requeue']);
   });
 
   it('only the MOST RECENT run of a duty counts — an old incomplete run superseded by a complete one stays finished', async () => {
@@ -122,7 +126,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'archive', ranAt: '2026-07-16T09:00:00Z', ok: true,
       report: { ok: true, summary: 'done', detail: { remaining: 0 } } });
     expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), await gifts.lastRuns()))
-      .toEqual(['reconcile']);
+      .toEqual(['reconcile', 'requeue']);
   });
 
   it('never doubles a duty its start date already scheduled', async () => {
@@ -130,7 +134,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-06-30T09:00:00Z', ok: true,
       report: { ok: true, summary: 'sliced', detail: { remaining: 10 } } });
     expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), await gifts.lastRuns()))
-      .toEqual(['reconcile', 'sweep']);
+      .toEqual(['reconcile', 'requeue', 'sweep']);
   });
 
   it('archive continues daily until complete, and summaries materialize on the run that hits remaining 0', async () => {
@@ -148,7 +152,7 @@ describe('dutiesForDate', () => {
 
     // July 16: the daily cron sees the incomplete run and continues it.
     expect(dutiesForDate(new Date('2026-07-16T09:00:00Z'), await gifts.lastRuns()))
-      .toEqual(['reconcile', 'archive']);
+      .toEqual(['reconcile', 'requeue', 'archive']);
     d.now = new Date('2026-08-02T00:00:00Z'); // a later ran_at, so lastRuns sees THIS run as most recent
     const second = await runDuty('archive', d);
     expect((second.detail as { remaining: number }).remaining).toBe(0);
@@ -156,7 +160,7 @@ describe('dutiesForDate', () => {
 
     // July 17: complete — archive drops back out of the schedule.
     expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), await gifts.lastRuns()))
-      .toEqual(['reconcile']);
+      .toEqual(['reconcile', 'requeue']);
   });
 });
 
@@ -433,5 +437,53 @@ describe('reconcile duty', () => {
     expect(detail.summaryBoardMismatches).toEqual([
       { fiscalYear: 2015, ledgerCents: 5000, boardCents: null },
     ]);
+  });
+});
+
+// Fix 5: rows the queue never finished (messages expired unconsumed, or a batch that died
+// before touching D1) are re-enqueued nightly. Their received_at is left alone on purpose —
+// the consumer's coalescing (fix 3) then turns every message after the first per owner into a
+// two-read skip, so a flood's worth of stuck rows costs ~one recompute per owner.
+describe('requeue duty', () => {
+  const seed = async (id: string, receivedAt: string, status?: 'queued' | 'written' | 'failed') => {
+    const store = new D1PendingStore(env.DB);
+    await store.upsertPending({ donationItemId: id, donationBoardId: '100', eventId: 'e', receivedAt });
+    if (status) await store.updateStatus(id, status, status === 'failed' ? { error: 'x' } : {});
+  };
+
+  it('re-enqueues queued/received rows older than 24h in batches of 100, leaving fresh, written and failed rows alone, and reports attention', async () => {
+    for (let i = 0; i < 250; i += 1) await seed(`stuck-${String(i).padStart(3, '0')}`, `2026-07-30T00:${String(i % 60).padStart(2, '0')}:00Z`, 'queued');
+    await seed('never-enqueued', '2026-07-29T00:00:00Z'); // 'received'
+    await seed('fresh', '2026-07-31T20:00:00Z', 'queued'); // within 24h of now (2026-08-01T00:00Z)
+    await seed('done', '2026-07-01T00:00:00Z', 'written');
+    await seed('dead', '2026-07-01T00:00:00Z', 'failed'); // a human's signal, not ours to retry
+
+    const batches: number[] = [];
+    const sent: RecomputeQueueMessage[] = [];
+    const state = { archived: [], updates: [] as { itemId: number; body: string }[] };
+    const d = deps(state, sent, testConfig({ alertItemId: 7 }));
+    d.queue = { sendBatch: async (msgs) => { batches.push(msgs.length); sent.push(...msgs); } };
+
+    const report = await runDuty('requeue', d);
+
+    expect(sent).toHaveLength(251);
+    expect(batches).toEqual([100, 100, 51]);
+    const ids = new Set(sent.map((m) => m.donationItemId));
+    expect(ids.has('never-enqueued')).toBe(true);
+    expect(ids.has('fresh') || ids.has('done') || ids.has('dead')).toBe(false);
+    expect(sent[0]).toEqual({ donationItemId: 'never-enqueued', donationBoardId: '100' });
+    expect(report.ok).toBe(false); // stuck rows mean the consumer lost work earlier — say so
+    expect(report.summary).toContain('251');
+    expect(state.updates).toHaveLength(1); // one alert
+  });
+
+  it('is quiet when nothing is stuck', async () => {
+    await seed('fresh', '2026-07-31T23:00:00Z', 'queued');
+    const state = { archived: [], updates: [] as { itemId: number; body: string }[] };
+    const sent: RecomputeQueueMessage[] = [];
+    const report = await runDuty('requeue', deps(state, sent, testConfig({ alertItemId: 7 })));
+    expect(sent).toHaveLength(0);
+    expect(report.ok).toBe(true);
+    expect(state.updates).toHaveLength(0);
   });
 });
