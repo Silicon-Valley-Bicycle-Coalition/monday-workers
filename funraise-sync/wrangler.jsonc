@@ -36,5 +36,43 @@
   },
   "observability": {
     "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-funraise-sync-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
+  // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (MONDAY_API_TOKEN, FUNRAISE_WEBHOOK_SECRET).
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-funraise-sync-sandbox",
+          // Replace after running: wrangler d1 create svbc-funraise-sync-sandbox
+          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [{ "queue": "funraise-sync-writes-sandbox", "binding": "WRITE_QUEUE" }],
+        "consumers": [
+          {
+            "queue": "funraise-sync-writes-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "funraise-sync-writes-sandbox-dlq"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": ["0 9 * * *"]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }
