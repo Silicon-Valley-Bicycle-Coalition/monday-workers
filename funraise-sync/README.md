@@ -88,6 +88,70 @@ contact ID** text column mirroring the existing Salesforce ID column pattern. Re
 `funraise__fr_ID__c` external-ID convention from the Salesforce side rather than inventing a new
 identifier scheme.
 
+In practice the sandbox v2 People board carries that id as a **link** column, `Funraise Profile`
+(`link_mm6j7djp`, `https://platform.funraise.io/supporter/<id>` with the bare id as the link
+text), because `salesforce-import` writes it that way — not as a text column. Verified live
+2026-09-17: `items_page_by_column_values` on that column matches the bare id (`3682773` found its
+person; the display text and the url did not), and on `Personal Email` (`email_mm6j5e9q`) it
+matches the address. So the two lookups in `matchDonor` work as written against these columns.
+The *create* path does not yet: Monday rejects a bare string for link and email columns (they
+need `{url, text}` / `{email, text}`, see `salesforce-import`'s `load/columnValues.ts`), and
+`matchDonor` writes both as bare strings when it creates a donor. See "Blocking before first
+deploy" below.
+
+## Monday targets (sandbox v2 ids, verified live 2026-09-17)
+
+`config/svbc.json` now carries the real ids for the CRM Sandbox v2 boards — the same boards
+`salesforce-import` loads and `donation-rollups` reads — instead of placeholders. Re-verify
+against production ids before cutover; the sandbox gets rebuilt. Every id below was read from the
+board schemas via the Monday API on 2026-09-17.
+
+| Config key | Board / column | Id | Notes |
+|---|---|---|---|
+| `monday.boards["donations:live"]` | Donations (sandbox v2) | `18428131791` | |
+| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | |
+| `monday.boards["event-registrations"]` | Event Registrations (sandbox v2) | `18428131782` | |
+| `monday.boards["people-live"]` | People (sandbox v2) | `18428131737` | People (Historical) is not a match target |
+| `columnMap.transaction.amount` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | |
+| `columnMap.transaction.status` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending |
+| `columnMap.transaction.createdAt` | Donations → Date (date) | `date_mm6jthpq` | |
+| `columnMap.recurringGift.amount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm6jg878` | per-installment, per docs/03 |
+| `columnMap.recurringGift.frequency` | Recurring Gifts → Frequency (status) | `color_mm6jc24s` | labels: Monthly / Yearly / Quarterly — a **status**, not text; the raw value must equal a label |
+| `columnMap.recurringGift.status` | Recurring Gifts → Status (status) | `color_mm6j1tk1` | labels: Redacted / Active / Cancelled / Failed |
+| `columnMap.registration` | Event Registrations | `{}` | see below |
+| `entityIdColumn` | — | `null` | see below |
+| `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm78nf5s` | |
+| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm6j66w3` | |
+| `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm70czyd` | |
+| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm6j7djp` | lookup works; create-write shape is a code gap |
+| `donorEmailColumn` | People → Personal Email (email) | `email_mm6j5e9q` | same |
+| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm6jf5jb` | Donations only; see below |
+
+Three placeholders became something other than an id, on purpose:
+
+* **`columnMap.transaction.description` is gone.** The Donations board has no description text
+  column; `description` is already the item name via `itemNameField`. The importer's
+  `Salesforce Debug` long-text is provenance, not a description, and stays untouched.
+* **`columnMap.registration` is empty.** Event Registrations has no text column for an event
+  name and no date column for a registration time: `Event` is a connect column to the Events
+  board (`board_relation_mm6jatgp`, needs an Events item id, not a name), and the remaining
+  columns (Attendee Name/Email, Ticket Amount, Deductible Amount, Ticket Type, Attendance, Role,
+  Source) map to Funraise registration fields this Worker has never seen a payload for. Mapping
+  those needs a verified payload, not a guess. `itemNameField.registration` still names the item.
+* **`entityIdColumn` is `null`.** The column it was meant to be — a text id "on every target
+  board" — doesn't exist on these boards. Donations and Recurring Gifts carry the Funraise id in
+  a **link** column (`link_mm6jhcj8` and `link_mm6jryz2`, transaction URL + bare id as text, the
+  same shape as `Funraise Profile`), Event Registrations has none, and the ids differ per board
+  while the config key is a single string. The lookup half would work (bare-id search on the
+  Donations link column found its item, verified live), but the consumer writes `entityId` as a
+  bare string, which Monday rejects on a link column, so every create would fail. `null`
+  disables orphan recovery (a retry after a lost status update can duplicate an item) rather
+  than break creates. Fix is code: per-board ids plus link-shaped values, tracked below.
+* **`donorLinkColumn` is the Donations board's `Donor` column only.** Recurring Gifts' `Donor`
+  is `board_relation_mm6j443g` and Event Registrations' `Attendee` is `board_relation_mm6j98ft`;
+  the config key is a single string, so subscription/pledge/registration items would be written
+  with a column id that doesn't exist on their board. Same per-board fix as `entityIdColumn`.
+
 ## Field mapping
 
 Full column-by-column mapping (Donations ← Opportunity/Transaction fields, Recurring Gifts ←
@@ -159,6 +223,57 @@ first write, never on updates.** `donation-rollups`' membership rule (spec
 Gift Type is in its eligible list, so without this stamp a Funraise renewal would never extend a
 membership. Staff can reclassify a gift afterwards (e.g. to `Matching Donation`) and this Worker will
 not undo it.
+
+## Blocking before first deploy — the Funraise payload doesn't match this Worker's assumptions
+
+Found 2026-09-17 while wiring the Monday ids above, by reading Funraise's own
+[webhooks article](https://help.funraise.io/en/articles/4471107-webhooks) (its only public
+payload documentation; the Stoplight API reference is a JS app and unreadable without a browser).
+None of this is fixed by config; each item is code, and the first one means **every real
+delivery is rejected today**:
+
+1. **Envelope shape.** Funraise sends `{ "sentAt": <epoch ms>, "event": "DONATION", "data": {…} }`.
+   `validateEnvelope` requires a top-level string `id`; the real id is `data.id` and it is a
+   **number** (`123` in the example). So every delivery fails validation and is logged as
+   rejected. Every field path in `config/svbc.json` (`entityIdField`, `columnMap.*`,
+   `donorExternalIdField`, `emailFieldPrecedence`, `donorNameField`, `statusField`,
+   `doNotMigrateFields`) is also written against the bare object, not `data.*`.
+2. **One event type.** The article says you can create a single webhook and it fires "when a
+   Transaction is created or edited". There is no subscription, pledge, or registration
+   webhook. The `/webhooks/funraise/subscription|pledge|registration` routes, the
+   `recurringGift` and `registration` column maps, and the Recurring Gifts / Event Registrations
+   board targets have nothing to receive unless those come from polling the REST API instead.
+   A recurring payment does arrive as a transaction carrying `data.subscription.id` and
+   `data.subscription.sequence`, which is how the Recurring Gift connect column
+   (`board_relation_mm6jbjtd` on Donations) could be linked.
+3. **Field names.** The example payload uses `data.supporter.id` / `.email` / `.name` (config
+   says `donor.contactId` / `donor.email` / `donor.name`), `data.transaction.amount` (config:
+   `amount`), `data.transaction.status` with the value `"Complete"` (config maps `Posted`, which
+   is the *Salesforce* stage name, to `Received` — `Complete` is unmapped and would be written
+   verbatim, a label the Donations status column doesn't have, so the write fails), and the PII
+   fields are `data.transaction.lastFour` / `.expirationDate` / `.billing*` (config denylists
+   `paymentMethod.lastFour` / `paymentMethod.expiration`, which don't exist — **the strip is a
+   no-op against the real payload**). `data.supporter.id` is a number; `matchDonor` only matches
+   on a string external id, so it would fall through to email matching.
+4. **Dates are epoch milliseconds.** `data.donationDate` and `data.cretime` are numbers like
+   `1599067880174`; there is no `createdAt`. `fiscalYearEnding` returns null for a non-string, so
+   Fiscal Year Ending would always be left blank, and a raw epoch number written to the Date
+   column is not a value Monday accepts.
+5. **Link and email writes.** `matchDonor` creates a donor with bare strings in
+   `donorExternalIdColumn` (a link column) and `donorEmailColumn` (an email column); Monday
+   requires `{url, text}` and `{email, text}`. Reads on both columns are fine (verified live, see
+   "Donor matching").
+6. **Per-board column ids.** `entityIdColumn` and `donorLinkColumn` are one id for three boards
+   whose ids differ (see "Monday targets"). Moot until item 2 gives the other boards a source.
+
+Suggested order: fix 1, 3, 4 together as one "read the real envelope" change with a fixture
+built from the documented example payload (config field paths become `data.*`, status map becomes
+`Complete → Received`, denylist becomes the `data.transaction.*` PII fields, `entityIdField` and
+`donorExternalIdField` accept numbers, dates convert from epoch ms to `YYYY-MM-DD` before the
+Date column and the fiscal-year derivation); then 5; then decide whether 2 is polling or out of
+scope, which settles 6. `docs/01` and `docs/03` in the private planning repo describe the
+*Salesforce-side* Funraise package fields (`funraise__*`), which is where the `Posted` /
+`createdAt` / `donor.*` assumptions came from — they are not the webhook's field names.
 
 ## Related, not yet in scope here
 

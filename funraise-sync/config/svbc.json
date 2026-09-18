@@ -2,29 +2,25 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": null,
-      "recurring-gifts": null,
-      "event-registrations": null,
-      "people-live": null
+      "donations:live": 18428131791,
+      "recurring-gifts": 18428131768,
+      "event-registrations": 18428131782,
+      "people-live": 18428131737
     }
   },
   "funraiseSync": {
     "columnMap": {
       "transaction": {
-        "amount": "numeric_column_id",
-        "description": "text_column_id",
-        "status": "status_column_id",
-        "createdAt": "date_column_id"
+        "amount": "numeric_mm6jkxrs",
+        "status": "color_mm6jqdhn",
+        "createdAt": "date_mm6jthpq"
       },
       "recurringGift": {
-        "amount": "numeric_column_id",
-        "frequency": "text_column_id",
-        "status": "status_column_id"
+        "amount": "numeric_mm6jg878",
+        "frequency": "color_mm6jc24s",
+        "status": "color_mm6j1tk1"
       },
-      "registration": {
-        "eventName": "text_column_id",
-        "registeredAt": "date_column_id"
-      }
+      "registration": {}
     },
     "itemNameField": {
       "transaction": "description",
@@ -36,18 +32,18 @@
       "recurringGift": "id",
       "registration": "id"
     },
-    "entityIdColumn": "text_funraise_entity_id_column",
-    "thankYouSentColumn": "thank_you_sent_column_id",
+    "entityIdColumn": null,
+    "thankYouSentColumn": "boolean_mm78nf5s",
     "giftTypeColumn": "text_mm6j66w3",
     "giftTypeValue": "Donation",
     "fiscalYearColumn": "text_mm70czyd",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "donor.contactId",
-    "donorExternalIdColumn": "funraise__fr_id__c",
-    "donorEmailColumn": "email",
+    "donorExternalIdColumn": "link_mm6j7djp",
+    "donorEmailColumn": "email_mm6j5e9q",
     "donorNameField": "donor.name",
-    "donorLinkColumn": "connect_boards_column_id",
+    "donorLinkColumn": "board_relation_mm6jf5jb",
     "emailFieldPrecedence": ["donor.email"],
     "statusField": "status",
     "statusValueMap": {
