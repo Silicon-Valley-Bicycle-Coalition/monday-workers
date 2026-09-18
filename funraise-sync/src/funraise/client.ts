@@ -32,6 +32,11 @@ export interface FunraiseClient {
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+// Funraise answers HTTP 500 to `updtime >= 0` (and to 1); values from 2001-09-09 up work
+// (observed live 2026-09-18). Well before any Funraise data, so flooring a fresh cursor here
+// changes nothing except that the first poll can run.
+export const MIN_QUERYABLE_UPDTIME_MS = 1000000000000;
+
 export class HttpFunraiseClient implements FunraiseClient {
   constructor(
     private baseUrl: string,
@@ -50,7 +55,7 @@ export class HttpFunraiseClient implements FunraiseClient {
 
   async listSubscriptionsUpdatedSince(cursorMs: number, page: number): Promise<FunraiseSubscription[]> {
     const res = await this.request('crm/subscription', {
-      q: `updtime >= ${cursorMs} order by updtime asc`,
+      q: `updtime >= ${Math.max(cursorMs, MIN_QUERYABLE_UPDTIME_MS)} order by updtime asc`,
       page: String(page),
     });
     if (!res.ok) {
