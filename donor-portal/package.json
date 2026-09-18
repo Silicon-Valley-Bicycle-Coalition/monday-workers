@@ -9,6 +9,7 @@
     "predev:local": "wrangler d1 migrations apply svbc-donor-portal-local --local --config wrangler.local.jsonc",
     "dev:local": "wrangler dev --config wrangler.local.jsonc",
     "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
   },
   "keywords": [],
