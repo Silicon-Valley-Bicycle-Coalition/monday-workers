@@ -16,6 +16,7 @@ export interface GiftHistoryRow {
   fiscalYear: number;
   status: string;
   giftType: string | null;
+  actingForItemId: string | null;
   archived: boolean;
 }
 
@@ -39,13 +40,14 @@ export interface GiftLedgerProjection {
   includedCount: number;
 }
 
-type GiftLedgerTuple = [string, string, number, string, string];
+type GiftLedgerTuple = [string, string, number, string, string, string];
 
 const tuple = (r: GiftHistoryRow): GiftLedgerTuple =>
-  [r.mondayItemId, r.giftDateISO, r.amountCents, r.giftType ?? '', r.status];
+  [r.mondayItemId, r.giftDateISO, r.amountCents, r.giftType ?? '', r.status, r.actingForItemId ?? ''];
 
-// Newest first. Compact tuple form: [itemId, dateISO, cents, type, status] ≈ 45 bytes/gift —
-// a 20-year monthly donor (~240 gifts) is ~11KB against Monday's ~64KB per-item budget.
+// Newest first. Compact tuple form: [itemId, dateISO, cents, type, status, actingForItemId] ≈
+// 50 bytes/gift — a 20-year monthly donor (~240 gifts) is ~12KB against Monday's ~64KB
+// per-item budget.
 export function buildGiftLedgerJson(rows: GiftHistoryRow[]): GiftLedgerProjection {
   const tuples = sorted(rows).map(tuple);
   const encoder = new TextEncoder();
@@ -61,6 +63,7 @@ export function buildGiftLedgerJson(rows: GiftHistoryRow[]): GiftLedgerProjectio
   const marker = (included: number): GiftLedgerTuple => [
     GIFT_LEDGER_TRUNCATION_ID, '', 0, '',
     `${rows.length - included} older of ${rows.length} gifts omitted — full history in the D1 gifts ledger`,
+    '',
   ];
   // Budgeting against the worst-case marker (included = 0 has the most omitted digits).
   let bytes = encoder.encode(JSON.stringify([marker(0)])).length;
@@ -109,7 +112,12 @@ export function parseGiftLedgerJson(text: string): ParsedGiftLedger | null {
 const dollars = (cents: number): string =>
   (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
-export function buildGiftHistoryMarkdown(rows: GiftHistoryRow[], accountUrl: string): string {
+const cell = (text: string): string => text.replace(/\|/g, '\\|');
+
+export function buildGiftHistoryMarkdown(
+  rows: GiftHistoryRow[], accountUrl: string,
+  driven?: { affiliationName: string; cents: number; count: number }[],
+): string {
   const lines = [
     '## Gift History',
     '',
@@ -118,12 +126,16 @@ export function buildGiftHistoryMarkdown(rows: GiftHistoryRow[], accountUrl: str
   ];
   for (const r of sorted(rows)) {
     const date = r.giftDateISO || '(undated)';
-    const cell = r.donationBoardId
+    const dateCell = r.donationBoardId
       ? `[${date}](${accountUrl}/boards/${r.donationBoardId}/pulses/${r.mondayItemId})`
       : date;
-    lines.push(`| ${cell} | ${dollars(r.amountCents)} | ${r.giftType ?? ''} | ${r.status} |`);
+    lines.push(`| ${dateCell} | ${dollars(r.amountCents)} | ${cell(r.giftType ?? '')} | ${cell(r.status)} |`);
   }
   lines.push('', `_${rows.length} gifts. Maintained automatically by donation-rollups — edits here are overwritten._`);
+  if (driven && driven.length > 0) {
+    lines.push('', '## Driven for organizations', '', '| Affiliation | Attributed giving | Gifts |', '| --- | --- | --- |');
+    for (const d of driven) lines.push(`| ${cell(d.affiliationName)} | ${dollars(d.cents)} | ${d.count} |`);
+  }
   return lines.join('\n');
 }
 

@@ -6,6 +6,7 @@ import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
 import { D1MembershipBaselineStore } from './db/membershipBaseline';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
+import { D1AffiliationsStore } from './db/affiliations';
 import { HttpMondayClient } from './monday/client';
 import { processRecomputeBatch } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
@@ -69,6 +70,7 @@ export default {
       giftsStore: new D1GiftsStore(env.DB),
       baselineStore: new D1MembershipBaselineStore(env.DB),
       recomputesStore: new D1OwnerRecomputesStore(env.DB),
+      affiliationsStore: new D1AffiliationsStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
     });

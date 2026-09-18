@@ -17,7 +17,8 @@
           "giftType": "text_mm6j66w3",
           "termStart": "date_mm6jyeva",
           "termEnd": "date_mm6jnna5",
-          "membershipType": "text_mm6jas1b"
+          "membershipType": "text_mm6jas1b",
+          "actingForLink": null
         }
       }
     ],
@@ -103,5 +104,6 @@
       "byType": "long_text_mm6rqd1q",
       "restatedAt": "date_mm6rw3g8"
     }
-  }
+  },
+  "affiliations": null
 }

@@ -9,6 +9,7 @@ export interface GiftFact {
   // Present when the donation board's Gift Type column is configured — refreshes the
   // bootstrap value; null/undefined leaves the stored value untouched.
   giftType?: string | null;
+  actingForItemId?: string | null; // undefined = column not configured, leave stored value
 }
 
 export interface AnnualSummaryRow {
@@ -37,6 +38,17 @@ export interface GiftsStore {
   refreshFacts(rows: GiftFact[], source: string, now: string): Promise<{ changed: number }>;
   // Full gift history for one owner, deep-link board ids joined in — the projections' source.
   giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
+  // acting_for_item_id per gift, for the affiliation recompute path.
+  actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>>;
+  // Attributed totals for one affiliation: Received gifts whose acting_for_item_id matches it.
+  attributedTotals(affiliationItemId: string, statusLabel: string): Promise<{ cents: number; count: number; lastGiftDateISO: string | null }>;
+  // Organizational Giving: totals across every affiliation belonging to a person.
+  organizationalGivingTotals(personItemId: string, statusLabel: string): Promise<{ cents: number; count: number }>;
+  // Reconciliation's ledger side for legs 5/6: every affiliation's attributed total (leg 5)
+  // and every person's Organizational Giving total (leg 6), in one pass each rather than
+  // one query per affiliation/person.
+  attributedTotalsAll(statusLabel: string): Promise<Map<string, { cents: number; count: number }>>;
+  organizationalGivingAll(statusLabel: string): Promise<Map<string, { cents: number; personBoardId: string }>>;
   // Records which Monday item on the Annual Giving Summary board represents a fiscal year.
   setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void>;
   // Active gifts older than the retention cutoff — the year-end archive run's work list.
@@ -70,11 +82,16 @@ interface StoredFacts {
   fiscal_year: number;
   status: string;
   gift_type: string | null;
+  acting_for_item_id: string | null;
+  archived_at: string | null;
 }
 
 // A gift needs writing when it's new or any webhook-visible fact differs. giftType is the one
 // field the webhook path may not know: null/undefined means "leave stored", so only a present,
-// different value counts (mirrors the COALESCE in the upsert below).
+// different value counts (mirrors the COALESCE in the upsert below). actingForItemId follows the
+// upsert's CASE: undefined never counts, and an archived gift keeps D1's value whatever Monday
+// says now, so only an active gift with a supplied, different value (including a clear to null)
+// is a change.
 function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
   if (stored === undefined) return true;
   return stored.owner_item_id !== g.ownerItemId
@@ -83,7 +100,8 @@ function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
     || stored.gift_date !== g.giftDateISO
     || stored.fiscal_year !== g.fiscalYear
     || stored.status !== g.status
-    || (g.giftType != null && g.giftType !== stored.gift_type);
+    || (g.giftType != null && g.giftType !== stored.gift_type)
+    || (g.actingForItemId !== undefined && stored.archived_at === null && g.actingForItemId !== stored.acting_for_item_id);
 }
 
 export class D1GiftsStore implements GiftsStore {
@@ -95,7 +113,8 @@ export class D1GiftsStore implements GiftsStore {
       const ids = rows.slice(i, i + READ_CHUNK).map((g) => g.mondayItemId);
       const res = await this.db
         .prepare(
-          `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type
+          `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type,
+             acting_for_item_id, archived_at
            FROM gifts WHERE monday_item_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`,
         )
         .bind(...ids)
@@ -109,8 +128,8 @@ export class D1GiftsStore implements GiftsStore {
       await this.db.batch(chunk.map((g) => this.db
         .prepare(
           `INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents,
-             gift_date, fiscal_year, status, gift_type, source, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             gift_date, fiscal_year, status, gift_type, acting_for_item_id, source, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
            ON CONFLICT (monday_item_id) DO UPDATE SET
              owner_item_id = excluded.owner_item_id,
              owner_board_id = excluded.owner_board_id,
@@ -119,11 +138,17 @@ export class D1GiftsStore implements GiftsStore {
              fiscal_year = excluded.fiscal_year,
              status = excluded.status,
              gift_type = COALESCE(excluded.gift_type, gifts.gift_type),
+             -- ?12 = 1 when the caller supplied acting_for (even null). Active gifts take the new value verbatim (staff may clear it); archived gifts always keep D1's — an archived item's board_relation reads back empty on Monday, and nothing else may rewrite history.
+             acting_for_item_id = CASE
+               WHEN ?12 = 0 THEN gifts.acting_for_item_id
+               WHEN gifts.archived_at IS NOT NULL THEN gifts.acting_for_item_id
+               ELSE excluded.acting_for_item_id END,
              source = excluded.source,
              updated_at = excluded.updated_at`,
         )
         .bind(g.mondayItemId, g.ownerItemId, g.ownerBoardId, g.amountCents,
-          g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null, source, now)));
+          g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null,
+          g.actingForItemId ?? null, source, now, g.actingForItemId === undefined ? 0 : 1)));
     }
     return { changed: changed.length };
   }
@@ -133,17 +158,88 @@ export class D1GiftsStore implements GiftsStore {
     // duplicate it. LEFT JOIN so a link-less row still renders (without a link).
     const res = await this.db
       .prepare(`SELECT g.monday_item_id, l.donation_board_id, g.amount_cents, g.gift_date,
-                       g.fiscal_year, g.status, g.gift_type, g.archived_at
+                       g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.archived_at
                 FROM gifts g LEFT JOIN donation_links l ON l.donation_item_id = g.monday_item_id
                 WHERE g.owner_item_id = ?1`)
       .bind(ownerItemId)
       .all<{ monday_item_id: string; donation_board_id: string | null; amount_cents: number;
-        gift_date: string; fiscal_year: number; status: string; gift_type: string | null; archived_at: string | null }>();
+        gift_date: string; fiscal_year: number; status: string; gift_type: string | null;
+        acting_for_item_id: string | null; archived_at: string | null }>();
     return res.results.map((r) => ({
       mondayItemId: r.monday_item_id, donationBoardId: r.donation_board_id,
       amountCents: r.amount_cents, giftDateISO: r.gift_date, fiscalYear: r.fiscal_year,
-      status: r.status, giftType: r.gift_type, archived: r.archived_at !== null,
+      status: r.status, giftType: r.gift_type, actingForItemId: r.acting_for_item_id,
+      archived: r.archived_at !== null,
     }));
+  }
+
+  async actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>> {
+    const out = new Map<string, string | null>();
+    for (let i = 0; i < mondayItemIds.length; i += CHUNK) {
+      const chunk = mondayItemIds.slice(i, i + CHUNK);
+      const res = await this.db
+        .prepare(`SELECT monday_item_id, acting_for_item_id FROM gifts
+                  WHERE monday_item_id IN (${chunk.map((_, j) => `?${j + 1}`).join(',')})`)
+        .bind(...chunk)
+        .all<{ monday_item_id: string; acting_for_item_id: string | null }>();
+      for (const r of res.results) out.set(r.monday_item_id, r.acting_for_item_id);
+    }
+    return out;
+  }
+
+  async attributedTotals(affiliationItemId: string, statusLabel: string): Promise<{ cents: number; count: number; lastGiftDateISO: string | null }> {
+    const r = await this.db
+      .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS n, MAX(gift_date) AS last
+                FROM gifts WHERE acting_for_item_id = ?1 AND status = ?2`)
+      .bind(affiliationItemId, statusLabel)
+      .first<{ cents: number; n: number; last: string | null }>();
+    return { cents: r?.cents ?? 0, count: r?.n ?? 0, lastGiftDateISO: r?.last || null };
+  }
+
+  async organizationalGivingTotals(personItemId: string, statusLabel: string): Promise<{ cents: number; count: number }> {
+    const r = await this.db
+      .prepare(`SELECT COALESCE(SUM(g.amount_cents), 0) AS cents, COUNT(*) AS n
+                FROM gifts g JOIN affiliations a ON a.affiliation_item_id = g.acting_for_item_id
+                WHERE a.person_item_id = ?1 AND g.status = ?2`)
+      .bind(personItemId, statusLabel)
+      .first<{ cents: number; n: number }>();
+    return { cents: r?.cents ?? 0, count: r?.n ?? 0 };
+  }
+
+  // Review finding 2: built FROM affiliations (LEFT JOIN gifts), not from gifts — so an
+  // affiliation whose ledger total dropped to 0 (its gifts moved off it, or it never had
+  // any) still appears with a zero, and reconcile leg 5 catches a stale non-zero column on
+  // Monday instead of silently skipping it. A gift whose acting_for_item_id isn't in
+  // affiliations (a bootstrap gap, not a ledger fact — see checkArtifactGuards) is excluded
+  // by construction; it was never reachable from an affiliation row to begin with.
+  async attributedTotalsAll(statusLabel: string): Promise<Map<string, { cents: number; count: number }>> {
+    const res = await this.db
+      .prepare(`SELECT a.affiliation_item_id,
+                       COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents,
+                       COUNT(CASE WHEN g.status = ?1 THEN 1 END) AS n
+                FROM affiliations a LEFT JOIN gifts g ON g.acting_for_item_id = a.affiliation_item_id
+                GROUP BY a.affiliation_item_id`)
+      .bind(statusLabel)
+      .all<{ affiliation_item_id: string; cents: number; n: number }>();
+    const out = new Map<string, { cents: number; count: number }>();
+    for (const r of res.results) out.set(r.affiliation_item_id, { cents: r.cents, count: r.n });
+    return out;
+  }
+
+  // Same reasoning as attributedTotalsAll, grouped by person instead: a person whose
+  // affiliation(s) currently have no attributed gifts still appears with cents: 0, so
+  // reconcile leg 6 catches a stale non-zero Organizational Giving column.
+  async organizationalGivingAll(statusLabel: string): Promise<Map<string, { cents: number; personBoardId: string }>> {
+    const res = await this.db
+      .prepare(`SELECT a.person_item_id, a.person_board_id,
+                       COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents
+                FROM affiliations a LEFT JOIN gifts g ON g.acting_for_item_id = a.affiliation_item_id
+                GROUP BY a.person_item_id, a.person_board_id`)
+      .bind(statusLabel)
+      .all<{ person_item_id: string; person_board_id: string; cents: number }>();
+    const out = new Map<string, { cents: number; personBoardId: string }>();
+    for (const r of res.results) out.set(r.person_item_id, { cents: r.cents, personBoardId: r.person_board_id });
+    return out;
   }
 
   async setSummaryItemId(fiscalYear: number, mondayItemId: string): Promise<void> {

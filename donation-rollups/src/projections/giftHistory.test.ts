@@ -7,7 +7,7 @@ import {
 
 const row = (over: Partial<GiftHistoryRow>): GiftHistoryRow => ({
   mondayItemId: 'g1', donationBoardId: '100', amountCents: 5000, giftDateISO: '2020-01-15',
-  fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: true, ...over,
+  fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, archived: true, ...over,
 });
 
 // Enough rows to overflow any byte budget: each tuple serializes to ~50 bytes.
@@ -26,8 +26,8 @@ describe('buildGiftLedgerJson', () => {
       row({ mondayItemId: 'new', giftDateISO: '2026-03-01', amountCents: 12345 }),
     ]);
     expect(JSON.parse(ledger.json)).toEqual([
-      ['new', '2026-03-01', 12345, 'Donation', 'Received'],
-      ['old', '2015-06-01', 5000, '', 'Received'],
+      ['new', '2026-03-01', 12345, 'Donation', 'Received', ''],
+      ['old', '2015-06-01', 5000, '', 'Received', ''],
     ]);
     expect(ledger.truncated).toBe(false);
     expect(ledger.totalCount).toBe(2);
@@ -36,12 +36,12 @@ describe('buildGiftLedgerJson', () => {
   });
 
   it('past the alert threshold but under the write budget: full JSON, oversized bytes reported', () => {
-    const rows = manyRows(1_000); // ~50KB — between 48KB alert and 60KB budget
+    const rows = manyRows(900); // ~56KB with the acting-for element — between 48KB alert and 60KB budget
     const ledger = buildGiftLedgerJson(rows);
     expect(ledger.fullBytes).toBeGreaterThan(GIFT_LEDGER_ALERT_BYTES);
     expect(ledger.fullBytes).toBeLessThanOrEqual(GIFT_LEDGER_MAX_BYTES);
     expect(ledger.truncated).toBe(false);
-    expect(JSON.parse(ledger.json)).toHaveLength(1_000);
+    expect(JSON.parse(ledger.json)).toHaveLength(900);
   });
 
   it('past the write budget: truncates to the most recent entries plus a marker, never a dead write', () => {
@@ -51,7 +51,7 @@ describe('buildGiftLedgerJson', () => {
     expect(ledger.fullBytes).toBeGreaterThan(GIFT_LEDGER_MAX_BYTES);
     expect(ledger.json.length).toBeLessThanOrEqual(GIFT_LEDGER_MAX_BYTES);
 
-    const parsed = JSON.parse(ledger.json) as [string, string, number, string, string][];
+    const parsed = JSON.parse(ledger.json) as [string, string, number, string, string, string][];
     expect(ledger.includedCount).toBeGreaterThan(0);
     expect(ledger.includedCount).toBeLessThan(2_000);
     expect(parsed).toHaveLength(ledger.includedCount + 1); // + the marker entry
@@ -63,6 +63,18 @@ describe('buildGiftLedgerJson', () => {
     expect(marker[0]).toBe(GIFT_LEDGER_TRUNCATION_ID);
     expect(marker[2]).toBe(0); // never pollutes a sum over the tuples
     expect(marker[4]).toContain(String(2_000));
+  });
+
+  it('tuples carry the acting-for affiliation id as a sixth element ("" when personal)', () => {
+    const rows = [
+      { mondayItemId: 'g1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: 'Donation', archived: false, actingForItemId: null },
+      { mondayItemId: 'g2', donationBoardId: '1', amountCents: 50000, giftDateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', giftType: 'Sponsorship', archived: false, actingForItemId: 'af-1' },
+    ];
+    expect(JSON.parse(buildGiftLedgerJson(rows).json)).toEqual([
+      ['g2', '2024-02-02', 50000, 'Sponsorship', 'Received', 'af-1'],
+      ['g1', '2020-01-15', 5000, 'Donation', 'Received', ''],
+    ]);
+    expect(parseGiftLedgerJson(buildGiftLedgerJson(rows).json)!.entries).toHaveLength(2);
   });
 });
 
@@ -110,5 +122,29 @@ describe('buildGiftHistoryMarkdown', () => {
     const md = buildGiftHistoryMarkdown([row({ giftDateISO: '', donationBoardId: null })], 'https://x');
     expect(md).toContain('| (undated) | $50.00 |');
     expect(md).not.toContain('](https://x');
+  });
+
+  it('gains a "Driven for organizations" section only when there is driven giving', () => {
+    const md = buildGiftHistoryMarkdown([], 'https://acme.monday.com', [{ affiliationName: 'Uma @ Beta Org', cents: 50000, count: 1 }]);
+    expect(md).toContain('## Driven for organizations');
+    expect(md).toContain('| Uma @ Beta Org | $500.00 | 1 |');
+    expect(buildGiftHistoryMarkdown([], 'https://acme.monday.com')).not.toContain('Driven for');
+  });
+
+  it('escapes pipes in affiliation names to protect the markdown table', () => {
+    const md = buildGiftHistoryMarkdown([], 'https://acme.monday.com', [{ affiliationName: 'Acme | Beta', cents: 50000, count: 1 }]);
+    expect(md).toContain('| Acme \\| Beta | $500.00 | 1 |');
+  });
+
+  // Review finding 7: a loop-local `cell` shadowed the module-level cell() escaper, so the
+  // gift table's Type/Status cells rendered unescaped while the driven table's names didn't.
+  it('escapes pipes in the gift Type and Status cells too (finding 7)', () => {
+    const md = buildGiftHistoryMarkdown([
+      row({ mondayItemId: 'a', giftDateISO: '2020-01-01', giftType: 'A|B', status: 'C|D' }),
+    ], 'https://acme.monday.com');
+    expect(md).toContain('A\\|B');
+    expect(md).toContain('C\\|D');
+    expect(md).not.toContain('A|B');
+    expect(md).not.toContain('C|D');
   });
 });

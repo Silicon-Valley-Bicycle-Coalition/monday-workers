@@ -3,9 +3,10 @@ import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
 import type { MembershipBaselineStore } from '../db/membershipBaseline';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
+import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
 import type {
-  DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
+  AffiliationsConfig, DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns,
 } from '../types';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
@@ -18,6 +19,7 @@ import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipState,
 } from '../membership/derive';
+import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -34,6 +36,7 @@ export interface ProcessBatchDeps {
   giftsStore: GiftsStore;
   baselineStore: MembershipBaselineStore;
   recomputesStore: OwnerRecomputesStore;
+  affiliationsStore: AffiliationsStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
   now?: Date; // injectable for tests; defaults to the real current time
@@ -168,6 +171,13 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns) })));
   const donations = perBoard.flatMap((p) => p.items);
 
+  // Affiliations phase 2 (spec "Rollups"): capture the ledger's acting_for *before* this
+  // fetch overwrites it, so a gift that moved to a different affiliation still recomputes
+  // the one it left — see affectedAffiliations below.
+  const affiliationsCfg = config.affiliations;
+  const fetchedIds = donations.map((d) => d.id);
+  const previousActingFor = affiliationsCfg ? await deps.giftsStore.actingForByIds(fetchedIds) : new Map<string, string | null>();
+
   // Ledger v2 (docs/20 §5.1): every recompute re-asserts the webhook-visible facts of every
   // gift it just read, so the gifts table self-heals from the same fetch the rollup uses —
   // a missed webhook can't leave the ledger stale past this owner's next recompute. The store
@@ -179,6 +189,7 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
       amountCents: Math.round(d.amount * 100),
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
       giftType: d.giftType ?? null,
+      actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
     })),
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
@@ -228,9 +239,25 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   for (const w of giftTermWrites) {
     await mondayClient.changeColumnValues(w.boardId, w.itemId, w.values);
   }
+  // Gift-history's own "Driven for organizations" section (docs/20 §5.5 addendum): when this
+  // owner is a Person who drives giving for one or more organizations, show what their acting-for
+  // attribution has produced — sourced fresh from the ledger, same as the rest of this projection.
+  // Gated on affiliations being configured at all; a zero-total affiliation is omitted, not
+  // shown as a $0 row.
+  // Review finding 12: driven-for-organizations gets its own try, separate from the
+  // description write below — a D1 hiccup computing it must not cost the whole gift-history
+  // markdown (the description write has its own non-fatal handling for its own failure modes).
+  let driven: { affiliationName: string; cents: number; count: number }[] | undefined;
+  if (affiliationsCfg !== null) {
+    try {
+      driven = await drivenForOrganizations(deps, ownerItemId, receivedStatusLabel);
+    } catch (err) {
+      console.warn(`donation-rollups consumer: driven-for-organizations skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   try {
     await mondayClient.setItemDescription(ownerItemId,
-      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl));
+      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
     // Gift Ledger JSON column, and set_item_description_content 500s outright on accounts
@@ -238,6 +265,10 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     // trivial markdown fails). The rollups and JSON projection above already landed; don't
     // burn queue retries over the optional rendering.
     console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (affiliationsCfg !== null) {
+    await recomputeAffiliations(deps, affiliationsCfg, affectedAffiliations(previousActingFor, donations, donationItemId));
   }
 
   // Recorded only now — after the owner write AND the gift term stamps — so a recompute that
@@ -324,6 +355,18 @@ async function alertOversizedLedger(
   }
 }
 
+async function drivenForOrganizations(
+  deps: ProcessBatchDeps, ownerItemId: string, statusLabel: string,
+): Promise<{ affiliationName: string; cents: number; count: number }[]> {
+  const mine = await deps.affiliationsStore.forPerson(ownerItemId);
+  const driven: { affiliationName: string; cents: number; count: number }[] = [];
+  for (const a of mine) {
+    const totals = await deps.giftsStore.attributedTotals(a.affiliationItemId, statusLabel);
+    if (totals.cents > 0) driven.push({ affiliationName: a.name, cents: totals.cents, count: totals.count });
+  }
+  return driven;
+}
+
 function numCol(n: number | null): string {
   return n === null ? '' : String(n);
 }
@@ -347,4 +390,76 @@ export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<s
     [columns.lastGiftDate]: dateCol(r.lastGiftDate),
     [columns.lastGiftAmount]: numCol(r.lastGiftAmount),
   };
+}
+
+// Bounded fan-out (review finding 1): only the triggering gift and gifts whose acting_for
+// actually changed contribute affiliations to recompute — not every gift this owner has, which
+// for an organization owner holding all attributed gifts (the common case after the Donor-link
+// decision) would be unbounded amplification against Monday's per-invocation subrequest budget.
+export function affectedAffiliations(
+  previous: Map<string, string | null>, donations: DonationRecord[], triggeringDonationId: string,
+): Set<string> {
+  const out = new Set<string>();
+  const add = (v: string | null | undefined) => { if (v) out.add(v); };
+  for (const d of donations) {
+    const previousActingFor = previous.get(d.id) ?? null;
+    const currentActingFor = d.actingForItemId ?? null;
+    if (d.id === triggeringDonationId) {
+      add(previousActingFor);
+      add(currentActingFor);
+    } else if (currentActingFor !== null && previousActingFor !== currentActingFor) {
+      // Review finding 1: a null CURRENT value on a non-triggering gift is Monday reading an
+      // archived item's board_relation as empty, not a real clear — D1 preserves the archived
+      // gift's acting_for_item_id forever, so without this guard previous !== current would
+      // fire on every recompute for every archived attributed gift this owner ever had,
+      // fanning out to every affiliation across the owner's full tenure history. A genuine
+      // clear on the TRIGGERING gift (the one just written) is still caught above.
+      add(previousActingFor);
+      add(currentActingFor);
+    }
+  }
+  return out;
+}
+
+// Phase 2 (spec "Rollups"): the affiliations this batch of gifts touches get their attributed
+// totals rewritten, and every person those affiliations belong to — now, or before a re-point —
+// gets Organizational Giving rewritten. Full recompute from the ledger, like phase 1.
+async function recomputeAffiliations(deps: ProcessBatchDeps, cfg: AffiliationsConfig, affiliationIds: Set<string>): Promise<void> {
+  const { mondayClient, giftsStore, affiliationsStore, config } = deps;
+  const { receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
+  const now = new Date().toISOString();
+  const persons = new Map<string, string>(); // person item id -> board id, from a fresh Monday summary
+  const previousPersons = new Map<string, string>(); // person item id -> board id, from a (possibly stale) D1 row
+  for (const affiliationId of affiliationIds) {
+    const previous = await affiliationsStore.get(affiliationId);
+    if (previous) previousPersons.set(previous.personItemId, previous.personBoardId);
+    const summary = await mondayClient.getAffiliationSummary(affiliationId, cfg.columns.personLink);
+    if (summary === null) {
+      console.warn(`donation-rollups consumer: affiliation "${affiliationId}" no longer exists on Monday — skipped`);
+      continue;
+    }
+    if (summary.personItemId !== null && summary.personBoardId !== null) {
+      await affiliationsStore.upsert({ affiliationItemId: affiliationId, personItemId: summary.personItemId,
+        personBoardId: summary.personBoardId, name: summary.name }, now);
+      persons.set(summary.personItemId, summary.personBoardId);
+    }
+    const totals = await giftsStore.attributedTotals(affiliationId, receivedStatusLabel);
+    await mondayClient.changeColumnValues(cfg.boardId, affiliationId,
+      attributedToColumnValues(attributedRollupFromTotals(totals), cfg.columns));
+  }
+  // Review finding 2: a stale D1 row for one affiliation must never clobber a fresh summary
+  // written by another affiliation for the same person — so previous rows only fill in persons
+  // no affiliation this pass resolved fresh (e.g. the affiliation was deleted on Monday).
+  for (const [personItemId, personBoardId] of previousPersons) {
+    if (!persons.has(personItemId)) persons.set(personItemId, personBoardId);
+  }
+  for (const [personItemId, personBoardId] of persons) {
+    const column = ownerColumnsByBoard[personBoardId]?.organizationalGiving;
+    if (!column) {
+      console.warn(`donation-rollups consumer: no organizationalGiving column for board "${personBoardId}" — Organizational Giving for "${personItemId}" not written`);
+      continue;
+    }
+    const totals = await giftsStore.organizationalGivingTotals(personItemId, receivedStatusLabel);
+    await mondayClient.changeColumnValues(Number(personBoardId), personItemId, { [column]: organizationalGivingColumnValue(totals.cents) });
+  }
 }

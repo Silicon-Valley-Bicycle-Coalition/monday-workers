@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1GiftsStore } from '../db/gifts';
 import { D1DonationLinksStore } from '../db/links';
 import { D1PendingStore } from '../db/pending';
-import { dutiesForDate, runDuty, type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
+import { dutiesForDate, runDuty, RECONCILE_AFFILIATIONS_PER_RUN,
+  type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const OWNER_COLS = {
@@ -17,8 +18,9 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
     monday: { apiUrl: 'https://x', accountUrl: 'https://acme.monday.com' },
     custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
       annualSummaryBoardId: null, annualSummaryColumns: null, ...over },
+    affiliations: null,
     donationRollups: {
-      donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy' } }],
+      donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy', actingForLink: null } }],
       receivedStatusLabel: 'Received',
       ownerColumnsByBoard: { 'b1': OWNER_COLS },
       membership: null,
@@ -36,6 +38,9 @@ interface FakeClientState {
   updates: { itemId: number; body: string }[];
   createdItems?: { boardId: number; name: string; columnValues: Record<string, unknown> }[];
   changedColumns?: { boardId: number; itemId: string; columnValues: Record<string, unknown> }[];
+  // Every getItemsColumnsText call this client saw, in order — lets tests assert which
+  // columns (and so which legs) actually spent a Monday subrequest in a given run.
+  calls?: { itemIds: string[]; columnIds: string[] }[];
 }
 
 function fakeClient(state: FakeClientState): CustodianMondayClient {
@@ -46,6 +51,7 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     },
     async listWorkspaceBoards() { return state.boards ?? []; },
     async getItemsColumnsText(itemIds, columnIds) {
+      (state.calls ??= []).push({ itemIds: [...itemIds], columnIds: [...columnIds] });
       const out = new Map<string, Map<string, string | null>>();
       for (const id of itemIds) {
         const rec = state.columnText?.get(id);
@@ -84,14 +90,15 @@ beforeEach(async () => {
     env.DB.prepare('DELETE FROM custodian_runs'),
     env.DB.prepare('DELETE FROM donation_links'),
     env.DB.prepare('DELETE FROM pending_recomputes'),
+    env.DB.prepare('DELETE FROM affiliations'),
   ]);
 });
 
-const seedGift = (db: D1Database, id: string, over: Partial<{ owner: string; fy: number; cents: number; status: string; archivedAt: string | null }> = {}) =>
+const seedGift = (db: D1Database, id: string, over: Partial<{ owner: string; fy: number; cents: number; status: string; archivedAt: string | null; actingFor: string | null }> = {}) =>
   db.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date,
-    fiscal_year, status, archived_at, source, updated_at)
-    VALUES (?1, ?2, 'b1', ?3, '2020-01-01', ?4, ?5, ?6, 'import', 'now')`)
-    .bind(id, over.owner ?? 'o1', over.cents ?? 1000, over.fy ?? 2020, over.status ?? 'Received', over.archivedAt ?? null)
+    fiscal_year, status, archived_at, acting_for_item_id, source, updated_at)
+    VALUES (?1, ?2, 'b1', ?3, '2020-01-01', ?4, ?5, ?6, ?7, 'import', 'now')`)
+    .bind(id, over.owner ?? 'o1', over.cents ?? 1000, over.fy ?? 2020, over.status ?? 'Received', over.archivedAt ?? null, over.actingFor ?? null)
     .run();
 
 describe('dutiesForDate', () => {
@@ -438,6 +445,163 @@ describe('reconcile duty', () => {
       { fiscalYear: 2015, ledgerCents: 5000, boardCents: null },
     ]);
   });
+
+  const AFFIL_CFG: DonationRollupsConfig = {
+    ...testConfig(),
+    affiliations: { boardId: 500, columns: { personLink: 'pl', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } },
+    donationRollups: {
+      ...testConfig().donationRollups,
+      ownerColumnsByBoard: { b1: { ...OWNER_COLS, organizationalGiving: 'col_og' } },
+    },
+  };
+
+  it('reconciles attributed giving and Organizational Giving cleanly when Monday matches the ledger', async () => {
+    await seedGift(env.DB, 'ag1', { owner: 'oA', cents: 52500, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '525', col_glj: glj([['ag1', 52500]]) }],
+      ['af-1', { n_ag: '525' }],
+      ['p-1', { col_og: '525' }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+    // Legs 5/6 only run in an invocation whose owner slice is empty — simulate the owner
+    // walk having already completed (parked at the only owner, 'oA') on a prior run.
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true,
+      report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true);
+    const detail = report.detail as { affiliationMismatchCount: number; organizationalMismatchCount: number };
+    expect(detail.affiliationMismatchCount).toBe(0);
+    expect(detail.organizationalMismatchCount).toBe(0);
+  });
+
+  it('flags affiliation and Organizational Giving mismatches against the ledger', async () => {
+    await seedGift(env.DB, 'ag2', { owner: 'oA', cents: 52500, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '525', col_glj: glj([['ag2', 52500]]) }],
+      ['af-1', { n_ag: '524' }],
+      ['p-1', { col_og: '524' }],
+    ]) };
+    const d = deps(state, [], AFFIL_CFG);
+    // Legs 5/6 only run in an invocation whose owner slice is empty — simulate the owner
+    // walk having already completed (parked at the only owner, 'oA') on a prior run.
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true,
+      report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(false);
+    const detail = report.detail as {
+      affiliationMismatches: { affiliationItemId: string; ledgerCents: number; mondayCents: number | null }[];
+      organizationalMismatches: { personItemId: string; ledgerCents: number; mondayCents: number | null }[];
+    };
+    expect(detail.affiliationMismatches).toEqual([{ affiliationItemId: 'af-1', ledgerCents: 52500, mondayCents: 52400 }]);
+    expect(detail.organizationalMismatches).toEqual([{ personItemId: 'p-1', ledgerCents: 52500, mondayCents: 52400 }]);
+  });
+
+  it('warns (review finding 13) when leg 6 skips a person whose board has no organizationalGiving column', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cfgNoOgColumn: DonationRollupsConfig = {
+      ...AFFIL_CFG,
+      donationRollups: {
+        ...AFFIL_CFG.donationRollups,
+        // b2 is a configured owner board, but — like an Organizations board — carries no
+        // organizationalGiving column at all.
+        ownerColumnsByBoard: { ...AFFIL_CFG.donationRollups.ownerColumnsByBoard, b2: OWNER_COLS },
+      },
+    };
+    await seedGift(env.DB, 'ag2b', { owner: 'oA', cents: 5000, actingFor: 'af-2' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-2','p-2','b2','Zed @ Co','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '50', col_glj: glj([['ag2b', 5000]]) }],
+      ['af-2', { n_ag: '50' }],
+    ]) };
+    const d = deps(state, [], cfgNoOgColumn);
+    await d.gifts.recordRun({ duty: 'reconcile', ranAt: '2026-07-31T00:00:00Z', ok: true,
+      report: { ok: true, summary: 'parked', detail: { remaining: 1, cursor: 'oA' } } });
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true); // a missing column is a skip, not a mismatch
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "b2"'));
+    warn.mockRestore();
+  });
+
+  it('skips legs 5/6 entirely when config.affiliations is not configured', async () => {
+    await seedGift(env.DB, 'ag3', { owner: 'oA', cents: 5000, actingFor: 'af-1' });
+    await env.DB.prepare(`INSERT INTO affiliations VALUES ('af-1','p-1','b1','Ada @ Acme','now')`).run();
+    const state: FakeClientState = { archived: [], updates: [], columnText: new Map([
+      ['oA', { col_lt: '50', col_glj: glj([['ag3', 5000]]) }],
+    ]) };
+    const d = deps(state, []); // default testConfig(): affiliations: null
+
+    const report = await runDuty('reconcile', d);
+    expect(report.ok).toBe(true);
+    const detail = report.detail as { affiliationMismatchCount: number; organizationalMismatchCount: number };
+    expect(detail.affiliationMismatchCount).toBe(0);
+    expect(detail.organizationalMismatchCount).toBe(0);
+  });
+
+  // Seeds RECONCILE_AFFILIATIONS_PER_RUN + 1 affiliations (each with its own gift, all
+  // acting for the same single person 'p-1' so leg 6 stays a one-item, one-call leg) via a
+  // raw batch insert — seedGift's per-row helper would be far too slow at this volume.
+  async function seedAffiliationOverflow(db: D1Database, count: number) {
+    const affiliationStmts = [];
+    const giftStmts = [];
+    for (let i = 0; i < count; i++) {
+      const afId = `af-${String(i).padStart(4, '0')}`;
+      affiliationStmts.push(db.prepare(`INSERT INTO affiliations VALUES (?1, 'p-1', 'b1', ?2, 'now')`)
+        .bind(afId, `Person ${i}`));
+      giftStmts.push(db.prepare(`INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id,
+          amount_cents, gift_date, fiscal_year, status, archived_at, acting_for_item_id, source, updated_at)
+        VALUES (?1, 'o1', 'b1', 100, '2020-01-01', 2020, 'Received', NULL, ?2, 'import', 'now')`)
+        .bind(`g-${afId}`, afId));
+    }
+    const all = [...affiliationStmts, ...giftStmts];
+    for (let i = 0; i < all.length; i += 500) await db.batch(all.slice(i, i + 500));
+  }
+
+  it('slices legs 5/6 across runs under the subrequest cap, never sharing an invocation with an owner slice', async () => {
+    const total = RECONCILE_AFFILIATIONS_PER_RUN + 1;
+    await seedAffiliationOverflow(env.DB, total);
+    const sortedIds = Array.from({ length: total }, (_, i) => `af-${String(i).padStart(4, '0')}`).sort();
+    const columnText = new Map<string, Record<string, string | null>>();
+    for (const id of sortedIds) columnText.set(id, { n_ag: '1' }); // 100 cents == $1.00
+    columnText.set('p-1', { col_og: String(total) }); // total * 100 cents == $total.00
+    const state: FakeClientState = { archived: [], updates: [], columnText, calls: [] };
+    const d = deps(state, [], AFFIL_CFG);
+    d.now = new Date('2026-08-01T00:00:00Z');
+
+    // Run 0: the owner walk itself — a single owner ('o1'), consumed in one slice since
+    // RECONCILE_OWNERS_PER_RUN comfortably covers it. Legs 5/6 must spend zero Monday
+    // subrequests here, even though ownerRemaining reaches 0 in this same run.
+    const before0 = state.calls!.length;
+    await runDuty('reconcile', d);
+    const run0Calls = state.calls!.slice(before0);
+    expect(run0Calls.some((c) => c.columnIds.includes('n_ag') || c.columnIds.includes('col_og'))).toBe(false);
+
+    // Run 1: the owner slice is now empty (parked on the just-completed owner walk) — leg 5
+    // spends its RECONCILE_AFFILIATIONS_PER_RUN-per-run cap (20 getItemsColumnsText calls)
+    // and leaves exactly 1 affiliation outstanding; leg 6 must not run yet.
+    d.now = new Date('2026-08-02T00:00:00Z');
+    const before1 = state.calls!.length;
+    const run1 = await runDuty('reconcile', d);
+    const run1Calls = state.calls!.slice(before1);
+    const detail1 = run1.detail as { affiliationRemaining: number; affiliationCursor: string };
+    expect(detail1.affiliationRemaining).toBe(1);
+    expect(detail1.affiliationCursor).toBe(sortedIds[RECONCILE_AFFILIATIONS_PER_RUN - 1]);
+    expect(run1Calls.some((c) => c.columnIds.includes('col_og'))).toBe(false);
+    expect(run1Calls.length).toBeLessThanOrEqual(20);
+
+    // Run 2: leg 5 finishes its last affiliation, which lets leg 6 run in the same
+    // invocation — both fully catch up and the combined remaining drops to 0.
+    d.now = new Date('2026-08-03T00:00:00Z');
+    const run2 = await runDuty('reconcile', d);
+    const detail2 = run2.detail as { affiliationRemaining: number; personRemaining: number; remaining: number };
+    expect(detail2.affiliationRemaining).toBe(0);
+    expect(detail2.personRemaining).toBe(0);
+    expect(detail2.remaining).toBe(0);
+  }, 30_000);
 });
 
 // Fix 5: rows the queue never finished (messages expired unconsumed, or a batch that died

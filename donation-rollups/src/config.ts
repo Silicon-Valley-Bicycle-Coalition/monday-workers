@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, AffiliationsConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -35,6 +35,10 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       throw new Error(`config: donationRollups.donationBoards[${index}].columns.${key} must be a column id string, null, or omitted`);
     }
   }
+  if (columns.actingForLink !== undefined && columns.actingForLink !== null
+    && (typeof columns.actingForLink !== 'string' || columns.actingForLink === '')) {
+    throw new Error(`config: donationRollups.donationBoards[${index}].columns.actingForLink must be a column id string, null, or omitted`);
+  }
   return {
     boardId: b.boardId,
     columns: {
@@ -45,6 +49,7 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       termStart: (columns.termStart ?? null) as string | null,
       termEnd: (columns.termEnd ?? null) as string | null,
       membershipType: (columns.membershipType ?? null) as string | null,
+      actingForLink: (columns.actingForLink ?? null) as string | null,
     },
   };
 }
@@ -71,6 +76,9 @@ function validateOwnerColumns(raw: unknown, boardId: string): OwnerColumns {
       }
     }
     membership = { status: m.status as string, tier: m.tier as string, since: m.since as string, until: m.until as string };
+  }
+  if (columns.organizationalGiving !== undefined && (typeof columns.organizationalGiving !== 'string' || columns.organizationalGiving === '')) {
+    throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].organizationalGiving must be a Monday column id string or omitted`);
   }
   const { membership: _raw, ...rest } = columns;
   return { ...(rest as unknown as OwnerColumns), ...(membership ? { membership } : {}) };
@@ -172,12 +180,33 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
       throw new Error('config: at least one ownerColumnsByBoard entry must have "membership" columns when donationRollups.membership is configured');
     }
   }
+  const affiliations = validateAffiliations(cfg.affiliations, donationBoards);
 
   return {
     monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, '') },
     custodian: validateCustodian(cfg.custodian),
+    affiliations,
     donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership },
   };
+}
+
+function validateAffiliations(raw: unknown, donationBoards: DonationBoardConfig[]): AffiliationsConfig | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object') throw new Error('config: "affiliations" must be an object or null');
+  const a = raw as Record<string, unknown>;
+  if (typeof a.boardId !== 'number') throw new Error('config: "affiliations.boardId" must be a number');
+  const columns = (a.columns ?? {}) as Record<string, unknown>;
+  for (const key of ['personLink', 'attributedGiving', 'attributedGiftCount', 'lastAttributedGift'] as const) {
+    if (typeof columns[key] !== 'string' || columns[key] === '') {
+      throw new Error(`config: "affiliations.columns.${key}" must be a Monday column id string`);
+    }
+  }
+  for (const b of donationBoards) {
+    if (b.columns.actingForLink === null) {
+      throw new Error(`config: donationBoards[${b.boardId}].columns.actingForLink is required when affiliations is set`);
+    }
+  }
+  return { boardId: a.boardId, columns: columns as unknown as AffiliationsConfig['columns'] };
 }
 
 function validateCustodian(raw: unknown): CustodianConfig {

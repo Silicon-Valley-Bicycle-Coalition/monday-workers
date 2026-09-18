@@ -18,11 +18,21 @@ export interface DonationRecord {
   termStart?: string | null;
   termEnd?: string | null;
   membershipType?: string | null;
+  // The Affiliation item this donation's Acting for column points at. undefined when the
+  // board has no actingForLink configured; null when the column is configured but empty.
+  actingForItemId?: string | null;
+}
+
+export interface AffiliationSummary {
+  name: string;
+  personItemId: string | null;
+  personBoardId: string | null;
 }
 
 export type DonationReadColumns = {
   amount: string; date: string; fiscalYear: string | null; status: string;
   giftType?: string | null; termStart?: string | null; termEnd?: string | null; membershipType?: string | null;
+  actingForLink?: string | null;
 };
 
 export interface DonationRollupsMondayClient {
@@ -46,6 +56,10 @@ export interface DonationRollupsMondayClient {
   // reads as all-null so a deleted owner degrades to "never a member", not a thrown recompute.
   getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns):
     Promise<{ statusLabel: string | null; tierLabel: string | null; since: string | null; until: string | null }>;
+  // The Affiliation item's own name and the Person it links to (and that Person's board,
+  // needed since Person items can live on the Donor or Organization board) — null when the
+  // Affiliation item itself has been deleted.
+  getAffiliationSummary(affiliationItemId: string, personLinkColumnId: string): Promise<AffiliationSummary | null>;
   // Rewrites an owner item's description with the markdown gift-history projection.
   setItemDescription(itemId: string, markdown: string): Promise<void>;
   // All items on one Donations board, each with its raw Donor-link value — used only
@@ -67,7 +81,7 @@ interface GraphQLResponse<T> {
   status_code?: number;
 }
 
-interface ColumnValue { id: string; text: string | null }
+interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
 
 export class HttpMondayClient implements DonationRollupsMondayClient {
   constructor(
@@ -135,7 +149,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       ...(columns.giftType ? [columns.giftType] : []),
       ...(columns.termStart ? [columns.termStart] : []),
       ...(columns.termEnd ? [columns.termEnd] : []),
-      ...(columns.membershipType ? [columns.membershipType] : [])];
+      ...(columns.membershipType ? [columns.membershipType] : []),
+      ...(columns.actingForLink ? [columns.actingForLink] : [])];
     const donations: DonationRecord[] = [];
     const optionalText = (byId: Map<string, string>, id: string | null | undefined): string | null | undefined =>
       id ? (byId.get(id) || null) : undefined;
@@ -154,7 +169,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       // more than 25 gifts on one board).
       const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text } }
+          items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
         }`,
         { ids: chunk, columnIds },
       );
@@ -179,11 +194,15 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const rawFY = fyText === '' ? NaN : Number(fyText);
         const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
         const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
+        const actingForItemId = columns.actingForLink
+          ? (item.column_values.find((cv) => cv.id === columns.actingForLink)?.linked_item_ids?.[0] ?? null)
+          : undefined;
         donations.push({
           id: item.id, amount, dateISO, fiscalYear, status, giftType,
           termStart: optionalDate(byId, columns.termStart),
           termEnd: optionalDate(byId, columns.termEnd),
           membershipType: optionalText(byId, columns.membershipType),
+          actingForItemId,
         });
       }
     }
@@ -196,6 +215,20 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     const text = (id: string): string | null => cols?.get(id) ?? null;
     const date = (id: string): string | null => text(id)?.slice(0, 10) ?? null;
     return { statusLabel: text(columns.status), tierLabel: text(columns.tier), since: date(columns.since), until: date(columns.until) };
+  }
+
+  async getAffiliationSummary(affiliationItemId: string, personLinkColumnId: string): Promise<AffiliationSummary | null> {
+    const data = await this.graphql<{ items: { id: string; name: string; column_values: { id: string; linked_item_ids?: string[] }[] }[] }>(
+      `query ($itemId: ID!, $columnId: [String!]) {
+        items(ids: [$itemId]) { id name column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids } } }
+      }`,
+      { itemId: affiliationItemId, columnId: [personLinkColumnId] },
+    );
+    const item = data.items[0];
+    if (item === undefined) return null;
+    const personItemId = item.column_values[0]?.linked_item_ids?.[0] ?? null;
+    const personBoardId = personItemId === null ? null : await this.getItemBoardId(personItemId);
+    return { name: item.name, personItemId, personBoardId };
   }
 
   async listDonationOwnerLinks(

@@ -100,3 +100,33 @@ describe('validateConfig — membership block', () => {
     expect(validateConfig(enabled).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
   });
 });
+
+const rawBase = () => JSON.parse(JSON.stringify(rawConfig)) as Record<string, any>;
+
+describe('validateConfig — affiliations block', () => {
+  it('accepts affiliations: null (feature gated off) and leaves actingForLink null', () => {
+    const cfg = validateConfig(rawBase());
+    expect(cfg.affiliations).toBeNull();
+    expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBeNull();
+  });
+  it('accepts a full affiliations block and an optional organizationalGiving owner column', () => {
+    const raw = rawBase();
+    raw.affiliations = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag',
+      attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } };
+    raw.donationRollups.donationBoards[0].columns.actingForLink = 'br_af';
+    raw.donationRollups.ownerColumnsByBoard['18428131737'].organizationalGiving = 'n_og';
+    const cfg = validateConfig(raw);
+    expect(cfg.affiliations).toEqual({ boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag',
+      attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } });
+    expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBe('br_af');
+    expect(cfg.donationRollups.ownerColumnsByBoard['18428131737']!.organizationalGiving).toBe('n_og');
+    expect(cfg.donationRollups.ownerColumnsByBoard['18428131727']!.organizationalGiving).toBeUndefined();
+  });
+  it('rejects an affiliations block missing a column, and a block without actingForLink on the donation board', () => {
+    const raw = rawBase();
+    raw.affiliations = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc' } };
+    expect(() => validateConfig(raw)).toThrow(/affiliations\.columns\.lastAttributedGift/);
+    raw.affiliations.columns.lastAttributedGift = 'd_lag';
+    expect(() => validateConfig(raw)).toThrow(/actingForLink.*required when affiliations is set/);
+  });
+});

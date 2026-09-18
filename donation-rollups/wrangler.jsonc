@@ -30,6 +30,10 @@
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
         "max_concurrency": 1,
+        // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
+        // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
+        // the Free plan's 50-subrequest cap.
+        "max_batch_size": 2,
         "dead_letter_queue": "donation-rollups-recompute-dlq"
       },
       {

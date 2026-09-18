@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processRecomputeBatch, rollupToColumnValues } from './processBatch';
+import { processRecomputeBatch, rollupToColumnValues, affectedAffiliations } from './processBatch';
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
+import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns } from '../types';
 import type { MembershipBaselineStore, BaselineRow } from '../db/membershipBaseline';
@@ -20,10 +21,11 @@ const config: DonationRollupsConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', accountUrl: 'https://acme.monday.com' },
   custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
     annualSummaryBoardId: null, annualSummaryColumns: null },
+  affiliations: null,
   donationRollups: {
     donationBoards: [
-      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1' } },
-      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null } },
+      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1', actingForLink: null } },
+      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null, actingForLink: null } },
     ],
     receivedStatusLabel: 'Received',
     ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns },
@@ -39,7 +41,7 @@ const membershipConfig: MembershipConfig = {
 };
 const memberOwnerColumns: OwnerColumns = { ...ownerColumns, membership: { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' } };
 const membershipBoard = { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1',
-  fiscalYear: 'fy_1', giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1' } };
+  fiscalYear: 'fy_1', giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1', actingForLink: null } };
 const membershipEnabled: DonationRollupsConfig = {
   ...config,
   donationRollups: {
@@ -94,6 +96,11 @@ function fakeGiftsStore(): GiftsStore {
   return {
     refreshFacts: vi.fn().mockResolvedValue({ changed: 0 }),
     giftsForOwner: vi.fn().mockResolvedValue([]),
+    actingForByIds: vi.fn().mockResolvedValue(new Map()),
+    attributedTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0, lastGiftDateISO: null }),
+    organizationalGivingTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0 }),
+    attributedTotalsAll: vi.fn().mockResolvedValue(new Map()),
+    organizationalGivingAll: vi.fn().mockResolvedValue(new Map()),
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
     markArchived: vi.fn().mockResolvedValue(undefined),
@@ -105,6 +112,11 @@ function fakeGiftsStore(): GiftsStore {
     recordRun: vi.fn().mockResolvedValue(undefined),
     lastRuns: vi.fn().mockResolvedValue([]),
   };
+}
+
+function fakeAffiliationsStore(overrides: Partial<AffiliationsStore> = {}): AffiliationsStore {
+  return { upsert: vi.fn().mockResolvedValue(undefined), get: vi.fn().mockResolvedValue(null),
+    forPerson: vi.fn().mockResolvedValue([]), bulkUpsert: vi.fn().mockResolvedValue(0), ...overrides };
 }
 
 function fakeMessage(donationItemId: string, donationBoardId = '1') {
@@ -121,6 +133,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
     setItemDescription: vi.fn().mockResolvedValue(undefined),
     createUpdate: vi.fn().mockResolvedValue(undefined),
+    getAffiliationSummary: vi.fn().mockResolvedValue(null),
     ...overrides,
   };
 }
@@ -129,7 +142,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
 const oversizedHistory = Array.from({ length: 2_000 }, (_, i) => ({
   mondayItemId: `18427756${String(i).padStart(6, '0')}`, donationBoardId: '1',
   amountCents: 5000, giftDateISO: `${2000 + (i % 26)}-01-15`, fiscalYear: 2000 + (i % 26),
-  status: 'Received', giftType: 'Donation', archived: false,
+  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false,
 }));
 
 const configWithAlert: DonationRollupsConfig = {
@@ -153,10 +166,10 @@ describe('gift-history projections in the recompute path', () => {
       ]),
     });
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
     const written = changeColumnValues.mock.calls[0]![2] as Record<string, unknown>;
-    expect(JSON.parse(written['glj'] as string)).toEqual([['dn1', '2020-01-15', 5000, 'Donation', 'Received']]);
+    expect(JSON.parse(written['glj'] as string)).toEqual([['dn1', '2020-01-15', 5000, 'Donation', 'Received', '']]);
     expect(setItemDescription).toHaveBeenCalledWith('donor-1',
       expect.stringContaining('https://acme.monday.com/boards/1/pulses/dn1'));
     expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
@@ -174,7 +187,7 @@ describe('gift-history projections in the recompute path', () => {
     });
     const message = fakeMessage('dn1');
     await processRecomputeBatch([message],
-      { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
@@ -198,7 +211,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     const { giftsStore, mondayClient } = oversizedSetup();
     const message = fakeMessage('dn1');
     await processRecomputeBatch([message],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
@@ -215,7 +228,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     const createUpdate = vi.fn().mockResolvedValue(undefined);
     const { giftsStore, mondayClient } = oversizedSetup({ createUpdate });
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
 
     expect(createUpdate).toHaveBeenCalledTimes(1);
     const [itemId, body] = createUpdate.mock.calls[0]! as [number, string];
@@ -227,14 +240,14 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
   it('alerts (without truncating) already at the 48KB planning threshold', async () => {
     const createUpdate = vi.fn().mockResolvedValue(undefined);
     const giftsStore = fakeGiftsStore();
-    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory.slice(0, 1_000)); // ~50KB
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory.slice(0, 900)); // ~56KB with the acting-for element
     const mondayClient = fakeMondayClient({ createUpdate });
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
 
     expect(createUpdate).toHaveBeenCalledTimes(1);
     const written = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2] as Record<string, unknown>;
-    expect(JSON.parse(written['glj'] as string)).toHaveLength(1_000); // still the full projection
+    expect(JSON.parse(written['glj'] as string)).toHaveLength(900); // still the full projection
   });
 
   it('a failing alert post never kills the rollup write', async () => {
@@ -244,7 +257,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn1');
     await processRecomputeBatch([message],
-      { pendingStore, linksStore: fakeLinksStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+      { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
 
     expect(message.ack).toHaveBeenCalled();
     expect(mondayClient.changeColumnValues).toHaveBeenCalled();
@@ -255,7 +268,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     const createUpdate = vi.fn().mockResolvedValue(undefined);
     const mondayClient = fakeMondayClient({ createUpdate });
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config: configWithAlert, now: new Date('2026-01-01') });
     expect(createUpdate).not.toHaveBeenCalled();
   });
 });
@@ -291,7 +304,7 @@ describe('processRecomputeBatch', () => {
     const upsertLink = vi.fn().mockResolvedValue(undefined);
     const mondayClient = fakeMondayClient({ getDonorLinkForDonation, getItemBoardId: vi.fn().mockResolvedValue('2') });
     await processRecomputeBatch([fakeMessage('dn1', '9')], // board 9, not board 1
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ upsertLink }), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ upsertLink }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonorLinkForDonation).toHaveBeenCalledWith('dn1', 'donor_link_9'); // board 9's own column id
     expect(upsertLink).toHaveBeenCalledWith(
       { donationItemId: 'dn1', donationBoardId: '9', ownerItemId: 'donor-1', ownerBoardId: '2' },
@@ -304,7 +317,7 @@ describe('processRecomputeBatch', () => {
     const getLinksForOwner = vi.fn().mockResolvedValue(new Map([['1', ['dn1', 'dnOld']], ['9', ['dnHist']]]));
     const mondayClient = fakeMondayClient({ getDonationsByIds });
     await processRecomputeBatch([fakeMessage('dn1', '1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(2); // both boards the index has links on
     expect(getDonationsByIds).toHaveBeenCalledWith(['dn1', 'dnOld'], expect.objectContaining({ fiscalYear: 'fy_1' }));
     expect(getDonationsByIds).toHaveBeenCalledWith(['dnHist'], expect.objectContaining({ fiscalYear: null }));
@@ -315,7 +328,7 @@ describe('processRecomputeBatch', () => {
     const getLinksForOwner = vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])); // nothing on board 9
     const mondayClient = fakeMondayClient({ getDonationsByIds });
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(1);
   });
 
@@ -330,7 +343,7 @@ describe('processRecomputeBatch', () => {
     const linksStore = fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])) });
     const pendingStore = fakePendingStore();
 
-    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore, linksStore, giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore, linksStore, affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-1', expect.objectContaining({ lg: '100' }));
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written',
@@ -342,7 +355,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn1');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
 
     expect(message.retry).toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'failed', expect.objectContaining({
@@ -355,7 +368,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn3');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
 
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
@@ -373,7 +386,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dnArchived');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore, giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
+    await processRecomputeBatch([message], { pendingStore, linksStore, affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
     expect(linksStore.getLinkForDonation).toHaveBeenCalledWith('dnArchived');
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything());
@@ -387,7 +400,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn5', '77'); // no donationBoards entry for board 77
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
 
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
@@ -404,7 +417,7 @@ describe('processRecomputeBatch', () => {
     const pendingStore = fakePendingStore();
     const message = fakeMessage('dn4');
 
-    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config });
 
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
@@ -431,7 +444,7 @@ describe('membership step (spec 2026-09-15)', () => {
     return {
       changeColumnValues, baselineStore, mondayClient,
       run: () => processRecomputeBatch([fakeMessage('dn1')], {
-        pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(),
+        pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
         recomputesStore: fakeRecomputesStore(), baselineStore, mondayClient, config: over.cfg ?? membershipEnabled, now: NOW,
       }),
     };
@@ -549,7 +562,7 @@ describe('membership step (spec 2026-09-15)', () => {
     const message = fakeMessage('dn1');
     const recomputesStore = fakeRecomputesStore();
     await processRecomputeBatch([message], {
-      pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(),
+      pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
       recomputesStore, baselineStore: d.baselineStore, mondayClient: d.mondayClient, config: membershipEnabled, now: NOW,
     });
     expect(d.changeColumnValues.mock.calls[0]![1]).toBe('donor-1');
@@ -577,7 +590,7 @@ describe('owner recompute coalescing (fix 3)', () => {
     const mondayClient = fakeMondayClient();
     const message = fakeMessage('dn1');
     const done = processRecomputeBatch([message],
-      { pendingStore, linksStore, giftsStore: fakeGiftsStore(), recomputesStore, baselineStore: fakeBaselineStore(), mondayClient, config });
+      { pendingStore, linksStore, affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, baselineStore: fakeBaselineStore(), mondayClient, config });
     return { done, pendingStore, linksStore, recomputesStore, mondayClient, message };
   }
 
@@ -627,7 +640,7 @@ describe('owner recompute coalescing (fix 3)', () => {
     (recomputesStore.record as ReturnType<typeof vi.fn>).mockImplementation(async () => { order.push('record'); });
     const before = new Date().toISOString();
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore, baselineStore: fakeBaselineStore(), mondayClient, config });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, baselineStore: fakeBaselineStore(), mondayClient, config });
     const after = new Date().toISOString();
 
     expect(order).toEqual(['fetch', 'write', 'record']);
@@ -641,7 +654,7 @@ describe('owner recompute coalescing (fix 3)', () => {
     const mondayClient = fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(new Error('monday down')) });
     const recomputesStore = fakeRecomputesStore(null);
     await processRecomputeBatch([fakeMessage('dn1')],
-      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(), recomputesStore, baselineStore: fakeBaselineStore(), mondayClient, config });
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, baselineStore: fakeBaselineStore(), mondayClient, config });
     expect(recomputesStore.record).not.toHaveBeenCalled();
   });
 });
@@ -658,7 +671,7 @@ describe('D1 quota outage handling (fix 4)', () => {
   function base(over: { pendingStore?: PendingStore; linksStore?: DonationLinksStore; mondayClient?: DonationRollupsMondayClient } = {}) {
     return {
       pendingStore: over.pendingStore ?? fakePendingStore(), linksStore: over.linksStore ?? fakeLinksStore(),
-      giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(),
+      giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), affiliationsStore: fakeAffiliationsStore(), baselineStore: fakeBaselineStore(),
       mondayClient: over.mondayClient ?? fakeMondayClient(), config, now: STALL,
     };
   }
@@ -708,5 +721,212 @@ describe('D1 quota outage handling (fix 4)', () => {
       expect(m.retry).toHaveBeenCalledWith({ delaySeconds: DELAY });
       expect(m.ack).not.toHaveBeenCalled();
     }
+  });
+});
+
+const affiliationsCfg = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } };
+const configWithAffiliations: DonationRollupsConfig = {
+  ...config,
+  affiliations: affiliationsCfg,
+  donationRollups: { ...config.donationRollups,
+    donationBoards: config.donationRollups.donationBoards.map((b) => ({ ...b, columns: { ...b.columns, actingForLink: `af_${b.boardId}` } })),
+    ownerColumnsByBoard: { '2': { ...ownerColumns, organizationalGiving: 'og' }, '3': ownerColumns } },
+};
+
+describe('affectedAffiliations', () => {
+  it('unions the triggering donation\'s previous and current acting-for ids, ignoring nulls', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-old'], ['dn2', null]]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      'dn1')].sort())
+      .toEqual(['af-new', 'af-old']);
+  });
+
+  it('an unchanged non-triggering gift contributes nothing', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-unchanged']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-unchanged' }],
+      'dn1')])
+      .toEqual(['af-trigger']);
+  });
+
+  it('the triggering gift\'s affiliation is included even when unchanged', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-same']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-same' }],
+      'dn1')])
+      .toEqual(['af-same']);
+  });
+
+  it('a changed non-triggering gift contributes both its old and new affiliation', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-old']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' }],
+      'dn1')].sort())
+      .toEqual(['af-new', 'af-old', 'af-trigger']);
+  });
+
+  // Review finding 1: donation_links includes archived gifts, and D1 preserves an archived
+  // gift's acting_for_item_id forever while Monday reads its board_relation back as null —
+  // without the null-current guard, previous !== current fires on every recompute for every
+  // archived attributed gift, fanning out to every affiliation an org owner ever had.
+  it('a non-triggering archived gift whose fetched value reads back null contributes nothing (finding 1)', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-archived']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      'dn1')])
+      .toEqual(['af-trigger']);
+  });
+
+  it('the same previous/current-null shape on the TRIGGERING gift is still a genuine clear (finding 1)', () => {
+    expect([...affectedAffiliations(new Map([['dn1', 'af-archived']]),
+      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      'dn1')])
+      .toEqual(['af-archived']);
+  });
+});
+
+describe('consumer phase 2 — affiliation rollups', () => {
+  const donation = { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-1' };
+  function setup(over: { giftsStore?: Partial<GiftsStore>; affiliationsStore?: Partial<AffiliationsStore>; monday?: Partial<DonationRollupsMondayClient> } = {}) {
+    const giftsStore = { ...fakeGiftsStore(), ...over.giftsStore } as GiftsStore;
+    (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
+    (giftsStore.organizationalGivingTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1 });
+    const mondayClient = fakeMondayClient({
+      getDonationsByIds: vi.fn().mockResolvedValue([donation]),
+      getAffiliationSummary: vi.fn().mockResolvedValue({ name: 'Uma @ Beta', personItemId: 'p-1', personBoardId: '2' }),
+      ...over.monday });
+    const affiliationsStore = fakeAffiliationsStore(over.affiliationsStore);
+    return { giftsStore, mondayClient, affiliationsStore };
+  }
+
+  it('writes the three attributed columns on the Affiliations board and Organizational Giving on the person', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup();
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(mondayClient.getDonationsByIds).toHaveBeenCalledWith(['dn1'], expect.objectContaining({ actingForLink: 'af_1' }));
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith([expect.objectContaining({ mondayItemId: 'dn1', actingForItemId: 'af-1' })], 'webhook', expect.any(String));
+    expect(mondayClient.getAffiliationSummary).toHaveBeenCalledWith('af-1', 'br_p');
+    expect(affiliationsStore.upsert).toHaveBeenCalledWith({ affiliationItemId: 'af-1', personItemId: 'p-1', personBoardId: '2', name: 'Uma @ Beta' }, expect.any(String));
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', { n_ag: '500', n_agc: '1', d_lag: { date: '2024-02-02' } });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500' });
+  });
+
+  it('recomputes the affiliation a gift moved away from, and the person it used to belong to', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      giftsStore: { actingForByIds: vi.fn().mockResolvedValue(new Map([['dn1', 'af-old']])) },
+      affiliationsStore: { get: vi.fn().mockImplementation(async (id: string) =>
+        id === 'af-old' ? { affiliationItemId: 'af-old', personItemId: 'p-old', personBoardId: '2', name: 'Old @ Org' } : null) },
+      monday: { getAffiliationSummary: vi.fn().mockImplementation(async (id: string) =>
+        ({ name: `${id} name`, personItemId: id === 'af-old' ? 'p-old' : 'p-1', personBoardId: '2' })) },
+    });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-old', expect.anything());
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', expect.anything());
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-old', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500' });
+  });
+
+  it('skips Organizational Giving with a warning when the person board has no such column, and skips a deleted affiliation', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      monday: { getAffiliationSummary: vi.fn().mockResolvedValue({ name: 'X @ Y', personItemId: 'p-3', personBoardId: '3' }) } });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-3', expect.anything());
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "3"'));
+    warn.mockRestore();
+
+    const gone = setup({ monday: { getAffiliationSummary: vi.fn().mockResolvedValue(null) } });
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore: gone.giftsStore, affiliationsStore: gone.affiliationsStore, mondayClient: gone.mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(message.ack).toHaveBeenCalled();
+    expect(gone.mondayClient.changeColumnValues).not.toHaveBeenCalledWith(555, expect.anything(), expect.anything());
+  });
+
+  it('a fresh summary for one affiliation wins over a stale D1 row for the same person held by another (finding 2)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const giftsStore = fakeGiftsStore();
+    // Order matters here: affectedAffiliations walks donations in order (dn1 then dn2), so
+    // aff-a is processed — and its fresh summary written to `persons` — before aff-b, whose
+    // unconditional `persons.set(previous...)` at the top of its own iteration is the thing
+    // under test: it must not clobber aff-a's fresh entry for the same person.
+    (giftsStore.actingForByIds as ReturnType<typeof vi.fn>).mockResolvedValue(new Map([['dn1', 'aff-a'], ['dn2', 'aff-b']]));
+    (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
+    (giftsStore.organizationalGivingTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1 });
+    const donations = [
+      { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'aff-a' },
+      { id: 'dn2', amount: 100, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
+    ];
+    const mondayClient = fakeMondayClient({
+      getDonationsByIds: vi.fn().mockResolvedValue(donations),
+      // aff-a resolves person p-shared to board 2 (fresh); aff-b is deleted on Monday.
+      getAffiliationSummary: vi.fn().mockImplementation(async (id: string) =>
+        id === 'aff-a' ? { name: 'A name', personItemId: 'p-shared', personBoardId: '2' } : null),
+    });
+    const affiliationsStore = fakeAffiliationsStore({
+      // aff-b's stale D1 row says p-shared lived on board 3.
+      get: vi.fn().mockImplementation(async (id: string) =>
+        id === 'aff-b' ? { affiliationItemId: 'aff-b', personItemId: 'p-shared', personBoardId: '3', name: 'Stale @ Org' } : null),
+    });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500' });
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
+    warn.mockRestore();
+  });
+
+  it('gift-history description gains a "Driven for organizations" section when the owner drives affiliated giving', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      affiliationsStore: { forPerson: vi.fn().mockResolvedValue([
+        { affiliationItemId: 'af-1', personItemId: 'donor-1', personBoardId: '2', name: 'Uma @ Beta Org' },
+      ]) },
+    });
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(affiliationsStore.forPerson).toHaveBeenCalledWith('donor-1');
+    expect(mondayClient.setItemDescription).toHaveBeenCalledWith('donor-1', expect.stringContaining('Driven for organizations'));
+  });
+
+  it('does nothing extra when affiliations is null (gate off)', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup();
+    await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config, now: new Date('2026-01-01') });
+    expect(mondayClient.getAffiliationSummary).not.toHaveBeenCalled();
+    expect(giftsStore.actingForByIds).not.toHaveBeenCalled();
+    expect(affiliationsStore.forPerson).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledTimes(1);   // the owner write only
+  });
+
+  it('driven computation D1 failure is non-fatal — rollups and markdown land, message acks', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      affiliationsStore: { forPerson: vi.fn().mockRejectedValue(new Error('D1 hiccup')) },
+    });
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything());
+    // Review finding 12: driven's own D1 hiccup must not cost the gift-history description
+    // write — it still lands, just without the "Driven for organizations" section.
+    expect(mondayClient.setItemDescription).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('driven-for-organizations skipped'));
+    warn.mockRestore();
+  });
+
+  it('a phase-2 Monday failure retries the message (owner write is idempotent)', async () => {
+    const { giftsStore, mondayClient, affiliationsStore } = setup({
+      monday: { changeColumnValues: vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('monday API: HTTP 500')) } });
+    const message = fakeMessage('dn1');
+    const pendingStore = fakePendingStore();
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(),
+      recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
+    expect(message.retry).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dn1', 'written', expect.anything());
   });
 });

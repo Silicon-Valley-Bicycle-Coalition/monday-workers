@@ -18,6 +18,7 @@ export interface DonationBoardConfig {
     termStart?: string | null;
     termEnd?: string | null;
     membershipType?: string | null;
+    actingForLink: string | null;
   };
 }
 
@@ -37,10 +38,21 @@ export interface CustodianConfig {
   annualSummaryColumns: { fiscalYear: string; total: string; giftCount: string; byType: string; restatedAt: string } | null;
 }
 
+export interface AffiliationsConfig {
+  boardId: number;
+  columns: {
+    personLink: string;          // Affiliations board: connect → People / People (Historical)
+    attributedGiving: string;    // numbers (currency)
+    attributedGiftCount: string; // numbers
+    lastAttributedGift: string;  // date
+  };
+}
+
 export interface DonationRollupsConfig {
   // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
   monday: { apiUrl: string; accountUrl: string };
   custodian: CustodianConfig;
+  affiliations: AffiliationsConfig | null;
   donationRollups: {
     donationBoards: DonationBoardConfig[];
     receivedStatusLabel: string;
@@ -71,6 +83,7 @@ export interface OwnerColumns {
   lastGiftDate: string;
   lastGiftAmount: string;
   membership?: OwnerMembershipColumns;
+  organizationalGiving?: string;   // People boards only — Organizations have no driven-giving concept.
 }
 
 // The four membership columns on a People-type owner board. Absent on Organizations: an
