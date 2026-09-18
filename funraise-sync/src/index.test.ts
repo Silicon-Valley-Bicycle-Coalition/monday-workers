@@ -36,7 +36,11 @@ describe('scheduled payload purge', () => {
 });
 
 describe('environment selection', () => {
-  it('scheduled purge runs under the sandbox config when ENVIRONMENT is "sandbox"', async () => {
+  // Both configs carry the same retention windows, so this cannot tell which file was selected
+  // — src/environment.test.ts proves the selection. What it guards is that moving config
+  // selection into the handler did not break the scheduled path under a sandbox env; the case
+  // below proves the env var is actually read.
+  it('scheduled purge still runs when ENVIRONMENT is "sandbox" (regression guard for the request-time config switch)', async () => {
     await env.DB.prepare(
       `INSERT INTO events (event_id, entity_type, entity_id, raw_payload, status, received_at, written_at, monday_item_id)
        VALUES ('evt-purge-sb', 'transaction', 'txn-purge-sb', '{"pii":"y"}', 'written', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'item-2')`
