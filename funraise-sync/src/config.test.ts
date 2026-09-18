@@ -50,6 +50,7 @@ const validConfig = {
     frequencyMultiplier: { Monthly: 12, Quarterly: 4, Yearly: 1 },
     statusLabelMap: { Active: 'Active', Cancelled: 'Cancelled' },
     funraiseLinkBase: 'https://platform.funraise.io/transaction/',
+    maxPagesPerRun: 1,
   },
 };
 
@@ -225,5 +226,16 @@ describe('validateConfig subscriptionsPoll', () => {
 
   it('requires a non-empty funraiseLinkBase', () => {
     expect(() => validateConfig(withPoll({ funraiseLinkBase: '' }))).toThrow(/funraiseLinkBase/);
+  });
+
+  // Workers Free allows 50 external subrequests per invocation; one page of ten rows costs up
+  // to ~45, so the run must be bounded in config, not just by the code's safety cap.
+  it('requires maxPagesPerRun to be a positive integer', () => {
+    const { maxPagesPerRun, ...poll } = validConfig.subscriptionsPoll;
+    expect(() => validateConfig({ ...validConfig, subscriptionsPoll: poll })).toThrow(/maxPagesPerRun/);
+    for (const bad of [0, -1, 1.5, '1']) {
+      expect(() => validateConfig(withPoll({ maxPagesPerRun: bad }))).toThrow(/maxPagesPerRun/);
+    }
+    expect(() => validateConfig(withPoll({ maxPagesPerRun: 1 }))).not.toThrow();
   });
 });
