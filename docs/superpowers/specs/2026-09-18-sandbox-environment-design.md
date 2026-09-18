@@ -1,7 +1,7 @@
 # Sandbox environment — inbound only, no outbound data — Design
 
 **Date:** 2026-09-18
-**Status:** Approved design, pre-implementation.
+**Status:** Approved. Rollout step 1 (`donor-portal`) implemented on `feat/sandbox-environment`, 2026-09-18; steps 2–3 pending.
 **Workers:** every deployed Worker in this repo except `svbc-calendars` (not migration-related,
 no donor data). Outbound sinks change in `donor-portal`, `mailchimp-sync`, `quickbooks-sync`,
 `monday-backup`; the environment split alone applies to `funraise-sync`, `donation-rollups`,
