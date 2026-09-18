@@ -1,7 +1,7 @@
 # Sandbox environment — inbound only, no outbound data — Design
 
 **Date:** 2026-09-18
-**Status:** Approved. Rollout step 1 (`donor-portal`) implemented on `feat/sandbox-environment`, 2026-09-18; steps 2–3 pending.
+**Status:** Approved. Rollout steps 1 (`donor-portal`) and 2 (`funraise-sync`, `donation-rollups`) implemented on `feat/sandbox-environment` / `feat/sandbox-environment-step2`, 2026-09-18; step 3 pending.
 **Workers:** every deployed Worker in this repo except `svbc-calendars` (not migration-related,
 no donor data). Outbound sinks change in `donor-portal`, `mailchimp-sync`, `quickbooks-sync`,
 `monday-backup`; the environment split alone applies to `funraise-sync`, `donation-rollups`,
@@ -303,15 +303,19 @@ sandbox boards. Order, per Worker:
    `svbc.json` back on placeholders.
 2. `wrangler d1 create svbc-<worker>-sandbox`; put the id in `env.sandbox`; apply migrations
    with `--env sandbox`.
-3. Data: `donation-rollups`' D1 is a derived index, rebuilt by its own backfill — no copy.
-   `funraise-sync`'s D1 holds ingested sandbox events; copy with `wrangler d1 export` /
-   `d1 execute --file` (small, sandbox-only data).
+3. Data: copy **both** D1s with `wrangler d1 export … --remote --output` and
+   `wrangler d1 execute … --remote --file`. `funraise-sync`'s holds ingested sandbox events.
+   `donation-rollups`' is mostly a derived index, but its `membership_baseline` table was
+   captured once (2026-09-17) from board values that the rollups have since overwritten, so
+   re-capturing it would not reproduce the original — copy rather than rebuild.
 4. `wrangler secret put … --env sandbox` for each secret (sandbox integration user token, §4).
 5. `npm run deploy:sandbox`; re-register each Monday webhook subscription at the
    `…-sandbox.workers.dev` URL; for `funraise-sync`, repoint Funraise's webhook.
-6. Deploy the production-named Worker with placeholder config. It now fails loudly at first
-   request (that is the existing placeholder behaviour) and receives nothing, because every
-   subscription moved. Its old D1 stays until the production deploy reuses or replaces it.
+6. Delete the production-named Worker (`wrangler delete --name svbc-<worker>`) once the sandbox
+   deployment is verified. Leaving it deployed is not safe even with every subscription moved:
+   its daily cron (the rollups custodian, the funraise-sync purge) would keep running the old
+   build against the sandbox boards beside the new one. Its D1 and queues survive the delete;
+   the production deploy at cutover recreates the Worker with production config.
 
 `donor-portal`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`, `benevity-import` have
 never been deployed, so they simply gain the environment before their first deploy, sandbox

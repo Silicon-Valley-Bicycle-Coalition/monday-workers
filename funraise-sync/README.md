@@ -133,7 +133,7 @@ lookup and the write. `donorExternalIdColumn` must therefore be a link column an
 
 ## Monday targets (sandbox v2 ids, verified live 2026-09-17)
 
-`config/svbc.json` now carries the real ids for the CRM Sandbox v2 boards — the same boards
+`config/sandbox.json` carries the real ids for the CRM Sandbox v2 boards — the same boards
 `salesforce-import` loads and `donation-rollups` reads — instead of placeholders. Re-verify
 against production ids before cutover; the sandbox gets rebuilt. Every id below was read from the
 board schemas via the Monday API on 2026-09-17.
@@ -323,7 +323,26 @@ this Worker's D1, and the gift's rows removed from `donation-rollups`' D1 (`pend
 `donation_links`, `gifts`). The next real Funraise transaction flows the same way and stays.
 
 Re-verify the same three steps after the sandbox rebuild and again against production ids at
-cutover — every board and column id in `config/svbc.json` is a sandbox id.
+cutover. Since the sandbox environment split (below), every sandbox id lives in
+`config/sandbox.json`; `config/svbc.json` is production and holds placeholders until cutover.
+
+## Sandbox environment — inbound only, no outbound data
+
+This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `env.sandbox`):
+`npm run deploy:sandbox` deploys `svbc-funraise-sync-sandbox` against the CRM Sandbox boards in
+`config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var (`src/environment.ts`).
+It has its own D1 (`svbc-funraise-sync-sandbox`), queues (`funraise-sync-writes-sandbox` and
+`-sandbox-dlq`), and secrets (`wrangler secret put … --env sandbox`); it shares nothing with
+the production-named Worker. This Worker writes only to Monday, so there is no outbound sink to
+lock — the split exists so the sandbox and production deployments can coexist after cutover.
+`config/split.test.ts` fails if the two configs ever share an id or if `env.sandbox` shares a
+resource with the top level. Design:
+`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`; the move of the existing
+deployment onto this environment is its §9, run once from the runbook in the step 2 plan.
+
+Funraise allows one webhook per organization. Until cutover it points at the sandbox Worker;
+at cutover it moves to production and the sandbox loses its live feed (design doc §7) — after
+that, sandbox testing uses Funraise's Test button or a hand replay of a stored delivery.
 
 ## Recurring gifts and registrations — decided 2026-09-18
 

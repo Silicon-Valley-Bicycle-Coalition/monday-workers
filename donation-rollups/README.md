@@ -10,7 +10,8 @@ set (`scripts/setup-owner-columns.mjs`). Webhooks drop from 18 subscriptions to 
 (`create_item` + `change_column_value` on the one board, shared secret in the URL — Monday
 doesn't sign payloads); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
 Worker with the matching `MONDAY_WEBHOOK_SECRET`. **Scoped entirely to the CRM Sandbox** —
-every board id in `config/svbc.json` is a sandbox board, not a production one (production
+every board id in `config/sandbox.json` is a sandbox board,
+not a production one (`config/svbc.json` is production and holds placeholders until cutover) (production
 doesn't exist yet; real cutover is October), so nothing this Worker does can touch live donor
 data. The era-board deployment was verified end-to-end 2026-08-25 (webhook → D1 → queue →
 consumer → Monday fetch → recompute → write-back, correct cross-board totals); re-verify the
@@ -620,11 +621,13 @@ sandbox gets rebuilt before cutover:
 ## APIs & auth
 
 * **Monday.com webhooks** — one pair (`create_item` + `change_column_value`) on the single
-  Donations board, pointed at
-  `https://svbc-donation-rollups.svbc-account.workers.dev/webhooks/monday/donations` with the
+  Donations board, pointed at the deployment's `/webhooks/monday/donations` route
+  (`https://svbc-donation-rollups-sandbox.svbc-account.workers.dev` for the sandbox environment;
+  the production-named Worker once production boards exist) with the
   shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
   Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
-  era boards' 18 old ones). The subscription-creation handshake POSTs `{"challenge": "..."}` to
+  era boards' 18 old ones). Pass `--config config/sandbox.json` to subscribe the sandbox
+  boards; the default reads `config/svbc.json`. The subscription-creation handshake POSTs `{"challenge": "..."}` to
   the webhook URL, which is echoed back verbatim — handled in `src/webhook/route.ts`, and is
   also what a new subscription's secret check has to pass, so a wrong secret at subscribe-time
   fails loudly rather than silently. Note the API cannot read back a webhook's URL, so a lost
@@ -646,6 +649,24 @@ October); until there is, this Worker cannot touch live donor data no matter wha
 **Before ever repointing any id in that config at a production workspace, re-verify every single
 one against production directly** (the sandbox gets rebuilt before cutover, so today's ids won't
 necessarily match) — don't assume sandbox and production share ids just because the schema matches.
+
+## Sandbox environment — inbound only, no outbound data
+
+This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `env.sandbox`):
+`npm run deploy:sandbox` deploys `svbc-donation-rollups-sandbox` against the CRM Sandbox
+boards in `config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var
+(`src/environment.ts`). It has its own D1 (`svbc-donation-rollups-sandbox`), queues
+(`donation-rollups-recompute-sandbox` and `-sandbox-dlq`, consumed by the same handler — see
+`isDeadLetterBatch` in `src/index.ts`), and secrets (`wrangler secret put … --env sandbox`);
+it shares nothing with the production-named Worker. This Worker writes only to Monday, so
+there is no outbound sink to lock — the split exists so the sandbox and production deployments
+can coexist after cutover. `config/split.test.ts` fails if any of the ~50 sandbox column ids
+appears in `config/svbc.json` or if `env.sandbox` shares a resource with the top level. The
+four operator scripts that read config (`setup-webhooks.mjs`, `bootstrap-links.mjs`,
+`bootstrap-gifts-from-artifacts.mjs`, `setup-affiliation-columns.mjs`) take
+`--config config/sandbox.json`. Design:
+`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`; the move of the existing
+deployment onto this environment is its §9, run once from the runbook in the step 2 plan.
 
 ## Not yet done
 
