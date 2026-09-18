@@ -350,10 +350,17 @@ migration `0004`, `src/scheduled.ts`). How it runs:
 
 * **Hourly cron** `0 * * * *` → `pollSubscriptions`: `GET /api/v1/crm/subscription` with
   `q = updtime >= <cursor> order by updtime asc`, pages of 10 via `page=N`, until a short page.
-  Every row goes through `upsertSubscription`; the cursor (`poll_cursors.subscriptions`, the
-  page's max `updtime`) advances only after the whole page is written, so a failed run re-reads
-  the page next hour and the ledger's per-row `updtime` makes already-landed rows no-ops. `>=`
-  re-reads the boundary row on purpose. Idle cost: one request per run.
+  Every row goes through `upsertSubscription`. Three cursors in `poll_cursors`: `subscriptions`
+  (the timestamp the query filters on), `subscriptions:page` (the next page of that query) and
+  `subscriptions:max` (the largest `updtime` seen in it). A run walks pages and persists the page
+  index; the timestamp cursor moves only when a short page proves the query exhausted, to that
+  max, and the page index resets. It cannot be moved sooner: a bulk import gave hundreds of
+  subscriptions one identical `updtime`, and a cursor equal to it re-selects the same first page
+  forever (seen live 2026-09-18). A failed page leaves every cursor untouched, so the next run
+  re-reads it and the ledger's per-row `updtime` makes already-landed rows no-ops; `>=` re-reads
+  the boundary rows on purpose. Idle cost: one request per run. Two more Funraise quirks live in
+  `src/funraise/client.ts`: the list answers HTTP 500 to any `updtime` filter below about 2001,
+  so a fresh cursor is floored there, and the page size is fixed at 10.
 * **One page per run on Workers Free.** A Free-plan invocation may make 50 external
   subrequests (and a cron gets 10 ms CPU); a page of ten rows costs up to ~45 Monday and
   Funraise calls (donor lookup, adopt lookup, write). `subscriptionsPoll.maxPagesPerRun` ships as
