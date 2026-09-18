@@ -7,6 +7,18 @@ export interface DonorMatchResult {
   created: boolean;
 }
 
+// Funraise's supporter pages are global (no org slug). salesforce-import writes the People
+// board's Funraise Profile link column as this URL with the bare id as the link text, and this
+// Worker writes the same shape so a donor it creates looks like a migrated one.
+const FUNRAISE_SUPPORTER_URL = 'https://platform.funraise.io/supporter/';
+
+// Funraise sends `supporter.id` as a number; Monday column values and lookups want strings.
+const externalIdString = (value: unknown): string | null => {
+  if (typeof value === 'string') return value.length > 0 ? value : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+};
+
 export async function matchDonor(
   mondayClient: MondayClient,
   config: FunraiseSyncConfig,
@@ -20,8 +32,8 @@ export async function matchDonor(
   const { donorExternalIdField, donorExternalIdColumn, donorEmailColumn, donorNameField, emailFieldPrecedence } =
     config.funraiseSync;
 
-  const externalId = getPath(rawPayload, donorExternalIdField);
-  if (typeof externalId === 'string' && externalId.length > 0) {
+  const externalId = externalIdString(getPath(rawPayload, donorExternalIdField));
+  if (externalId !== null) {
     const existing = await mondayClient.findItemByColumnValue(donorsBoardId, donorExternalIdColumn, externalId);
     if (existing) return { donorItemId: existing.id, created: false };
   }
@@ -39,12 +51,17 @@ export async function matchDonor(
     .find((value): value is string => typeof value === 'string' && value.length > 0);
   const donorName = getPath(rawPayload, donorNameField);
 
+  // Monday rejects bare strings on email and link columns — they need these small objects.
+  // `items_page_by_column_values` still matches them by the bare address / link text, which is
+  // what the two lookups above pass (verified live against the sandbox People board 2026-09-17).
   const created = await mondayClient.createItem(
     donorsBoardId,
     typeof donorName === 'string' && donorName.length > 0 ? donorName : 'Unknown Donor',
     {
-      ...(primaryEmail ? { [donorEmailColumn]: primaryEmail } : {}),
-      ...(typeof externalId === 'string' && externalId.length > 0 ? { [donorExternalIdColumn]: externalId } : {}),
+      ...(primaryEmail ? { [donorEmailColumn]: { email: primaryEmail, text: primaryEmail } } : {}),
+      ...(externalId !== null
+        ? { [donorExternalIdColumn]: { url: `${FUNRAISE_SUPPORTER_URL}${externalId}`, text: externalId } }
+        : {}),
     }
   );
 

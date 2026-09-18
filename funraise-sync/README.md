@@ -93,11 +93,13 @@ In practice the sandbox v2 People board carries that id as a **link** column, `F
 text), because `salesforce-import` writes it that way — not as a text column. Verified live
 2026-09-17: `items_page_by_column_values` on that column matches the bare id (`3682773` found its
 person; the display text and the url did not), and on `Personal Email` (`email_mm6j5e9q`) it
-matches the address. So the two lookups in `matchDonor` work as written against these columns.
-The *create* path does not yet: Monday rejects a bare string for link and email columns (they
-need `{url, text}` / `{email, text}`, see `salesforce-import`'s `load/columnValues.ts`), and
-`matchDonor` writes both as bare strings when it creates a donor. See "Blocking before first
-deploy" below.
+matches the address. So the two lookups in `matchDonor` pass the bare id and the bare address.
+The *create* path writes the shapes those columns require — `{url, text}` with the supporter
+URL for the link column and `{email, text}` for the email column (Monday rejects bare strings on
+both; see `salesforce-import`'s `load/columnValues.ts`) — so a donor this Worker creates looks
+like a migrated one. Funraise sends `supporter.id` as a **number**; it is stringified before the
+lookup and the write. `donorExternalIdColumn` must therefore be a link column and
+`donorEmailColumn` an email column; a fork with a plain text id column changes `matchDonor`.
 
 ## Monday targets (sandbox v2 ids, verified live 2026-09-17)
 
@@ -112,9 +114,9 @@ board schemas via the Monday API on 2026-09-17.
 | `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | |
 | `monday.boards["event-registrations"]` | Event Registrations (sandbox v2) | `18428131782` | |
 | `monday.boards["people-live"]` | People (sandbox v2) | `18428131737` | People (Historical) is not a match target |
-| `columnMap.transaction.amount` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | |
-| `columnMap.transaction.status` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending |
-| `columnMap.transaction.createdAt` | Donations → Date (date) | `date_mm6jthpq` | |
+| `columnMap.transaction["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
+| `columnMap.transaction["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending; `Complete → Received` via `statusValueMap` |
+| `columnMap.transaction.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
 | `columnMap.recurringGift.amount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm6jg878` | per-installment, per docs/03 |
 | `columnMap.recurringGift.frequency` | Recurring Gifts → Frequency (status) | `color_mm6jc24s` | labels: Monthly / Yearly / Quarterly — a **status**, not text; the raw value must equal a label |
 | `columnMap.recurringGift.status` | Recurring Gifts → Status (status) | `color_mm6j1tk1` | labels: Redacted / Active / Cancelled / Failed |
@@ -158,9 +160,12 @@ Full column-by-column mapping (Donations ← Opportunity/Transaction fields, Rec
 Subscription, status-value mapping where `Posted` — not `Closed Won` — is the real success state,
 and the full do-not-migrate list) lives in
 `docs/03-monday-migration-mapping.md` (private planning repo) — this
-Worker's write step should follow that mapping exactly, not redefine it. One board-side
-constraint on top of that doc: `config/svbc.json` maps `Posted` to `Received` because the
-Donations board's status vocabulary (seeded by `salesforce-import`) is exactly `Received` /
+Worker's write step should follow that mapping's *targets* exactly, not redefine them; its
+*source* field names are the Salesforce package's, not the webhook's (see "The Funraise
+delivery, as actually sent" for the translation). One board-side constraint on top of that doc:
+`config/svbc.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
+gift as seen from Salesforce) because the Donations board's status vocabulary (seeded by
+`salesforce-import`) is exactly `Received` /
 `Received (Historical)` / `Failed` / `Pending`, and `donation-rollups` counts only `Received` —
 mapping to any label outside that set silently drops the gift from rollups. Notably: **Pledge and
 Subscription are a confirmed 1:1 duplicate** — do not create separate items for both; **8 email
@@ -172,8 +177,9 @@ Monday**.
 text `Fiscal Year Ending` column that `salesforce-import` writes on every migrated gift (SVBC's
 July–June fiscal year, named for the year it ends in, so a 2026-08-15 gift is FY 2027 and a
 2026-06-30 gift is FY 2026). It isn't a Funraise field, so `columnMap.transaction` can't map it;
-instead the consumer derives it from the transaction's `createdAt` — the same value
-`columnMap.transaction.createdAt` writes to the Date column, so the two never disagree — with
+instead the consumer derives it from the transaction's `donationDate` (Funraise sends epoch
+milliseconds; `toISODate` in `src/util/isoDate.ts` normalizes it to a UTC `YYYY-MM-DD`, which is
+also the value written to the Date column as `{ date }`, so the two never disagree) with
 `fiscalYearEnding()` in `src/mapping/fiscalYear.ts` (same July rule as `salesforce-import`'s
 `fiscalYear()` and `donation-rollups`' `fiscalYearFromDate`) and writes it as a string to
 `funraiseSync.fiscalYearColumn`. Decided 2026-09-17 (see `donation-rollups`'s README, "Fiscal
@@ -181,14 +187,15 @@ year, not calendar year"): `donation-rollups` treats a blank cell as missing and
 Date, but will *not* backfill the column, so the writer that creates the item owns it. Rules,
 matching `Thank You Sent`: transactions only (never recurring gifts or registrations); first
 write only, including adoption of an orphaned item, never a later update that could clobber a
-staff correction; a missing or unparseable `createdAt` logs a warning and leaves the cell blank
-rather than failing the write (rollups still derive from Date). Set `fiscalYearColumn` to `null`
+staff correction; a missing or unparseable `donationDate` logs a warning and leaves the cell
+blank, and leaves the Date column out too rather than writing a raw number (rollups then derive
+from whatever Date holds). Set `fiscalYearColumn` to `null`
 for a board without the column. `config/svbc.json` points it at `text_mm70czyd`, the text column
 titled "Fiscal Year Ending" on the sandbox v2 Donations board (`18428131791`, verified live
 2026-09-17) — the same one `donation-rollups` reads — not the older numbers column titled "Fiscal
 Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. Known edge: the year is read
-from the UTC date in `createdAt`, the same way the Date column is read, so a gift made between
-5 pm and midnight Pacific on June 30 lands in the new fiscal year on both columns.
+from the UTC date of `donationDate`, the same way the Date column is written, so a gift made
+between 5 pm and midnight Pacific on June 30 lands in the new fiscal year on both columns.
 
 ## Acknowledgment / receipting
 
@@ -224,56 +231,49 @@ Gift Type is in its eligible list, so without this stamp a Funraise renewal woul
 membership. Staff can reclassify a gift afterwards (e.g. to `Matching Donation`) and this Worker will
 not undo it.
 
-## Blocking before first deploy — the Funraise payload doesn't match this Worker's assumptions
+## The Funraise delivery, as actually sent
 
-Found 2026-09-17 while wiring the Monday ids above, by reading Funraise's own
-[webhooks article](https://help.funraise.io/en/articles/4471107-webhooks) (its only public
-payload documentation; the Stoplight API reference is a JS app and unreadable without a browser).
-None of this is fixed by config; each item is code, and the first one means **every real
-delivery is rejected today**:
+This Worker was first written against the *Salesforce-side* Funraise package fields
+(`funraise__*` in `docs/01` and `docs/03` of the private planning repo): a bare object with a
+string `id`, `createdAt`, `donor.contactId`, and a `Posted` status. Funraise's own
+[webhooks article](https://help.funraise.io/en/articles/4471107-webhooks) — its only public
+payload documentation; the Stoplight API reference is a JS app and unreadable without a browser
+— shows something else, and on 2026-09-18 the route, config, and donor matching were rewritten
+to it, with `src/integration.test.ts` carrying a fixture trimmed from the documented example:
 
-1. **Envelope shape.** Funraise sends `{ "sentAt": <epoch ms>, "event": "DONATION", "data": {…} }`.
-   `validateEnvelope` requires a top-level string `id`; the real id is `data.id` and it is a
-   **number** (`123` in the example). So every delivery fails validation and is logged as
-   rejected. Every field path in `config/svbc.json` (`entityIdField`, `columnMap.*`,
-   `donorExternalIdField`, `emailFieldPrecedence`, `donorNameField`, `statusField`,
-   `doNotMigrateFields`) is also written against the bare object, not `data.*`.
-2. **One event type.** The article says you can create a single webhook and it fires "when a
-   Transaction is created or edited". There is no subscription, pledge, or registration
-   webhook. The `/webhooks/funraise/subscription|pledge|registration` routes, the
+* **Envelope.** `{ "sentAt": <epoch ms>, "event": "DONATION", "data": { … } }`. `validateEnvelope`
+  unwraps `data`; everything downstream (D1 `raw_payload`, every field path in `config/svbc.json`)
+  sees the entity object, not the envelope. The pre-envelope bare shape is rejected.
+* **Ids are numbers.** `data.id` and `data.supporter.id` are numbers (`123`, `7276`); both are
+  stringified. Funraise sends no per-delivery id, so `events.event_id` is `<data.id>:<sentAt>`
+  (fallback `data.updtime`, then the bare id): an edit of the same transaction arrives with a new
+  `sentAt` and takes the entity-keyed *update* path, while an identical redelivery is a duplicate.
+* **Field names.** Amount and status live under `data.transaction`; the donor under
+  `data.supporter` (`id`, `email`, `name`); the gift's date is `donationDate` (epoch ms, see
+  "Fiscal Year Ending"); the item name is `description`. `statusValueMap` maps `Complete` — the
+  documented success value — to `Received`. Anything else (`Refunded`, `Failed`, …) is written
+  verbatim, so a value outside the Donations status vocabulary fails the write and lands in the
+  DLQ rather than silently mislabeling; extend the map when Funraise's other statuses are known.
+* **PII denylist** is the `data.transaction.*` card and billing fields Funraise actually sends
+  (`lastFour`, `expirationDate`, `cardType`, `billingFirstName`/`LastName`/`Zip`) plus
+  `transaction.errors`, the gateway response (it carries a Stripe source fingerprint). They are
+  stripped before the row reaches D1. Not stripped, flagged for a decision: `dedication.*`
+  (a third party's name and email, "⚠ PII screen" in docs/03) and `comment`.
+
+## Open before first deploy
+
+1. **One webhook, transactions only.** Funraise supports a single webhook per org and it fires
+   "when a Transaction is created or edited". There is no subscription, pledge, or registration
+   webhook, so the `/webhooks/funraise/subscription|pledge|registration` routes, the
    `recurringGift` and `registration` column maps, and the Recurring Gifts / Event Registrations
    board targets have nothing to receive unless those come from polling the REST API instead.
    A recurring payment does arrive as a transaction carrying `data.subscription.id` and
    `data.subscription.sequence`, which is how the Recurring Gift connect column
-   (`board_relation_mm6jbjtd` on Donations) could be linked.
-3. **Field names.** The example payload uses `data.supporter.id` / `.email` / `.name` (config
-   says `donor.contactId` / `donor.email` / `donor.name`), `data.transaction.amount` (config:
-   `amount`), `data.transaction.status` with the value `"Complete"` (config maps `Posted`, which
-   is the *Salesforce* stage name, to `Received` — `Complete` is unmapped and would be written
-   verbatim, a label the Donations status column doesn't have, so the write fails), and the PII
-   fields are `data.transaction.lastFour` / `.expirationDate` / `.billing*` (config denylists
-   `paymentMethod.lastFour` / `paymentMethod.expiration`, which don't exist — **the strip is a
-   no-op against the real payload**). `data.supporter.id` is a number; `matchDonor` only matches
-   on a string external id, so it would fall through to email matching.
-4. **Dates are epoch milliseconds.** `data.donationDate` and `data.cretime` are numbers like
-   `1599067880174`; there is no `createdAt`. `fiscalYearEnding` returns null for a non-string, so
-   Fiscal Year Ending would always be left blank, and a raw epoch number written to the Date
-   column is not a value Monday accepts.
-5. **Link and email writes.** `matchDonor` creates a donor with bare strings in
-   `donorExternalIdColumn` (a link column) and `donorEmailColumn` (an email column); Monday
-   requires `{url, text}` and `{email, text}`. Reads on both columns are fine (verified live, see
-   "Donor matching").
-6. **Per-board column ids.** `entityIdColumn` and `donorLinkColumn` are one id for three boards
-   whose ids differ (see "Monday targets"). Moot until item 2 gives the other boards a source.
-
-Suggested order: fix 1, 3, 4 together as one "read the real envelope" change with a fixture
-built from the documented example payload (config field paths become `data.*`, status map becomes
-`Complete → Received`, denylist becomes the `data.transaction.*` PII fields, `entityIdField` and
-`donorExternalIdField` accept numbers, dates convert from epoch ms to `YYYY-MM-DD` before the
-Date column and the fiscal-year derivation); then 5; then decide whether 2 is polling or out of
-scope, which settles 6. `docs/01` and `docs/03` in the private planning repo describe the
-*Salesforce-side* Funraise package fields (`funraise__*`), which is where the `Posted` /
-`createdAt` / `donor.*` assumptions came from — they are not the webhook's field names.
+   (`board_relation_mm6jbjtd` on Donations) could be linked. Decide: poll, or drop those paths.
+2. **Per-board column ids.** `entityIdColumn` and `donorLinkColumn` are one id for three boards
+   whose ids differ (see "Monday targets"). Moot until item 1 gives the other boards a source.
+3. **Register the webhook at `/webhooks/funraise/transaction?secret=…`** (see "APIs & auth");
+   the other three entity paths stay routable but will never be called by Funraise.
 
 ## Related, not yet in scope here
 

@@ -12,8 +12,10 @@ const config: FunraiseSyncConfig = {
     boards: { 'donations:live': 8845443596, 'recurring-gifts': 111222, 'event-registrations': 333444, 'people-live': 555666 },
   },
   funraiseSync: {
+    // Field paths follow Funraise's documented webhook payload (the entity under `data`, which
+    // the route unwraps): amount and status under `transaction`, the donor under `supporter`.
     columnMap: {
-      transaction: { amount: 'numeric_col', description: 'text_col' },
+      transaction: { 'transaction.amount': 'numeric_col', 'transaction.status': 'status_col', donationDate: 'date_col' },
       recurringGift: { amount: 'numeric_col' },
       registration: { eventName: 'text_col' },
     },
@@ -23,7 +25,7 @@ const config: FunraiseSyncConfig = {
       registration: 'eventName',
     },
     entityIdField: {
-      transaction: 'transactionId',
+      transaction: 'id',
       recurringGift: 'id',
       registration: 'id',
     },
@@ -31,20 +33,43 @@ const config: FunraiseSyncConfig = {
     thankYouSentColumn: null,
     giftTypeColumn: null,
     giftTypeValue: 'Donation',
-    fiscalYearColumn: null,
+    fiscalYearColumn: 'fiscal_year_col',
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
-    donorExternalIdField: 'donor.contactId',
+    donorExternalIdField: 'supporter.id',
     donorExternalIdColumn: 'funraise_id_col',
     donorEmailColumn: 'email_col',
-    donorNameField: 'donor.name',
+    donorNameField: 'supporter.name',
     donorLinkColumn: 'connect_col',
-    emailFieldPrecedence: ['donor.email'],
-    statusField: 'status',
-    statusValueMap: {},
-    doNotMigrateFields: ['paymentMethod.lastFour'],
+    emailFieldPrecedence: ['supporter.email'],
+    statusField: 'transaction.status',
+    statusValueMap: { Complete: 'Received' },
+    doNotMigrateFields: ['transaction.lastFour', 'transaction.expirationDate'],
   },
 };
+
+// The example delivery from help.funraise.io "Webhooks", trimmed to the fields this Worker reads
+// plus the PII it must strip. `id` and `supporter.id` are numbers, dates are epoch milliseconds.
+function funraiseDelivery(overrides: { sentAt: number; status?: string }) {
+  return {
+    sentAt: overrides.sentAt,
+    event: 'DONATION',
+    data: {
+      id: 123,
+      description: 'Debbie Donor - Funraise 2020-09-02T17:31:20.174045Z',
+      donationDate: 1599067880174,
+      cretime: 1599067880174,
+      transaction: {
+        amount: 51.5,
+        status: overrides.status ?? 'Complete',
+        lastFour: '0005',
+        expirationDate: 1780271999999,
+        paymentMethod: 'card',
+      },
+      supporter: { id: 7276, firstName: 'Debbie', lastName: 'Donor', name: 'Debbie Donor', email: 'debbie@example.com' },
+    },
+  };
+}
 
 describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () => {
   it('carries a real D1 row from the route through the consumer to a create, then an update', async () => {
@@ -56,29 +81,24 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
 
     const res = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
       method: 'POST',
-      body: JSON.stringify({
-        id: 'int-evt-1',
-        transactionId: 'int-txn-1',
-        amount: 100,
-        description: 'Integration test gift',
-        donor: { contactId: 'fr-int-1', email: 'int@example.com' },
-        paymentMethod: { lastFour: '4242' },
-      }),
+      body: JSON.stringify(funraiseDelivery({ sentAt: 1599067884009 })),
       headers: { 'Content-Type': 'application/json' },
     });
 
     expect(res.status).toBe(200);
-    expect(captured).toEqual({ entityType: 'transaction', entityId: 'int-txn-1' });
+    expect(captured).toEqual({ entityType: 'transaction', entityId: '123' });
 
-    const afterRoute = await eventStore.getEventByEntity('transaction', 'int-txn-1');
+    const afterRoute = await eventStore.getEventByEntity('transaction', '123');
     expect(afterRoute?.status).toBe('queued');
     // Matching hasn't happened yet — it belongs to the consumer now.
     expect(afterRoute?.matchedDonorItemId).toBeNull();
-    // Denylisted PII never lands in D1.
-    expect(afterRoute?.rawPayload).not.toContain('4242');
+    // Denylisted PII never lands in D1; the rest of the transaction sub-object does.
+    expect(afterRoute?.rawPayload).not.toContain('0005');
+    expect(afterRoute?.rawPayload).not.toContain('1780271999999');
+    expect(afterRoute?.rawPayload).toContain('"paymentMethod":"card"');
 
     const consumerMondayClient: MondayClient = {
-      findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'donor-int-1' }),
+      findItemByColumnValue: vi.fn().mockResolvedValue({ id: '9001' }),
       createItem: vi.fn().mockResolvedValue({ id: 'monday-item-int-1' }),
       changeColumnValues: vi.fn().mockResolvedValue(undefined),
     };
@@ -93,26 +113,37 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
     expect(ack).toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
 
-    const afterConsumer = await eventStore.getEventByEntity('transaction', 'int-txn-1');
+    // The donor was looked up by the numeric supporter id, stringified.
+    expect(consumerMondayClient.findItemByColumnValue).toHaveBeenCalledWith(555666, 'funraise_id_col', '7276');
+    // Complete → Received, the epoch-ms donationDate became a Monday date object, and Fiscal
+    // Year Ending was derived from that same date (September 2020 → FY 2021).
+    expect(consumerMondayClient.createItem).toHaveBeenCalledWith(
+      8845443596,
+      'Debbie Donor - Funraise 2020-09-02T17:31:20.174045Z',
+      expect.objectContaining({
+        numeric_col: 51.5,
+        status_col: 'Received',
+        date_col: { date: '2020-09-02' },
+        fiscal_year_col: '2021',
+        connect_col: { item_ids: [9001] },
+      })
+    );
+
+    const afterConsumer = await eventStore.getEventByEntity('transaction', '123');
     expect(afterConsumer?.status).toBe('written');
-    expect(afterConsumer?.matchedDonorItemId).toBe('donor-int-1');
+    expect(afterConsumer?.matchedDonorItemId).toBe('9001');
     expect(afterConsumer?.mondayItemId).toBe('monday-item-int-1');
 
-    // A second delivery for the same transaction updates the existing item instead of creating another.
+    // A later edit of the same transaction (new sentAt) updates the existing item instead of
+    // creating another; an identical redelivery (same sentAt) would be a duplicate instead.
     const res2 = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
       method: 'POST',
-      body: JSON.stringify({
-        id: 'int-evt-2',
-        transactionId: 'int-txn-1',
-        amount: 100,
-        description: 'Integration test gift',
-        status: 'Refunded',
-        donor: { contactId: 'fr-int-1', email: 'int@example.com' },
-      }),
+      body: JSON.stringify(funraiseDelivery({ sentAt: 1599067990000, status: 'Refunded' })),
       headers: { 'Content-Type': 'application/json' },
     });
     expect(res2.status).toBe(200);
-    expect(captured).toEqual({ entityType: 'transaction', entityId: 'int-txn-1' });
+    expect(await res2.json()).toEqual({ ok: true });
+    expect(captured).toEqual({ entityType: 'transaction', entityId: '123' });
 
     await processFunraiseQueueBatch(
       [{ body: captured!, ack: vi.fn(), retry: vi.fn() }],
@@ -123,7 +154,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
     expect(consumerMondayClient.changeColumnValues).toHaveBeenCalledWith(
       8845443596,
       'monday-item-int-1',
-      expect.objectContaining({ numeric_col: 100 })
+      expect.objectContaining({ numeric_col: 51.5, status_col: 'Refunded' })
     );
   });
 });

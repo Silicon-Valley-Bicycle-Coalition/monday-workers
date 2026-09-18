@@ -88,7 +88,7 @@ describe('createApp', () => {
     const eventStore = fakeEventStore();
     const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { id: 'evt-1' }, 'donation');
+    const res = await postEvent(app, { data: { id: 'evt-1' } }, 'donation');
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: false, error: expect.stringContaining('unknown entity type') });
@@ -100,21 +100,21 @@ describe('createApp', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
+    // Funraise's documented envelope: sentAt + event + the entity under data, numeric ids.
     const res = await postEvent(app, {
-      id: 'evt-1',
-      transactionId: 'txn-9',
-      amount: 100,
-      paymentMethod: { lastFour: '4242', brand: 'visa' },
+      sentAt: 1599067884009,
+      event: 'DONATION',
+      data: { id: 123, transactionId: 'txn-9', amount: 100, paymentMethod: { lastFour: '4242', brand: 'visa' } },
     });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
 
     expect(eventStore.upsertEvent).toHaveBeenCalledWith({
-      eventId: 'evt-1',
+      eventId: '123:1599067884009',
       entityType: 'transaction',
       entityId: 'txn-9',
-      rawPayload: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9', amount: 100, paymentMethod: { brand: 'visa' } }),
+      rawPayload: JSON.stringify({ id: 123, transactionId: 'txn-9', amount: 100, paymentMethod: { brand: 'visa' } }),
       receivedAt: expect.any(String),
     });
     expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
@@ -126,7 +126,7 @@ describe('createApp', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { id: 'evt-2', transactionId: 'txn-9', amount: 50 });
+    const res = await postEvent(app, { data: { id: 'evt-2', transactionId: 'txn-9', amount: 50 } });
 
     expect(res.status).toBe(200);
     expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
@@ -137,7 +137,7 @@ describe('createApp', () => {
     const send = vi.fn();
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+    const res = await postEvent(app, { data: { id: 'evt-1', transactionId: 'txn-9' } });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, duplicate: true });
@@ -149,7 +149,7 @@ describe('createApp', () => {
     const send = vi.fn().mockRejectedValue(new Error('queue unavailable'));
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { id: 'evt-3', transactionId: 'txn-3' });
+    const res = await postEvent(app, { data: { id: 'evt-3', transactionId: 'txn-3' } });
 
     expect(res.status).toBe(500);
     expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-3', 'failed', {
@@ -167,7 +167,7 @@ describe('webhook authentication', () => {
     const res = await app.request('/webhooks/funraise/transaction', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9' }),
+      body: JSON.stringify({ data: { id: 'evt-1', transactionId: 'txn-9' } }),
     });
 
     expect(res.status).toBe(401);
@@ -181,7 +181,7 @@ describe('webhook authentication', () => {
     const res = await app.request('/webhooks/funraise/transaction?secret=wrong', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9' }),
+      body: JSON.stringify({ data: { id: 'evt-1', transactionId: 'txn-9' } }),
     });
 
     expect(res.status).toBe(401);
@@ -194,7 +194,7 @@ describe('webhook authentication', () => {
     const res = await app.request(`/webhooks/funraise/transaction?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9' }),
+      body: JSON.stringify({ data: { id: 'evt-1', transactionId: 'txn-9' } }),
     });
 
     expect(res.status).toBe(401);
@@ -221,7 +221,7 @@ describe('webhook authentication', () => {
     const res = await app.request(`/webhooks/funraise/transaction?secret=${SECRET}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-hook-secret': 'per-delivery' },
-      body: JSON.stringify({ id: 'evt-1', transactionId: 'txn-9', amount: 25 }),
+      body: JSON.stringify({ data: { id: 'evt-1', transactionId: 'txn-9', amount: 25 } }),
     });
 
     expect(res.status).toBe(200);
@@ -260,10 +260,10 @@ describe('validation-failure observability', () => {
     try {
       const app = createApp({ eventStore: fakeEventStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
 
-      const res = await postEvent(app, { amount: 100 }); // missing "id"
+      const res = await postEvent(app, { data: { amount: 100 } }); // missing "data.id"
 
       expect(res.status).toBe(200);
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('missing a non-empty "id"'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('missing a non-empty "data.id"'));
     } finally {
       errorSpy.mockRestore();
     }
@@ -279,7 +279,7 @@ describe('redelivery of a stranded event', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+    const res = await postEvent(app, { data: { id: 'evt-1', transactionId: 'txn-9' } });
 
     expect(res.status).toBe(200);
     expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
@@ -294,7 +294,7 @@ describe('redelivery of a stranded event', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
-    await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+    await postEvent(app, { data: { id: 'evt-1', transactionId: 'txn-9' } });
 
     expect(send).toHaveBeenCalledWith({ entityType: 'transaction', entityId: 'txn-9' });
   });
@@ -307,7 +307,7 @@ describe('redelivery of a stranded event', () => {
     const send = vi.fn();
     const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET });
 
-    const res = await postEvent(app, { id: 'evt-1', transactionId: 'txn-9' });
+    const res = await postEvent(app, { data: { id: 'evt-1', transactionId: 'txn-9' } });
 
     expect(await res.json()).toEqual({ ok: true, duplicate: true });
     expect(send).not.toHaveBeenCalled();
