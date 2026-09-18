@@ -5,6 +5,7 @@ import { D1PendingStore } from './db/pending';
 import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
 import { D1MembershipBaselineStore } from './db/membershipBaseline';
+import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
 import { HttpMondayClient } from './monday/client';
 import { processRecomputeBatch } from './consumer/processBatch';
 import { runDuty, dutiesForDate, type CustodianDeps } from './custodian/custodian';
@@ -53,6 +54,7 @@ export default {
       linksStore: new D1DonationLinksStore(env.DB),
       giftsStore: new D1GiftsStore(env.DB),
       baselineStore: new D1MembershipBaselineStore(env.DB),
+      recomputesStore: new D1OwnerRecomputesStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
     });

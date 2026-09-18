@@ -100,10 +100,19 @@ backfill) would silently lose recomputes the same way.
    "N of M gift facts changed" when N > 0. A recompute of an owner whose history is already
    right costs reads, not rows written — O(changed gifts) instead of O(gifts). An absent
    `giftType` still means "keep stored" and is not a change.
-3. **Coalesce redundant recomputes per owner.** Record `owner_recomputed_at` (on
-   `donation_links` or a small owners table) when a recompute lands; when a message resolves to
-   an owner whose last recompute completed after the pending row's `received_at`, mark the row
-   `written` without recomputing. A 3,700-webhook flood then costs ~1 recompute per owner.
+3. ~~**Coalesce redundant recomputes per owner.**~~ **Done (branch `feat/rollups-owner-coalescing`,
+   migration 0006 — apply to the sandbox D1 before deploying):** `owner_recomputes` records, per
+   owner, when a successful recompute *fetched* Monday and when its write landed. A message is
+   coalesced (pending row marked `written`, no fetch, no write) only when **both** hold: the
+   owner's last fetch is at/after the pending row's `received_at` (fetch time, not completion —
+   a recompute that started before the edit read stale data), **and** this donation's link
+   already existed unchanged before that fetch (a recompute only reads the donations D1 links
+   to the owner at that moment, so a new or re-owned link can't have been covered — the sketch
+   above missed this). `upsertLink` became diff-aware for that check and now costs no write
+   when unchanged. The row is recorded only after the owner write *and* the gift term stamps,
+   so a partial failure retries in full instead of being coalesced away. A 3,700-webhook flood
+   now costs ~1 recompute per owner plus two Monday reads and three small D1 ops per skipped
+   message; the consumer logs each coalesced donation.
 4. **Make D1 outages retry later instead of burning the DLQ.** In the consumer's catch, wrap the
    `failed` status write in its own try/catch (a D1 error there must not escape the batch loop),
    and when the error text is D1's "exceeded … daily row write limit", call
@@ -265,7 +274,8 @@ stops. The merge with the board is **extend-only** — a staff-granted comp or L
 shortened or downgraded; shorten by hand if you mean to.
 
 * **Enabling — order matters.** The block is **on** in the shipped config because migration
-  0005 was applied to the CRM Sandbox database on 2026-09-17. For any other database (a fresh
+  0005 was applied to the CRM Sandbox database on 2026-09-17; 0006 (`owner_recomputes`, fix 3
+  coalescing) must be applied the same way before deploying that change. For any other database (a fresh
   fork, the production cutover), set `donationRollups.membership` to `null` first, then:
   1. `CI=1 wrangler d1 migrations apply svbc-donation-rollups --remote`
   2. set `donationRollups.membership` in `config/svbc.json` to the block below and deploy.
