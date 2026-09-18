@@ -1,4 +1,6 @@
-import rawConfig from '../config/svbc.json';
+import productionConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
+import { createConfigSelector, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
 import { D1PendingStore } from './db/pending';
@@ -14,12 +16,23 @@ import { runDuty, dutiesForDate, type CustodianDeps } from './custodian/custodia
 import { createCustodianApp } from './custodian/routes';
 import type { Env, RecomputeQueueMessage } from './types';
 
-const config = validateConfig(rawConfig);
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate — see src/environment.ts and config/split.test.ts.
+const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
-// Must match the dead_letter_queue name in wrangler.jsonc.
+// Must match the dead_letter_queue names in wrangler.jsonc: the production name at the top
+// level, and the same name with "-sandbox" before "-dlq" under env.sandbox.
 const DEAD_LETTER_QUEUE = 'donation-rollups-recompute-dlq';
+const SANDBOX_DEAD_LETTER_QUEUE = 'donation-rollups-recompute-sandbox-dlq';
+
+// Exported for tests. Both spellings are accepted so one consumer serves both environments;
+// queueBaseName() alone is not enough because the sandbox suffix sits before "-dlq".
+export function isDeadLetterBatch(queueName: string): boolean {
+  return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE || queueBaseName(queueName) === DEAD_LETTER_QUEUE;
+}
 
 function custodianDeps(env: Env): CustodianDeps {
+  const config = configFor(env);
   return {
     gifts: new D1GiftsStore(env.DB),
     pending: new D1PendingStore(env.DB),
@@ -34,6 +47,7 @@ function custodianDeps(env: Env): CustodianDeps {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const config = configFor(env);
     if (new URL(request.url).pathname.startsWith('/custodian/')) {
       const deps = custodianDeps(env);
       const app = createCustodianApp({
@@ -56,7 +70,8 @@ export default {
 
   // Both queues are consumed by this one Worker; wrangler.jsonc's consumers list names them.
   async queue(batch: MessageBatch<RecomputeQueueMessage>, env: Env): Promise<void> {
-    if (batch.queue === DEAD_LETTER_QUEUE) {
+    const config = configFor(env);
+    if (isDeadLetterBatch(batch.queue)) {
       await processDeadLetters([...batch.messages], {
         pendingStore: new D1PendingStore(env.DB),
         mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
