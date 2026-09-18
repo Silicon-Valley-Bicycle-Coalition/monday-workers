@@ -65,10 +65,10 @@ invocation flips to `scriptThrewException` at 25–50/min until the backlog has 
 retries (09-03 20:09–20:39; 09-09 01:58–02:01). Once D1 rejects writes, `processRecomputeBatch`'s
 catch block calls `pendingStore.updateStatus(…, 'failed')`, which is itself a D1 write, so the
 exception escapes the loop, the whole batch is retried, and after `max_retries: 3` the messages
-land in `donation-rollups-recompute-dlq`. The DLQ has **no consumer**, so those messages expired
-after the queue's 4-day retention — there is nothing left to read or replay from it
-(`wrangler queues info donation-rollups-recompute-dlq`: 0 producers, 0 consumers). The D1 rows
-were never touched again.
+land in `donation-rollups-recompute-dlq`. The DLQ had **no consumer** (until fix 5), and its
+`message_retention_period` is 1 day, not the 4-day default assumed here at first — so there was
+nothing left to read or replay from it (`wrangler queues info donation-rollups-recompute-dlq`:
+0 producers, 0 consumers). The D1 rows were never touched again.
 
 **Why one flood writes 100k+ rows.** Nothing else wrote to D1 on either day (every 09-03/09-09
 row in `gifts` and `donation_links` has `source = 'webhook'`). The volume is the consumer's own
@@ -139,6 +139,15 @@ backfill) would silently lose recomputes the same way.
    whenever it found anything, because stuck rows mean the consumer lost work earlier. The
    2,865 rows this was designed to repair were drained by hand first (below), so the duty is
    preventative: it should report "no stuck recomputes" every night.
+   **First-deploy incident (2026-09-18 20:38 UTC):** attaching the consumer delivered the DLQ's
+   remaining backlog at once. Most of it (~2,700 messages) was dropped by the platform as past the
+   queue's 1-day retention, but ~300 messages from the previous day's hand re-drive were
+   delivered — and their rows had since been written. The consumer marked them `failed` and
+   posted 35 alerts in two minutes before delivery was paused (`wrangler queues pause-delivery`).
+   The rows were restored (`status='written', error=NULL` where `written_at` was set; 300 rows)
+   and the consumer now treats a message sent at or before the row's `written_at` — or carrying
+   no timestamp — as stale: acked, row untouched, not alerted. Re-deployed with that guard, then
+   `wrangler queues resume-delivery`.
 
 **Update — drained 2026-09-17 20:24–22:15 UTC, ahead of fixes 4–5.** The 2,865 rows were
 re-driven by what became `scripts/redrive-pending.mjs`: one synthetic

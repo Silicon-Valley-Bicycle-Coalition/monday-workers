@@ -21,6 +21,9 @@ import {
 
 export interface QueueMessageLike<T> {
   body: T;
+  // When the message was sent (Cloudflare's Message.timestamp) — the dead-letter consumer
+  // compares it against a pending row's written_at to spot stale dead messages.
+  timestamp?: Date;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
 }
