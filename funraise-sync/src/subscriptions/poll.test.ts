@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { pollSubscriptions, SUBSCRIPTIONS_CURSOR } from './poll';
+import { pollSubscriptions, SUBSCRIPTIONS_CURSOR, SUBSCRIPTIONS_PAGE_CURSOR } from './poll';
 import type { FunraiseClient, FunraiseSubscription } from '../funraise/client';
 import type { SubscriptionStore } from '../db/subscriptions';
 import type { MondayClient } from '../monday/client';
@@ -67,7 +67,7 @@ describe('pollSubscriptions', () => {
     const result = await pollSubscriptions({ funraiseClient: funraise, subscriptionStore: store, mondayClient: fakeMonday(), config, pageSize: 10 });
 
     expect(funraise.calls).toEqual([[0, 0], [0, 1]]);
-    expect(result).toEqual({ pages: 2, rows: 12, actions: { created: 12, adopted: 0, updated: 0, noop: 0 }, cursor: 2500 });
+    expect(result).toEqual({ pages: 2, rows: 12, actions: { created: 12, adopted: 0, updated: 0, noop: 0 }, cursor: 2500, nextPage: 0 });
     expect(store.cursors.get(SUBSCRIPTIONS_CURSOR)).toBe(2500);
     expect(store.rows.size).toBe(12);
   });
@@ -136,5 +136,51 @@ describe('pollSubscriptions', () => {
 
     expect(result.pages).toBe(3);
     expect(funraise.calls.length).toBe(3);
+  });
+
+  // Seen live 2026-09-18: a bulk import gave hundreds of subscriptions the identical updtime.
+  // With one page per run the cursor can't move past them by timestamp alone, so the page index
+  // is persisted while the cursor stands still and reset once it advances.
+  describe('page cursor across runs (maxPages 1 against rows sharing one updtime)', () => {
+    const shared = Array.from({ length: 25 }, (_, i) => sub(500 + i, 5000));
+    const pagesAtZero = [shared.slice(0, 10), shared.slice(10, 20), [...shared.slice(20), sub(900, 6000)]];
+
+    it('continues from the next page on the following run instead of re-reading the same ten rows', async () => {
+      const store = memoryStore();
+      const funraise = fakeFunraise({ 0: pagesAtZero });
+      const monday = fakeMonday();
+      const deps = { funraiseClient: funraise, subscriptionStore: store, mondayClient: monday, config, pageSize: 10, maxPages: 1 };
+
+      const first = await pollSubscriptions(deps);
+      const second = await pollSubscriptions(deps);
+      const third = await pollSubscriptions(deps);
+
+      expect(funraise.calls).toEqual([[0, 0], [0, 1], [0, 2]]);
+      expect(first.actions.created + second.actions.created + third.actions.created).toBe(26);
+      expect(store.cursors.get(SUBSCRIPTIONS_CURSOR)).toBe(6000);
+      expect(store.cursors.get(SUBSCRIPTIONS_PAGE_CURSOR)).toBe(0);
+    });
+
+    it('resets the page index to 0 once the cursor advances, so the new query starts from its first page', async () => {
+      const store = memoryStore();
+      store.cursors.set(SUBSCRIPTIONS_PAGE_CURSOR, 1);
+      const funraise = fakeFunraise({ 0: pagesAtZero, 6000: [[sub(900, 6000), sub(901, 7000)]] });
+      const deps = { funraiseClient: funraise, subscriptionStore: store, mondayClient: fakeMonday(), config, pageSize: 10, maxPages: 1 };
+
+      await pollSubscriptions(deps); // page 1 at cursor 0: ten shared rows, cursor stays
+      await pollSubscriptions(deps); // page 2: short page carrying updtime 6000 → cursor 6000, page reset
+      const next = await pollSubscriptions(deps); // new query from 6000, page 0
+
+      expect(funraise.calls).toEqual([[0, 1], [0, 2], [6000, 0]]);
+      expect(next.cursor).toBe(7000);
+      expect(store.cursors.get(SUBSCRIPTIONS_PAGE_CURSOR)).toBe(0);
+    });
+
+    it('reports the page it will resume from', async () => {
+      const store = memoryStore();
+      const funraise = fakeFunraise({ 0: pagesAtZero });
+      const result = await pollSubscriptions({ funraiseClient: funraise, subscriptionStore: store, mondayClient: fakeMonday(), config, pageSize: 10, maxPages: 1 });
+      expect(result.nextPage).toBe(1);
+    });
   });
 });
