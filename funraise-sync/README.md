@@ -354,6 +354,12 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   page's max `updtime`) advances only after the whole page is written, so a failed run re-reads
   the page next hour and the ledger's per-row `updtime` makes already-landed rows no-ops. `>=`
   re-reads the boundary row on purpose. Idle cost: one request per run.
+* **One page per run on Workers Free.** A Free-plan invocation may make 50 external
+  subrequests (and a cron gets 10 ms CPU); a page of ten rows costs up to ~45 Monday and
+  Funraise calls (donor lookup, adopt lookup, write). `subscriptionsPoll.maxPagesPerRun` ships as
+  `1`, so a busy hour with more than ten changed subscriptions catches up over the following
+  hours from the cursor — and the ~60-page bootstrap walk cannot run deployed at all. Raise the
+  value when the account moves to Workers Paid (10,000 subrequests, 15 min CPU per hourly cron).
 * **Adopt before create.** A subscription the ledger doesn't know is looked up on the board by
   bare id in the Funraise ID link column; found → updated and recorded, not found → created.
   **The first run on a board `salesforce-import` has loaded therefore adopts its ~600 existing
@@ -367,11 +373,19 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   `FUNRISE_API_KEY`; rename when storing). Unset → the poll logs and skips; the webhook path
   still writes gifts, minus the Recurring Gift link. `subscriptionsPoll.enabled: false` also
   skips.
-* **Budget:** hourly idle 744 requests/month + one page per ten changed subscriptions + one
-  request per never-seen subscription on the webhook side; under 900 of the base plan's 3,000.
-* **Verify after deploy** (not yet done): run the hourly job once by hand
-  (`npx wrangler cron trigger --cron "0 * * * *"` or wait for the top of the hour), read the log
-  line, confirm the ledger count matches the board, then re-run and expect one request and
+* **Budget (Funraise API):** hourly idle 744 requests/month + one page per ten changed
+  subscriptions + one request per never-seen subscription on the webhook side; under 900 of
+  the base plan's 3,000. The bootstrap walk is ~60 requests, once.
+* **Bootstrap walk, run locally.** Wrangler's limits are not enforced in local development, so
+  the one-time reconciliation of the importer's items runs from a laptop against the *remote*
+  D1 and the real APIs: put `MONDAY_API_TOKEN` and `FUNRAISE_API_KEY` in `funraise-sync/.dev.vars`
+  (gitignored; delete it afterwards), start `npx wrangler dev --remote --test-scheduled`, and
+  hit `http://localhost:8787/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
+  deployed-shaped run that advances the cursor, so a loop of ~60 requests walks the board. Read
+  the `subscriptions poll read …` log line each time; the last one reads `0 rows`. Then
+  `select count(*) from subscriptions` on the remote D1 should equal the board's item count and
+  `created` should have stayed ≈ 0 (everything adopted). There is no CLI to fire a deployed cron;
+  after the bootstrap, wait for the top of the hour and expect a one-request run with
   `unchanged` = the boundary row only. Funraise's webhook Test payload has no `subscription`, so
   its Donations item must show an empty Recurring Gift column.
 

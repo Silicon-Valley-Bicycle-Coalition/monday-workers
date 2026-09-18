@@ -51,6 +51,10 @@ export interface SubscriptionsPollConfig {
   statusLabelMap: Record<string, string>;
   // Prefix for the Funraise ID link's url; the bare id is the link text.
   funraiseLinkBase: string;
+  // Pages (of ten rows) one run may process. Workers Free allows 50 external subrequests per
+  // invocation and one page costs up to ~45, so the shipped value is 1; the poll resumes from
+  // its cursor next hour. Raise on Workers Paid. The one-time bootstrap walk runs locally.
+  maxPagesPerRun: number;
 }
 
 export interface FunraiseSyncConfig {

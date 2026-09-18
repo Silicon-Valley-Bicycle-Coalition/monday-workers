@@ -174,6 +174,9 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
   if (!isObject(poll.statusLabelMap) || Object.values(poll.statusLabelMap).some((v) => typeof v !== 'string')) {
     throw new Error('config: "subscriptionsPoll.statusLabelMap" must map Funraise statuses to board labels');
   }
+  if (typeof poll.maxPagesPerRun !== 'number' || !Number.isInteger(poll.maxPagesPerRun) || poll.maxPagesPerRun < 1) {
+    throw new Error('config: "subscriptionsPoll.maxPagesPerRun" must be a positive integer (1 on Workers Free: 50 external subrequests per invocation)');
+  }
   if (!isNonEmptyString(poll.funraiseLinkBase)) {
     throw new Error('config: "subscriptionsPoll.funraiseLinkBase" must be a non-empty URL prefix');
   }

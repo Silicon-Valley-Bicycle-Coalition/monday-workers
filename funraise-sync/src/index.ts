@@ -57,6 +57,7 @@ export default {
           subscriptionStore: new D1SubscriptionStore(env.DB),
           mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
           config,
+          maxPages: config.subscriptionsPoll.maxPagesPerRun,
         });
         console.log(
           `funraise-sync scheduled: subscriptions poll read ${result.rows} rows over ${result.pages} pages — created ${result.actions.created}, adopted ${result.actions.adopted}, updated ${result.actions.updated}, unchanged ${result.actions.noop}; cursor ${result.cursor}`

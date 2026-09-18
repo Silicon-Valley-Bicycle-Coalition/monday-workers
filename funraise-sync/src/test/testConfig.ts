@@ -53,6 +53,7 @@ export function testConfig(
       frequencyMultiplier: { Monthly: 12, Quarterly: 4, Yearly: 1 },
       statusLabelMap: { Active: 'Active', Cancelled: 'Cancelled', Failed: 'Failed' },
       funraiseLinkBase: 'https://platform.funraise.io/transaction/',
+      maxPagesPerRun: 200,
       ...subscriptionsPoll,
     },
   };

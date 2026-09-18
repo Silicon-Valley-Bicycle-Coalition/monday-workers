@@ -60,6 +60,7 @@
     },
     "frequencyMultiplier": { "Monthly": 12, "Quarterly": 4, "Yearly": 1 },
     "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed" },
-    "funraiseLinkBase": "https://platform.funraise.io/transaction/"
+    "funraiseLinkBase": "https://platform.funraise.io/transaction/",
+    "maxPagesPerRun": 1
   }
 }
