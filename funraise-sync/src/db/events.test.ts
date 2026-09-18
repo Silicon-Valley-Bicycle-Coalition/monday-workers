@@ -102,15 +102,6 @@ describe('D1EventStore', () => {
     });
   });
 
-  it('same entity id under a different entity type is a separate entity', async () => {
-    const store = new D1EventStore(env.DB);
-    await store.upsertEvent(newEvent({ eventId: 'evt-4a', entityType: 'transaction', entityId: 'shared-4' }));
-    const result = await store.upsertEvent(
-      newEvent({ eventId: 'evt-4b', entityType: 'subscription', entityId: 'shared-4' })
-    );
-    expect(result).toBe('inserted');
-  });
-
   it('updates status and patch fields by entity, then clears error on the next update', async () => {
     const store = new D1EventStore(env.DB);
     await store.upsertEvent(newEvent({ eventId: 'evt-5', entityId: 'txn-5' }));

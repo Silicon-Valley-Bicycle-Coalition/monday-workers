@@ -7,44 +7,59 @@ const validConfig = {
     boards: {
       'donations:live': 123,
       'recurring-gifts': null,
-      'event-registrations': null,
       'people-live': null,
     },
   },
   funraiseSync: {
-    columnMap: {
-      transaction: { amount: 'numeric_col' },
-      recurringGift: { amount: 'numeric_col' },
-      registration: { eventName: 'text_col' },
-    },
-    itemNameField: {
-      transaction: 'description',
-      recurringGift: 'description',
-      registration: 'eventName',
-    },
-    entityIdField: {
-      transaction: 'id',
-      recurringGift: 'id',
-      registration: 'id',
-    },
+    columnMap: { 'transaction.amount': 'numeric_col' },
+    itemNameField: 'description',
+    entityIdField: 'id',
     entityIdColumn: null,
     thankYouSentColumn: null,
     giftTypeColumn: null,
     giftTypeValue: 'Donation',
+    eventGiftTypeValue: 'Event Ticket',
     fiscalYearColumn: null,
+    recurringGiftLinkColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
-    donorExternalIdField: 'donor.contactId',
-    donorExternalIdColumn: 'funraise__fr_id__c',
+    donorExternalIdField: 'supporter.id',
+    donorExternalIdColumn: 'funraise_profile_col',
     donorEmailColumn: 'email',
-    donorNameField: 'donor.name',
+    donorNameField: 'supporter.name',
     donorLinkColumn: 'connect_col',
-    emailFieldPrecedence: ['donor.email'],
-    statusField: 'status',
-    statusValueMap: { Posted: 'Received' },
-    doNotMigrateFields: ['paymentMethod.lastFour'],
+    emailFieldPrecedence: ['supporter.email'],
+    statusField: 'transaction.status',
+    statusValueMap: { Complete: 'Received' },
+    doNotMigrateFields: ['transaction.lastFour'],
+  },
+  subscriptionsPoll: {
+    enabled: false,
+    columns: {
+      funraiseId: 'rg_id',
+      donor: 'rg_donor',
+      installmentAmount: 'rg_amount',
+      annualizedValue: null,
+      frequency: 'rg_frequency',
+      status: 'rg_status',
+      nextPayment: 'rg_next',
+      designation: null,
+      companyMatch: null,
+      matchEmployer: null,
+    },
+    frequencyMultiplier: { Monthly: 12, Quarterly: 4, Yearly: 1 },
+    statusLabelMap: { Active: 'Active', Cancelled: 'Cancelled' },
+    funraiseLinkBase: 'https://platform.funraise.io/transaction/',
   },
 };
+
+function withFunraiseSync(patch: Record<string, unknown>) {
+  return { ...validConfig, funraiseSync: { ...validConfig.funraiseSync, ...patch } };
+}
+
+function withPoll(patch: Record<string, unknown>) {
+  return { ...validConfig, subscriptionsPoll: { ...validConfig.subscriptionsPoll, ...patch } };
+}
 
 describe('validateConfig', () => {
   it('returns the config unchanged when valid', () => {
@@ -68,6 +83,11 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/donations:live/);
   });
 
+  it('no longer requires an event-registrations board — Funraise has no registration source', () => {
+    const boards = { ...validConfig.monday.boards, 'event-registrations': 999 };
+    expect(() => validateConfig({ ...validConfig, monday: { ...validConfig.monday, boards } })).not.toThrow();
+  });
+
   it('throws when funraiseSync is missing', () => {
     const { funraiseSync, ...missing } = validConfig;
     expect(() => validateConfig(missing)).toThrow(/funraiseSync/);
@@ -79,25 +99,32 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/donorEmailColumn/);
   });
 
-  it('throws when columnMap is missing an entity key', () => {
-    const { transaction, ...columnMap } = validConfig.funraiseSync.columnMap;
-    const broken = {
-      ...validConfig,
-      funraiseSync: { ...validConfig.funraiseSync, columnMap },
-    };
-    expect(() => validateConfig(broken)).toThrow(/columnMap.transaction/);
+  it('throws when columnMap is missing or not an object of column ids', () => {
+    const { columnMap, ...rest } = validConfig.funraiseSync;
+    expect(() => validateConfig({ ...validConfig, funraiseSync: rest })).toThrow(/columnMap/);
+    expect(() => validateConfig(withFunraiseSync({ columnMap: { amount: 42 } }))).toThrow(/columnMap.amount/);
+  });
+
+  it('rejects the pre-2026-09-18 per-entity columnMap shape so a stale fork config fails loudly', () => {
+    expect(() =>
+      validateConfig(withFunraiseSync({ columnMap: { transaction: { amount: 'numeric_col' } } }))
+    ).toThrow(/columnMap.transaction/);
   });
 });
 
 describe('validateConfig new keys', () => {
-  it('throws when entityIdField is missing', () => {
+  it('throws when entityIdField is missing or empty', () => {
     const { entityIdField, ...funraiseSync } = validConfig.funraiseSync;
     expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/entityIdField/);
+    expect(() => validateConfig(withFunraiseSync({ entityIdField: '' }))).toThrow(/entityIdField/);
+  });
+
+  it('throws when itemNameField is not a non-empty string', () => {
+    expect(() => validateConfig(withFunraiseSync({ itemNameField: {} }))).toThrow(/itemNameField/);
   });
 
   it('throws when rawPayloadRetentionDays is not a positive number', () => {
-    const funraiseSync = { ...validConfig.funraiseSync, rawPayloadRetentionDays: 0 };
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/rawPayloadRetentionDays/);
+    expect(() => validateConfig(withFunraiseSync({ rawPayloadRetentionDays: 0 }))).toThrow(/rawPayloadRetentionDays/);
   });
 
   it('throws when thankYouSentColumn is missing', () => {
@@ -106,28 +133,11 @@ describe('validateConfig new keys', () => {
   });
 
   it('throws when thankYouSentColumn is an empty string', () => {
-    const funraiseSync = { ...validConfig.funraiseSync, thankYouSentColumn: '' };
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/thankYouSentColumn/);
+    expect(() => validateConfig(withFunraiseSync({ thankYouSentColumn: '' }))).toThrow(/thankYouSentColumn/);
   });
 
   it('accepts a configured thankYouSentColumn', () => {
-    const funraiseSync = { ...validConfig.funraiseSync, thankYouSentColumn: 'thank_you_col' };
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).not.toThrow();
-  });
-});
-
-describe('validateConfig deep checks', () => {
-  function withFunraiseSync(patch: Record<string, unknown>) {
-    return { ...validConfig, funraiseSync: { ...validConfig.funraiseSync, ...patch } };
-  }
-
-  it('throws when itemNameField is missing an entity key', () => {
-    expect(() => validateConfig(withFunraiseSync({ itemNameField: {} }))).toThrow(/itemNameField.transaction/);
-  });
-
-  it('throws when a columnMap entry maps to a non-string column id', () => {
-    const columnMap = { ...validConfig.funraiseSync.columnMap, transaction: { amount: 42 } };
-    expect(() => validateConfig(withFunraiseSync({ columnMap }))).toThrow(/columnMap.transaction.amount/);
+    expect(() => validateConfig(withFunraiseSync({ thankYouSentColumn: 'thank_you_col' }))).not.toThrow();
   });
 
   it('throws when emailFieldPrecedence is empty', () => {
@@ -135,7 +145,7 @@ describe('validateConfig deep checks', () => {
   });
 
   it('throws when statusValueMap has a non-string value', () => {
-    expect(() => validateConfig(withFunraiseSync({ statusValueMap: { Posted: 1 } }))).toThrow(/statusValueMap/);
+    expect(() => validateConfig(withFunraiseSync({ statusValueMap: { Complete: 1 } }))).toThrow(/statusValueMap/);
   });
 
   it('throws when doNotMigrateFields is not an array of strings', () => {
@@ -147,48 +157,66 @@ describe('validateConfig deep checks', () => {
   });
 });
 
-describe('validateConfig — giftTypeColumn / giftTypeValue', () => {
+describe('validateConfig — giftTypeColumn / giftTypeValue / eventGiftTypeValue', () => {
   it('throws when giftTypeColumn is missing', () => {
     const { giftTypeColumn, ...funraiseSync } = validConfig.funraiseSync;
     expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/giftTypeColumn/);
   });
   it('throws when giftTypeColumn is an empty string', () => {
-    const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: '' };
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/giftTypeColumn/);
+    expect(() => validateConfig(withFunraiseSync({ giftTypeColumn: '' }))).toThrow(/giftTypeColumn/);
   });
-  it('throws when giftTypeValue is empty', () => {
-    const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: 'gt_col', giftTypeValue: '' };
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/giftTypeValue/);
+  it('throws when giftTypeValue is empty while the column is set', () => {
+    expect(() => validateConfig(withFunraiseSync({ giftTypeColumn: 'gt_col', giftTypeValue: '' }))).toThrow(/giftTypeValue/);
   });
-  it('accepts a configured column and value', () => {
-    const funraiseSync = { ...validConfig.funraiseSync, giftTypeColumn: 'gt_col', giftTypeValue: 'Donation' };
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).not.toThrow();
+  it('throws when eventGiftTypeValue is empty while the column is set', () => {
+    expect(() => validateConfig(withFunraiseSync({ giftTypeColumn: 'gt_col', eventGiftTypeValue: '' }))).toThrow(
+      /eventGiftTypeValue/
+    );
+  });
+  it('accepts a configured column and both values', () => {
+    expect(() =>
+      validateConfig(withFunraiseSync({ giftTypeColumn: 'gt_col', giftTypeValue: 'Donation', eventGiftTypeValue: 'Event Ticket' }))
+    ).not.toThrow();
   });
 });
 
-describe('validateConfig fiscalYearColumn', () => {
-  function withFunraiseSync(patch: Record<string, unknown>) {
-    return { ...validConfig, funraiseSync: { ...validConfig.funraiseSync, ...patch } };
+describe('validateConfig nullable column ids', () => {
+  for (const key of ['fiscalYearColumn', 'recurringGiftLinkColumn', 'entityIdColumn'] as const) {
+    it(`requires ${key} to be present as a column id or null`, () => {
+      const { [key]: _drop, ...funraiseSync } = validConfig.funraiseSync;
+      expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(new RegExp(key));
+      expect(() => validateConfig(withFunraiseSync({ [key]: '' }))).toThrow(new RegExp(key));
+      expect(() => validateConfig(withFunraiseSync({ [key]: 2027 }))).toThrow(new RegExp(key));
+      expect(() => validateConfig(withFunraiseSync({ [key]: null }))).not.toThrow();
+      expect(() => validateConfig(withFunraiseSync({ [key]: 'some_col' }))).not.toThrow();
+    });
   }
+});
 
-  it('throws when fiscalYearColumn is missing', () => {
-    const { fiscalYearColumn, ...funraiseSync } = validConfig.funraiseSync;
-    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/fiscalYearColumn/);
+describe('validateConfig subscriptionsPoll', () => {
+  it('throws when the block is missing', () => {
+    const { subscriptionsPoll, ...rest } = validConfig;
+    expect(() => validateConfig(rest)).toThrow(/subscriptionsPoll/);
   });
 
-  it('throws when fiscalYearColumn is an empty string', () => {
-    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: '' }))).toThrow(/fiscalYearColumn/);
+  it('throws when enabled is not a boolean', () => {
+    expect(() => validateConfig(withPoll({ enabled: 'yes' }))).toThrow(/subscriptionsPoll.enabled/);
   });
 
-  it('throws when fiscalYearColumn is not a string', () => {
-    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: 2027 }))).toThrow(/fiscalYearColumn/);
+  it('requires every column key, each a column id or null', () => {
+    const { funraiseId, ...columns } = validConfig.subscriptionsPoll.columns;
+    expect(() => validateConfig(withPoll({ columns }))).toThrow(/subscriptionsPoll.columns.funraiseId/);
+    expect(() => validateConfig(withPoll({ columns: { ...validConfig.subscriptionsPoll.columns, status: '' } }))).toThrow(
+      /subscriptionsPoll.columns.status/
+    );
   });
 
-  it('accepts null (board has no Fiscal Year Ending column)', () => {
-    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: null }))).not.toThrow();
+  it('requires positive frequency multipliers and string status labels', () => {
+    expect(() => validateConfig(withPoll({ frequencyMultiplier: { Monthly: 0 } }))).toThrow(/frequencyMultiplier/);
+    expect(() => validateConfig(withPoll({ statusLabelMap: { Active: 1 } }))).toThrow(/statusLabelMap/);
   });
 
-  it('accepts a configured fiscalYearColumn', () => {
-    expect(() => validateConfig(withFunraiseSync({ fiscalYearColumn: 'fiscal_year_col' }))).not.toThrow();
+  it('requires a non-empty funraiseLinkBase', () => {
+    expect(() => validateConfig(withPoll({ funraiseLinkBase: '' }))).toThrow(/funraiseLinkBase/);
   });
 });

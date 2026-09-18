@@ -1,7 +1,7 @@
 import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
 import type { EntityType, EventRow, FunraiseSyncConfig } from '../types';
-import { mapToMondayColumns, ENTITY_MAP_KEY } from '../mapping/fieldMap';
+import { mapToMondayColumns } from '../mapping/fieldMap';
 import { fiscalYearEnding } from '../mapping/fiscalYear';
 import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
@@ -25,20 +25,12 @@ export interface ProcessBatchDeps {
   config: FunraiseSyncConfig;
 }
 
-type BoardKey = keyof FunraiseSyncConfig['monday']['boards'];
-
 // The Funraise transaction field the Donations board's Date column is mapped from
-// (`columnMap.transaction.donationDate` in config/svbc.json). Funraise sends it as epoch
+// (`columnMap.donationDate` in config/svbc.json). Funraise sends it as epoch
 // milliseconds, so it's normalized to YYYY-MM-DD before the write, and Fiscal Year Ending is
 // derived from that same normalized value so the two columns can never disagree.
 const TRANSACTION_DATE_FIELD = 'donationDate';
 
-const BOARD_FOR_ENTITY: Record<EntityType, BoardKey> = {
-  transaction: 'donations:live',
-  subscription: 'recurring-gifts',
-  pledge: 'recurring-gifts',
-  registration: 'event-registrations',
-};
 
 export async function processFunraiseQueueBatch(
   messages: QueueMessageLike<FunraiseQueueMessage>[],
@@ -66,10 +58,11 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     throw new Error(`funraise-sync consumer: no event row for ${entityType} "${entityId}"`);
   }
 
-  const boardKey = BOARD_FOR_ENTITY[event.entityType];
-  const boardId = deps.config.monday.boards[boardKey];
+  // Every delivery is a transaction (Funraise's only webhook), so every write lands on the
+  // Donations board; Recurring Gifts is fed by the subscriptions poller instead.
+  const boardId = deps.config.monday.boards['donations:live'];
   if (boardId === null) {
-    throw new Error(`config: monday.boards["${boardKey}"] is not configured`);
+    throw new Error('config: monday.boards["donations:live"] is not configured');
   }
 
   const rawPayload = JSON.parse(event.rawPayload) as Record<string, unknown>;
@@ -87,13 +80,13 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
 
   const { donorLinkColumn, entityIdColumn, thankYouSentColumn, giftTypeColumn, giftTypeValue, fiscalYearColumn } =
     deps.config.funraiseSync;
-  const columnValues = mapToMondayColumns(event.entityType, rawPayload, deps.config);
+  const columnValues = mapToMondayColumns(rawPayload, deps.config);
 
   // columnMap writes values verbatim, which is wrong for the date: Funraise sends epoch
   // milliseconds and Monday's date column wants { date: 'YYYY-MM-DD' }. Replace the mapped
   // value with the normalized one, or drop the column rather than write a raw number.
   const transactionDate = entityType === 'transaction' ? toISODate(getPath(rawPayload, TRANSACTION_DATE_FIELD)) : null;
-  const dateColumn = deps.config.funraiseSync.columnMap.transaction[TRANSACTION_DATE_FIELD];
+  const dateColumn = deps.config.funraiseSync.columnMap[TRANSACTION_DATE_FIELD];
   if (entityType === 'transaction' && dateColumn) {
     if (transactionDate !== null) columnValues[dateColumn] = { date: transactionDate };
     else delete columnValues[dateColumn];
@@ -177,7 +170,6 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
 }
 
 function describeItemName(entityType: EntityType, rawPayload: Record<string, unknown>, config: FunraiseSyncConfig): string {
-  const fieldPath = config.funraiseSync.itemNameField[ENTITY_MAP_KEY[entityType]];
-  const value = getPath(rawPayload, fieldPath);
+  const value = getPath(rawPayload, config.funraiseSync.itemNameField);
   return typeof value === 'string' && value.length > 0 ? value : `Funraise ${entityType}`;
 }
