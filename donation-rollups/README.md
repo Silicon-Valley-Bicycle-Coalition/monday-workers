@@ -131,6 +131,26 @@ backfill) would silently lose recomputes the same way.
    (or Paid) are in place. Do **not** re-enqueue them before that: 1,349 owners including the
    biggest would reproduce the 100k-row day.
 
+**Update — drained 2026-09-17 20:24–22:15 UTC, ahead of fixes 4–5.** The 2,865 rows were
+re-driven by what became `scripts/redrive-pending.mjs`: one synthetic
+`POST /webhooks/monday/donations` per distinct owner (1,349 owners + 14 rows with no D1 owner =
+1,363 messages), in chunks of 50 behind a 5-owner canary, each chunk waited on in D1 before the
+next. All 1,363 settled `written`, 0 failed, ~50 owners per 4 minutes at `max_concurrency: 1`,
+against the build deployed at 20:05 UTC (version `db2aea17`). The daily D1 write cap did not
+trip: the drain costs one recompute per owner, where the 09-03 flood cost one per donation. The
+other ~1,500 rows of already-recomputed owners were then marked `written` by hand with
+`scripts/redrive-pending-bookkeeping.sql` (09-18 00:20 UTC), and the 3 `failed` rows from 09-03
+were re-driven individually on 09-18 19:38 UTC and settled in under 20 s each. Table now: 3,830
+`written`, 0 `queued`, 0 `failed`. The "do not re-enqueue" warning stands as the rule for the
+*next* flood until fixes 4–5 land; the script's canary, per-chunk settle, and 20 % failure-rate
+abort are what made a one-off hand run safe. Usage:
+
+```sh
+MONDAY_WEBHOOK_SECRET=... node scripts/redrive-pending.mjs \
+  --worker-url https://svbc-donation-rollups.svbc-account.workers.dev --dry-run   # plan only
+# then without --dry-run; add --bookkeep to mark each owner's other rows written once settled
+```
+
 ### 2. "No pending row since 09-09" — webhooks are delivering; the evidence was cleaned up
 
 The two subscriptions (`630667357` create_item, `630667362` change_column_value) **are working.**
@@ -151,6 +171,12 @@ So the row was created and written, then deleted along with the test item's othe
 did not orphan the subscriptions (they were recreated after it), and Monday did not disable them.
 The 19:27 synthetic POST that "worked" was the same path the real webhooks had taken two hours
 earlier. **No `setup-webhooks.mjs` re-run is needed.**
+
+(A re-run happened anyway at 19:52 UTC on 2026-09-17, before this analysis was in: `--prune
+18428131791` deleted `630667357`/`630667362` and re-subscribed as **`638989616`** (create_item)
+and **`638989691`** (change_column_value) — same URL and secret, so harmless, but those are the
+live subscription ids now. A throwaway item created at 20:07 UTC produced its pending row within
+a second and was deleted afterwards.)
 
 Two things worth knowing from this exercise:
 

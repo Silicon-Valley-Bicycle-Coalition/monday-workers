@@ -1,3 +1,6 @@
 node_modules/
 .wrangler/
 bootstrap.sql
+
+# scripts/redrive-pending.mjs progress (resume file, per run)
+redrive-pending-state.json
