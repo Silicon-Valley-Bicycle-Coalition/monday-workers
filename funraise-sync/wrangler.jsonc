@@ -8,8 +8,8 @@
     {
       "binding": "DB",
       "database_name": "svbc-funraise-sync",
-      // Replace after running: wrangler d1 create svbc-funraise-sync
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      // Created 2026-09-18 on the SVBC account (wrangler d1 create svbc-funraise-sync); forks: create your own
+      "database_id": "526c360c-0aa9-476d-af51-3de46b5e2f0b",
       "migrations_dir": "migrations"
     }
   ],
