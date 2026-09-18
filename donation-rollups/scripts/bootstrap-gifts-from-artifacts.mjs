@@ -40,7 +40,7 @@ const OUT = arg('--out') ?? 'bootstrap-gifts.sql';
 const OUT_AFF = arg('--out-affiliations') ?? 'bootstrap-affiliations.sql';
 const force = process.argv.includes('--force');
 if (!payloadsPath || !ledgerPath || !boardsPath) {
-  console.error('usage: bootstrap-gifts-from-artifacts.mjs --payloads <payloads.ndjson> --ledger <ledger.ndjson> --boards <boards.json> [--out file.sql] [--out-affiliations file.sql] [--force]');
+  console.error('usage: bootstrap-gifts-from-artifacts.mjs --payloads <payloads.ndjson> --ledger <ledger.ndjson> --boards <boards.json> [--out file.sql] [--out-affiliations file.sql] [--config config/sandbox.json] [--force]');
   process.exit(1);
 }
 
@@ -56,7 +56,8 @@ const { rows, skippedNoOwner, skippedActingFor, donationBoardIds, ownerBoardIds 
 });
 const { rows: affRows, skippedNoPerson, skippedNotPerson } = buildAffiliationRows({ payloads, ledgerEntries, boards });
 
-const config = JSON.parse(readFileSync(new URL('../config/svbc.json', import.meta.url), 'utf8'));
+const configPath = arg('--config') ?? new URL('../config/svbc.json', import.meta.url);
+const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const errors = checkArtifactGuards({
   rows, skippedActingFor, donationBoardIds, ownerBoardIds, config, skippedNotPerson,
   affiliationRows: affRows, skippedNoPerson,

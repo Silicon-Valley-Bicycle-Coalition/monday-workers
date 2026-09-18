@@ -106,8 +106,9 @@ for (const boardId of peopleBoardIds) {
 // line, since it's already recorded there and the whole point is to reduce copy/paste.
 let actingForNote = null;
 try {
-  const config = JSON.parse(await (await import('node:fs/promises')).readFile(
-    new URL('../config/svbc.json', import.meta.url), 'utf8'));
+  const configIdx = process.argv.indexOf('--config');
+  const configPath = configIdx >= 0 ? process.argv[configIdx + 1] : new URL('../config/svbc.json', import.meta.url);
+  const config = JSON.parse(await (await import('node:fs/promises')).readFile(configPath, 'utf8'));
   const donationBoards = config.donationRollups?.donationBoards ?? [];
   for (const b of donationBoards) {
     const board = await getBoard(b.boardId);
@@ -119,7 +120,7 @@ try {
     console.error(`setup-affiliation-columns: Donations board ${b.boardId} (${board.name}) has no "Acting for" column — checked, not found.`);
   }
 } catch (err) {
-  console.error(`setup-affiliation-columns: could not read config/svbc.json to look up the Donations board's "Acting for" column: ${err instanceof Error ? err.message : String(err)}`);
+  console.error(`setup-affiliation-columns: could not read the config file to look up the Donations board's "Acting for" column: ${err instanceof Error ? err.message : String(err)}`);
 }
 
 console.log(JSON.stringify({

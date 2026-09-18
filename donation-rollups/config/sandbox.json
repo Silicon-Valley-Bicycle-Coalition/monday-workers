@@ -1,0 +1,109 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com"
+  },
+  "donationRollups": {
+    "receivedStatusLabel": "Received",
+    "donationBoards": [
+      {
+        "boardId": 18428131791,
+        "columns": {
+          "donorLink": "board_relation_mm6jf5jb",
+          "amount": "numeric_mm6jkxrs",
+          "date": "date_mm6jthpq",
+          "status": "color_mm6jqdhn",
+          "fiscalYear": "text_mm70czyd",
+          "giftType": "text_mm6j66w3",
+          "termStart": "date_mm6jyeva",
+          "termEnd": "date_mm6jnna5",
+          "membershipType": "text_mm6jas1b",
+          "actingForLink": null
+        }
+      }
+    ],
+    "ownerColumnsByBoard": {
+      "18428131737": {
+        "giftLedgerJson": "text_mm6rxx8c",
+        "lifetimeGiving": "numeric_mm6j7y8j",
+        "giftCount": "numeric_mm6j9wxh",
+        "firstGift": "date_mm6jgwmh",
+        "thisYearAmount": "numeric_mm6rga0j",
+        "thisYearCount": "numeric_mm6rmv2x",
+        "lastYearAmount": "numeric_mm6r6pd8",
+        "lastYearCount": "numeric_mm6rm7sh",
+        "largestGift": "numeric_mm6r76sx",
+        "smallestGift": "numeric_mm6r4bp",
+        "averageGift": "numeric_mm6r24vk",
+        "lastGiftDate": "date_mm6rm3t",
+        "lastGiftAmount": "numeric_mm6rtf0e",
+        "membership": {
+          "status": "color_mm6jbkns",
+          "tier": "color_mm6jhs7g",
+          "since": "date_mm6jv5gt",
+          "until": "date_mm6jq0va"
+        }
+      },
+      "18428131744": {
+        "giftLedgerJson": "text_mm6r2dnp",
+        "lifetimeGiving": "numeric_mm6jbx7d",
+        "giftCount": "numeric_mm6jnr4e",
+        "firstGift": "date_mm6j4xxn",
+        "thisYearAmount": "numeric_mm6r2kz0",
+        "thisYearCount": "numeric_mm6re5g2",
+        "lastYearAmount": "numeric_mm6r2zhn",
+        "lastYearCount": "numeric_mm6rzcjd",
+        "largestGift": "numeric_mm6rrs6r",
+        "smallestGift": "numeric_mm6rmwn5",
+        "averageGift": "numeric_mm6rmqtn",
+        "lastGiftDate": "date_mm6rt5fm",
+        "lastGiftAmount": "numeric_mm6rh3pw",
+        "membership": {
+          "status": "color_mm6j5hbd",
+          "tier": "color_mm6jfgr9",
+          "since": "date_mm6j6p7b",
+          "until": "date_mm6jpvx8"
+        }
+      },
+      "18428131727": {
+        "giftLedgerJson": "text_mm6r9q6m",
+        "lifetimeGiving": "numeric_mm6jkfnk",
+        "giftCount": "numeric_mm6jypaf",
+        "firstGift": "date_mm6jh48s",
+        "thisYearAmount": "numeric_mm6rzf1y",
+        "thisYearCount": "numeric_mm6rhqxv",
+        "lastYearAmount": "numeric_mm6r2h0p",
+        "lastYearCount": "numeric_mm6rv1gh",
+        "largestGift": "numeric_mm6r6r74",
+        "smallestGift": "numeric_mm6rpcqf",
+        "averageGift": "numeric_mm6rzzxx",
+        "lastGiftDate": "date_mm6rkf7c",
+        "lastGiftAmount": "numeric_mm6rckjb"
+      }
+    },
+    "membership": {
+      "fromISO": "2026-10-01",
+      "eligibleGiftTypes": ["Donation"],
+      "termMonths": 12,
+      "lifetimeThresholdCents": 100000,
+      "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
+      "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
+      "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
+    }
+  },
+  "custodian": {
+    "activeFiscalYears": 2,
+    "workspaceId": 17141226,
+    "capacityAlertPct": 80,
+    "alertItemId": 12887692259,
+    "annualSummaryBoardId": 18429045784,
+    "annualSummaryColumns": {
+      "fiscalYear": "numeric_mm6r9er0",
+      "total": "numeric_mm6r1v6s",
+      "giftCount": "numeric_mm6rehes",
+      "byType": "long_text_mm6rqd1q",
+      "restatedAt": "date_mm6rw3g8"
+    }
+  },
+  "affiliations": null
+}

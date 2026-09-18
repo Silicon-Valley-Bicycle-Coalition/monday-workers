@@ -8,6 +8,7 @@
 // Usage:
 //   MONDAY_API_TOKEN=... WEBHOOK_SECRET=... node scripts/setup-webhooks.mjs \
 //     --worker-url https://svbc-donation-rollups.svbc-account.workers.dev \
+//     [--config config/sandbox.json]   # which config's donationBoards to subscribe (default config/svbc.json)
 //     [--prune 111,222,333]        # delete every webhook on these board ids first
 
 import { readFileSync } from 'node:fs';
@@ -29,7 +30,8 @@ if (!workerUrl) {
 }
 const prune = argIdx('--prune') >= 0 ? process.argv[argIdx('--prune') + 1].split(',') : [];
 
-const config = JSON.parse(readFileSync(join(HERE, '..', 'config', 'svbc.json'), 'utf8'));
+const configPath = argIdx('--config') >= 0 ? process.argv[argIdx('--config') + 1] : join(HERE, '..', 'config', 'svbc.json');
+const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const url = `${workerUrl.replace(/\/$/, '')}/webhooks/monday/donations?secret=${encodeURIComponent(secret)}`;
 
 async function graphql(query, variables) {

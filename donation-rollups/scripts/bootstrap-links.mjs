@@ -28,7 +28,9 @@ if (!token) {
 const outIdx = process.argv.indexOf('--out');
 const OUT = outIdx >= 0 ? process.argv[outIdx + 1] : join(HERE, '..', 'bootstrap.sql');
 
-const config = JSON.parse(readFileSync(join(HERE, '..', 'config', 'svbc.json'), 'utf8'));
+const configIdx = process.argv.indexOf('--config');
+const configPath = configIdx >= 0 ? process.argv[configIdx + 1] : join(HERE, '..', 'config', 'svbc.json');
+const config = JSON.parse(readFileSync(configPath, 'utf8'));
 const { apiUrl } = config.monday;
 const { donationBoards } = config.donationRollups;
 
