@@ -59,7 +59,7 @@
       "matchEmployer": "text_mm6jma3d"
     },
     "frequencyMultiplier": { "Monthly": 12, "Quarterly": 4, "Yearly": 1 },
-    "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed" },
+    "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed", "Redacted": "Redacted" },
     "funraiseLinkBase": "https://platform.funraise.io/transaction/",
     "maxPagesPerRun": 1
   }
