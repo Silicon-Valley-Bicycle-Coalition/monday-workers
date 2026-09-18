@@ -1,0 +1,66 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boards": {
+      "donations:live": 18428131791,
+      "recurring-gifts": 18428131768,
+      "people-live": 18428131737
+    }
+  },
+  "funraiseSync": {
+    "columnMap": {
+      "transaction.amount": "numeric_mm6jkxrs",
+      "transaction.status": "color_mm6jqdhn",
+      "donationDate": "date_mm6jthpq"
+    },
+    "itemNameField": "description",
+    "entityIdField": "id",
+    "entityIdColumn": null,
+    "thankYouSentColumn": "boolean_mm78nf5s",
+    "giftTypeColumn": "text_mm6j66w3",
+    "giftTypeValue": "Donation",
+    "eventGiftTypeValue": "Event Ticket",
+    "fiscalYearColumn": "text_mm70czyd",
+    "recurringGiftLinkColumn": "board_relation_mm6jbjtd",
+    "rawPayloadRetentionDays": 90,
+    "unresolvedPayloadRetentionDays": 365,
+    "donorExternalIdField": "supporter.id",
+    "donorExternalIdColumn": "link_mm6j7djp",
+    "donorEmailColumn": "email_mm6j5e9q",
+    "donorNameField": "supporter.name",
+    "donorLinkColumn": "board_relation_mm6jf5jb",
+    "emailFieldPrecedence": ["supporter.email"],
+    "statusField": "transaction.status",
+    "statusValueMap": {
+      "Complete": "Received"
+    },
+    "doNotMigrateFields": [
+      "transaction.lastFour",
+      "transaction.expirationDate",
+      "transaction.cardType",
+      "transaction.billingFirstName",
+      "transaction.billingLastName",
+      "transaction.billingZip",
+      "transaction.errors"
+    ]
+  },
+  "subscriptionsPoll": {
+    "enabled": true,
+    "columns": {
+      "funraiseId": "link_mm6jryz2",
+      "donor": "board_relation_mm6j443g",
+      "installmentAmount": "numeric_mm6jg878",
+      "annualizedValue": "numeric_mm6jt3sp",
+      "frequency": "color_mm6jc24s",
+      "status": "color_mm6j1tk1",
+      "nextPayment": "date_mm6j20p6",
+      "designation": "text_mm6jvmje",
+      "companyMatch": "boolean_mm6jbmvy",
+      "matchEmployer": "text_mm6jma3d"
+    },
+    "frequencyMultiplier": { "Monthly": 12, "Quarterly": 4, "Yearly": 1 },
+    "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed", "Redacted": "Redacted" },
+    "funraiseLinkBase": "https://platform.funraise.io/transaction/",
+    "maxPagesPerRun": 1
+  }
+}

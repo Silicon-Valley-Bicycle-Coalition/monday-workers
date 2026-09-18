@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import rawSvbcConfig from '../../config/svbc.json';
+import rawSandboxConfig from '../../config/sandbox.json';
 import { validateConfig } from '../config';
 import { mapToMondayColumns } from './fieldMap';
 import { testConfig } from '../test/testConfig';
@@ -39,14 +40,20 @@ describe('mapToMondayColumns', () => {
 
   // Funraise's documented webhook payload carries the status at data.transaction.status with
   // the value "Complete" for a successful gift — "Posted" was the Salesforce stage name.
-  it("maps Funraise's Complete success state to 'Received' in the shipped SVBC config", () => {
-    const svbcConfig = validateConfig(rawSvbcConfig);
+  it("maps Funraise's Complete success state to 'Received' in the shipped sandbox config", () => {
+    const sandboxConfig = validateConfig(rawSandboxConfig);
 
-    const result = mapToMondayColumns({ transaction: { status: 'Complete' } }, svbcConfig);
+    const result = mapToMondayColumns({ transaction: { status: 'Complete' } }, sandboxConfig);
 
-    const statusColumn = svbcConfig.funraiseSync.columnMap['transaction.status'];
+    const statusColumn = sandboxConfig.funraiseSync.columnMap['transaction.status'];
     expect(statusColumn).toBeDefined();
     expect(result[statusColumn as string]).toBe('Received');
+  });
+
+  it('the shipped production config validates and carries the same status map', () => {
+    const productionConfig = validateConfig(rawSvbcConfig);
+    expect(productionConfig.funraiseSync.statusValueMap).toEqual({ Complete: 'Received' });
+    expect(productionConfig.monday.boards['donations:live']).toBeNull();
   });
 
   it('denylists the card and billing PII where Funraise actually puts it, so the strip is not a no-op', () => {
