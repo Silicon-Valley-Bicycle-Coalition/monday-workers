@@ -65,10 +65,26 @@ invocation flips to `scriptThrewException` at 25–50/min until the backlog has 
 retries (09-03 20:09–20:39; 09-09 01:58–02:01). Once D1 rejects writes, `processRecomputeBatch`'s
 catch block calls `pendingStore.updateStatus(…, 'failed')`, which is itself a D1 write, so the
 exception escapes the loop, the whole batch is retried, and after `max_retries: 3` the messages
-land in `donation-rollups-recompute-dlq`. The DLQ had **no consumer** (until fix 5), and its
-`message_retention_period` is 1 day, not the 4-day default assumed here at first — so there was
-nothing left to read or replay from it (`wrangler queues info donation-rollups-recompute-dlq`:
+land in `donation-rollups-recompute-dlq`. The DLQ had **no consumer** (until fix 5), so there
+was nothing to read or replay from it (`wrangler queues info donation-rollups-recompute-dlq`:
 0 producers, 0 consumers). The D1 rows were never touched again.
+
+**Queue retention, corrected 2026-09-18.** Both donation-rollups queues were created on 08-25
+with a `message_retention_period` of **1 day**, not the 4-day default this section first
+assumed (the main queue's settings were never modified after creation; the funraise-sync queues
+created 09-18 show the 4-day default). And the platform evidently does not delete an expired
+message until it tries to deliver it: when the fix-5 consumer first attached, ~2,700 messages
+from the 09-03/09-09 floods — two weeks past a 1-day retention — were dropped in that minute,
+while ~300 from the previous day were delivered. So for three weeks the DLQ's contents were
+simply unobservable. Settings since 2026-09-18 21:00 UTC: DLQ retention **14 days** (the
+maximum — a safety net if delivery is ever paused or the consumer breaks), main queue **4 days**
+(fix 4 can defer a quota-hit message up to 12 h, and a second deferral would have crossed a
+1-day retention and been dropped before its retry):
+
+```sh
+npx wrangler queues update donation-rollups-recompute-dlq --message-retention-period-secs 1209600
+npx wrangler queues update donation-rollups-recompute --message-retention-period-secs 345600
+```
 
 **Why one flood writes 100k+ rows.** Nothing else wrote to D1 on either day (every 09-03/09-09
 row in `gifts` and `donation_links` has `source = 'webhook'`). The volume is the consumer's own
@@ -141,7 +157,8 @@ backfill) would silently lose recomputes the same way.
    preventative: it should report "no stuck recomputes" every night.
    **First-deploy incident (2026-09-18 20:38 UTC):** attaching the consumer delivered the DLQ's
    remaining backlog at once. Most of it (~2,700 messages) was dropped by the platform as past the
-   queue's 1-day retention, but ~300 messages from the previous day's hand re-drive were
+   queue's then 1-day retention (expiry is enforced lazily, on delivery — see "Queue retention,
+   corrected" above), but ~300 messages from the previous day's hand re-drive were
    delivered — and their rows had since been written. The consumer marked them `failed` and
    posted 35 alerts in two minutes before delivery was paused (`wrangler queues pause-delivery`).
    The rows were restored (`status='written', error=NULL` where `written_at` was set; 300 rows)
