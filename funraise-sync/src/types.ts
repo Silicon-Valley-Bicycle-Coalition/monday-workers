@@ -122,4 +122,6 @@ export interface Env extends Cloudflare.Env {
   // subscriptions poller and the consumer's never-seen-subscription lookup. Optional for the
   // same reason; the poll logs and skips until it is set.
   FUNRAISE_API_KEY?: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
 }

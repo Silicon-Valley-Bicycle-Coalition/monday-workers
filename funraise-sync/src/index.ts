@@ -1,4 +1,6 @@
-import rawConfig from '../config/svbc.json';
+import productionConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
+import { createConfigSelector } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
 import { D1EventStore } from './db/events';
@@ -10,7 +12,9 @@ import { pollSubscriptions } from './subscriptions/poll';
 import { dispatchScheduled } from './scheduled';
 import type { Env } from './types';
 
-const config = validateConfig(rawConfig);
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate — see src/environment.ts and config/split.test.ts.
+const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
 // Funraise's REST API host; the reference's "Live Server". Only the subscriptions poller and the
 // consumer's never-seen-subscription lookup talk to it.
@@ -22,6 +26,7 @@ function funraiseClient(env: Env): HttpFunraiseClient | undefined {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const config = configFor(env);
     const app = createApp({
       eventStore: new D1EventStore(env.DB),
       config,
@@ -34,6 +39,7 @@ export default {
   },
 
   async queue(batch: MessageBatch<FunraiseQueueMessage>, env: Env): Promise<void> {
+    const config = configFor(env);
     await processFunraiseQueueBatch([...batch.messages], {
       eventStore: new D1EventStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
@@ -44,6 +50,7 @@ export default {
   },
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    const config = configFor(env);
     await dispatchScheduled(controller.cron, {
       pollEnabled: config.subscriptionsPoll.enabled,
       apiKeyPresent: env.FUNRAISE_API_KEY !== undefined && env.FUNRAISE_API_KEY !== '',
