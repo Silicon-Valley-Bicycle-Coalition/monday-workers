@@ -6,6 +6,9 @@ const VALID_ENTITY_TYPES: readonly EntityType[] = ['transaction', 'subscription'
 
 export interface ValidatedEnvelope {
   eventId: string;
+  // The envelope's send time (epoch ms), or the entity's updtime when the envelope has none;
+  // null when neither is usable. Stored so a stale redelivery can be ordered against the row.
+  sentAt: number | null;
   entityType: EntityType;
   // The entity object itself (Funraise's `data`), not the delivery envelope around it — every
   // configured field path (`entityIdField`, `columnMap`, `donorExternalIdField`, …) is relative
@@ -20,6 +23,12 @@ export function isEntityType(value: string): value is EntityType {
 const idString = (value: unknown): string | null => {
   if (typeof value === 'string') return value.length > 0 ? value : null;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+};
+
+const epochMs = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value);
   return null;
 };
 
@@ -48,9 +57,9 @@ export function validateEnvelope(entityTypeParam: string, body: unknown): Valida
   if (entityId === null) {
     throw new Error('funraise webhook: payload missing a non-empty "data.id" field');
   }
-  const deliveryStamp = idString(envelope.sentAt) ?? idString(raw.updtime);
-  const eventId = deliveryStamp === null ? entityId : `${entityId}:${deliveryStamp}`;
-  return { eventId, entityType: entityTypeParam, raw };
+  const sentAt = epochMs(envelope.sentAt) ?? epochMs(raw.updtime);
+  const eventId = sentAt === null ? entityId : `${entityId}:${sentAt}`;
+  return { eventId, sentAt, entityType: entityTypeParam, raw };
 }
 
 /**

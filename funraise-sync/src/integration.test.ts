@@ -156,5 +156,21 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
       'monday-item-int-1',
       expect.objectContaining({ numeric_col: 51.5, status_col: 'Refunded' })
     );
+
+    // At-least-once delivery can replay the *original* Complete delivery after the Refunded
+    // edit was already written. Its sentAt is older than the stored row's, so it must be
+    // treated as a duplicate: nothing enqueued, and the Refunded payload left in place.
+    captured = undefined;
+    const res3 = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
+      method: 'POST',
+      body: JSON.stringify(funraiseDelivery({ sentAt: 1599067884009 })),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res3.status).toBe(200);
+    expect(await res3.json()).toEqual({ ok: true, duplicate: true });
+    expect(captured).toBeUndefined();
+    const afterStale = await eventStore.getEventByEntity('transaction', '123');
+    expect(afterStale?.status).toBe('written');
+    expect(afterStale?.rawPayload).toContain('"status":"Refunded"');
   });
 });

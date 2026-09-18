@@ -112,6 +112,7 @@ describe('createApp', () => {
 
     expect(eventStore.upsertEvent).toHaveBeenCalledWith({
       eventId: '123:1599067884009',
+      sentAt: 1599067884009,
       entityType: 'transaction',
       entityId: 'txn-9',
       rawPayload: JSON.stringify({ id: 123, transactionId: 'txn-9', amount: 100, paymentMethod: { brand: 'visa' } }),

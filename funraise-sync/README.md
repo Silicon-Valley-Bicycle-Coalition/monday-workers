@@ -248,6 +248,12 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
   stringified. Funraise sends no per-delivery id, so `events.event_id` is `<data.id>:<sentAt>`
   (fallback `data.updtime`, then the bare id): an edit of the same transaction arrives with a new
   `sentAt` and takes the entity-keyed *update* path, while an identical redelivery is a duplicate.
+  The send time is also stored (`events.sent_at`, migration `0003`) and the upsert refuses to
+  replace a row with an *older* delivery — at-least-once delivery can replay the original
+  `Complete` after a `Refunded` edit was already written, and without the guard the consumer
+  would push the stale columns back onto the Monday item. A stale delivery is reported as a
+  duplicate; a NULL send time on either side (pre-`0003` rows, envelopes without one) never
+  blocks an update, since their order is unknown.
 * **Field names.** Amount and status live under `data.transaction`; the donor under
   `data.supporter` (`id`, `email`, `name`); the gift's date is `donationDate` (epoch ms, see
   "Fiscal Year Ending"); the item name is `description`. `statusValueMap` maps `Complete` — the
