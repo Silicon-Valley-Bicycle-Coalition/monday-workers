@@ -6,7 +6,11 @@ export interface DonationLink {
 }
 
 export interface DonationLinksStore {
-  upsertLink(link: DonationLink, updatedAt: string): Promise<void>;
+  // Diff-aware: an unchanged link costs no write and keeps its stored updated_at, so the
+  // returned updatedAt is when this link LAST CHANGED — the consumer's coalescing rule compares
+  // it against the owner's last recompute fetch (a link that changed after that fetch wasn't
+  // covered by it). `changed` is true for a new or re-owned link.
+  upsertLink(link: DonationLink, updatedAt: string): Promise<{ changed: boolean; updatedAt: string }>;
   // Grouped by donation_board_id, since fetching each donation's column values needs
   // that board's own column ids (see monday/client.ts getDonationsByIds).
   getLinksForOwner(ownerItemId: string): Promise<Map<string, string[]>>; // board id -> donation item ids
@@ -25,7 +29,17 @@ interface D1LinkRecord {
 export class D1DonationLinksStore implements DonationLinksStore {
   constructor(private db: D1Database) {}
 
-  async upsertLink(link: DonationLink, updatedAt: string): Promise<void> {
+  async upsertLink(link: DonationLink, updatedAt: string): Promise<{ changed: boolean; updatedAt: string }> {
+    const existing = await this.db
+      .prepare(`SELECT donation_board_id, owner_item_id, owner_board_id, updated_at FROM donation_links WHERE donation_item_id = ?1`)
+      .bind(link.donationItemId)
+      .first<{ donation_board_id: string; owner_item_id: string; owner_board_id: string; updated_at: string }>();
+    if (existing !== null
+      && existing.donation_board_id === link.donationBoardId
+      && existing.owner_item_id === link.ownerItemId
+      && existing.owner_board_id === link.ownerBoardId) {
+      return { changed: false, updatedAt: existing.updated_at };
+    }
     await this.db
       .prepare(
         `INSERT INTO donation_links (donation_item_id, donation_board_id, owner_item_id, owner_board_id, updated_at)
@@ -38,6 +52,7 @@ export class D1DonationLinksStore implements DonationLinksStore {
       )
       .bind(link.donationItemId, link.donationBoardId, link.ownerItemId, link.ownerBoardId, updatedAt)
       .run();
+    return { changed: true, updatedAt };
   }
 
   async getLinksForOwner(ownerItemId: string): Promise<Map<string, string[]>> {

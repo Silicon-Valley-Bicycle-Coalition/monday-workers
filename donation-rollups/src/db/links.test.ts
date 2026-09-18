@@ -12,6 +12,29 @@ describe('D1DonationLinksStore', () => {
     expect(links.get('1')).toEqual(['d1']);
   });
 
+  // Fix 3 (owner coalescing) needs to know whether a donation's link pre-dates an owner's last
+  // recompute, so an unchanged re-assertion must keep its stored updated_at — and, in the spirit
+  // of fix 2, cost no write.
+  it('upsertLink reports an unchanged link as unchanged and keeps its stored updated_at', async () => {
+    const store = new D1DonationLinksStore(env.DB);
+    const link = { donationItemId: 'd-same', donationBoardId: '1', ownerItemId: 'o-same', ownerBoardId: '2' };
+    expect(await store.upsertLink(link, '2026-01-01T00:00:00Z')).toEqual({ changed: true, updatedAt: '2026-01-01T00:00:00Z' });
+
+    expect(await store.upsertLink(link, '2026-01-05T00:00:00Z')).toEqual({ changed: false, updatedAt: '2026-01-01T00:00:00Z' });
+    const row = await env.DB.prepare(`SELECT updated_at FROM donation_links WHERE donation_item_id = 'd-same'`).first();
+    expect(row).toEqual({ updated_at: '2026-01-01T00:00:00Z' });
+  });
+
+  it('upsertLink reports a re-owned link as changed and stamps the new updated_at', async () => {
+    const store = new D1DonationLinksStore(env.DB);
+    await store.upsertLink({ donationItemId: 'd-move', donationBoardId: '1', ownerItemId: 'o-old', ownerBoardId: '2' }, '2026-01-01T00:00:00Z');
+
+    const result = await store.upsertLink({ donationItemId: 'd-move', donationBoardId: '1', ownerItemId: 'o-new', ownerBoardId: '3' }, '2026-01-05T00:00:00Z');
+
+    expect(result).toEqual({ changed: true, updatedAt: '2026-01-05T00:00:00Z' });
+    expect(await store.getLinkForDonation('d-move')).toEqual({ ownerItemId: 'o-new', ownerBoardId: '3' });
+  });
+
   it('groups multiple donations for one owner by their donation board id', async () => {
     const store = new D1DonationLinksStore(env.DB);
     await store.upsertLink({ donationItemId: 'd1', donationBoardId: '1', ownerItemId: 'o2', ownerBoardId: '2' }, '2026-01-01T00:00:00Z');

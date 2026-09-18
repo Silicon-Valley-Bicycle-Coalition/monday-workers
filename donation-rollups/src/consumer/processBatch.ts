@@ -2,6 +2,7 @@ import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
 import type { MembershipBaselineStore } from '../db/membershipBaseline';
+import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
 import type {
   DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
@@ -28,6 +29,7 @@ export interface ProcessBatchDeps {
   linksStore: DonationLinksStore;
   giftsStore: GiftsStore;
   baselineStore: MembershipBaselineStore;
+  recomputesStore: OwnerRecomputesStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
   now?: Date; // injectable for tests; defaults to the real current time
@@ -100,10 +102,34 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
 
   // Keep the reverse index current *before* reading it back — this donation's own
   // link is part of what the recompute below needs to see.
-  await deps.linksStore.upsertLink(
+  const link = await deps.linksStore.upsertLink(
     { donationItemId, donationBoardId, ownerItemId, ownerBoardId },
     new Date().toISOString(),
   );
+
+  // Coalescing (README "operational findings, 2026-09-17", fix 3). A bulk edit recomputes a big
+  // owner once per donation; if a recompute of this owner already READ Monday at or after this
+  // donation's webhook arrived, it saw this edit and there is nothing new to compute. Two parts,
+  // both required: (1) the owner's last fetch is at/after the pending row's received_at —
+  // fetch time, not completion, since a recompute that started before the edit read stale
+  // data; (2) this donation's link already existed, unchanged, before that fetch — a recompute
+  // only reads the donations D1 links to the owner at that moment, so a new or re-owned link
+  // (or one rewritten after the fetch) can't have been covered. No pending row (a custodian
+  // sweep message) or no prior recompute means recompute.
+  const [last, pending] = await Promise.all([
+    deps.recomputesStore.get(ownerItemId),
+    deps.pendingStore.getPending(donationItemId),
+  ]);
+  if (last !== null && pending !== null
+    && last.fetchedAt >= pending.receivedAt
+    && !link.changed && link.updatedAt <= last.fetchedAt) {
+    console.log(`donation-rollups consumer: coalesced donation "${donationItemId}" — owner ${ownerItemId} already fetched at ${last.fetchedAt}, after its webhook at ${pending.receivedAt}`);
+    await deps.pendingStore.updateStatus(donationItemId, 'written', {
+      ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
+    });
+    return;
+  }
+  const fetchedAt = new Date().toISOString();
 
   // Monday has no supported filter for board_relation columns (confirmed 2026-08-24 —
   // items_page_by_column_values rejects it outright), so "every Donation this owner
@@ -188,6 +214,11 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // Recorded only now — after the owner write AND the gift term stamps — so a recompute that
+  // failed partway is retried in full rather than coalesced away (the retry's webhook time
+  // predates this fetch; without a fresh row it can't match). The description write above is
+  // non-fatal and deliberately doesn't gate this.
+  await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
   });
