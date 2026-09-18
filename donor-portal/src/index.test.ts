@@ -1,12 +1,12 @@
 import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
-import worker, { routeQueueBatch } from './index';
+import worker, { routeQueueBatch, emailBindingFor } from './index';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { LetterSendStore } from './db/letterSends';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
-import type { ChangeQueueMessage, Config, LetterSendQueueMessage } from './types';
+import type { ChangeQueueMessage, Config, Env, LetterSendQueueMessage } from './types';
 
 // Full valid test Config shape, same fixture used in routes.test.ts / processBatch.test.ts /
 // processLetterSendBatch.test.ts.
@@ -221,5 +221,84 @@ describe('routeQueueBatch', () => {
     ).rejects.toThrow('unrecognized queue "not-a-real-queue"');
     expect(changeStore.getRequest).not.toHaveBeenCalled();
     expect(letterStore.getById).not.toHaveBeenCalled();
+  });
+
+  it('routes the sandbox-suffixed change-requests queue to the change-request store', async () => {
+    const changeStore = fakeChangeStore();
+    const letterStore = fakeLetterStore();
+    const message = makeMessage<ChangeQueueMessage>({ requestId: 7 });
+    const batch = fakeBatch<ChangeQueueMessage>('donor-portal-change-requests-sandbox', [message]);
+
+    await routeQueueBatch(batch, {
+      changeStore,
+      letterStore,
+      monday: fakeMonday(),
+      tokenStore: fakeTokenStore(),
+      emailSender: fakeEmailSender(),
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(changeStore.getRequest).toHaveBeenCalledWith(7);
+    expect(letterStore.getById).not.toHaveBeenCalled();
+  });
+
+  it('routes the sandbox-suffixed letter-emails queue to the letter-send store', async () => {
+    const changeStore = fakeChangeStore();
+    const letterStore = fakeLetterStore();
+    const message = makeMessage<LetterSendQueueMessage>({ sendId: 7 });
+    const batch = fakeBatch<LetterSendQueueMessage>('donor-portal-letter-emails-sandbox', [message]);
+
+    await routeQueueBatch(batch, {
+      changeStore,
+      letterStore,
+      monday: fakeMonday(),
+      tokenStore: fakeTokenStore(),
+      emailSender: fakeEmailSender(),
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(letterStore.getById).toHaveBeenCalledWith(7);
+    expect(changeStore.getRequest).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a dead-letter queue name, sandbox or not', async () => {
+    const batch = fakeBatch<ChangeQueueMessage>('donor-portal-change-requests-sandbox-dlq', []);
+    await expect(
+      routeQueueBatch(batch, {
+        changeStore: fakeChangeStore(),
+        letterStore: fakeLetterStore(),
+        monday: fakeMonday(),
+        tokenStore: fakeTokenStore(),
+        emailSender: fakeEmailSender(),
+        config,
+        now: () => new Date('2026-08-24T10:00:00.000Z'),
+      })
+    ).rejects.toThrow('unrecognized queue "donor-portal-change-requests-sandbox-dlq"');
+  });
+});
+
+describe('emailBindingFor', () => {
+  const inner = { send: vi.fn().mockResolvedValue({ messageId: 'id' }) } as unknown as SendEmail;
+
+  it('returns the raw EMAIL binding in production', () => {
+    const env = { EMAIL: inner } as unknown as Env;
+    expect(emailBindingFor(env)).toBe(inner);
+  });
+
+  it('returns a rewriting wrapper in the sandbox', async () => {
+    const env = { EMAIL: inner, ENVIRONMENT: 'sandbox', SANDBOX_EMAIL_SINK: 'sandbox@example.org' } as unknown as Env;
+    const binding = emailBindingFor(env);
+    expect(binding).not.toBe(inner);
+
+    await binding.send({ to: 'donor@example.org', from: 'login@example.org', subject: 'Hi', text: 'x' });
+    const sent = (inner.send as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as EmailMessageBuilder;
+    expect(sent.to).toBe('sandbox@example.org');
+  });
+
+  it('throws in the sandbox when SANDBOX_EMAIL_SINK is missing rather than sending unwrapped', () => {
+    const env = { EMAIL: inner, ENVIRONMENT: 'sandbox' } as unknown as Env;
+    expect(() => emailBindingFor(env)).toThrow('SANDBOX_EMAIL_SINK');
   });
 });

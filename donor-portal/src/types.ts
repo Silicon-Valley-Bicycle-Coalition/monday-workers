@@ -305,4 +305,8 @@ export interface Env extends Cloudflare.Env {
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
   LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;
   LETTER_WEBHOOK_SECRET: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
+  // The sandbox email sink (env.sandbox.vars); must equal the send binding's allowlist entry.
+  SANDBOX_EMAIL_SINK?: string;
 }
