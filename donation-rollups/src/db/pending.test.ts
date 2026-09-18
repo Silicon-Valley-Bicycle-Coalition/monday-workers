@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1PendingStore } from './pending';
 
@@ -32,5 +32,30 @@ describe('D1PendingStore', () => {
   it('returns null for an unknown donation item', async () => {
     const store = new D1PendingStore(env.DB);
     expect(await store.getPending('nope')).toBeNull();
+  });
+});
+
+// Fix 5: the custodian's nightly requeue duty re-enqueues rows the queue never finished.
+describe('D1PendingStore.listStuck', () => {
+  beforeEach(async () => { await env.DB.prepare('DELETE FROM pending_recomputes').run(); });
+
+  it('returns queued/received rows older than the cutoff, oldest first, capped — not written, failed or fresh rows', async () => {
+    const store = new D1PendingStore(env.DB);
+    const seed = async (id: string, receivedAt: string, status?: 'queued' | 'written' | 'failed') => {
+      await store.upsertPending({ donationItemId: id, donationBoardId: '1', eventId: 'e', receivedAt });
+      if (status) await store.updateStatus(id, status, status === 'failed' ? { error: 'x' } : {});
+    };
+    await seed('old-queued-b', '2026-07-30T02:00:00Z', 'queued');
+    await seed('old-queued-a', '2026-07-30T01:00:00Z', 'queued');
+    await seed('old-received', '2026-07-29T00:00:00Z'); // still 'received' — enqueue never happened
+    await seed('old-written', '2026-07-28T00:00:00Z', 'written');
+    await seed('old-failed', '2026-07-28T00:00:00Z', 'failed');
+    await seed('fresh-queued', '2026-07-31T23:00:00Z', 'queued');
+
+    const stuck = await store.listStuck('2026-07-31T00:00:00Z', 10);
+    expect(stuck.map((r) => r.donationItemId)).toEqual(['old-received', 'old-queued-a', 'old-queued-b']);
+    expect(stuck[0]).toEqual({ donationItemId: 'old-received', donationBoardId: '1', receivedAt: '2026-07-29T00:00:00Z' });
+
+    expect(await store.listStuck('2026-07-31T00:00:00Z', 2)).toHaveLength(2);
   });
 });

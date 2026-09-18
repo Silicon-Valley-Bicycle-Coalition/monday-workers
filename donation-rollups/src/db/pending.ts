@@ -20,6 +20,10 @@ export interface PendingStore {
   upsertPending(row: NewPending): Promise<UpsertResult>;
   updateStatus(donationItemId: string, status: PendingStatus, patch?: PendingStatusPatch): Promise<void>;
   getPending(donationItemId: string): Promise<PendingRow | null>;
+  // Rows the queue never finished — still 'received' (enqueue never happened) or 'queued'
+  // (message expired unconsumed, or its batch died before touching D1) — received before the
+  // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5).
+  listStuck(olderThanISO: string, limit: number): Promise<{ donationItemId: string; donationBoardId: string; receivedAt: string }[]>;
 }
 
 interface D1PendingRecord {
@@ -107,5 +111,17 @@ export class D1PendingStore implements PendingStore {
       .bind(donationItemId)
       .first<D1PendingRecord>();
     return record === null ? null : toPendingRow(record);
+  }
+
+  async listStuck(olderThanISO: string, limit: number): Promise<{ donationItemId: string; donationBoardId: string; receivedAt: string }[]> {
+    const res = await this.db
+      .prepare(
+        `SELECT donation_item_id, donation_board_id, received_at FROM pending_recomputes
+         WHERE status IN ('received', 'queued') AND received_at < ?1
+         ORDER BY received_at LIMIT ?2`,
+      )
+      .bind(olderThanISO, limit)
+      .all<{ donation_item_id: string; donation_board_id: string; received_at: string }>();
+    return res.results.map((r) => ({ donationItemId: r.donation_item_id, donationBoardId: r.donation_board_id, receivedAt: r.received_at }));
   }
 }

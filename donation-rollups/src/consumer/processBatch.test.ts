@@ -68,6 +68,7 @@ function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
     upsertPending: vi.fn().mockResolvedValue('inserted'),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getPending: vi.fn().mockResolvedValue(null),
+    listStuck: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }

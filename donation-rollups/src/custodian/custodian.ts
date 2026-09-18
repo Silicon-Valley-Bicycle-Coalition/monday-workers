@@ -1,4 +1,5 @@
 import type { GiftsStore } from '../db/gifts';
+import type { PendingStore } from '../db/pending';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 import { currentFiscalYear } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
@@ -25,6 +26,7 @@ export interface CustodianMondayClient {
 
 export interface CustodianDeps {
   gifts: GiftsStore;
+  pending: PendingStore;
   mondayClient: CustodianMondayClient;
   queue: { sendBatch(messages: RecomputeQueueMessage[]): Promise<void> };
   config: DonationRollupsConfig;
@@ -33,7 +35,7 @@ export interface CustodianDeps {
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
 
-export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile'] as const;
+export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 // Cron schedule, decided by date so one daily trigger covers everything:
@@ -48,7 +50,7 @@ export type Duty = (typeof DUTIES)[number];
 // continuation from cron (and the year-end summaries, gated on remaining === 0, would never
 // materialize). Cursor resume inside each duty picks up where the last slice stopped.
 export function dutiesForDate(now: Date, lastRuns: { duty: string; report: unknown }[] = []): Duty[] {
-  const duties: Duty[] = ['reconcile'];
+  const duties: Duty[] = ['reconcile', 'requeue']; // requeue: fix 5, nightly with reconcile
   if (now.getUTCDay() === 1) duties.push('capacity');
   if (now.getUTCMonth() === 6 && now.getUTCDate() === 1) duties.push('sweep');
   if (now.getUTCMonth() === 6 && now.getUTCDate() === 15) duties.push('archive');
@@ -69,6 +71,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps): Promise<DutyRepo
       duty === 'archive' ? await runArchive(deps, now)
       : duty === 'capacity' ? await runCapacity(deps)
       : duty === 'sweep' ? await runSweep(deps)
+      : duty === 'requeue' ? await runRequeue(deps, now)
       : await runReconcile(deps);
   } catch (err) {
     report = { ok: false, summary: `${duty} crashed: ${err instanceof Error ? err.message : String(err)}` };
@@ -206,6 +209,36 @@ async function runSweep(deps: CustodianDeps): Promise<DutyReport> {
     summary: `enqueued recompute for ${slice.length} owners` +
       (remaining > 0 ? ` — more remain, run sweep again to continue` : ''),
     detail: { enqueued: slice.length, remaining, cursor: slice.at(-1)?.ownerItemId ?? cursor },
+  };
+}
+
+// Nightly requeue (README "operational findings, 2026-09-17", fix 5): pending rows the queue never
+// finished — 'received' with no enqueue, or 'queued' whose message expired unconsumed or whose
+// batch died before touching D1 (the 09-03/09-09 failure mode) — are re-enqueued, oldest first,
+// with their received_at left alone: the consumer's coalescing (fix 3) then makes every message
+// after the first per owner a two-read skip, so a flood's worth of stuck rows costs ~one
+// recompute per owner. 24h keeps clear of fix 4's up-to-12h quota deferrals (a message that
+// old with no outcome is genuinely lost). 'failed' rows are NOT touched — a dead-lettered row
+// is a human's signal (see consumer/processDeadLetters.ts). Same slicing as the sweep: queue
+// sends count against the subrequest budget, sendBatch caps at 100.
+const REQUEUE_BATCHES_PER_RUN = 35;
+const REQUEUE_STUCK_AFTER_MS = 24 * 60 * 60 * 1000;
+async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
+  const cutoff = new Date(now.getTime() - REQUEUE_STUCK_AFTER_MS).toISOString();
+  const stuck = await deps.pending.listStuck(cutoff, REQUEUE_BATCHES_PER_RUN * 100 + 1);
+  const slice = stuck.slice(0, REQUEUE_BATCHES_PER_RUN * 100);
+  for (let i = 0; i < slice.length; i += 100) {
+    await deps.queue.sendBatch(slice.slice(i, i + 100)
+      .map((r) => ({ donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
+  }
+  const remaining = stuck.length - slice.length;
+  if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0 } };
+  // Stuck rows mean the consumer lost work earlier — report it, don't just quietly fix it.
+  return {
+    ok: false,
+    summary: `re-enqueued ${slice.length} stuck recomputes received before ${cutoff}` +
+      (remaining > 0 ? ' — more remain, continuing next run' : ''),
+    detail: { enqueued: slice.length, remaining, oldest: slice[0]!.receivedAt },
   };
 }
 
