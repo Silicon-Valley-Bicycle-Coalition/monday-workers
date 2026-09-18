@@ -11,6 +11,13 @@ import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
 // recorded) and the batch raises ONE alert on the custodian alert item. Nothing is re-driven
 // from here — a dead-lettered row is a signal for a human (scripts/redrive-pending.mjs is the
 // tool once the cause is understood), not something to retry forever.
+//
+// A dead message is only evidence about the row AS OF THE MOMENT IT WAS SENT. The first deploy
+// (2026-09-18 20:38 UTC) attached this consumer to a DLQ still holding messages whose rows had
+// since been re-driven and written by hand; marking them failed downgraded 300 correct rows and
+// posted 35 alerts before delivery was paused. So: a row already 'written' at or after the
+// message was sent is left alone (stale), and a written row is never downgraded by a message
+// with no timestamp at all.
 export interface DeadLetterDeps {
   pendingStore: PendingStore;
   mondayClient: Pick<DonationRollupsMondayClient, 'createUpdate'>;
@@ -33,8 +40,15 @@ export async function processDeadLetters(
     }
     try {
       const row = await deps.pendingStore.getPending(donationItemId);
+      const sentAt = message.timestamp?.toISOString();
+      if (row?.status === 'written' && row.writtenAt !== null && (sentAt === undefined || row.writtenAt >= sentAt)) {
+        console.log(`donation-rollups dlq: stale dead letter for donation "${donationItemId}" — row written at ${row.writtenAt}, message sent ${sentAt ?? '(unknown)'}; leaving it`);
+        message.ack();
+        continue;
+      }
+      const prior = row?.error ?? '(no recorded error)';
       await deps.pendingStore.updateStatus(donationItemId, 'failed', {
-        error: `${DEAD_LETTER_PREFIX}${row?.error ?? '(no recorded error)'}`,
+        error: prior.startsWith(DEAD_LETTER_PREFIX) ? prior : `${DEAD_LETTER_PREFIX}${prior}`,
       });
       dead.push(donationItemId);
       message.ack();

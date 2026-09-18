@@ -27,7 +27,7 @@ function fakePendingStore(over: Partial<PendingStore> = {}): PendingStore {
     ...over,
   };
 }
-const message = (id: string) => ({ body: { donationItemId: id, donationBoardId: '1' }, ack: vi.fn(), retry: vi.fn() });
+const message = (id: string, timestamp?: Date) => ({ body: { donationItemId: id, donationBoardId: '1' }, ack: vi.fn(), retry: vi.fn(), timestamp });
 const deps = (over: Partial<DeadLetterDeps> = {}): DeadLetterDeps => ({
   pendingStore: fakePendingStore(), mondayClient: { createUpdate: vi.fn().mockResolvedValue(undefined) }, config,
   now: new Date('2026-09-03T20:09:00Z'), ...over,
@@ -85,5 +85,59 @@ describe('processDeadLetters', () => {
     await processDeadLetters([m2], other);
     expect(m2.retry).toHaveBeenCalledWith();
     expect(m2.ack).not.toHaveBeenCalled();
+  });
+});
+
+// Learned the hard way on the first deploy (2026-09-18 20:38 UTC): the DLQ still held messages
+// whose rows had since been re-driven and written by hand. Marking those rows failed downgraded
+// 300 correct rows and posted 35 alerts before delivery was paused. A dead message is only
+// evidence about the row as of the moment it was SENT.
+describe('processDeadLetters — stale messages', () => {
+  const writtenRow = (writtenAt: string) => ({
+    donationItemId: 'dn1', donationBoardId: '1', eventId: 'e', status: 'written' as const, ownerItemId: 'o1', ownerBoard: '2',
+    error: null, receivedAt: '2026-09-03T19:20:00Z', writtenAt,
+  });
+
+  it('a dead message sent BEFORE the row\'s last successful write is stale: acked, row untouched, no alert', async () => {
+    const d = deps({ pendingStore: fakePendingStore({ getPending: vi.fn().mockResolvedValue(writtenRow('2026-09-17T22:15:40Z')) }) });
+    const m = message('dn1', new Date('2026-09-17T21:00:00Z'));
+    await processDeadLetters([m], d);
+    expect(d.pendingStore.updateStatus).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalled();
+    expect(d.mondayClient.createUpdate).not.toHaveBeenCalled();
+  });
+
+  it('a dead message sent AFTER the row\'s last write still marks it failed — that later attempt really died', async () => {
+    const d = deps({ pendingStore: fakePendingStore({ getPending: vi.fn().mockResolvedValue(writtenRow('2026-09-17T21:00:00Z')) }) });
+    await processDeadLetters([message('dn1', new Date('2026-09-17T22:00:00Z'))], d);
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'failed', { error: 'dead-lettered after retries: (no recorded error)' });
+  });
+
+  it('never downgrades a written row when the message carries no timestamp', async () => {
+    const d = deps({ pendingStore: fakePendingStore({ getPending: vi.fn().mockResolvedValue(writtenRow('2026-09-17T21:00:00Z')) }) });
+    const m = message('dn1');
+    await processDeadLetters([m], d);
+    expect(d.pendingStore.updateStatus).not.toHaveBeenCalled();
+    expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('does not stack the prefix when the row is already dead-lettered', async () => {
+    const already = { ...writtenRow('2026-09-17T21:00:00Z'), status: 'failed' as const, error: 'dead-lettered after retries: monday API: HTTP 500' };
+    const d = deps({ pendingStore: fakePendingStore({ getPending: vi.fn().mockResolvedValue(already) }) });
+    await processDeadLetters([message('dn1', new Date('2026-09-18T20:00:00Z'))], d);
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'failed', { error: 'dead-lettered after retries: monday API: HTTP 500' });
+  });
+
+  it('the batch alert names only the rows actually marked failed', async () => {
+    const rows: Record<string, unknown> = {
+      stale: writtenRow('2026-09-17T22:15:40Z'),
+      dead: { ...writtenRow('2026-09-17T21:00:00Z'), status: 'failed', error: 'monday API: HTTP 500' },
+    };
+    const d = deps({ pendingStore: fakePendingStore({ getPending: vi.fn().mockImplementation(async (id: string) => rows[id]) }) });
+    await processDeadLetters([message('stale', new Date('2026-09-17T21:30:00Z')), message('dead', new Date('2026-09-17T21:30:00Z'))], d);
+    expect(d.mondayClient.createUpdate).toHaveBeenCalledTimes(1);
+    const body = (d.mondayClient.createUpdate as ReturnType<typeof vi.fn>).mock.calls[0]![1] as string;
+    expect(body).toContain('dead');
+    expect(body).not.toContain('stale');
   });
 });
