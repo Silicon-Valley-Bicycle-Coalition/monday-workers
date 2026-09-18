@@ -13,6 +13,7 @@ import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
 } from '../projections/giftHistory';
+import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipState,
@@ -21,7 +22,7 @@ import {
 export interface QueueMessageLike<T> {
   body: T;
   ack(): void;
-  retry(): void;
+  retry(options?: { delaySeconds?: number }): void;
 }
 
 export interface ProcessBatchDeps {
@@ -49,17 +50,39 @@ const MAX_GIFT_TERM_WRITES_PER_RECOMPUTE = 10;
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
+  // Once D1 has refused a query for the day, every later message in this batch would fail the
+  // same way after spending two Monday calls each — defer them all to the same moment instead.
+  let quotaDelaySeconds: number | null = null;
   for (const message of messages) {
     const { donationItemId, donationBoardId } = message.body;
+    if (quotaDelaySeconds !== null) {
+      message.retry({ delaySeconds: quotaDelaySeconds });
+      continue;
+    }
     try {
       await processOne(donationItemId, donationBoardId, deps);
       message.ack();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups consumer: failed to process donation "${donationItemId}": ${errMsg}`);
-      await deps.pendingStore.updateStatus(donationItemId, 'failed', { error: errMsg });
-      if (err instanceof NonRetryableError) message.ack();
-      else message.retry();
+      // This write is itself a D1 query. During a D1 outage it throws too — and until fix 4 that
+      // escaped the loop, retried the whole batch immediately, and three fast retries later
+      // every message was dead in the DLQ. It must never take the retry decision down with it.
+      try {
+        await deps.pendingStore.updateStatus(donationItemId, 'failed', { error: errMsg });
+      } catch (statusErr) {
+        console.error(`donation-rollups consumer: could not record failed status for donation "${donationItemId}": ${statusErr instanceof Error ? statusErr.message : String(statusErr)}`);
+      }
+      if (err instanceof NonRetryableError) {
+        message.ack();
+      } else if (isD1QuotaError(err)) {
+        // D1's daily limit resets at midnight UTC — the retry worth making is the one after it.
+        quotaDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
+        console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${quotaDelaySeconds}s (to midnight UTC)`);
+        message.retry({ delaySeconds: quotaDelaySeconds });
+      } else {
+        message.retry();
+      }
     }
   }
 }

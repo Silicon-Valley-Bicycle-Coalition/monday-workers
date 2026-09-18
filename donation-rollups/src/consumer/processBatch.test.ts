@@ -644,3 +644,68 @@ describe('owner recompute coalescing (fix 3)', () => {
     expect(recomputesStore.record).not.toHaveBeenCalled();
   });
 });
+
+// Fix 4 (README "operational findings, 2026-09-17"): when D1 rejects writes for the day, the
+// old catch block's own 'failed' status write threw, escaped the loop, the batch retried
+// immediately, and three fast retries later every message was dead in a consumer-less DLQ.
+describe('D1 quota outage handling (fix 4)', () => {
+  const QUOTA = new Error("D1_ERROR: Your account has exceeded D1's free tier daily row write limit. Upgrade to a paid plan or wait until tomorrow (midnight UTC) to continue.");
+  // The minute the 09-03 flood stalled — 3h51m before midnight UTC.
+  const STALL = new Date('2026-09-03T20:09:00Z');
+  const DELAY = 3 * 3600 + 51 * 60;
+
+  function base(over: { pendingStore?: PendingStore; linksStore?: DonationLinksStore; mondayClient?: DonationRollupsMondayClient } = {}) {
+    return {
+      pendingStore: over.pendingStore ?? fakePendingStore(), linksStore: over.linksStore ?? fakeLinksStore(),
+      giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(),
+      mondayClient: over.mondayClient ?? fakeMondayClient(), config, now: STALL,
+    };
+  }
+
+  it('a D1 quota error retries the message after midnight UTC instead of immediately, and does not ack', async () => {
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], base({ linksStore: fakeLinksStore({ upsertLink: vi.fn().mockRejectedValue(QUOTA) }) }));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: DELAY });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('a plain Monday error still retries immediately, with no delay', async () => {
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], base({ mondayClient: fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) }) }));
+
+    expect(message.retry).toHaveBeenCalledWith();
+  });
+
+  it('a throwing failed-status write is logged and the batch continues with the next message', async () => {
+    const pendingStore = fakePendingStore({
+      updateStatus: vi.fn().mockImplementation(async (id: string, status: string) => {
+        if (id === 'dn1' && status === 'failed') throw QUOTA;
+      }),
+    });
+    const mondayClient = fakeMondayClient({
+      changeColumnValues: vi.fn().mockRejectedValueOnce(new Error('monday API: HTTP 500')).mockResolvedValue(undefined),
+    });
+    const first = fakeMessage('dn1');
+    const second = fakeMessage('dn2');
+
+    await processRecomputeBatch([first, second], base({ pendingStore, mondayClient }));
+
+    expect(first.retry).toHaveBeenCalled();
+    expect(second.ack).toHaveBeenCalled();
+  });
+
+  it('after one quota error the rest of the batch is deferred with the same delay without calling Monday', async () => {
+    const linksStore = fakeLinksStore({ upsertLink: vi.fn().mockRejectedValue(QUOTA) });
+    const mondayClient = fakeMondayClient();
+    const messages = [fakeMessage('dn1'), fakeMessage('dn2'), fakeMessage('dn3')];
+
+    await processRecomputeBatch(messages, base({ linksStore, mondayClient }));
+
+    expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
+    for (const m of messages) {
+      expect(m.retry).toHaveBeenCalledWith({ delaySeconds: DELAY });
+      expect(m.ack).not.toHaveBeenCalled();
+    }
+  });
+});

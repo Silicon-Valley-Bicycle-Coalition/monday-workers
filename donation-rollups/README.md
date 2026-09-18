@@ -113,13 +113,17 @@ backfill) would silently lose recomputes the same way.
    so a partial failure retries in full instead of being coalesced away. A 3,700-webhook flood
    now costs ~1 recompute per owner plus two Monday reads and three small D1 ops per skipped
    message; the consumer logs each coalesced donation.
-4. **Make D1 outages retry later instead of burning the DLQ.** In the consumer's catch, wrap the
-   `failed` status write in its own try/catch (a D1 error there must not escape the batch loop),
-   and when the error text is D1's "exceeded … daily row write limit", call
-   `message.retry({ delaySeconds })` with the seconds until midnight UTC (Queues allows up to
-   12 h) so the flood drains itself the next day. Also set `max_batch_size` low enough that a full
-   batch fits the 50-subrequest budget (~3 messages at today's ~12–15 subrequests each — D1
-   queries count too) instead of the default 10.
+4. ~~**Make D1 outages retry later instead of burning the DLQ.**~~ **Done (branch
+   `fix/rollups-d1-quota-retry`):** the consumer's `failed` status write is guarded so a D1 error
+   there can no longer escape the batch loop; a D1 daily-quota error (`src/consumer/quota.ts`
+   matches D1's fixed "exceeded D1's free tier daily row read/write limit" text) retries the
+   message with `delaySeconds` to the next midnight UTC (capped at Queues' 12 h — a message
+   further out comes back once mid-way, fails without touching Monday, and defers again), and
+   once one message in a batch hits it the rest of that batch is deferred to the same moment
+   without any Monday calls. Other errors still retry immediately. `max_batch_size` is 2: D1
+   queries count against the 50-subrequest budget and a full recompute costs ~16–26, so two
+   worst-case recomputes fit and three don't (the default 10 is what produced the three
+   "Too many subrequests" rows). Raise it on Workers Paid.
 5. **Give the DLQ a consumer** (or at least a `queue()` branch keyed on `batch.queue`) that marks
    the pending row `failed` with the reason, so a dead message is visible in D1 instead of
    silently expiring. Add a custodian duty `requeue-stuck` that re-enqueues `queued` rows older
