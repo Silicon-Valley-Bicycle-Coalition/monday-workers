@@ -1,6 +1,7 @@
 # funraise-sync
 
-**Status:** Decided — Option B (full retirement). Build the direct sync.
+**Status:** Decided — Option B (full retirement). Build the direct sync. **Deployed to the CRM
+Sandbox and receiving Funraise's live webhook since 2026-09-18** — see "Deployed and verified".
 **Priority:** Blocking-adjacent — feeds ongoing donation data once Salesforce retires; the
 historical side is handled by `salesforce-import`, this Worker takes over going forward.
 **Owner:** Unassigned.
@@ -79,6 +80,20 @@ across every webhook-driven Worker in this plan.
   valid event payload (empty body or non-event shape); a valid event that happens to carry an
   `x-hook-secret` header is processed normally, so a per-delivery secret can never swallow real
   deliveries.
+
+  Registering it, as done 2026-09-18: Funraise → Settings → Webhooks, one webhook per org. The
+  card shows a **Webhook Signing Secret** (three-dot menu → Generate) — that value is *Funraise's*,
+  sent as the `x-hook-secret` header on its verify call; it is **not** the URL secret and never
+  goes into this Worker. Then Edit → Webhook Target URL (the full URL above, transaction path,
+  `?secret=` = the Worker secret) + Contact Email (delivery-failure notices after ~24 h of
+  retries) → Save. Save fires the verify call; the webhook only flips from Disabled to Enabled
+  when the Worker answers 200 with the header echoed. The first attempt stayed Disabled because
+  the signing secret had been pasted over the URL secret in the shared `.env`, the URL was built
+  from it, and the Worker answered 401 — so if it reads Disabled after Save, check which secret is
+  in the URL before anything else. The drawer's **Test** button sends a real `DONATION` delivery
+  (transaction id `-1`, supporter "Lorem Ipsum", `donor@example.com`, amount 123.12, status
+  Complete); the Worker treats it like any gift, so expect a donor and a Donations item to clean
+  up afterwards (see "Deployed and verified").
 * **Monday.com GraphQL API** — standard API token, same pattern as every other Worker here.
 
 ## Donor matching
@@ -266,7 +281,38 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
   stripped before the row reaches D1. Not stripped, flagged for a decision: `dedication.*`
   (a third party's name and email, "⚠ PII screen" in docs/03) and `comment`.
 
-## Open before first deploy
+## Deployed and verified (CRM Sandbox, 2026-09-18)
+
+Hand-deployed with `wrangler deploy` (D1 `svbc-funraise-sync`, migrations 0001–0003 applied
+remotely; queues `funraise-sync-writes` and `-dlq`; secrets `FUNRAISE_WEBHOOK_SECRET` and
+`MONDAY_API_TOKEN`), then proven three ways, each time leaving nothing behind:
+
+1. **Documented example, by hand.** The trimmed example from Funraise's webhooks article,
+   POSTed to the live route: accepted, and 12 s later the consumer had created the donor on
+   the People board (email object + Funraise Profile link) and the Donations item with amount
+   51.5, `Complete → Received`, Date 2020-09-02 from the epoch-ms `donationDate`, Fiscal Year
+   Ending 2021, Gift Type Donation, Thank You Sent, Donor link. The stored payload held no card
+   number, billing zip, or gateway response. `donation-rollups` picked the create up on its own
+   and rolled the gift onto the donor.
+2. **Webhook registration.** Funraise's verify call reached the Worker (Cloudflare invocation
+   analytics, `workersInvocationsAdaptive` by minute) and the card flipped to **Enabled** — on
+   the second attempt; see "APIs & auth" for the secret mix-up on the first.
+3. **Funraise's own Test button.** A genuine Funraise-originated `DONATION` delivery
+   (transaction id `-1`, "Lorem Ipsum", 123.12, Complete, `sentAt` = now): stored with
+   `event_id` `-1:<sentAt>`, written in 8 s, donor + Donations item created with amount 123.12,
+   Received, the day's date, Fiscal Year Ending 2027, Gift Type, Thank You Sent; the drawer
+   showed its green check; `donation-rollups` rolled it up. This is the closest thing to a real
+   gift that doesn't move money or put a fake transaction in Funraise's books.
+
+Cleanup after 1 and 3, verified each time: the two Monday items deleted (`delete_item`; Monday
+reports them `state: deleted` and keeps them in its recycle bin), the `events` row removed from
+this Worker's D1, and the gift's rows removed from `donation-rollups`' D1 (`pending_recomputes`,
+`donation_links`, `gifts`). The next real Funraise transaction flows the same way and stays.
+
+Re-verify the same three steps after the sandbox rebuild and again against production ids at
+cutover — every board and column id in `config/svbc.json` is a sandbox id.
+
+## Open
 
 1. **One webhook, transactions only.** Funraise supports a single webhook per org and it fires
    "when a Transaction is created or edited". There is no subscription, pledge, or registration
@@ -278,8 +324,9 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
    (`board_relation_mm6jbjtd` on Donations) could be linked. Decide: poll, or drop those paths.
 2. **Per-board column ids.** `entityIdColumn` and `donorLinkColumn` are one id for three boards
    whose ids differ (see "Monday targets"). Moot until item 1 gives the other boards a source.
-3. **Register the webhook at `/webhooks/funraise/transaction?secret=…`** (see "APIs & auth");
-   the other three entity paths stay routable but will never be called by Funraise.
+3. ~~Register the webhook at `/webhooks/funraise/transaction?secret=…`~~ **Done 2026-09-18**
+   (see "APIs & auth"); the other three entity paths stay routable but will never be called by
+   Funraise.
 
 ## Related, not yet in scope here
 
