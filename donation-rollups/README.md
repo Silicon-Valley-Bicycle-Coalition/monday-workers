@@ -11,8 +11,8 @@ set (`scripts/setup-owner-columns.mjs`). Webhooks drop from 18 subscriptions to 
 doesn't sign payloads); subscribe/prune via `scripts/setup-webhooks.mjs` after deploying the
 Worker with the matching `MONDAY_WEBHOOK_SECRET`. **Scoped entirely to the CRM Sandbox** —
 every board id in `config/sandbox.json` is a sandbox board,
-not a production one (`config/svbc.json` is production and holds placeholders until cutover) (production
-doesn't exist yet; real cutover is October), so nothing this Worker does can touch live donor
+not a production one (production doesn't exist yet; real cutover is October — `config/svbc.json`
+is the production placeholder file until then), so nothing this Worker does can touch live donor
 data. The era-board deployment was verified end-to-end 2026-08-25 (webhook → D1 → queue →
 consumer → Monday fetch → recompute → write-back, correct cross-board totals); re-verify the
 same flow against the v2 board after the webhook cutover.
@@ -245,7 +245,7 @@ Full background: `docs/07-migration-gotchas.md` gotcha #10, `docs/05-migration-s
 ## Data flow
 
 ```
-Monday.com (the single Donations board — config/svbc.json)
+Monday.com (the single Donations board — config/sandbox.json (or svbc.json for production))
   │  webhook, on Donation item create / column change
   ▼
 Cloudflare Worker (webhook handler)
@@ -272,7 +272,7 @@ Cloudflare Queue → consumer Worker
   │  on failure at any step, Queues retries automatically and, once exhausted, routes to
   │  a Dead Letter Queue instead of a donor's totals silently drifting out of date
   ▼
-People / People (Historical) / Organizations board (ids + column ids in config/svbc.json)
+People / People (Historical) / Organizations board (ids + column ids in config/sandbox.json (or svbc.json for production))
 ```
 
 ## Why a D1 reverse index — the sandbox test that changed the design
@@ -512,7 +512,7 @@ the same guardrail reasoning as the existing owner/board checks.
 locates its existing `Person` board_relation column (this one it never creates — it must already
 exist, and the script errors if it's missing or the wrong column type), and ensures
 `Organizational Giving` (numbers, currency) on every People board passed to it. It also reads the
-Donations board id out of `config/svbc.json` and looks up that board's `Acting for` column, so
+Donations board id out of `config/sandbox.json` (or `svbc.json` for production) and looks up that board's `Acting for` column, so
 the printed output is ready to paste straight into config — `affiliations`,
 `organizationalGivingByBoard`, and a reminder with the `actingForLink` column id.
 
@@ -584,7 +584,7 @@ fallback but show a blank Fiscal Year Ending on the board.
 
 ## Config
 
-`config/svbc.json` holds real ids verified against the CRM Sandbox v2 boards (2026-08-31), not
+`config/sandbox.json` holds real ids verified against the CRM Sandbox v2 boards (2026-08-31), not
 placeholders — re-verify against production board ids before deploying for real, since the
 sandbox gets rebuilt before cutover:
 
@@ -642,10 +642,12 @@ sandbox gets rebuilt before cutover:
 
 ## Non-destructive by design
 
-Every board id in `config/svbc.json` — the Donations board and all 3 owner boards — is a CRM
+Every board id in `config/sandbox.json` — the Donations board and all 3 owner boards — is a CRM
 **Sandbox** id (the "(sandbox v2)" set, verified directly 2026-08-31), not copied from a
-production workspace. There is no production Monday workspace with real cutover data yet (that's
-October); until there is, this Worker cannot touch live donor data no matter what triggers it.
+production workspace; `config/svbc.json` is the production placeholder file, whose ids must be
+verified against the production workspace before cutover. There is no production Monday
+workspace with real cutover data yet (that's October); until there is, this Worker cannot touch
+live donor data no matter what triggers it.
 **Before ever repointing any id in that config at a production workspace, re-verify every single
 one against production directly** (the sandbox gets rebuilt before cutover, so today's ids won't
 necessarily match) — don't assume sandbox and production share ids just because the schema matches.
@@ -660,13 +662,16 @@ boards in `config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var
 `isDeadLetterBatch` in `src/index.ts`), and secrets (`wrangler secret put … --env sandbox`);
 it shares nothing with the production-named Worker. This Worker writes only to Monday, so
 there is no outbound sink to lock — the split exists so the sandbox and production deployments
-can coexist after cutover. `config/split.test.ts` fails if any of the ~50 sandbox column ids
+can coexist after cutover. `config/split.test.ts` fails if any of the 60-odd sandbox column ids
 appears in `config/svbc.json` or if `env.sandbox` shares a resource with the top level. The
 four operator scripts that read config (`setup-webhooks.mjs`, `bootstrap-links.mjs`,
 `bootstrap-gifts-from-artifacts.mjs`, `setup-affiliation-columns.mjs`) take
 `--config config/sandbox.json`. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`; the move of the existing
 deployment onto this environment is its §9, run once from the runbook in the step 2 plan.
+`npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id` in
+`wrangler.jsonc` is replaced with the id `wrangler d1 create` prints — see the step 2 plan's
+Task 9.
 
 ## Not yet done
 
@@ -700,7 +705,7 @@ deployment onto this environment is its §9, run once from the runbook in the st
   on its own — a small annual cron sweep (recompute every owner once, first week of July) would
   close this gap if it turns out to matter in practice; docs/20's custodian duties list already
   includes it alongside the year-end archive run.
-* **Affiliation model shipped but not turned on.** `config/svbc.json`'s `affiliations` is still
+* **Affiliation model shipped but not turned on.** `config/sandbox.json`'s `affiliations` is still
   `null` — the Affiliations board and its columns haven't been provisioned in the sandbox yet.
   Run `scripts/setup-affiliation-columns.mjs`, paste its output into config, and set
   `donationRollups.donationBoards[].columns.actingForLink`; see "Affiliation model (Plan 2)"

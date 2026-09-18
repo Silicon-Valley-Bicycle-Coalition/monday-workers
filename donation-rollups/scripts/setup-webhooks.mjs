@@ -10,6 +10,10 @@
 //     --worker-url https://svbc-donation-rollups.svbc-account.workers.dev \
 //     [--config config/sandbox.json]   # which config's donationBoards to subscribe (default config/svbc.json)
 //     [--prune 111,222,333]        # delete every webhook on these board ids first
+//
+// Re-running without `--prune` leaves any existing subscription for another Worker URL in
+// place — the skip check keys on event type, not URL. Pass `--prune <boardId>` when moving
+// the webhook to a different deployment.
 
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';

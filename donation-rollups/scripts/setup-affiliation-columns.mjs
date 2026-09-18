@@ -3,8 +3,9 @@
 // that are missing) and locates its existing `Person` connect column, then ensures every
 // People board has an `Organizational Giving` column. Mirrors setup-owner-columns.mjs's shape
 // (same graphql helper, find-by-title-else-create, currency defaults) — run once per new
-// environment (sandbox rebuild, production cutover), then paste the printed JSON into
-// config/svbc.json's `affiliations` and `donationRollups.ownerColumnsByBoard[...].organizationalGiving`.
+// environment (sandbox rebuild, production cutover), then paste the printed JSON into the
+// config file's (`--config <path>`, default `config/svbc.json`) `affiliations` and
+// `donationRollups.ownerColumnsByBoard[...].organizationalGiving`.
 //
 // Usage:
 //   MONDAY_API_TOKEN=... node scripts/setup-affiliation-columns.mjs <affiliationsBoardId> <peopleBoardId> [<peopleBoardId> ...]

@@ -31,7 +31,8 @@
     // POLL_CRON and PURGE_CRON there:
     //   "0 * * * *"  hourly Recurring Gifts ← Funraise subscriptions poll (spec 2026-09-18)
     //   "0 9 * * *"  daily raw_payload retention purge — window set by
-    //                funraiseSync.rawPayloadRetentionDays in config/svbc.json
+    //                funraiseSync.rawPayloadRetentionDays in the selected config
+    //                (config/svbc.json in production, config/sandbox.json in the sandbox)
     "crons": ["0 * * * *", "0 9 * * *"]
   },
   "observability": {
@@ -43,7 +44,7 @@
   // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
   // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (MONDAY_API_TOKEN, FUNRAISE_WEBHOOK_SECRET).
+  // (MONDAY_API_TOKEN, FUNRAISE_WEBHOOK_SECRET, FUNRAISE_API_KEY for the subscriptions poll).
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
@@ -68,7 +69,8 @@
         ]
       },
       "triggers": {
-        "crons": ["0 9 * * *"]
+        // Same two jobs as production (the split test asserts they match).
+        "crons": ["0 * * * *", "0 9 * * *"]
       },
       "observability": {
         "enabled": true

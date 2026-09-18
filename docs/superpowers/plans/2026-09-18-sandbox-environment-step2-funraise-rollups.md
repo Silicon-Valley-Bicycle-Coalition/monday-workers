@@ -1591,6 +1591,10 @@ irreversible actions (the Funraise webhook URL change and the `wrangler delete` 
 production-named Workers) are human decisions and are marked. Stop and hand off at the first
 step you cannot complete.
 
+**Run Steps 1–6 in one sitting, and start after 09:00 UTC has passed for the day** so no
+custodian cron fires between the D1 snapshot and the deletes. On the day of the move both
+custodians plus the D1 import share the Free-tier 100k-row daily write cap.
+
 **Files:**
 - Modify: `funraise-sync/wrangler.jsonc` and `donation-rollups/wrangler.jsonc` (one value each: `env.sandbox.d1_databases[0].database_id`)
 
@@ -1609,7 +1613,20 @@ npx wrangler d1 create svbc-funraise-sync-sandbox
 Paste the returned id into `env.sandbox.d1_databases[0].database_id`. Then:
 
 ```bash
-npx wrangler d1 migrations apply svbc-funraise-sync-sandbox --remote --env sandbox && npx wrangler d1 export svbc-funraise-sync --remote --no-schema --output "$TMPDIR/funraise-sync-data.sql" && npx wrangler d1 execute svbc-funraise-sync-sandbox --remote --env sandbox --file "$TMPDIR/funraise-sync-data.sql" -y
+npx wrangler d1 migrations apply svbc-funraise-sync-sandbox --remote --env sandbox && npx wrangler d1 export svbc-funraise-sync --remote --no-schema --output "$TMPDIR/funraise-sync-data.sql"
+```
+
+Before executing the dump, check whether it carries `d1_migrations` rows — they would collide
+with the rows `migrations apply` just wrote and abort the import:
+
+```bash
+grep -c 'd1_migrations' "$TMPDIR/funraise-sync-data.sql"
+```
+
+If the count is non-zero, strip them first: `grep -v 'd1_migrations' "$TMPDIR/funraise-sync-data.sql" > "$TMPDIR/funraise-sync-data.filtered.sql"` and execute the filtered file instead.
+
+```bash
+npx wrangler d1 execute svbc-funraise-sync-sandbox --remote --env sandbox --file "$TMPDIR/funraise-sync-data.sql" -y
 ```
 
 From `donation-rollups/`:
@@ -1621,7 +1638,20 @@ npx wrangler d1 create svbc-donation-rollups-sandbox
 Paste the id into its `env.sandbox.d1_databases[0].database_id`. Then:
 
 ```bash
-npx wrangler d1 migrations apply svbc-donation-rollups-sandbox --remote --env sandbox && npx wrangler d1 export svbc-donation-rollups --remote --no-schema --output "$TMPDIR/donation-rollups-data.sql" && npx wrangler d1 execute svbc-donation-rollups-sandbox --remote --env sandbox --file "$TMPDIR/donation-rollups-data.sql" -y
+npx wrangler d1 migrations apply svbc-donation-rollups-sandbox --remote --env sandbox && npx wrangler d1 export svbc-donation-rollups --remote --no-schema --output "$TMPDIR/donation-rollups-data.sql"
+```
+
+Before executing the dump, check whether it carries `d1_migrations` rows — they would collide
+with the rows `migrations apply` just wrote and abort the import:
+
+```bash
+grep -c 'd1_migrations' "$TMPDIR/donation-rollups-data.sql"
+```
+
+If the count is non-zero, strip them first: `grep -v 'd1_migrations' "$TMPDIR/donation-rollups-data.sql" > "$TMPDIR/donation-rollups-data.filtered.sql"` and execute the filtered file instead.
+
+```bash
+npx wrangler d1 execute svbc-donation-rollups-sandbox --remote --env sandbox --file "$TMPDIR/donation-rollups-data.sql" -y
 ```
 
 Expected: migrations 0001–0003 and 0001–0007 applied; the data-only exports import cleanly
@@ -1638,6 +1668,11 @@ re-executing.
 Verify row counts match, for example
 `npx wrangler d1 execute svbc-donation-rollups-sandbox --remote --env sandbox --command "SELECT COUNT(*) FROM donation_links" -y`
 against the same query on `svbc-donation-rollups` (expected on the order of 37,000).
+
+The snapshot is taken now but the feeds do not move until Steps 4–5; anything that arrives in
+between exists only in the old D1. After Step 5, re-run the export/import for rows newer than
+the snapshot (or repeat the full export/import into a freshly created sandbox D1 if the volume
+is small) and re-verify the row counts **then**, not only here.
 
 - [ ] **Step 2: Queues and secrets**
 
@@ -1688,6 +1723,17 @@ two deletions, then `create_item` and `change_column_value` subscribed. Verify b
 Amount on one sandbox Donations item and watching `npx wrangler tail --env sandbox` in
 `donation-rollups/` show the webhook and, within a minute, the recompute.
 
+**Immediately after this verification, and before 09:00 UTC passes, retire the production-named
+rollups Worker** (human decision — confirm with dwk):
+
+```bash
+npx wrangler delete --name svbc-donation-rollups
+```
+
+Its daily custodian cron would otherwise keep reconciling from a D1 that stopped receiving
+gifts at this step and overwrite the sandbox Worker's correct rollups. D1 `svbc-donation-rollups`
+and the production-named queues survive the delete.
+
 - [ ] **Step 5: Repoint the Funraise webhook (human, irreversible in the sense that the old URL stops receiving)**
 
 In Funraise's webhook settings, change the URL from
@@ -1699,17 +1745,16 @@ delivery lands on the sandbox Worker and creates the donor and Donations item (R
 "Deployed and verified" step 3), and that `svbc-donation-rollups-sandbox` rolls it up. Clean
 up the test items and rows exactly as that README section describes, in the **sandbox** D1s.
 
-- [ ] **Step 6: Retire the production-named Workers (human decision)**
-
-Only after Steps 4 and 5 are verified. Confirm with dwk, then:
+Then retire the production-named funraise-sync Worker (human decision):
 
 ```bash
-npx wrangler delete --name svbc-funraise-sync && npx wrangler delete --name svbc-donation-rollups
+npx wrangler delete --name svbc-funraise-sync
 ```
 
-This removes the two Workers and their crons; D1 databases `svbc-funraise-sync` and
-`svbc-donation-rollups` and the four production-named queues stay (they are the production
-resources for cutover). Do not `wrangler d1 delete` anything.
+- [ ] **Step 6: Confirm both production-named Workers are gone** (`npx wrangler deployments
+list --name svbc-funraise-sync` and `--name svbc-donation-rollups` should report no such
+Worker) and that D1 databases `svbc-funraise-sync` and `svbc-donation-rollups` still exist
+(`npx wrangler d1 list`). Do not `wrangler d1 delete` anything.
 
 - [ ] **Step 7: Commit the provisioned ids and record the move**
 
@@ -1721,5 +1766,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
 
 Then append to both rows in the root `README.md` status table: `Moved onto the sandbox
-environment <YYYY-MM-DD>; production names retired until cutover.` and commit as
+environment <YYYY-MM-DD>; production names retired until cutover.` Also update
+`funraise-sync/README.md`'s "Deployed and verified" opening sentence and
+`donation-rollups/README.md`'s opening status paragraph to name
+`svbc-funraise-sync-sandbox` / `svbc-donation-rollups-sandbox` as the running deployments and
+to say the production names are retired until cutover. Commit all of it as
 `docs: record the funraise-sync and donation-rollups sandbox move`.

@@ -66,6 +66,20 @@ describe('config split: board and column ids', () => {
     expect(sandbox.monday.boards['donations:live']).toBe(18428131791);
     expect(sandbox.monday.boards['people-live']).toBe(18428131737);
   });
+
+  it('no sandbox column id string-appears anywhere in production', () => {
+    const ids = new Set<string>();
+    const collect = (value: unknown): void => {
+      if (typeof value === 'string' && /^[a-z_]+_mm[0-9a-z]+$/.test(value)) ids.add(value);
+      else if (value !== null && typeof value === 'object') Object.values(value as Record<string, unknown>).forEach(collect);
+    };
+    collect(sandbox.funraiseSync);
+    expect(ids.size).toBeGreaterThan(8);
+    const productionText = JSON.stringify(production);
+    for (const id of ids) {
+      expect(productionText, id).not.toContain(`"${id}"`);
+    }
+  });
 });
 
 describe('wrangler.jsonc env.sandbox', () => {

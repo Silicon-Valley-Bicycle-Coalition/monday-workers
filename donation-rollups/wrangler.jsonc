@@ -22,6 +22,10 @@
         // stamps), so the default batch of 10 is what produced the 2026-09-03 "Too many
         // subrequests" failures. Two worst-case recomputes fit; three don't. Throughput is
         // unchanged (max_concurrency is already 1). Raise this on Workers Paid (cap 1,000).
+        //
+        // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
+        // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
+        // the Free plan's 50-subrequest cap.
         "max_batch_size": 2,
         // Retries are immediate except on a D1 daily-quota error, which the consumer defers to
         // midnight UTC (capped at Queues' 12h); with midnight up to 24h away that can use two of
@@ -30,10 +34,6 @@
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
         "max_concurrency": 1,
-        // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
-        // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
-        // the Free plan's 50-subrequest cap.
-        "max_batch_size": 2,
         "dead_letter_queue": "donation-rollups-recompute-dlq"
       },
       {

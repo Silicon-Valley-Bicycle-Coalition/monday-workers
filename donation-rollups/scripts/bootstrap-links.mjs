@@ -3,11 +3,12 @@
 // The Worker maintains this reverse index incrementally as webhooks arrive, but it starts
 // empty — every Donation already on the board when this Worker goes live needs a row too,
 // or its donor's rollup silently comes back short until that specific donation happens to
-// get touched again. Reads config/svbc.json for the same donationBoards list the Worker
-// itself uses, so there's one source of truth for "which boards, which column ids."
+// get touched again. Reads the same donationBoards list the Worker itself uses (--config
+// <path>, default config/svbc.json), so there's one source of truth for "which boards, which
+// column ids."
 //
 // Usage:
-//   MONDAY_API_TOKEN=... node scripts/bootstrap-links.mjs [--out bootstrap.sql]
+//   MONDAY_API_TOKEN=... node scripts/bootstrap-links.mjs [--out bootstrap.sql] [--config config/sandbox.json]
 //   wrangler d1 execute <database-name> --remote --file=bootstrap.sql
 //
 // Deliberately writes a SQL file for `wrangler d1 execute` rather than writing to D1
