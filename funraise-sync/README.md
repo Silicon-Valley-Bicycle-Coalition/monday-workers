@@ -312,18 +312,34 @@ this Worker's D1, and the gift's rows removed from `donation-rollups`' D1 (`pend
 Re-verify the same three steps after the sandbox rebuild and again against production ids at
 cutover — every board and column id in `config/svbc.json` is a sandbox id.
 
+## Recurring gifts and registrations — decided 2026-09-18
+
+Funraise supports a single webhook per org and it fires only "when a Transaction is created or
+edited"; there is no subscription, pledge, or registration webhook. Established against the live
+API the same day (`X-Api-Key`, base `https://api.funraise.io`): every recurring installment already
+arrives as a transaction carrying `data.subscription.{id, sequence}` and
+`data.transaction.frequency`; `GET /api/v1/crm/subscription` is pollable with a working `q`
+filter (`status`, `updtime`, `order by`, exact id) and pages of 10, and returns frequency, status,
+next payment, amount and supporter; `GET /api/v1/crm/donation` ignores `q`; and there is **no
+registration resource at all** (the Fundraising Event group has only create / update /
+completeAuctionItem / delete). SVBC's events run on Eventbrite and the plan already assigns
+Event Registrations to an Eventbrite-fed Worker.
+
+**Decision (DWK, 2026-09-18):** keep the Recurring Gifts board and feed it by polling
+subscriptions on an hourly cron inside this Worker, link each webhook installment to its
+Recurring Gift item, and **drop the registration path** along with the never-called subscription
+and pledge routes. A paid Funraise ticket still lands on Donations via the webhook and gets its
+own Gift Type so it never counts toward membership. Full design, mapping, config, budget and
+tests: `docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.md`. Until that
+ships, the extra routes stay routable but unused, and `columnMap.recurringGift` /
+`columnMap.registration` are dead config.
+
 ## Open
 
-1. **One webhook, transactions only.** Funraise supports a single webhook per org and it fires
-   "when a Transaction is created or edited". There is no subscription, pledge, or registration
-   webhook, so the `/webhooks/funraise/subscription|pledge|registration` routes, the
-   `recurringGift` and `registration` column maps, and the Recurring Gifts / Event Registrations
-   board targets have nothing to receive unless those come from polling the REST API instead.
-   A recurring payment does arrive as a transaction carrying `data.subscription.id` and
-   `data.subscription.sequence`, which is how the Recurring Gift connect column
-   (`board_relation_mm6jbjtd` on Donations) could be linked. Decide: poll, or drop those paths.
-2. **Per-board column ids.** `entityIdColumn` and `donorLinkColumn` are one id for three boards
-   whose ids differ (see "Monday targets"). Moot until item 1 gives the other boards a source.
+1. ~~One webhook, transactions only — poll or drop?~~ **Decided 2026-09-18**, above.
+2. ~~Per-board column ids.~~ Dissolved by the same decision: once the registration and
+   subscription routes are gone the webhook consumer writes only the Donations board, and the
+   poller carries its own column block.
 3. ~~Register the webhook at `/webhooks/funraise/transaction?secret=…`~~ **Done 2026-09-18**
    (see "APIs & auth"); the other three entity paths stay routable but will never be called by
    Funraise.
