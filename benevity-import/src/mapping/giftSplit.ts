@@ -32,7 +32,10 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
     [cols.amount]: amount,
     [cols.date]: { date: row.donationDate },
     [cols.disbursementDate]: { date: disbursementPeriodEnding },
-    [cols.fiscalYearEnding]: { date: fyEnding },
+    // Fiscal Year Ending and Gift Type are TEXT columns on the Donations board (same as
+    // funraise-sync and salesforce-import write them), so they take plain strings — a `{date}`
+    // or `{label}` object here is what Monday rejects as "invalid value" for the column.
+    [cols.fiscalYearEnding]: fyEnding,
     [cols.status]: { label: 'Received' },
     [cols.anonymousDonor]: { checked: personItemId ? 'false' : 'true' },
     [cols.transactionId]: transactionId,
@@ -47,7 +50,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
       itemName: `${donorLabel} - Donation ${row.donationDate} (Benevity)`,
       columnValues: {
         ...baseColumns(row.totalDonationToBeAcknowledged, row.transactionId),
-        [cols.giftType]: { label: 'Donation' },
+        [cols.giftType]: 'Donation',
       },
     });
   }
@@ -58,7 +61,7 @@ export function splitRowIntoGifts(ctx: GiftContext, config: BenevityImportConfig
       itemName: `${row.company} - Employer Matching ${donorLabel} ${row.donationDate}`,
       columnValues: {
         ...baseColumns(row.matchAmount, `${row.transactionId}-match`),
-        [cols.giftType]: { label: 'Matching Donation' },
+        [cols.giftType]: 'Matching Donation',
         [cols.matchedBy]: { item_ids: [Number(organizationItemId)] },
       },
     });
