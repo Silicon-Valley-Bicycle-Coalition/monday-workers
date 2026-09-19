@@ -1,0 +1,40 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "donorsBoardId": 18428131737,
+    "campaignsBoardId": 18431818836,
+    "columns": {
+      "membershipStatus": "color_mm6jbkns",
+      "membershipTier": "color_mm6jhs7g",
+      "memberSince": "date_mm6jv5gt",
+      "memberUntil": "date_mm6jq0va",
+      "addr1": "text_mm6j66ah",
+      "city": "text_mm6jbmkr",
+      "state": "REPLACE_WITH_COLUMN_ID",
+      "zip": "text_mm6jrhv7",
+      "email": "email_mm6j5e9q",
+      "totalGiven": "numeric_mm6j7y8j",
+      "mailchimpCampaigns": "board_relation_mm7bkcrm"
+    }
+  },
+  "mailchimp": {
+    "apiBaseUrl": "https://REPLACE_WITH_DC.api.mailchimp.com/3.0",
+    "audienceId": "REPLACE_WITH_SANDBOX_AUDIENCE_ID",
+    "mergeFields": {
+      "memberSince": "MEMBERSINCE",
+      "memberUntil": "MEMBERUNTIL",
+      "membershipTier": "MTIER",
+      "membershipStatus": "MSTATUS",
+      "address": "ADDRESS",
+      "totalGiven": "TOTALGIVE"
+    },
+    "tags": {
+      "activeMember": "active-member",
+      "lapsedMember": "lapsed-member",
+      "lifetimeMember": "lifetime-member",
+      "hasDonated": "has-donated"
+    }
+  },
+  "lifetimeTierValue": "Lifetime",
+  "activeStatusValue": "Active"
+}
