@@ -16,6 +16,7 @@ import type { QueueMessage, QuickbooksSyncConfig } from './types';
 
 const config: QuickbooksSyncConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', boards: { customers: 789, invoices: 456, products: 123 } },
+  quickbooks: { apiBaseUrl: 'https://quickbooks.api.intuit.com/v3/company' },
   quickbooksSync: {
     columnMap: {
       customer: { DisplayName: 'text_col', 'PrimaryEmailAddr.Address': 'email_col' },

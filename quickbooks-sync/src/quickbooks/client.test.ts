@@ -34,7 +34,7 @@ describe('HttpQuickBooksClient', () => {
   it('fetches an entity using a cached, unexpired access token', async () => {
     const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
     const fetchMock = mockFetchSequence([{ ok: true, json: { Customer: { Id: '1', DisplayName: 'Acme' } } }]);
-    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret');
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
 
     const result = await client.getEntity('customer', '1');
 
@@ -47,7 +47,7 @@ describe('HttpQuickBooksClient', () => {
   it('fetches an invoice using the "Item" path segment for a product', async () => {
     const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
     const fetchMock = mockFetchSequence([{ ok: true, json: { Item: { Id: '5', Name: 'Widget' } } }]);
-    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret');
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
 
     const result = await client.getEntity('product', '5');
 
@@ -62,7 +62,7 @@ describe('HttpQuickBooksClient', () => {
       { ok: true, json: { access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 3600 } },
       { ok: true, json: { Customer: { Id: '1' } } },
     ]);
-    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret');
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
 
     const result = await client.getEntity('customer', '1');
 
@@ -82,14 +82,14 @@ describe('HttpQuickBooksClient', () => {
 
   it('throws when no tokens have been stored yet', async () => {
     const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(null) });
-    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret');
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
     await expect(client.getEntity('customer', '1')).rejects.toThrow(/no OAuth tokens stored/);
   });
 
   it('creates a customer', async () => {
     const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
     const fetchMock = mockFetchSequence([{ ok: true, json: { Customer: { Id: '99' } } }]);
-    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret');
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
 
     const result = await client.createCustomer({ DisplayName: 'New Co' });
 
@@ -104,7 +104,17 @@ describe('HttpQuickBooksClient', () => {
   it('throws on a non-OK API response', async () => {
     const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
     mockFetchSequence([{ ok: false, status: 500, json: {} }]);
-    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret');
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
     await expect(client.getEntity('invoice', '1')).rejects.toThrow(/HTTP 500/);
+  });
+
+  it('builds entity URLs from the configured API base, so the sandbox host is a config change', async () => {
+    const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
+    const fetchMock = mockFetchSequence([{ ok: true, json: { Customer: { Id: '1' } } }]);
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://sandbox-quickbooks.api.intuit.com/v3/company');
+
+    await client.getEntity('customer', '1');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://sandbox-quickbooks.api.intuit.com/v3/company/realm-1/customer/1');
   });
 });

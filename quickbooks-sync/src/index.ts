@@ -29,7 +29,12 @@ export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const mapStore = new D1MapStore(env.DB);
     const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
-    const quickBooksClient = new HttpQuickBooksClient(new D1TokenStore(env.DB), env.QB_CLIENT_ID, env.QB_CLIENT_SECRET);
+    const quickBooksClient = new HttpQuickBooksClient(
+      new D1TokenStore(env.DB),
+      env.QB_CLIENT_ID,
+      env.QB_CLIENT_SECRET,
+      config.quickbooks.apiBaseUrl
+    );
     const queue = toQueueLike(env.SYNC_QUEUE);
 
     const app = new Hono();
@@ -62,7 +67,12 @@ export default {
       mondayEventStore: new D1MondayEventStore(env.DB),
       mapStore: new D1MapStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
-      quickBooksClient: new HttpQuickBooksClient(new D1TokenStore(env.DB), env.QB_CLIENT_ID, env.QB_CLIENT_SECRET),
+      quickBooksClient: new HttpQuickBooksClient(
+        new D1TokenStore(env.DB),
+        env.QB_CLIENT_ID,
+        env.QB_CLIENT_SECRET,
+        config.quickbooks.apiBaseUrl
+      ),
       config,
     });
   },

@@ -9,6 +9,7 @@ import type { EntityType, MapEntry, QbEventRow, MondayEventRow, QueueMessage, Qu
 
 const config: QuickbooksSyncConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', boards: { customers: 111, invoices: 222, products: 333 } },
+  quickbooks: { apiBaseUrl: 'https://quickbooks.api.intuit.com/v3/company' },
   quickbooksSync: {
     columnMap: {
       customer: { DisplayName: 'text_col' },

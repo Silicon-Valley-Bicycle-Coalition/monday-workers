@@ -42,6 +42,12 @@ export interface QuickbooksSyncConfig {
     apiUrl: string;
     boards: MondayBoards;
   };
+  quickbooks: {
+    // QuickBooks Online Accounting API base (…/v3/company). Production is
+    // https://quickbooks.api.intuit.com/v3/company; the sandbox environment points at Intuit's
+    // sandbox host so a sandbox deploy can never create a Customer in the real company.
+    apiBaseUrl: string;
+  };
   quickbooksSync: {
     columnMap: {
       customer: Record<string, string>;
