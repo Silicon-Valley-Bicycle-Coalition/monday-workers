@@ -103,7 +103,7 @@ access is the CRM Sandbox workspace, and the snapshot is the sandbox and nothing
 Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENVIRONMENT` var,
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
-Own D1, same daily cron, no public surface. Secrets exist twice (`wrangler secret put … --env
+Own D1, same daily cron, no public surface. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
 sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder, the
 sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
 is replaced with the id `wrangler d1 create` prints. Design:

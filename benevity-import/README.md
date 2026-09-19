@@ -249,7 +249,7 @@ never a staff member's personal token.
 against the CRM Sandbox boards in `config/sandbox.json`, chosen at request time by the
 `ENVIRONMENT` var (`src/environment.ts`); `config/svbc.json` is production and holds
 placeholders until cutover. Own D1, queue (`benevity-import-writes-sandbox` and its `-dlq`), cron,
-and secrets (`wrangler secret put … --env sandbox`). This Worker writes only to Monday, so the
+and secrets (`wrangler secret put … --env sandbox`). Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. This Worker writes only to Monday, so the
 split exists so the two deployments can coexist. `config/split.test.ts` fails if any of the
 sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board webhook must point at
 the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") with the sandbox

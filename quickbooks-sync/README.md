@@ -70,7 +70,7 @@ config for exactly this. A sandbox company is reachable only with the app's *dev
 so `QB_CLIENT_ID`/`QB_CLIENT_SECRET` and the seeded token pair are different secrets per
 environment (`wrangler secret put … --env sandbox`), and a production key presented to the sandbox
 host fails authentication. `config/split.test.ts` fails if the two configs ever share the host.
-Own D1 and queue (`quickbooks-sync-writes-sandbox` and its `-dlq`). Monday board ids are `null`
+Own D1 and queue (`quickbooks-sync-writes-sandbox` and its `-dlq`). Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Monday board ids are `null`
 in both configs until the Customers/Invoices/Products boards exist. Staff prerequisites (the step 3
 plan's Task 15): an Intuit sandbox company, development keys, a token pair seeded via the OAuth
 Playground, and a webhook subscription. `npm run deploy:sandbox` fails until

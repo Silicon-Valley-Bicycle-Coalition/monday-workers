@@ -95,7 +95,7 @@ Three independent flows — see the design doc for full sequence diagrams:
 against the CRM Sandbox People board and a **sandbox Mailchimp audience**, from
 `config/sandbox.json` (chosen at request time by the `ENVIRONMENT` var — `src/environment.ts`).
 Its own D1, queues (`mailchimp-sync-outbound-sandbox`, `mailchimp-sync-inbound-sandbox`, each
-with a `-dlq`), and secrets. The rule for this Worker: the sandbox may upsert contacts and
+with a `-dlq`), and secrets. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. The rule for this Worker: the sandbox may upsert contacts and
 reconcile interests only in the sandbox audience — `config/split.test.ts` fails if the two
 configs ever share `mailchimp.audienceId`, and the Mailchimp API key cannot enforce it (keys
 are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board gained a `State`

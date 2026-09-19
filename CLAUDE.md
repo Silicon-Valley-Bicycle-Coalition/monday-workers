@@ -89,6 +89,7 @@ npm run typecheck           # tsc --noEmit
 npm run dev                 # wrangler dev — local Worker + D1 + queue simulation
 npm run deploy               # wrangler deploy
 npm run deploy:sandbox       # wrangler deploy --env sandbox — every migration Worker has an env.sandbox block
+npm run dev:sandbox          # wrangler dev --env sandbox — local dev against the sandbox config; plain `npm run dev` is production and writes to production sinks once .dev.vars holds real secrets
 ```
 
 `salesforce-import` is a one-time batch CLI, not a deployed Worker, so it has no `dev`/`deploy`
