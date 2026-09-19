@@ -8,5 +8,6 @@ declare namespace Cloudflare {
     QB_WEBHOOK_VERIFIER_TOKEN: string;
     MONDAY_WEBHOOK_SECRET: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
+    ENVIRONMENT?: string;
   }
 }
