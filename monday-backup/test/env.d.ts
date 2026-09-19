@@ -5,6 +5,7 @@ declare namespace Cloudflare {
     GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
     GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
     SLACK_WEBHOOK_URL: string;
+    ENVIRONMENT?: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
   }
 }
