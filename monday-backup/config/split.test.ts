@@ -36,6 +36,12 @@ describe('config split: the Drive sink', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
   });
+
+  it('the sandbox config scopes to the CRM Sandbox workspace only; production names none', () => {
+    // Belt-and-braces alongside the workspace-scoped sandbox token (design doc §4).
+    expect((sandbox as Json).workspaceIds).toEqual(['17141226']);
+    expect((production as Json).workspaceIds).toBeUndefined();
+  });
 });
 
 describe('wrangler.jsonc env.sandbox', () => {

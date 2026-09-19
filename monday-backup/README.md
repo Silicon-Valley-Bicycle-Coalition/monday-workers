@@ -109,6 +109,14 @@ sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_data
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+The sandbox token scoped to the CRM Sandbox workspace (design doc §4) is the primary guard
+against a sandbox run touching production boards or docs. `config/backup.sandbox.json` also sets
+`workspaceIds: ["17141226"]`, a config-level belt-and-braces check: `runBackup` skips any board
+or doc whose `workspaceId` isn't in the list, so a token that somehow gained broader access still
+wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — absent or empty (as
+in `config/backup.json`) means no filter, today's "snapshot everything the token can see"
+behaviour.
+
 ## Retention
 
 SVBC has confirmed ample spare Drive storage, so the default is **keep every dated snapshot

@@ -215,7 +215,12 @@ fails authentication; that is the platform-side guard here.
 `GOOGLE_SERVICE_ACCOUNT_*` secrets are a service account shared only into that folder;
 `SLACK_WEBHOOK_URL` in the sandbox posts to a `#crm-sandbox` channel. Snapshot contents are
 real donor data either way — that is acceptable because the destination is staff-only Drive,
-the same trust boundary as the sandbox workspace itself.
+the same trust boundary as the sandbox workspace itself. `config/backup.sandbox.json` also sets
+`workspaceIds: ["17141226"]` (the CRM Sandbox workspace), an optional config-level scope guard
+that `runBackup` applies to both boards and docs, skipping anything whose `workspaceId` isn't
+listed; `config/backup.json` leaves it unset, preserving today's "snapshot everything the token
+can see" behaviour. This is belt-and-braces on top of the §4 workspace-scoped token, which
+remains the primary guard — added as a follow-up from the step 3 final review (2026-09-18).
 
 **Inbound-only Workers** (`funraise-sync`, `benevity-import`, `donation-rollups`) get §1 and §2
 and nothing else.

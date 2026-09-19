@@ -47,12 +47,12 @@ function fakeRunStore(): SnapshotRunStore & { finishes: RunResult[]; failures: s
 
 const config: BackupConfig = { destinationParentFolderId: 'parent-1', excludeBoardIds: [] };
 
-function board(id: string, name = `Board ${id}`): BoardSummary {
-  return { id, name, workspaceId: 'ws-1' };
+function board(id: string, name = `Board ${id}`, workspaceId: string | null = 'ws-1'): BoardSummary {
+  return { id, name, workspaceId };
 }
 
-function doc(id: string, name = `Doc ${id}`): DocSummary {
-  return { id, name, workspaceId: 'ws-1', url: null };
+function doc(id: string, name = `Doc ${id}`, workspaceId: string | null = 'ws-1'): DocSummary {
+  return { id, name, workspaceId, url: null };
 }
 
 afterEach(() => {
@@ -113,6 +113,87 @@ describe('runBackup', () => {
 
     const filenames = drive.uploads.map((u) => u.filename);
     expect(filenames).toEqual(['board-1.json', 'manifest.json']);
+  });
+
+  it('skips boards outside config.workspaceIds when set', async () => {
+    const monday = fakeMonday({
+      listBoards: async () => [board('1', 'Board 1', 'ws-1'), board('2', 'Board 2', 'ws-2')],
+    });
+    const drive = fakeDrive();
+    const runStore = fakeRunStore();
+
+    await runBackup({
+      monday,
+      drive,
+      runStore,
+      config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'] },
+      slackWebhookUrl: '',
+      now: () => new Date('2026-08-25T09:00:00.000Z'),
+    });
+
+    const filenames = drive.uploads.map((u) => u.filename);
+    expect(filenames).toEqual(['board-1.json', 'manifest.json']); // board 2 (ws-2) filtered out
+  });
+
+  it('skips boards with a null workspaceId when config.workspaceIds is set', async () => {
+    const monday = fakeMonday({
+      listBoards: async () => [board('1', 'Board 1', 'ws-1'), board('2', 'Board 2', null)],
+    });
+    const drive = fakeDrive();
+    const runStore = fakeRunStore();
+
+    await runBackup({
+      monday,
+      drive,
+      runStore,
+      config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'] },
+      slackWebhookUrl: '',
+      now: () => new Date('2026-08-25T09:00:00.000Z'),
+    });
+
+    const filenames = drive.uploads.map((u) => u.filename);
+    expect(filenames).toEqual(['board-1.json', 'manifest.json']);
+  });
+
+  it('skips docs outside config.workspaceIds when set', async () => {
+    const monday = fakeMonday({
+      listDocs: async () => [doc('d1', 'Doc 1', 'ws-1'), doc('d2', 'Doc 2', 'ws-2')],
+    });
+    const drive = fakeDrive();
+    const runStore = fakeRunStore();
+
+    await runBackup({
+      monday,
+      drive,
+      runStore,
+      config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'] },
+      slackWebhookUrl: '',
+      now: () => new Date('2026-08-25T09:00:00.000Z'),
+    });
+
+    const filenames = drive.uploads.map((u) => u.filename);
+    expect(filenames).toEqual(['doc-d1.json', 'manifest.json']); // doc d2 (ws-2) filtered out
+  });
+
+  it('applies no workspace filter when config.workspaceIds is absent or empty', async () => {
+    const monday = fakeMonday({
+      listBoards: async () => [board('1', 'Board 1', 'ws-1'), board('2', 'Board 2', 'ws-2')],
+      listDocs: async () => [doc('d1', 'Doc 1', 'ws-1'), doc('d2', 'Doc 2', null)],
+    });
+    const drive = fakeDrive();
+    const runStore = fakeRunStore();
+
+    await runBackup({
+      monday,
+      drive,
+      runStore,
+      config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: [] },
+      slackWebhookUrl: '',
+      now: () => new Date('2026-08-25T09:00:00.000Z'),
+    });
+
+    const filenames = drive.uploads.map((u) => u.filename);
+    expect(filenames).toEqual(['board-1.json', 'board-2.json', 'doc-d1.json', 'doc-d2.json', 'manifest.json']);
   });
 
   it('records a board failure in the manifest, continues, and alerts on any partial run', async () => {
