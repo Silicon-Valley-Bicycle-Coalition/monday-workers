@@ -95,6 +95,20 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   otherwise, budget for paginating the snapshot across invocations rather than assuming one
   run covers every board.
 
+## Sandbox environment — inbound only, no outbound data
+
+`npm run deploy:sandbox` deploys `svbc-monday-backup-sandbox` (`wrangler.jsonc` `env.sandbox`),
+which snapshots every board its **sandbox token** can see — mint it from a user whose only
+access is the CRM Sandbox workspace, and the snapshot is the sandbox and nothing else — into the
+Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENVIRONMENT` var,
+`src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
+sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
+Own D1, same daily cron, no public surface. Secrets exist twice (`wrangler secret put … --env
+sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder, the
+sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
+is replaced with the id `wrangler d1 create` prints. Design:
+`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
+
 ## Retention
 
 SVBC has confirmed ample spare Drive storage, so the default is **keep every dated snapshot

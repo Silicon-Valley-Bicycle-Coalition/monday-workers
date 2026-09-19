@@ -1,7 +1,7 @@
 # Sandbox environment — inbound only, no outbound data — Design
 
 **Date:** 2026-09-18
-**Status:** Approved. Rollout steps 1 (`donor-portal`) and 2 (`funraise-sync`, `donation-rollups`) implemented on `feat/sandbox-environment` / `feat/sandbox-environment-step2`, 2026-09-18; step 3 pending.
+**Status:** Approved and implemented — rollout steps 1–3 landed 2026-09-18 (donor-portal; funraise-sync and donation-rollups; mailchimp-sync, quickbooks-sync, monday-backup, benevity-import). Live provisioning per Worker follows each step's plan runbook.
 **Workers:** every deployed Worker in this repo except `svbc-calendars` (not migration-related,
 no donor data). Outbound sinks change in `donor-portal`, `mailchimp-sync`, `quickbooks-sync`,
 `monday-backup`; the environment split alone applies to `funraise-sync`, `donation-rollups`,
@@ -195,10 +195,13 @@ Interest Category as production (README "Prerequisites"), and its audience webho
 the sandbox Worker with the "API" event source unchecked, for the same feedback-loop reason as
 production. `MAILCHIMP_API_KEY` may be the same key in both environments — Mailchimp keys are
 account-scoped — which is why the repo test in §5, not the secret, is what keeps the sandbox
-off the production audience.
+off the production audience. The sandbox also needs its own "Mailchimp Campaigns (sandbox)"
+board and a People connect column pointed at it — created 2026-09-18 (step 3 plan, Task 2).
 
 **`quickbooks-sync` — host into config, separate app.** `QB_API_BASE` moves from a constant in
-`src/quickbooks/client.ts` to `config.quickbooks.apiBaseUrl`, validated as a URL.
+`src/quickbooks/client.ts` to `config.quickbooks.apiBaseUrl`, validated as a URL. The client takes
+the base as a constructor argument (`HttpQuickBooksClient(tokenStore, clientId, clientSecret,
+apiBaseUrl)`).
 `config/svbc.json` carries `https://quickbooks.api.intuit.com/v3/company`;
 `config/sandbox.json` carries `https://sandbox-quickbooks.api.intuit.com/v3/company`. The
 OAuth token endpoint is the same for both. Intuit sandbox companies are only reachable with an

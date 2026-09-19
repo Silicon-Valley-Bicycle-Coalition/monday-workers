@@ -227,7 +227,8 @@ email, company, amount, and date only.
 
 ## Monday targets
 
-All ids in `config/svbc.json`, validated at startup, none hardcoded:
+All ids in `config/sandbox.json` (the CRM Sandbox) or `config/svbc.json` (production,
+placeholders until cutover), validated at first request, none hardcoded:
 
 | Board / column | Purpose |
 |---|---|
@@ -241,6 +242,20 @@ All ids in `config/svbc.json`, validated at startup, none hardcoded:
 Token: a dedicated staff-facing integration user with access to exactly these boards (see the
 least-privilege note in `../README.md`); the same user `funraise-sync` writes as is acceptable,
 never a staff member's personal token.
+
+## Sandbox environment — inbound only, no outbound data
+
+`npm run deploy:sandbox` deploys `svbc-benevity-import-sandbox` (`wrangler.jsonc` `env.sandbox`)
+against the CRM Sandbox boards in `config/sandbox.json`, chosen at request time by the
+`ENVIRONMENT` var (`src/environment.ts`); `config/svbc.json` is production and holds
+placeholders until cutover. Own D1, queue (`benevity-import-writes-sandbox` and its `-dlq`), cron,
+and secrets (`wrangler secret put … --env sandbox`). This Worker writes only to Monday, so the
+split exists so the two deployments can coexist. `config/split.test.ts` fails if any of the
+sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board webhook must point at
+the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") with the sandbox
+`BENEVITY_WEBHOOK_SECRET`. `npm run deploy:sandbox` fails until
+`env.sandbox.d1_databases[0].database_id` is replaced with the id `wrangler d1 create` prints.
+Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 ## Related changes elsewhere
 
