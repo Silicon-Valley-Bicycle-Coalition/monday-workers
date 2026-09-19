@@ -20,7 +20,7 @@ const get = (obj: unknown, path: string): unknown =>
 const wrangler = parseJsonc(wranglerText) as Json;
 const sandboxEnv = get(wrangler, 'env.sandbox') as Json;
 
-const BOARD_KEYS = ['donations:live', 'recurring-gifts', 'event-registrations', 'people-live'];
+const BOARD_KEYS = ['donations:live', 'recurring-gifts', 'people-live'];
 const COLUMN_KEYS = [
   'funraiseSync.thankYouSentColumn',
   'funraiseSync.giftTypeColumn',
@@ -48,12 +48,11 @@ describe('config split: board and column ids', () => {
   });
 
   it('no columnMap id is shared between sandbox and production', () => {
-    for (const entity of ['transaction', 'recurringGift', 'registration'] as const) {
-      const sb = sandbox.funraiseSync.columnMap[entity] as Record<string, string>;
-      const prod = production.funraiseSync.columnMap[entity] as Record<string, string>;
-      for (const [field, id] of Object.entries(sb)) {
-        expect(prod[field], `columnMap.${entity}.${field}`).not.toBe(id);
-      }
+    // columnMap is a flat Funraise-field-path → column-id map since 2026-09-18 (one entity type).
+    const sb = sandbox.funraiseSync.columnMap as Record<string, string>;
+    const prod = production.funraiseSync.columnMap as Record<string, string>;
+    for (const [field, id] of Object.entries(sb)) {
+      expect(prod[field], `columnMap.${field}`).not.toBe(id);
     }
   });
 
