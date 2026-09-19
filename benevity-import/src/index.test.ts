@@ -25,4 +25,10 @@ describe('worker entry point', () => {
       worker.scheduled({ scheduledTime: Date.now(), cron: '15 9 * * *' } as ScheduledController, { ...env, ENVIRONMENT: 'sandbox' } as unknown as import('./types').Env)
     ).resolves.toBeUndefined();
   });
+
+  it('refuses an unknown ENVIRONMENT value before routing a request, too', () => {
+    expect(() =>
+      worker.fetch(new Request('https://worker.example/health'), { ...env, ENVIRONMENT: 'staging' } as unknown as import('./types').Env, { waitUntil() {}, passThroughOnException() {} } as unknown as ExecutionContext)
+    ).toThrow('ENVIRONMENT');
+  });
 });

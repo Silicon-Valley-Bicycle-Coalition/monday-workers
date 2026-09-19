@@ -1,9 +1,9 @@
 # benevity-import
 
-**Status:** Built (`feat/benevity-import`) — not deployed; needs D1 provisioning, real Monday
-board/column ids (`config/svbc.json`'s `REPLACE_*` placeholders), the two `salesforce-import`
-Donations-board columns it depends on (see Related changes elsewhere), and Monday webhook +
-integration-user token setup.
+**Status:** Built (`feat/benevity-import`) — not deployed; production D1 provisioned and sandbox
+board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover,
+the two `salesforce-import` Donations-board columns it depends on (see Related changes
+elsewhere), and Monday webhook + integration-user token setup.
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.

@@ -23,10 +23,18 @@ describe('config split: the QuickBooks sink', () => {
     expect(production.quickbooks.apiBaseUrl).toBe('https://quickbooks.api.intuit.com/v3/company');
   });
 
-  it('everything else is identical — the sink is the only difference until Monday boards exist', () => {
-    const strip = (c: unknown) => JSON.stringify({ ...(c as Json), quickbooks: undefined });
-    expect(strip(sandbox)).toBe(strip(production));
-    expect(production.monday.boards).toEqual({ customers: null, invoices: null, products: null });
+  it('Monday board ids: sandbox is real or null, and never equal to a real production id', () => {
+    for (const key of ['customers', 'invoices', 'products'] as const) {
+      const sb = sandbox.monday.boards[key];
+      const prod = production.monday.boards[key];
+      expect(sb === null || (typeof sb === 'number' && sb > 0)).toBe(true);
+      expect(prod === null || prod !== sb).toBe(true);
+    }
+  });
+
+  it('the column map and item-name fields are the same in both — they are shapes, not ids, until boards exist', () => {
+    expect(sandbox.quickbooksSync).toEqual(production.quickbooksSync);
+    expect(sandbox.monday.apiUrl).toBe(production.monday.apiUrl);
   });
 
   it('both shipped configs validate', () => {

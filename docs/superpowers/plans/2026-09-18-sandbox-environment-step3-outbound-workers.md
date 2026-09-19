@@ -1638,7 +1638,7 @@ placeholders until cutover. Own D1, queue (`benevity-import-writes-sandbox` and 
 and secrets (`wrangler secret put … --env sandbox`). This Worker writes only to Monday, so the
 split exists so the two deployments can coexist. `config/split.test.ts` fails if any of the
 sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board webhook must point at
-the sandbox Worker's `/webhooks/monday/uploads` route (see "Data flow") with the sandbox
+the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") with the sandbox
 `BENEVITY_WEBHOOK_SECRET`. `npm run deploy:sandbox` fails until
 `env.sandbox.d1_databases[0].database_id` is replaced with the id `wrangler d1 create` prints.
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
@@ -1649,7 +1649,7 @@ validated at startup, none hardcoded:" to "All ids in `config/sandbox.json` (the
 `config/svbc.json` (production, placeholders until cutover), validated at first request, none
 hardcoded:". Then `grep -n 'svbc.json' benevity-import/README.md` and fix any other hit that
 describes the file as holding sandbox ids. (If the Data flow section names the webhook route
-differently from `/webhooks/monday/uploads`, use the route the code actually mounts — check
+differently from `/webhooks/monday/benevity-upload`, use the route the code actually mounts — check
 `src/webhook/route.ts` — in the inserted text.)
 
 - [ ] **Step 2: Root `README.md`.** Append to each Status cell (keep each row on one line):
@@ -1698,16 +1698,23 @@ Cloudflare login is a human action; stop and hand off at the first one you canno
   `/webhooks/mailchimp/audience?secret=…` with "API" events unchecked.
 - `quickbooks-sync`: an Intuit sandbox company under SVBC's developer account, the app's
   development keys, a token pair seeded via the OAuth Playground into the sandbox D1 (same manual
-  step as production), and a webhook subscription to the sandbox Worker.
+  step as production), and a webhook subscription to the sandbox Worker's `/webhooks/quickbooks`
+  route.
 - `monday-backup`: a "CRM Sandbox backups" Drive folder shared with a service account; its id into
   `config/backup.sandbox.json`; a `#crm-sandbox` Slack incoming webhook.
 - All four: the shared sandbox Monday integration user (workspace `17141226` only, member seat)
   and its token.
 
+**benevity-import first:** its production D1 already exists (`wrangler.jsonc` carries the real id,
+provisioned 2026-09-18) and its README status was stale. Run `npx wrangler deployments list --name
+svbc-benevity-import`; if a deployment exists, do not provision a plain sandbox first deploy —
+follow the design doc's §9 move (as step 2 did for funraise-sync and donation-rollups). Do not run
+`wrangler d1 create svbc-benevity-import`; only the sandbox database is new.
+
 **Cloudflare, per Worker, from its directory:**
 
 ```bash
-npx wrangler d1 create svbc-<worker>-sandbox      # paste the id into env.sandbox.d1_databases[0].database_id
+npx wrangler d1 create svbc-<worker>-sandbox      # paste the id into env.sandbox.d1_databases[0].database_id — the sandbox database only — production D1s that already exist (benevity-import) are not recreated
 npx wrangler d1 migrations apply svbc-<worker>-sandbox --remote --env sandbox
 npx wrangler queues create <queue>-sandbox && npx wrangler queues create <queue>-sandbox-dlq   # each producer queue (mailchimp has two)
 npx wrangler secret put <NAME> --env sandbox      # each secret listed in that Worker's env.sandbox comment; the operator types the values
@@ -1719,16 +1726,16 @@ sink ids once staff supply them) as `chore: point the step 3 Workers' env.sandbo
 
 **Register the Monday webhooks** at the sandbox URLs: `mailchimp-sync` on the People board
 (`create_item` + `change_column_value`, `/webhooks/monday/donors?secret=…`), `benevity-import` on
-the Benevity Uploads board (`18431270204`, `/webhooks/monday/uploads?secret=…` — confirm the route in its
+the Benevity Uploads board (`18431270204`, `/webhooks/monday/benevity-upload?secret=…` — confirm the route in its
 README), `quickbooks-sync` only once its Monday boards exist.
 
 **Verify:** `mailchimp-sync` — change Membership Status on one sandbox People item and confirm the
 contact appears in the **sandbox** audience and not the production one (check both); unsubscribe
 it in Mailchimp and confirm the People connect column updates. `quickbooks-sync` — create a
 Customer through the Monday route (once boards exist) and confirm it appears in the Intuit
-**sandbox** company. `monday-backup` — `npx wrangler triggers deploy` is not needed; wait for the
-09:00 UTC run (or call `/health` to confirm it is alive) and confirm a dated folder appears under
-the sandbox Drive folder containing only sandbox boards. `benevity-import` — drop a small CSV on
+**sandbox** company. `monday-backup` — it has no public surface in either environment, so watch
+the 09:00 UTC run with `npx wrangler tail --env sandbox` from `monday-backup/` and confirm a dated
+folder appears under the sandbox Drive folder containing only sandbox boards. `benevity-import` — drop a small CSV on
 the sandbox Uploads board and confirm the gifts land on the sandbox Donations board.
 
 Record the outcome per Worker in the root README status rows (`Sandbox provisioned and verified

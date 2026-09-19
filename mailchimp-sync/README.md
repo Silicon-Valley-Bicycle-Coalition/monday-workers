@@ -98,10 +98,12 @@ Its own D1, queues (`mailchimp-sync-outbound-sandbox`, `mailchimp-sync-inbound-s
 with a `-dlq`), and secrets. The rule for this Worker: the sandbox may upsert contacts and
 reconcile interests only in the sandbox audience — `config/split.test.ts` fails if the two
 configs ever share `mailchimp.audienceId`, and the Mailchimp API key cannot enforce it (keys
-are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board
-has no State column, so `monday.columns.state` stays a placeholder and the ADDRESS merge field
-carries an empty state; the sandbox "Mailchimp Campaigns (sandbox)" board and the People
-board's "Mailchimp Campaigns" connect column were created 2026-09-18 by the step 3 plan's Task 2.
+are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board gained a `State`
+text column on 2026-09-18 (the migrated boards had none — the production People board will need
+one too before this Worker can send the ADDRESS merge field, which `src/consumer/mapDonor.ts`
+omits unless all four address parts are present); the sandbox "Mailchimp Campaigns (sandbox)"
+board and the People board's "Mailchimp Campaigns" connect column were created 2026-09-18 by the
+step 3 plan's Task 2.
 Staff prerequisites before the first sandbox deploy (the step 3 plan's Task 15): the sandbox
 audience with the six merge fields and the Interest Category, and its webhook pointed at the
 sandbox Worker. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`

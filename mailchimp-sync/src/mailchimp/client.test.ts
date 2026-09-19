@@ -13,6 +13,26 @@ function fakeFetch(response: Partial<Response> & { json?: () => Promise<unknown>
 const MANAGED_TAGS = ['active-member', 'lapsed-member', 'lifetime-member', 'has-donated'];
 
 describe('HttpMailchimpClient.upsertMember', () => {
+  // Must run before any other test in this file calls upsertMember: the log guard
+  // (`sinkLogged`) is module-scope, so it is only still `false` on the first call.
+  it('logs the sandbox outbound sink once per isolate, not on the second call', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchFn = fakeFetch({ ok: true });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await client.upsertMember('a@b.com', {}, ['active-member'], MANAGED_TAGS);
+    await client.upsertMember('a@b.com', {}, ['active-member'], MANAGED_TAGS);
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toEqual({
+      sandboxOutbound: 'mailchimp',
+      audienceId: 'aud1',
+      apiBaseUrl: 'https://us1.api.mailchimp.com/3.0',
+    });
+
+    logSpy.mockRestore();
+  });
+
   it('PUTs the member keyed by the MD5 hash of the lowercased email', async () => {
     const fetchFn = fakeFetch({ ok: true });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);

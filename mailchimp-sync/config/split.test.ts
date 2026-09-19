@@ -42,12 +42,12 @@ describe('config split: the Mailchimp sink', () => {
 });
 
 describe('config split: Monday ids', () => {
-  it('sandbox board ids are the CRM Sandbox boards and production has none yet', () => {
+  it('sandbox board ids are the CRM Sandbox boards and production is null or different', () => {
     expect(sandbox.monday.donorsBoardId).toBe(18428131737);
     expect(typeof sandbox.monday.campaignsBoardId).toBe('number');
     expect(sandbox.monday.campaignsBoardId).toBeGreaterThan(0);
-    expect(production.monday.donorsBoardId).toBeNull();
-    expect(production.monday.campaignsBoardId).toBeNull();
+    expect(production.monday.donorsBoardId === null || production.monday.donorsBoardId !== sandbox.monday.donorsBoardId).toBe(true);
+    expect(production.monday.campaignsBoardId === null || production.monday.campaignsBoardId !== sandbox.monday.campaignsBoardId).toBe(true);
   });
 
   it('no real sandbox column id appears in production', () => {
@@ -59,7 +59,7 @@ describe('config split: Monday ids', () => {
       real += 1;
       expect(prod[key], `monday.columns.${key}`).not.toBe(id);
     }
-    expect(real).toBeGreaterThanOrEqual(10);
+    expect(real).toBe(11);
   });
 
   it('both shipped configs validate', () => {

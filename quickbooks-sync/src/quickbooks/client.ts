@@ -14,6 +14,8 @@ const QB_ENTITY_PATH: Record<EntityType, string> = {
 
 const QB_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 
+let sinkLogged = false;
+
 interface RefreshResponse {
   access_token: string;
   refresh_token: string;
@@ -85,6 +87,11 @@ export class HttpQuickBooksClient implements QuickBooksClient {
   }
 
   async createCustomer(fields: Record<string, unknown>): Promise<{ id: string }> {
+    if (!sinkLogged) {
+      sinkLogged = true;
+      // Design doc §6: one line per isolate naming the sink this deployment writes to.
+      console.log(JSON.stringify({ sandboxOutbound: 'quickbooks', apiBaseUrl: this.apiBaseUrl }));
+    }
     const { realmId, accessToken } = await this.getValidAccessToken();
     const response = await fetch(`${this.apiBaseUrl}/${realmId}/customer`, {
       method: 'POST',
