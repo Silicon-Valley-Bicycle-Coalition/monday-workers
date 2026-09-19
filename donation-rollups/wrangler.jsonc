@@ -22,6 +22,10 @@
         // stamps), so the default batch of 10 is what produced the 2026-09-03 "Too many
         // subrequests" failures. Two worst-case recomputes fit; three don't. Throughput is
         // unchanged (max_concurrency is already 1). Raise this on Workers Paid (cap 1,000).
+        //
+        // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
+        // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
+        // the Free plan's 50-subrequest cap.
         "max_batch_size": 2,
         // Retries are immediate except on a D1 daily-quota error, which the consumer defers to
         // midnight UTC (capped at Queues' 12h); with midnight up to 24h away that can use two of
@@ -30,10 +34,6 @@
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
         "max_concurrency": 1,
-        // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
-        // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
-        // the Free plan's 50-subrequest cap.
-        "max_batch_size": 2,
         "dead_letter_queue": "donation-rollups-recompute-dlq"
       },
       {
@@ -55,5 +55,51 @@
   },
   "observability": {
     "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-donation-rollups-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
+  // nothing with production. The consumer settings mirror the top level — same subrequest and
+  // D1-quota reasoning applies. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (MONDAY_API_TOKEN, MONDAY_WEBHOOK_SECRET).
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-donation-rollups-sandbox",
+          // Replace after running: wrangler d1 create svbc-donation-rollups-sandbox
+          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [{ "queue": "donation-rollups-recompute-sandbox", "binding": "RECOMPUTE_QUEUE" }],
+        "consumers": [
+          {
+            "queue": "donation-rollups-recompute-sandbox",
+            "max_batch_size": 2,
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "donation-rollups-recompute-sandbox-dlq"
+          },
+          {
+            "queue": "donation-rollups-recompute-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
+          }
+        ]
+      },
+      "triggers": {
+        "crons": ["0 9 * * *"]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }

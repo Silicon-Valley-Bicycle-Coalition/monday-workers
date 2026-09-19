@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig } from './config';
 import rawConfig from '../config/svbc.json';
+import rawSandboxConfig from '../config/sandbox.json';
 
 const ownerColumns = {
   giftLedgerJson: 'glj', lifetimeGiving: 'lg', giftCount: 'gc', firstGift: 'fg',
@@ -91,17 +92,25 @@ describe('validateConfig — membership block', () => {
     expect(() => validateConfig(bad)).toThrow(/membership\.until/);
   });
 
-  it('the shipped config/svbc.json validates (the membership block may be on or off — see README "Enabling")', () => {
-    expect(() => validateConfig(rawConfig)).not.toThrow();
+  it('the shipped production config/svbc.json validates with its placeholder ids', () => {
+    const cfg = validateConfig(rawConfig);
+    expect(cfg.donationRollups.donationBoards[0]!.boardId).toBe(0);
+    expect(cfg.custodian.annualSummaryBoardId).toBeNull();
   });
 
-  it('the shipped config validates with the documented membership block switched on', () => {
-    const enabled = { ...rawConfig, donationRollups: { ...rawConfig.donationRollups, membership: documentedMembershipBlock } };
+  it('the shipped config/sandbox.json validates (the membership block may be on or off — see README "Enabling")', () => {
+    expect(() => validateConfig(rawSandboxConfig)).not.toThrow();
+  });
+
+  it('the shipped sandbox config validates with the documented membership block switched on', () => {
+    const enabled = { ...rawSandboxConfig, donationRollups: { ...rawSandboxConfig.donationRollups, membership: documentedMembershipBlock } };
     expect(validateConfig(enabled).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
   });
 });
 
-const rawBase = () => JSON.parse(JSON.stringify(rawConfig)) as Record<string, any>;
+// The affiliation cases below index real owner-board keys, so they build on the shipped
+// sandbox config (real ids); svbc.json is the production placeholder file.
+const rawBase = () => JSON.parse(JSON.stringify(rawSandboxConfig)) as Record<string, any>;
 
 describe('validateConfig — affiliations block', () => {
   it('accepts affiliations: null (feature gated off) and leaves actingForLink null', () => {

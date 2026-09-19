@@ -46,7 +46,7 @@ Cloudflare Queue → consumer
   │  on failure at any step, Queues retries automatically and, once exhausted, routes
   │  to a Dead Letter Queue instead of the match or write silently disappearing
   ▼
-Donations board (+ Donor and Recurring Gift links)
+Donations board (+ Donor and Recurring Gift links; board ids in config/sandbox.json, or svbc.json for production)
 
 Cloudflare cron, hourly ("0 * * * *")
   │  GET /api/v1/crm/subscription?q=updtime >= <cursor> order by updtime asc&page=N …
@@ -133,7 +133,7 @@ lookup and the write. `donorExternalIdColumn` must therefore be a link column an
 
 ## Monday targets (sandbox v2 ids, verified live 2026-09-17)
 
-`config/svbc.json` now carries the real ids for the CRM Sandbox v2 boards — the same boards
+`config/sandbox.json` carries the real ids for the CRM Sandbox v2 boards — the same boards
 `salesforce-import` loads and `donation-rollups` reads — instead of placeholders. Re-verify
 against production ids before cutover; the sandbox gets rebuilt. Every id below was read from the
 board schemas via the Monday API on 2026-09-17.
@@ -191,7 +191,7 @@ and the full do-not-migrate list) lives in
 Worker's write step should follow that mapping's *targets* exactly, not redefine them; its
 *source* field names are the Salesforce package's, not the webhook's (see "The Funraise
 delivery, as actually sent" for the translation). One board-side constraint on top of that doc:
-`config/svbc.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
+`config/sandbox.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
 gift as seen from Salesforce) because the Donations board's status vocabulary (seeded by
 `salesforce-import`) is exactly `Received` /
 `Received (Historical)` / `Failed` / `Pending`, and `donation-rollups` counts only `Received` —
@@ -218,7 +218,7 @@ write only, including adoption of an orphaned item, never a later update that co
 staff correction; a missing or unparseable `donationDate` logs a warning and leaves the cell
 blank, and leaves the Date column out too rather than writing a raw number (rollups then derive
 from whatever Date holds). Set `fiscalYearColumn` to `null`
-for a board without the column. `config/svbc.json` points it at `text_mm70czyd`, the text column
+for a board without the column. `config/sandbox.json` points it at `text_mm70czyd`, the text column
 titled "Fiscal Year Ending" on the sandbox v2 Donations board (`18428131791`, verified live
 2026-09-17) — the same one `donation-rollups` reads — not the older numbers column titled "Fiscal
 Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. Known edge: the year is read
@@ -270,7 +270,8 @@ payload documentation; the Stoplight API reference is a JS app and unreadable wi
 to it, with `src/integration.test.ts` carrying a fixture trimmed from the documented example:
 
 * **Envelope.** `{ "sentAt": <epoch ms>, "event": "DONATION", "data": { … } }`. `validateEnvelope`
-  unwraps `data`; everything downstream (D1 `raw_payload`, every field path in `config/svbc.json`)
+  unwraps `data`; everything downstream (D1 `raw_payload`, every field path in
+  `config/sandbox.json` (or `svbc.json` for production))
   sees the entity object, not the envelope. The pre-envelope bare shape is rejected.
 * **Ids are numbers.** `data.id` and `data.supporter.id` are numbers (`123`, `7276`); both are
   stringified. Funraise sends no per-delivery id, so `events.event_id` is `<data.id>:<sentAt>`
@@ -323,7 +324,29 @@ this Worker's D1, and the gift's rows removed from `donation-rollups`' D1 (`pend
 `donation_links`, `gifts`). The next real Funraise transaction flows the same way and stays.
 
 Re-verify the same three steps after the sandbox rebuild and again against production ids at
-cutover — every board and column id in `config/svbc.json` is a sandbox id.
+cutover. Since the sandbox environment split (below), every sandbox id lives in
+`config/sandbox.json`; `config/svbc.json` is production and holds placeholders until cutover.
+
+## Sandbox environment — inbound only, no outbound data
+
+This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `env.sandbox`):
+`npm run deploy:sandbox` deploys `svbc-funraise-sync-sandbox` against the CRM Sandbox boards in
+`config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var (`src/environment.ts`).
+It has its own D1 (`svbc-funraise-sync-sandbox`), queues (`funraise-sync-writes-sandbox` and
+`-sandbox-dlq`), and secrets (`wrangler secret put … --env sandbox`); it shares nothing with
+the production-named Worker. This Worker writes only to Monday, so there is no outbound sink to
+lock — the split exists so the sandbox and production deployments can coexist after cutover.
+`config/split.test.ts` fails if the two configs ever share an id or if `env.sandbox` shares a
+resource with the top level. Design:
+`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`; the move of the existing
+deployment onto this environment is its §9, run once from the runbook in the step 2 plan.
+`npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id` in
+`wrangler.jsonc` is replaced with the id `wrangler d1 create` prints — see the step 2 plan's
+Task 9.
+
+Funraise allows one webhook per organization. Until cutover it points at the sandbox Worker;
+at cutover it moves to production and the sandbox loses its live feed (design doc §7) — after
+that, sandbox testing uses Funraise's Test button or a hand replay of a stored delivery.
 
 ## Recurring gifts and registrations — decided 2026-09-18
 

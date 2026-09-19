@@ -170,6 +170,16 @@ async function syncAnnualSummaryBoard(deps: CustodianDeps, changedFYs: Set<numbe
 async function runCapacity(deps: CustodianDeps): Promise<DutyReport> {
   const { workspaceId, capacityAlertPct } = deps.config.custodian;
   const boards = await deps.mondayClient.listWorkspaceBoards(workspaceId);
+  // An empty listing means the workspace id is wrong (0 is the production placeholder) or the
+  // token cannot see the workspace — either way the alarm is blind, which must read as
+  // ATTENTION, not "all 0 boards under 80%".
+  if (boards.length === 0) {
+    return {
+      ok: false,
+      summary: `no boards visible in workspace ${workspaceId} — capacity alarm is blind (wrong workspaceId or token scope)`,
+      detail: { checked: 0, over: [] },
+    };
+  }
   const over = boards
     .filter((b) => b.itemsLimit !== null && b.itemsLimit > 0)
     .map((b) => ({ ...b, pct: Math.round((b.itemsCount / b.itemsLimit!) * 100) }))

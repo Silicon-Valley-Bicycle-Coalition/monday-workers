@@ -4,7 +4,8 @@
 // config-ready `ownerColumnsByBoard` JSON block. salesforce-import creates only the first
 // three (Lifetime Giving / First Gift / Gift Count); the other nine are this Worker's own
 // surface, so provisioning them lives here. Run once per new environment (sandbox rebuild,
-// production cutover), then paste the output into config/svbc.json.
+// production cutover), then paste the output into the config file for the environment you
+// provisioned (`config/sandbox.json` or `config/svbc.json`).
 //
 // Usage:
 //   MONDAY_API_TOKEN=... node scripts/setup-owner-columns.mjs <boardId> [<boardId> ...]

@@ -4,5 +4,6 @@ declare namespace Cloudflare {
     RECOMPUTE_QUEUE: Queue<{ donationItemId: string }>;
     MONDAY_API_TOKEN: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
+    ENVIRONMENT?: string;
   }
 }

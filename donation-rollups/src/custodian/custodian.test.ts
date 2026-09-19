@@ -269,6 +269,14 @@ describe('capacity duty', () => {
     expect(state.updates).toHaveLength(1);
     expect(state.updates[0]!.itemId).toBe(42);
   });
+
+  it('reports ATTENTION, not ok, when the workspace lists no boards (blind alarm)', async () => {
+    const state: FakeClientState = { archived: [], updates: [], boards: [] };
+    const d = deps(state, [], testConfig({ alertItemId: 42 }));
+    const report = await runDuty('capacity', d);
+    expect(report.ok).toBe(false);
+    expect(report.summary).toContain('blind');
+  });
 });
 
 describe('sweep duty', () => {

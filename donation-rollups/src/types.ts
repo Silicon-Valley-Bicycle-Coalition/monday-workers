@@ -125,6 +125,8 @@ export interface Env {
   RECOMPUTE_QUEUE: Queue<RecomputeQueueMessage>;
   MONDAY_API_TOKEN: string;
   MONDAY_WEBHOOK_SECRET?: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
 }
 
 export interface RecomputeQueueMessage {
