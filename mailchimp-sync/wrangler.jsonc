@@ -49,5 +49,54 @@
   },
   "observability": {
     "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-mailchimp-sync-sandbox
+  // against the CRM Sandbox People board and the *sandbox* Mailchimp audience named in
+  // config/sandbox.json (selected by the ENVIRONMENT var). Rule: inbound data only, no outbound
+  // data — the sandbox may only upsert into the sandbox audience; config/split.test.ts fails if
+  // the two configs ever share an audience id. Everything here is non-inheritable in Wrangler and
+  // deliberately restated. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for MONDAY_API_TOKEN,
+  // MAILCHIMP_API_KEY (may be the same account key), MONDAY_WEBHOOK_SECRET, MAILCHIMP_WEBHOOK_SECRET.
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-mailchimp-sync-sandbox",
+          // Replace after running: wrangler d1 create svbc-mailchimp-sync-sandbox
+          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [
+          { "queue": "mailchimp-sync-outbound-sandbox", "binding": "OUTBOUND_QUEUE" },
+          { "queue": "mailchimp-sync-inbound-sandbox", "binding": "INBOUND_QUEUE" }
+        ],
+        "consumers": [
+          {
+            "queue": "mailchimp-sync-outbound-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "mailchimp-sync-outbound-sandbox-dlq"
+          },
+          {
+            "queue": "mailchimp-sync-inbound-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "mailchimp-sync-inbound-sandbox-dlq"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": ["0 15 * * *"]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }

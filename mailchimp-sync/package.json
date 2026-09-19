@@ -7,6 +7,7 @@
     "test": "vitest run",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
   },
   "keywords": [],
