@@ -48,8 +48,8 @@
         {
           "binding": "DB",
           "database_name": "svbc-benevity-import-sandbox",
-          // Replace after running: wrangler d1 create svbc-benevity-import-sandbox
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          // Created 2026-09-19 on the SVBC account (wrangler d1 create svbc-benevity-import-sandbox); forks: create your own
+          "database_id": "e71ba272-31f4-41d1-ae35-6a5c8a108631",
           "migrations_dir": "migrations"
         }
       ],
