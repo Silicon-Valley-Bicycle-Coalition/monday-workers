@@ -1,5 +1,7 @@
-import rawConfig from '../config/svbc.json';
+import productionConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
 import { validateConfig } from './config';
+import { createConfigSelector } from './environment';
 import { createApp } from './webhook/route';
 import { D1UploadStore } from './db/uploads';
 import { D1DisbursementStore } from './db/disbursements';
@@ -7,9 +9,15 @@ import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
 import { processBenevityQueueBatch, type BenevityQueueMessage } from './consumer/processBatch';
-import type { Env } from './types';
+import type { Env, BenevityImportConfig } from './types';
 
-const config = validateConfig(rawConfig);
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate — see src/environment.ts and config/split.test.ts.
+const configFor = createConfigSelector<BenevityImportConfig>({
+  production: productionConfig,
+  sandbox: sandboxConfig,
+  validate: validateConfig,
+});
 
 async function fetchCsv(url: string): Promise<string> {
   const response = await fetch(url);
@@ -21,6 +29,7 @@ async function fetchCsv(url: string): Promise<string> {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const config = configFor(env);
     const app = createApp({
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       uploadStore: new D1UploadStore(env.DB),
@@ -38,6 +47,7 @@ export default {
   },
 
   async queue(batch: MessageBatch<BenevityQueueMessage>, env: Env): Promise<void> {
+    const config = configFor(env);
     await processBenevityQueueBatch([...batch.messages], {
       rowStore: new D1RowStore(env.DB),
       disbursementStore: new D1DisbursementStore(env.DB),
@@ -52,6 +62,7 @@ export default {
   // emptied once the write has been in Monday long enough (or, for rows that never resolved,
   // after the longer unresolved-row window). Same shape as funraise-sync's scheduled handler.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const config = configFor(env);
     const dayMs = 24 * 60 * 60 * 1000;
     const store = new D1RowStore(env.DB);
     const writtenCutoff = new Date(Date.now() - config.benevityImport.rawRowRetentionDays * dayMs).toISOString();
