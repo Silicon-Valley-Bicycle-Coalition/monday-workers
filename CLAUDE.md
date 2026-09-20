@@ -132,7 +132,7 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
-**Sandbox environment — inbound only, no outbound data.** Every migration Worker (`donor-portal`,
+**Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
 `benevity-import`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
@@ -141,12 +141,12 @@ secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.EN
 `send_email` binding's `allowed_destination_addresses`) and by a per-Worker
 `config/split.test.ts` that fails if the two configs ever share a sink or an id (the id checks
 are latent until production ids exist). When adding the
-environment to another Worker, copy `donor-portal`'s `environment.ts`, split test, and
+environment to another Worker, copy `member-portal`'s `environment.ts`, split test, and
 `env.sandbox` shape rather than re-deriving them. Design:
 `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
-per exposure class (the public-facing `donor-portal` gets its own user with access to only the
+per exposure class (the public-facing `member-portal` gets its own user with access to only the
 boards it reads), never a staff member's personal token — see the root README for why.
 
 **`data/` directories** (e.g. in `salesforce-import`) hold real extracted donor PII pulled from
