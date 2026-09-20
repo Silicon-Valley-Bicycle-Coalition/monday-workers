@@ -43,8 +43,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-monday-backup-sandbox",
-          // Replace after running: wrangler d1 create svbc-monday-backup-sandbox
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "database_id": "f3dc73a0-bf23-488f-b810-f26e79dad6f5",
           "migrations_dir": "migrations"
         }
       ],
