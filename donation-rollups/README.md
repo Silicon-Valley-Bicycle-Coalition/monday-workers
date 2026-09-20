@@ -1,6 +1,20 @@
 # donation-rollups
 
-**Status: repointed at the single archive-in-place Donations board ("sandbox v2"), 2026-08-31** —
+**Status: running as `svbc-donation-rollups-sandbox` since the 2026-09-20 move onto the sandbox
+environment** (`npm run deploy:sandbox`; own D1 `svbc-donation-rollups-sandbox`, queues
+`donation-rollups-recompute-sandbox` and `-sandbox-dlq`, secrets under `--env sandbox`; the
+production name `svbc-donation-rollups` is retired until cutover — sandbox design §9). The move:
+D1 created and migrations 0001–0007 applied, every table copied from `svbc-donation-rollups` with
+counts verified equal (37,367 links, 37,367 gifts, 3,838 pending, 1,349 baseline rows, 18
+summaries, 30 runs, 12 owner recomputes), secrets set, deployed, both Donations-board webhooks
+pruned and re-subscribed at the `…-sandbox` URL by `scripts/setup-webhooks.mjs`, one recompute
+proven end to end on the new Worker (donor 12896376818 unchanged at This Year 200 / 4), no rows
+newer than the snapshot in the old D1, and the old Worker deleted (its consumer bindings on both
+queues removed first — Cloudflare refuses to delete a consumer Worker). Its D1 and queues
+survive for the cutover deploy. One finding: the ~300,000 row writes of the copy went through
+`wrangler d1 execute --file` without hitting the Free tier's 100k/day cap — that cap has only
+ever bitten Worker-binding writes here, so the operational finding below still stands.
+**Repointed at the single archive-in-place Donations board ("sandbox v2"), 2026-08-31** —
 config now targets ONE Donations board (id `18428131791`, with a real `fiscalYear` column at
 last) plus the three v2 owner boards, replacing the 9-era-board layout that docs/20 in the
 private planning repo retired. D1 re-bootstrapped from `salesforce-import`'s run artifacts
