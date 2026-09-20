@@ -1,4 +1,5 @@
 {
   "destinationParentFolderId": "REPLACE_WITH_SANDBOX_DRIVE_FOLDER_ID",
-  "excludeBoardIds": []
+  "excludeBoardIds": [],
+  "workspaceIds": ["17141226"]
 }

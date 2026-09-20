@@ -32,6 +32,31 @@ describe('validateConfig', () => {
     );
   });
 
+  it('carries through workspaceIds when present', () => {
+    const config = validateConfig({ destinationParentFolderId: 'folder-123', workspaceIds: ['17141226'] });
+    expect(config.workspaceIds).toEqual(['17141226']);
+  });
+
+  it('leaves workspaceIds undefined when absent', () => {
+    const config = validateConfig({ destinationParentFolderId: 'folder-123' });
+    expect(config.workspaceIds).toBeUndefined();
+  });
+
+  it('rejects a non-array workspaceIds', () => {
+    expect(() => validateConfig({ destinationParentFolderId: 'f', workspaceIds: 'nope' })).toThrow(
+      /workspaceIds must be an array/,
+    );
+  });
+
+  it('rejects workspaceIds entries that are not non-empty strings', () => {
+    expect(() => validateConfig({ destinationParentFolderId: 'f', workspaceIds: ['1', ''] })).toThrow(
+      /workspaceIds entries must be non-empty strings/,
+    );
+    expect(() => validateConfig({ destinationParentFolderId: 'f', workspaceIds: [1] })).toThrow(
+      /workspaceIds entries must be non-empty strings/,
+    );
+  });
+
   it('rejects a non-object config', () => {
     expect(() => validateConfig(null)).toThrow(/expected an object/);
   });
