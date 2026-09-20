@@ -56,13 +56,13 @@
     "benefitTiers": []
   },
   "changeRequests": {
-    "boardId": null,
+    "boardId": 18431948024,
     "columns": {
-      "donorLink": "REPLACE_WITH_COLUMN_ID",
-      "field": "REPLACE_WITH_COLUMN_ID",
-      "oldValue": "REPLACE_WITH_COLUMN_ID",
-      "newValue": "REPLACE_WITH_COLUMN_ID",
-      "submittedAt": "REPLACE_WITH_COLUMN_ID"
+      "donorLink": "board_relation_mm7cb551",
+      "field": "text_mm7ccq8c",
+      "oldValue": "text_mm7csmsm",
+      "newValue": "text_mm7cvy5s",
+      "submittedAt": "date_mm7ce5se"
     },
     "dedupeWindowHours": 72,
     "retentionDays": 180
