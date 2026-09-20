@@ -11,8 +11,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-donor-portal",
-      // Replace after running: wrangler d1 create svbc-donor-portal
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "1c2e47c7-29b7-40aa-becb-c079a364c000",
       "migrations_dir": "migrations"
     }
   ],
