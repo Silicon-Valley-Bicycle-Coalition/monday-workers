@@ -7,6 +7,7 @@ const config: QuickbooksSyncConfig = {
     apiUrl: 'https://api.monday.com/v2',
     boards: { customers: 1, invoices: 2, products: 3 },
   },
+  quickbooks: { apiBaseUrl: 'https://quickbooks.api.intuit.com/v3/company' },
   quickbooksSync: {
     columnMap: {
       customer: { DisplayName: 'text_col', 'PrimaryEmailAddr.Address': 'email_col' },

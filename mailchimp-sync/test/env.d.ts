@@ -8,5 +8,6 @@ declare namespace Cloudflare {
     MAILCHIMP_API_KEY: string;
     MAILCHIMP_WEBHOOK_SECRET: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
+    ENVIRONMENT?: string;
   }
 }

@@ -55,4 +55,6 @@ export interface Env extends Cloudflare.Env {
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   SLACK_WEBHOOK_URL: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
 }

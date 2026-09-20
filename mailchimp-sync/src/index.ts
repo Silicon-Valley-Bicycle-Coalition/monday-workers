@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import configJson from '../config/svbc.json';
+import productionConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
+import { createConfigSelector, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { HttpMondayClient } from './monday/client';
 import { HttpMailchimpClient } from './mailchimp/client';
@@ -13,10 +15,14 @@ import { processInboundBatch } from './consumer/inbound';
 import { reconcileCampaigns } from './campaigns/reconcile';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
-const config = validateConfig(configJson);
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate — see src/environment.ts and config/split.test.ts. In the sandbox, mailchimp.audienceId
+// names the sandbox audience; the split test is what keeps that id off the production file.
+const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const config = configFor(env);
     const app = new Hono();
     app.get('/health', (c) => c.json({ ok: true }));
     app.route('/', createOutboundApp({
@@ -34,10 +40,13 @@ export default {
   },
 
   async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+    const config = configFor(env);
     const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
     const mailchimpClient = new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId);
 
-    if (batch.queue === 'mailchimp-sync-outbound') {
+    const queueName = queueBaseName(batch.queue);
+
+    if (queueName === 'mailchimp-sync-outbound') {
       await processOutboundBatch(batch.messages as unknown as { body: OutboundSyncMessage; ack(): void; retry(): void }[], {
         pendingStore: new D1PendingOutboundStore(env.DB),
         mondayClient,
@@ -47,7 +56,7 @@ export default {
       return;
     }
 
-    if (batch.queue === 'mailchimp-sync-inbound') {
+    if (queueName === 'mailchimp-sync-inbound') {
       await processInboundBatch(batch.messages as unknown as { body: InboundSyncMessage; ack(): void; retry(): void }[], {
         pendingStore: new D1PendingInboundStore(env.DB),
         mondayClient,
@@ -64,6 +73,7 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const config = configFor(env);
     ctx.waitUntil(
       reconcileCampaigns({
         mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),

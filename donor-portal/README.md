@@ -141,7 +141,7 @@ kept separate from the main domain's mail flow, is standard practice for transac
 nowhere else, two ways at once: the `EMAIL` binding is declared with
 `allowed_destination_addresses` of that one address, so Cloudflare rejects any other recipient
 with `E_RECIPIENT_NOT_ALLOWED`; and `src/email/sandboxBinding.ts` rewrites every recipient to
-it, prefixing the subject with `[sandbox → <original recipient>]` and prepending a notice. Staff
+it, prefixing the subject with `[sandbox → <original recipient>]` and prepending a notice. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Staff
 can therefore request a login link as any real donor to test the portal end to end. The
 production and sandbox configs are kept apart by `config/split.test.ts`, which fails if they ever
 share a sink, a board id, or a column id (the id checks are latent until production boards exist

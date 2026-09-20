@@ -25,6 +25,8 @@ function subscriberHash(email: string): string {
   return md5(email.trim().toLowerCase());
 }
 
+let sinkLogged = false;
+
 export class HttpMailchimpClient implements MailchimpClient {
   constructor(
     private apiBaseUrl: string,
@@ -40,6 +42,11 @@ export class HttpMailchimpClient implements MailchimpClient {
   }
 
   async upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<void> {
+    if (!sinkLogged) {
+      sinkLogged = true;
+      // Design doc §6: one line per isolate naming the sink this deployment writes to.
+      console.log(JSON.stringify({ sandboxOutbound: 'mailchimp', audienceId: this.audienceId, apiBaseUrl: this.apiBaseUrl }));
+    }
     const hash = subscriberHash(email);
     const response = await this.fetchFn(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}`,

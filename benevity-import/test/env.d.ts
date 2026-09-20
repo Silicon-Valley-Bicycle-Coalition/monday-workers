@@ -7,6 +7,7 @@ declare global {
       WRITE_QUEUE: Queue<BenevityQueueMessage>;
       MONDAY_API_TOKEN: string;
       TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
+      ENVIRONMENT?: string;
     }
   }
 }

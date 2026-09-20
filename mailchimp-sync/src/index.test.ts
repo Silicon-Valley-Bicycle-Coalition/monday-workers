@@ -140,3 +140,25 @@ describe('scheduled', () => {
     await expect(captured).resolves.toBeUndefined();
   });
 });
+
+describe('request-time config selection', () => {
+  it('serves /health under the sandbox environment', async () => {
+    const res = await worker.fetch(new Request('https://worker.example/health'), fakeEnv({ ENVIRONMENT: 'sandbox' }), {} as ExecutionContext);
+    expect(res.status).toBe(200);
+  });
+
+  it('refuses an unknown ENVIRONMENT value before routing anything', () => {
+    // fetch is synchronous up to the config lookup, so the refusal is a synchronous throw — which
+    // the Workers runtime turns into a 500 before any route runs.
+    expect(() =>
+      worker.fetch(new Request('https://worker.example/health'), fakeEnv({ ENVIRONMENT: 'staging' }), {} as ExecutionContext)
+    ).toThrow('ENVIRONMENT');
+  });
+
+  it('routes the sandbox-suffixed queue names to the same consumers', async () => {
+    const emptyBatch = (queue: string) => ({ queue, messages: [], retryAll: vi.fn(), ackAll: vi.fn() }) as unknown as MessageBatch<unknown>;
+    await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
+    await expect(worker.queue(emptyBatch('mailchimp-sync-inbound-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
+    await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-sandbox-dlq'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).rejects.toThrow('unknown queue');
+  });
+});

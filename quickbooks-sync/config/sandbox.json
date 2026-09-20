@@ -1,0 +1,44 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boards": {
+      "customers": null,
+      "invoices": null,
+      "products": null
+    }
+  },
+  "quickbooks": {
+    "apiBaseUrl": "https://sandbox-quickbooks.api.intuit.com/v3/company"
+  },
+  "quickbooksSync": {
+    "columnMap": {
+      "customer": {
+        "DisplayName": "text_column_id",
+        "PrimaryEmailAddr.Address": "email_column_id",
+        "PrimaryPhone.FreeFormNumber": "phone_column_id"
+      },
+      "invoice": {
+        "DocNumber": "text_column_id",
+        "TotalAmt": "numeric_column_id",
+        "Balance": "numeric_column_id",
+        "DueDate": "date_column_id"
+      },
+      "product": {
+        "Name": "text_column_id",
+        "UnitPrice": "numeric_column_id"
+      }
+    },
+    "itemNameField": {
+      "customer": "DisplayName",
+      "invoice": "DocNumber",
+      "product": "Name"
+    },
+    "linkColumn": {
+      "invoice": "connect_boards_column_id"
+    },
+    "customerCreateFieldMap": {
+      "text_column_id": "DisplayName",
+      "email_column_id": "PrimaryEmailAddr.Address"
+    }
+  }
+}

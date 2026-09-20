@@ -42,6 +42,12 @@ export interface QuickbooksSyncConfig {
     apiUrl: string;
     boards: MondayBoards;
   };
+  quickbooks: {
+    // QuickBooks Online Accounting API base (…/v3/company). Production is
+    // https://quickbooks.api.intuit.com/v3/company; the sandbox environment points at Intuit's
+    // sandbox host so a sandbox deploy can never create a Customer in the real company.
+    apiBaseUrl: string;
+  };
   quickbooksSync: {
     columnMap: {
       customer: Record<string, string>;
@@ -74,4 +80,6 @@ export interface Env extends Cloudflare.Env {
   QB_CLIENT_SECRET: string;
   QB_WEBHOOK_VERIFIER_TOKEN: string;
   MONDAY_WEBHOOK_SECRET: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
 }

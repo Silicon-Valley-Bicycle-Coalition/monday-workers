@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import rawConfig from '../config/backup.json';
+import productionConfig from '../config/backup.json';
+import sandboxConfig from '../config/backup.sandbox.json';
+import { createConfigSelector } from './environment';
 import { runBackup } from './backup';
 import { validateConfig } from './config';
 import { D1SnapshotRunStore } from './db/runs';
@@ -7,7 +9,11 @@ import { GoogleDriveClient } from './drive/client';
 import { HttpMondayClient } from './monday/client';
 import type { Env } from './types';
 
-const config = validateConfig(rawConfig);
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate — see src/environment.ts and config/split.test.ts. In the sandbox,
+// destinationParentFolderId names the sandbox Drive folder; the split test is what keeps that id
+// off the production file.
+const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 
 // Cron-only Worker with no public surface (see wrangler.jsonc: no routes, workers_dev and
@@ -20,6 +26,7 @@ export default {
   fetch: app.fetch,
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const config = configFor(env);
     await runBackup({
       monday: new HttpMondayClient(MONDAY_API_URL, env.MONDAY_API_TOKEN),
       drive: new GoogleDriveClient({

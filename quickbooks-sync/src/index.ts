@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
-import rawConfig from '../config/svbc.json';
+import productionConfig from '../config/svbc.json';
+import sandboxConfig from '../config/sandbox.json';
 import { validateConfig } from './config';
 import { processSyncQueueBatch } from './consumer/processBatch';
 import { D1MapStore } from './db/map';
 import { D1MondayEventStore } from './db/mondayEvents';
 import { D1QbEventStore } from './db/qbEvents';
+import { createConfigSelector } from './environment';
 import { HttpMondayClient } from './monday/client';
 import { createMondayWebhookApp } from './monday/webhook/route';
 import { HttpQuickBooksClient } from './quickbooks/client';
@@ -12,7 +14,9 @@ import { D1TokenStore } from './quickbooks/tokenStore';
 import { createQbWebhookApp, type QueueLike } from './quickbooks/webhook/route';
 import type { Env, QueueMessage } from './types';
 
-const config = validateConfig(rawConfig);
+// One config per environment, chosen at request time from env.ENVIRONMENT and validated once
+// per isolate — see src/environment.ts and config/split.test.ts.
+const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
 // env.SYNC_QUEUE is a Cloudflare Queue<QueueMessage>, whose send() resolves to a
 // QueueSendResponse rather than void. Adapt it to the QueueLike interface shared by
@@ -27,9 +31,15 @@ function toQueueLike(queue: Queue<QueueMessage>): QueueLike {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const config = configFor(env);
     const mapStore = new D1MapStore(env.DB);
     const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
-    const quickBooksClient = new HttpQuickBooksClient(new D1TokenStore(env.DB), env.QB_CLIENT_ID, env.QB_CLIENT_SECRET);
+    const quickBooksClient = new HttpQuickBooksClient(
+      new D1TokenStore(env.DB),
+      env.QB_CLIENT_ID,
+      env.QB_CLIENT_SECRET,
+      config.quickbooks.apiBaseUrl
+    );
     const queue = toQueueLike(env.SYNC_QUEUE);
 
     const app = new Hono();
@@ -57,12 +67,18 @@ export default {
   },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
+    const config = configFor(env);
     await processSyncQueueBatch([...batch.messages], {
       qbEventStore: new D1QbEventStore(env.DB),
       mondayEventStore: new D1MondayEventStore(env.DB),
       mapStore: new D1MapStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
-      quickBooksClient: new HttpQuickBooksClient(new D1TokenStore(env.DB), env.QB_CLIENT_ID, env.QB_CLIENT_SECRET),
+      quickBooksClient: new HttpQuickBooksClient(
+        new D1TokenStore(env.DB),
+        env.QB_CLIENT_ID,
+        env.QB_CLIENT_SECRET,
+        config.quickbooks.apiBaseUrl
+      ),
       config,
     });
   },

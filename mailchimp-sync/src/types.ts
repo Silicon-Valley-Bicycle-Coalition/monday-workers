@@ -53,6 +53,8 @@ export interface Env {
   MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
   MAILCHIMP_WEBHOOK_SECRET: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
 }
 
 export interface OutboundSyncMessage {

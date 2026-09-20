@@ -2,48 +2,48 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations": 18428131791,
-      "organizations": 18428131727,
-      "people": 18428131737,
-      "affiliations": 18431270120,
-      "benevityUploads": 18431270204
+      "donations": null,
+      "organizations": null,
+      "people": null,
+      "affiliations": null,
+      "benevityUploads": null
     }
   },
   "benevityImport": {
     "minDonationDate": "2026-09-16",
     "donationsColumns": {
-      "donor": "board_relation_mm6jf5jb",
-      "matchedBy": "board_relation_mm70ek0z",
-      "amount": "numeric_mm6jkxrs",
-      "date": "date_mm6jthpq",
-      "disbursementDate": "date_mm789k7q",
-      "fiscalYearEnding": "text_mm70czyd",
-      "status": "color_mm6jqdhn",
-      "giftType": "text_mm6j66w3",
-      "anonymousDonor": "boolean_mm6jb6ym",
-      "transactionId": "text_mm7035h1"
+      "donor": "REPLACE_WITH_COLUMN_ID",
+      "matchedBy": "REPLACE_WITH_COLUMN_ID",
+      "amount": "REPLACE_WITH_COLUMN_ID",
+      "date": "REPLACE_WITH_COLUMN_ID",
+      "disbursementDate": "REPLACE_WITH_COLUMN_ID",
+      "fiscalYearEnding": "REPLACE_WITH_COLUMN_ID",
+      "status": "REPLACE_WITH_COLUMN_ID",
+      "giftType": "REPLACE_WITH_COLUMN_ID",
+      "anonymousDonor": "REPLACE_WITH_COLUMN_ID",
+      "transactionId": "REPLACE_WITH_COLUMN_ID"
     },
     "organizationsNameColumn": "name",
     "peopleColumns": {
-      "personalEmail": "email_mm6j5e9q",
-      "householdEmail": "email_mm6j919c",
-      "employer": "text_mm6jsgh2"
+      "personalEmail": "REPLACE_WITH_COLUMN_ID",
+      "householdEmail": "REPLACE_WITH_COLUMN_ID",
+      "employer": "REPLACE_WITH_COLUMN_ID"
     },
     "affiliationsColumns": {
-      "person": "board_relation_mm78wgab",
-      "organization": "board_relation_mm78azxs",
-      "workEmail": "email_mm78ve2q"
+      "person": "REPLACE_WITH_COLUMN_ID",
+      "organization": "REPLACE_WITH_COLUMN_ID",
+      "workEmail": "REPLACE_WITH_COLUMN_ID"
     },
     "uploadsBoard": {
-      "fileColumn": "file_mm78enz6",
-      "worklistGroupId": "group_mm789n24",
+      "fileColumn": "REPLACE_WITH_COLUMN_ID",
+      "worklistGroupId": "REPLACE_WITH_GROUP_ID",
       "worklistColumns": {
-        "reason": "long_text_mm78n744",
+        "reason": "REPLACE_WITH_COLUMN_ID",
         "name": "name",
-        "email": "email_mm78a3wy",
-        "company": "text_mm78gr6a",
-        "amount": "numeric_mm78bqmd",
-        "date": "date_mm78e4yc"
+        "email": "REPLACE_WITH_COLUMN_ID",
+        "company": "REPLACE_WITH_COLUMN_ID",
+        "amount": "REPLACE_WITH_COLUMN_ID",
+        "date": "REPLACE_WITH_COLUMN_ID"
       }
     },
     "organizationAliases": {},

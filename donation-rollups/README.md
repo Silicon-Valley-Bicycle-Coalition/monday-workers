@@ -660,7 +660,7 @@ boards in `config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var
 (`src/environment.ts`). It has its own D1 (`svbc-donation-rollups-sandbox`), queues
 (`donation-rollups-recompute-sandbox` and `-sandbox-dlq`, consumed by the same handler — see
 `isDeadLetterBatch` in `src/index.ts`), and secrets (`wrangler secret put … --env sandbox`);
-it shares nothing with the production-named Worker. This Worker writes only to Monday, so
+it shares nothing with the production-named Worker. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. This Worker writes only to Monday, so
 there is no outbound sink to lock — the split exists so the sandbox and production deployments
 can coexist after cutover. `config/split.test.ts` fails if any of the 60-odd sandbox column ids
 appears in `config/svbc.json` or if `env.sandbox` shares a resource with the top level. The
