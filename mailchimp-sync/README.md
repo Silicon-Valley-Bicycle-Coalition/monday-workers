@@ -89,6 +89,27 @@ Three independent flows — see the design doc for full sequence diagrams:
   webhook (the Worker also guards against this in code; see the design doc's feedback-loop note).
 * Fill in every `REPLACE_WITH_*` placeholder in `config/svbc.json` once the above exist.
 
+## Sandbox environment — inbound only, no outbound data
+
+`npm run deploy:sandbox` deploys `svbc-mailchimp-sync-sandbox` (`wrangler.jsonc` `env.sandbox`)
+against the CRM Sandbox People board and a **sandbox Mailchimp audience**, from
+`config/sandbox.json` (chosen at request time by the `ENVIRONMENT` var — `src/environment.ts`).
+Its own D1, queues (`mailchimp-sync-outbound-sandbox`, `mailchimp-sync-inbound-sandbox`, each
+with a `-dlq`), and secrets. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. The rule for this Worker: the sandbox may upsert contacts and
+reconcile interests only in the sandbox audience — `config/split.test.ts` fails if the two
+configs ever share `mailchimp.audienceId`, and the Mailchimp API key cannot enforce it (keys
+are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board gained a `State`
+text column on 2026-09-18 (the migrated boards had none — the production People board will need
+one too before this Worker can send the ADDRESS merge field, which `src/consumer/mapDonor.ts`
+omits unless all four address parts are present); the sandbox "Mailchimp Campaigns (sandbox)"
+board and the People board's "Mailchimp Campaigns" connect column were created 2026-09-18 by the
+step 3 plan's Task 2.
+Staff prerequisites before the first sandbox deploy (the step 3 plan's Task 15): the sandbox
+audience with the six merge fields and the Interest Category, and its webhook pointed at the
+sandbox Worker. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
+is replaced with the id `wrangler d1 create` prints. Design:
+`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
+
 ## Local development
 
 - `npm install` — install dependencies

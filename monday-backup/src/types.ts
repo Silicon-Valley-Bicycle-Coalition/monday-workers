@@ -45,6 +45,10 @@ export interface DocBlock {
 export interface BackupConfig {
   destinationParentFolderId: string;
   excludeBoardIds: string[];
+  // Belt-and-braces alongside the workspace-scoped sandbox token (design doc §4): when set and
+  // non-empty, only boards/docs whose workspaceId is in this list are backed up. Absent or
+  // empty means no filter — today's "snapshot everything the token can see" behaviour.
+  workspaceIds?: string[];
 }
 
 // Bindings (D1, etc.) come from the generated Cloudflare.Env
@@ -55,4 +59,6 @@ export interface Env extends Cloudflare.Env {
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   SLACK_WEBHOOK_URL: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
 }

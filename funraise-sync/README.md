@@ -1,7 +1,9 @@
 # funraise-sync
 
-**Status:** Decided — Option B (full retirement). Build the direct sync. **Deployed to the CRM
-Sandbox and receiving Funraise's live webhook since 2026-09-18** — see "Deployed and verified".
+**Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
+`svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
+2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
+`svbc-funraise-sync` is retired until cutover) — see "Deployed and verified".
 **Priority:** Blocking-adjacent — feeds ongoing donation data once Salesforce retires; the
 historical side is handled by `salesforce-import`, this Worker takes over going forward.
 **Owner:** Unassigned.
@@ -297,9 +299,22 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
 
 ## Deployed and verified (CRM Sandbox, 2026-09-18)
 
-Hand-deployed with `wrangler deploy` (D1 `svbc-funraise-sync`, migrations 0001–0003 applied
-remotely; queues `funraise-sync-writes` and `-dlq`; secrets `FUNRAISE_WEBHOOK_SECRET` and
-`MONDAY_API_TOKEN`), then proven three ways, each time leaving nothing behind:
+**The running deployment is `svbc-funraise-sync-sandbox`** (`npm run deploy:sandbox`; D1
+`svbc-funraise-sync-sandbox`, queues `funraise-sync-writes-sandbox` and `-sandbox-dlq`, secrets
+`FUNRAISE_WEBHOOK_SECRET`, `MONDAY_API_TOKEN`, `FUNRAISE_API_KEY` under `--env sandbox`). It was
+moved there on 2026-09-19 per the sandbox design's §9: D1 created and migrations 0001–0004
+applied, data copied from `svbc-funraise-sync` with counts verified equal, secrets set, deployed,
+Funraise's webhook repointed to the `…-sandbox` host (its verify call reached the new Worker and
+the card read Enabled), Funraise's Test button delivery written end to end on the new path and
+cleaned up, and the production-named Worker deleted (queue consumer removed first — Cloudflare
+refuses to delete a consumer Worker). D1 `svbc-funraise-sync` and the production-named queues
+survive for the cutover deploy. Nothing arrived in the old D1 between the snapshot and the
+repoint, so no re-sync was needed. Note for the rollups half of §9: the cron poll here means two
+pollers overlap while both Workers exist — keep that window short.
+
+First deployed 2026-09-18 under the production name (`wrangler deploy`; D1 `svbc-funraise-sync`,
+migrations 0001–0003; queues `funraise-sync-writes` and `-dlq`; secrets `FUNRAISE_WEBHOOK_SECRET`
+and `MONDAY_API_TOKEN`), then proven three ways, each time leaving nothing behind:
 
 1. **Documented example, by hand.** The trimmed example from Funraise's webhooks article,
    POSTed to the live route: accepted, and 12 s later the consumer had created the donor on
@@ -334,7 +349,7 @@ This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `en
 `config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var (`src/environment.ts`).
 It has its own D1 (`svbc-funraise-sync-sandbox`), queues (`funraise-sync-writes-sandbox` and
 `-sandbox-dlq`), and secrets (`wrangler secret put … --env sandbox`); it shares nothing with
-the production-named Worker. This Worker writes only to Monday, so there is no outbound sink to
+the production-named Worker. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. This Worker writes only to Monday, so there is no outbound sink to
 lock — the split exists so the sandbox and production deployments can coexist after cutover.
 `config/split.test.ts` fails if the two configs ever share an id or if `env.sandbox` shares a
 resource with the top level. Design:
@@ -410,8 +425,8 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   the one-time reconciliation of the importer's items runs from a laptop against the *remote*
   D1 and the real APIs: put `MONDAY_API_TOKEN` and `FUNRAISE_API_KEY` in `funraise-sync/.dev.vars`
   (gitignored; delete it afterwards), start `npx wrangler dev --remote --test-scheduled
-  --var ENVIRONMENT:sandbox` (the var selects `config/sandbox.json`; the top-level D1 binding is
-  what the deployed sandbox poller uses until the §9 move), and hit
+  --env sandbox` (since the 2026-09-19 move: the sandbox D1, queues and `ENVIRONMENT` var come
+  from `env.sandbox`; before it, `--var ENVIRONMENT:sandbox` against the top-level binding), and hit
   `http://localhost:8788/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
   deployed-shaped run that advances the cursors. Read the `subscriptions poll read …` log line
   each time. The walk is done when a run reads **only unchanged rows** — never `0 rows`, because

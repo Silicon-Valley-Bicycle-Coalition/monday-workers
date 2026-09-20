@@ -1,9 +1,10 @@
 # benevity-import
 
-**Status:** Built (`feat/benevity-import`) — not deployed; needs D1 provisioning, real Monday
-board/column ids (`config/svbc.json`'s `REPLACE_*` placeholders), the two `salesforce-import`
-Donations-board columns it depends on (see Related changes elsewhere), and Monday webhook +
-integration-user token setup.
+**Status:** Built (`feat/benevity-import`) — production not deployed; sandbox provisioned and
+verified end to end 2026-09-19 (see "Sandbox environment" below); production D1 provisioned and
+sandbox board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover,
+the two `salesforce-import` Donations-board columns it depends on (see Related changes
+elsewhere), and Monday webhook + integration-user token setup.
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.
@@ -227,7 +228,8 @@ email, company, amount, and date only.
 
 ## Monday targets
 
-All ids in `config/svbc.json`, validated at startup, none hardcoded:
+All ids in `config/sandbox.json` (the CRM Sandbox) or `config/svbc.json` (production,
+placeholders until cutover), validated at first request, none hardcoded:
 
 | Board / column | Purpose |
 |---|---|
@@ -241,6 +243,30 @@ All ids in `config/svbc.json`, validated at startup, none hardcoded:
 Token: a dedicated staff-facing integration user with access to exactly these boards (see the
 least-privilege note in `../README.md`); the same user `funraise-sync` writes as is acceptable,
 never a staff member's personal token.
+
+## Sandbox environment — inbound only, no outbound data
+
+`npm run deploy:sandbox` deploys `svbc-benevity-import-sandbox` (`wrangler.jsonc` `env.sandbox`)
+against the CRM Sandbox boards in `config/sandbox.json`, chosen at request time by the
+`ENVIRONMENT` var (`src/environment.ts`); `config/svbc.json` is production and holds
+placeholders until cutover. Own D1, queue (`benevity-import-writes-sandbox` and its `-dlq`), cron,
+and secrets (`wrangler secret put … --env sandbox`). Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. This Worker writes only to Monday, so the
+split exists so the two deployments can coexist. `config/split.test.ts` fails if any of the
+sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board webhook must point at
+the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") with the sandbox
+`BENEVITY_WEBHOOK_SECRET`.
+
+Provisioned and verified 2026-09-19: D1 `svbc-benevity-import-sandbox` (id in `wrangler.jsonc`),
+both queues, both secrets, and Monday webhook `639785248` on the sandbox Uploads board. Register
+that webhook as `change_specific_column_value` with `config: {"columnId": "<file column id>"}` —
+Monday rejects `change_column_value` with a column config ("This event doesn't support config"),
+and an unscoped subscription fires on every column edit. A synthetic one-row CSV (one $25 gift
+plus a $25 match) produced the expected two Donations items — Anonymous Donor checked, Matched
+By linked to the company, Gift Type and Fiscal Year Ending as text — and was then deleted along
+with its D1 rows, so the sandbox tables start empty. That first upload also surfaced a real bug:
+the gift splitter sent `{label}`/`{date}` objects to the two text columns and Monday rejected
+every create (fixed in the same branch, `giftSplit.ts`).
+Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 ## Related changes elsewhere
 

@@ -12,8 +12,9 @@ const QB_ENTITY_PATH: Record<EntityType, string> = {
   product: 'item',
 };
 
-const QB_API_BASE = 'https://quickbooks.api.intuit.com/v3/company';
 const QB_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
+
+let sinkLogged = false;
 
 interface RefreshResponse {
   access_token: string;
@@ -25,7 +26,8 @@ export class HttpQuickBooksClient implements QuickBooksClient {
   constructor(
     private tokenStore: TokenStore,
     private clientId: string,
-    private clientSecret: string
+    private clientSecret: string,
+    private apiBaseUrl: string
   ) {}
 
   private async getValidAccessToken(): Promise<{ realmId: string; accessToken: string }> {
@@ -73,7 +75,7 @@ export class HttpQuickBooksClient implements QuickBooksClient {
   async getEntity(entityType: EntityType, qbId: string): Promise<Record<string, unknown>> {
     const { realmId, accessToken } = await this.getValidAccessToken();
     const path = QB_ENTITY_PATH[entityType];
-    const response = await fetch(`${QB_API_BASE}/${realmId}/${path}/${qbId}`, {
+    const response = await fetch(`${this.apiBaseUrl}/${realmId}/${path}/${qbId}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
     });
     if (!response.ok) {
@@ -85,8 +87,13 @@ export class HttpQuickBooksClient implements QuickBooksClient {
   }
 
   async createCustomer(fields: Record<string, unknown>): Promise<{ id: string }> {
+    if (!sinkLogged) {
+      sinkLogged = true;
+      // Design doc §6: one line per isolate naming the sink this deployment writes to.
+      console.log(JSON.stringify({ sandboxOutbound: 'quickbooks', apiBaseUrl: this.apiBaseUrl }));
+    }
     const { realmId, accessToken } = await this.getValidAccessToken();
-    const response = await fetch(`${QB_API_BASE}/${realmId}/customer`, {
+    const response = await fetch(`${this.apiBaseUrl}/${realmId}/customer`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,

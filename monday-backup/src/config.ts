@@ -24,8 +24,17 @@ export function validateConfig(raw: unknown): BackupConfig {
     throw new Error('config: excludeBoardIds entries must be strings');
   }
 
+  const workspaceIds = cfg.workspaceIds;
+  if (workspaceIds !== undefined && !Array.isArray(workspaceIds)) {
+    throw new Error('config: workspaceIds must be an array if present');
+  }
+  if (Array.isArray(workspaceIds) && workspaceIds.some((id) => typeof id !== 'string' || id === '')) {
+    throw new Error('config: workspaceIds entries must be non-empty strings');
+  }
+
   return {
     destinationParentFolderId,
     excludeBoardIds: (excludeBoardIds as string[] | undefined) ?? [],
+    workspaceIds: workspaceIds as string[] | undefined,
   };
 }

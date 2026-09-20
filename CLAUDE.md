@@ -88,7 +88,8 @@ npm test -- -t "test name"         # single test by name
 npm run typecheck           # tsc --noEmit
 npm run dev                 # wrangler dev — local Worker + D1 + queue simulation
 npm run deploy               # wrangler deploy
-npm run deploy:sandbox       # wrangler deploy --env sandbox — Workers that have an env.sandbox block (donor-portal, funraise-sync, donation-rollups so far)
+npm run deploy:sandbox       # wrangler deploy --env sandbox — every migration Worker has an env.sandbox block
+npm run dev:sandbox          # wrangler dev --env sandbox — local dev against the sandbox config; plain `npm run dev` is production and writes to production sinks once .dev.vars holds real secrets
 ```
 
 `salesforce-import` is a one-time batch CLI, not a deployed Worker, so it has no `dev`/`deploy`
@@ -131,9 +132,9 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
-**Sandbox environment — inbound only, no outbound data.** Workers that run against the sandbox
-(`donor-portal`, `funraise-sync`, `donation-rollups` today; `mailchimp-sync`, `quickbooks-sync`,
-`monday-backup`, `benevity-import` next) carry a
+**Sandbox environment — inbound only, no outbound data.** Every migration Worker (`donor-portal`,
+`funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
+`benevity-import`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the

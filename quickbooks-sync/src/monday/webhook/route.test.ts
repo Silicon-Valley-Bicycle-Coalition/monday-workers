@@ -20,6 +20,7 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
 
 const config: QuickbooksSyncConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', boards: { customers: 789, invoices: null, products: null } },
+  quickbooks: { apiBaseUrl: 'https://quickbooks.api.intuit.com/v3/company' },
   quickbooksSync: {
     columnMap: { customer: {}, invoice: {}, product: {} },
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },

@@ -95,7 +95,7 @@ describe('splitRowIntoGifts', () => {
     expect(gifts[0]!.transactionId).toBe('TXN001-match'); // guarded by toHaveLength(1) above
   });
 
-  it('sets exact Gift Type and Status labels, and Matched By only on the match gift', () => {
+  it('writes Gift Type as text and Status as a label, and Matched By only on the match gift', () => {
     const config = fakeConfig();
     // fakeRow() defaults both amounts positive, so both the employee and match gift are produced
     // (see "produces both an employee gift and a company match" above)
@@ -103,10 +103,10 @@ describe('splitRowIntoGifts', () => {
       { row: fakeRow(), disbursementPeriodEnding: '2025-12-16', organizationItemId: '99', personItemId: '5' },
       config
     ) as [GiftSpec, GiftSpec];
-    expect(employeeGift.columnValues[config.benevityImport.donationsColumns.giftType]).toEqual({ label: 'Donation' });
+    expect(employeeGift.columnValues[config.benevityImport.donationsColumns.giftType]).toBe('Donation');
     expect(employeeGift.columnValues[config.benevityImport.donationsColumns.status]).toEqual({ label: 'Received' });
     expect(employeeGift.columnValues[config.benevityImport.donationsColumns.matchedBy]).toBeUndefined();
-    expect(matchGift.columnValues[config.benevityImport.donationsColumns.giftType]).toEqual({ label: 'Matching Donation' });
+    expect(matchGift.columnValues[config.benevityImport.donationsColumns.giftType]).toBe('Matching Donation');
     expect(matchGift.columnValues[config.benevityImport.donationsColumns.matchedBy]).toEqual({ item_ids: [99] });
   });
 
@@ -133,7 +133,7 @@ describe('splitRowIntoGifts', () => {
     expect(gift.itemName).toContain('Anonymous');
   });
 
-  it('computes Fiscal Year Ending from the Donation Date', () => {
+  it('computes Fiscal Year Ending from the Donation Date and writes it as text', () => {
     const config = fakeConfig();
     // fakeRow() defaults both amounts positive, so the employee gift is always produced first
     const [gift] = splitRowIntoGifts(
@@ -145,6 +145,6 @@ describe('splitRowIntoGifts', () => {
       },
       config
     ) as [GiftSpec, ...GiftSpec[]];
-    expect(gift.columnValues[config.benevityImport.donationsColumns.fiscalYearEnding]).toEqual({ date: '2027-06-30' });
+    expect(gift.columnValues[config.benevityImport.donationsColumns.fiscalYearEnding]).toBe('2027-06-30');
   });
 });

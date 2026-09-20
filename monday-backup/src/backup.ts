@@ -21,6 +21,13 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
   const dateFolderName = startedAtUtc.slice(0, 10); // YYYY-MM-DD
   const runId = await deps.runStore.recordRunStart(startedAtUtc);
 
+  // Belt-and-braces alongside the workspace-scoped sandbox token (design doc §4): when set and
+  // non-empty, skip anything outside the listed workspace(s). Absent/empty preserves today's
+  // "snapshot everything the token can see" behaviour.
+  const workspaceIds = deps.config.workspaceIds;
+  const inScope = (workspaceId: string | null): boolean =>
+    workspaceIds === undefined || workspaceIds.length === 0 || (workspaceId !== null && workspaceIds.includes(workspaceId));
+
   try {
     const folderId = await deps.drive.ensureDatedFolder(deps.config.destinationParentFolderId, dateFolderName);
 
@@ -32,6 +39,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     const boards = await deps.monday.listBoards();
     for (const board of boards) {
       if (deps.config.excludeBoardIds.includes(board.id)) continue;
+      if (!inScope(board.workspaceId)) continue;
       try {
         const schema = await deps.monday.getBoardSchema(board.id);
         const items = await deps.monday.getBoardItems(board.id);
@@ -47,6 +55,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
 
     const docs = await deps.monday.listDocs();
     for (const doc of docs) {
+      if (!inScope(doc.workspaceId)) continue;
       try {
         const blocks = await deps.monday.getDocBlocks(doc.id);
         docCount++;

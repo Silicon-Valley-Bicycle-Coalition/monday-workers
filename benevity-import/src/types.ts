@@ -79,4 +79,6 @@ export interface Env extends Cloudflare.Env {
   // aren't declared in wrangler.jsonc — the webhook route fails closed (401 on every
   // delivery) until it is set, same convention as funraise-sync.
   BENEVITY_WEBHOOK_SECRET?: string;
+  // Which deployment this isolate is — unset (production) or "sandbox". See src/environment.ts.
+  ENVIRONMENT?: string;
 }

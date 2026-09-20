@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { validateConfig } from './config';
+import rawConfig from '../config/svbc.json';
 
 const validConfig = {
   monday: {
     apiUrl: 'https://api.monday.com/v2',
     boards: { customers: null, invoices: null, products: null },
+  },
+  quickbooks: {
+    apiBaseUrl: 'https://quickbooks.api.intuit.com/v3/company',
   },
   quickbooksSync: {
     columnMap: {
@@ -95,5 +99,14 @@ describe('validateConfig', () => {
       quickbooksSync: { ...validConfig.quickbooksSync, itemNameField },
     };
     expect(() => validateConfig(broken)).toThrow(/itemNameField.invoice/);
+  });
+
+  it('requires quickbooks.apiBaseUrl to be an https URL', () => {
+    const base = JSON.parse(JSON.stringify(rawConfig)) as Record<string, any>;
+    expect(validateConfig(base).quickbooks.apiBaseUrl).toBe('https://quickbooks.api.intuit.com/v3/company');
+    base.quickbooks.apiBaseUrl = 'http://quickbooks.api.intuit.com/v3/company';
+    expect(() => validateConfig(base)).toThrow('quickbooks.apiBaseUrl');
+    delete base.quickbooks;
+    expect(() => validateConfig(base)).toThrow('quickbooks');
   });
 });

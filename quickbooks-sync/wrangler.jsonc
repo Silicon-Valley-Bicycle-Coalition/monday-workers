@@ -19,7 +19,7 @@
       "binding": "DB",
       "database_name": "svbc-quickbooks-sync",
       // Replace after running: wrangler d1 create svbc-quickbooks-sync
-      "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
       "migrations_dir": "migrations"
     }
   ],
@@ -38,5 +38,44 @@
   },
   "observability": {
     "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-quickbooks-sync-sandbox
+  // against Intuit's *sandbox* host (config/sandbox.json quickbooks.apiBaseUrl, selected by the
+  // ENVIRONMENT var) with the sandbox app's development keys. Rule: inbound data only, no
+  // outbound data — a sandbox deploy can only create Customers in the sandbox company, and
+  // config/split.test.ts fails if the two configs ever share the host. Everything here is
+  // non-inheritable in Wrangler and deliberately restated.
+  // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for MONDAY_API_TOKEN,
+  // QB_CLIENT_ID and QB_CLIENT_SECRET (the sandbox app's *development* keys — production keys
+  // are refused by the sandbox host), QB_WEBHOOK_VERIFIER_TOKEN, MONDAY_WEBHOOK_SECRET.
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-quickbooks-sync-sandbox",
+          // Replace after running: wrangler d1 create svbc-quickbooks-sync-sandbox
+          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [{ "queue": "quickbooks-sync-writes-sandbox", "binding": "SYNC_QUEUE" }],
+        "consumers": [
+          {
+            "queue": "quickbooks-sync-writes-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "quickbooks-sync-writes-sandbox-dlq"
+          }
+        ]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }

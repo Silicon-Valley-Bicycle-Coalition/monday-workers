@@ -7,6 +7,9 @@
       "products": null
     }
   },
+  "quickbooks": {
+    "apiBaseUrl": "https://quickbooks.api.intuit.com/v3/company"
+  },
   "quickbooksSync": {
     "columnMap": {
       "customer": {

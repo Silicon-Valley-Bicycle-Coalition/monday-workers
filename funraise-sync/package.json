@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "dev": "wrangler dev",
+    "dev:sandbox": "wrangler dev --env sandbox",
     "deploy": "wrangler deploy",
     "deploy:sandbox": "wrangler deploy --env sandbox",
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"

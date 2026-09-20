@@ -44,6 +44,11 @@ export function validateConfig(raw: unknown): QuickbooksSyncConfig {
     }
   }
 
+  const quickbooks = requireObject(cfg.quickbooks, 'quickbooks');
+  if (typeof quickbooks.apiBaseUrl !== 'string' || !/^https:\/\/[^/]+\/v3\/company$/.test(quickbooks.apiBaseUrl)) {
+    throw new Error('config: "quickbooks.apiBaseUrl" must be an https URL ending in /v3/company (the QuickBooks Accounting API base)');
+  }
+
   const quickbooksSync = requireObject(cfg.quickbooksSync, 'quickbooksSync');
 
   for (const key of REQUIRED_QUICKBOOKS_SYNC_KEYS) {
