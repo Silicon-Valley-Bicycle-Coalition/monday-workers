@@ -539,10 +539,10 @@ export class HttpMondayClient implements MondayClient {
     newValue: string;
     submittedAtISO: string;
   }): Promise<void> {
-    // NOTE: the column_values shapes below (connect-boards { item_ids }, date { date, time })
-    // are written from current Monday API v2 knowledge but not verified against a live account —
-    // verify against the real Change Requests board before deploy (same caveat as the read-side
-    // NOTEs above). All user-sourced values travel as GraphQL variables.
+    // column_values shapes (connect-boards { item_ids }, date { date, time }) verified live
+    // against the sandbox Change Requests board on 2026-09-20 — donor link resolved correctly,
+    // text/date columns round-tripped as expected, item landed in the top ("New") group. All
+    // user-sourced values travel as GraphQL variables.
     const mutation = `
       mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
         create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) {
