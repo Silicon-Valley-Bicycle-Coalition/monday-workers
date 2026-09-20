@@ -1,7 +1,9 @@
 # funraise-sync
 
-**Status:** Decided — Option B (full retirement). Build the direct sync. **Deployed to the CRM
-Sandbox and receiving Funraise's live webhook since 2026-09-18** — see "Deployed and verified".
+**Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
+`svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
+2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
+`svbc-funraise-sync` is retired until cutover) — see "Deployed and verified".
 **Priority:** Blocking-adjacent — feeds ongoing donation data once Salesforce retires; the
 historical side is handled by `salesforce-import`, this Worker takes over going forward.
 **Owner:** Unassigned.
@@ -297,9 +299,22 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
 
 ## Deployed and verified (CRM Sandbox, 2026-09-18)
 
-Hand-deployed with `wrangler deploy` (D1 `svbc-funraise-sync`, migrations 0001–0003 applied
-remotely; queues `funraise-sync-writes` and `-dlq`; secrets `FUNRAISE_WEBHOOK_SECRET` and
-`MONDAY_API_TOKEN`), then proven three ways, each time leaving nothing behind:
+**The running deployment is `svbc-funraise-sync-sandbox`** (`npm run deploy:sandbox`; D1
+`svbc-funraise-sync-sandbox`, queues `funraise-sync-writes-sandbox` and `-sandbox-dlq`, secrets
+`FUNRAISE_WEBHOOK_SECRET`, `MONDAY_API_TOKEN`, `FUNRAISE_API_KEY` under `--env sandbox`). It was
+moved there on 2026-09-19 per the sandbox design's §9: D1 created and migrations 0001–0004
+applied, data copied from `svbc-funraise-sync` with counts verified equal, secrets set, deployed,
+Funraise's webhook repointed to the `…-sandbox` host (its verify call reached the new Worker and
+the card read Enabled), Funraise's Test button delivery written end to end on the new path and
+cleaned up, and the production-named Worker deleted (queue consumer removed first — Cloudflare
+refuses to delete a consumer Worker). D1 `svbc-funraise-sync` and the production-named queues
+survive for the cutover deploy. Nothing arrived in the old D1 between the snapshot and the
+repoint, so no re-sync was needed. Note for the rollups half of §9: the cron poll here means two
+pollers overlap while both Workers exist — keep that window short.
+
+First deployed 2026-09-18 under the production name (`wrangler deploy`; D1 `svbc-funraise-sync`,
+migrations 0001–0003; queues `funraise-sync-writes` and `-dlq`; secrets `FUNRAISE_WEBHOOK_SECRET`
+and `MONDAY_API_TOKEN`), then proven three ways, each time leaving nothing behind:
 
 1. **Documented example, by hand.** The trimmed example from Funraise's webhooks article,
    POSTed to the live route: accepted, and 12 s later the consumer had created the donor on
@@ -409,15 +424,31 @@ migration `0004`, `src/scheduled.ts`). How it runs:
 * **Bootstrap walk, run locally.** Wrangler's limits are not enforced in local development, so
   the one-time reconciliation of the importer's items runs from a laptop against the *remote*
   D1 and the real APIs: put `MONDAY_API_TOKEN` and `FUNRAISE_API_KEY` in `funraise-sync/.dev.vars`
-  (gitignored; delete it afterwards), start `npx wrangler dev --remote --test-scheduled`, and
-  hit `http://localhost:8787/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
-  deployed-shaped run that advances the cursor, so a loop of ~60 requests walks the board. Read
-  the `subscriptions poll read …` log line each time; the last one reads `0 rows`. Then
-  `select count(*) from subscriptions` on the remote D1 should equal the board's item count and
-  `created` should have stayed ≈ 0 (everything adopted). There is no CLI to fire a deployed cron;
-  after the bootstrap, wait for the top of the hour and expect a one-request run with
-  `unchanged` = the boundary row only. Funraise's webhook Test payload has no `subscription`, so
-  its Donations item must show an empty Recurring Gift column.
+  (gitignored; delete it afterwards), start `npx wrangler dev --remote --test-scheduled
+  --env sandbox` (since the 2026-09-19 move: the sandbox D1, queues and `ENVIRONMENT` var come
+  from `env.sandbox`; before it, `--var ENVIRONMENT:sandbox` against the top-level binding), and hit
+  `http://localhost:8788/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
+  deployed-shaped run that advances the cursors. Read the `subscriptions poll read …` log line
+  each time. The walk is done when a run reads **only unchanged rows** — never `0 rows`, because
+  `>=` re-reads the boundary rows that share the last `updtime` on every idle run (that is the
+  one-request idle cost). Then `select count(*) from subscriptions` on the remote D1 should equal
+  the board's item count and Funraise's own subscription count.
+  **Do it while the deployed hourly cron cannot fire** (deploy with `subscriptionsPoll.enabled:
+  false`, or finish between two top-of-the-hour runs): on 2026-09-19 the 02:00 cron and the local
+  loop reached the same page within a second and both created subscription 197170 before either
+  had recorded it; the copy the ledger didn't own was deleted by hand. Funraise's webhook Test
+  payload has no `subscription`, so its Donations item must show an empty Recurring Gift column.
+* **Done 2026-09-19 (CRM Sandbox, run locally as above, ~140 invocations).** Funraise holds
+  1,175 subscriptions — 542 Active, 61 Cancelled, 4 Failed, 568 Redacted. The importer had put
+  604 on the board (the Salesforce package never carried 567 of the Redacted ones, which are
+  historical agreements bulk-imported into Funraise on 2024-10-09 with their payment method
+  scrubbed; decision DWK 2026-09-18: mirror Funraise fully, so they were created). Result,
+  across the local walk and the hourly cron runs that overlapped it: all 604 importer items
+  adopted, 571 created, ledger 1,175 = board 1,175 = Funraise 1,175, every row with a
+  Donor link and a Status; cursor `1789733255690`, page 0. Three things this walk uncovered
+  and fixed on the way: Funraise 500s on an `updtime` filter below ~2001 (cursor floored), a
+  bulk import gave hundreds of rows one `updtime` (page index persisted across runs), and
+  `Redacted` was not in `statusLabelMap` (mapped).
 
 ## Open
 
@@ -428,8 +459,11 @@ migration `0004`, `src/scheduled.ts`). How it runs:
 3. ~~Register the webhook at `/webhooks/funraise/transaction?secret=…`~~ **Done 2026-09-18**
    (see "APIs & auth"). The former subscription / pledge / registration paths are gone; any
    other path 404s.
-4. **Deploy the poller build and run the first poll** (see "Recurring gifts and registrations",
-   "Verify after deploy"): `FUNRAISE_API_KEY` secret, migration `0004`, then one hourly run.
+4. ~~Deploy the poller build and run the first poll~~ **Done 2026-09-18/19**: `FUNRAISE_API_KEY`
+   set, migration `0004` applied, poller deployed, bootstrap walk finished (see "Recurring gifts
+   and registrations"). The deployment is still under the production name with sandbox ids
+   baked in; the move onto `env.sandbox` (D1 export/import, secrets, `deploy:sandbox`, repoint
+   Funraise's webhook, delete the production-named Worker) is the sandbox design's §9.
 5. **Gift Type vocabulary for tickets.** `eventGiftTypeValue` ships as `Event Ticket`; confirm
    the label staff want on the Donations board before the first paid Funraise ticket arrives.
 
