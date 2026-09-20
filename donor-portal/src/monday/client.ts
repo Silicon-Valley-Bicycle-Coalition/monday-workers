@@ -240,8 +240,9 @@ export class HttpMondayClient implements MondayClient {
   // connect-board column links to donorItemId, following the cursor across pages.
   // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
   // id is written from current Monday API v2 knowledge but not verified against a live
-  // account — verify against a real board before deploy (same caveat already flagged in
-  // membership-reminders/src/monday.ts); a shape fix here covers both callers. donorItemId
+  // account — verify against a real board before deploy (MR !91 already ran this live check
+  // and found this exact shape needs a fix; see that MR, not yet merged to main); a shape fix
+  // here covers both callers. donorItemId
   // isn't attacker-reachable today (it's derived from the session, never client-supplied),
   // but it's passed as a $donorItemId GraphQL variable rather than interpolated, as
   // defense-in-depth and for consistency with findDonorsByEmail above.
@@ -406,8 +407,9 @@ export class HttpMondayClient implements MondayClient {
   async getDiscountOrganizations(): Promise<DiscountOrganization[]> {
     // NOTE: the query_params.rules shape for filtering by a checkbox column's boolean value
     // (discountActive here) is written from current Monday API v2 knowledge but not verified
-    // against a live account — verify against a real Organizations board before deploy (same
-    // caveat already flagged in membership-reminders/src/monday.ts).
+    // against a live account — verify against a real Organizations board before deploy (MR
+    // !91 already ran this live check and found this exact shape needs a fix; see that MR,
+    // not yet merged to main).
     const query = `
       query ($boardId: ID!) {
         boards(ids: [$boardId]) {
