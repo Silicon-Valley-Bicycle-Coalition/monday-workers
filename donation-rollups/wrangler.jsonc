@@ -71,8 +71,8 @@
         {
           "binding": "DB",
           "database_name": "svbc-donation-rollups-sandbox",
-          // Replace after running: wrangler d1 create svbc-donation-rollups-sandbox
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          // Created 2026-09-19 on the SVBC account (wrangler d1 create svbc-donation-rollups-sandbox)
+          "database_id": "0d0663d9-b0dc-4a1c-b40b-6a6d020e034d",
           "migrations_dir": "migrations"
         }
       ],
