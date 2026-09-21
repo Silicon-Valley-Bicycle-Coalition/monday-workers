@@ -57,14 +57,21 @@ Three independent flows — see the design doc for full sequence diagrams:
   webhook "API" event source **unchecked** — otherwise this Worker's own writes back to Mailchimp
   (from the outbound side) can themselves trigger inbound webhook events, risking a feedback loop
   with the Donors-board webhook below.
-* **Not yet verified against a live Mailchimp account** — confirm before relying on the
-  `active-member`/`lapsed-member`/`lifetime-member` tags for any live segment or Journey: does a
-  Mailchimp list-member `PUT` (what `upsertMember` sends) actually *replace* a contact's existing
-  `tags` array, or does it *merge* with what's already there? Public documentation disagrees. If it
-  merges, a donor's status change (e.g. active → lapsed) would leave the stale `active-member` tag
-  in place alongside the new one. If confirmed to merge, the fix is switching to Mailchimp's
-  dedicated `POST /lists/{id}/members/{hash}/tags` endpoint with explicit `active`/`inactive`
-  status per tag, rather than sending `tags` through the upsert call.
+* ~~Not yet verified against a live Mailchimp account — does a Mailchimp list-member `PUT` replace
+  or merge the `tags` array?~~ **Resolved in code, not just in theory — this caveat was stale.**
+  `upsertMember` in `src/mailchimp/client.ts` doesn't rely on the PUT body's `tags` at all for
+  updates: its own comment states why (`PUT`'s `tags` field only applies when the member is first
+  created; on an update Mailchimp silently ignores it), and every call follows the `PUT` with a
+  `syncTags` call against the dedicated `POST /lists/{id}/members/{hash}/tags` endpoint — explicit
+  `active`/`inactive` status per tag, touching only tags this Worker manages (`managedTags`) so
+  staff- or other-tool-applied tags are never disturbed. Unit-tested (`client.test.ts`: "POSTs the
+  desired tags as active and the other managed tags as inactive after the PUT"). Consistent with
+  Mailchimp's own API reference, checked 2026-09-21: the `PUT /lists/{list_id}/members/
+  {subscriber_hash}` request schema I could find documented merge_fields/interests/status and
+  similar, but no writable `tags` field — it showed up only in the *response* schema, read-only —
+  which doesn't prove the create-vs-update split the code comment describes, but doesn't
+  contradict it either, and finding no writable `tags` param at all is itself reason enough not to
+  depend on the PUT for tag changes regardless.
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
