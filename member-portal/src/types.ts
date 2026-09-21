@@ -178,6 +178,9 @@ export interface Config {
   email: {
     fromAddress: string;
     fromName: string;
+    // Optional — when set, outbound emails carry this Reply-To instead of the (unmonitored)
+    // send-only fromAddress. The sandbox binding strips it regardless (see sandboxBinding.ts).
+    replyTo?: string;
   };
   auth: {
     magicLinkTtlMinutes: number;
