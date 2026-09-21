@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-member-portal",
-      "database_id": "1c2e47c7-29b7-40aa-becb-c079a364c000",
+      "database_id": "de5bdf9d-d1fd-4f8c-aeb5-d49df43a6c41",
       "migrations_dir": "migrations"
     }
   ],
@@ -81,8 +81,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-member-portal-sandbox",
-          // Replace after running: wrangler d1 create svbc-member-portal-sandbox
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "database_id": "490a0d98-e168-46eb-a4ee-ef28ecf92043",
           "migrations_dir": "migrations"
         }
       ],
