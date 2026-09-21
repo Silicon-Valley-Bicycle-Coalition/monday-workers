@@ -9,6 +9,7 @@ export interface NewQbEvent {
 
 export interface QbEventStatusPatch {
   fetchedPayload?: string;
+  pendingMondayItemId?: string;
   error?: string;
   writtenAt?: string;
 }
@@ -24,6 +25,7 @@ interface D1QbEventRecord {
   entity_type: EntityType;
   qb_id: string;
   fetched_payload: string | null;
+  pending_monday_item_id: string | null;
   status: SyncStatus;
   error: string | null;
   received_at: string;
@@ -36,6 +38,7 @@ function toQbEventRow(record: D1QbEventRecord): QbEventRow {
     entityType: record.entity_type,
     qbId: record.qb_id,
     fetchedPayload: record.fetched_payload,
+    pendingMondayItemId: record.pending_monday_item_id,
     status: record.status,
     error: record.error,
     receivedAt: record.received_at,
@@ -64,18 +67,26 @@ export class D1QbEventStore implements QbEventStore {
         `UPDATE qb_events SET
            status = ?2,
            fetched_payload = COALESCE(?3, fetched_payload),
-           error = ?4,
-           written_at = COALESCE(?5, written_at)
+           pending_monday_item_id = COALESCE(?4, pending_monday_item_id),
+           error = ?5,
+           written_at = COALESCE(?6, written_at)
          WHERE event_id = ?1`
       )
-      .bind(eventId, status, patch.fetchedPayload ?? null, patch.error ?? null, patch.writtenAt ?? null)
+      .bind(
+        eventId,
+        status,
+        patch.fetchedPayload ?? null,
+        patch.pendingMondayItemId ?? null,
+        patch.error ?? null,
+        patch.writtenAt ?? null
+      )
       .run();
   }
 
   async getEvent(eventId: string): Promise<QbEventRow | null> {
     const record = await this.db
       .prepare(
-        `SELECT event_id, entity_type, qb_id, fetched_payload, status, error, received_at, written_at
+        `SELECT event_id, entity_type, qb_id, fetched_payload, pending_monday_item_id, status, error, received_at, written_at
          FROM qb_events WHERE event_id = ?1`
       )
       .bind(eventId)

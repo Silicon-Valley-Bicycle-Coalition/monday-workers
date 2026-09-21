@@ -11,6 +11,7 @@ function qbEventRow(overrides: Partial<QbEventRow> = {}): QbEventRow {
     entityType: 'customer',
     qbId: '60',
     fetchedPayload: null,
+    pendingMondayItemId: null,
     status: 'received',
     error: null,
     receivedAt: '2026-08-22T00:00:00.000Z',

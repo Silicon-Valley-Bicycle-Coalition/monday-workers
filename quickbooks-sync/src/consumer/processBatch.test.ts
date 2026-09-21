@@ -28,6 +28,7 @@ function qbEventRow(overrides: Partial<QbEventRow> = {}): QbEventRow {
     entityType: 'customer',
     qbId: 'qb-1',
     fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Acme Co' }),
+    pendingMondayItemId: null,
     status: 'queued',
     error: null,
     receivedAt: '2026-08-22T00:00:00.000Z',
