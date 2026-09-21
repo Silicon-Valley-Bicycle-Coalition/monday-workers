@@ -29,18 +29,18 @@ function columnIds(columns: Record<string, unknown>): string[] {
 
 describe('config split: board ids', () => {
   it('the sandbox Donations board is the CRM Sandbox one and production is the placeholder', () => {
-    expect(sandbox.donationRollups.donationBoards[0]!.boardId).toBe(18428131791);
+    expect(sandbox.donationRollups.donationBoards[0]!.boardId).toBe(18431577310);
     expect(production.donationRollups.donationBoards[0]!.boardId).toBe(0);
   });
 
   it('owner boards are the three CRM Sandbox boards in sandbox and a placeholder in production', () => {
-    expect(Object.keys(sandbox.donationRollups.ownerColumnsByBoard).sort()).toEqual(['18428131727', '18428131737', '18428131744']);
+    expect(Object.keys(sandbox.donationRollups.ownerColumnsByBoard).sort()).toEqual(['18431577213', '18431577220', '18431577228']);
     expect(Object.keys(production.donationRollups.ownerColumnsByBoard)).toEqual(['0']);
   });
 
   it('custodian ids are real in sandbox and null or placeholder in production', () => {
     expect(sandbox.custodian.workspaceId).toBe(17141226);
-    expect(sandbox.custodian.annualSummaryBoardId).toBe(18429045784);
+    expect(sandbox.custodian.annualSummaryBoardId).toBe(18431966690);
     expect(production.custodian.workspaceId).toBe(0);
     expect(production.custodian.alertItemId).toBeNull();
     expect(production.custodian.annualSummaryBoardId).toBeNull();
