@@ -20,9 +20,9 @@ describe('config split: sinks', () => {
     expect(production.fromName).not.toBe(sandbox.fromName);
   });
 
-  it('sandbox feedbackFormUrl is a real monday form, and production is still a placeholder', () => {
+  it('sandbox and production feedbackFormUrl are both real monday forms', () => {
     expect(sandbox.feedbackFormUrl).toMatch(/^https:\/\/forms\.monday\.com\/forms\//);
-    expect(production.feedbackFormUrl).toBe('REPLACE_AFTER_PRODUCTION_ORGANIZER_FEEDBACK_FORM_FIXED');
+    expect(production.feedbackFormUrl).toMatch(/^https:\/\/forms\.monday\.com\/forms\//);
   });
 
   it('production and sandbox never point at the same form', () => {

@@ -88,8 +88,12 @@ Same convention as `donor-portal`: `wrangler deploy --env sandbox` deploys
 `sandbox@bikesiliconvalley.org` (Cloudflare-enforced via `allowed_destination_addresses`, plus a
 code-layer rewrite in `src/email/sandboxBinding.ts` — see that file's comment). `config/sandbox.json`
 holds the sandbox Organizer Feedback Form's real URL; `config/production.json`'s
-`feedbackFormUrl` is a placeholder until the production Organizer Feedback Form's title/column
-cleanup (see `migration-plan.md`) is actually applied by someone with write access to it.
+`feedbackFormUrl` now points at the real, live Organizer Feedback Form
+(`https://forms.monday.com/forms/4a5ce8f0e00550987dffbcf96280094e`, confirmed live 2026-09-20 —
+its questions and welcome/success copy are already organizer-specific; only the browser-tab title
+and some dead board columns are still cosmetically wrong, see `migration-plan.md`). That cosmetic
+cleanup doesn't block this Worker functionally, but production deploy is still gated on the two
+items in Open Questions below.
 
 **Confirmed working end-to-end as of 2026-09-21.** Sends to `sandbox@bikesiliconvalley.org` had
 initially failed with `destination address is not a verified address` — Cloudflare requires every
@@ -110,7 +114,7 @@ npm run dev           # wrangler dev — local Worker, no real email sends witho
                        # domain configured locally; see wrangler docs for local email testing
 npm run dev:sandbox
 npm run deploy:sandbox
-npm run deploy         # do not run until config/production.json's feedbackFormUrl is real
+npm run deploy         # do not run until the Open Questions below are resolved
 ```
 
 ## Open questions
@@ -120,8 +124,9 @@ npm run deploy         # do not run until config/production.json's feedbackFormU
   `quickbooks-sync`, `mailchimp-sync`, `donation-rollups`, `benevity-import` all take webhook
   traffic on their default `*.workers.dev` URL with no custom route — access control is the
   shared secret, not domain trust). No route to add here.
-- Production `feedbackFormUrl` needs the real Organizer Feedback Form fixed (title + dead columns
-  — see `migration-plan.md`) before this Worker can be deployed to production for real.
+- ~~Production `feedbackFormUrl` is a placeholder~~ — resolved (2026-09-20): points at the real
+  live form now (see Sandbox environment section above for the URL and what's still cosmetically
+  pending on the board itself).
 - To go live in production: add the `Post-Event Feedback` column and the same webhook automation
-  to the real `BP Request Form` board (id `18395469629`), point `config/production.json` at the
-  fixed production form URL, and `npm run deploy`.
+  to the real `BP Request Form` board (id `18395469629`), set the production `WEBHOOK_SECRET`
+  (see Secrets above) if not already set, and `npm run deploy`.
