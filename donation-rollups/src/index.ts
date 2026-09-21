@@ -14,6 +14,7 @@ import { processRecomputeBatch } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { runDuty, dutiesForDate, type CustodianDeps } from './custodian/custodian';
 import { createCustodianApp } from './custodian/routes';
+import { checkRequestRateLimit } from './rateLimit';
 import type { Env, RecomputeQueueMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -47,25 +48,35 @@ function custodianDeps(env: Env): CustodianDeps {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // configFor validates synchronously and must keep throwing synchronously (before any
+    // routing or rate-limit check) on a misconfigured ENVIRONMENT.
     const config = configFor(env);
-    if (new URL(request.url).pathname.startsWith('/custodian/')) {
-      const deps = custodianDeps(env);
-      const app = createCustodianApp({
-        runDuty: (duty) => runDuty(duty, deps),
-        lastRuns: () => deps.gifts.lastRuns(),
-        secret: env.MONDAY_WEBHOOK_SECRET,
+
+    // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
+    // cost limits". Covers both branches below. REQUEST_RATE_LIMITER is provisioned in
+    // wrangler.jsonc.
+    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+      if (limited) return limited;
+
+      if (new URL(request.url).pathname.startsWith('/custodian/')) {
+        const deps = custodianDeps(env);
+        const app = createCustodianApp({
+          runDuty: (duty) => runDuty(duty, deps),
+          lastRuns: () => deps.gifts.lastRuns(),
+          secret: env.MONDAY_WEBHOOK_SECRET,
+        });
+        return app.fetch(request, env, ctx);
+      }
+      const app = createApp({
+        pendingStore: new D1PendingStore(env.DB),
+        donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
+        queue: {
+          send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined),
+        },
+        webhookSecret: env.MONDAY_WEBHOOK_SECRET,
       });
       return app.fetch(request, env, ctx);
-    }
-    const app = createApp({
-      pendingStore: new D1PendingStore(env.DB),
-      donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
-      queue: {
-        send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined),
-      },
-      webhookSecret: env.MONDAY_WEBHOOK_SECRET,
     });
-    return app.fetch(request, env, ctx);
   },
 
   // Both queues are consumed by this one Worker; wrangler.jsonc's consumers list names them.

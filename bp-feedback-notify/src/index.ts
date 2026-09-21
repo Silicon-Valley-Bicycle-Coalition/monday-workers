@@ -4,6 +4,7 @@ import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { sandboxEmailBinding } from './email/sandboxBinding';
 import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webhook';
 import { timingSafeEqual } from './timingSafeEqual';
+import { checkRequestRateLimit } from './rateLimit';
 import production from '../config/production.json';
 import sandbox from '../config/sandbox.json';
 
@@ -11,9 +12,20 @@ export interface Env extends EnvironmentBindings {
   EMAIL: SendEmail;
   WEBHOOK_SECRET: string;
   SANDBOX_EMAIL_SINK?: string;
+  // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
+  REQUEST_RATE_LIMITER: RateLimit;
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Checked before any routing or email-sending work — see README "Reliability: traffic and cost
+// limits". Registered first so it gates every route below (Hono runs middleware in registration
+// order).
+app.use('*', async (c, next) => {
+  const limited = await checkRequestRateLimit(c.req.raw, { limit: (key) => c.env.REQUEST_RATE_LIMITER.limit({ key }) });
+  if (limited) return limited;
+  await next();
+});
 
 // monday.com's "Send a webhook" automation action has no custom-header field in its UI — the
 // connection URL itself is the only place to put a secret — so the shared secret is checked as

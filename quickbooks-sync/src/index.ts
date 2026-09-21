@@ -12,6 +12,7 @@ import { createMondayWebhookApp } from './monday/webhook/route';
 import { HttpQuickBooksClient } from './quickbooks/client';
 import { D1TokenStore } from './quickbooks/tokenStore';
 import { createQbWebhookApp, type QueueLike } from './quickbooks/webhook/route';
+import { checkRequestRateLimit } from './rateLimit';
 import type { Env, QueueMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -31,39 +32,48 @@ function toQueueLike(queue: Queue<QueueMessage>): QueueLike {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // configFor validates synchronously and must keep throwing synchronously (before any
+    // routing or rate-limit check) on a misconfigured ENVIRONMENT — see index.test.ts.
     const config = configFor(env);
-    const mapStore = new D1MapStore(env.DB);
-    const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
-    const quickBooksClient = new HttpQuickBooksClient(
-      new D1TokenStore(env.DB),
-      env.QB_CLIENT_ID,
-      env.QB_CLIENT_SECRET,
-      config.quickbooks.apiBaseUrl
-    );
-    const queue = toQueueLike(env.SYNC_QUEUE);
 
-    const app = new Hono();
-    app.route(
-      '/',
-      createQbWebhookApp({
-        qbEventStore: new D1QbEventStore(env.DB),
-        quickBooksClient,
-        queue,
-        verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
-      })
-    );
-    app.route(
-      '/',
-      createMondayWebhookApp({
-        mondayEventStore: new D1MondayEventStore(env.DB),
-        mapStore,
-        queue,
-        config,
-        mondayWebhookSecret: env.MONDAY_WEBHOOK_SECRET,
-      })
-    );
+    // Checked before any routing, D1, or Monday/QuickBooks work — see README "Reliability:
+    // traffic and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
+    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+      if (limited) return limited;
 
-    return app.fetch(request, env, ctx);
+      const mapStore = new D1MapStore(env.DB);
+      const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
+      const quickBooksClient = new HttpQuickBooksClient(
+        new D1TokenStore(env.DB),
+        env.QB_CLIENT_ID,
+        env.QB_CLIENT_SECRET,
+        config.quickbooks.apiBaseUrl
+      );
+      const queue = toQueueLike(env.SYNC_QUEUE);
+
+      const app = new Hono();
+      app.route(
+        '/',
+        createQbWebhookApp({
+          qbEventStore: new D1QbEventStore(env.DB),
+          quickBooksClient,
+          queue,
+          verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
+        })
+      );
+      app.route(
+        '/',
+        createMondayWebhookApp({
+          mondayEventStore: new D1MondayEventStore(env.DB),
+          mapStore,
+          queue,
+          config,
+          mondayWebhookSecret: env.MONDAY_WEBHOOK_SECRET,
+        })
+      );
+
+      return app.fetch(request, env, ctx);
+    });
   },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {

@@ -23,6 +23,7 @@ import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
 import { purgeExpiredCardTokens } from './card/purgeExpiredTokens';
+import { checkRequestRateLimit } from './requestRateLimit';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate. Production's config/svbc.json still ships with placeholder ids until an operator
@@ -91,49 +92,59 @@ export async function routeQueueBatch(
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    // Validated lazily and memoized per environment — see configFor above.
+    // Validated lazily and memoized per environment — see configFor above. Must keep throwing
+    // synchronously (before any routing or rate-limit check) on a misconfigured deploy.
     const config = configFor(env);
-    if (config.monday.donorsBoardId === null || config.monday.donationsBoardId === null || config.monday.organizationsBoardId === null) {
+    const { donorsBoardId, donationsBoardId, organizationsBoardId } = config.monday;
+    if (donorsBoardId === null || donationsBoardId === null || organizationsBoardId === null) {
       throw new Error('config: monday board ids must be set before this Worker can serve requests');
     }
 
-    const app = createApp({
-      monday: new HttpMondayClient(
-        config.monday.apiUrl,
-        env.MONDAY_API_TOKEN,
-        config.monday.columns,
-        config.monday.donorsBoardId,
-        config.monday.donationsBoardId,
-        config.monday.organizationsBoardId,
-        config.donations,
-        // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
-        // non-null assertion below can't fire on a placeholder config.
-        pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
-        // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
-        // null board id rather than querying a sentinel.
-        config.monday.volunteersBoardId
-      ),
-      tokenStore: new D1MagicLinkTokenStore(env.DB),
-      sessionStore: new D1SessionStore(env.DB),
-      attemptStore: new D1LoginAttemptStore(env.DB),
-      emailSender: new CloudflareEmailSender(
-        emailBindingFor(env),
-        config.email.fromAddress,
-        config.email.fromName,
-        config.email.logoUrl,
-        config.email.replyTo
-      ),
-      ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
-      config,
-      now: () => new Date(),
-      changeStore: new D1ChangeRequestStore(env.DB),
-      changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
-      letterSendStore: new D1LetterSendStore(env.DB),
-      letterQueue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
-      letterWebhookSecret: env.LETTER_WEBHOOK_SECRET,
-      cardTokenStore: new D1CardTokenStore(env.DB),
+    // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
+    // cost limits". This is coarser than (and in addition to) the login/change/verify-specific
+    // limits already threaded through createApp below via ipLimiter. REQUEST_RATE_LIMITER is
+    // provisioned in wrangler.jsonc.
+    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+      if (limited) return limited;
+
+      const app = createApp({
+        monday: new HttpMondayClient(
+          config.monday.apiUrl,
+          env.MONDAY_API_TOKEN,
+          config.monday.columns,
+          donorsBoardId,
+          donationsBoardId,
+          organizationsBoardId,
+          config.donations,
+          // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
+          // non-null assertion below can't fire on a placeholder config.
+          pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
+          // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
+          // null board id rather than querying a sentinel.
+          config.monday.volunteersBoardId
+        ),
+        tokenStore: new D1MagicLinkTokenStore(env.DB),
+        sessionStore: new D1SessionStore(env.DB),
+        attemptStore: new D1LoginAttemptStore(env.DB),
+        emailSender: new CloudflareEmailSender(
+          emailBindingFor(env),
+          config.email.fromAddress,
+          config.email.fromName,
+          config.email.logoUrl,
+          config.email.replyTo
+        ),
+        ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
+        config,
+        now: () => new Date(),
+        changeStore: new D1ChangeRequestStore(env.DB),
+        changeQueue: { send: (message) => env.CHANGE_QUEUE.send(message).then(() => undefined) },
+        letterSendStore: new D1LetterSendStore(env.DB),
+        letterQueue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
+        letterWebhookSecret: env.LETTER_WEBHOOK_SECRET,
+        cardTokenStore: new D1CardTokenStore(env.DB),
+      });
+      return app.fetch(request, env, ctx);
     });
-    return app.fetch(request, env, ctx);
   },
 
   async queue(batch: MessageBatch<ChangeQueueMessage> | MessageBatch<LetterSendQueueMessage>, env: Env): Promise<void> {

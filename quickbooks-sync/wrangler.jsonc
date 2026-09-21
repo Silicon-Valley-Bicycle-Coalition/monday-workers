@@ -36,6 +36,14 @@
       }
     ]
   },
+  // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP
+  // covers both webhook routes, generous against real volume while blunting a flood against
+  // routes that do D1 work before their signature/secret check ever rejects a bogus request.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2051", "simple": { "limit": 60, "period": 60 } }],
+  // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
+  // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
+  // that move rather than following a surprise bill.
+  "limits": { "cpu_ms": 100 },
   "observability": {
     "enabled": true
   },
@@ -72,6 +80,8 @@
           }
         ]
       },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2052", "simple": { "limit": 60, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
       "observability": {
         "enabled": true
       }

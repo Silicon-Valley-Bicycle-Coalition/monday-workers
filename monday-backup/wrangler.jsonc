@@ -22,6 +22,12 @@
     // time is preferred once this is actually scheduled.
     "crons": ["0 9 * * *"]
   },
+  // Cost guardrail, not a traffic one (no public surface here) — see README "Reliability:
+  // traffic and cost limits". Free plan already hard-caps CPU at 10ms/invocation; this only
+  // starts to matter on Workers Paid (default 30s, or 15min for a >=1hr cron interval). 100ms
+  // is a starting point — raise it based on real CPU-time metrics once this Worker is actually
+  // snapshotting production board counts, rather than lower it reactively after a surprise bill.
+  "limits": { "cpu_ms": 100 },
   "observability": { "enabled": true },
 
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
@@ -50,6 +56,7 @@
       "triggers": {
         "crons": ["0 9 * * *"]
       },
+      "limits": { "cpu_ms": 100 },
       "observability": { "enabled": true }
     }
   }

@@ -98,6 +98,55 @@ Migration Method). What it needs instead: retry-with-backoff on individual Monda
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
 
+## Reliability: traffic and cost limits
+
+**The account is still on Workers Free** (donation-rollups' README documents the D1 100k-writes/day
+cap that already bit it once), and Workers Paid is the known next step once that D1 quota needs
+raising. Free plan usage costs nothing no matter the volume, but it also means every Worker here
+was built without ever having to bound a request's cost — nothing stops a traffic spike (a bot
+crawl, a flood against a discovered webhook URL, a viral link) from becoming an expensive one the
+day the account moves to Paid. Two guardrails, applied now so they predate that move rather than
+following a surprise bill:
+
+**Per-IP request rate limiting**, via Cloudflare's [Workers Rate Limiting
+binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) — GA,
+included on every plan, no upgrade needed. Every publicly-reachable Worker (`member-portal`,
+`svbc-calendars`, and every webhook receiver: `benevity-import`, `bp-feedback-notify`,
+`donation-rollups`, `funraise-sync`, `mailchimp-sync`, `quickbooks-sync`) checks a blanket
+`REQUEST_RATE_LIMITER` binding — keyed on `CF-Connecting-IP` — before any routing, D1, or Monday
+work happens, in each Worker's own `src/rateLimit.ts` (`member-portal`'s is
+`src/requestRateLimit.ts`, since this filesystem is case-insensitive and it already has a
+`ratelimit.ts` for its login-specific limiting). This is deliberately coarser than each Worker's
+own webhook-secret or signature check: that check still runs and still rejects a bogus delivery,
+but a flood of requests — valid secret or not — now costs at most the configured rate instead of
+one full request (D1 lookup, JSON parse, Monday-shaped work) per delivery. Webhook receivers are
+set to 60 requests/min/IP (generous against real volume — a few hundred events a month); the two
+public-facing Workers (`svbc-calendars`, and `member-portal`'s blanket limit on top of its
+existing tighter login/change/verify limits) are set to 120/min/IP. `monday-backup` has no public
+HTTP surface (`workers_dev`/`preview_urls` both `false`, no routes) and is excluded;
+`salesforce-import` is a local CLI, not a deployed Worker, and is excluded too. Tune the numbers
+in each Worker's `wrangler.jsonc` `ratelimits` block as real traffic patterns emerge.
+
+**A per-invocation CPU cap**, via [`limits.cpu_ms`](https://developers.cloudflare.com/workers/wrangler/configuration/#limits)
+in every Worker's `wrangler.jsonc` (`monday-backup` included, even without a public surface — a
+cost guardrail against a runaway invocation, not only a traffic one). Cloudflare's own pricing
+docs name this the specific mitigation for "accidental runaway bills or denial-of-wallet attacks."
+It matters here because Workers Free already hard-caps CPU time at 10ms/invocation — so this has
+no effect today — but Workers Paid's *default* is 30 seconds/request (up to 5 minutes, or 15
+minutes for a cron on a >=1hr interval), a 3000x jump. Every Worker here is set to a 100ms cap: 5–50x
+this repo's typical CPU usage (Cloudflare's docs cite 2–20ms as normal for most workloads,
+including ones parsing large payloads), so it shouldn't interfere with real work, but it means the
+account can never accidentally bill 30 seconds of CPU for one request. Raise it per-Worker if real
+usage ever approaches it — the Cloudflare dashboard's per-Worker CPU-time metrics are the source
+of truth for that, not a guess made here.
+
+**Account-level spend alerting is not code-configurable** — Cloudflare has no API/wrangler-managed
+hard spend cap, only a dashboard Notification on a usage threshold. One already exists on this
+account: a Cloudflare-auto-created "Billing Budget Alert" at **$10/month**, emailing SVBC staff.
+Worth raising once the account is actually on Workers Paid — at $10 it will fire almost
+immediately off the $5/month base subscription alone, before telling you anything about a real
+spike. Manage it at **Manage account → Notifications** in the Cloudflare dashboard.
+
 ## Branded email template
 
 Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares

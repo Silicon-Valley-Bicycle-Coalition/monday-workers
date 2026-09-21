@@ -46,6 +46,14 @@
     // Daily at 13:00 UTC (5am/6am Pacific depending on DST), matching committee-calendars' prior schedule.
     "crons": ["0 13 * * *"]
   },
+  // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 120/min/IP is
+  // generous for a real visitor loading the widget/listing repeatedly, while blunting a bot
+  // crawl or scraped-link flood against a Worker with no secret or auth of its own to gate abuse.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2061", "simple": { "limit": 120, "period": 60 } }],
+  // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
+  // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
+  // that move rather than following a surprise bill.
+  "limits": { "cpu_ms": 100 },
   "observability": {
     "enabled": true
   }

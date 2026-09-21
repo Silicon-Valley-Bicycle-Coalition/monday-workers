@@ -7,6 +7,7 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
     WEBHOOK_SECRET: SECRET,
     EMAIL: { send: vi.fn().mockResolvedValue({ messageId: 'test-id' }) },
+    REQUEST_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) },
     ...overrides,
   };
 }
