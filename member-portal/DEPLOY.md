@@ -153,6 +153,18 @@ npm run deploy:sandbox
 The deploy attaches the custom domain `member.sandbox.bikesiliconvalley.org` (declared in
 `env.sandbox.routes`; the zone is on Cloudflare, so no manual DNS).
 
+**Three different local-dev entrypoints — don't mix them up:**
+
+| Command | Talks to | Needs secrets? |
+|---|---|---|
+| `npm run dev` | production config (`config/svbc.json`) | yes, real production secrets |
+| `npm run dev:sandbox` (`wrangler dev --env sandbox`) | real CRM Sandbox boards + the `sandbox@` inbox, from your machine | yes — the sandbox integration user's `MONDAY_API_TOKEN` and `LETTER_WEBHOOK_SECRET` in `.dev.vars` |
+| `npm run dev:local` (or the `run-member-portal` skill's `smoke.sh`) | nothing — in-memory fakes, no network | no |
+
+Use `dev:sandbox` to debug a code change against real sandbox data before running
+`deploy:sandbox`; use `dev:local`/`smoke.sh` for fast iteration with no secrets at all (see the
+`run-member-portal` skill for the fake donors it ships with).
+
 **Verify the rule holds, both layers:**
 
 1. From `https://member.sandbox.bikesiliconvalley.org`, request a login link for a real donor

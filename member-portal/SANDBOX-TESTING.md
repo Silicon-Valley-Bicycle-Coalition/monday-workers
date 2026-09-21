@@ -1,168 +1,106 @@
-# Testing the member portal in the sandbox environment
+# Testing the member portal — a guide for staff testers
 
-This is a walkthrough for using and testing `svbc-member-portal-sandbox` — the permanent,
-already-deployed parallel copy of the member portal that runs against Monday's **CRM Sandbox**
-workspace instead of production. It's for anyone testing the portal (staff exercising the real
-login flow, an engineer verifying a config or code change) without touching a real donor's data
-or inbox. For provisioning the sandbox from scratch, see [`DEPLOY.md`](DEPLOY.md)'s "Sandbox
-environment" section — this doc assumes that's already done, which it is.
+Thanks for helping test the new member portal! This is where donors and members will eventually
+log in to see their giving history, membership status, and bike-shop discounts. Before it goes
+live, we need real people (not just engineers) to click through it and tell us what's confusing,
+broken, or missing.
 
-Background/design: [`../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`](../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md).
+**You cannot break anything by testing this**, and you cannot accidentally contact a real donor.
+Read on for why, then jump to [How to test it](#how-to-test-it).
 
-Note on naming: the product is branded "member portal" to donors and staff (the directory,
-Worker, and domain all say `member-portal` / `member`), but the underlying Monday data model
-still calls people and their records "Donor" — boards, columns, and code all say donor/Donors.
-Both terms appear below; they refer to the same thing.
+## Is this connected to real donor information?
 
-Note on "production": SVBC's live system of record today is still Salesforce — the
-Salesforce→Monday migration cutover hasn't happened yet. What this doc calls "production"
-(`config/svbc.json`, the non-sandbox Cloudflare deploy, `member.bikesiliconvalley.org`) is the
-Monday-based configuration being built and tested *ahead of* that cutover, not a system already
-serving real donor traffic against Monday. When this doc compares the sandbox to "production," it
-means that pre-cutover target config, not a live baseline.
+Two things worth knowing before you start:
 
-## The one rule: inbound only, no outbound data
+- **This is a test copy, not the real thing.** It looks and works exactly like the real portal
+  will, but everything it shows you — donation histories, membership records, discounts — is test
+  data in a practice version of our records, kept completely separate from anything real.
+- **SVBC's actual donor records still live in a different system today (Salesforce)**, not in
+  this new one yet. This project is building what will eventually replace it, but that switch
+  hasn't happened. So nothing you do here can touch what SVBC is actually using day to day.
 
-The sandbox reads real (if fake-ish) data from Monday's CRM Sandbox boards, but **every email it
-sends lands only at `sandbox@bikesiliconvalley.org`** (a Google Workspace group), never at a real
-donor's address — no matter which donor's email you type into the login form. This is enforced
-twice, independently:
+## The most important thing: no real person will ever be emailed
 
-1. **Platform layer:** the Worker's `EMAIL` binding is configured with
-   `allowed_destination_addresses: ["sandbox@bikesiliconvalley.org"]`. Cloudflare rejects any
-   other recipient outright (`E_RECIPIENT_NOT_ALLOWED`).
-2. **Code layer:** `src/email/sandboxBinding.ts` rewrites the recipient to the sink regardless,
-   prefixes the subject with `[sandbox → <the address you actually entered>]`, and prepends a
-   "Sandbox copy" notice to the body.
+While testing, you'll be typing in email addresses — possibly real donors' — to see what they'd
+see. **No matter whose email you type in, the actual test email always lands in one shared inbox
+that only staff can see** (`sandbox@bikesiliconvalley.org`), never at the real person's address.
 
-Either layer alone would stop a real send; both exist so one bug in the other can't cause a leak.
-This is why you can safely type in *any real donor's* email address while testing — you'll never
-actually contact that person.
+This is guaranteed two separate ways at once, so that even if one of them failed, the other would
+still catch it. That's a deliberate, tested safety design — not a "please be careful" request. You
+can safely use any real donor's email address while testing.
 
-## Quick start — request a real login as a test donor
+## How to test it
 
-1. Go to **https://member.sandbox.bikesiliconvalley.org**.
-2. Enter the email address of anyone who exists on the CRM Sandbox's People board (Monday board
-   `18428131737`, workspace `17141226` — this is the sandbox's equivalent of the Donors board
-   `config/svbc.json` will point at once member-portal goes live). You need Monday access to
-   browse that board and pick a real entry; any staff member testing the portal already has an
-   entry there too.
-3. Check the **`sandbox@bikesiliconvalley.org`** group inbox. The login email arrives there with
-   subject `[sandbox → <the email you entered>] Your SVBC member portal login link` — never at
-   the address you typed.
-4. Click the link. The portal renders that donor's real sandbox data: donation history,
-   membership status/tier, and any bike-shop discounts.
-5. If nothing arrives, you're probably rate-limited (see [Gotchas](#gotchas) below), not broken.
+1. Open a web browser and go to **https://member.sandbox.bikesiliconvalley.org**.
+2. Enter an email address from the test list you were given for this round of testing. (If you
+   weren't given one, ask whoever asked you to test this — the portal only sends a link for
+   addresses that already exist in the test records.)
+3. Check the shared test inbox, **`sandbox@bikesiliconvalley.org`**. You'll get an email with a
+   subject like `[sandbox → the address you typed] Your SVBC member portal login link` — the
+   bracketed part tells you which test address the email is "pretending" to be for.
+4. Click the link in that email. You'll land on that person's test portal page, seeing their
+   donation history, membership status, and discounts.
+5. If nothing shows up after a minute or two, see [If something seems stuck](#if-something-seems-stuck)
+   below before assuming it's broken.
 
-Nothing you do here can write back to Monday except submitting a change request (below) — the
-portal is read-only against donor records everywhere else.
+## What to try while you're in there
 
-## What you can and can't test right now
+- **Log in** and confirm you land on a page with donation history, membership status, and
+  discounts — not an error or a blank page.
+- **Look at the donation history** — does it look reasonable and readable?
+- **Look at the membership status and any bike-shop discounts** — do they display clearly?
+- **Open the digital membership card** — does it show and look right?
+- **Submit a change** — try updating an address, email, or phone number through the portal and
+  confirm you get a confirmation message.
+- **Open a giving/tax letter** — it's expected to say **"SANDBOX TEST"** prominently on it. That's
+  correct, not a bug — it's proof the safety check is working. If a letter does *not* say that,
+  stop and report it right away (see below).
+- **Try logging in with an email shared by two people in the same household**, if you have one on
+  your test list — you should see both people listed separately by name, not merged together.
+- **Try an email that isn't in the test records at all** — you should get the same generic
+  "check your email" message either way, with no hint about whether it was recognized.
 
-The sandbox runs the exact same feature-gating logic as the pre-launch production config — a
-feature only appears once its Monday board/column ids are filled in `config/sandbox.json` (the
-production equivalent, `config/svbc.json`, isn't live yet — see the naming note above). Some
-features have real sandbox ids today; others are still placeholders, so they're gated off in the
-sandbox exactly as `config/svbc.json` currently has them configured to be once it goes live.
+## What's not ready to test yet
 
-| Feature | Status in sandbox | Why |
-|---|---|---|
-| Login / magic link | ✅ works | core path, always configured |
-| Donation history | ✅ visible | `historyVisibleFromISO` is already past |
-| Membership status/tier + bike-shop discounts | ✅ works | two sandbox Organizations items have a discount marked active, for a real result to check |
-| Digital membership card (`/portal/card/:id`) | ✅ works | `membershipExpiry` column configured |
-| Change requests (address/email/phone edits) | ✅ works, lands on a real sandbox Change Requests board (`18431948024`) | fully configured |
-| Tax letters (`/portal/letters`) | ✅ renders, but every letter is stamped **"SANDBOX TEST — NOT A VALID TAX RECEIPT"** | sandbox uses obviously-fake signoff text so the flow can be tested *ahead of* SVBC's real IRS-language sign-off — `config/svbc.json`'s `benefitStatement` is still a placeholder, so this feature won't be enabled even once production goes live, until that sign-off happens |
-| Staff-triggered / automatic January letter-ready emails | ⚠️ machinery is wired up, but leave the "Auto-send" checkbox **unchecked** on the sandbox "Member Portal Letter Settings (sandbox)" board (`18428114991`) — checking it with a past start date queues up to 200 real-looking emails into `sandbox@` on the next 09:00 UTC run | see `DEPLOY.md` |
-| Communication preferences (email/SMS opt-out, do-not-mail) | ❌ not shown | opt-out column ids are still placeholders |
-| Preferred-language (stored per donor) | ❌ not read | column id is a placeholder; locale still falls back to the browser/cookie guess |
-| Volunteer history | ❌ not shown | no sandbox Volunteers board configured |
-| Event registrations | ❌ not shown | no sandbox Event Registrations board configured |
-| Pledge tracking | ❌ not shown | no sandbox Pledges board configured |
-| Employer matching-gifts search widget | ❌ hidden (the page itself still renders, with generic "ask your HR team" guidance and SVBC's real EIN) | no Double the Donation key configured |
+These features aren't wired up to test data yet, so you'll see them missing rather than broken —
+no need to report these as bugs:
 
-If you're testing a feature from the ❌ list, it's not broken — it just has no sandbox board wired
-up yet. Ask before spending time debugging a "missing" feature from that list.
+- Setting communication preferences (opting out of email, text, or mail)
+- Your preferred language being remembered automatically
+- Volunteer history
+- Event sign-ups/registrations
+- Pledge tracking
+- The "find your employer's matching-gift program" search tool
 
-## Feature walkthroughs
+The giving letter (tax letter) *does* work in this test environment, but it's deliberately shown
+with obvious "SANDBOX TEST" placeholder wording everywhere, since SVBC hasn't finalized the real
+wording for that letter yet.
 
-- **Donations & membership:** log in as above; the portal home page lists donation history and
-  current membership tier read live from the sandbox Donations/Donors boards.
-- **Discounts:** two Organizations in the sandbox have `Discount Active` checked — log in as a
-  donor and confirm both appear with their discount text.
-- **Change requests:** from the logged-in portal, submit an address/email/phone change. Confirm
-  a new item appears on the sandbox Change Requests board (`18431948024`) with the donor link,
-  field, old/new value, and timestamp. Submitting the identical request again within 72 hours
-  should be deduped, not double-posted.
-- **Tax letters:** visit `/en/portal/letters` while logged in as a donor with at least one gift in
-  a completed calendar year. The rendered letter must visibly say "SANDBOX TEST" — if it doesn't,
-  something is misreading `config/svbc.json` instead of `config/sandbox.json` and needs
-  investigating immediately (it would mean donor-facing letter text is coming from the wrong
-  config file, mixing test and real content).
-- **Shared-email household:** log in with an email that matches more than one sandbox donor item;
-  confirm each person renders under their own labeled name, not merged or defaulting to one.
-- **Enumeration guard:** request a login for an email that doesn't exist on the sandbox board;
-  the response must be byte-identical to a real "check your email" response.
+## If something seems stuck
 
-## Gotchas
+- **No email after a couple of minutes?** Wait about 15 minutes and try again. The system limits
+  how many login attempts one email address can make in a short window, as an anti-abuse
+  measure — if you hit that limit, it looks identical to a normal "check your email" response,
+  with no error shown.
+- **Logged in, but the homepage shows the login screen again?** That's expected — the homepage
+  always shows the login form, even if you're already logged in elsewhere. It doesn't mean you
+  got logged out.
+- **Landed on an unexpected language?** That's driven by test-data settings, not anything you
+  chose — not a bug worth reporting on its own.
 
-- **Rate limits are real in the sandbox too.** Login is capped at 5 attempts per email per 15
-  minutes (`config/sandbox.json`'s `rateLimit`) plus a 10-requests/60s-per-IP edge limiter. A
-  rate-limited request returns the exact same "check your email" response as a real send, by
-  design (anti-enumeration) — so repeatedly retesting the same email can silently stop producing
-  emails with no error. Wait out the window or use a different sandbox donor's email.
-- **`/` is always the login form**, even when you're logged in — the authenticated page is
-  `/:locale/portal` (e.g. `/en/portal`), which is where the magic-link callback redirects you.
-- **Locale can look "wrong" but isn't** — it's driven by each donor's `Preferred Language` where
-  configured, or otherwise your browser's language/cookie, not anything you choose at login.
+## Reporting what you find
 
-## Three different ways to run this — don't mix them up
+For anything that looks wrong (other than the known gaps above), note down:
 
-| | Command | Talks to | Needs secrets? | Use for |
-|---|---|---|---|---|
-| **Sandbox (live, deployed)** | n/a — just browse to `https://member.sandbox.bikesiliconvalley.org` | real CRM Sandbox boards + `sandbox@` inbox | no (already deployed) | the walkthroughs above; the closest thing to "real" testing that's still 100% safe |
-| **Local dev against the sandbox** | `npm run dev:sandbox` (`wrangler dev --env sandbox`) | real CRM Sandbox boards + `sandbox@` inbox, but from your machine | yes — the sandbox integration user's `MONDAY_API_TOKEN` and `LETTER_WEBHOOK_SECRET` in `.dev.vars` | debugging a code change against real sandbox data before deploying it |
-| **Local dev with fakes** | `npm run dev:local`, or the driver at `.claude/skills/run-member-portal/smoke.sh` | nothing — in-memory fake Monday client and fake email, no network at all | no | fast iteration on UI/logic; three canned fake donors (`jordan@example.com`, `family@example.com` — a two-person household, `casey@example.com`) |
+1. What you did (which page, which button, which email address)
+2. What you expected to happen
+3. What actually happened — include a screenshot if you can
+4. The date/time, so it's easier to find in logs
 
-`npm run dev` (no suffix) is the **production config** — don't use it for testing; it needs real
-production secrets and, once those exist, would write to `config/svbc.json`'s sinks (which,
-again, aren't live production traffic yet — see the naming note above).
+Report it on SVBC's [IT Requests board](https://bikesiliconvalley.monday.com/boards/8846215481)
+on Monday.com, or send it to whoever asked you to test this round.
 
-The `run-member-portal` skill (`.claude/skills/run-member-portal/`) documents the fakes-based
-local path in detail, including a `smoke.sh demo` one-liner that logs in and prints what it found.
+---
 
-## Automated checks
-
-From `member-portal/`:
-
-```sh
-npm test              # ~590 tests, includes config/split.test.ts
-npm run typecheck
-```
-
-`config/split.test.ts` is the one worth knowing about here: it fails the build if
-`config/svbc.json` (the pre-launch production config) and `config/sandbox.json` (sandbox) ever
-end up sharing a board id, column id, or email sink — the thing that would turn a "sandbox" test
-into a real write or a real donor email once production does go live.
-
-## Deploying a change to the sandbox
-
-```sh
-npm test && npm run typecheck
-npm run deploy:sandbox
-```
-
-This deploys `svbc-member-portal-sandbox` independently of the production deploy target —
-deploying to the sandbox never touches the `svbc-member-portal` Worker, and vice versa. After
-deploying, redo the quick-start login above to confirm the change works end to end against real
-(sandbox) data before it goes anywhere near that production config.
-
-## Confirming the safety rule holds (do this after any change to email code)
-
-1. Log in as in the quick start; confirm the email lands **only** in `sandbox@`, with the
-   `[sandbox → ...]` subject prefix.
-2. `wrangler tail --env sandbox` should show one `{"sandboxOutbound":"email",...}` log line per
-   send.
-3. See `DEPLOY.md`'s "Sandbox environment" section, step 3, for how to test the platform-layer
-   guard in isolation (temporarily bypassing the code-layer wrapper to confirm Cloudflare's
-   `allowed_destination_addresses` rejects the send on its own).
+*For engineers: deployment steps, technical architecture, and local-development instructions live
+in [`DEPLOY.md`](DEPLOY.md) and the `run-member-portal` skill, not in this guide.*
