@@ -47,24 +47,47 @@ section.
 
 On the target board (production: `BP Request Form`, id `18395469629`; prototyped and confirmed
 working end-to-end on its sandbox mirror `BP Request Form (sandbox)`, id `18431960612`, in the
-`Bike Parking Forms (sandbox)` workspace):
+`Bike Parking Forms (sandbox)` workspace). Per the project convention of never writing directly to
+live SVBC boards from an agent session, these steps are for a human with write access (Zachary
+Kearsley, the live board's owner, or an account admin) to apply manually — verified against the
+sandbox mirror's actual live config on 2026-09-21, not just described generically:
 
-1. Add a status column named `Post-Event Feedback` with labels `Not Yet` / `Ready to Send` /
-   `Sent to Organizer` (already added on the sandbox mirror).
-2. In the board's Automation Center → Create → search "webhook" → use the template "When a
+1. **Deploy the Worker to production first** — the webhook URL in step 3 doesn't exist until this
+   runs, and monday's connection handshake will fail against a URL that isn't live yet:
+   ```sh
+   cd bp-feedback-notify
+   wrangler secret put WEBHOOK_SECRET   # generate with: openssl rand -hex 32
+   npm run deploy
+   ```
+   This deploys to `https://svbc-bp-feedback-notify.svbc-account.workers.dev` (same `*.workers.dev`
+   pattern as this repo's other webhook-only Workers — see Open questions below, no custom route
+   needed).
+2. Add a status column named exactly `Post-Event Feedback`, with these labels in this order
+   (matches the sandbox mirror's live config exactly):
+
+   | Label | Color |
+   |---|---|
+   | `Not Yet` (default) | orange |
+   | `Ready to Send` | blue |
+   | `Sent to Organizer` | green |
+3. In the board's Automation Center → Create → search "webhook" → use the template "When a
    status changes to something, send a webhook" (monday's natural-language automation-creation
    API could not resolve this action by name — two different phrasings both matched an unrelated
    *inbound* webhook trigger block instead. It only worked by building it directly in the UI).
-   Connect a new webhook URL: `https://<this-worker's-domain>/webhook/bp-feedback?secret=<WEBHOOK_SECRET>`
-   (there's no header field, hence the secret in the query string — see Data flow above). Set the
-   trigger to `Post-Event Feedback` → `Ready to Send`.
-3. Staff sets the column back to `Sent to Organizer` once they've confirmed delivery (manual for
+   Trigger: `Post-Event Feedback` → `Ready to Send`. Webhook URL:
+   `https://svbc-bp-feedback-notify.svbc-account.workers.dev/webhook/bp-feedback?secret=<the WEBHOOK_SECRET from step 1>`
+   (there's no header field, hence the secret in the query string — see Data flow above). monday
+   verifies the URL with a one-off `{"challenge": "..."}` POST before accepting the connection —
+   the Worker already handles that ahead of normal payload validation.
+4. Staff sets the column back to `Sent to Organizer` once they've confirmed delivery (manual for
    now — the Worker doesn't write back to monday).
 
 Confirmed on the sandbox board on 2026-09-21: the connection's challenge handshake succeeded, and
 a real status-change fired the webhook end-to-end (verified via `wrangler tail`). The only
 remaining failure at that point was the organizer email send itself, blocked on the Cloudflare
-destination-address verification described below — the monday → Worker leg is solid.
+destination-address verification described below — the monday → Worker leg is solid. The sandbox
+board's two other automations (an internal notify-me and a broken Gmail send, both left over from
+earlier prototyping) are disabled — nothing there worth replicating on the live board.
 
 ## Secrets
 
@@ -127,6 +150,6 @@ npm run deploy         # do not run until the Open Questions below are resolved
 - ~~Production `feedbackFormUrl` is a placeholder~~ — resolved (2026-09-20): points at the real
   live form now (see Sandbox environment section above for the URL and what's still cosmetically
   pending on the board itself).
-- To go live in production: add the `Post-Event Feedback` column and the same webhook automation
-  to the real `BP Request Form` board (id `18395469629`), set the production `WEBHOOK_SECRET`
-  (see Secrets above) if not already set, and `npm run deploy`.
+- To go live in production: follow the four steps in Monday automation setup above (deploy,
+  add the column, wire the webhook automation, hand off the manual "mark sent" step to staff).
+  Nobody's done this yet — it needs a human with write access to the live board.
