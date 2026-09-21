@@ -76,6 +76,11 @@ wrangler secret put WEBHOOK_SECRET --env sandbox  # sandbox
 Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger an email send, so
 treat it like a password, not a config value.
 
+Because monday's webhook action can only carry the secret in the URL (see Data flow above), it
+appears in this Worker's Cloudflare access logs (Logpush, `wrangler tail`) on every request.
+Restrict who can read those logs the same way you'd restrict who holds `WEBHOOK_SECRET` itself,
+and rotate the secret if that access ever widens.
+
 ## Sandbox environment
 
 Same convention as `donor-portal`: `wrangler deploy --env sandbox` deploys
