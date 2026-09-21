@@ -38,3 +38,23 @@ routes, 24h for the calendar routes — with a KV last-known-good fallback per s
 - CORS allows `bikesiliconvalley.org` and `localhost` origins.
 - Full route list (from `src/index.ts`): `OPTIONS` → CORS preflight (204); any non-`GET` method → 405; `GET /widget` → embeddable HTML widget; `GET /` or `GET /events` → Eventbrite JSON API; `GET /calendars` → staff listing page; `GET /calendars/:id.ics` → one source's ICS feed; `GET /status.json` → live per-source health (never cached); everything else → 404. A daily cron (`scheduled` handler) proactively warms every source into `CALENDAR_KV`.
 - `/widget` accepts query params: `max`, `images`, `descriptions`.
+
+## Sandbox environment
+
+`env.sandbox` (`wrangler deploy --env sandbox`, deploys `svbc-calendars-sandbox`) is a plain
+staging tier — unrelated to the CRM-migration "sandbox" convention used by every other Worker in
+this repo (no donor data here, not migration-related; see the root design doc). It has its own KV
+namespace and Analytics Engine dataset and serves on its `workers.dev` URL, **not** the real
+custom domains.
+
+**Real incident, 2026-09-21:** the first deploy of `env.sandbox`, before it had an explicit
+`"routes": []` override, silently inherited the top-level `routes` — `events.bikesiliconvalley.org`
+and `committees.bikesiliconvalley.org` — and reassigned both real custom domains to the untested
+sandbox Worker. `wrangler deploy` prints an explicit warning about exactly this before it happens;
+it's easy to miss in a long build/deploy log. Fixed by adding the `"routes": []` line (now in
+`wrangler.jsonc`, with a comment — never remove it) and manually deleting both Custom Domain
+entries from `svbc-calendars-sandbox` in the Cloudflare dashboard (**Workers & Pages → the
+Worker → Domains**), since clearing `routes` in config does not retroactively delete an
+already-created Custom Domain resource — that's a separate, manual step every time this mistake
+happens. Before running `wrangler deploy --env sandbox` for this Worker again, read wrangler's
+own output for a "reassign" warning and stop if one appears.
