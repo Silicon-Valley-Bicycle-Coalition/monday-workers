@@ -1,0 +1,42 @@
+// Minimal JSONC reader for tests: strips // and /* */ comments outside string literals and
+// removes trailing commas, then hands the result to JSON.parse. Enough for wrangler.jsonc; not
+// a general parser. Copied from donor-portal/test/jsonc.ts.
+export function parseJsonc(text: string): unknown {
+  let out = '';
+  let i = 0;
+  let inString = false;
+  while (i < text.length) {
+    const ch = text[i]!;
+    const next = text[i + 1];
+    if (inString) {
+      out += ch;
+      if (ch === '\\' && next !== undefined) {
+        out += next;
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (i < text.length && text[i] !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return JSON.parse(out.replace(/,(\s*[}\]])/g, '$1'));
+}

@@ -33,6 +33,11 @@ benevity-import:
   variables:
     WORKER_DIR: benevity-import
 
+bp-feedback-notify:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: bp-feedback-notify
+
 donation-rollups:
   extends: .worker_job
   variables:
