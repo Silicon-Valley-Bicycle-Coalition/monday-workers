@@ -55,7 +55,7 @@ app.post('/webhook/bp-feedback', async (c) => {
       ? sandboxEmailBinding(c.env.EMAIL, requireSandboxSink(c.env))
       : c.env.EMAIL;
 
-  const sender = new CloudflareEmailSender(binding, config.fromAddress, config.fromName);
+  const sender = new CloudflareEmailSender(binding, config.fromAddress, config.fromName, config.logoUrl);
   await sender.sendFeedbackRequestEmail({
     to: payload.organizerEmail,
     eventName: payload.eventName,

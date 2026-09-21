@@ -1,5 +1,6 @@
 {
   "feedbackFormUrl": "REPLACE_AFTER_PRODUCTION_ORGANIZER_FEEDBACK_FORM_FIXED",
   "fromAddress": "noreply@mail.bikesiliconvalley.org",
-  "fromName": "SVBC Bike Valet"
+  "fromName": "SVBC Bike Valet",
+  "logoUrl": "https://member.bikesiliconvalley.org/email/logo.png"
 }

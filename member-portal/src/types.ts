@@ -178,6 +178,10 @@ export interface Config {
   email: {
     fromAddress: string;
     fromName: string;
+    // Absolute URL to the branded PNG logo served by GET /email/logo.png (see assets/emailLogo.ts)
+    // — differs per environment since it's domain-qualified (member.bikesiliconvalley.org vs the
+    // sandbox/local hosts), same reasoning as auth.portalBaseUrl below.
+    logoUrl: string;
   };
   auth: {
     magicLinkTtlMinutes: number;

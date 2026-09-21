@@ -1,33 +1,41 @@
 import { escapeHtml } from '../views';
 import { t } from '../i18n/t';
 import { renderLetterEmailBody } from '../letters/letterEmailBody';
+import { renderEmailLayout } from './layout';
 import type { EmailSender, SendLoginEmailParams, SendLetterReadyEmailParams } from './types';
 
 export class CloudflareEmailSender implements EmailSender {
   constructor(
     private emailBinding: SendEmail,
     private fromAddress: string,
-    private fromName: string
+    private fromName: string,
+    private logoUrl: string
   ) {}
 
   async sendLoginEmail(params: SendLoginEmailParams): Promise<void> {
     const subject = `🚴 ${t(params.locale, 'email.subject')}`;
     const bodyIntro = t(params.locale, 'email.bodyIntro');
     const loginButton = t(params.locale, 'email.loginButton');
+    const body = renderEmailLayout({
+      bodyHtml: `<p>${bodyIntro}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>`,
+      bodyText: `${bodyIntro}\n\n${params.loginUrl}`,
+      logoUrl: this.logoUrl,
+    });
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },
       subject,
-      html: `<p>${bodyIntro}</p><p><a href="${params.loginUrl}">${loginButton}</a></p>`,
-      text: `${bodyIntro}\n\n${params.loginUrl}`,
+      html: body.html,
+      text: body.text,
     });
   }
 
   async sendLetterReadyEmail(params: SendLetterReadyEmailParams): Promise<void> {
     const template = params.bodyTemplate?.trim();
-    const body = template
+    const rendered = template
       ? renderLetterEmailBody(template, { donorName: params.donorName, year: params.year, loginUrl: params.loginUrl })
       : this.defaultLetterReadyBody(params);
+    const body = renderEmailLayout({ bodyHtml: rendered.html, bodyText: rendered.text, logoUrl: this.logoUrl });
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },

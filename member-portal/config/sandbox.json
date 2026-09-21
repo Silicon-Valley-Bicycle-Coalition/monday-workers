@@ -33,7 +33,8 @@
   },
   "email": {
     "fromAddress": "login@mail.bikesiliconvalley.org",
-    "fromName": "SVBC Member Portal (sandbox)"
+    "fromName": "SVBC Member Portal (sandbox)",
+    "logoUrl": "https://member.sandbox.bikesiliconvalley.org/email/logo.png"
   },
   "auth": {
     "magicLinkTtlMinutes": 15,

@@ -19,6 +19,10 @@ export interface WorkerConfig {
   feedbackFormUrl: string;
   fromAddress: string;
   fromName: string;
+  // Absolute URL to the branded PNG logo — served by member-portal's GET /email/logo.png (this
+  // Worker has no copy of its own), so this must point at the matching member-portal environment
+  // (production vs sandbox), not necessarily this Worker's own.
+  logoUrl: string;
 }
 
 export function configFor(env: EnvironmentBindings, production: WorkerConfig, sandbox: WorkerConfig): WorkerConfig {
