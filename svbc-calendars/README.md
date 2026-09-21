@@ -156,15 +156,21 @@ listing page). First deployed 2026-09-21; two follow-up fixes then landed the sa
 `time_filter` param Eventbrite no longer accepts, and a dead organizer id removed from
 `config/eventbriteOrganizers.json` — see git log for both).
 
-### 6. Verify, then retire the old Workers — Worker verified; old-Worker retirement still open
+### 6. Verify, then retire the old Workers — done
 
 Cloudflare custom domains are exclusive to one Worker, so step 5's deploy claims both
 `events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` for this Worker (as of
 2026-09-21 neither domain had a live target to take them away from — see the note at the top of
 this section). Verified 2026-09-21: widget, JSON API, calendar feeds, and the listing page all
-serve correctly. The old Workers' scripts (and `committee-calendars`'s D1 database) have **not**
-been deleted yet — that's a deliberate, separate, destructive step for whoever's doing the
-cutover to trigger explicitly, not something to do as a side effect of verification.
+serve correctly.
+
+`svbc-events-widgets` and `svbc-committee-calendars` were deleted 2026-09-21, along with
+`committee-calendars`'s D1 database (48 cached events, 7 source-status rows — purely a
+last-known-good ICS cache, re-derivable from the live Legistar/CivicPlus/Caltrain/Eventbrite
+sources, same role this Worker's `CALENDAR_KV` now plays; exported to a local `.sql` backup before
+deletion regardless). Confirmed gone via `wrangler d1 list` and the Workers & Pages dashboard;
+re-confirmed `events.bikesiliconvalley.org`/`committees.bikesiliconvalley.org` still serve 200s
+on `svbc-calendars` afterward.
 
 ### 7. Actually embed the widget on the live site — still open
 
