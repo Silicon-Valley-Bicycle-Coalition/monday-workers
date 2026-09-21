@@ -81,7 +81,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-member-portal-sandbox",
-          "database_id": "5b3911bc-4808-4a7f-b4b6-8a62e47ffa1a",
+          "database_id": "490a0d98-e168-46eb-a4ee-ef28ecf92043",
           "migrations_dir": "migrations"
         }
       ],
