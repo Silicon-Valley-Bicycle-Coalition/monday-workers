@@ -32,12 +32,11 @@
     "CACHE_TTL": "900", // /events, /widget — 15 min, unchanged from events-widgets
     "CALENDAR_CACHE_TTL": "86400", // /calendars/*.ics, /calendars — 24h, "nothing needs to be real-time"
     "CACHE_VERSION": "1", // reset to 1 for the new merged Worker's cache key space
-    // Empty pending manual setup — enable Web Analytics for bikesiliconvalley.org (or its
-    // subdomains) in the Cloudflare dashboard (Analytics & Logs -> Web Analytics -> Add a site)
-    // and paste the resulting site token here before deploying. Deliberately empty rather than a
-    // non-empty placeholder: src/widget.ts and src/listing.ts only emit the beacon <script> when
-    // this is truthy, so an un-filled-in deploy silently ships with no analytics instead of a
-    // broken beacon carrying a garbage token.
+    // Deliberately empty — permanently, not pending setup. bikesiliconvalley.org already has Web
+    // Analytics on automatic setup (checked 2026-09-21), which injects the beacon into every
+    // subdomain's pages with no code changes; a manual token here would just be a second,
+    // redundant beacon. src/widget.ts and src/listing.ts only emit the beacon <script> when this
+    // is truthy, so it stays empty rather than carrying a token that would double-count traffic.
     "CF_WEB_ANALYTICS_TOKEN": ""
   },
   "triggers": {

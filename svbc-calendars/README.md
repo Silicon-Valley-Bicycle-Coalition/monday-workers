@@ -102,13 +102,15 @@ Cutover checklist, in order:
 Provisioned 2026-09-21 (`wrangler.jsonc`'s `kv_namespaces[0].id` is the real id, not the old
 `placeholder-replaced-in-task-16` value).
 
-### 2. Enable Cloudflare Web Analytics
+### 2. Enable Cloudflare Web Analytics — not needed, already covered
 
-In the Cloudflare dashboard: **Analytics & Logs → Web Analytics → Add a site**, for
-`bikesiliconvalley.org` (or its relevant subdomains). Paste the resulting site token into
-`wrangler.jsonc`'s `vars.CF_WEB_ANALYTICS_TOKEN`, replacing the empty string. If left empty, the
-widget and listing page simply omit the beacon script rather than shipping a broken one — see the
-comment above that var in `wrangler.jsonc`.
+Checked 2026-09-21: `bikesiliconvalley.org` already has Web Analytics on **automatic setup**
+(active 8 months). Per Cloudflare's own docs, automatic setup injects the beacon into every page
+served through the proxied zone, **on all subdomains**, with no code changes — so once this Worker
+is live on `events.bikesiliconvalley.org`/`committees.bikesiliconvalley.org`, its pages are already
+covered. Manually setting `vars.CF_WEB_ANALYTICS_TOKEN` on top of that would add a second,
+redundant beacon (a proxied site "can, but does not have to" also add one manually). Leave it
+empty — that's not a placeholder, it's the correct final value here.
 
 ### 3. Set the secrets
 
@@ -117,15 +119,24 @@ npx wrangler secret put EVENTBRITE_TOKEN
 npx wrangler secret put SLACK_WEBHOOK_URL
 ```
 
-See "Setup" above for where each value comes from.
+See "Setup" above for where each value comes from. Checked 2026-09-21: both secrets already exist
+on the two predecessor Workers (`svbc-events-widgets` has `EVENTBRITE_TOKEN`,
+`svbc-committee-calendars` has `SLACK_WEBHOOK_URL`) — Cloudflare secrets are write-only, so those
+values can't be read back out, but this confirms the credentials are already in hand somewhere
+(Eventbrite's own API keys page, the Slack app's incoming-webhooks config) rather than needing to
+be minted fresh.
+
+**Do this before step 5.** Deploying without these set doesn't fail the deploy — it ships a Worker
+that 401s on every Eventbrite call, live, to whichever real visitors hit the newly-claimed domains.
 
 ### 4. Point Workers Builds at this subdirectory
 
-In the Cloudflare dashboard, update this Worker's connected [Workers
-Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) root directory — currently
-pointing at whichever of the two predecessor directories it was last connected to (see the root
-`README.md`'s Deploys section, e.g. `/committee-calendars`, `/events-widgets`) — to `/svbc-calendars`,
-so future pushes to `main` auto-deploy the right directory instead of a now-deleted one.
+Checked 2026-09-21: neither predecessor Worker actually has a Git repository connected right now
+— both show **Settings → Builds → Git repository: Connect** (disconnected), not pointed at an old
+directory as this step used to assume. So this is a fresh connection to make, not a repoint:
+in the Cloudflare dashboard, **svbc-calendars → Settings → Builds → Connect**, authorize this
+GitLab repo, and set the build's root directory to `/svbc-calendars`. This needs an interactive
+GitLab authorization step, so it isn't something to script or do unattended.
 
 ### 5. Deploy
 
