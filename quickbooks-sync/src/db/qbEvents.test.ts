@@ -19,6 +19,7 @@ describe('D1QbEventStore', () => {
       entityType: 'customer',
       qbId: 'qb-1',
       fetchedPayload: null,
+      pendingMondayItemId: null,
       status: 'received',
       error: null,
       receivedAt: '2026-08-22T00:00:00.000Z',
@@ -73,5 +74,27 @@ describe('D1QbEventStore', () => {
   it('returns null for an unknown event id', async () => {
     const store = new D1QbEventStore(env.DB);
     expect(await store.getEvent('does-not-exist')).toBeNull();
+  });
+
+  it('round-trips pendingMondayItemId and leaves status untouched when only that field is patched', async () => {
+    const store = new D1QbEventStore(env.DB);
+    await store.insertEvent({
+      eventId: 'evt-4',
+      entityType: 'customer',
+      qbId: 'qb-4',
+      receivedAt: '2026-08-22T00:00:00.000Z',
+    });
+    await store.updateStatus('evt-4', 'queued');
+
+    await store.updateStatus('evt-4', 'queued', { pendingMondayItemId: 'item-abc' });
+    const row = await store.getEvent('evt-4');
+    expect(row?.status).toBe('queued');
+    expect(row?.pendingMondayItemId).toBe('item-abc');
+
+    // A later patch that doesn't mention pendingMondayItemId must not clear it — same
+    // COALESCE-on-write behavior the other patch fields already have.
+    await store.updateStatus('evt-4', 'written', { writtenAt: '2026-08-22T01:00:00.000Z' });
+    const finalRow = await store.getEvent('evt-4');
+    expect(finalRow?.pendingMondayItemId).toBe('item-abc');
   });
 });

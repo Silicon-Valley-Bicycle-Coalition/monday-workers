@@ -6,6 +6,7 @@ export interface QbEventRow {
   entityType: EntityType;
   qbId: string;
   fetchedPayload: string | null;
+  pendingMondayItemId: string | null;
   status: SyncStatus;
   error: string | null;
   receivedAt: string;

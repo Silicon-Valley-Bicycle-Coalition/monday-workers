@@ -28,6 +28,7 @@ function qbEventRow(overrides: Partial<QbEventRow> = {}): QbEventRow {
     entityType: 'customer',
     qbId: 'qb-1',
     fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Acme Co' }),
+    pendingMondayItemId: null,
     status: 'queued',
     error: null,
     receivedAt: '2026-08-22T00:00:00.000Z',
@@ -126,6 +127,61 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
+  it('durably records the created Monday item id before writing the mapping', async () => {
+    const qbEventStore = fakeQbEventStore();
+    const mapStore = fakeMapStore();
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-1' });
+    const mondayClient = fakeMondayClient({ createItem });
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore,
+      mondayClient,
+      quickBooksClient: fakeQuickBooksClient(),
+      config,
+    });
+
+    // The id lands in D1, status unchanged, before createMapping runs -- so a createMapping
+    // failure leaves a row a retry can resume from instead of calling createItem again.
+    expect(qbEventStore.updateStatus).toHaveBeenNthCalledWith(1, 'evt-1', 'queued', {
+      pendingMondayItemId: 'item-1',
+    });
+    expect(qbEventStore.updateStatus).toHaveBeenNthCalledWith(2, 'evt-1', 'written', {
+      writtenAt: expect.any(String),
+    });
+  });
+
+  it('resumes from a previously recorded Monday item id instead of creating a second item', async () => {
+    const qbEventStore = fakeQbEventStore({
+      getEvent: vi.fn().mockResolvedValue(qbEventRow({ pendingMondayItemId: 'item-from-earlier-attempt' })),
+    });
+    const mapStore = fakeMapStore();
+    const createItem = vi.fn();
+    const mondayClient = fakeMondayClient({ createItem });
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore,
+      mondayClient,
+      quickBooksClient: fakeQuickBooksClient(),
+      config,
+    });
+
+    expect(createItem).not.toHaveBeenCalled();
+    expect(mapStore.createMapping).toHaveBeenCalledWith({
+      entityType: 'customer',
+      qbId: 'qb-1',
+      mondayItemId: 'item-from-earlier-attempt',
+      mondayBoardId: 111,
+      createdAt: expect.any(String),
+    });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('updates the existing Monday item instead of creating a duplicate', async () => {
     const mapStore = fakeMapStore({
       getByQbId: vi.fn().mockResolvedValue({
@@ -150,9 +206,43 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       config,
     });
 
-    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', { text_col: 'Acme Co' });
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', { text_col: 'Acme Co', name: 'Acme Co' });
     expect(createItem).not.toHaveBeenCalled();
     expect(mapStore.createMapping).not.toHaveBeenCalled();
+  });
+
+  it('renames the Monday item when the QuickBooks name field has changed', async () => {
+    const qbEventStore = fakeQbEventStore({
+      getEvent: vi.fn().mockResolvedValue(
+        qbEventRow({ fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Acme Co (renamed)' }) })
+      ),
+    });
+    const mapStore = fakeMapStore({
+      getByQbId: vi.fn().mockResolvedValue({
+        entityType: 'customer',
+        qbId: 'qb-1',
+        mondayItemId: 'item-existing',
+        mondayBoardId: 111,
+        createdAt: '2026-08-22T00:00:00.000Z',
+      }),
+    });
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient = fakeMondayClient({ changeColumnValues });
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore,
+      mondayClient,
+      quickBooksClient: fakeQuickBooksClient(),
+      config,
+    });
+
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', {
+      text_col: 'Acme Co (renamed)',
+      name: 'Acme Co (renamed)',
+    });
   });
 
   it('links an invoice to its customer via qb_monday_map when the customer is already mapped', async () => {
