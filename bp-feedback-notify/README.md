@@ -86,14 +86,14 @@ holds the sandbox Organizer Feedback Form's real URL; `config/production.json`'s
 `feedbackFormUrl` is a placeholder until the production Organizer Feedback Form's title/column
 cleanup (see `migration-plan.md`) is actually applied by someone with write access to it.
 
-**Blocked as of 2026-09-21 on Cloudflare destination-address verification:** sends to
-`sandbox@bikesiliconvalley.org` currently fail with `destination address is not a verified
-address`. Cloudflare requires every `send_email` destination to be added and verified once, per
-account, before any Worker can deliver to it — Compute → Email Service → Email Routing →
-Destination Addresses in the dashboard, which emails a verification link to the address itself
-that a human with access to the `sandbox@` group needs to click. This blocks `donor-portal`'s
-sandbox email testing too, not just this Worker — it's an account-level prerequisite, not
-per-Worker config.
+**Confirmed working end-to-end as of 2026-09-21.** Sends to `sandbox@bikesiliconvalley.org` had
+initially failed with `destination address is not a verified address` — Cloudflare requires every
+`send_email` destination to be added and verified once, per account, before any Worker can deliver
+to it (Compute → Email Service → Email Routing → Destination Addresses in the dashboard, which
+emails a verification link to the address itself). Added and verified; a real monday automation
+run (not just a direct curl call) was then confirmed landing via `wrangler tail`. This was an
+account-level prerequisite, not per-Worker config — it also unblocks `donor-portal`'s own sandbox
+email testing, which hadn't hit it yet.
 
 ## Commands
 
@@ -114,6 +114,6 @@ npm run deploy         # do not run until config/production.json's feedbackFormU
   matching how other Workers in this repo are routed.
 - Production `feedbackFormUrl` needs the real Organizer Feedback Form fixed (title + dead columns
   — see `migration-plan.md`) before this Worker can be deployed to production for real.
-- Once Cloudflare destination-address verification is done, re-run the sandbox end-to-end test
-  (flip the sandbox test item's `Post-Event Feedback` to `Ready to Send`) to confirm the email
-  actually lands, not just that the webhook fires.
+- To go live in production: add the `Post-Event Feedback` column and the same webhook automation
+  to the real `BP Request Form` board (id `18395469629`), point `config/production.json` at the
+  fixed production form URL, and `npm run deploy`.
