@@ -89,14 +89,22 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     // GraphQL shape against a live account), so no mutation is attempted here.
     await deps.mondayClient.changeColumnValues(boardId, existing.mondayItemId, columnValues);
   } else {
-    // Known, accepted narrow window: if createItem succeeds but createMapping below throws, the
-    // queue retry re-runs this branch and creates a second Monday item. Closing it needs either a
-    // schema change or a Monday item-search capability; both are out of scope and tracked.
-    const created = await deps.mondayClient.createItem(boardId, itemName, columnValues);
+    let mondayItemId = event.pendingMondayItemId;
+    if (mondayItemId === null) {
+      const created = await deps.mondayClient.createItem(boardId, itemName, columnValues);
+      mondayItemId = created.id;
+
+      // Durably record the created item's id, status unchanged, before writing the mapping.
+      // A queue retry that resumes here (the mapping lookup above still misses, because
+      // createMapping below is what's about to fail or hasn't run yet) reuses this id instead
+      // of calling createItem again -- closing the duplicate-item window.
+      await deps.qbEventStore.updateStatus(eventId, event.status, { pendingMondayItemId: mondayItemId });
+    }
+
     await deps.mapStore.createMapping({
       entityType: event.entityType,
       qbId: event.qbId,
-      mondayItemId: created.id,
+      mondayItemId,
       mondayBoardId: boardId,
       createdAt: new Date().toISOString(),
     });
