@@ -603,10 +603,12 @@ describe('HttpMondayClient.getVolunteerShiftsForDonor', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
 
-    await client.getVolunteerShiftsForDonor('donor-1');
+    await client.getVolunteerShiftsForDonor('4567');
 
     expect(captured).not.toBeNull();
-    expect(captured!.variables.donorItemId).toBe('donor-1');
+    // Sent as a number, not the raw id string — a connect-board column's compare_value only
+    // matches a linked item id when it's a JSON number (verified live 2026-09-20).
+    expect(captured!.variables.donorItemId).toBe(4567);
     expect(captured!.variables.boardId).toBe(3);
     expect(captured!.query).toContain('$donorItemId');
   });
@@ -958,11 +960,13 @@ describe('HttpMondayClient.getEventRegistrationsForDonor', () => {
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, null, null, fetchMock);
 
-    await client.getEventRegistrationsForDonor({ donorItemId: 'donor-9', ...eventParams });
+    await client.getEventRegistrationsForDonor({ donorItemId: '4589', ...eventParams });
 
     expect(captured).not.toBeNull();
-    expect(captured!.variables.donorItemId).toBe('donor-9');
-    expect(captured!.query).not.toContain('donor-9');
+    // Sent as a number, not the raw id string — same connect-board compare_value fix as
+    // fetchItemsLinkedToDonor's other callers (verified live 2026-09-20).
+    expect(captured!.variables.donorItemId).toBe(4589);
+    expect(captured!.query).not.toContain('4589');
   });
 
   it('skips the events lookup entirely when the donor has no registrations', async () => {
@@ -1095,7 +1099,8 @@ describe('HttpMondayClient.getPledgesForDonor', () => {
     ]);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> };
-    expect(body.variables.donorItemId).toBe('4567');
+    // Sent as a number, not the raw id string (verified live 2026-09-20).
+    expect(body.variables.donorItemId).toBe(4567);
     expect(body.variables.boardId).toBe(777);
     expect(body.query).toContain('pledge_link_col');
     expect(body.query).not.toContain('4567');

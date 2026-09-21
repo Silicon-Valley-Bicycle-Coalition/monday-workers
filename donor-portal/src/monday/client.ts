@@ -145,13 +145,14 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async findDonorsByEmail(email: string): Promise<DonorMatch[]> {
-    // NOTE: `email` is attacker-controlled (it comes straight from the POST /login body), so it
-    // must never be interpolated into the query string — it's passed as a proper GraphQL
-    // variable ($email) instead, with only `compare_value: [$email]` referencing it. This
-    // variable-inside-query_params shape is written from current Monday API v2 knowledge but not
-    // verified against a live account — verify before deploy (same caveat as the two NOTE
-    // comments below on query_params.rules shapes). column_id stays interpolated because it's a
-    // trusted config value, never attacker input.
+    // `email` is attacker-controlled (it comes straight from the POST /login body), so it must
+    // never be interpolated into the query string — it's passed as a proper GraphQL variable
+    // ($email) instead, with only `compare_value: [$email]` referencing it. column_id stays
+    // interpolated because it's a trusted config value, never attacker input. Verified live
+    // against the sandbox Donors board on 2026-09-20: query_params.rules filtering on a text
+    // column works with the value passed as-is, but the variable's declared type must be
+    // `CompareValue`, not `String!` — the API rejects a `String!` variable used in a
+    // CompareValue position (caught the same way the two NOTEs below were).
     // preferredLanguage is a gated/optional column, same convention as membershipExpiry in
     // getDonorPortalData below: only request it once it's been configured with a real column id,
     // so the literal placeholder never ships to Monday's API.
@@ -160,7 +161,7 @@ export class HttpMondayClient implements MondayClient {
         ? `column_values(ids: ["${this.columns.preferredLanguage}"]) { id text }`
         : '';
     const query = `
-      query ($boardId: ID!, $email: String!) {
+      query ($boardId: ID!, $email: CompareValue) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 25,
@@ -238,29 +239,30 @@ export class HttpMondayClient implements MondayClient {
 
   // Shared by getDonationsForDonor, getPledgesForDonor, and getVolunteerShiftsForDonor: every item on a board whose
   // connect-board column links to donorItemId, following the cursor across pages.
-  // NOTE: the query_params.rules shape for filtering by a connect-board column's linked item
-  // id is written from current Monday API v2 knowledge but not verified against a live
-  // account — verify against a real board before deploy (MR !91 already ran this live check
-  // and found this exact shape needs a fix; see that MR, not yet merged to main); a shape fix
-  // here covers both callers. donorItemId
-  // isn't attacker-reachable today (it's derived from the session, never client-supplied),
-  // but it's passed as a $donorItemId GraphQL variable rather than interpolated, as
-  // defense-in-depth and for consistency with findDonorsByEmail above.
+  // Verified live against the sandbox Donations board on 2026-09-20. Two things the "current API
+  // knowledge" version got wrong: the variable's declared type must be `CompareValue`, not
+  // `String!` (same fix as findDonorsByEmail above); and — the real catch — a connect-board
+  // column's compare_value must be the linked item's id as a JSON *number*, not a numeric
+  // string. Filtering with the id as a string silently returns zero matches (no error, no
+  // warning), which would have shipped as "donor has no donations/pledges/shifts" for every
+  // donor. donorItemId isn't attacker-reachable today (it's derived from the session, never
+  // client-supplied), but it still travels as a $donorItemId GraphQL variable rather than being
+  // interpolated, as defense-in-depth and for consistency with findDonorsByEmail above.
   private async fetchItemsLinkedToDonor(
     boardId: number,
     linkColumnId: string,
     donorItemId: string,
     columnIds: string[],
     includeName: boolean,
-    // NOTE: reading a board_relation column's linked_item_ids via the `... on BoardRelationValue`
-    // fragment is written from current Monday API v2 knowledge but not verified against a live
-    // account — same verify-before-deploy caveat as the rules shape above.
+    // Reading a board_relation column's linked_item_ids via the `... on BoardRelationValue`
+    // fragment was verified in the same live check — the fragment shape itself was already
+    // correct.
     includeLinkedItemIds = false
   ): Promise<MondayItem[]> {
     const valueFields = includeLinkedItemIds ? '{ id text ... on BoardRelationValue { linked_item_ids } }' : '{ id text }';
     const itemFields = `id ${includeName ? 'name ' : ''}column_values(ids: ${JSON.stringify(columnIds)}) ${valueFields}`;
     const firstPageQuery = `
-      query ($boardId: ID!, $donorItemId: String!) {
+      query ($boardId: ID!, $donorItemId: CompareValue) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 500,
@@ -285,7 +287,7 @@ export class HttpMondayClient implements MondayClient {
 
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
-    }>(firstPageQuery, { boardId, donorItemId });
+    }>(firstPageQuery, { boardId, donorItemId: Number(donorItemId) });
     const firstPage = firstData.boards[0]?.items_page;
     const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
     let cursor = firstPage?.cursor ?? null;
@@ -405,18 +407,19 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getDiscountOrganizations(): Promise<DiscountOrganization[]> {
-    // NOTE: the query_params.rules shape for filtering by a checkbox column's boolean value
-    // (discountActive here) is written from current Monday API v2 knowledge but not verified
-    // against a live account — verify against a real Organizations board before deploy (MR
-    // !91 already ran this live check and found this exact shape needs a fix; see that MR,
-    // not yet merged to main).
+    // Verified live against the sandbox Organizations board on 2026-09-20: checkbox columns
+    // don't support any_of/compare_value filtering at all — the API's own filter guidelines
+    // (get_column_type_info) say checkbox only accepts is_empty/is_not_empty with an empty-array
+    // compare_value. The original `{ compare_value: ["true"], operator: any_of }` shape ran
+    // without error but silently matched nothing, which would have shipped as "no discount
+    // organizations" regardless of how many were actually checked.
     const query = `
       query ($boardId: ID!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 500,
             query_params: {
-              rules: [{ column_id: "${this.columns.discountActive}", compare_value: ["true"], operator: any_of }]
+              rules: [{ column_id: "${this.columns.discountActive}", compare_value: [], operator: is_not_empty }]
             }
           ) {
             cursor
@@ -541,10 +544,10 @@ export class HttpMondayClient implements MondayClient {
     newValue: string;
     submittedAtISO: string;
   }): Promise<void> {
-    // NOTE: the column_values shapes below (connect-boards { item_ids }, date { date, time })
-    // are written from current Monday API v2 knowledge but not verified against a live account —
-    // verify against the real Change Requests board before deploy (same caveat as the read-side
-    // NOTEs above). All user-sourced values travel as GraphQL variables.
+    // column_values shapes (connect-boards { item_ids }, date { date, time }) verified live
+    // against the sandbox Change Requests board on 2026-09-20 — donor link resolved correctly,
+    // text/date columns round-tripped as expected, item landed in the top ("New") group. All
+    // user-sourced values travel as GraphQL variables.
     const mutation = `
       mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
         create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) {
