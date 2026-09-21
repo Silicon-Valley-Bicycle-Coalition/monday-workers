@@ -1,7 +1,6 @@
 {
   "organizers": [
     { "id": "21763925459", "label": "Silicon Valley Bicycle Coalition (main)" },
-    { "id": "17135810858", "label": "Silicon Valley Bicycle Coalition (volunteering)" },
-    { "id": "121346572357", "label": "Silicon Valley Bicycle Coalition (bike parking)" }
+    { "id": "17135810858", "label": "Silicon Valley Bicycle Coalition (volunteering)" }
   ]
 }

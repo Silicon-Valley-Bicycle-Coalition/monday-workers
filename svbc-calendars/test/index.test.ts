@@ -82,10 +82,11 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     const res = await call(req("/events"));
     expect(res.status).toBe(200);
     const data = await res.json<{ events: unknown[]; total: number }>();
-    // No organizer param means all 3 allowlisted organizers are fetched and merged (Task 11's
-    // multi-organizer fix); mockEventbrite() is organizer-agnostic and returns the same single
-    // event for every one of those 3 fetches, so the merged total is 3, not 1.
-    expect(data.events).toHaveLength(3);
+    // No organizer param means every allowlisted organizer (2, since "bike parking" was removed
+    // 2026-09-21 — see eventsApi.ts) is fetched and merged (Task 11's multi-organizer fix);
+    // mockEventbrite() is organizer-agnostic and returns the same single event for each fetch,
+    // so the merged total is 2, not 1.
+    expect(data.events).toHaveLength(2);
   });
 
   it("GET / also returns events", async () => {
@@ -207,7 +208,7 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
 });
 
 describe("multi-organizer merge (the fixed correctness gap)", () => {
-  it("GET /events with no organizer param fetches and merges all 3 allowlisted organizers", async () => {
+  it("GET /events with no organizer param fetches and merges every allowlisted organizer", async () => {
     let calls = 0;
     fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
       calls += 1;
@@ -215,7 +216,30 @@ describe("multi-organizer merge (the fixed correctness gap)", () => {
     });
     const res = await call(req("/events"));
     expect(res.status).toBe(200);
-    expect(calls).toBe(3); // one organizer-scoped fetch per allowlisted organizer — cache was cleared in beforeEach, so this is a guaranteed MISS
+    expect(calls).toBe(2); // one organizer-scoped fetch per allowlisted organizer — cache was cleared in beforeEach, so this is a guaranteed MISS
+  });
+
+  it("omits a failing organizer from the combined response instead of failing the whole request", async () => {
+    // Real incident, 2026-09-21: a dead organizer id (404) took down the entire combined
+    // widget/JSON API for every organizer, not just its own events. This is the regression test.
+    let calls = 0;
+    fetchSpy.mockImplementation(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ status_code: 404 }), { status: 404 });
+      }
+      return new Response(JSON.stringify(fakeEventbriteResponse()), { status: 200 });
+    });
+    const res = await call(req("/events"));
+    expect(res.status).toBe(200);
+    const data = await res.json<{ events: unknown[]; total: number }>();
+    expect(data.events).toHaveLength(1); // only the succeeding organizer's event
+  });
+
+  it("returns 502 only when every organizer fails", async () => {
+    fetchSpy.mockImplementation(async () => new Response(JSON.stringify({ status_code: 404 }), { status: 404 }));
+    const res = await call(req("/events"));
+    expect(res.status).toBe(502);
   });
 });
 

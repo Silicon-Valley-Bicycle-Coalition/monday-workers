@@ -1,6 +1,7 @@
 import type { Env, NormalizedEvent } from './types';
 import { fetchEventbriteEvents } from './adapters/eventbrite';
 import rawOrganizers from '../config/eventbriteOrganizers.json';
+import { errorMessage } from './util/errorMessage';
 
 interface EventbriteOrganizerConfig {
   id: string;
@@ -28,12 +29,13 @@ function validateOrganizers(raw: unknown): EventbriteOrganizerConfig[] {
 
 /**
  * Eventbrite organizer IDs allowed via the `organizer` query param, derived from
- * config/eventbriteOrganizers.json rather than hardcoded here. Two of these three ids are also
- * the `organizerId` of an Eventbrite source in config/sources.json (those two have their own ICS
- * calendar feed); the third — "bike parking" — has no ICS feed of its own and exists only in this
- * organizers list. Kept as its own small config file, rather than folded entirely into
- * sources.json, to avoid turning "bike parking" into a 10th public calendar feed + listing entry
- * for a change that's purely about not hardcoding organizer ids in source.
+ * config/eventbriteOrganizers.json rather than hardcoded here. Both current ids are also the
+ * `organizerId` of an Eventbrite source in config/sources.json (each has its own ICS calendar
+ * feed). A third — "bike parking" (121346572357) — was removed 2026-09-21: confirmed gone from
+ * Eventbrite entirely (404, both on its public page and via the API), production cutover day.
+ * Re-add it here once a current replacement organizer id is confirmed. Kept as its own small
+ * config file, rather than folded entirely into sources.json, so a future organizer here doesn't
+ * have to become a 10th public calendar feed + listing entry just to be allowed via `organizer`.
  */
 export const ALLOWED_ORGANIZERS: string[] = validateOrganizers(rawOrganizers).map((o) => o.id);
 
@@ -84,7 +86,7 @@ function toEventItem(event: NormalizedEvent): EventItem {
   };
 }
 
-/** An ad-hoc EventbriteSourceConfig for organizer-scoped widget fetches (these aren't calendar sources with their own .ics feed — bike parking in particular has none). */
+/** An ad-hoc EventbriteSourceConfig for organizer-scoped widget fetches — these aren't calendar sources, so they need no .ics feed of their own (a future organizer added here wouldn't need one either). */
 function organizerSource(organizerId: string) {
   return { id: organizerId, name: organizerId, committeeName: '', adapter: 'eventbrite' as const, organizerId };
 }
@@ -95,16 +97,30 @@ async function fetchOrganizerEvents(organizerId: string, token: string): Promise
 
 export async function fetchEventsResponse(env: Env, organizerId: string | null, pageSize: number, cacheTTL: number): Promise<Response> {
   let events: NormalizedEvent[];
-  try {
-    if (organizerId) {
+  if (organizerId) {
+    // A specific organizer was asked for — if it fails, there's nothing else to fall back to.
+    try {
       events = await fetchOrganizerEvents(organizerId, env.EVENTBRITE_TOKEN);
-    } else {
-      const perOrganizer = await Promise.all(ALLOWED_ORGANIZERS.map((id) => fetchOrganizerEvents(id, env.EVENTBRITE_TOKEN)));
-      events = perOrganizer.flat().sort((a, b) => a.startUtc.localeCompare(b.startUtc));
+    } catch (err) {
+      return jsonResponse({ error: 'Eventbrite API error', detail: errorMessage(err) }, 502);
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return jsonResponse({ error: 'Eventbrite API error', detail: message }, 502);
+  } else {
+    // The combined feed across every allowed organizer — one organizer failing (a bad id, a
+    // transient Eventbrite error) shouldn't take down the whole widget for every organizer's
+    // events. Log it and serve what succeeded; only a total wipeout is a 502.
+    const results = await Promise.allSettled(ALLOWED_ORGANIZERS.map((id) => fetchOrganizerEvents(id, env.EVENTBRITE_TOKEN)));
+    const succeeded: NormalizedEvent[][] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        succeeded.push(result.value);
+      } else {
+        console.error(`eventsApi: organizer ${ALLOWED_ORGANIZERS[i]} failed, omitting it from the combined response: ${errorMessage(result.reason)}`);
+      }
+    });
+    if (succeeded.length === 0) {
+      return jsonResponse({ error: 'Eventbrite API error', detail: 'every organizer failed' }, 502);
+    }
+    events = succeeded.flat().sort((a, b) => a.startUtc.localeCompare(b.startUtc));
   }
 
   const now = new Date();
