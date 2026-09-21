@@ -18,8 +18,8 @@ const VALID_BODY = {
   eventName: 'Fall Festival',
 };
 
-function post(body: unknown, headers: Record<string, string> = { 'X-Webhook-Secret': SECRET }) {
-  return new Request('http://worker/webhook/bp-feedback', {
+function post(body: unknown, headers: Record<string, string> = { 'X-Webhook-Secret': SECRET }, query = '') {
+  return new Request(`http://worker/webhook/bp-feedback${query}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -39,6 +39,34 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(VALID_BODY, { 'X-Webhook-Secret': 'nope' }), undefined, env);
     expect(res.status).toBe(401);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
+  });
+
+  it('accepts the secret as a ?secret= query param, since monday.com\'s webhook action has no custom-header field', async () => {
+    const env = fakeEnv();
+    const res = await app.request(post(VALID_BODY, {}, `?secret=${SECRET}`), undefined, env);
+    expect(res.status).toBe(200);
+    expect(env.EMAIL.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects the wrong secret given as a query param', async () => {
+    const env = fakeEnv();
+    const res = await app.request(post(VALID_BODY, {}, '?secret=nope'), undefined, env);
+    expect(res.status).toBe(401);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+  });
+
+  it('echoes back a monday.com connection-verification challenge instead of treating it as a feedback payload', async () => {
+    const env = fakeEnv();
+    const res = await app.request(post({ challenge: 'abc123' }), undefined, env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc123' });
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+  });
+
+  it('still requires the secret before answering a challenge', async () => {
+    const env = fakeEnv();
+    const res = await app.request(post({ challenge: 'abc123' }, {}), undefined, env);
+    expect(res.status).toBe(401);
   });
 
   it('rejects an invalid payload with 400 and does not send', async () => {
