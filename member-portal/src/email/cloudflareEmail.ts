@@ -9,7 +9,8 @@ export class CloudflareEmailSender implements EmailSender {
     private emailBinding: SendEmail,
     private fromAddress: string,
     private fromName: string,
-    private logoUrl: string
+    private logoUrl: string,
+    private replyTo?: string
   ) {}
 
   async sendLoginEmail(params: SendLoginEmailParams): Promise<void> {
@@ -24,6 +25,7 @@ export class CloudflareEmailSender implements EmailSender {
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },
+      ...(this.replyTo ? { replyTo: this.replyTo } : {}),
       subject,
       html: body.html,
       text: body.text,
@@ -39,6 +41,7 @@ export class CloudflareEmailSender implements EmailSender {
     await this.emailBinding.send({
       to: params.to,
       from: { email: this.fromAddress, name: this.fromName },
+      ...(this.replyTo ? { replyTo: this.replyTo } : {}),
       // Subject is always ours, so it always follows the donor's locale — even when the body
       // comes from a staff template.
       subject: `🚴 ${t(params.locale, 'letterReady.subject', { year: String(params.year) })}`,

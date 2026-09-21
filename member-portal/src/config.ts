@@ -164,6 +164,9 @@ export function validateConfig(raw: unknown): Config {
 
   const email = requireObject(cfg, 'email');
   requireKeys(email, 'email', REQUIRED_EMAIL_KEYS);
+  if ('replyTo' in email && typeof email.replyTo !== 'string') {
+    throw new Error('config: "email.replyTo" must be a string when present');
+  }
 
   const auth = requireObject(cfg, 'auth');
   requireKeys(auth, 'auth', REQUIRED_AUTH_KEYS);

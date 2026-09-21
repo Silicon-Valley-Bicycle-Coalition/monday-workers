@@ -43,6 +43,30 @@ const STYLE = `
     --svbc-black: #221E1F;
     --svbc-gold: #FEC10C;
     --svbc-white: #FFFFFF;
+    /* Semantic tokens that flip under prefers-color-scheme below. The brand tokens above stay
+       fixed in both themes — header/footer bars, the member card, and table headers are
+       deliberately always-dark brand chrome, not page background. */
+    --bg: var(--svbc-white);
+    --text: var(--svbc-black);
+    --surface: var(--svbc-white);
+    --border: #ccc;
+    --table-border: #eee;
+    --row-stripe: #fafafa;
+    --tab-bg: #f0f0f0;
+    --tab-border: #ddd;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1b1b;
+      --text: #ececec;
+      --surface: #2a2828;
+      --border: #4d4a4a;
+      --table-border: #3a3838;
+      --row-stripe: #242222;
+      --tab-bg: #2a2828;
+      --tab-border: #4d4a4a;
+    }
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -56,10 +80,10 @@ const STYLE = `
     display: flex;
     flex-direction: column;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: var(--svbc-black);
-    background: var(--svbc-white);
+    color: var(--text);
+    background: var(--bg);
   }
-  a { color: var(--svbc-black); }
+  a { color: var(--text); }
   /* The header/footer bars are full-bleed edge-to-edge, like bikesiliconvalley.org's own nav —
      matching its visual weight matters more here than lining up with <main>'s narrower 720px
      reading column underneath, which stays capped for form/table readability. Same fixed side
@@ -132,9 +156,9 @@ const STYLE = `
     padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
-    border: 1px solid var(--svbc-black);
-    background: var(--svbc-white);
-    color: var(--svbc-black);
+    border: 1px solid var(--text);
+    background: var(--surface);
+    color: var(--text);
   }
   main button[type='submit'] {
     background: var(--svbc-gold);
@@ -157,8 +181,10 @@ const STYLE = `
   input[type='email'], input[type='text'], select {
     font-size: 14px;
     padding: 8px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border);
     border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
   }
   /* Buttons with real padding/borders (vs. the tiny default inline button) need breathing room
      when a wrapped line lands right above the next list item — e.g. the portal's per-language
@@ -180,13 +206,13 @@ const STYLE = `
   }
   td {
     padding: 6px 10px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--table-border);
   }
-  tbody tr:nth-child(even) td { background: #fafafa; }
+  tbody tr:nth-child(even) td { background: var(--row-stripe); }
   .col-amount { text-align: right; }
   tfoot td {
     font-weight: bold;
-    border-top: 2px solid var(--svbc-black);
+    border-top: 2px solid var(--text);
     border-bottom: none;
   }
 
@@ -207,8 +233,8 @@ const STYLE = `
     padding: 8px 16px;
     margin: 0 4px 0 0;
     cursor: pointer;
-    background: #f0f0f0;
-    border: 1px solid #ddd;
+    background: var(--tab-bg);
+    border: 1px solid var(--tab-border);
     border-bottom: none;
     border-radius: 6px 6px 0 0;
     font-weight: bold;
@@ -228,7 +254,7 @@ const STYLE = `
     display: none;
     width: 100%;
     padding-top: 14px;
-    border-top: 2px solid var(--svbc-black);
+    border-top: 2px solid var(--text);
   }
   .tab-input:nth-of-type(1):checked ~ .tab-panel:nth-of-type(1),
   .tab-input:nth-of-type(2):checked ~ .tab-panel:nth-of-type(2),

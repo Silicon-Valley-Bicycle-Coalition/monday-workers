@@ -3,6 +3,7 @@ import { configFor, type EnvironmentBindings } from './environment';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { sandboxEmailBinding } from './email/sandboxBinding';
 import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webhook';
+import { timingSafeEqual } from './timingSafeEqual';
 import production from '../config/production.json';
 import sandbox from '../config/sandbox.json';
 
@@ -18,10 +19,15 @@ const app = new Hono<{ Bindings: Env }>();
 // connection URL itself is the only place to put a secret — so the shared secret is checked as
 // a query param (?secret=...) as well as the X-Webhook-Secret header, for whichever caller sets
 // it. A missing/mismatched secret is rejected before the body is even parsed.
+//
+// The query-param path means WEBHOOK_SECRET lands in this Worker's Cloudflare access logs
+// (Logpush/`wrangler tail`) on every monday-triggered request — there's no way around that as
+// long as monday's webhook action stays header-less. Treat those logs as holding a live secret:
+// restrict who can read them, and rotate WEBHOOK_SECRET if that access ever widens.
 function isAuthorized(c: { req: { header: (name: string) => string | undefined; query: (name: string) => string | undefined } }, env: Env): boolean {
   if (!env.WEBHOOK_SECRET) return false;
-  const provided = c.req.header('X-Webhook-Secret') ?? c.req.query('secret');
-  return provided === env.WEBHOOK_SECRET;
+  const provided = c.req.header('X-Webhook-Secret') ?? c.req.query('secret') ?? '';
+  return timingSafeEqual(provided, env.WEBHOOK_SECRET);
 }
 
 app.post('/webhook/bp-feedback', async (c) => {

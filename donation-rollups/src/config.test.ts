@@ -113,29 +113,50 @@ describe('validateConfig — membership block', () => {
 const rawBase = () => JSON.parse(JSON.stringify(rawSandboxConfig)) as Record<string, any>;
 
 describe('validateConfig — affiliations block', () => {
-  it('accepts affiliations: null (feature gated off) and leaves actingForLink null', () => {
-    const cfg = validateConfig(rawBase());
+  it('accepts affiliations: null (feature gated off) even when actingForLink is already wired', () => {
+    // The shipped sandbox config's Donations board carries a real Acting for column id
+    // regardless of whether the affiliations feature itself is on — validateAffiliations passes
+    // actingForLink through unchanged; it isn't forced to null. Force affiliations off here to
+    // test that path explicitly, since the shipped config now has it on (see the next test).
+    const raw = rawBase();
+    raw.affiliations = null;
+    const cfg = validateConfig(raw);
     expect(cfg.affiliations).toBeNull();
-    expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBeNull();
+    expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBe('board_relation_mm79313');
+  });
+  it('the shipped sandbox config has the affiliations feature on, wired to the real Affiliations board', () => {
+    const cfg = validateConfig(rawBase());
+    expect(cfg.affiliations).toEqual({
+      boardId: 18431577240,
+      columns: {
+        personLink: 'board_relation_mm794eac',
+        attributedGiving: 'numeric_mm79ym3t',
+        attributedGiftCount: 'numeric_mm796s2x',
+        lastAttributedGift: 'date_mm79bzkq',
+      },
+    });
   });
   it('accepts a full affiliations block and an optional organizationalGiving owner column', () => {
     const raw = rawBase();
     raw.affiliations = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag',
       attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } };
     raw.donationRollups.donationBoards[0].columns.actingForLink = 'br_af';
-    raw.donationRollups.ownerColumnsByBoard['18428131737'].organizationalGiving = 'n_og';
+    raw.donationRollups.ownerColumnsByBoard['18431577220'].organizationalGiving = 'n_og';
     const cfg = validateConfig(raw);
     expect(cfg.affiliations).toEqual({ boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag',
       attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } });
     expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBe('br_af');
-    expect(cfg.donationRollups.ownerColumnsByBoard['18428131737']!.organizationalGiving).toBe('n_og');
-    expect(cfg.donationRollups.ownerColumnsByBoard['18428131727']!.organizationalGiving).toBeUndefined();
+    expect(cfg.donationRollups.ownerColumnsByBoard['18431577220']!.organizationalGiving).toBe('n_og');
+    expect(cfg.donationRollups.ownerColumnsByBoard['18431577213']!.organizationalGiving).toBeUndefined();
   });
   it('rejects an affiliations block missing a column, and a block without actingForLink on the donation board', () => {
     const raw = rawBase();
     raw.affiliations = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc' } };
     expect(() => validateConfig(raw)).toThrow(/affiliations\.columns\.lastAttributedGift/);
     raw.affiliations.columns.lastAttributedGift = 'd_lag';
+    // The shipped sandbox config already has actingForLink wired; null it out here so this
+    // case still exercises the "missing actingForLink" rejection on its own terms.
+    raw.donationRollups.donationBoards[0].columns.actingForLink = null;
     expect(() => validateConfig(raw)).toThrow(/actingForLink.*required when affiliations is set/);
   });
 });

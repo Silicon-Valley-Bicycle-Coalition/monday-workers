@@ -139,6 +139,20 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/fromName/);
   });
 
+  it('accepts config with no email.replyTo (optional)', () => {
+    expect(() => validateConfig(validConfig)).not.toThrow();
+  });
+
+  it('accepts a string email.replyTo', () => {
+    const cfg = { ...validConfig, email: { ...validConfig.email, replyTo: 'contactus@example.org' } };
+    expect(validateConfig(cfg).email.replyTo).toBe('contactus@example.org');
+  });
+
+  it('throws when email.replyTo is present but not a string', () => {
+    const cfg = { ...validConfig, email: { ...validConfig.email, replyTo: 12345 } };
+    expect(() => validateConfig(cfg)).toThrow(/email\.replyTo/);
+  });
+
   it('throws when auth is missing a key', () => {
     const { portalBaseUrl, ...rest } = validConfig.auth;
     const broken = { ...validConfig, auth: rest };

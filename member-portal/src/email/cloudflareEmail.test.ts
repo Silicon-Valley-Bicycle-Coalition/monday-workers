@@ -48,6 +48,26 @@ describe('CloudflareEmailSender', () => {
 
       await expect(sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', locale: 'en' })).rejects.toThrow('domain not onboarded');
     });
+
+    it('sets the Reply-To header when one is configured', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL, 'contactus@bikesiliconvalley.org');
+
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', locale: 'en' });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.replyTo).toBe('contactus@bikesiliconvalley.org');
+    });
+
+    it('omits Reply-To when none is configured', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'login@example.org', 'Test Portal', LOGO_URL);
+
+      await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://x', locale: 'en' });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.replyTo).toBeUndefined();
+    });
   });
 
   describe('sendLetterReadyEmail', () => {
@@ -213,6 +233,22 @@ describe('CloudflareEmailSender', () => {
       const message = binding.send.mock.calls[0]![0];
       expect(message.subject).toBe(`🚴 ${t('es', 'letterReady.subject', { year: '2025' })}`);
       expect(message.html).toContain('<p>Hola Juana</p>');
+    });
+
+    it('sets the Reply-To header when one is configured', async () => {
+      const binding = fakeBinding();
+      const sender = new CloudflareEmailSender(binding, 'letters@mail.bikesiliconvalley.org', 'SVBC', LOGO_URL, 'contactus@bikesiliconvalley.org');
+
+      await sender.sendLetterReadyEmail({
+        to: 'jane@example.org',
+        donorName: 'Jane',
+        year: 2025,
+        loginUrl: 'https://x/callback',
+        locale: 'en',
+      });
+
+      const message = binding.send.mock.calls[0]![0];
+      expect(message.replyTo).toBe('contactus@bikesiliconvalley.org');
     });
   });
 });
