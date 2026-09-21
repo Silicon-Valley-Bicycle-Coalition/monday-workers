@@ -47,14 +47,24 @@ this repo (no donor data here, not migration-related; see the root design doc). 
 namespace and Analytics Engine dataset and serves on its `workers.dev` URL, **not** the real
 custom domains.
 
-**Real incident, 2026-09-21:** the first deploy of `env.sandbox`, before it had an explicit
-`"routes": []` override, silently inherited the top-level `routes` — `events.bikesiliconvalley.org`
-and `committees.bikesiliconvalley.org` — and reassigned both real custom domains to the untested
-sandbox Worker. `wrangler deploy` prints an explicit warning about exactly this before it happens;
-it's easy to miss in a long build/deploy log. Fixed by adding the `"routes": []` line (now in
-`wrangler.jsonc`, with a comment — never remove it) and manually deleting both Custom Domain
-entries from `svbc-calendars-sandbox` in the Cloudflare dashboard (**Workers & Pages → the
-Worker → Domains**), since clearing `routes` in config does not retroactively delete an
-already-created Custom Domain resource — that's a separate, manual step every time this mistake
-happens. Before running `wrangler deploy --env sandbox` for this Worker again, read wrangler's
-own output for a "reassign" warning and stop if one appears.
+**Real incident, 2026-09-21 — confirmed non-outage:** the first deploy of `env.sandbox`, before it
+had an explicit `"routes": []` override, silently inherited the top-level `routes` —
+`events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` — and reassigned both real
+custom domains to the untested sandbox Worker. `wrangler deploy` prints an explicit warning about
+exactly this before it happens; it's easy to miss in a long build/deploy log. Fixed by adding the
+`"routes": []` line (now in `wrangler.jsonc`, with a comment — never remove it) and manually
+deleting both Custom Domain entries from `svbc-calendars-sandbox` in the Cloudflare dashboard
+(**Workers & Pages → the Worker → Domains**), since clearing `routes` in config does not
+retroactively delete an already-created Custom Domain resource — that's a separate, manual step
+every time this mistake happens.
+
+Verified afterward, directly against the zone: **neither domain had a live target before or after
+this incident**, so it did not cause a real outage. `bikesiliconvalley.org`'s DNS records (search
+in the dashboard's DNS tab) contain no record at all for `events` or `committees`; the legacy
+`svbc-events-widgets` and `svbc-committee-calendars` Workers (the two this repo is meant to
+replace) both show "No custom domains" on their own Domains tabs; and external resolution for both
+hostnames fails outright (NXDOMAIN). The domain cutover described in the root README's Deploy
+section is still a fully pending step, not a live reassignment this incident disturbed.
+
+Before running `wrangler deploy --env sandbox` for this Worker again, read wrangler's own output
+for a "reassign" warning and stop if one appears — this won't always be a no-op.
