@@ -81,8 +81,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-member-portal-sandbox",
-          // Replace after running: wrangler d1 create svbc-member-portal-sandbox
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "database_id": "5b3911bc-4808-4a7f-b4b6-8a62e47ffa1a",
           "migrations_dir": "migrations"
         }
       ],
