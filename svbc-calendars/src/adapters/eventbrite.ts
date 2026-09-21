@@ -25,7 +25,14 @@ interface EventbriteEventsResponse {
 const MAX_PAGES = 20;
 
 function organizerEventsUrl(organizerId: string, continuation?: string): string {
-  const base = `https://www.eventbriteapi.com/v3/organizers/${organizerId}/events/?expand=venue&status=live&order_by=start_asc&time_filter=current_future`;
+  // No time_filter here — that parameter only exists on the /v3/organizations/{id}/events/
+  // endpoint (Eventbrite's docs, "List your Events by Date"), not this organizer-scoped one.
+  // It used to be accepted silently; Eventbrite tightened argument validation at some point
+  // (checked 2026-09-21) and now rejects it outright with ARGUMENTS_ERROR. status=live already
+  // excludes ended events (Eventbrite transitions status away from "live" once an event ends —
+  // see the Event Status list in their docs), and fetchEventsResponse's own
+  // `startUtc > now` filter in eventsApi.ts is the real backstop regardless.
+  const base = `https://www.eventbriteapi.com/v3/organizers/${organizerId}/events/?expand=venue&status=live&order_by=start_asc`;
   return continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
 }
 

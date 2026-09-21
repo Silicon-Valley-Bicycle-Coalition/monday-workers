@@ -60,7 +60,7 @@ describe('fetchEventbriteEvents', () => {
         return new Response(JSON.stringify(PAGE_2), { status: 200 });
       }
       expect(String(url)).toBe(
-        'https://www.eventbriteapi.com/v3/organizers/org-123/events/?expand=venue&status=live&order_by=start_asc&time_filter=current_future'
+        'https://www.eventbriteapi.com/v3/organizers/org-123/events/?expand=venue&status=live&order_by=start_asc'
       );
       return new Response(JSON.stringify(PAGE_1), { status: 200 });
     });
