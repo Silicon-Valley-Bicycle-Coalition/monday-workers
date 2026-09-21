@@ -91,10 +91,12 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 ## Deploy
 
 Deployed to production 2026-09-21: both custom domains are live and verified healthy (widget,
-JSON API, calendar feeds, listing page all serving correctly), and Workers Builds is now connected
-— pushes to `main` auto-deploy from here on. **Step 7 is still open** — nothing on the public site
-actually embeds this Worker yet, so none of the verified-healthy content in step 6 is in front of
-a real visitor. See that step for what's still needed.
+JSON API, calendar feeds, listing page all serving correctly), Workers Builds is connected —
+pushes to `main` auto-deploy from here on — and the predecessor Workers are retired. The public
+`/events` page's main widget now embeds this Worker for real, verified live. **Step 7 has two
+loose ends** — a second, separate Code Block on that same page still runs the old third-party
+embed (out of scope of what this README documents), and `committees.bikesiliconvalley.org` was
+never checked for a similar swap. See step 7 for the detail.
 
 Cutover checklist, in order:
 
@@ -172,22 +174,29 @@ deletion regardless). Confirmed gone via `wrangler d1 list` and the Workers & Pa
 re-confirmed `events.bikesiliconvalley.org`/`committees.bikesiliconvalley.org` still serve 200s
 on `svbc-calendars` afterward.
 
-### 7. Actually embed the widget on the live site — still open
+### 7. Actually embed the widget on the live site — partly done
 
 Deploying this Worker does **not** put its content in front of any real visitor by itself; that
 only happens once something on the public site points at it. Checked 2026-09-21, after steps 1–6
-above were otherwise complete: `bikesiliconvalley.org/events` embeds **no reference to
-`events.bikesiliconvalley.org` at all** — it loads `https://dist.eventscalendar.co/embed.js`
-instead, an unrelated third-party events-calendar service. The README's original assumption that
-a Squarespace iframe already pointed at this Worker was wrong (or that step was never done); the
-"Widget embed snippet" section below has never actually been pasted into the live site.
+above were otherwise complete: `bikesiliconvalley.org/events` embedded **no reference to
+`events.bikesiliconvalley.org` at all** — it loaded `https://dist.eventscalendar.co/embed.js`
+instead, an unrelated third-party events-calendar service, in a Code Block under the "Upcoming
+SVBC Classes & Rides" heading. The README's original assumption that a Squarespace iframe already
+pointed at this Worker was wrong (or that step was never done).
 
-This means every verification in step 6 only proves the Worker itself is healthy — it says
-nothing about what real visitors see, since they're not being served by it yet. Until someone
-edits the Squarespace `/events` page (swap the `eventscalendar.co` embed for the iframe in "Widget
-embed snippet" below) and the `/committees` page similarly, this migration isn't actually
-user-facing, no matter how correct the Worker is. That's a Squarespace content edit, not something
-in this repo.
+**Done 2026-09-21:** that one Code Block's content was replaced in the Squarespace editor with
+the exact iframe in "Widget embed snippet" below (`events.bikesiliconvalley.org/widget?organizer=21763925459`),
+saved, and verified live — `bikesiliconvalley.org/events` now renders real events (checked the
+page's actual `<iframe src>` after saving, not just the editor preview).
+
+**Still open, scoped out deliberately:** the *same* `/events` page has a second, separate Code
+Block further down, under "The Silicon Valley Bike Calendar" heading, that still runs its own
+`eventscalendar.co` embed — a broader community calendar (BPAC committees + more), not the single
+widget this README documents. Replacing it would need a URL this README doesn't define (possibly
+`committees.bikesiliconvalley.org`'s listing content, in some embeddable form), so it was left
+alone rather than guessed at. Separately, `committees.bikesiliconvalley.org` itself was never
+checked for a similar third-party embed needing the same swap — that's still an open question, not
+confirmed done or not-needed.
 
 ## Widget embed snippet
 
