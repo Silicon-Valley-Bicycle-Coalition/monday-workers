@@ -38,10 +38,10 @@ donation-rollups:
   variables:
     WORKER_DIR: donation-rollups
 
-donor-portal:
+member-portal:
   extends: .worker_job
   variables:
-    WORKER_DIR: donor-portal
+    WORKER_DIR: member-portal
 
 funraise-sync:
   extends: .worker_job

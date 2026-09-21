@@ -1,0 +1,125 @@
+{
+  "name": "svbc-member-portal",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  // Login portal — serve only on the custom domain, never *.workers.dev or preview URLs.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "member.bikesiliconvalley.org", "custom_domain": true }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-member-portal",
+      "database_id": "1c2e47c7-29b7-40aa-becb-c079a364c000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "LOGIN_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ],
+  // Requires `wrangler email sending enable mail.bikesiliconvalley.org` (see DEPLOY.md) before
+  // first deploy — the "from" domain must be onboarded to Cloudflare Email Sending.
+  "send_email": [{ "name": "EMAIL" }],
+  "queues": {
+    "producers": [
+      { "queue": "member-portal-change-requests", "binding": "CHANGE_QUEUE" },
+      { "queue": "member-portal-letter-emails", "binding": "LETTER_SEND_QUEUE" }
+    ],
+    "consumers": [
+      {
+        "queue": "member-portal-change-requests",
+        "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain.
+        "max_concurrency": 1,
+        "dead_letter_queue": "member-portal-change-requests-dlq"
+      },
+      {
+        "queue": "member-portal-letter-emails",
+        "max_retries": 3,
+        // Same reasoning as the change-requests consumer above.
+        "max_concurrency": 1,
+        "dead_letter_queue": "member-portal-letter-emails-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    // Daily run: change_requests/card_tokens retention purges, plus the automatic January
+    // letter-email check (runLetterCron — a no-op unless the Letter Settings board arms it;
+    // see README v2.3).
+    "crons": ["0 9 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-member-portal-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Rule: inbound data only, no outbound data — the EMAIL binding below may only deliver to the
+  // one sink address, enforced by Cloudflare (E_RECIPIENT_NOT_ALLOWED otherwise); the code
+  // layer in src/email/sandboxBinding.ts rewrites recipients to the same address. Everything
+  // here is non-inheritable in Wrangler and deliberately restated: the sandbox shares nothing
+  // with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`.
+  "env": {
+    "sandbox": {
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        // Must equal allowed_destination_addresses[0] below — config/split.test.ts checks.
+        "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org"
+      },
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "member.sandbox.bikesiliconvalley.org", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-member-portal-sandbox",
+          // Replace after running: wrangler d1 create svbc-member-portal-sandbox
+          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "LOGIN_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 10, "period": 60 }
+        }
+      ],
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
+      "queues": {
+        "producers": [
+          { "queue": "member-portal-change-requests-sandbox", "binding": "CHANGE_QUEUE" },
+          { "queue": "member-portal-letter-emails-sandbox", "binding": "LETTER_SEND_QUEUE" }
+        ],
+        "consumers": [
+          {
+            "queue": "member-portal-change-requests-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "member-portal-change-requests-sandbox-dlq"
+          },
+          {
+            "queue": "member-portal-letter-emails-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "member-portal-letter-emails-sandbox-dlq"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": ["0 9 * * *"]
+      },
+      "observability": {
+        "enabled": true
+      }
+    }
+  }
+}

@@ -1,0 +1,796 @@
+import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import type { MondayClient } from './monday/client';
+import type { MagicLinkTokenStore } from './db/tokens';
+import type { SessionStore } from './db/sessions';
+import type { LoginAttemptStore } from './db/loginAttempts';
+import type { EmailSender } from './email/types';
+import type { IpRateLimiter } from './ratelimit';
+import type { Config } from './types';
+import type { ChangeRequestStore } from './db/changeRequests';
+import type { ChangeQueueMessage } from './changeRequests/submitChangeRequest';
+import type { LetterSendStore } from './db/letterSends';
+import type { LetterSendQueueMessage } from './types';
+import { validateLetterWebhookBody } from './letters/validateLetterWebhook';
+import { triggerLetterSend } from './letters/triggerLetterSend';
+import type { CardTokenStore } from './db/cardTokens';
+import { checkLoginRateLimit } from './ratelimit';
+import { requestLogin } from './auth/requestLogin';
+import { verifyLogin } from './auth/verifyLogin';
+import { loadPortalData } from './portal/loadPortalData';
+import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
+import { sha256Hex } from './crypto/hash';
+import {
+  changeRequestsEnabled,
+  configuredPrefFields,
+  lettersEnabled,
+  cardEnabled,
+  eventsEnabled,
+  funraiseLinks,
+  pledgesEnabled,
+  matchingGiftsSearchEnabled,
+  signedOffEin,
+  volunteerHistoryEnabled,
+  donationHistoryEnabled,
+} from './config';
+import { loadPledgeData } from './pledges/loadPledgeData';
+import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
+import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
+import { generateToken } from './crypto/token';
+import { listLetterYears, loadLetterData } from './letters/loadLetterData';
+import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
+import { submitChangeRequest } from './changeRequests/submitChangeRequest';
+import { submitPreferences } from './changeRequests/submitPreferences';
+import type { PrefField } from './types';
+import { changeRequestFormView, changeRequestResultView, changeRequestsUnavailableView, preferencesResultView } from './changeRequests/changeRequestViews';
+import { loadEventRegistrations } from './events/loadEventRegistrations';
+import type { EventRegistrationListing } from './events/loadEventRegistrations';
+import { eventsListView, eventsUnavailableView } from './events/eventViews';
+import { buildCardData } from './card/loadCardData';
+import type { PortalCard } from './card/loadCardData';
+import { generateQrSvg } from './card/qr';
+import { getOrCreateCardToken } from './card/getOrCreateCardToken';
+import { verifyView, verifyNotValidView } from './card/cardViews';
+import { detectLocale, LANG_COOKIE } from './i18n/detectLocale';
+import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
+import type { Locale } from './i18n/locales';
+import { t } from './i18n/t';
+import { decodeFavicon } from './assets/favicon';
+
+export interface AppDeps {
+  monday: MondayClient;
+  tokenStore: MagicLinkTokenStore;
+  sessionStore: SessionStore;
+  attemptStore: LoginAttemptStore;
+  emailSender: EmailSender;
+  ipLimiter: IpRateLimiter;
+  config: Config;
+  now: () => Date;
+  changeStore: ChangeRequestStore;
+  changeQueue: { send(message: ChangeQueueMessage): Promise<void> };
+  letterSendStore: LetterSendStore;
+  letterQueue: { send(message: LetterSendQueueMessage): Promise<void> };
+  letterWebhookSecret: string;
+  cardTokenStore: CardTokenStore;
+}
+
+const SESSION_COOKIE = 'session';
+
+// Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
+// characters that would let a value break out of a GraphQL string literal), and requires an
+// "@" plus at least one "." in the domain part. This is intentionally not full RFC 5322
+// validation — it only needs to be strict enough to keep attacker input inert downstream.
+const EMAIL_PATTERN = /^[^\s@"'\\]+@[^\s@"'\\]+\.[^\s@"'\\]+$/;
+const MAX_EMAIL_LENGTH = 254; // RFC 5321 max mailbox length
+
+function isPlausibleEmail(email: string): boolean {
+  return email.length > 0 && email.length <= MAX_EMAIL_LENGTH && EMAIL_PATTERN.test(email);
+}
+
+// Donor PII must never be servable from browser cache/bfcache/history after logout on a
+// shared machine — the server-side session deletion in POST /logout doesn't evict a
+// previously cached rendering of a page. Every authenticated, PII-bearing route sets this.
+const NO_STORE = 'private, no-store, max-age=0';
+
+// Shared by every authenticated route: resolves the session cookie to the donor item ids it
+// grants access to, or null if there is no valid session. Callers redirect to / (login) on null.
+async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] | null> {
+  const sessionToken = getCookie(c, SESSION_COOKIE);
+  if (!sessionToken) return null;
+  return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
+}
+
+// Shared by every authenticated route from this task on: the authenticated zone's locale comes
+// from the `:locale` path param (not cookie/header sniffing like detectLocale), falling back to
+// the default rather than 404ing on an unrecognized code.
+function resolvePathLocale(c: Context): Locale {
+  const raw = c.req.param('locale');
+  return raw !== undefined && isLocale(raw) ? raw : DEFAULT_LOCALE;
+}
+
+export function createApp(deps: AppDeps) {
+  const app = new Hono();
+
+  app.onError((err, c) => {
+    console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+    const locale = detectLocale(c);
+    return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 500);
+  });
+
+  app.get('/health', (c) => c.json({ ok: true }));
+
+  // Served from an embedded constant rather than a Workers Assets binding (none configured here)
+  // — long cache header since the bytes never change without a redeploy.
+  app.get('/favicon.png', () => {
+    // decodeFavicon()'s Uint8Array itself isn't a valid BodyInit under this project's TS lib
+    // config (its .buffer is typed ArrayBufferLike, and .slice() widens further to include
+    // SharedArrayBuffer) — copying into a fresh ArrayBuffer sidesteps both.
+    const bytes = decodeFavicon();
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return new Response(buffer, {
+      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' },
+    });
+  });
+
+  // The language switcher lives in the shared site footer (see views.ts's siteFooter) and so
+  // appears on every route, submitting the browser's current location.pathname as `to` — rather
+  // than hand-maintain an exact-match allowlist of every page shape that can now show it, this
+  // accepts any same-origin relative path and only blocks the open-redirect shapes: an absolute
+  // URL, a protocol-relative "//evil.example", and the backslash-tolerant "/\evil.example" some
+  // browsers still treat as protocol-relative.
+  function isAllowedLangRedirect(path: string): boolean {
+    return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+  }
+
+  // Sets the lang cookie and returns the resolved locale (falling back to the default for an
+  // unsupported/missing code) so the caller can also rewrite a :locale path segment below.
+  function setLangCookie(c: Context, code: string): Locale {
+    const locale = isLocale(code) ? code : DEFAULT_LOCALE;
+    setCookie(c, LANG_COOKIE, locale, { httpOnly: false, secure: true, sameSite: 'Lax', path: '/', maxAge: 365 * 24 * 3600 });
+    return locale;
+  }
+
+  // The authenticated portal tree reads its locale from the `:locale` path segment, not the lang
+  // cookie (see resolvePathLocale) — so redirecting back to the exact page a switch was submitted
+  // from would silently keep rendering the old locale, cookie notwithstanding. Rewrite that
+  // segment to the newly-selected locale for any /:locale/portal... path; every other page (pre-
+  // identity, /verify) has no locale segment and is left untouched, since those already pick up
+  // the cookie via detectLocale on next render.
+  function applyLocaleToPath(path: string, locale: Locale): string {
+    const match = /^\/[^/]+(\/portal(?:\/.*)?)$/.exec(path);
+    return match ? `/${locale}${match[1]}` : path;
+  }
+
+  function langRedirectTarget(c: Context, locale: Locale): string {
+    const requestedTo = c.req.query('to') ?? '/';
+    const target = isAllowedLangRedirect(requestedTo) ? requestedTo : '/';
+    return applyLocaleToPath(target, locale);
+  }
+
+  app.get('/lang/:code', (c) => {
+    const locale = setLangCookie(c, c.req.param('code'));
+    return c.redirect(langRedirectTarget(c, locale));
+  });
+
+  // Query-string variant of the route above, for the site footer's language <select> (see
+  // views.ts's siteFooter) — a native <select> can't submit into a dynamic path segment without
+  // JS, so the form posts `code` as a query param instead of hitting /lang/:code directly.
+  app.get('/lang', (c) => {
+    const locale = setLangCookie(c, c.req.query('code') ?? '');
+    return c.redirect(langRedirectTarget(c, locale));
+  });
+
+  // Back-compat: the login page used to live at /login; a stale bookmark or link lands here and
+  // is sent to the new root path, matching this route table's existing back-compat convention
+  // (see the bare /portal redirect below).
+  app.get('/login', (c) => c.redirect('/'));
+
+  app.get('/', (c) => {
+    const locale = detectLocale(c);
+    return c.html(page(t(locale, 'title.login') + ' — ' + t(locale, 'site.title'), loginFormView(locale), locale));
+  });
+
+  app.post('/', async (c) => {
+    const locale = detectLocale(c);
+    const body = await c.req.parseBody();
+    const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    // A malformed email (fails the plausibility check) is treated exactly like an empty one —
+    // skip rate-limiting and requestLogin entirely — so this branch produces the same generic
+    // response as a well-formed but non-matching email, preserving the enumeration guard.
+    const email = isPlausibleEmail(rawEmail) ? rawEmail : '';
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+
+    if (email.length > 0) {
+      try {
+        const allowed = await checkLoginRateLimit(
+          ip,
+          email,
+          { ipLimiter: deps.ipLimiter, attemptStore: deps.attemptStore, config: deps.config.rateLimit },
+          deps.now()
+        );
+        if (allowed) {
+          // requestLogin does a D1 write plus an email-send round-trip; awaiting it inline
+          // would make the matching-email case measurably slower than the non-matching/denied
+          // cases even though the response body is identical, letting an attacker distinguish
+          // "matched" from "didn't match" by response latency alone. Defer it instead so the
+          // response returns immediately regardless of match state.
+          const work = requestLogin(email, locale, {
+            monday: deps.monday,
+            tokenStore: deps.tokenStore,
+            emailSender: deps.emailSender,
+            portalBaseUrl: deps.config.auth.portalBaseUrl,
+            magicLinkTtlMinutes: deps.config.auth.magicLinkTtlMinutes,
+            now: deps.now,
+          }).catch((err) => {
+            // Same enumeration-guard rule as below: a failure here must never surface as a
+            // different response than the generic one — log and swallow.
+            console.error(`member-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
+
+          try {
+            c.executionCtx.waitUntil(work);
+          } catch {
+            // c.executionCtx is unavailable outside a real Worker request (e.g. in app.request()
+            // test helper) — fall back to awaiting inline so tests stay deterministic.
+            await work;
+          }
+        }
+      } catch (err) {
+        // A failure here (e.g. checkLoginRateLimit's D1 read) must never surface as a different
+        // response than the enumeration-safe path below — otherwise "did this email exist" leaks
+        // through error-vs-success response variance. Log and fall through.
+        console.error(`member-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale), locale));
+  });
+
+  app.get('/auth/callback', async (c) => {
+    const locale = detectLocale(c);
+    const token = c.req.query('token');
+    if (!token) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.invalidLink', locale), locale));
+    }
+
+    let sessionToken: string | null;
+    try {
+      sessionToken = await verifyLogin(token, {
+        tokenStore: deps.tokenStore,
+        sessionStore: deps.sessionStore,
+        sessionTtlHours: deps.config.auth.sessionTtlHours,
+        now: deps.now,
+      });
+    } catch (err) {
+      // e.g. the magic-link token was validly consumed but the follow-up session write failed
+      // (D1 error) — show the same "request a new one" recovery path rather than a raw 500.
+      console.error(`member-portal login verification failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.expiredLink', locale), locale));
+    }
+
+    if (sessionToken === null) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.expiredLink', locale), locale));
+    }
+
+    setCookie(c, SESSION_COOKIE, sessionToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      path: '/',
+      maxAge: deps.config.auth.sessionTtlHours * 3600,
+    });
+    const langParam = c.req.query('lang');
+    const redirectLocale = langParam !== undefined && isLocale(langParam) ? langParam : DEFAULT_LOCALE;
+    return c.redirect(`/${redirectLocale}/portal`);
+  });
+
+  // Back-compat: anything still linking to the old unprefixed /portal (a stale bookmark, an
+  // email sent before locale-prefixed routes existed) lands on the default-locale equivalent
+  // instead of 404ing.
+  app.get('/portal', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
+
+  app.get('/:locale/portal', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) {
+      return c.redirect('/');
+    }
+
+    const data = await loadPortalData(
+      donorItemIds,
+      deps.monday,
+      {
+        enabled: volunteerHistoryEnabled(deps.config),
+        completedStatuses: deps.config.volunteerHistory.completedStatuses,
+      },
+      donationHistoryEnabled(deps.config, deps.now())
+    );
+    c.header('Cache-Control', NO_STORE);
+
+    // Same degrade-instead-of-fail treatment as volunteer history above: a Monday read failure
+    // here should cost the donor the Events tab, not the whole dashboard. Disabled and
+    // failed-to-load both collapse to `null`, which donorSection() treats as "omit this tab".
+    let eventsByDonor: Record<string, EventRegistrationListing> | null = null;
+    if (eventsEnabled(deps.config)) {
+      try {
+        const listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
+        eventsByDonor = Object.fromEntries(listings.map((listing) => [listing.donorId, listing]));
+      } catch (err) {
+        console.error(`member-portal dashboard events load failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // The membership card is now a dashboard widget (one per donor), not a separate page — see
+    // views.ts's memberCardWidget. A token failure for one donor is logged and that donor simply
+    // renders without a card widget; it must never take down the whole dashboard, since donation
+    // history, discounts, and everything else on the page is still useful without it.
+    const cards: Record<string, PortalCard> = {};
+    if (cardEnabled(deps.config)) {
+      for (const donor of data.donors) {
+        try {
+          const token = await getOrCreateCardToken(donor.id, deps.cardTokenStore, deps.now);
+          const verifyUrl = `${deps.config.auth.portalBaseUrl}/verify/${token}`;
+          cards[donor.id] = { data: buildCardData(donor), qrSvg: generateQrSvg(verifyUrl) };
+        } catch (err) {
+          console.error(`member-portal dashboard card failed for donor "${donor.id}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    return c.html(
+      page(
+        t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'),
+        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor),
+        locale,
+        { authenticated: true }
+      )
+    );
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/letters', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/letters`));
+  app.get('/portal/letters/:donorItemId/:year', (c) =>
+    c.redirect(`/${DEFAULT_LOCALE}/portal/letters/${c.req.param('donorItemId')}/${c.req.param('year')}`)
+  );
+
+  app.get('/:locale/portal/letters', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!lettersEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
+    }
+    let listings;
+    try {
+      listings = await listLetterYears(donorItemIds, deps.monday, deps.now());
+    } catch (err) {
+      // A Monday read failure here would otherwise fall through to the global onError, whose
+      // generic "please try logging in again" copy is misleading — this isn't an auth problem.
+      console.error(`member-portal letters list failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.lettersLoadFailed', locale), locale, { authenticated: true }), 500);
+    }
+    return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersListView(listings, locale), locale, { authenticated: true }));
+  });
+
+  app.get('/:locale/portal/letters/:donorItemId/:year', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!lettersEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.lettersList') + ' — ' + t(locale, 'site.title'), lettersUnavailableView(locale), locale, { authenticated: true }));
+    }
+
+    // The path param selects among the session's own donor items — never widens them.
+    const donorItemId = c.req.param('donorItemId');
+    const yearParam = c.req.param('year');
+    const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
+    if (!donorItemIds.includes(donorItemId) || year === null) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale, { authenticated: true }), 404);
+    }
+
+    let data;
+    try {
+      data = await loadLetterData(donorItemId, year, deps.monday, deps.config.taxLetter, deps.now());
+    } catch (err) {
+      // Same reasoning as the letters-list route above: a Monday read failure isn't an auth
+      // problem, so it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`member-portal letter load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterLoadFailed', locale), locale, { authenticated: true }), 500);
+    }
+    if (data === null) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.letterNotFound', locale), locale, { authenticated: true }), 404);
+    }
+
+    const generatedOn = deps.now().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    // Browsers print the document <title> (and URL) in default print headers/footers, and this
+    // page is meant to be printed/saved as a PDF — so the title needs to identify the letter on
+    // its own, not just say "SVBC Member Portal".
+    const letterTitle = `SVBC ${data.year} Tax Letter — ${data.donorName}`;
+    return c.html(page(letterTitle, letterView(data, deps.config.taxLetter, generatedOn, locale), locale, { authenticated: true }));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/events', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/events`));
+
+  app.get('/:locale/portal/events', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!eventsEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsUnavailableView(locale), locale, { authenticated: true }));
+    }
+
+    let listings;
+    try {
+      listings = await loadEventRegistrations(donorItemIds, deps.monday, deps.config.eventRegistrations, deps.now());
+    } catch (err) {
+      // Same reasoning as the letters routes above: a Monday read failure isn't an auth
+      // problem, so it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`member-portal events list failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.eventsLoadFailed', locale), locale, { authenticated: true }), 500);
+    }
+    return c.html(page(t(locale, 'title.events') + ' — ' + t(locale, 'site.title'), eventsListView(listings, locale), locale, { authenticated: true }));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/change-request', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/change-request`));
+
+  app.get('/:locale/portal/change-request', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!changeRequestsEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
+    }
+    const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
+    return c.html(
+      page(
+        t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'),
+        changeRequestFormView(donors, locale, configuredPrefFields(deps.config)),
+        locale,
+        { authenticated: true }
+      )
+    );
+  });
+
+  app.post('/:locale/portal/change-request', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!changeRequestsEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
+    }
+
+    // Same limiter binding as login, but a distinct key prefix so the two budgets don't
+    // interfere. No enumeration concern here (the caller is already authenticated), so a plain
+    // 429 is fine.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
+    }
+
+    // Spec also requires a per-session budget: an IP-only limit lets many donors sharing one
+    // office/NAT IP throttle each other, and doesn't cap a single scripted/compromised session
+    // hammering the endpoint from a rotating IP. The cookie was already validated by
+    // getSessionDonorIds above, so it's guaranteed present here.
+    const sessionToken = getCookie(c, SESSION_COOKIE) as string;
+    const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
+    if (!sessionResult.success) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
+    }
+
+    const body = await c.req.parseBody();
+    const input = {
+      donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
+      field: typeof body.field === 'string' ? body.field : '',
+      newValue: typeof body.newValue === 'string' ? body.newValue : '',
+    };
+
+    const result = await submitChangeRequest(donorItemIds, input, {
+      monday: deps.monday,
+      store: deps.changeStore,
+      queue: deps.changeQueue,
+      dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
+      now: deps.now,
+    });
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestResultView(result, locale), locale, { authenticated: true }));
+  });
+
+  app.post('/:locale/portal/change-request/preferences', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!changeRequestsEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
+    }
+
+    // Same limiter keys as the free-text change-request POST above — the two forms share one
+    // abuse budget since they feed the same staff queue.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`change:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
+    }
+    const sessionToken = getCookie(c, SESSION_COOKIE) as string;
+    const sessionResult = await deps.ipLimiter.limit(`change:s:${await sha256Hex(sessionToken)}`);
+    if (!sessionResult.success) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale, { authenticated: true }), 429);
+    }
+
+    const body = await c.req.parseBody();
+    // Only fields whose Donors-board column is configured are read from the body — an
+    // unconfigured preference can't be diffed against Monday, so a value for it is ignored
+    // rather than rejected (the form never renders it; only a hand-crafted POST carries one).
+    const prefs: Partial<Record<PrefField, boolean>> = {};
+    for (const field of configuredPrefFields(deps.config)) {
+      const value = body[field];
+      if (value === 'yes') prefs[field] = true;
+      else if (value === 'no') prefs[field] = false;
+    }
+    const input = {
+      donorItemId: typeof body.donorItemId === 'string' ? body.donorItemId : '',
+      prefs,
+    };
+
+    const result = await submitPreferences(donorItemIds, input, {
+      monday: deps.monday,
+      store: deps.changeStore,
+      queue: deps.changeQueue,
+      dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
+      now: deps.now,
+    });
+    return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), preferencesResultView(result, locale), locale, { authenticated: true }));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/pledges', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/pledges`));
+
+  app.get('/:locale/portal/pledges', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    if (!pledgesEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesUnavailableView(locale), locale, { authenticated: true }));
+    }
+
+    let sections;
+    try {
+      sections = await loadPledgeData(donorItemIds, deps.monday);
+    } catch (err) {
+      // Same reasoning as the letters routes: a Monday read failure isn't an auth problem, so
+      // it shouldn't fall through to the global onError's login-focused copy.
+      console.error(`member-portal pledges load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.pledgesLoadFailed', locale), locale, { authenticated: true }), 500);
+    }
+    return c.html(page(t(locale, 'title.pledges') + ' — ' + t(locale, 'site.title'), pledgesView(sections, locale), locale, { authenticated: true }));
+  });
+
+  // Back-compat: same reasoning as the bare /portal redirect above.
+  app.get('/portal/matching-gifts', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal/matching-gifts`));
+
+  // Authenticated (it lives in the portal nav) but deliberately PII-free — see the note in
+  // matchingGiftViews.ts about third-party JS. Reads nothing from Monday or D1, so there's no
+  // load-failure branch; the only gate is whether the embedded search is configured, and the
+  // page itself always renders.
+  app.get('/:locale/portal/matching-gifts', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    c.header('Cache-Control', NO_STORE);
+    // The app's only CSP, on its only page that may run third-party JS. The load-bearing part
+    // is connect-src excluding 'self': the DTD script executes on the authenticated portal
+    // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
+    // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
+    // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
+    // works under this policy alongside the embed-snippet check (matchingGiftViews.ts NOTE)
+    // before provisioning a key.
+    c.header(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
+        "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
+        "connect-src https://doublethedonation.com; frame-ancestors 'none'"
+    );
+    const ein = signedOffEin(deps.config);
+    const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
+    return c.html(
+      page(t(locale, 'title.matchingGifts') + ' — ' + t(locale, 'site.title'), matchingGiftsView({ publicApiKey, ein }, locale), locale, {
+        authenticated: true,
+      })
+    );
+  });
+
+  // The membership card used to be its own page — it's now a dashboard widget (see GET
+  // /:locale/portal above), so both the bare and locale-prefixed forms just redirect a stale
+  // link/bookmark to the dashboard instead of 404ing, matching this route table's existing
+  // back-compat convention (see the bare /portal redirect above).
+  app.get('/portal/card/:donorItemId', (c) => c.redirect(`/${DEFAULT_LOCALE}/portal`));
+  app.get('/:locale/portal/card/:donorItemId', (c) => c.redirect(`/${resolvePathLocale(c)}/portal`));
+
+  // No bare-POST redirect for /regenerate — same reasoning as the change-request POST above: the
+  // form action is always rendered locale-prefixed already, so there is no unprefixed submitter.
+  app.post('/:locale/portal/card/:donorItemId/regenerate', async (c) => {
+    const locale = resolvePathLocale(c);
+    const donorItemIds = await getSessionDonorIds(c, deps);
+    if (donorItemIds === null) return c.redirect('/');
+
+    // No dedicated "unavailable" page to render for this anymore (the card is a dashboard
+    // widget, not a page) — the widget and its regenerate button only ever render when
+    // cardEnabled() is already true, so a POST arriving with it false is a stale form/replay.
+    // Just send them back to the dashboard rather than a full error page.
+    if (!cardEnabled(deps.config)) {
+      return c.redirect(`/${locale}/portal`);
+    }
+
+    const donorItemId = c.req.param('donorItemId');
+    if (!donorItemIds.includes(donorItemId)) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale, { authenticated: true }), 404);
+    }
+
+    const now = deps.now().toISOString();
+    try {
+      await deps.cardTokenStore.revokeAllForDonor(donorItemId, now);
+    } catch (err) {
+      console.error(`member-portal card token revoke failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale, { authenticated: true }), 500);
+    }
+    try {
+      await deps.cardTokenStore.createToken(donorItemId, generateToken(), now);
+    } catch (err) {
+      // The one-active-token-per-donor DB constraint (migrations/0003) throws here if a
+      // concurrent regenerate for the same donor (double-click, two open tabs) revoked and
+      // re-inserted first. This request's own token is moot in that case — the concurrent
+      // request's token is just as valid, and the redirect below doesn't need to know which
+      // token is active, only that one exists. Re-read rather than fail the request. A genuine
+      // unrelated D1 outage would simply fail again on this re-read, and is reported with this
+      // route's own copy below rather than falling through to the generic (and misleading,
+      // login-flavored) app.onError handler.
+      console.error(`member-portal card token regenerate failed, re-reading active token: ${err instanceof Error ? err.message : String(err)}`);
+      let token: string | null;
+      try {
+        token = await deps.cardTokenStore.getActiveToken(donorItemId);
+      } catch {
+        token = null;
+      }
+      if (token === null) {
+        return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardRegenerateFailed', locale), locale, { authenticated: true }), 500);
+      }
+    }
+
+    // Back to the dashboard, not a per-card page — the card widget there picks up the freshly
+    // regenerated token on next render (getOrCreateCardToken reads whatever is currently active).
+    return c.redirect(`/${locale}/portal`);
+  });
+
+  // /verify/:token stays unprefixed and public: its viewer is a shop clerk scanning a donor's QR
+  // code or opening the link, not the donor, so it uses the same cookie/Accept-Language
+  // detection as the pre-identity pages (detectLocale), never a locale path segment and never
+  // the donor's Monday-stored preference.
+  app.get('/verify/:token', async (c) => {
+    const locale = detectLocale(c);
+    c.header('Cache-Control', NO_STORE);
+
+    // Rate-limit before the kill-switch check below, not after — otherwise disabling the card
+    // feature (config revert, incident response) also disables rate limiting on this endpoint,
+    // turning the exact moment someone flips the kill switch into an unlimited request sink.
+    const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
+    const ipResult = await deps.ipLimiter.limit(`verify:${ip}`);
+    if (!ipResult.success) {
+      return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), errorView('error.rateLimited', locale), locale), 429);
+    }
+
+    // If the card feature is ever disabled after tokens have already been issued (config
+    // revert, incident response), every previously-issued verify link must stop serving PII —
+    // this is the kill switch's only enforcement point, since token issuance/regeneration is
+    // already gated. Reuse the generic "not valid" response so this carries no signal
+    // distinguishing "feature off" from "token doesn't exist".
+    if (!cardEnabled(deps.config)) {
+      return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), verifyNotValidView(locale), locale));
+    }
+
+    const token = c.req.param('token');
+    let donorItemId: string | null;
+    try {
+      donorItemId = await deps.cardTokenStore.findActiveDonorId(token);
+    } catch (err) {
+      console.error(`member-portal verify lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
+    }
+    if (donorItemId === null) {
+      return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), verifyNotValidView(locale), locale));
+    }
+
+    let donor;
+    try {
+      donor = await deps.monday.getMemberPortalData(donorItemId);
+    } catch (err) {
+      console.error(`member-portal verify load failed: ${err instanceof Error ? err.message : String(err)}`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.verifyLoadFailed', locale), locale), 500);
+    }
+
+    return c.html(page(t(locale, 'title.verify') + ' — ' + t(locale, 'site.title'), verifyView(buildCardData(donor), locale), locale));
+  });
+
+  app.post('/logout', async (c) => {
+    const sessionToken = getCookie(c, SESSION_COOKIE);
+    if (sessionToken) {
+      await deps.sessionStore.deleteSession(await sha256Hex(sessionToken));
+    }
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    return c.redirect('/');
+  });
+
+  // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard mitigation
+  // used elsewhere in this repo (donation-rollups) is a shared secret in the webhook URL itself,
+  // set when subscribing and checked here.
+  app.post('/webhooks/monday/letters', async (c) => {
+    if (!deps.letterWebhookSecret || c.req.query('secret') !== deps.letterWebhookSecret) {
+      return c.json({ ok: false }, 401);
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: 'invalid JSON body' }, 200);
+    }
+
+    // Monday's webhook-subscription verification handshake: echo the challenge back verbatim,
+    // no other processing. Sent once, at subscription-creation time.
+    if (typeof body === 'object' && body !== null && 'challenge' in body) {
+      return c.json({ challenge: (body as { challenge: unknown }).challenge }, 200);
+    }
+
+    let event;
+    try {
+      event = validateLetterWebhookBody(body);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`member-portal webhook: rejected letter-send delivery: ${errMsg}`);
+      return c.json({ ok: false, error: errMsg }, 200);
+    }
+
+    let result;
+    try {
+      result = await triggerLetterSend(event.donorItemId, {
+        monday: deps.monday,
+        store: deps.letterSendStore,
+        queue: deps.letterQueue,
+        now: deps.now,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`member-portal webhook: letter-send trigger failed for donor "${event.donorItemId}": ${errMsg}`);
+      return c.json({ ok: false }, 500);
+    }
+
+    if (result.kind !== 'queued') {
+      console.log(`member-portal webhook: letter-send for donor "${event.donorItemId}" resulted in "${result.kind}"`);
+    }
+    return c.json({ ok: true, result: result.kind }, 200);
+  });
+
+  return app;
+}

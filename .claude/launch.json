@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "donor-portal-local",
+      "name": "member-portal-local",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd donor-portal && npm run dev:local"],
+      "runtimeArgs": ["-c", "cd member-portal && npm run dev:local"],
       "port": 8787
     }
   ]
