@@ -74,8 +74,9 @@
         {
           "binding": "DB",
           "database_name": "svbc-mailchimp-sync-sandbox",
-          // Replace after running: wrangler d1 create svbc-mailchimp-sync-sandbox
-          "database_id": "REPLACE_AFTER_WRANGLER_D1_CREATE",
+          // Already existed on the SVBC account (created 2026-09-20, before this file was ever
+          // wired to it) — found via `wrangler d1 list` rather than created fresh.
+          "database_id": "12d8cae3-159d-47d0-a6e4-d2deb459a627",
           "migrations_dir": "migrations"
         }
       ],
