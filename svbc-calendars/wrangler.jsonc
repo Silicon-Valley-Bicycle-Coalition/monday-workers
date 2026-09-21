@@ -14,10 +14,8 @@
   "kv_namespaces": [
     {
       "binding": "CALENDAR_KV",
-      // Placeholder pending real provisioning — a live agent session isn't authorized to run
-      // `npx wrangler kv namespace create` against the SVBC account. Run it manually and replace
-      // this id before deploying; see README.md's Deploy section.
-      "id": "placeholder-replaced-in-task-16"
+      // Created via `wrangler kv namespace create CALENDAR_KV` (2026-09-21).
+      "id": "0fcbba8d6fbf464a8429149b65ffd989"
     }
   ],
   "analytics_engine_datasets": [

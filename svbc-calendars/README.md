@@ -90,18 +90,17 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 ## Deploy
 
-This Worker has never been deployed — `wrangler.jsonc`'s KV namespace id is a placeholder, no
-secrets are set, and both custom domains below still point at the two Workers this one replaces.
+This Worker has never been deployed and no secrets are set yet. Verified 2026-09-21: neither
+custom domain currently points at the two Workers this one replaces, or anywhere else —
+`svbc-events-widgets` and `svbc-committee-calendars` both show no custom domains attached, and
+`bikesiliconvalley.org`'s DNS has no record for `events` or `committees` at all. The domain
+reassignment in steps 5–6 below is not undoing a live pointer, just claiming an open one.
 Cutover checklist, in order:
 
-### 1. Provision the KV namespace
+### 1. Provision the KV namespace — done
 
-```sh
-npx wrangler kv namespace create CALENDAR_KV
-```
-
-Paste the printed `id` into `wrangler.jsonc`'s `kv_namespaces[0].id`, replacing the
-`placeholder-replaced-in-task-16` value.
+Provisioned 2026-09-21 (`wrangler.jsonc`'s `kv_namespaces[0].id` is the real id, not the old
+`placeholder-replaced-in-task-16` value).
 
 ### 2. Enable Cloudflare Web Analytics
 
@@ -140,11 +139,12 @@ listing page).
 
 ### 6. Verify, then retire the old Workers
 
-Cloudflare custom domains are exclusive to one Worker, so step 5's deploy reassigns both
-`events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` away from their current
-Workers (`svbc-events-widgets`, `svbc-committee-calendars`) to this one. Verify both domains serve
-correctly — widget, JSON API, calendar feeds, listing page — **before** considering the old
-Workers' scripts (and `committee-calendars`'s D1 database) safe to manually delete.
+Cloudflare custom domains are exclusive to one Worker, so step 5's deploy claims both
+`events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` for this Worker (as of
+2026-09-21 neither domain has a live target to take them away from — see the note at the top of
+this section). Verify both domains serve correctly — widget, JSON API, calendar feeds, listing
+page — **before** considering the old Workers' scripts (and `committee-calendars`'s D1 database)
+safe to manually delete.
 
 ## Widget embed snippet
 
