@@ -56,5 +56,69 @@
   "limits": { "cpu_ms": 100 },
   "observability": {
     "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // Unlike every other Worker's env.sandbox, this one has nothing to do with the CRM-migration
+  // "inbound only, no outbound data" convention (docs/superpowers/specs/2026-09-18-sandbox-
+  // environment-design.md explicitly lists svbc-calendars as out of scope there — no donor data,
+  // not migration-related). This is a plain staging tier: a place to deploy and exercise changes
+  // before they hit the real public domains, with its own KV/Analytics so test traffic can't
+  // corrupt the real cache or skew real Web Analytics numbers. `wrangler deploy --env sandbox`
+  // deploys svbc-calendars-sandbox.
+  //
+  // No staging subdomain exists for bikesiliconvalley.org, so this serves on its default
+  // workers.dev URL rather than a custom domain.
+  //
+  // Secrets aren't in this file — set the sandbox copies separately:
+  //   npx wrangler secret put EVENTBRITE_TOKEN --env sandbox   (same real token; public event
+  //                                                              data, no sensitivity)
+  //   npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  (optional — sendFailureAlert
+  //                                                              no-ops without it, so leaving it
+  //                                                              unset means test-triggered
+  //                                                              failures don't page the real
+  //                                                              ops channel)
+  "env": {
+    "sandbox": {
+      "workers_dev": true,
+      "preview_urls": false,
+      // Explicit empty override — env.sandbox otherwise INHERITS the top-level `routes` (the
+      // real custom domains) unless this is here. Learned this the hard way: the first sandbox
+      // deploy, without this line, silently reassigned events.bikesiliconvalley.org and
+      // committees.bikesiliconvalley.org away from whatever they were pointed at, straight to
+      // the untested sandbox Worker. Never remove this line.
+      "routes": [],
+      "kv_namespaces": [
+        {
+          "binding": "CALENDAR_KV",
+          // Created via `wrangler kv namespace create CALENDAR_KV --env sandbox` — separate from
+          // production's so sandbox cache/last-known-good writes never collide with the real site.
+          "id": "92501769bf324c409dfdbba8f47b44bf"
+        }
+      ],
+      "analytics_engine_datasets": [
+        {
+          "binding": "CALENDAR_ANALYTICS",
+          "dataset": "svbc_calendars_sandbox"
+        }
+      ],
+      "vars": {
+        "EVENTBRITE_ORG_ID": "9974694499",
+        "CACHE_TTL": "900",
+        "CALENDAR_CACHE_TTL": "86400",
+        "CACHE_VERSION": "1",
+        // Deliberately empty, same reasoning as production — see the top-level vars comment.
+        // Left empty here permanently, not just pending setup: sandbox traffic shouldn't count
+        // toward the real site's Web Analytics numbers at all.
+        "CF_WEB_ANALYTICS_TOKEN": ""
+      },
+      "triggers": {
+        "crons": ["0 13 * * *"]
+      },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2062", "simple": { "limit": 120, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
+      "observability": {
+        "enabled": true
+      }
+    }
   }
 }
