@@ -90,11 +90,13 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 ## Deploy
 
-This Worker has never been deployed and no secrets are set yet. Verified 2026-09-21: neither
-custom domain currently points at the two Workers this one replaces, or anywhere else —
-`svbc-events-widgets` and `svbc-committee-calendars` both show no custom domains attached, and
-`bikesiliconvalley.org`'s DNS has no record for `events` or `committees` at all. The domain
-reassignment in steps 5–6 below is not undoing a live pointer, just claiming an open one.
+Deployed to production 2026-09-21: both custom domains are live and verified healthy (widget,
+JSON API, calendar feeds, listing page all serving correctly). **Steps 4 and 7 are still open** —
+Workers Builds isn't connected yet (routine `main` pushes still need a manual `wrangler deploy`
+until then), and nothing on the public site actually embeds this Worker yet, so none of the
+verified-healthy content in step 6 is in front of a real visitor. See those two steps for what's
+still needed.
+
 Cutover checklist, in order:
 
 ### 1. Provision the KV namespace — done
@@ -112,33 +114,31 @@ covered. Manually setting `vars.CF_WEB_ANALYTICS_TOKEN` on top of that would add
 redundant beacon (a proxied site "can, but does not have to" also add one manually). Leave it
 empty — that's not a placeholder, it's the correct final value here.
 
-### 3. Set the secrets
+### 3. Set the secrets — done
 
 ```sh
 npx wrangler secret put EVENTBRITE_TOKEN
 npx wrangler secret put SLACK_WEBHOOK_URL
 ```
 
-See "Setup" above for where each value comes from. Checked 2026-09-21: both secrets already exist
-on the two predecessor Workers (`svbc-events-widgets` has `EVENTBRITE_TOKEN`,
-`svbc-committee-calendars` has `SLACK_WEBHOOK_URL`) — Cloudflare secrets are write-only, so those
-values can't be read back out, but this confirms the credentials are already in hand somewhere
-(Eventbrite's own API keys page, the Slack app's incoming-webhooks config) rather than needing to
-be minted fresh.
+See "Setup" above for where each value comes from. Both were already in hand — checked 2026-09-21,
+both secrets already existed on the two predecessor Workers (`svbc-events-widgets` had
+`EVENTBRITE_TOKEN`, `svbc-committee-calendars` had `SLACK_WEBHOOK_URL`) — so neither needed to be
+minted fresh, just re-entered here (Cloudflare secrets are write-only and per-Worker; there's no
+way to copy one directly from another Worker).
 
-**Do this before step 5.** Deploying without these set doesn't fail the deploy — it ships a Worker
-that 401s on every Eventbrite call, live, to whichever real visitors hit the newly-claimed domains.
-
-### 4. Point Workers Builds at this subdirectory
+### 4. Point Workers Builds at this subdirectory — still open
 
 Checked 2026-09-21: neither predecessor Worker actually has a Git repository connected right now
 — both show **Settings → Builds → Git repository: Connect** (disconnected), not pointed at an old
 directory as this step used to assume. So this is a fresh connection to make, not a repoint:
 in the Cloudflare dashboard, **svbc-calendars → Settings → Builds → Connect**, authorize this
 GitLab repo, and set the build's root directory to `/svbc-calendars`. This needs an interactive
-GitLab authorization step, so it isn't something to script or do unattended.
+GitLab authorization step, so it isn't something to script or do unattended. Until this is done,
+merges to `main` don't auto-deploy — use `npx wrangler deploy` by hand, as steps 5 and the fixes
+below did.
 
-### 5. Deploy
+### 5. Deploy — done
 
 ```sh
 npx wrangler deploy
@@ -146,16 +146,36 @@ npx wrangler deploy
 
 Deploys to both custom domains configured in `wrangler.jsonc`: `events.bikesiliconvalley.org`
 (widget + JSON events API) and `committees.bikesiliconvalley.org` (calendar feeds + staff
-listing page).
+listing page). First deployed 2026-09-21; two follow-up fixes then landed the same day (a dropped
+`time_filter` param Eventbrite no longer accepts, and a dead organizer id removed from
+`config/eventbriteOrganizers.json` — see git log for both).
 
-### 6. Verify, then retire the old Workers
+### 6. Verify, then retire the old Workers — Worker verified; old-Worker retirement still open
 
 Cloudflare custom domains are exclusive to one Worker, so step 5's deploy claims both
 `events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` for this Worker (as of
-2026-09-21 neither domain has a live target to take them away from — see the note at the top of
-this section). Verify both domains serve correctly — widget, JSON API, calendar feeds, listing
-page — **before** considering the old Workers' scripts (and `committee-calendars`'s D1 database)
-safe to manually delete.
+2026-09-21 neither domain had a live target to take them away from — see the note at the top of
+this section). Verified 2026-09-21: widget, JSON API, calendar feeds, and the listing page all
+serve correctly. The old Workers' scripts (and `committee-calendars`'s D1 database) have **not**
+been deleted yet — that's a deliberate, separate, destructive step for whoever's doing the
+cutover to trigger explicitly, not something to do as a side effect of verification.
+
+### 7. Actually embed the widget on the live site — still open
+
+Deploying this Worker does **not** put its content in front of any real visitor by itself; that
+only happens once something on the public site points at it. Checked 2026-09-21, after steps 1–6
+above were otherwise complete: `bikesiliconvalley.org/events` embeds **no reference to
+`events.bikesiliconvalley.org` at all** — it loads `https://dist.eventscalendar.co/embed.js`
+instead, an unrelated third-party events-calendar service. The README's original assumption that
+a Squarespace iframe already pointed at this Worker was wrong (or that step was never done); the
+"Widget embed snippet" section below has never actually been pasted into the live site.
+
+This means every verification in step 6 only proves the Worker itself is healthy — it says
+nothing about what real visitors see, since they're not being served by it yet. Until someone
+edits the Squarespace `/events` page (swap the `eventscalendar.co` embed for the iframe in "Widget
+embed snippet" below) and the `/committees` page similarly, this migration isn't actually
+user-facing, no matter how correct the Worker is. That's a Squarespace content edit, not something
+in this repo.
 
 ## Widget embed snippet
 
