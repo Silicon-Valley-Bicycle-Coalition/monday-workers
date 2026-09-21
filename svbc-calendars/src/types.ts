@@ -89,4 +89,6 @@ export interface Env {
   CALENDAR_KV: KVNamespace;
   /** Per-route, per-source usage/health metrics. */
   CALENDAR_ANALYTICS: AnalyticsEngineDataset;
+  /** Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits". */
+  REQUEST_RATE_LIMITER: RateLimit;
 }

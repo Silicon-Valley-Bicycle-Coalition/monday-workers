@@ -21,8 +21,20 @@
       "name": "LOGIN_RATE_LIMITER",
       "namespace_id": "1001",
       "simple": { "limit": 10, "period": 60 }
+    },
+    // Blanket per-IP guard covering every route (including /webhooks/monday/letters, which had
+    // no limit before this) — see README "Reliability: traffic and cost limits". Coarser than,
+    // and in addition to, LOGIN_RATE_LIMITER above.
+    {
+      "name": "REQUEST_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": { "limit": 120, "period": 60 }
     }
   ],
+  // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
+  // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
+  // that move rather than following a surprise bill.
+  "limits": { "cpu_ms": 100 },
   // Requires `wrangler email sending enable mail.bikesiliconvalley.org` (see DEPLOY.md) before
   // first deploy — the "from" domain must be onboarded to Cloudflare Email Sending.
   "send_email": [{ "name": "EMAIL" }],
@@ -90,8 +102,14 @@
           "name": "LOGIN_RATE_LIMITER",
           "namespace_id": "1002",
           "simple": { "limit": 10, "period": 60 }
+        },
+        {
+          "name": "REQUEST_RATE_LIMITER",
+          "namespace_id": "1004",
+          "simple": { "limit": 120, "period": 60 }
         }
       ],
+      "limits": { "cpu_ms": 100 },
       "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
       "queues": {
         "producers": [

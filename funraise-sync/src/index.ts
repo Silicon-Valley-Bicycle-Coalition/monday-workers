@@ -10,6 +10,7 @@ import { HttpMondayClient } from './monday/client';
 import { processFunraiseQueueBatch, type FunraiseQueueMessage } from './consumer/processBatch';
 import { pollSubscriptions } from './subscriptions/poll';
 import { dispatchScheduled } from './scheduled';
+import { checkRequestRateLimit } from './rateLimit';
 import type { Env } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -26,16 +27,25 @@ function funraiseClient(env: Env): HttpFunraiseClient | undefined {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // configFor validates synchronously and must keep throwing synchronously (before any
+    // routing or rate-limit check) on a misconfigured ENVIRONMENT — see index.test.ts.
     const config = configFor(env);
-    const app = createApp({
-      eventStore: new D1EventStore(env.DB),
-      config,
-      queue: {
-        send: (message: FunraiseQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
-      },
-      webhookSecret: env.FUNRAISE_WEBHOOK_SECRET,
+
+    // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
+    // cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
+    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+      if (limited) return limited;
+
+      const app = createApp({
+        eventStore: new D1EventStore(env.DB),
+        config,
+        queue: {
+          send: (message: FunraiseQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
+        },
+        webhookSecret: env.FUNRAISE_WEBHOOK_SECRET,
+      });
+      return app.fetch(request, env, ctx);
     });
-    return app.fetch(request, env, ctx);
   },
 
   async queue(batch: MessageBatch<FunraiseQueueMessage>, env: Env): Promise<void> {

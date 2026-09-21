@@ -12,6 +12,9 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
     MONDAY_WEBHOOK_SECRET: 'test-monday-webhook-secret',
     MAILCHIMP_API_KEY: 'key',
     MAILCHIMP_WEBHOOK_SECRET: 'test-mailchimp-webhook-secret',
+    // Real local-simulated binding (see wrangler.jsonc's ratelimits) — never exceeded by these
+    // tests' request volume.
+    REQUEST_RATE_LIMITER: testEnv.REQUEST_RATE_LIMITER,
     ...overrides,
   };
 }

@@ -13,6 +13,7 @@ import { createInboundApp } from './webhook/inboundRoute';
 import { processOutboundBatch } from './consumer/outbound';
 import { processInboundBatch } from './consumer/inbound';
 import { reconcileCampaigns } from './campaigns/reconcile';
+import { checkRequestRateLimit } from './rateLimit';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -22,21 +23,30 @@ const configFor = createConfigSelector({ production: productionConfig, sandbox: 
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // configFor validates synchronously and must keep throwing synchronously (before any
+    // routing or rate-limit check) on a misconfigured ENVIRONMENT — see index.test.ts.
     const config = configFor(env);
-    const app = new Hono();
-    app.get('/health', (c) => c.json({ ok: true }));
-    app.route('/', createOutboundApp({
-      pendingStore: new D1PendingOutboundStore(env.DB),
-      queue: { send: (message: OutboundSyncMessage) => env.OUTBOUND_QUEUE.send(message).then(() => undefined) },
-      webhookSecret: env.MONDAY_WEBHOOK_SECRET,
-      config,
-    }));
-    app.route('/', createInboundApp({
-      pendingStore: new D1PendingInboundStore(env.DB),
-      queue: { send: (message: InboundSyncMessage) => env.INBOUND_QUEUE.send(message).then(() => undefined) },
-      webhookSecret: env.MAILCHIMP_WEBHOOK_SECRET,
-    }));
-    return app.fetch(request, env, ctx);
+
+    // Checked before any routing, D1, or Monday/Mailchimp work — see README "Reliability:
+    // traffic and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
+    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+      if (limited) return limited;
+
+      const app = new Hono();
+      app.get('/health', (c) => c.json({ ok: true }));
+      app.route('/', createOutboundApp({
+        pendingStore: new D1PendingOutboundStore(env.DB),
+        queue: { send: (message: OutboundSyncMessage) => env.OUTBOUND_QUEUE.send(message).then(() => undefined) },
+        webhookSecret: env.MONDAY_WEBHOOK_SECRET,
+        config,
+      }));
+      app.route('/', createInboundApp({
+        pendingStore: new D1PendingInboundStore(env.DB),
+        queue: { send: (message: InboundSyncMessage) => env.INBOUND_QUEUE.send(message).then(() => undefined) },
+        webhookSecret: env.MAILCHIMP_WEBHOOK_SECRET,
+      }));
+      return app.fetch(request, env, ctx);
+    });
   },
 
   async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {

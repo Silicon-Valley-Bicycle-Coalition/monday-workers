@@ -9,6 +9,7 @@ import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
 import { processBenevityQueueBatch, type BenevityQueueMessage } from './consumer/processBatch';
+import { checkRequestRateLimit } from './rateLimit';
 import type { Env, BenevityImportConfig } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -29,21 +30,30 @@ async function fetchCsv(url: string): Promise<string> {
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // configFor validates synchronously and must keep throwing synchronously (before any
+    // routing or rate-limit check) on a misconfigured ENVIRONMENT — see index.test.ts.
     const config = configFor(env);
-    const app = createApp({
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
-      uploadStore: new D1UploadStore(env.DB),
-      disbursementStore: new D1DisbursementStore(env.DB),
-      rowStore: new D1RowStore(env.DB),
-      config,
-      queue: {
-        send: (message: BenevityQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
-      },
-      webhookSecret: env.BENEVITY_WEBHOOK_SECRET,
-      fetchCsv,
-      now: () => new Date().toISOString(),
+
+    // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
+    // cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
+    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+      if (limited) return limited;
+
+      const app = createApp({
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+        uploadStore: new D1UploadStore(env.DB),
+        disbursementStore: new D1DisbursementStore(env.DB),
+        rowStore: new D1RowStore(env.DB),
+        config,
+        queue: {
+          send: (message: BenevityQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
+        },
+        webhookSecret: env.BENEVITY_WEBHOOK_SECRET,
+        fetchCsv,
+        now: () => new Date().toISOString(),
+      });
+      return app.fetch(request, env, ctx);
     });
-    return app.fetch(request, env, ctx);
   },
 
   async queue(batch: MessageBatch<BenevityQueueMessage>, env: Env): Promise<void> {

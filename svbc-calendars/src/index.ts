@@ -9,6 +9,7 @@ import { getAllSourceStatuses } from './calendarStore';
 import { sendFailureAlert } from './alert';
 import { recordMetric } from './metrics';
 import { errorMessage } from './util/errorMessage';
+import { checkRequestRateLimit } from './rateLimit';
 import type { Env } from './types';
 
 const config = validateConfig(rawConfig);
@@ -111,6 +112,12 @@ export default {
       if (request.method === 'OPTIONS') {
         return handleCORS(request, new Response(null, { status: 204 }));
       }
+
+      // Checked before any routing, upstream fetch, or KV work — see README "Reliability:
+      // traffic and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
+      const limited = await checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) });
+      if (limited) return handleCORS(request, limited);
+
       if (request.method !== 'GET') {
         return handleCORS(request, new Response('Method not allowed', { status: 405 }));
       }
