@@ -91,11 +91,10 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 ## Deploy
 
 Deployed to production 2026-09-21: both custom domains are live and verified healthy (widget,
-JSON API, calendar feeds, listing page all serving correctly). **Steps 4 and 7 are still open** —
-Workers Builds isn't connected yet (routine `main` pushes still need a manual `wrangler deploy`
-until then), and nothing on the public site actually embeds this Worker yet, so none of the
-verified-healthy content in step 6 is in front of a real visitor. See those two steps for what's
-still needed.
+JSON API, calendar feeds, listing page all serving correctly), and Workers Builds is now connected
+— pushes to `main` auto-deploy from here on. **Step 7 is still open** — nothing on the public site
+actually embeds this Worker yet, so none of the verified-healthy content in step 6 is in front of
+a real visitor. See that step for what's still needed.
 
 Cutover checklist, in order:
 
@@ -127,16 +126,23 @@ both secrets already existed on the two predecessor Workers (`svbc-events-widget
 minted fresh, just re-entered here (Cloudflare secrets are write-only and per-Worker; there's no
 way to copy one directly from another Worker).
 
-### 4. Point Workers Builds at this subdirectory — still open
+### 4. Point Workers Builds at this subdirectory — done
 
-Checked 2026-09-21: neither predecessor Worker actually has a Git repository connected right now
-— both show **Settings → Builds → Git repository: Connect** (disconnected), not pointed at an old
-directory as this step used to assume. So this is a fresh connection to make, not a repoint:
-in the Cloudflare dashboard, **svbc-calendars → Settings → Builds → Connect**, authorize this
-GitLab repo, and set the build's root directory to `/svbc-calendars`. This needs an interactive
-GitLab authorization step, so it isn't something to script or do unattended. Until this is done,
-merges to `main` don't auto-deploy — use `npx wrangler deploy` by hand, as steps 5 and the fixes
-below did.
+Checked 2026-09-21: neither predecessor Worker actually had a Git repository connected — both
+showed **Settings → Builds → Git repository: Connect** (disconnected), not pointed at an old
+directory as this step used to assume. So this was a fresh connection, not a repoint. Connected
+2026-09-21 via **svbc-calendars → Settings → Builds → Connect**: repository
+`silicon-valley-bicycle-coalition/svbc-monday-workers`, production branch `main`, root directory
+`/svbc-calendars`, build command left empty (no `build` script in `package.json` — Wrangler
+transpiles on deploy, no separate build step), deploy command `npx wrangler deploy`, preview
+builds enabled for non-production branches. The GitLab account was already authorized on this
+Cloudflare account from a previous Worker's setup, so no fresh GitLab OAuth consent was needed
+this time. Verified by reloading the Settings page after connecting — the Git repository and
+build configuration both persisted server-side, not just in the dialog's local state.
+
+Every `main` push now auto-deploys via Workers Builds; `npx wrangler deploy` by hand (as steps 5
+and the fixes below used) is only needed for emergencies or first-time provisioning, per the root
+README's Deploys section.
 
 ### 5. Deploy — done
 
