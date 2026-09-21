@@ -38,7 +38,17 @@ export function letterView(data: LetterData, taxLetter: TaxLetterConfig, generat
 
   return `
     <style>
-      .letter { font-family: Georgia, 'Times New Roman', serif; max-width: 42rem; margin: 0 auto; line-height: 1.5; }
+      /* Fixed light "paper" look regardless of dark mode — this is a document a donor may keep
+         for tax purposes (see the English-only body note above for the same reasoning). */
+      .letter {
+        font-family: Georgia, 'Times New Roman', serif;
+        max-width: 42rem;
+        margin: 0 auto;
+        line-height: 1.5;
+        background: var(--svbc-white);
+        color: var(--svbc-black);
+        padding: 1.5rem 2rem;
+      }
       .letter table { border-collapse: collapse; width: 100%; }
       .letter th, .letter td { text-align: left; padding: 0.25rem 1rem 0.25rem 0; border-bottom: 1px solid #ccc; }
       .letter tr { page-break-inside: avoid; }
