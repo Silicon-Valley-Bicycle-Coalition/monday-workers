@@ -110,8 +110,11 @@ npm run deploy         # do not run until config/production.json's feedbackFormU
 
 ## Open questions
 
-- `workers_dev: true` is a placeholder route — pick a real subdomain/route before production use,
-  matching how other Workers in this repo are routed.
+- ~~`workers_dev: true` is a placeholder route~~ — resolved (2026-09-21): this is the established
+  pattern for secret-authenticated, webhook-only Workers in this repo (`funraise-sync`,
+  `quickbooks-sync`, `mailchimp-sync`, `donation-rollups`, `benevity-import` all take webhook
+  traffic on their default `*.workers.dev` URL with no custom route — access control is the
+  shared secret, not domain trust). No route to add here.
 - Production `feedbackFormUrl` needs the real Organizer Feedback Form fixed (title + dead columns
   — see `migration-plan.md`) before this Worker can be deployed to production for real.
 - To go live in production: add the `Post-Event Feedback` column and the same webhook automation
