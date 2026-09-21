@@ -53,7 +53,23 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only
 npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
+npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views
+npm run cli -- configure            # idempotent; --only key1,key2 scopes to specific boards
 ```
+
+**`configure`** applies the API-doable subset of the board-configuration plan (private repo:
+`docs/22-board-configuration-plan.md`) — board descriptions, the default-group rename, additive
+columns, column descriptions, and saved table views with filters — against whatever board ids are
+in `data/load/boards.json` (sandbox or production, whichever `load` last ran against). It's
+idempotent and non-destructive: an already-set description or column description is left alone
+rather than overwritten, and a view is only created if no view of that name exists yet. Run it
+after `load`'s `ensureBoards` pass and before staff get access, same sequencing docs/22 §5
+specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (no
+public API to create them), the Documentation doc view (no API for doc-kind views), stripping
+Monday's stock status labels (data-safety — do it by hand per docs/22 §2.5), Subitems-column
+deletion and hide-plumbing view settings (both UI-only in the plan), the Donations Fiscal Year
+column removal (a guarded one-off, not repeatable structure), and the Acknowledgment Tier
+backfill (a data operation, not board configuration).
 
 **Sandbox week:** set `monday.boardSuffix` to `" (sandbox)"` in config, and delete `data/load/`
 between full rehearsals. A run against a partial `payloads.ndjson` (e.g. a partial extract, not
