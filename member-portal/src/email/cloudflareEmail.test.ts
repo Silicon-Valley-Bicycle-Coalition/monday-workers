@@ -18,7 +18,7 @@ describe('CloudflareEmailSender', () => {
       const message = binding.send.mock.calls[0]![0];
       expect(message.to).toBe('donor@example.org');
       expect(message.from).toEqual({ email: 'login@example.org', name: 'Test Portal' });
-      expect(message.subject).toBe('Your SVBC member portal login link');
+      expect(message.subject).toBe('🚴 Your SVBC member portal login link');
       expect(message.html).toContain('https://portal.example.org/auth/callback?token=abc');
       expect(message.text).toContain('https://portal.example.org/auth/callback?token=abc');
     });
@@ -30,7 +30,7 @@ describe('CloudflareEmailSender', () => {
       await sender.sendLoginEmail({ to: 'donor@example.org', loginUrl: 'https://portal.example.org/x', locale: 'es' });
 
       const message = binding.send.mock.calls[0]![0];
-      expect(message.subject).toBe(t('es', 'email.subject'));
+      expect(message.subject).toBe(`🚴 ${t('es', 'email.subject')}`);
       expect(message.html).toContain(t('es', 'email.loginButton'));
       expect(message.text).toContain(t('es', 'email.bodyIntro'));
     });
@@ -61,7 +61,7 @@ describe('CloudflareEmailSender', () => {
       const message = binding.send.mock.calls[0]![0];
       expect(message.to).toBe('jane@example.org');
       expect(message.from).toEqual({ email: 'letters@mail.bikesiliconvalley.org', name: 'SVBC' });
-      expect(message.subject).toBe('Your 2025 SVBC giving letter is ready');
+      expect(message.subject).toBe('🚴 Your 2025 SVBC giving letter is ready');
       expect(message.html).toContain('https://portal.example.org/auth/callback?token=abc');
       expect(message.html).toContain('Jane Example');
       expect(message.text).toContain('https://portal.example.org/auth/callback?token=abc');
@@ -107,7 +107,7 @@ describe('CloudflareEmailSender', () => {
       });
 
       const message = binding.send.mock.calls[0]![0];
-      expect(message.subject).toBe('Your 2025 SVBC giving letter is ready');
+      expect(message.subject).toBe('🚴 Your 2025 SVBC giving letter is ready');
       expect(message.text).toBe(
         'Dear Jane Example,\n\nYour 2025 letter awaits: https://portal.example.org/auth/callback?token=abc'
       );
@@ -181,7 +181,7 @@ describe('CloudflareEmailSender', () => {
       });
 
       const message = binding.send.mock.calls[0]![0];
-      expect(message.subject).toBe(t('es', 'letterReady.subject', { year: '2025' }));
+      expect(message.subject).toBe(`🚴 ${t('es', 'letterReady.subject', { year: '2025' })}`);
       expect(message.html).toContain(t('es', 'letterReady.body', { year: '2025' }));
       expect(message.html).toContain(t('es', 'letterReady.loginLink'));
       expect(message.text).toContain(t('es', 'letterReady.expiry'));
@@ -202,7 +202,7 @@ describe('CloudflareEmailSender', () => {
       });
 
       const message = binding.send.mock.calls[0]![0];
-      expect(message.subject).toBe(t('es', 'letterReady.subject', { year: '2025' }));
+      expect(message.subject).toBe(`🚴 ${t('es', 'letterReady.subject', { year: '2025' })}`);
       expect(message.html).toBe('<p>Hola Juana</p>');
     });
   });

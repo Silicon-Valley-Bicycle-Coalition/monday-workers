@@ -11,7 +11,7 @@ export class CloudflareEmailSender implements EmailSender {
   ) {}
 
   async sendLoginEmail(params: SendLoginEmailParams): Promise<void> {
-    const subject = t(params.locale, 'email.subject');
+    const subject = `🚴 ${t(params.locale, 'email.subject')}`;
     const bodyIntro = t(params.locale, 'email.bodyIntro');
     const loginButton = t(params.locale, 'email.loginButton');
     await this.emailBinding.send({
@@ -33,7 +33,7 @@ export class CloudflareEmailSender implements EmailSender {
       from: { email: this.fromAddress, name: this.fromName },
       // Subject is always ours, so it always follows the donor's locale — even when the body
       // comes from a staff template.
-      subject: t(params.locale, 'letterReady.subject', { year: String(params.year) }),
+      subject: `🚴 ${t(params.locale, 'letterReady.subject', { year: String(params.year) })}`,
       html: body.html,
       text: body.text,
     });
