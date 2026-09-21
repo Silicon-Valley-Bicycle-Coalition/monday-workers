@@ -1,0 +1,45 @@
+#!/bin/sh
+# Guards against the collision documented in this repo's CLAUDE.md ("Concurrency — default to a
+# worktree"): two agent sessions committing to different feature branches in the same primary
+# checkout at once, tangling each other's work. Hooks are shared across all worktrees of a repo
+# (they live in the common .git dir), so this only fires when the commit is actually happening in
+# the PRIMARY checkout, not in a linked worktree.
+#
+# Not installed by default — git only runs hooks from .git/hooks (or core.hooksPath) on your own
+# clone. Enable it once per clone with:
+#   git config core.hooksPath .githooks
+#
+# Bypass for a genuine one-line fix (CLAUDE.md's own stated exception): git commit --no-verify.
+
+git_dir=$(git rev-parse --git-dir)
+common_dir=$(git rev-parse --git-common-dir)
+
+# Resolve to absolute paths so the comparison is reliable regardless of cwd.
+git_dir=$(cd "$git_dir" && pwd)
+common_dir=$(cd "$common_dir" && pwd)
+
+if [ "$git_dir" != "$common_dir" ]; then
+  # Linked worktree — not the primary checkout, nothing to guard here.
+  exit 0
+fi
+
+branch=$(git symbolic-ref --short -q HEAD)
+
+if [ -z "$branch" ] || [ "$branch" = "main" ]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+error: refusing to commit branch '$branch' directly in the primary monday-workers checkout.
+
+This repo's CLAUDE.md defaults to a worktree per topic/feature branch, specifically to avoid two
+sessions editing the same checkout at once. Use:
+
+  git worktree add ../monday-workers-<topic> -b $branch
+  (Claude Code sessions: the EnterWorktree tool)
+
+If this really is a one-line fix (CLAUDE.md's stated exception), bypass with:
+
+  git commit --no-verify
+EOF
+exit 1

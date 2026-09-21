@@ -74,6 +74,29 @@ fails. Instead:
 - Never pass your own `cwd` to a spawned sub-agent that's going to edit files. If you can't give
   it an isolated worktree, don't dispatch it — do the edit inline instead.
 
+**Second real collision, 2026-09-20/21, different shape:** two *separate* sessions (not one
+session's sub-agents) each working a distinct topic — a `bp-feedback-notify` webhook-auth fix and
+an unrelated `donation-rollups` sandbox-config remap — both skipped the worktree convention and
+committed feature branches directly in the primary checkout. One session's commit landed on top of
+the other's on the same branch without either noticing HEAD had moved off `main`, so a merge
+request for the webhook fix ended up merged to `main` with the unrelated donation-rollups commit
+still attached (harmless in this case — same diff already existed elsewhere on `main`, so it was a
+no-op duplicate rather than a conflict — but only by luck).
+
+To make this concrete instead of just documented, this repo now ships `.githooks/pre-commit`,
+which refuses `git commit` for any branch other than `main` when run from the primary checkout
+(linked worktrees are unaffected — hooks are shared across worktrees via the common `.git` dir, but
+the hook checks `git rev-parse --git-dir` against `--git-common-dir` to tell which one it's in).
+Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+Bypass for a genuine one-line fix (the exception already carved out above) with
+`git commit --no-verify`. The hook is a backstop, not a substitute for reaching for `EnterWorktree`
+first.
+
 ## Commands
 
 There's no root `package.json` — every command runs from inside a Worker's own subdirectory
