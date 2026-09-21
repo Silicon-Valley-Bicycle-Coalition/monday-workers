@@ -34,7 +34,8 @@
   },
   "email": {
     "fromAddress": "login@localhost",
-    "fromName": "SVBC Member Portal (local preview)"
+    "fromName": "SVBC Member Portal (local preview)",
+    "logoUrl": "http://localhost:8787/email/logo.png"
   },
   "auth": {
     "magicLinkTtlMinutes": 15,

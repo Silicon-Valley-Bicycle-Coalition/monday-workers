@@ -98,6 +98,22 @@ Migration Method). What it needs instead: retry-with-backoff on individual Monda
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
 
+## Branded email template
+
+Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares
+one branded layout — dark SVBC-gold header with the logo, light/dark-mode-aware body, plain-text
+part — rather than each Worker sending bare, unstyled HTML. `member-portal/src/email/layout.ts` is
+the source of truth; `bp-feedback-notify/src/email/layout.ts` is a copy, same reasoning as every
+other per-Worker copy in this repo (see "Concurrency" above). The logo itself is a PNG (email
+clients don't render the site's inline SVG logo) served by member-portal at `GET /email/logo.png`
+and referenced by every Worker's email config as an absolute URL — regenerate it from
+`member-portal/src/assets/logo.ts`'s SVG source with a tool like
+[resvg-js](https://github.com/thx/resvg-js) if the artwork ever changes.
+
+Monday.com automation emails (configured in Monday's own UI, not deployed code) use a separate
+static template — see [`docs/email-branding/`](docs/email-branding/) — since Monday's automation
+composer can't run this repo's code.
+
 ## Deploys
 
 The live Workers deploy automatically via [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):

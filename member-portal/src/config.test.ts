@@ -48,7 +48,7 @@ const validConfig = {
       volunteerStatus: 'vol_status_col',
     },
   },
-  email: { fromAddress: 'login@example.org', fromName: 'Test Portal' },
+  email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {

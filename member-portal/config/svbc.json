@@ -34,6 +34,7 @@
   "email": {
     "fromAddress": "login@mail.bikesiliconvalley.org",
     "fromName": "SVBC Member Portal",
+    "logoUrl": "https://member.bikesiliconvalley.org/email/logo.png",
     "replyTo": "contactus@bikesiliconvalley.org"
   },
   "auth": {

@@ -184,7 +184,7 @@ function fakeMondayWithDonations(): MondayClient {
 
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
-  email: { fromAddress: 'a@example.org', fromName: 'Test' },
+  email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {
@@ -494,6 +494,19 @@ describe('GET /favicon.png', () => {
   it('serves a cacheable PNG', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/favicon.png');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect(res.headers.get('Cache-Control')).toContain('immutable');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    // PNG magic bytes
+    expect(bytes.slice(0, 8)).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  });
+});
+
+describe('GET /email/logo.png', () => {
+  it('serves a cacheable PNG', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/email/logo.png');
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('image/png');
     expect(res.headers.get('Cache-Control')).toContain('immutable');

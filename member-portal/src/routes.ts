@@ -57,6 +57,7 @@ import { isLocale, DEFAULT_LOCALE } from './i18n/locales';
 import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
+import { decodeEmailLogoPng } from './assets/emailLogo';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -127,6 +128,18 @@ export function createApp(deps: AppDeps) {
     // config (its .buffer is typed ArrayBufferLike, and .slice() widens further to include
     // SharedArrayBuffer) — copying into a fresh ArrayBuffer sidesteps both.
     const bytes = decodeFavicon();
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return new Response(buffer, {
+      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' },
+    });
+  });
+
+  // Rasterized logo for branded emails (see assets/emailLogo.ts and email/layout.ts) — email
+  // clients can't render the inline SVG used elsewhere on the site, so outbound HTML emails
+  // reference this route by absolute URL (config.email.logoUrl) as an <img src>.
+  app.get('/email/logo.png', () => {
+    const bytes = decodeEmailLogoPng();
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
     return new Response(buffer, {

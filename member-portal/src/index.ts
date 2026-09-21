@@ -116,7 +116,13 @@ export default {
       tokenStore: new D1MagicLinkTokenStore(env.DB),
       sessionStore: new D1SessionStore(env.DB),
       attemptStore: new D1LoginAttemptStore(env.DB),
-      emailSender: new CloudflareEmailSender(emailBindingFor(env), config.email.fromAddress, config.email.fromName, config.email.replyTo),
+      emailSender: new CloudflareEmailSender(
+        emailBindingFor(env),
+        config.email.fromAddress,
+        config.email.fromName,
+        config.email.logoUrl,
+        config.email.replyTo
+      ),
       ipLimiter: { limit: (key: string) => env.LOGIN_RATE_LIMITER.limit({ key }) },
       config,
       now: () => new Date(),
@@ -155,7 +161,13 @@ export default {
       letterStore: new D1LetterSendStore(env.DB),
       monday,
       tokenStore: new D1MagicLinkTokenStore(env.DB),
-      emailSender: new CloudflareEmailSender(emailBindingFor(env), config.email.fromAddress, config.email.fromName, config.email.replyTo),
+      emailSender: new CloudflareEmailSender(
+        emailBindingFor(env),
+        config.email.fromAddress,
+        config.email.fromName,
+        config.email.logoUrl,
+        config.email.replyTo
+      ),
       config,
       now: () => new Date(),
     });

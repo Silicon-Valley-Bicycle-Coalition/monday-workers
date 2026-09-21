@@ -76,7 +76,7 @@ export const PREF_FIELD_COLUMNS: Record<PrefField, keyof MondayColumns> = {
 const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
-const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName'] as const;
+const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName', 'logoUrl'] as const;
 const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'sessionTtlHours', 'portalBaseUrl'] as const;
 const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
