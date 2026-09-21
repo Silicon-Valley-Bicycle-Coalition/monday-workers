@@ -1,0 +1,50 @@
+import { describe, it, expect } from 'vitest';
+import production from './production.json';
+import sandbox from './sandbox.json';
+import wranglerText from '../wrangler.jsonc?raw';
+import { parseJsonc } from '../test/jsonc';
+
+// Guards the "inbound only, no outbound data" rule at the repo level — same intent as
+// donor-portal/config/split.test.ts, scaled to this Worker's smaller config.
+
+const SINK = 'sandbox@bikesiliconvalley.org';
+
+type Json = Record<string, unknown>;
+const get = (obj: unknown, path: string): unknown => path.split('.').reduce<unknown>((o, key) => (o as Json | undefined)?.[key], obj);
+
+const wrangler = parseJsonc(wranglerText) as Json;
+const sandboxEnv = get(wrangler, 'env.sandbox') as Json;
+
+describe('config split: sinks', () => {
+  it('fromName differs between production and sandbox', () => {
+    expect(production.fromName).not.toBe(sandbox.fromName);
+  });
+
+  it('sandbox feedbackFormUrl is a real monday form, and production is still a placeholder', () => {
+    expect(sandbox.feedbackFormUrl).toMatch(/^https:\/\/forms\.monday\.com\/forms\//);
+    expect(production.feedbackFormUrl).toBe('REPLACE_AFTER_PRODUCTION_ORGANIZER_FEEDBACK_FORM_FIXED');
+  });
+
+  it('production and sandbox never point at the same form', () => {
+    expect(sandbox.feedbackFormUrl).not.toBe(production.feedbackFormUrl);
+  });
+});
+
+describe('wrangler.jsonc env.sandbox', () => {
+  it('locks the EMAIL binding to exactly the sink address', () => {
+    expect(sandboxEnv.send_email).toEqual([{ name: 'EMAIL', allowed_destination_addresses: [SINK] }]);
+  });
+
+  it('sets the vars the entrypoint reads, with the sink matching the allowlist', () => {
+    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox', SANDBOX_EMAIL_SINK: SINK });
+  });
+
+  it('does not restrict production sends', () => {
+    expect(wrangler.send_email).toEqual([{ name: 'EMAIL' }]);
+  });
+
+  it('never sets ENVIRONMENT at the top level — production must not load sandbox config', () => {
+    expect((wrangler.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
+    expect((wrangler.vars as Json | undefined)?.SANDBOX_EMAIL_SINK).toBeUndefined();
+  });
+});

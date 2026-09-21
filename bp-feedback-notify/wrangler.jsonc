@@ -1,0 +1,36 @@
+{
+  "name": "svbc-bp-feedback-notify",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "workers_dev": true,
+  // Reuses mail.bikesiliconvalley.org, already onboarded to Cloudflare Email Sending for
+  // donor-portal — no new domain onboarding needed for this Worker.
+  "send_email": [{ "name": "EMAIL" }],
+  "observability": {
+    "enabled": true
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-bp-feedback-notify-sandbox.
+  // Rule: inbound data only, no outbound data — the EMAIL binding below may only deliver to the
+  // one sink address, enforced by Cloudflare (E_RECIPIENT_NOT_ALLOWED otherwise); the code layer
+  // in src/email/sandboxBinding.ts rewrites recipients to the same address. Same convention as
+  // donor-portal — see its wrangler.jsonc and
+  // docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copy with `wrangler secret put WEBHOOK_SECRET --env sandbox`.
+  "env": {
+    "sandbox": {
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        // Must equal allowed_destination_addresses[0] below — config/split.test.ts checks.
+        "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org"
+      },
+      "workers_dev": true,
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
+      "observability": {
+        "enabled": true
+      }
+    }
+  }
+}
