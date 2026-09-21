@@ -45,13 +45,14 @@ a Worker secret.
 | [`monday-backup`](monday-backup/README.md) | Built (`feat/monday-backup`) — not deployed; needs D1 provisioning, a dedicated Monday backup integration user/token, and a Google service account scoped to the destination Drive folder. Has a **sandbox environment** (`npm run deploy:sandbox`, `config/backup.sandbox.json`) that snapshots the sandbox workspace into a separate Drive folder — see [the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) | Post-migration, non-blocking, but time-relevant once real donor data lives in Monday with no Salesforce copy to fall back on |
 | [`benevity-import`](benevity-import/README.md) | Built (`feat/benevity-import`) — production not deployed; **sandbox provisioned and verified 2026-09-19** (`svbc-benevity-import-sandbox`: a synthetic one-row upload on the sandbox Uploads board produced the gift and match items on the sandbox Donations board); production D1 provisioned and sandbox board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover and Monday webhook + integration-user token setup. Needs two `salesforce-import` column changes before cutover (see its README). Has a **sandbox environment** (`npm run deploy:sandbox`, `config/sandbox.json`) — see [the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) | Post-migration, non-blocking — staff can keep hand-entering matches on the board meanwhile |
 
-Two related builds are **deliberately not Workers** and don't get a subdirectory here — see the
-plan for both:
+Two related builds are **deliberately not Workers**:
 
-* **Bike-lane / geography proximity script** — explicitly scoped as "a one-off TypeScript script
-  (Node.js), not standing infrastructure," run on request per project. Only worth wrapping as a
-  persistent Worker if it becomes a frequent, recurring ask. See "Bike-lane GIS proximity" in the
-  plan.
+* **[`geo-filter`](geo-filter/README.md)** — "contacts near a point or corridor," generalized
+  2026-09-21 from the original bike-lane-specific design (svbc-monday-migration#24) into zip,
+  radius, and arbitrary-corridor modes for any campaign. Explicitly scoped as "a one-off
+  TypeScript script (Node.js), not standing infrastructure," run on request per project. Only
+  worth wrapping as a persistent Worker if it becomes a frequent, recurring ask. See "Bike-lane
+  GIS proximity" in the plan for the original design this generalizes.
 * **Per-contact bike-lane map** — a static Leaflet.js + CyclOSM page with no backend logic, hosted
   on **Cloudflare Pages**, not a Worker. See "Mapping a contact relative to bike lanes" in the plan.
 
