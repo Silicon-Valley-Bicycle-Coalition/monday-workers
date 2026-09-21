@@ -14,6 +14,13 @@ Worker, and domain all say `member-portal` / `member`), but the underlying Monda
 still calls people and their records "Donor" — boards, columns, and code all say donor/Donors.
 Both terms appear below; they refer to the same thing.
 
+Note on "production": SVBC's live system of record today is still Salesforce — the
+Salesforce→Monday migration cutover hasn't happened yet. What this doc calls "production"
+(`config/svbc.json`, the non-sandbox Cloudflare deploy, `member.bikesiliconvalley.org`) is the
+Monday-based configuration being built and tested *ahead of* that cutover, not a system already
+serving real donor traffic against Monday. When this doc compares the sandbox to "production," it
+means that pre-cutover target config, not a live baseline.
+
 ## The one rule: inbound only, no outbound data
 
 The sandbox reads real (if fake-ish) data from Monday's CRM Sandbox boards, but **every email it
@@ -36,9 +43,10 @@ actually contact that person.
 
 1. Go to **https://member.sandbox.bikesiliconvalley.org**.
 2. Enter the email address of anyone who exists on the CRM Sandbox's People board (Monday board
-   `18428131737`, workspace `17141226` — this is the sandbox's equivalent of the production
-   Donors board). You need Monday access to browse that board and pick a real entry; any staff
-   member testing the portal already has an entry there too.
+   `18428131737`, workspace `17141226` — this is the sandbox's equivalent of the Donors board
+   `config/svbc.json` will point at once member-portal goes live). You need Monday access to
+   browse that board and pick a real entry; any staff member testing the portal already has an
+   entry there too.
 3. Check the **`sandbox@bikesiliconvalley.org`** group inbox. The login email arrives there with
    subject `[sandbox → <the email you entered>] Your SVBC member portal login link` — never at
    the address you typed.
@@ -51,10 +59,11 @@ portal is read-only against donor records everywhere else.
 
 ## What you can and can't test right now
 
-The sandbox shares the exact same feature gates as production — a feature only appears once its
-Monday board/column ids are filled in `config/sandbox.json`. Some features have real sandbox ids
-today; others are still placeholders, so they're gated off in the sandbox exactly as they are in
-production.
+The sandbox runs the exact same feature-gating logic as the pre-launch production config — a
+feature only appears once its Monday board/column ids are filled in `config/sandbox.json` (the
+production equivalent, `config/svbc.json`, isn't live yet — see the naming note above). Some
+features have real sandbox ids today; others are still placeholders, so they're gated off in the
+sandbox exactly as `config/svbc.json` currently has them configured to be once it goes live.
 
 | Feature | Status in sandbox | Why |
 |---|---|---|
@@ -63,7 +72,7 @@ production.
 | Membership status/tier + bike-shop discounts | ✅ works | two sandbox Organizations items have a discount marked active, for a real result to check |
 | Digital membership card (`/portal/card/:id`) | ✅ works | `membershipExpiry` column configured |
 | Change requests (address/email/phone edits) | ✅ works, lands on a real sandbox Change Requests board (`18431948024`) | fully configured |
-| Tax letters (`/portal/letters`) | ✅ renders, but every letter is stamped **"SANDBOX TEST — NOT A VALID TAX RECEIPT"** | sandbox uses obviously-fake signoff text so the flow can be tested *ahead of* SVBC's real IRS-language sign-off (production's `benefitStatement` is still a placeholder, so letters aren't live there yet) |
+| Tax letters (`/portal/letters`) | ✅ renders, but every letter is stamped **"SANDBOX TEST — NOT A VALID TAX RECEIPT"** | sandbox uses obviously-fake signoff text so the flow can be tested *ahead of* SVBC's real IRS-language sign-off — `config/svbc.json`'s `benefitStatement` is still a placeholder, so this feature won't be enabled even once production goes live, until that sign-off happens |
 | Staff-triggered / automatic January letter-ready emails | ⚠️ machinery is wired up, but leave the "Auto-send" checkbox **unchecked** on the sandbox "Member Portal Letter Settings (sandbox)" board (`18428114991`) — checking it with a past start date queues up to 200 real-looking emails into `sandbox@` on the next 09:00 UTC run | see `DEPLOY.md` |
 | Communication preferences (email/SMS opt-out, do-not-mail) | ❌ not shown | opt-out column ids are still placeholders |
 | Preferred-language (stored per donor) | ❌ not read | column id is a placeholder; locale still falls back to the browser/cookie guess |
@@ -88,7 +97,8 @@ up yet. Ask before spending time debugging a "missing" feature from that list.
 - **Tax letters:** visit `/en/portal/letters` while logged in as a donor with at least one gift in
   a completed calendar year. The rendered letter must visibly say "SANDBOX TEST" — if it doesn't,
   something is misreading `config/svbc.json` instead of `config/sandbox.json` and needs
-  investigating immediately (it would mean production text leaked into a test artifact, or worse).
+  investigating immediately (it would mean donor-facing letter text is coming from the wrong
+  config file, mixing test and real content).
 - **Shared-email household:** log in with an email that matches more than one sandbox donor item;
   confirm each person renders under their own labeled name, not merged or defaulting to one.
 - **Enumeration guard:** request a login for an email that doesn't exist on the sandbox board;
@@ -114,8 +124,9 @@ up yet. Ask before spending time debugging a "missing" feature from that list.
 | **Local dev against the sandbox** | `npm run dev:sandbox` (`wrangler dev --env sandbox`) | real CRM Sandbox boards + `sandbox@` inbox, but from your machine | yes — the sandbox integration user's `MONDAY_API_TOKEN` and `LETTER_WEBHOOK_SECRET` in `.dev.vars` | debugging a code change against real sandbox data before deploying it |
 | **Local dev with fakes** | `npm run dev:local`, or the driver at `.claude/skills/run-member-portal/smoke.sh` | nothing — in-memory fake Monday client and fake email, no network at all | no | fast iteration on UI/logic; three canned fake donors (`jordan@example.com`, `family@example.com` — a two-person household, `casey@example.com`) |
 
-`npm run dev` (no suffix) is **production** — don't use it for testing; it needs real production
-secrets and, once those exist, would write to production sinks.
+`npm run dev` (no suffix) is the **production config** — don't use it for testing; it needs real
+production secrets and, once those exist, would write to `config/svbc.json`'s sinks (which,
+again, aren't live production traffic yet — see the naming note above).
 
 The `run-member-portal` skill (`.claude/skills/run-member-portal/`) documents the fakes-based
 local path in detail, including a `smoke.sh demo` one-liner that logs in and prints what it found.
@@ -130,9 +141,9 @@ npm run typecheck
 ```
 
 `config/split.test.ts` is the one worth knowing about here: it fails the build if
-`config/svbc.json` (production) and `config/sandbox.json` (sandbox) ever end up sharing a board
-id, column id, or email sink — the thing that would turn a "sandbox" test into a real write or a
-real donor email.
+`config/svbc.json` (the pre-launch production config) and `config/sandbox.json` (sandbox) ever
+end up sharing a board id, column id, or email sink — the thing that would turn a "sandbox" test
+into a real write or a real donor email once production does go live.
 
 ## Deploying a change to the sandbox
 
@@ -141,10 +152,10 @@ npm test && npm run typecheck
 npm run deploy:sandbox
 ```
 
-This deploys `svbc-member-portal-sandbox` independently of production — deploying to the sandbox
-never touches the production Worker, and vice versa. After deploying, redo the quick-start login
-above to confirm the change works end to end against real (sandbox) data before it goes anywhere
-near production.
+This deploys `svbc-member-portal-sandbox` independently of the production deploy target —
+deploying to the sandbox never touches the `svbc-member-portal` Worker, and vice versa. After
+deploying, redo the quick-start login above to confirm the change works end to end against real
+(sandbox) data before it goes anywhere near that production config.
 
 ## Confirming the safety rule holds (do this after any change to email code)
 
