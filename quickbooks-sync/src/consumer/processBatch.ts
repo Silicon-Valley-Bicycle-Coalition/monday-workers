@@ -83,11 +83,15 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   const itemName = typeof itemNameValue === 'string' && itemNameValue.length > 0 ? itemNameValue : event.qbId;
 
   if (existing) {
-    // Only mapped column values are propagated — a QuickBooks-side rename does not update the
-    // Monday item's name/title. Whether monday.com's GraphQL API supports renaming an existing
-    // item this way is an open question (see the design spec's caveat about verifying the
-    // GraphQL shape against a live account), so no mutation is attempted here.
-    await deps.mondayClient.changeColumnValues(boardId, existing.mondayItemId, columnValues);
+    // monday.com's Name column is a reserved pseudo-column addressable as column_id "name"
+    // through the same change_multiple_column_values mutation used for every other mapped
+    // column (developer.monday.com/api-reference/reference/name) — confirmed against monday's
+    // public API docs, not yet exercised against a live account. This keeps the item's title in
+    // sync with the QuickBooks-side name field (DisplayName, DocNumber, ...) on every update.
+    await deps.mondayClient.changeColumnValues(boardId, existing.mondayItemId, {
+      ...columnValues,
+      name: itemName,
+    });
   } else {
     let mondayItemId = event.pendingMondayItemId;
     if (mondayItemId === null) {
