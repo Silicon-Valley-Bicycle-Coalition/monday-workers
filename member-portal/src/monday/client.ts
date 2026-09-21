@@ -106,7 +106,13 @@ export class HttpMondayClient implements MondayClient {
     // null until an operator configures monday.volunteersBoardId — getVolunteerShiftsForDonor
     // throws its own config error on null rather than querying a sentinel board id.
     private volunteersBoardId: number | null = null,
-    private fetchFn: typeof fetch = fetch
+    // Bound to globalThis, not the bare function reference: called below as `this.fetchFn(...)`,
+    // which — for the real global fetch — is a method call with `this` rebound to the
+    // HttpMondayClient instance. Cloudflare's fetch implementation requires `this === globalThis`
+    // and throws "Illegal invocation" otherwise. Only caught by a real deployed Worker making a
+    // real Monday API call — every unit test injects its own fetchMock (no `this` requirement),
+    // and local dev never reaches this class at all (it uses FakeMondayClient).
+    private fetchFn: typeof fetch = fetch.bind(globalThis)
   ) {}
 
   private async request<T>(query: string, variables: Record<string, unknown>): Promise<T> {
