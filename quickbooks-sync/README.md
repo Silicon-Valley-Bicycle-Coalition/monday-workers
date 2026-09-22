@@ -86,10 +86,15 @@ writing that column on its first real message. Applied it and confirmed
 `qb_events.pending_monday_item_id` exists via `PRAGMA table_info`. `config/split.test.ts`, the
 full unit suite, `wrangler types && tsc --noEmit`, and `wrangler deploy --dry-run --env sandbox`
 all pass; the sandbox Worker itself auto-deployed via Workers Builds on the 2026-09-21 merge to
-main. **Not yet done:** no sandbox secrets are set (`wrangler secret list --env sandbox` is
-empty) and Monday board ids are still `null` — both wait on the staff prerequisites above (Intuit
-sandbox company/keys, OAuth Playground token pair, a dedicated Monday integration-user token) plus
-the open Intuit app-review question below.
+main. **`MONDAY_API_TOKEN` set 2026-09-22** — reused the existing shared `Sandbox Integration`
+user (`dwk+sandbox-integration@bikesiliconvalley.org`, the single sandbox-wide integration user
+the [sandbox design](../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4
+calls for; verified via a `me` query before use, not minted fresh so the other sandbox Workers
+already using it keep working). **Not yet done:** `QB_CLIENT_ID`, `QB_CLIENT_SECRET`,
+`QB_WEBHOOK_VERIFIER_TOKEN`, and `MONDAY_WEBHOOK_SECRET` remain unset, and Monday board ids are
+still `null` — these wait on the staff prerequisites above (an Intuit sandbox company and
+development keys, a token pair seeded via the OAuth Playground) plus the open Intuit app-review
+question below.
 
 ## Open question before starting
 
