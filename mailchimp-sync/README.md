@@ -1,8 +1,15 @@
 # mailchimp-sync
 
 **Status:** Built — repurposed from the never-deployed `membership-reminders` (2026-08-26). Not
-deployed; blocked on the same Donors-board prerequisite as everything else downstream of
-`salesforce-import`, plus a Mailchimp audience with the merge fields/Interest Categories below.
+deployed to production; blocked on the same Donors-board prerequisite as everything else
+downstream of `salesforce-import`, plus a Mailchimp audience with the merge fields/Interest
+Categories below. **Sandbox provisioned and verified 2026-09-22**: `svbc-mailchimp-sync-sandbox`
+is deployed, with its own D1/queues/secrets, a live "SVBC Sandbox" Mailchimp audience
+(`dfe12eec72`, `us9`), and both Monday/Mailchimp webhooks registered. Verification also caught
+and fixed two bugs invisible to the unit suite — both `HttpMondayClient` and `HttpMailchimpClient`
+called an unbound native `fetch` as `this.fetchFn(...)`, throwing "Illegal invocation" on every
+real request; and `findItemIdByEmail`'s GraphQL declared `$email: [String!]` where Monday's schema
+wants `[String]!`. See git history for both fixes.
 **Priority:** Post-migration, **time-sensitive** — SVBC's existing Mailchimp newsletter
 segmentation (by city, by donation history) is fed from Salesforce today and breaks at
 retirement, same urgency as the renewal reminders this Worker's predecessor was built for.
@@ -43,14 +50,19 @@ Three independent flows — see the design doc for full sequence diagrams:
 ## Prerequisites before this can run against real data
 
 **Mailchimp side (staff task):**
-* Create six merge fields in the target audience: `MEMBERSINCE`, `MEMBERUNTIL`, `MTIER`,
-  `MSTATUS`, `ADDRESS` (type: Address), `TOTALGIVE`.
+* Create six merge fields in the target audience: `MEMBSINCE`, `MEMBUNTIL`, `MTIER`,
+  `MSTATUS`, `ADDRESS` (type: Address), `TOTALGIVE`. Mailchimp merge tags are capped at 10
+  characters and silently truncate anything longer rather than erroring — `MEMBERSINCE`/
+  `MEMBERUNTIL` (11 chars each) become `MEMBERSINC`/`MEMBERUNTI` if typed as-is, which then
+  won't match `config/*.json`'s `mailchimp.mergeFields` and silently drops those two fields
+  from every sync. Discovered provisioning the sandbox audience 2026-09-22; use the 9-char
+  tags above instead.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
   independently.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
-  Interest, triggered off `MEMBERSINCE`/`MEMBERUNTIL` respectively. Recommended renewal cadence:
-  42/28/14 days before `MEMBERUNTIL` (carried forward from the original `membership-reminders`
+  Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Recommended renewal cadence:
+  42/28/14 days before `MEMBUNTIL` (carried forward from the original `membership-reminders`
   design).
 * Set up an audience webhook (Subscribes/Unsubscribes/Profile updates/Cleaned) pointed at this
   Worker's `/webhooks/mailchimp/audience`, with a secret in the URL, and leave Mailchimp's

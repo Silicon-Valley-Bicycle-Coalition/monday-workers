@@ -21,8 +21,8 @@
     "apiBaseUrl": "https://REPLACE_WITH_DC.api.mailchimp.com/3.0",
     "audienceId": "REPLACE_WITH_AUDIENCE_ID",
     "mergeFields": {
-      "memberSince": "MEMBERSINCE",
-      "memberUntil": "MEMBERUNTIL",
+      "memberSince": "MEMBSINCE",
+      "memberUntil": "MEMBUNTIL",
       "membershipTier": "MTIER",
       "membershipStatus": "MSTATUS",
       "address": "ADDRESS",

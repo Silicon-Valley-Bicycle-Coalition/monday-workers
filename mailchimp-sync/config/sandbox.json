@@ -1,28 +1,28 @@
 {
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
-    "donorsBoardId": 18428131737,
+    "donorsBoardId": 18431577220,
     "campaignsBoardId": 18431818836,
     "columns": {
-      "membershipStatus": "color_mm6jbkns",
-      "membershipTier": "color_mm6jhs7g",
-      "memberSince": "date_mm6jv5gt",
-      "memberUntil": "date_mm6jq0va",
-      "addr1": "text_mm6j66ah",
-      "city": "text_mm6jbmkr",
-      "state": "text_mm7b5fsa",
-      "zip": "text_mm6jrhv7",
-      "email": "email_mm6j5e9q",
-      "totalGiven": "numeric_mm6j7y8j",
-      "mailchimpCampaigns": "board_relation_mm7bkcrm"
+      "membershipStatus": "color_mm79yw6p",
+      "membershipTier": "color_mm79baj4",
+      "memberSince": "date_mm79y9fa",
+      "memberUntil": "date_mm79p82j",
+      "addr1": "text_mm79v4e1",
+      "city": "text_mm79wdm8",
+      "state": "text_mm7ef9z4",
+      "zip": "text_mm79w5wm",
+      "email": "email_mm79m5qa",
+      "totalGiven": "numeric_mm79zsgp",
+      "mailchimpCampaigns": "board_relation_mm7eg3jz"
     }
   },
   "mailchimp": {
-    "apiBaseUrl": "https://REPLACE_WITH_DC.api.mailchimp.com/3.0",
-    "audienceId": "REPLACE_WITH_SANDBOX_AUDIENCE_ID",
+    "apiBaseUrl": "https://us9.api.mailchimp.com/3.0",
+    "audienceId": "dfe12eec72",
     "mergeFields": {
-      "memberSince": "MEMBERSINCE",
-      "memberUntil": "MEMBERUNTIL",
+      "memberSince": "MEMBSINCE",
+      "memberUntil": "MEMBUNTIL",
       "membershipTier": "MTIER",
       "membershipStatus": "MSTATUS",
       "address": "ADDRESS",
