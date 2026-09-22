@@ -1,7 +1,11 @@
 # quickbooks-sync
 
-**Status:** Decided — build the Cloudflare Workers sync, rules out the Monday Ultimate-plan
-upgrade and the QuickBooks Complete Marketplace app (both carry an ongoing cost this avoids).
+**Status:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
+Marketplace app (both carry an ongoing cost this avoids). 133 tests passing across 19 files;
+webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. Not
+yet connected to a real QuickBooks company, sandbox or production — that needs an Intuit
+developer account and app credentials, a staff/admin task (see "Sandbox environment" and "Open
+question" below), which hasn't happened yet.
 **Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
@@ -77,15 +81,38 @@ Playground, and a webhook subscription. `npm run deploy:sandbox` fails until
 `env.sandbox.d1_databases[0].database_id` is replaced with the id `wrangler d1 create` prints.
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
-## Open question before starting
+## Open question before starting — resolved 2026-09-21
 
-Confirm with Intuit whether a **single-company internal integration** (as opposed to a public
-app-marketplace listing) needs the same formal app review as a multi-tenant product — the docs
-reviewed for this plan don't make that distinction clear. Resolve before assuming the OAuth setup
-is as lightweight as a typical internal tool.
+**A private, single-company integration does not need the full app-store review, but does need a
+shorter self-assessment questionnaire — confirmed directly from Intuit's own FAQ:**
+
+> I have a private app and don't plan to list it on the app store. Do I still need to submit this
+> questionnaire? Yes. If your app has any connections to production QuickBooks Online companies,
+> you will need to submit this questionnaire even if your app is not listed on the QuickBooks App
+> store. The app assessment and compliance process applies to both private (i.e. unlisted) apps
+> and apps that are, or want to be listed, on the QuickBooks App Store.
+>
+> What is the difference between the current technical, legal, security, and marketing reviews
+> and the new app assessment? Apps that you submit to be published on the QuickBooks app store
+> undergo an in-depth technical, legal, security, and marketing review annually. These in-depth
+> reviews only apply to apps that are listed on the app store. Any app that requests access to
+> production data must undergo the new self-assessment process.
+>
+> — [App assessment and compliance FAQ](https://help.developer.intuit.com/s/article/New-app-assessment-process-FAQ) (Intuit Developer)
+
+So for this Worker: no annual technical/legal/security/marketing review (that's app-store-listing
+only), but the ~40-minute self-assessment questionnaire is still required before production keys
+are issued, whether or not the app is ever listed — confirmed independently in a
+[developer-forum answer](https://help.developer.intuit.com/s/question/0D54R00008fCxd7SAC/production-keys-credentials-for-single-company-use-only-internal-use-only)
+to the exact "single company use only / internal use only" question: *"This applies to all apps,
+whether or not they are listed in the QuickBooks app store."* Whoever sets up the Intuit developer
+account and app credentials (staff prerequisite, above) should budget for that questionnaire —
+it's a one-time step, not a lightweight skip, but also not the multi-week review this question
+was worried it might be.
 
 ## Sources
 
+* [App assessment and compliance FAQ (Intuit Developer)](https://help.developer.intuit.com/s/article/New-app-assessment-process-FAQ)
 * [How Much Does the QuickBooks API Cost? (Truto)](https://truto.one/blog/how-much-does-the-quickbooks-api-cost-2026-pricing-rate-limits/)
 * [QuickBooks Online API Integration Guide (getknit.dev)](https://www.getknit.dev/blog/quickbooks-online-api-integration-guide-in-depth)
 * [QuickBooks Integration (Monday.com native, not used)](https://support.monday.com/hc/en-us/articles/25274611229330-QuickBooks-Integration)
