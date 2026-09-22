@@ -109,6 +109,13 @@ sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_data
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**Workers Builds:** connect a second Worker, `svbc-monday-backup-sandbox`, to this repo with
+root directory `/monday-backup`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:monday-backup` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
 The sandbox token scoped to the CRM Sandbox workspace (design doc §4) is the primary guard
 against a sandbox run touching production boards or docs. `config/backup.sandbox.json` also sets
 `workspaceIds: ["17141226"]`, a config-level belt-and-braces check: `runBackup` skips any board

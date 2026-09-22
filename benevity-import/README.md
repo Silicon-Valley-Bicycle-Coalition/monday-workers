@@ -268,6 +268,13 @@ the gift splitter sent `{label}`/`{date}` objects to the two text columns and Mo
 every create (fixed in the same branch, `giftSplit.ts`).
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**Workers Builds:** connect a second Worker, `svbc-benevity-import-sandbox`, to this repo with
+root directory `/benevity-import`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:benevity-import` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
 ## Related changes elsewhere
 
 * **Donations board:** provision a new `Benevity Disbursement Date` column before this Worker's
