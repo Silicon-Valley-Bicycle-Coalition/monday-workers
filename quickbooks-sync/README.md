@@ -77,6 +77,20 @@ Playground, and a webhook subscription. `npm run deploy:sandbox` fails until
 `env.sandbox.d1_databases[0].database_id` is replaced with the id `wrangler d1 create` prints.
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**Provisioned and verified 2026-09-22:** D1 `svbc-quickbooks-sync-sandbox` (id wired 2026-09-20)
+and both queues (`quickbooks-sync-writes-sandbox`, `-dlq`) exist. Found and closed a gap: the
+`0002_qb_events_pending_monday_item_id` migration (added 2026-09-21, after the D1 id was wired)
+had never been applied to the remote sandbox database — `wrangler d1 migrations list --env
+sandbox --remote` showed it pending, so the deployed Worker's queue consumer would have failed
+writing that column on its first real message. Applied it and confirmed
+`qb_events.pending_monday_item_id` exists via `PRAGMA table_info`. `config/split.test.ts`, the
+full unit suite, `wrangler types && tsc --noEmit`, and `wrangler deploy --dry-run --env sandbox`
+all pass; the sandbox Worker itself auto-deployed via Workers Builds on the 2026-09-21 merge to
+main. **Not yet done:** no sandbox secrets are set (`wrangler secret list --env sandbox` is
+empty) and Monday board ids are still `null` — both wait on the staff prerequisites above (Intuit
+sandbox company/keys, OAuth Playground token pair, a dedicated Monday integration-user token) plus
+the open Intuit app-review question below.
+
 ## Open question before starting
 
 Confirm with Intuit whether a **single-company internal integration** (as opposed to a public
