@@ -151,6 +151,12 @@ consumer idles), volunteer history, event registrations, pledges, and the
 communication-preference checkboxes — each stays hidden by its own config gate. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**Sandbox provisioned and verified 2026-09-22**: `svbc-member-portal-sandbox` is deployed and
+live at `member.sandbox.bikesiliconvalley.org` in the SVBC Cloudflare account (D1 migrated, all
+four queues + DLQs created, both secrets set, `sandbox@bikesiliconvalley.org` a verified Email
+Routing destination). A live login-link request for a real sandbox People record produced a
+`sandboxOutbound` log line with the correct `[sandbox → …]` subject and no delivery errors.
+
 ## Data model dependencies
 
 * **Membership Status + Tier** on the Donors board (or a linked Membership board, once designed) —
