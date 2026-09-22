@@ -23,7 +23,11 @@ export class HttpMondayClient implements MondayClient {
   constructor(
     private apiUrl: string,
     private apiToken: string,
-    private fetchFn: typeof fetch = fetch,
+    // Bound to globalThis: called as `this.fetchFn(...)` below, and an unbound native
+    // `fetch` throws "Illegal invocation" when invoked with `this` set to something other
+    // than the global scope. Invisible in unit tests (they inject a plain mock function,
+    // which doesn't care about `this`) — only surfaced provisioning the sandbox 2026-09-22.
+    private fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {}
 
   private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
@@ -120,7 +124,7 @@ export class HttpMondayClient implements MondayClient {
   // specifically with board_relation columns, not plain text ones, so this is safe.
   async findItemIdByEmail(boardId: number, emailColumnId: string, email: string): Promise<string | null> {
     const data = await this.graphql<{ items_page_by_column_values: { items: { id: string }[] } }>(
-      `query ($boardId: ID!, $columnId: String!, $email: [String!]) {
+      `query ($boardId: ID!, $columnId: String!, $email: [String]!) {
         items_page_by_column_values(board_id: $boardId, columns: [{ column_id: $columnId, column_values: $email }], limit: 1) {
           items { id }
         }

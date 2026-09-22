@@ -32,7 +32,11 @@ export class HttpMailchimpClient implements MailchimpClient {
     private apiBaseUrl: string,
     private apiKey: string,
     private audienceId: string,
-    private fetchFn: typeof fetch = fetch,
+    // Bound to globalThis: called as `this.fetchFn(...)` below, and an unbound native
+    // `fetch` throws "Illegal invocation" when invoked with `this` set to something other
+    // than the global scope. Invisible in unit tests (they inject a plain mock function,
+    // which doesn't care about `this`) — only surfaced provisioning the sandbox 2026-09-22.
+    private fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {}
 
   // Mailchimp Marketing API auth: HTTP Basic with any non-empty username and the API
