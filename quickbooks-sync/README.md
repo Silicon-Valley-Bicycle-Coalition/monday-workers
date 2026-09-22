@@ -90,11 +90,14 @@ main. **`MONDAY_API_TOKEN` set 2026-09-22** — reused the existing shared `Sand
 user (`dwk+sandbox-integration@bikesiliconvalley.org`, the single sandbox-wide integration user
 the [sandbox design](../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4
 calls for; verified via a `me` query before use, not minted fresh so the other sandbox Workers
-already using it keep working). **Not yet done:** `QB_CLIENT_ID`, `QB_CLIENT_SECRET`,
-`QB_WEBHOOK_VERIFIER_TOKEN`, and `MONDAY_WEBHOOK_SECRET` remain unset, and Monday board ids are
-still `null` — these wait on the staff prerequisites above (an Intuit sandbox company and
-development keys, a token pair seeded via the OAuth Playground) plus the open Intuit app-review
-question below.
+already using it keep working). **`MONDAY_WEBHOOK_SECRET` generated and set 2026-09-22** — a
+fresh random value (this one doesn't come from an external account, so no reuse concern); a copy
+is saved in this Worker's gitignored `.dev.vars` for when the Monday webhook subscription is
+registered as `.../webhooks/monday?secret=<value>`. **Not yet done:** `QB_CLIENT_ID`,
+`QB_CLIENT_SECRET`, and `QB_WEBHOOK_VERIFIER_TOKEN` remain unset, and Monday board ids are still
+`null` — these wait on the staff prerequisites above (an Intuit sandbox company and development
+keys, a token pair seeded via the OAuth Playground) plus the open Intuit app-review question
+below.
 
 ## Open question before starting
 
