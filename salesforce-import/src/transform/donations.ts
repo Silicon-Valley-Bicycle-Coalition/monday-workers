@@ -8,9 +8,52 @@ import { attributionColumns, MATCHING_GIFT_TYPE } from './attribution.js';
 // filters on Status === 'Received' exactly, so a shared label would silently pull these
 // back into ongoing Lifetime Giving totals every time it recomputes, undoing the fix in
 // transform/rollups.ts. See docs/17 for the full picklist audit.
+// Withdrawn is Failed, not Pending: the donor backed out, so the gift isn't coming.
 const STATUS: Record<string, string> = {
-  Posted: 'Received', 'Closed Won': 'Received (Historical)', 'Closed Lost': 'Failed',
+  Posted: 'Received', 'Closed Won': 'Received (Historical)', 'Closed Lost': 'Failed', Withdrawn: 'Failed',
 };
+// Stages that genuinely mean "not received yet" (docs/17). Any other stage still lands as
+// Pending so the gift isn't lost, but transform counts it (unknownStages) instead of hiding it.
+const PENDING_STAGES = new Set(['Prospecting', 'Pledged', 'Invoiced', 'Not Posted', 'Engaged with Organization']);
+
+export const donationStatus = (stage: unknown): string =>
+  typeof stage === 'string' && Object.hasOwn(STATUS, stage) ? STATUS[stage]! : 'Pending';
+
+// Stage name → gift count for every stage donationStatus doesn't recognise.
+export function unknownStages(opportunities: readonly Record<string, unknown>[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const o of opportunities) {
+    const stage = o['StageName'] as string | null;
+    if (stage && (Object.hasOwn(STATUS, stage) || PENDING_STAGES.has(stage))) continue;
+    const key = stage ?? '(blank)';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// Soft credits (issue #23, decided 2026-09-23): every OpportunityContactRole naming someone other
+// than the gift's Primary Contact — Fundraiser, Influencer, Recruiter, Team Captain, a second
+// Donor… NPSP also gives the Primary Contact a role of its own (Donor, or Soft Credit on ~5k
+// gifts), which Donor/Acting for already carry, and auto-creates a Household Member role for each
+// of the donor's housemates, which is derivable from the household and skipped. ~2,750 links on
+// ~2,200 gifts as of 2026-09-23. Targets that aren't migrated People are skipped at load.
+export function softCreditsByGift(
+  roles: readonly Record<string, unknown>[], opportunities: readonly Record<string, unknown>[],
+  placeholderDonorSfIds: ReadonlySet<string> = new Set(),
+): Map<string, string[]> {
+  const primaryOf = new Map(opportunities.map((o) => [o['Id'] as string,
+    (o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? null) as string | null]));
+  const credits = new Map<string, Set<string>>();
+  for (const r of roles) {
+    const giftId = r['OpportunityId'] as string | null;
+    const contactId = r['ContactId'] as string | null;
+    if (!giftId || !contactId || !primaryOf.has(giftId)) continue;
+    if (r['Role'] === 'Household Member' || contactId === primaryOf.get(giftId)) continue;
+    if (placeholderDonorSfIds.has(contactId)) continue;
+    (credits.get(giftId) ?? credits.set(giftId, new Set()).get(giftId)!).add(contactId);
+  }
+  return new Map([...credits].map(([id, set]) => [id, [...set].sort()]));
+}
 
 // Donor precedence, then re-pointed through `donorAlias` when the fallback AccountId is a
 // person-named Account folded into a Person (people.ts personNamedAccountIds) — otherwise
@@ -35,6 +78,7 @@ export interface DonorResolution {
 
 export interface OpportunityDeps extends DonorResolution {
   termCols: Map<string, Record<string, unknown>>;
+  softCredits?: readonly string[];
 }
 
 export const giftType = (o: Record<string, unknown>): string =>
@@ -72,6 +116,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
   }
   if (o['funraise__Subscription__c']) links.push({ column: 'Recurring Gift', targetSfIds: [o['funraise__Subscription__c'] as string] });
   if (o['CampaignId']) links.push({ column: 'Campaign', targetSfIds: [o['CampaignId'] as string] });
+  if (deps.softCredits?.length) links.push({ column: 'Soft Credit', targetSfIds: [...deps.softCredits] });
   return {
     board: 'donations',
     sfId: o['Id'] as string,
@@ -81,7 +126,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Date': dateCol(o['CloseDate'] as string),
       'Fiscal Year Ending': fiscalYear(o['CloseDate'] as string | null),
       'Salesforce Owner': ownerAttribution(o['Owner']),
-      'Status': { label: STATUS[o['StageName'] as string] ?? 'Pending' },
+      'Status': { label: donationStatus(o['StageName']) },
       'Gift Type': type,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId ? null : { checked: 'true' },

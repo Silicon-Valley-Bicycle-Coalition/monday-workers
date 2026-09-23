@@ -14,7 +14,7 @@ import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './m
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
   type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
-import { opportunityToPayload, cnpOverlapCheck, cnpToPayload } from './donations.js';
+import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
   eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
@@ -47,10 +47,10 @@ export async function runTransform(args: string[]): Promise<number> {
   if (!consentExists) console.warn('transform: consent.ndjson not found — proceeding with ' +
     '--no-consent (empty consent map, every contact will show "Not in Mailchimp")');
 
-  const [contacts, accounts, opportunities, memberships, affiliations, subscriptions, pledges,
+  const [contacts, accounts, opportunities, contactRoles, memberships, affiliations, subscriptions, pledges,
     events, registrations, ebEvents, ebAttendees, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
-    await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('memberships'),
-      load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
+    await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('contact_roles'),
+      load('memberships'), load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
       load('registrations'), load('eb4sf_events'), load('eb4sf_attendees'), load('campaigns'),
       load('clickpledge_transactions'), load('volunteer_hours'), load('tasks_recent'),
       consentExists ? load('consent') : Promise.resolve([])]);
@@ -336,9 +336,10 @@ export async function runTransform(args: string[]): Promise<number> {
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);
   }
+  const softCredits = softCreditsByGift(contactRoles, opportunities, placeholderDonorSfIds);
   for (const o of opportunities) {
     payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
-      actingFor: attributedOpps.get(o['Id'] as string) ?? null }));
+      actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string) }));
   }
   for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 
@@ -396,6 +397,15 @@ export async function runTransform(args: string[]): Promise<number> {
   if (personNamed.size > 0) {
     warnings.push(`people: ${personNamed.size} person-named account${personNamed.size === 1 ? '' : 's'} ` +
       `(blank NPSP type, sole Contact shares the name) folded into their Contact instead of Organizations`);
+  }
+  const softCreditTargets = [...softCredits.values()].flat();
+  const softCreditUnmigrated = softCreditTargets.filter((id) => !boardOf.has(id)).length;
+  warnings.push(`soft credits: ${softCreditTargets.length} on ${softCredits.size} gifts; ` +
+    `${softCreditUnmigrated} name a contact who isn't a migrated Person (skipped at load)`);
+  const unknown = unknownStages(opportunities);
+  if (unknown.size > 0) {
+    warnings.push(`donations: ${[...unknown.values()].reduce((a, b) => a + b, 0)} gifts have an unrecognised ` +
+      `stage, loaded as Pending — ${[...unknown].map(([stage, n]) => `${stage} (${n})`).join(', ')}`);
   }
   if (rollups.overlap > 0) {
     warnings.push(`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`);

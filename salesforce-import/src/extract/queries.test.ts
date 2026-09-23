@@ -31,10 +31,16 @@ describe('buildExtracts', () => {
       expect(attendees.soql, f).toContain(f);
     }
   });
-  it('paginates every object near the 50k CLI ceiling (opportunities ~48k, payments/tasks ~42k)', () => {
-    for (const name of ['contacts', 'accounts', 'opportunities', 'payments', 'tasks_all']) {
+  it('paginates every object near the 50k CLI ceiling (contact roles ~54k, opportunities ~48k, payments/tasks ~42k)', () => {
+    for (const name of ['contacts', 'accounts', 'opportunities', 'contact_roles', 'payments', 'tasks_all']) {
       expect(byName.get(name)!.paginate, name).toBe(true);
     }
+  });
+  it('keeps payments in the backup archive only and extracts contact roles for soft credits (issue #23)', () => {
+    expect(byName.get('payments')!.backupOnly).toBe(true);
+    const roles = byName.get('contact_roles')!;
+    expect(roles.backupOnly).toBeFalsy();
+    for (const f of ['OpportunityId', 'ContactId', 'Role']) expect(roles.soql, f).toContain(f);
   });
   it('never paginates a query runSoqlPaginated would reject (it appends its own WHERE/ORDER BY/LIMIT)', () => {
     for (const ex of byName.values()) {
