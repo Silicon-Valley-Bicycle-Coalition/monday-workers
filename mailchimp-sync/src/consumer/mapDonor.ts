@@ -49,7 +49,7 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
   return out;
 }
 
-// Every Mailchimp tag this worker owns — the only tags upsertMember is allowed to
+// Every Mailchimp tag this worker owns — the only tags updateMember is allowed to
 // deactivate when buildTags no longer produces them. Must stay a superset of every
 // possible buildTags output; anything outside this set is left alone in Mailchimp.
 export function managedTags(config: Config): string[] {

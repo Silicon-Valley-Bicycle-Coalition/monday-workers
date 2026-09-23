@@ -9,14 +9,18 @@ export interface MailchimpMemberInterests {
   interests: Record<string, boolean>;
 }
 
+export type UpdateMemberResult = 'updated' | 'not-in-audience';
+
 export interface MailchimpClient {
   /**
-   * Upsert the member, then sync its worker-managed tags. `tags` is the desired set;
+   * Update an existing member's merge fields, then sync its worker-managed tags. Never
+   * creates a member: Mailchimp is the consent system of record, so someone absent from
+   * the audience stays absent and this returns 'not-in-audience'. `tags` is the desired set;
    * `managedTags` is every tag this worker owns — managed tags not in `tags` are
    * deactivated, and tags outside `managedTags` (staff-applied, other tools') are
    * never touched.
    */
-  upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<void>;
+  updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
   listInterests(): Promise<MailchimpInterest[]>;
 }
@@ -45,39 +49,39 @@ export class HttpMailchimpClient implements MailchimpClient {
     return `Basic ${btoa(`anystring:${this.apiKey}`)}`;
   }
 
-  async upsertMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<void> {
+  async updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult> {
     if (!sinkLogged) {
       sinkLogged = true;
       // Design doc §6: one line per isolate naming the sink this deployment writes to.
       console.log(JSON.stringify({ sandboxOutbound: 'mailchimp', audienceId: this.audienceId, apiBaseUrl: this.apiBaseUrl }));
     }
     const hash = subscriberHash(email);
+    // PATCH, not PUT: a PUT creates the member when missing (with `status_if_new`), which
+    // subscribed every Donor with an email on their first column change — including ones
+    // who never opted in (issue #28). PATCH 404s instead, and the status of an existing
+    // member (subscribed, unsubscribed, cleaned…) is never sent, so never changed.
     const response = await this.fetchFn(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}`,
       {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
-        body: JSON.stringify({
-          email_address: email,
-          status_if_new: 'subscribed',
-          merge_fields: mergeFields,
-          tags,
-        }),
+        body: JSON.stringify({ merge_fields: mergeFields }),
       },
     );
+    if (response.status === 404) return 'not-in-audience';
     if (!response.ok) {
       const detail = await response.text();
       if (response.status === 429 || response.status >= 500) {
-        throw new MailchimpTransientError(`mailchimp upsertMember: HTTP ${response.status}: ${detail}`);
+        throw new MailchimpTransientError(`mailchimp updateMember: HTTP ${response.status}: ${detail}`);
       }
-      throw new MailchimpPermanentError(`mailchimp upsertMember: HTTP ${response.status}: ${detail}`);
+      throw new MailchimpPermanentError(`mailchimp updateMember: HTTP ${response.status}: ${detail}`);
     }
     await this.syncTags(hash, tags, managedTags);
+    return 'updated';
   }
 
-  // Mailchimp applies the PUT body's `tags` only when the member is first created — on
-  // updates the field is silently ignored — so without this explicit sync a lapsed
-  // member would keep e.g. svbc-active-member forever. Desired tags go active; managed
+  // Member PUT/PATCH bodies can't change tags on an existing member, so without this
+  // explicit sync a lapsed member would keep e.g. svbc-active-member forever. Desired tags go active; managed
   // tags no longer desired go inactive; anything outside the managed set is untouched.
   private async syncTags(hash: string, desired: string[], managed: string[]): Promise<void> {
     const tags = [

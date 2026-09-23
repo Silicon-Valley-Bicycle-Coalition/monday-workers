@@ -12,16 +12,16 @@ function fakeFetch(response: Partial<Response> & { json?: () => Promise<unknown>
 
 const MANAGED_TAGS = ['active-member', 'lapsed-member', 'lifetime-member', 'has-donated'];
 
-describe('HttpMailchimpClient.upsertMember', () => {
-  // Must run before any other test in this file calls upsertMember: the log guard
+describe('HttpMailchimpClient.updateMember', () => {
+  // Must run before any other test in this file calls updateMember: the log guard
   // (`sinkLogged`) is module-scope, so it is only still `false` on the first call.
   it('logs the sandbox outbound sink once per isolate, not on the second call', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const fetchFn = fakeFetch({ ok: true });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
 
-    await client.upsertMember('a@b.com', {}, ['active-member'], MANAGED_TAGS);
-    await client.upsertMember('a@b.com', {}, ['active-member'], MANAGED_TAGS);
+    await client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS);
+    await client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS);
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(JSON.parse(logSpy.mock.calls[0]![0] as string)).toEqual({
@@ -33,34 +33,43 @@ describe('HttpMailchimpClient.upsertMember', () => {
     logSpy.mockRestore();
   });
 
-  it('PUTs the member keyed by the MD5 hash of the lowercased email', async () => {
+  it('PATCHes only the merge fields of the member keyed by the MD5 hash of the lowercased email', async () => {
+    // PATCH, never PUT: a PUT creates missing members, and this Worker must never add
+    // anyone to the audience — Mailchimp is the consent system of record (issue #28).
     const fetchFn = fakeFetch({ ok: true });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
 
-    await client.upsertMember('Donor@Example.com', { MTIER: 'Standard' }, ['active-member'], MANAGED_TAGS);
+    const result = await client.updateMember('Donor@Example.com', { MTIER: 'Standard' }, ['active-member'], MANAGED_TAGS);
 
+    expect(result).toBe('updated');
     expect(fetchFn).toHaveBeenCalledWith(
       // md5('donor@example.com') === 'b5abe4cfed3adc382b3292a791f6faa3'
       'https://us1.api.mailchimp.com/3.0/lists/aud1/members/b5abe4cfed3adc382b3292a791f6faa3',
       expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({
-          email_address: 'Donor@Example.com',
-          status_if_new: 'subscribed',
-          merge_fields: { MTIER: 'Standard' },
-          tags: ['active-member'],
-        }),
+        method: 'PATCH',
+        body: JSON.stringify({ merge_fields: { MTIER: 'Standard' } }),
       }),
     );
   });
 
-  it('POSTs the desired tags as active and the other managed tags as inactive after the PUT', async () => {
-    // The PUT body's `tags` only applies on member creation — on updates Mailchimp
-    // silently ignores it, so tags must be synced via the tags endpoint every time.
+  it('returns not-in-audience on a 404 and never creates the member or touches tags', async () => {
+    const fetchFn = fakeFetch({ ok: false, status: 404, text: async () => 'Resource Not Found' });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    const result = await client.updateMember('nobody@example.com', { MTIER: 'Standard' }, ['active-member'], MANAGED_TAGS);
+
+    expect(result).toBe('not-in-audience');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('POSTs the desired tags as active and the other managed tags as inactive after the PATCH', async () => {
+    // Member PATCH bodies can't change an existing member's tags, so they must be
+    // synced via the tags endpoint every time.
     const fetchFn = fakeFetch({ ok: true });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
 
-    await client.upsertMember('Donor@Example.com', {}, ['lapsed-member', 'has-donated'], MANAGED_TAGS);
+    await client.updateMember('Donor@Example.com', {}, ['lapsed-member', 'has-donated'], MANAGED_TAGS);
 
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(fetchFn).toHaveBeenLastCalledWith(
@@ -79,10 +88,10 @@ describe('HttpMailchimpClient.upsertMember', () => {
     );
   });
 
-  it('does not POST tags when the PUT fails', async () => {
+  it('does not POST tags when the PATCH fails', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 400, text: async () => 'invalid email' });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
-    await expect(client.upsertMember('a@b.com', {}, ['active-member'], MANAGED_TAGS)).rejects.toThrow(MailchimpPermanentError);
+    await expect(client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS)).rejects.toThrow(MailchimpPermanentError);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -91,25 +100,25 @@ describe('HttpMailchimpClient.upsertMember', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response)
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}), text: async () => 'server error' } as Response);
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
-    await expect(client.upsertMember('a@b.com', {}, ['active-member'], MANAGED_TAGS)).rejects.toThrow(MailchimpTransientError);
+    await expect(client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS)).rejects.toThrow(MailchimpTransientError);
   });
 
   it('throws MailchimpTransientError on a 429', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 429, text: async () => 'rate limited' });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
-    await expect(client.upsertMember('a@b.com', {}, [], [])).rejects.toThrow(MailchimpTransientError);
+    await expect(client.updateMember('a@b.com', {}, [], [])).rejects.toThrow(MailchimpTransientError);
   });
 
   it('throws MailchimpTransientError on a 500', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 500, text: async () => 'server error' });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
-    await expect(client.upsertMember('a@b.com', {}, [], [])).rejects.toThrow(MailchimpTransientError);
+    await expect(client.updateMember('a@b.com', {}, [], [])).rejects.toThrow(MailchimpTransientError);
   });
 
   it('throws MailchimpPermanentError on a 400', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 400, text: async () => 'invalid email' });
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
-    await expect(client.upsertMember('not-an-email', {}, [], [])).rejects.toThrow(MailchimpPermanentError);
+    await expect(client.updateMember('not-an-email', {}, [], [])).rejects.toThrow(MailchimpPermanentError);
   });
 });
 
