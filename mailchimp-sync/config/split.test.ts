@@ -43,7 +43,7 @@ describe('config split: the Mailchimp sink', () => {
 
 describe('config split: Monday ids', () => {
   it('sandbox board ids are the CRM Sandbox boards and production is null or different', () => {
-    expect(sandbox.monday.donorsBoardId).toBe(18428131737);
+    expect(sandbox.monday.donorsBoardId).toBe(18431577220);
     expect(typeof sandbox.monday.campaignsBoardId).toBe('number');
     expect(sandbox.monday.campaignsBoardId).toBeGreaterThan(0);
     expect(production.monday.donorsBoardId === null || production.monday.donorsBoardId !== sandbox.monday.donorsBoardId).toBe(true);
