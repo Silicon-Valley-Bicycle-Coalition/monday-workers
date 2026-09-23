@@ -687,6 +687,13 @@ deployment onto this environment is its §9, run once from the runbook in the st
 `wrangler.jsonc` is replaced with the id `wrangler d1 create` prints — see the step 2 plan's
 Task 9.
 
+**Workers Builds:** connect a second Worker, `svbc-donation-rollups-sandbox`, to this repo with
+root directory `/donation-rollups`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:donation-rollups` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
 ## Not yet done
 
 * ~~Webhook cutover to the v2 board~~ **Done 2026-08-31**: secret rotated, Worker redeployed,

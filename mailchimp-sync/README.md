@@ -117,6 +117,13 @@ sandbox Worker. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**Workers Builds:** connect a second Worker, `svbc-mailchimp-sync-sandbox`, to this repo with
+root directory `/mailchimp-sync`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:mailchimp-sync` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
 ## Local development
 
 - `npm install` — install dependencies
