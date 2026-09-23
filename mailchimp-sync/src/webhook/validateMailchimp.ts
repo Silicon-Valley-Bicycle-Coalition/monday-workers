@@ -6,12 +6,16 @@ export interface MailchimpContactEvent {
 // fields like type=unsubscribe&data[email]=... — see
 // https://mailchimp.com/developer/marketing/guides/sync-audience-data-webhooks/.
 export function validateMailchimpWebhookBody(formData: URLSearchParams): MailchimpContactEvent {
-  if (formData.get('type') === null) {
+  const type = formData.get('type');
+  if (type === null) {
     throw new Error('webhook body has no "type" field');
   }
-  const email = formData.get('data[email]');
+  // An address change (upemail) carries data[old_email]/data[new_email] instead of
+  // data[email]; the new address is the one the member now lives under in Mailchimp.
+  const field = type === 'upemail' ? 'data[new_email]' : 'data[email]';
+  const email = formData.get(field);
   if (email === null || email === '') {
-    throw new Error('webhook body has no "data[email]" field');
+    throw new Error(`webhook body has no "${field}" field`);
   }
   // Normalize the same way mailchimp/client.ts's subscriberHash does before hashing, so
   // every downstream consumer (the D1 pending_inbound_syncs key, the Monday email-column

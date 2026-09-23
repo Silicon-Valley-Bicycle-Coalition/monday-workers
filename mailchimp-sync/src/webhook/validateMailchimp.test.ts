@@ -7,6 +7,13 @@ describe('validateMailchimpWebhookBody', () => {
     expect(validateMailchimpWebhookBody(params)).toEqual({ email: 'a@b.com' });
   });
 
+  it('uses data[new_email] for an upemail (address change) event, which has no data[email]', () => {
+    const params = new URLSearchParams({
+      type: 'upemail', 'data[old_email]': 'old@b.com', 'data[new_email]': 'New@B.com', 'data[list_id]': 'aud1',
+    });
+    expect(validateMailchimpWebhookBody(params)).toEqual({ email: 'new@b.com' });
+  });
+
   it('rejects a body with no type field', () => {
     const params = new URLSearchParams({ 'data[email]': 'a@b.com' });
     expect(() => validateMailchimpWebhookBody(params)).toThrow('webhook body has no "type" field');

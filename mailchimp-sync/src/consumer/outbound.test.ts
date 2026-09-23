@@ -33,7 +33,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
 }
 
 describe('processOutboundBatch', () => {
-  it('upserts the donor to Mailchimp and acks on success', async () => {
+  it('updates the donor in Mailchimp and acks on success', async () => {
     const message = fakeMessage('1');
     const mondayClient: MondayClient = {
       getDonorById: vi.fn().mockResolvedValue(donor()),
@@ -41,14 +41,14 @@ describe('processOutboundBatch', () => {
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
-      upsertMember: vi.fn().mockResolvedValue(undefined),
+      updateMember: vi.fn().mockResolvedValue('updated'),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG });
 
-    expect(mailchimpClient.upsertMember).toHaveBeenCalledWith(
+    expect(mailchimpClient.updateMember).toHaveBeenCalledWith(
       'a@b.com',
       expect.any(Object),
       ['active-member'],
@@ -59,6 +59,28 @@ describe('processOutboundBatch', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
+  it('records skipped (not written) and acks when the donor is not in the Mailchimp audience', async () => {
+    // No consent recorded in Mailchimp → the donor is never added (issue #28). A column
+    // change on such a donor (e.g. donation-rollups bumping Total Given) is a no-op.
+    const message = fakeMessage('4');
+    const mondayClient: MondayClient = {
+      getDonorById: vi.fn().mockResolvedValue(donor({ email: 'noconsent@example.com' })),
+      createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const mailchimpClient: MailchimpClient = {
+      updateMember: vi.fn().mockResolvedValue('not-in-audience'),
+      getMemberInterests: vi.fn(), listInterests: vi.fn(),
+    };
+    const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+
+    await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG });
+
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('4', 'skipped', expect.stringContaining('not in the Mailchimp audience'));
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('4', 'written', expect.anything(), expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('skips and acks (does not call Mailchimp) when the donor has no email', async () => {
     const message = fakeMessage('2');
     const mondayClient: MondayClient = {
@@ -66,12 +88,12 @@ describe('processOutboundBatch', () => {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
-    const mailchimpClient: MailchimpClient = { upsertMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
+    const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG });
 
-    expect(mailchimpClient.upsertMember).not.toHaveBeenCalled();
+    expect(mailchimpClient.updateMember).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('2', 'written', undefined, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
   });
@@ -83,7 +105,7 @@ describe('processOutboundBatch', () => {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
-    const mailchimpClient: MailchimpClient = { upsertMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
+    const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG });
@@ -99,7 +121,7 @@ describe('processOutboundBatch', () => {
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
-      upsertMember: vi.fn().mockRejectedValue(new Error('rate limited')),
+      updateMember: vi.fn().mockRejectedValue(new Error('rate limited')),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
@@ -119,7 +141,7 @@ describe('processOutboundBatch', () => {
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const mailchimpClient: MailchimpClient = {
-      upsertMember: vi.fn().mockRejectedValue(new MailchimpPermanentError('invalid email')),
+      updateMember: vi.fn().mockRejectedValue(new MailchimpPermanentError('invalid email')),
       getMemberInterests: vi.fn(), listInterests: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };

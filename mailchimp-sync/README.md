@@ -37,8 +37,13 @@ directions, so that:
 Three independent flows — see the design doc for full sequence diagrams:
 
 1. **Outbound:** Donor column change on Monday → webhook → D1 idempotency → Cloudflare Queue →
-   Mailchimp contact upsert (merge fields: Member Since/Until, Tier, Status, Address, Total
-   Given; tags: active/lapsed/lifetime-member, has-donated).
+   Mailchimp contact update (merge fields: Member Since/Until, Tier, Status, Address, Total
+   Given; tags: active/lapsed/lifetime-member, has-donated). **Update only — never creates a
+   contact.** Mailchimp is the consent system of record, so a Donor whose address isn't already
+   in the audience (they never opted in) is recorded as `skipped` and left out; the write is a
+   `PATCH`, which 404s rather than creating, and never sends a `status`, so an unsubscribed or
+   cleaned contact stays that way. People join the audience only through Mailchimp's own
+   signup forms or the cutover consent import.
 2. **Campaign catalog reconciliation:** daily cron diffs Mailchimp's Interest Categories against a
    D1-tracked set of Monday items on the Campaigns board — creates, renames, or archives as
    needed. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
@@ -69,28 +74,18 @@ Three independent flows — see the design doc for full sequence diagrams:
   webhook "API" event source **unchecked** — otherwise this Worker's own writes back to Mailchimp
   (from the outbound side) can themselves trigger inbound webhook events, risking a feedback loop
   with the Donors-board webhook below.
-* ~~Not yet verified against a live Mailchimp account — does a Mailchimp list-member `PUT` replace
-  or merge the `tags` array?~~ **Resolved in code, not just in theory — this caveat was stale.**
-  `upsertMember` in `src/mailchimp/client.ts` doesn't rely on the PUT body's `tags` at all for
-  updates: its own comment states why (`PUT`'s `tags` field only applies when the member is first
-  created; on an update Mailchimp silently ignores it), and every call follows the `PUT` with a
-  `syncTags` call against the dedicated `POST /lists/{id}/members/{hash}/tags` endpoint — explicit
-  `active`/`inactive` status per tag, touching only tags this Worker manages (`managedTags`) so
-  staff- or other-tool-applied tags are never disturbed. Unit-tested (`client.test.ts`: "POSTs the
-  desired tags as active and the other managed tags as inactive after the PUT"). Consistent with
-  Mailchimp's own API reference, checked 2026-09-21: the `PUT /lists/{list_id}/members/
-  {subscriber_hash}` request schema I could find documented merge_fields/interests/status and
-  similar, but no writable `tags` field — it showed up only in the *response* schema, read-only —
-  which doesn't prove the create-vs-update split the code comment describes, but doesn't
-  contradict it either, and finding no writable `tags` param at all is itself reason enough not to
-  depend on the PUT for tag changes regardless.
+* Tags are never written through the member body (Mailchimp's member `PUT`/`PATCH` schema has
+  no writable `tags` field). Every `updateMember` follows its `PATCH` with a `syncTags` call to
+  `POST /lists/{id}/members/{hash}/tags` — explicit `active`/`inactive` per tag, touching only
+  the tags this Worker manages (`managedTags`), so staff- or other-tool-applied tags are never
+  disturbed.
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
   (addr1/city/state/zip), Email — written by `salesforce-import`.
 * The Total Given / Last Gift rollup columns `donation-rollups` maintains.
 * **Subscription state is per email address, not per Donor** — and this Worker keys both
-  directions on the Donors board's single `email` column: outbound upserts that one address,
+  directions on the Donors board's single `email` column: outbound updates that one address,
   and inbound resolves a Mailchimp contact back to a Donor by matching that column only. A
   Donor's **Secondary Email** (its own column since `salesforce-import`, with its own
   **Secondary Email Consent** status there) is neither pushed to Mailchimp nor matched on the
@@ -98,6 +93,10 @@ Three independent flows — see the design doc for full sequence diagrams:
   second column — a second email column id in config, `findItemIdByEmail` across both, and
   either a second connect column or a union of both addresses' interests — is a follow-up,
   not built.
+* **Address changes made in Mailchimp** (`upemail` webhooks) are accepted and keyed on the new
+  address, but this Worker doesn't rewrite the Donor's Email column — so until staff update it
+  on Monday, the event records as `skipped` and later outbound updates for that Donor also skip
+  (the old address is no longer in the audience).
 * A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
   this Worker reconciles its *items* daily but does not create the board itself), plus a new
   connect-column on the Donors board pointed at it.
@@ -114,7 +113,7 @@ Three independent flows — see the design doc for full sequence diagrams:
 against the CRM Sandbox People board and a **sandbox Mailchimp audience**, from
 `config/sandbox.json` (chosen at request time by the `ENVIRONMENT` var — `src/environment.ts`).
 Its own D1, queues (`mailchimp-sync-outbound-sandbox`, `mailchimp-sync-inbound-sandbox`, each
-with a `-dlq`), and secrets. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. The rule for this Worker: the sandbox may upsert contacts and
+with a `-dlq`), and secrets. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. The rule for this Worker: the sandbox may update contacts and
 reconcile interests only in the sandbox audience — `config/split.test.ts` fails if the two
 configs ever share `mailchimp.audienceId`, and the Mailchimp API key cannot enforce it (keys
 are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board gained a `State`

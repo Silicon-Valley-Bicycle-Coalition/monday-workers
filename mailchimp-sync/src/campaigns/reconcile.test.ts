@@ -11,8 +11,9 @@ const CONFIG: Config = {
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active',
 };
 
-function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = []): CampaignItemsStore {
+function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = [], claimWins = true): CampaignItemsStore {
   return {
+    claim: vi.fn().mockResolvedValue(claimWins),
     listActive: vi.fn().mockResolvedValue(rows.filter((r) => r.archivedAt === null)),
     upsert: vi.fn().mockResolvedValue(undefined),
     markArchived: vi.fn().mockResolvedValue(undefined),
@@ -24,7 +25,7 @@ describe('reconcileCampaigns', () => {
   it('creates a Monday item for a new Mailchimp interest', async () => {
     const mailchimpClient: MailchimpClient = {
       listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
-      upsertMember: vi.fn(), getMemberInterests: vi.fn(),
+      updateMember: vi.fn(), getMemberInterests: vi.fn(),
     };
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn().mockResolvedValue('item1'),
@@ -40,10 +41,30 @@ describe('reconcileCampaigns', () => {
     expect(result).toEqual({ created: 1, renamed: 0, archived: 0 });
   });
 
+  it('does not create an item when another concurrent run already claimed the interest', async () => {
+    const mailchimpClient: MailchimpClient = {
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
+      updateMember: vi.fn(), getMemberInterests: vi.fn(),
+    };
+    const mondayClient: MondayClient = {
+      createCampaignItem: vi.fn().mockResolvedValue('item1'),
+      renameItem: vi.fn(), archiveItem: vi.fn(), getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const campaignItemsStore = fakeCampaignItemsStore([], false);
+
+    const result = await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config: CONFIG });
+
+    expect(campaignItemsStore.claim).toHaveBeenCalledWith('int1', 'Newsletter', expect.any(String), expect.any(String));
+    expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
+    expect(campaignItemsStore.upsert).not.toHaveBeenCalled();
+    expect(result).toEqual({ created: 0, renamed: 0, archived: 0 });
+  });
+
   it('renames the Monday item when a tracked interest is renamed in Mailchimp', async () => {
     const mailchimpClient: MailchimpClient = {
       listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'New Name' }]),
-      upsertMember: vi.fn(), getMemberInterests: vi.fn(),
+      updateMember: vi.fn(), getMemberInterests: vi.fn(),
     };
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn().mockResolvedValue(undefined),
@@ -60,7 +81,7 @@ describe('reconcileCampaigns', () => {
   });
 
   it('archives a tracked Monday item whose interest no longer exists in Mailchimp', async () => {
-    const mailchimpClient: MailchimpClient = { listInterests: vi.fn().mockResolvedValue([]), upsertMember: vi.fn(), getMemberInterests: vi.fn() };
+    const mailchimpClient: MailchimpClient = { listInterests: vi.fn().mockResolvedValue([]), updateMember: vi.fn(), getMemberInterests: vi.fn() };
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn().mockResolvedValue(undefined),
       getDonorById: vi.fn(),
@@ -78,7 +99,7 @@ describe('reconcileCampaigns', () => {
   it('leaves an unchanged, still-present interest alone', async () => {
     const mailchimpClient: MailchimpClient = {
       listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Same' }]),
-      upsertMember: vi.fn(), getMemberInterests: vi.fn(),
+      updateMember: vi.fn(), getMemberInterests: vi.fn(),
     };
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
@@ -106,7 +127,7 @@ describe('reconcileCampaigns', () => {
 
     const mailchimpClient: MailchimpClient = {
       listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
-      upsertMember: vi.fn(), getMemberInterests: vi.fn(),
+      updateMember: vi.fn(), getMemberInterests: vi.fn(),
     };
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn().mockRejectedValueOnce(new Error('transient')).mockResolvedValue('item1'),
@@ -128,7 +149,7 @@ describe('reconcileCampaigns', () => {
 
   it('throws if campaignsBoardId is not configured', async () => {
     const config: Config = { ...CONFIG, monday: { ...CONFIG.monday, campaignsBoardId: null } };
-    const mailchimpClient: MailchimpClient = { listInterests: vi.fn(), upsertMember: vi.fn(), getMemberInterests: vi.fn() };
+    const mailchimpClient: MailchimpClient = { listInterests: vi.fn(), updateMember: vi.fn(), getMemberInterests: vi.fn() };
     const mondayClient: MondayClient = {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       getDonorById: vi.fn(),

@@ -49,6 +49,12 @@ async function processOne(donorItemId: string, deps: OutboundConsumerDeps): Prom
     return;
   }
 
-  await mailchimpClient.upsertMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config));
+  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config));
+  if (result === 'not-in-audience') {
+    // Expected for every Donor who never opted in — Mailchimp owns consent, so this
+    // Worker only enriches existing members. 'skipped', not 'written', so it's countable.
+    await pendingStore.updateStatus(donorItemId, 'skipped', `"${donor.email}" is not in the Mailchimp audience`);
+    return;
+  }
   await pendingStore.updateStatus(donorItemId, 'written', undefined, new Date().toISOString());
 }
