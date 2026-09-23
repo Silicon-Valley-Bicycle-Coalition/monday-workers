@@ -31,6 +31,16 @@ describe('buildExtracts', () => {
       expect(attendees.soql, f).toContain(f);
     }
   });
+  it('paginates every object near the 50k CLI ceiling (opportunities ~48k, payments/tasks ~42k)', () => {
+    for (const name of ['contacts', 'accounts', 'opportunities', 'payments', 'tasks_all']) {
+      expect(byName.get(name)!.paginate, name).toBe(true);
+    }
+  });
+  it('never paginates a query runSoqlPaginated would reject (it appends its own WHERE/ORDER BY/LIMIT)', () => {
+    for (const ex of byName.values()) {
+      if (ex.paginate) expect(ex.soql, ex.name).not.toMatch(/\b(WHERE|ORDER BY|LIMIT)\b/i);
+    }
+  });
   it('extracts the Funraise ticket name for the shared Ticket Type column', () => {
     expect(byName.get('registrations')!.soql).toContain('funraise__Ticket_Name__c');
   });
