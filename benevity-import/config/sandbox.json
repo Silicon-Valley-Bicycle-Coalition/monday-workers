@@ -4,7 +4,7 @@
     "boards": {
       "donations": 18428131791,
       "organizations": 18428131727,
-      "people": 18428131737,
+      "people": 18431577220,
       "affiliations": 18431270120,
       "benevityUploads": 18431270204
     }
@@ -25,9 +25,9 @@
     },
     "organizationsNameColumn": "name",
     "peopleColumns": {
-      "personalEmail": "email_mm6j5e9q",
-      "householdEmail": "email_mm6j919c",
-      "employer": "text_mm6jsgh2"
+      "personalEmail": "email_mm79m5qa",
+      "householdEmail": "email_mm79ap8n",
+      "employer": "text_mm797f5r"
     },
     "affiliationsColumns": {
       "person": "board_relation_mm78wgab",
