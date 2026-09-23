@@ -31,8 +31,26 @@ describe('D1DonationLinksStore', () => {
 
     const result = await store.upsertLink({ donationItemId: 'd-move', donationBoardId: '1', ownerItemId: 'o-new', ownerBoardId: '3' }, '2026-01-05T00:00:00Z');
 
-    expect(result).toEqual({ changed: true, updatedAt: '2026-01-05T00:00:00Z' });
+    // The owner it left comes back too — it must be recomputed (issue #26).
+    expect(result).toEqual({ changed: true, updatedAt: '2026-01-05T00:00:00Z',
+      previousOwner: { ownerItemId: 'o-old', ownerBoardId: '2' } });
     expect(await store.getLinkForDonation('d-move')).toEqual({ ownerItemId: 'o-new', ownerBoardId: '3' });
+  });
+
+  it('upsertLink reports no previousOwner for a new link or a board-only change', async () => {
+    const store = new D1DonationLinksStore(env.DB);
+    expect(await store.upsertLink({ donationItemId: 'd-new', donationBoardId: '1', ownerItemId: 'o1', ownerBoardId: '2' }, '2026-01-01T00:00:00Z'))
+      .toEqual({ changed: true, updatedAt: '2026-01-01T00:00:00Z' });
+    expect(await store.upsertLink({ donationItemId: 'd-new', donationBoardId: '9', ownerItemId: 'o1', ownerBoardId: '2' }, '2026-01-02T00:00:00Z'))
+      .toEqual({ changed: true, updatedAt: '2026-01-02T00:00:00Z' });
+  });
+
+  it('deleteLink drops a donation from its owner\'s reverse index', async () => {
+    const store = new D1DonationLinksStore(env.DB);
+    await store.upsertLink({ donationItemId: 'd-del', donationBoardId: '1', ownerItemId: 'o-del', ownerBoardId: '2' }, '2026-01-01T00:00:00Z');
+    await store.deleteLink('d-del');
+    expect(await store.getLinkForDonation('d-del')).toBeNull();
+    expect((await store.getLinksForOwner('o-del')).size).toBe(0);
   });
 
   it('groups multiple donations for one owner by their donation board id', async () => {

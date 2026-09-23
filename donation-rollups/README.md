@@ -36,6 +36,29 @@ Archived items reject all writes and their `board_relation` columns read empty, 
 readable by id — which is exactly what the recompute path does (`items(ids: [...])`), so
 historical gifts still count. Corollary: `donation_links` rows for archived donations can never
 be re-derived from Monday — the importer's artifacts are their only source (docs/20).
+
+**When a gift leaves an owner (issue #26).** An empty Donor link means one of three things, and
+the consumer asks Monday for the item's `state` to tell them apart:
+
+- **Archived:** the gift still counts. The D1 owner is used as before.
+- **Deleted, or active with the link cleared:** the gift no longer counts for anyone. Its
+  `donation_links` row is dropped, the `gifts` row is soft-removed (`removed_at`, migration 0008),
+  and the owner it left is recomputed. Every total and projection ignores removed rows. A restore
+  or re-link clears `removed_at` on the next recompute, with provenance intact.
+- **Moved to a different owner:** `upsertLink` returns the previous owner. The consumer queues an
+  owner-keyed recompute for it (`RecomputeQueueMessage.ownerItemId`), which is never coalesced.
+  The recompute is queued, not run inline, to stay inside the subrequest budget
+  `max_batch_size: 2` is tuned for.
+
+Deletes only arrive if the board is subscribed to `item_deleted`, so `scripts/setup-webhooks.mjs`
+now also subscribes `item_deleted`, `item_archived` and `item_restored`. Re-run it once on
+existing boards; it only adds the missing subscriptions.
+
+**Deploy order for #26:** apply `0008_gifts_removed_at.sql` to the remote D1 database
+(`wrangler d1 migrations apply svbc-donation-rollups --remote`) **before** merging. `refreshFacts`
+and every ledger total name `removed_at`, so an unmigrated database breaks every consumer message
+the moment the build goes live, the same hazard as 0007 below. Then re-run `setup-webhooks.mjs`.
+
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
 **Owner:** Unassigned.

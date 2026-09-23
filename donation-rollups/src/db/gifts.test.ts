@@ -134,6 +134,35 @@ describe('D1GiftsStore', () => {
     }]);
   });
 
+  it('markRemoved takes a gift out of every total and projection; a later refreshFacts restores it (issue #26)', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await env.DB.prepare(`INSERT INTO affiliations (affiliation_item_id, person_item_id, person_board_id, name, updated_at)
+      VALUES ('aff1', 'p1', 'pb', 'Acme', '2026-01-01')`).run();
+    const kept = gift({ mondayItemId: 'g-kept', amountCents: 1000, actingForItemId: 'aff1' });
+    const gone = gift({ mondayItemId: 'g-gone', amountCents: 5000, actingForItemId: 'aff1' });
+    await store.refreshFacts([kept, gone], 'webhook', '2026-01-01T00:00:00Z');
+    await env.DB.prepare(`UPDATE gifts SET sf_id='006gone' WHERE monday_item_id='g-gone'`).run();
+
+    expect(await store.markRemoved('g-gone', '2026-02-01T00:00:00Z'))
+      .toEqual({ ownerItemId: 'o1', ownerBoardId: 'b1', actingForItemId: 'aff1' });
+    expect(await store.markRemoved('g-never', '2026-02-01T00:00:00Z')).toBeNull();
+
+    expect((await store.giftsForOwner('o1')).map((g) => g.mondayItemId)).toEqual(['g-kept']);
+    expect((await store.ownerTotals('Received')).get('o1')).toMatchObject({ cents: 1000, count: 1 });
+    expect((await store.fiscalYearTotals('Received', 2100))[0]).toMatchObject({ totalCents: 1000, giftCount: 1 });
+    expect(await store.attributedTotals('aff1', 'Received')).toMatchObject({ cents: 1000, count: 1 });
+    expect(await store.organizationalGivingTotals('p1', 'Received')).toMatchObject({ cents: 1000, count: 1 });
+    expect((await store.attributedTotalsAll('Received')).get('aff1')).toEqual({ cents: 1000, count: 1 });
+    expect((await store.organizationalGivingAll('Received')).get('p1')).toMatchObject({ cents: 1000 });
+    expect((await store.getArchivable(2100)).map((g) => g.mondayItemId)).toEqual(['g-kept']);
+
+    // Restored on Monday (or re-linked): the next recompute re-asserts it, provenance intact.
+    expect(await store.refreshFacts([gone], 'webhook', '2026-03-01T00:00:00Z')).toEqual({ changed: 1 });
+    expect((await store.ownerTotals('Received')).get('o1')).toMatchObject({ cents: 6000, count: 2 });
+    const row = await env.DB.prepare(`SELECT removed_at, sf_id FROM gifts WHERE monday_item_id='g-gone'`).first();
+    expect(row).toEqual({ removed_at: null, sf_id: '006gone' });
+  });
+
   it('setSummaryItemId records the board item backing a fiscal year', async () => {
     const store = new D1GiftsStore(env.DB);
     await store.upsertAnnualSummaries([{ fiscalYear: 2019, totalCents: 1, giftCount: 1, byTypeJson: '{}' }], 'now');

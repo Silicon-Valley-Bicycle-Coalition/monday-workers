@@ -136,4 +136,9 @@ export interface RecomputeQueueMessage {
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).
   donationBoardId: string;
+  // Set when this message recomputes a specific OWNER rather than resolving one from the
+  // donation: the owner a gift just moved away from (issue #26). donationItemId is then the gift
+  // that left, kept for logs. Always recomputed — never coalesced away.
+  ownerItemId?: string;
+  ownerBoardId?: string;
 }

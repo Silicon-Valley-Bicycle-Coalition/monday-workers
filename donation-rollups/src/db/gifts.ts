@@ -38,6 +38,11 @@ export interface GiftsStore {
   refreshFacts(rows: GiftFact[], source: string, now: string): Promise<{ changed: number }>;
   // Full gift history for one owner, deep-link board ids joined in — the projections' source.
   giftsForOwner(ownerItemId: string): Promise<import('../projections/giftHistory').GiftHistoryRow[]>;
+  // Takes a gift out of every total (issue #26): the item was deleted on Monday, or staff cleared
+  // its Donor link. Returns the owner and acting-for it had, so the caller can recompute them;
+  // null when the ledger never knew the gift. A later recompute that sees it again (restore,
+  // re-link) clears the mark via refreshFacts.
+  markRemoved(mondayItemId: string, now: string): Promise<{ ownerItemId: string; ownerBoardId: string; actingForItemId: string | null } | null>;
   // acting_for_item_id per gift, for the affiliation recompute path.
   actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>>;
   // Attributed totals for one affiliation: Received gifts whose acting_for_item_id matches it.
@@ -84,6 +89,7 @@ interface StoredFacts {
   gift_type: string | null;
   acting_for_item_id: string | null;
   archived_at: string | null;
+  removed_at: string | null;
 }
 
 // A gift needs writing when it's new or any webhook-visible fact differs. giftType is the one
@@ -94,7 +100,8 @@ interface StoredFacts {
 // is a change.
 function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
   if (stored === undefined) return true;
-  return stored.owner_item_id !== g.ownerItemId
+  return stored.removed_at !== null
+    || stored.owner_item_id !== g.ownerItemId
     || stored.owner_board_id !== g.ownerBoardId
     || stored.amount_cents !== g.amountCents
     || stored.gift_date !== g.giftDateISO
@@ -114,7 +121,7 @@ export class D1GiftsStore implements GiftsStore {
       const res = await this.db
         .prepare(
           `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type,
-             acting_for_item_id, archived_at
+             acting_for_item_id, archived_at, removed_at
            FROM gifts WHERE monday_item_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`,
         )
         .bind(...ids)
@@ -143,6 +150,8 @@ export class D1GiftsStore implements GiftsStore {
                WHEN ?12 = 0 THEN gifts.acting_for_item_id
                WHEN gifts.archived_at IS NOT NULL THEN gifts.acting_for_item_id
                ELSE excluded.acting_for_item_id END,
+             -- Re-asserted by a recompute that just read it on Monday: no longer removed.
+             removed_at = NULL,
              source = excluded.source,
              updated_at = excluded.updated_at`,
         )
@@ -160,7 +169,7 @@ export class D1GiftsStore implements GiftsStore {
       .prepare(`SELECT g.monday_item_id, l.donation_board_id, g.amount_cents, g.gift_date,
                        g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.archived_at
                 FROM gifts g LEFT JOIN donation_links l ON l.donation_item_id = g.monday_item_id
-                WHERE g.owner_item_id = ?1`)
+                WHERE g.owner_item_id = ?1 AND g.removed_at IS NULL`)
       .bind(ownerItemId)
       .all<{ monday_item_id: string; donation_board_id: string | null; amount_cents: number;
         gift_date: string; fiscal_year: number; status: string; gift_type: string | null;
@@ -171,6 +180,21 @@ export class D1GiftsStore implements GiftsStore {
       status: r.status, giftType: r.gift_type, actingForItemId: r.acting_for_item_id,
       archived: r.archived_at !== null,
     }));
+  }
+
+  async markRemoved(mondayItemId: string, now: string): Promise<{ ownerItemId: string; ownerBoardId: string; actingForItemId: string | null } | null> {
+    const row = await this.db
+      .prepare(`SELECT owner_item_id, owner_board_id, acting_for_item_id, removed_at FROM gifts WHERE monday_item_id = ?1`)
+      .bind(mondayItemId)
+      .first<{ owner_item_id: string; owner_board_id: string; acting_for_item_id: string | null; removed_at: string | null }>();
+    if (row === null) return null;
+    if (row.removed_at === null) {
+      await this.db
+        .prepare(`UPDATE gifts SET removed_at = ?2, updated_at = ?2 WHERE monday_item_id = ?1`)
+        .bind(mondayItemId, now)
+        .run();
+    }
+    return { ownerItemId: row.owner_item_id, ownerBoardId: row.owner_board_id, actingForItemId: row.acting_for_item_id };
   }
 
   async actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>> {
@@ -190,7 +214,7 @@ export class D1GiftsStore implements GiftsStore {
   async attributedTotals(affiliationItemId: string, statusLabel: string): Promise<{ cents: number; count: number; lastGiftDateISO: string | null }> {
     const r = await this.db
       .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS cents, COUNT(*) AS n, MAX(gift_date) AS last
-                FROM gifts WHERE acting_for_item_id = ?1 AND status = ?2`)
+                FROM gifts WHERE acting_for_item_id = ?1 AND status = ?2 AND removed_at IS NULL`)
       .bind(affiliationItemId, statusLabel)
       .first<{ cents: number; n: number; last: string | null }>();
     return { cents: r?.cents ?? 0, count: r?.n ?? 0, lastGiftDateISO: r?.last || null };
@@ -200,7 +224,7 @@ export class D1GiftsStore implements GiftsStore {
     const r = await this.db
       .prepare(`SELECT COALESCE(SUM(g.amount_cents), 0) AS cents, COUNT(*) AS n
                 FROM gifts g JOIN affiliations a ON a.affiliation_item_id = g.acting_for_item_id
-                WHERE a.person_item_id = ?1 AND g.status = ?2`)
+                WHERE a.person_item_id = ?1 AND g.status = ?2 AND g.removed_at IS NULL`)
       .bind(personItemId, statusLabel)
       .first<{ cents: number; n: number }>();
     return { cents: r?.cents ?? 0, count: r?.n ?? 0 };
@@ -217,7 +241,8 @@ export class D1GiftsStore implements GiftsStore {
       .prepare(`SELECT a.affiliation_item_id,
                        COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents,
                        COUNT(CASE WHEN g.status = ?1 THEN 1 END) AS n
-                FROM affiliations a LEFT JOIN gifts g ON g.acting_for_item_id = a.affiliation_item_id
+                FROM affiliations a LEFT JOIN gifts g
+                  ON g.acting_for_item_id = a.affiliation_item_id AND g.removed_at IS NULL
                 GROUP BY a.affiliation_item_id`)
       .bind(statusLabel)
       .all<{ affiliation_item_id: string; cents: number; n: number }>();
@@ -233,7 +258,8 @@ export class D1GiftsStore implements GiftsStore {
     const res = await this.db
       .prepare(`SELECT a.person_item_id, a.person_board_id,
                        COALESCE(SUM(CASE WHEN g.status = ?1 THEN g.amount_cents END), 0) AS cents
-                FROM affiliations a LEFT JOIN gifts g ON g.acting_for_item_id = a.affiliation_item_id
+                FROM affiliations a LEFT JOIN gifts g
+                  ON g.acting_for_item_id = a.affiliation_item_id AND g.removed_at IS NULL
                 GROUP BY a.person_item_id, a.person_board_id`)
       .bind(statusLabel)
       .all<{ person_item_id: string; person_board_id: string; cents: number }>();
@@ -252,7 +278,8 @@ export class D1GiftsStore implements GiftsStore {
   async getArchivable(cutoffFY: number): Promise<{ mondayItemId: string; fiscalYear: number }[]> {
     const res = await this.db
       .prepare(`SELECT monday_item_id, fiscal_year FROM gifts
-                WHERE archived_at IS NULL AND fiscal_year < ?1 ORDER BY fiscal_year, monday_item_id`)
+                WHERE archived_at IS NULL AND removed_at IS NULL AND fiscal_year < ?1
+                ORDER BY fiscal_year, monday_item_id`)
       .bind(cutoffFY)
       .all<{ monday_item_id: string; fiscal_year: number }>();
     return res.results.map((r) => ({ mondayItemId: r.monday_item_id, fiscalYear: r.fiscal_year }));
@@ -286,7 +313,7 @@ export class D1GiftsStore implements GiftsStore {
   async ownerTotals(statusLabel: string): Promise<Map<string, { cents: number; count: number; ownerBoardId: string }>> {
     const res = await this.db
       .prepare(`SELECT owner_item_id, owner_board_id, SUM(amount_cents) AS cents, COUNT(*) AS n
-                FROM gifts WHERE status = ?1 GROUP BY owner_item_id, owner_board_id`)
+                FROM gifts WHERE status = ?1 AND removed_at IS NULL GROUP BY owner_item_id, owner_board_id`)
       .bind(statusLabel)
       .all<{ owner_item_id: string; owner_board_id: string; cents: number; n: number }>();
     const out = new Map<string, { cents: number; count: number; ownerBoardId: string }>();
@@ -300,7 +327,7 @@ export class D1GiftsStore implements GiftsStore {
     const res = await this.db
       .prepare(`SELECT fiscal_year, COALESCE(gift_type, '(unknown)') AS gift_type,
                        SUM(amount_cents) AS cents, COUNT(*) AS n
-                FROM gifts WHERE status = ?1 AND fiscal_year < ?2
+                FROM gifts WHERE status = ?1 AND fiscal_year < ?2 AND removed_at IS NULL
                 GROUP BY fiscal_year, gift_type ORDER BY fiscal_year`)
       .bind(statusLabel, beforeFY)
       .all<{ fiscal_year: number; gift_type: string; cents: number; n: number }>();

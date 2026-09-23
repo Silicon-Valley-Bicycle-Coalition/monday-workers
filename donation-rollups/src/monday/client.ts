@@ -42,6 +42,10 @@ export interface DonationRollupsMondayClient {
   // The owner (Donor or Organization) a Donation item's connect column currently points
   // at — null if the Donation is unlinked (nothing to recompute).
   getDonorLinkForDonation(donationItemId: string, donorLinkColumnId: string): Promise<string | null>;
+  // Why a Donation's Donor link read back empty (issue #26): 'archived' (board_relation reads
+  // empty on archived items — the gift still counts), 'deleted' (gone, or no longer returned),
+  // or 'active' (staff genuinely cleared the link — it no longer counts for anyone).
+  getDonationState(donationItemId: string): Promise<'active' | 'archived' | 'deleted'>;
   // Fetches specific Donation items *by id* — not by filtering the board on its Donor
   // column, which Monday's API doesn't support for board_relation columns (confirmed
   // 2026-08-24: items_page_by_column_values rejects it outright). Callers get the id
@@ -137,6 +141,17 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     );
     const linked = data.items[0]?.column_values[0]?.linked_item_ids ?? [];
     return linked.length > 0 ? linked[0]! : null;
+  }
+
+  async getDonationState(donationItemId: string): Promise<'active' | 'archived' | 'deleted'> {
+    const data = await this.graphql<{ items: { state: string | null }[] }>(
+      `query ($itemId: ID!) { items(ids: [$itemId]) { state } }`,
+      { itemId: donationItemId },
+    );
+    const state = data.items[0]?.state;
+    // items(ids:) stops returning an item once it's deleted; a returned 'deleted' state is the same.
+    if (state === undefined || state === null || state === 'deleted') return 'deleted';
+    return state === 'archived' ? 'archived' : 'active';
   }
 
   async getDonationsByIds(
