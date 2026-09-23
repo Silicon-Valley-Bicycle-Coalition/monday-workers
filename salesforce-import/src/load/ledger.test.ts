@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { appendFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Ledger } from './ledger.js';
@@ -69,6 +69,33 @@ describe('Ledger', () => {
     const b = new Ledger(); await b.load();
     expect(b.has('o1', 'donations')).toBe(true); // success untouched
     expect(b.failures().map((f) => f.board)).toEqual(['archive']);
+  });
+
+  it('survives a torn final line from a crash mid-append', async () => {
+    const a = new Ledger(); await a.load();
+    await a.recordSuccess({ sfId: 'c1', board: 'people-live', itemId: '111' });
+    appendFileSync(dataPath('load', 'ledger.ndjson'), '{"kind":"success","sfId":"c2","bo');
+    const b = new Ledger(); await b.load();
+    expect(b.itemId('c1')).toBe('111');
+    expect(b.itemId('c2')).toBeUndefined();
+    await b.recordSuccess({ sfId: 'c3', board: 'people-live', itemId: '333' });
+    const c = new Ledger(); await c.load();
+    expect(c.itemId('c3')).toBe('333');
+  });
+
+  it('linkCovers is false once more targets resolve than the earlier write set', async () => {
+    const a = new Ledger(); await a.load();
+    expect(a.linkCovers('o1', 'Donor', ['c1'])).toBe(false);
+    await a.recordLink('o1', 'Donor', ['c1']);
+    const b = new Ledger(); await b.load();
+    expect(b.linkCovers('o1', 'Donor', ['c1'])).toBe(true);
+    expect(b.linkCovers('o1', 'Donor', ['c1', 'c2'])).toBe(false);
+  });
+
+  it('treats a pre-targetSfIds link entry as covering (older ledger.ndjson format)', async () => {
+    await appendNdjson(dataPath('load', 'ledger.ndjson'), { kind: 'link', sfId: 'o1', column: 'Donor' });
+    const a = new Ledger(); await a.load();
+    expect(a.linkCovers('o1', 'Donor', ['c1', 'c2'])).toBe(true);
   });
 
   it('hasAnyFor reports whether any item has ever landed successfully on a board', async () => {

@@ -53,9 +53,35 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only
 npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
+npm run cli -- validate --live      # also reads every board back from Monday (see below)
 npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views
 npm run cli -- configure            # idempotent; --only key1,key2 scopes to specific boards
 ```
+
+**Re-runs never duplicate items.** Every imported item carries its Salesforce Id in a plain-text
+`Salesforce ID` column (kept after the migration, unlike `Salesforce Debug` — it's the only
+searchable link back to the source record). `create_item` isn't idempotent, so the client never
+blindly retries it after a 5xx, a dropped connection or a timeout — the write may have committed.
+The loader looks the Id up first and adopts the item if it landed. At the start of each run, any
+board that existed before the run and still has unledgered payloads is scanned, and items already
+on Monday are adopted into the ledger (the crash window between `create_item` and the ledger
+append). Salesforce Ids found more than once are listed in `data/load/report.json`, never
+auto-deleted, and make `load` exit 1. A torn final ledger line from a crash is dropped with a
+warning.
+
+**Links are complete before a donation archives.** Each link write records the targets it set,
+so a link written while some targets were missing is rewritten once they land. A target that this
+run's payloads are expected to create but that doesn't exist yet (its create failed) is *pending*,
+not "skipped". Pending links hold back archiving and make `load` exit 1 until a re-run resolves
+them. Targets that were never migrated at all are still skipped by design. `data/load/report.json`
+records per-run counts: created, adopted, failed, written/partial/pending/skipped links, and
+archived/deferred items.
+
+**`validate --live`** doesn't trust the ledger. It scans each board's active items by
+`Salesforce ID` and fails on items the ledger expects but Monday lacks, items Monday has that the
+ledger doesn't, and duplicated Ids. It needs a fresh full load (the cutover procedure): items
+created before the `Salesforce ID` column existed carry no Id, so on older rehearsal boards they
+count as "without a Salesforce ID" and their ledger entries as missing.
 
 **`configure`** applies the API-doable subset of the board-configuration plan (private repo:
 `docs/22-board-configuration-plan.md`) — board descriptions, the default-group rename, additive

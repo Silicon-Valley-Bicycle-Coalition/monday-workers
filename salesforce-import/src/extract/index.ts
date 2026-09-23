@@ -5,6 +5,8 @@ import { CLI_ROW_CEILING, runSoql, runSoqlPaginated, type ExecFn } from './sfdx.
 import { checkSyncErrorGate } from './gate.js';
 import { buildExtracts } from './queries.js';
 
+const CEILING_WARN_FRACTION = 0.8;
+
 export async function runExtract(args: string[], deps: { exec?: ExecFn } = {}): Promise<number> {
   const cfg = loadConfig();
   const acknowledge = args.includes('--acknowledge-sync-errors');
@@ -25,6 +27,12 @@ export async function runExtract(args: string[], deps: { exec?: ExecFn } = {}): 
     if (!ex.paginate && rows.length >= CLI_ROW_CEILING) {
       // The CLI truncates silently at this ceiling — a full-looking page means data loss.
       throw new Error(`extract: ${ex.name} returned ${rows.length} rows (CLI truncation ceiling) — mark it paginate: true`);
+    }
+    if (!ex.paginate && rows.length >= CLI_ROW_CEILING * CEILING_WARN_FRACTION) {
+      // Warn well before the hard stop above, so a growing object gets paginated before the
+      // cutover-day extract is the one that trips it.
+      console.warn(`extract: ${ex.name} returned ${rows.length} rows — within ` +
+        `${Math.round((1 - CEILING_WARN_FRACTION) * 100)}% of the CLI ceiling; mark it paginate: true`);
     }
     const dir = ex.backupOnly ? 'backup' : 'extract';
     counts[ex.name] = await writeNdjson(dataPath(dir, `${ex.name}.ndjson`), rows);

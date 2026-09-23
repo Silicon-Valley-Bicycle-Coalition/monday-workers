@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { appendNdjson, dataPath, readNdjson } from '../artifacts.js';
+import { appendNdjson, dataPath, readNdjson, repairTornTail } from '../artifacts.js';
 
 type Entry =
   | { kind: 'success'; sfId: string; board: string; itemId: string }
@@ -7,7 +7,9 @@ type Entry =
   // targetSfIds (the link's TARGET items) is optional for compatibility with ledger.ndjson
   // files written before it existed — absent means "targets unknown", not "no targets".
   | { kind: 'linkFailure'; sfId: string; column: string; error: string; targetSfIds?: string[] }
-  | { kind: 'link'; sfId: string; column: string }
+  // targetSfIds: the targets this write set. Optional for pre-existing ledgers — absent means
+  // the targets written are unknown, which linkCovers() treats as covering (the old semantics).
+  | { kind: 'link'; sfId: string; column: string; targetSfIds?: string[] }
   | { kind: 'archive'; sfId: string }
   | { kind: 'archiveFailure'; sfId: string; error: string };
 
@@ -21,13 +23,18 @@ function archiveFailureKey(sfId: string): string {
 export class Ledger {
   private successes = new Map<string, { board: string; itemId: string }>();
   private failuresMap = new Map<string, { sfId: string; board: string; error: string; targetSfIds?: string[] }>();
-  private links = new Set<string>();
+  // Value: the target sfIds written, or null for a legacy entry that didn't record them.
+  private links = new Map<string, Set<string> | null>();
   private archives = new Set<string>();
   private path = dataPath('load', 'ledger.ndjson');
 
   async load(): Promise<void> {
     this.successes.clear(); this.failuresMap.clear(); this.links.clear(); this.archives.clear();
     if (!existsSync(this.path)) return;
+    const torn = await repairTornTail(this.path);
+    if (torn !== null) {
+      console.warn(`ledger: dropped a torn final line (crash mid-append): ${torn.slice(0, 120)}`);
+    }
     for (const e of await readNdjson<Entry>(this.path)) {
       if (e.kind === 'success') {
         this.successes.set(e.sfId, { board: e.board, itemId: e.itemId });
@@ -48,7 +55,7 @@ export class Ledger {
         this.failuresMap.set(archiveFailureKey(e.sfId),
           { sfId: e.sfId, board: 'archive', error: e.error });
       } else {
-        this.links.add(`${e.sfId}|${e.column}`);
+        this.links.set(`${e.sfId}|${e.column}`, e.targetSfIds ? new Set(e.targetSfIds) : null);
         // A later successful link clears any earlier failure recorded for that same link.
         this.failuresMap.delete(linkFailureKey(e.sfId, e.column));
       }
@@ -64,7 +71,21 @@ export class Ledger {
   }
   itemId(sfId: string): string | undefined { return this.successes.get(sfId)?.itemId; }
   failures(): { sfId: string; board: string; error: string; targetSfIds?: string[] }[] { return [...this.failuresMap.values()]; }
+  // Successful items per board (archived ones included) — for Monday read-back reconciliation.
+  successesFor(board: string): { sfId: string; itemId: string }[] {
+    const out: { sfId: string; itemId: string }[] = [];
+    for (const [sfId, s] of this.successes) if (s.board === board) out.push({ sfId, itemId: s.itemId });
+    return out;
+  }
   linkDone(sfId: string, column: string): boolean { return this.links.has(`${sfId}|${column}`); }
+  // Whether a previous write of this link already set every one of `targetSfIds` — false when
+  // more targets have become resolvable since (a partial link that must be rewritten).
+  linkCovers(sfId: string, column: string, targetSfIds: string[]): boolean {
+    const key = `${sfId}|${column}`;
+    if (!this.links.has(key)) return false;
+    const written = this.links.get(key);
+    return written === null || written === undefined || targetSfIds.every((t) => written.has(t));
+  }
   async recordSuccess(e: { sfId: string; board: string; itemId: string }): Promise<void> {
     this.successes.set(e.sfId, { board: e.board, itemId: e.itemId });
     this.failuresMap.delete(`${e.sfId}|${e.board}`);
@@ -80,10 +101,10 @@ export class Ledger {
         ...(e.targetSfIds ? { targetSfIds: e.targetSfIds } : {}) });
     await appendNdjson(this.path, { kind: 'linkFailure', ...e });
   }
-  async recordLink(sfId: string, column: string): Promise<void> {
-    this.links.add(`${sfId}|${column}`);
+  async recordLink(sfId: string, column: string, targetSfIds?: string[]): Promise<void> {
+    this.links.set(`${sfId}|${column}`, targetSfIds ? new Set(targetSfIds) : null);
     this.failuresMap.delete(linkFailureKey(sfId, column));
-    await appendNdjson(this.path, { kind: 'link', sfId, column });
+    await appendNdjson(this.path, { kind: 'link', sfId, column, ...(targetSfIds ? { targetSfIds } : {}) });
   }
   archivedDone(sfId: string): boolean { return this.archives.has(sfId); }
   async recordArchive(sfId: string): Promise<void> {

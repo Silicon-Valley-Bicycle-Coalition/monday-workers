@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MondayClient } from './monday.js';
+import { AmbiguousWriteError, MondayClient } from './monday.js';
 
 const noSleep = async () => {};
 
@@ -55,5 +55,54 @@ describe('MondayClient', () => {
     const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, maxAttempts: 3,
       fetchFn: sequence([() => new Response('boom', { status: 500 })]) });
     await expect(c.gql('q')).rejects.toThrow(/HTTP 500/);
+  });
+
+  it('retries a rejected fetch (network error) for idempotent calls', async () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      if (calls++ === 0) throw new TypeError('fetch failed: ECONNRESET');
+      return Response.json({ data: { ok: true } });
+    }) as typeof fetch;
+    const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, fetchFn });
+    expect(await c.gql('q')).toEqual({ ok: true });
+    expect(calls).toBe(2);
+  });
+
+  it('passes a timeout signal on every request', async () => {
+    let signal: AbortSignal | undefined;
+    const fetchFn = (async (_u: unknown, init: RequestInit) => {
+      signal = init.signal ?? undefined;
+      return Response.json({ data: { ok: true } });
+    }) as typeof fetch;
+    await new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, fetchFn }).gql('q');
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  describe('idempotent: false (create_item)', () => {
+    const ambiguousCases: [string, () => Response | Promise<Response>][] = [
+      ['HTTP 5xx', () => new Response('boom', { status: 502 })],
+      ['a network error', () => { throw new TypeError('fetch failed'); }],
+      ['the no-data shape without a 429 status', () => Response.json({ error_message: 'Internal error', status_code: 500 })],
+    ];
+    for (const [label, respond] of ambiguousCases) {
+      it(`throws AmbiguousWriteError on ${label} instead of retrying (the write may have committed)`, async () => {
+        let calls = 0;
+        const fetchFn = (async () => { calls++; return respond(); }) as typeof fetch;
+        const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, fetchFn });
+        await expect(c.gql('mutation', {}, { idempotent: false })).rejects.toBeInstanceOf(AmbiguousWriteError);
+        expect(calls).toBe(1);
+      });
+    }
+
+    it('still retries responses that prove the request never ran (429, complexity, no-data 429)', async () => {
+      const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
+        fetchFn: sequence([
+          () => new Response('rate limited', { status: 429 }),
+          () => Response.json({ errors: [{ message: 'x', extensions: { code: 'ComplexityException' } }] }),
+          () => Response.json({ error_message: 'Rate Limit Exceeded', status_code: 429 }),
+          () => Response.json({ data: { create_item: { id: '1' } } }),
+        ]) });
+      expect(await c.gql('mutation', {}, { idempotent: false })).toEqual({ create_item: { id: '1' } });
+    });
   });
 });
