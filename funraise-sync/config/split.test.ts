@@ -63,7 +63,7 @@ describe('config split: board and column ids', () => {
 
   it('sandbox.json targets the CRM Sandbox Donations and People boards', () => {
     expect(sandbox.monday.boards['donations:live']).toBe(18428131791);
-    expect(sandbox.monday.boards['people-live']).toBe(18428131737);
+    expect(sandbox.monday.boards['people-live']).toBe(18431577220);
   });
 
   it('no sandbox column id string-appears anywhere in production', () => {

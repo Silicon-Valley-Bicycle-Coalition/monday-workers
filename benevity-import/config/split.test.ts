@@ -30,7 +30,7 @@ describe('config split: board and column ids', () => {
 
   it('sandbox.json targets the CRM Sandbox Donations, People, and Uploads boards', () => {
     expect(sandbox.monday.boards.donations).toBe(18428131791);
-    expect(sandbox.monday.boards.people).toBe(18428131737);
+    expect(sandbox.monday.boards.people).toBe(18431577220);
     expect(sandbox.monday.boards.benevityUploads).toBe(18431270204);
   });
 

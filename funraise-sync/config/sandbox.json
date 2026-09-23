@@ -4,7 +4,7 @@
     "boards": {
       "donations:live": 18428131791,
       "recurring-gifts": 18428131768,
-      "people-live": 18428131737
+      "people-live": 18431577220
     }
   },
   "funraiseSync": {
@@ -25,8 +25,8 @@
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "supporter.id",
-    "donorExternalIdColumn": "link_mm6j7djp",
-    "donorEmailColumn": "email_mm6j5e9q",
+    "donorExternalIdColumn": "link_mm79dag0",
+    "donorEmailColumn": "email_mm79m5qa",
     "donorNameField": "supporter.name",
     "donorLinkColumn": "board_relation_mm6jf5jb",
     "emailFieldPrecedence": ["supporter.email"],
