@@ -105,6 +105,13 @@ registered as `.../webhooks/monday?secret=<value>`. **Not yet done:** `QB_CLIENT
 keys, a token pair seeded via the OAuth Playground) plus the Intuit app-review question below,
 now resolved.
 
+**Workers Builds:** connect a second Worker, `svbc-quickbooks-sync-sandbox`, to this repo with
+root directory `/quickbooks-sync`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:quickbooks-sync` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
 ## Open question before starting — resolved 2026-09-21
 
 **A private, single-company integration does not need the full app-store review, but does need a

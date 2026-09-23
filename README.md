@@ -174,6 +174,19 @@ first-time provisioning or emergencies, but routine changes should ship by mergi
 previously drifted from production for months when a Worker was deployed by hand and its CI
 connection silently broke.
 
+**Sandbox deploys double that connection, per Worker.** Every Worker with a `sandbox` Wrangler
+environment (`member-portal`, `funraise-sync`, `donation-rollups`, `mailchimp-sync`,
+`quickbooks-sync`, `monday-backup`, `benevity-import`, `bp-feedback-notify`) gets a *second*
+Workers Builds connection to the same repo and root directory, deploy command
+`npx wrangler deploy --env sandbox`, also tracking `main` — see each Worker's README "Sandbox
+environment" section for its specific Worker name. **Verify in the dashboard before relying on
+it:** if Cloudflare refuses two connections on one root directory, `.gitlab-ci.yml`'s
+`deploy-sandbox:<worker>` jobs are the fallback — same deploy command, run on `main`, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so they stay inert until that variable is actually set (so
+turning on the fallback never risks a double deploy alongside a working dashboard connection).
+Design: [`docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md)
+§8.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). Chosen specifically so other nonprofits can fork, adapt, and

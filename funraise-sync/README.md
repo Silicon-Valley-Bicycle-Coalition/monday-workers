@@ -359,6 +359,13 @@ deployment onto this environment is its §9, run once from the runbook in the st
 `wrangler.jsonc` is replaced with the id `wrangler d1 create` prints — see the step 2 plan's
 Task 9.
 
+**Workers Builds:** connect a second Worker, `svbc-funraise-sync-sandbox`, to this repo with root
+directory `/funraise-sync`, production branch `main`, and deploy command
+`npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:funraise-sync` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
+
 Funraise allows one webhook per organization. Until cutover it points at the sandbox Worker;
 at cutover it moves to production and the sandbox loses its live feed (design doc §7) — after
 that, sandbox testing uses Funraise's Test button or a hand replay of a stored delivery.

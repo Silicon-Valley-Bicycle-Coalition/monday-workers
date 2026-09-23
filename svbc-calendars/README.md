@@ -90,18 +90,14 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 ## Deploy
 
-This Worker has never been deployed — `wrangler.jsonc`'s KV namespace id is a placeholder, no
-secrets are set, and both custom domains below still point at the two Workers this one replaces.
-Cutover checklist, in order:
+This Worker has never been deployed — secrets aren't set yet, and both custom domains below still
+point at the two Workers this one replaces. Cutover checklist, in order:
 
-### 1. Provision the KV namespace
+### 1. ~~Provision the KV namespace~~ Done 2026-09-23
 
-```sh
-npx wrangler kv namespace create CALENDAR_KV
-```
-
-Paste the printed `id` into `wrangler.jsonc`'s `kv_namespaces[0].id`, replacing the
-`placeholder-replaced-in-task-16` value.
+`CALENDAR_KV` is provisioned (id in `wrangler.jsonc`). A `sandbox-CALENDAR_KV` namespace also
+exists in the account but isn't wired into this config — this Worker has no `env.sandbox` split
+(unlike `mailchimp-sync`/`donation-rollups`/etc.); add one later if that's wanted.
 
 ### 2. Enable Cloudflare Web Analytics
 

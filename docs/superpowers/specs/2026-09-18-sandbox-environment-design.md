@@ -302,6 +302,15 @@ connections on one repo + root directory. If it does not, the fallback is a GitL
 `"deploy:sandbox": "wrangler deploy --env sandbox"` for first-time provisioning and emergencies,
 mirroring the existing `deploy`.
 
+**Code side done, 2026-09-22 (issue #16):** every `env.sandbox` Worker (`member-portal`,
+`funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
+`benevity-import`, `bp-feedback-notify`) has the `deploy:sandbox` script, a "Workers Builds" note
+in its README/DEPLOY.md naming its sandbox Worker and root directory, and a matching
+`deploy-sandbox:<worker>` job in the root `.gitlab-ci.yml` gated on `CLOUDFLARE_API_TOKEN` so it
+stays inert unless that variable is set. The dashboard-side verification above — whether
+Cloudflare actually allows the second connection per Worker — is still a manual step for dwk;
+this only makes the fallback real and ready rather than prose.
+
 ### 9. Moving the two already-deployed Workers
 
 `svbc-donation-rollups` and `svbc-funraise-sync` are deployed under production names against

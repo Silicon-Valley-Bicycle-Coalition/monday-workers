@@ -5,6 +5,7 @@ workflow:
 
 stages:
   - test
+  - deploy
 
 default:
   image: node:22
@@ -27,6 +28,32 @@ default:
     - npm ci
     - npm test
     - npm run typecheck
+
+# Fallback path for the sandbox deploy connection (see each Worker's README
+# "Sandbox environment" section and docs/superpowers/specs/2026-09-18-sandbox-
+# environment-design.md §8): the primary path is a second Cloudflare Workers
+# Builds connection on the same repo/root directory, deploy command
+# `npx wrangler deploy --env sandbox`. If the dashboard refuses two
+# connections on one root directory, this job does the same deploy from CI
+# instead. It only runs on `main`, only for a Worker whose directory actually
+# changed, and only once $CLOUDFLARE_API_TOKEN is set as a CI variable — it
+# stays inert until that variable exists, so enabling it never risks a double
+# deploy alongside a working dashboard connection. account_id is already
+# baked into each Worker's wrangler.jsonc, so no other variable is needed.
+.deploy_sandbox_job:
+  stage: deploy
+  cache:
+    key: "$WORKER_DIR"
+    paths:
+      - "$WORKER_DIR/node_modules/"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npx wrangler deploy --env sandbox
 
 benevity-import:
   extends: .worker_job
@@ -77,3 +104,46 @@ svbc-calendars:
   extends: .worker_job
   variables:
     WORKER_DIR: svbc-calendars
+
+# svbc-calendars and salesforce-import have no `sandbox` Wrangler environment
+# (see root README/CLAUDE.md) and so have no deploy-sandbox job.
+
+deploy-sandbox:benevity-import:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: benevity-import
+
+deploy-sandbox:bp-feedback-notify:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: bp-feedback-notify
+
+deploy-sandbox:donation-rollups:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: donation-rollups
+
+deploy-sandbox:member-portal:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: member-portal
+
+deploy-sandbox:funraise-sync:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: funraise-sync
+
+deploy-sandbox:mailchimp-sync:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: mailchimp-sync
+
+deploy-sandbox:monday-backup:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: monday-backup
+
+deploy-sandbox:quickbooks-sync:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: quickbooks-sync

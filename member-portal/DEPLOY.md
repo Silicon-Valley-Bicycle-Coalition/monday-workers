@@ -183,9 +183,11 @@ Use `dev:sandbox` to debug a code change against real sandbox data before runnin
 **Workers Builds:** connect a second Worker, `svbc-member-portal-sandbox`, to this repo with root
 directory `/member-portal`, production branch `main`, and deploy command
 `npx wrangler deploy --env sandbox`. The sandbox then tracks `main` alongside production. If the
-dashboard refuses two connections on one root directory, fall back to a GitLab CI job on `main`
-that runs `npm ci && npx wrangler deploy --env sandbox` from `member-portal/` with a
-`CLOUDFLARE_API_TOKEN` CI variable.
+dashboard refuses two connections on one root directory, fall back to the
+`deploy-sandbox:member-portal` job in `../.gitlab-ci.yml` — same command, gated on a
+`CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set. Every other
+`env.sandbox` Worker in this repo follows the same two-connection-or-CI-fallback pattern; see
+its own README's "Sandbox environment" section.
 
 ## Phase 5 — Pre-launch verification (staff-only, before announcing)
 
