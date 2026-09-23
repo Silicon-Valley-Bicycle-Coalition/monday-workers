@@ -11,8 +11,9 @@ const CONFIG: Config = {
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active',
 };
 
-function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = []): CampaignItemsStore {
+function fakeCampaignItemsStore(rows: { interestId: string; mondayItemId: string; name: string; archivedAt: string | null }[] = [], claimWins = true): CampaignItemsStore {
   return {
+    claim: vi.fn().mockResolvedValue(claimWins),
     listActive: vi.fn().mockResolvedValue(rows.filter((r) => r.archivedAt === null)),
     upsert: vi.fn().mockResolvedValue(undefined),
     markArchived: vi.fn().mockResolvedValue(undefined),
@@ -38,6 +39,26 @@ describe('reconcileCampaigns', () => {
     expect(mondayClient.createCampaignItem).toHaveBeenCalledWith(999, 'Newsletter');
     expect(campaignItemsStore.upsert).toHaveBeenCalledWith({ interestId: 'int1', mondayItemId: 'item1', name: 'Newsletter', archivedAt: null });
     expect(result).toEqual({ created: 1, renamed: 0, archived: 0 });
+  });
+
+  it('does not create an item when another concurrent run already claimed the interest', async () => {
+    const mailchimpClient: MailchimpClient = {
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
+      updateMember: vi.fn(), getMemberInterests: vi.fn(),
+    };
+    const mondayClient: MondayClient = {
+      createCampaignItem: vi.fn().mockResolvedValue('item1'),
+      renameItem: vi.fn(), archiveItem: vi.fn(), getDonorById: vi.fn(),
+      findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+    };
+    const campaignItemsStore = fakeCampaignItemsStore([], false);
+
+    const result = await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config: CONFIG });
+
+    expect(campaignItemsStore.claim).toHaveBeenCalledWith('int1', 'Newsletter', expect.any(String), expect.any(String));
+    expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
+    expect(campaignItemsStore.upsert).not.toHaveBeenCalled();
+    expect(result).toEqual({ created: 0, renamed: 0, archived: 0 });
   });
 
   it('renames the Monday item when a tracked interest is renamed in Mailchimp', async () => {

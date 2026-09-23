@@ -47,4 +47,45 @@ describe('D1CampaignItemsStore', () => {
       interestId: 'int5', mondayItemId: 'item5', name: 'X', archivedAt: '2026-08-26T00:00:00.000Z',
     });
   });
+
+  describe('claim (one creator per new interest, issue #28)', () => {
+    const NOW = '2026-09-23T12:00:00.000Z';
+    const STALE_BEFORE = '2026-09-23T11:50:00.000Z';
+
+    it('lets exactly one of two concurrent claimants win an untracked interest', async () => {
+      const store = new D1CampaignItemsStore(env.DB);
+      const [a, b] = await Promise.all([
+        store.claim('c1', 'Newsletter', NOW, STALE_BEFORE),
+        store.claim('c1', 'Newsletter', NOW, STALE_BEFORE),
+      ]);
+      expect([a, b].sort()).toEqual([false, true]);
+    });
+
+    it('hides a claimed-but-not-yet-created row from listActive and getByInterestId', async () => {
+      const store = new D1CampaignItemsStore(env.DB);
+      await store.claim('c2', 'Newsletter', NOW, STALE_BEFORE);
+      expect((await store.listActive()).map((r) => r.interestId)).not.toContain('c2');
+      expect(await store.getByInterestId('c2')).toBeNull();
+    });
+
+    it('lets a stale claim (claimant crashed before creating) be reclaimed', async () => {
+      const store = new D1CampaignItemsStore(env.DB);
+      await store.claim('c3', 'Newsletter', '2026-09-23T11:00:00.000Z', '2026-09-23T10:50:00.000Z');
+      expect(await store.claim('c3', 'Newsletter', NOW, STALE_BEFORE)).toBe(true);
+    });
+
+    it('refuses to claim an interest that already has a live Monday item', async () => {
+      const store = new D1CampaignItemsStore(env.DB);
+      await store.upsert({ interestId: 'c4', mondayItemId: 'item-c4', name: 'Newsletter', archivedAt: null });
+      expect(await store.claim('c4', 'Newsletter', NOW, STALE_BEFORE)).toBe(false);
+      expect(await store.getByInterestId('c4')).toEqual({ interestId: 'c4', mondayItemId: 'item-c4', name: 'Newsletter', archivedAt: null });
+    });
+
+    it('allows claiming an archived interest that reappears in Mailchimp', async () => {
+      const store = new D1CampaignItemsStore(env.DB);
+      await store.upsert({ interestId: 'c5', mondayItemId: 'item-c5', name: 'Newsletter', archivedAt: null });
+      await store.markArchived('c5', '2026-09-01T00:00:00.000Z');
+      expect(await store.claim('c5', 'Newsletter', NOW, STALE_BEFORE)).toBe(true);
+    });
+  });
 });

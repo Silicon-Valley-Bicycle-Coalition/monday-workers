@@ -10,6 +10,13 @@ export interface CampaignItemsStore {
   upsert(row: CampaignItemRow): Promise<void>;
   markArchived(interestId: string, archivedAt: string): Promise<void>;
   getByInterestId(interestId: string): Promise<CampaignItemRow | null>;
+  /**
+   * Atomically reserve the right to create the Monday item for an interest. True for
+   * exactly one caller when the interest is untracked, archived, or held by a claim older
+   * than `staleBefore`; false when a live item or a fresh claim already exists. A claimed
+   * row is invisible to listActive/getByInterestId until `upsert` fills in its item id.
+   */
+  claim(interestId: string, name: string, now: string, staleBefore: string): Promise<boolean>;
 }
 
 interface D1CampaignItemRecord {
@@ -28,7 +35,7 @@ export class D1CampaignItemsStore implements CampaignItemsStore {
 
   async listActive(): Promise<CampaignItemRow[]> {
     const { results } = await this.db
-      .prepare(`SELECT interest_id, monday_item_id, name, archived_at FROM campaign_items WHERE archived_at IS NULL`)
+      .prepare(`SELECT interest_id, monday_item_id, name, archived_at FROM campaign_items WHERE archived_at IS NULL AND monday_item_id != ''`)
       .all<D1CampaignItemRecord>();
     return results.map(toRow);
   }
@@ -52,9 +59,24 @@ export class D1CampaignItemsStore implements CampaignItemsStore {
       .run();
   }
 
+  async claim(interestId: string, name: string, now: string, staleBefore: string): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO campaign_items (interest_id, monday_item_id, name, archived_at, claimed_at)
+         VALUES (?1, '', ?2, NULL, ?3)
+         ON CONFLICT (interest_id) DO UPDATE SET
+           monday_item_id = '', name = excluded.name, archived_at = NULL, claimed_at = excluded.claimed_at
+         WHERE campaign_items.archived_at IS NOT NULL
+            OR (campaign_items.monday_item_id = '' AND campaign_items.claimed_at < ?4)`,
+      )
+      .bind(interestId, name, now, staleBefore)
+      .run();
+    return result.meta.changes === 1;
+  }
+
   async getByInterestId(interestId: string): Promise<CampaignItemRow | null> {
     const record = await this.db
-      .prepare(`SELECT interest_id, monday_item_id, name, archived_at FROM campaign_items WHERE interest_id = ?1`)
+      .prepare(`SELECT interest_id, monday_item_id, name, archived_at FROM campaign_items WHERE interest_id = ?1 AND monday_item_id != ''`)
       .bind(interestId)
       .first<D1CampaignItemRecord>();
     return record === null ? null : toRow(record);

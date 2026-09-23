@@ -10,6 +10,10 @@ import { withRetry } from '../retry';
 // this isn't latency-sensitive, it's a once-a-day batch job.
 const RECONCILE_RETRY_OPTIONS = { attempts: 3, delayMs: 500 };
 
+// How long a create claim holds before another run may assume its claimant died between
+// claiming and recording the new item id. Far longer than one create's retries take.
+const CLAIM_STALE_MS = 10 * 60 * 1000;
+
 export interface ReconcileDeps {
   mailchimpClient: MailchimpClient;
   mondayClient: MondayClient;
@@ -38,14 +42,12 @@ export async function reconcileCampaigns(deps: ReconcileDeps): Promise<Reconcile
   for (const interest of interests) {
     const existing = trackedById.get(interest.interestId);
     if (existing === undefined) {
-      // `trackedById` only holds active rows (listActive excludes archived_at IS NOT NULL),
-      // so an archived interest_id that reappears in Mailchimp's list looks "new" here and
-      // gets a second Monday item created for it. That does NOT violate the interest_id
-      // primary key — campaignItemsStore.upsert below uses ON CONFLICT (interest_id) DO
-      // UPDATE, so the D1 row is simply re-pointed at the new item id. The real outcome is a
-      // duplicate Monday item (plus an orphaned, still-archived one left behind), not a PK
-      // error. Still out of scope to fix here: Mailchimp doesn't reuse interest ids in
-      // practice, so this is a theoretical edge case, not an observed one.
+      // Untracked (or archived and back again). The cron and every inbound consumer that
+      // meets an unknown interest run this concurrently, so claim it in D1 first — only
+      // the winner creates the Monday item; losers leave it to them (issue #28).
+      const now = new Date();
+      const staleBefore = new Date(now.getTime() - CLAIM_STALE_MS).toISOString();
+      if (!(await campaignItemsStore.claim(interest.interestId, interest.name, now.toISOString(), staleBefore))) continue;
       const itemId = await withRetry(() => mondayClient.createCampaignItem(boardId, interest.name), RECONCILE_RETRY_OPTIONS);
       await campaignItemsStore.upsert({ interestId: interest.interestId, mondayItemId: itemId, name: interest.name, archivedAt: null });
       created++;

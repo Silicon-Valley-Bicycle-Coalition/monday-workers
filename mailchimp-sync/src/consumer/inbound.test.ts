@@ -42,6 +42,7 @@ function fakeCampaignItemsStore(rows: CampaignItemRow[] = []): CampaignItemsStor
     listActive: vi.fn().mockResolvedValue(rows),
     upsert: vi.fn().mockResolvedValue(undefined),
     markArchived: vi.fn().mockResolvedValue(undefined),
+    claim: vi.fn().mockResolvedValue(true),
     getByInterestId: vi.fn().mockImplementation(async (id: string) => rows.find((r) => r.interestId === id) ?? null),
   };
 }
@@ -110,6 +111,7 @@ describe('processInboundBatch', () => {
       listActive: vi.fn().mockImplementation(async () => rows),
       upsert: vi.fn().mockImplementation(async (row: CampaignItemRow) => { rows.push(row); }),
       markArchived: vi.fn(),
+      claim: vi.fn().mockResolvedValue(true),
       getByInterestId: vi.fn().mockImplementation(async (id: string) => rows.find((r) => r.interestId === id) ?? null),
     };
     const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
