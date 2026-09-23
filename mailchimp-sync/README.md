@@ -93,6 +93,10 @@ Three independent flows — see the design doc for full sequence diagrams:
   second column — a second email column id in config, `findItemIdByEmail` across both, and
   either a second connect column or a union of both addresses' interests — is a follow-up,
   not built.
+* **Address changes made in Mailchimp** (`upemail` webhooks) are accepted and keyed on the new
+  address, but this Worker doesn't rewrite the Donor's Email column — so until staff update it
+  on Monday, the event records as `skipped` and later outbound updates for that Donor also skip
+  (the old address is no longer in the audience).
 * A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
   this Worker reconciles its *items* daily but does not create the board itself), plus a new
   connect-column on the Donors board pointed at it.
