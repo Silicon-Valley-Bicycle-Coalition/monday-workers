@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeNdjson, readNdjson, appendNdjson, writeJson, readJson } from './artifacts.js';
+import { writeNdjson, readNdjson, appendNdjson, writeJson, readJson, repairTornTail } from './artifacts.js';
 
 describe('artifacts', () => {
   let dir: string;
@@ -20,6 +20,30 @@ describe('artifacts', () => {
     await appendNdjson(p, { sfId: '1' });
     await appendNdjson(p, { sfId: '2' });
     expect((await readNdjson(p)).length).toBe(2);
+  });
+
+  it('repairTornTail drops a partial final row so the next append starts on a clean line', async () => {
+    const p = join(dir, 'ledger.ndjson');
+    writeFileSync(p, '{"sfId":"1"}\n{"sfId":"2"}\n{"sfId":"3","it');
+    expect(await repairTornTail(p)).toBe('{"sfId":"3","it');
+    await appendNdjson(p, { sfId: '4' });
+    expect(await readNdjson(p)).toEqual([{ sfId: '1' }, { sfId: '2' }, { sfId: '4' }]);
+  });
+
+  it('repairTornTail keeps a complete final row that only lacks its newline, and leaves clean files alone', async () => {
+    const p = join(dir, 'ledger.ndjson');
+    writeFileSync(p, '{"sfId":"1"}\n{"sfId":"2"}');
+    expect(await repairTornTail(p)).toBeNull();
+    expect(readFileSync(p, 'utf8')).toBe('{"sfId":"1"}\n{"sfId":"2"}\n');
+    expect(await repairTornTail(p)).toBeNull();
+    expect(readFileSync(p, 'utf8')).toBe('{"sfId":"1"}\n{"sfId":"2"}\n');
+  });
+
+  it('readNdjson still throws on corruption that is not a torn tail', async () => {
+    const p = join(dir, 'ledger.ndjson');
+    writeFileSync(p, '{"sfId":"1"}\n{bad\n{"sfId":"2"}\n');
+    expect(await repairTornTail(p)).toBeNull();
+    await expect(readNdjson(p)).rejects.toThrow();
   });
 
   it('round-trips JSON', async () => {

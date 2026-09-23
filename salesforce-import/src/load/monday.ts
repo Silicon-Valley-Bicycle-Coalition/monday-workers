@@ -1,31 +1,56 @@
 interface GqlError { message: string; extensions?: { code?: string } }
 
+// Thrown instead of retrying when a NON-idempotent mutation (create_item) failed in a way that
+// may have happened after Monday committed it — a 5xx, a dropped connection, a timeout, or the
+// HTTP-200/no-data shape without a rate-limit status. Blindly retrying those creates duplicate
+// items; the caller must first check whether the write landed (see load/index.ts).
+export class AmbiguousWriteError extends Error {
+  constructor(message: string) { super(message); this.name = 'AmbiguousWriteError'; }
+}
+
 export class MondayClient {
   private attempts: number;
   constructor(private opts: {
     apiUrl: string; token: string; fetchFn?: typeof fetch;
-    sleepFn?: (ms: number) => Promise<void>; maxAttempts?: number;
+    sleepFn?: (ms: number) => Promise<void>; maxAttempts?: number; requestTimeoutMs?: number;
   }) { this.attempts = opts.maxAttempts ?? 6; }
 
-  async gql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+  // `idempotent: false` still retries responses that prove the request was rejected before it
+  // ran (HTTP 429, complexity-budget errors, the no-data shape carrying status_code 429), but
+  // throws AmbiguousWriteError on anything that might have committed.
+  async gql<T>(query: string, variables: Record<string, unknown> = {},
+    { idempotent = true }: { idempotent?: boolean } = {}): Promise<T> {
     const fetchFn = this.opts.fetchFn ?? fetch;
     const sleep = this.opts.sleepFn ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    const ambiguous = (detail: string): string => {
+      if (!idempotent) throw new AmbiguousWriteError(`monday: ${detail} (write may have committed)`);
+      return detail;
+    };
     let lastError = '';
     for (let attempt = 0; attempt < this.attempts; attempt++) {
       if (attempt > 0) await sleep(2 ** attempt * 1000 + Math.random() * 500);
-      const res = await fetchFn(this.opts.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: this.opts.token,
-          'API-Version': '2026-01' },
-        body: JSON.stringify({ query, variables }),
-      });
+      let res: Response;
+      try {
+        // Without a timeout one hung socket stalls an hours-long load indefinitely.
+        res = await fetchFn(this.opts.apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: this.opts.token,
+            'API-Version': '2026-01' },
+          body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(this.opts.requestTimeoutMs ?? 60_000),
+        });
+      } catch (err) {
+        // ECONNRESET, DNS failure, timeout — previously these escaped the retry loop entirely.
+        lastError = ambiguous(`network error: ${String(err)}`);
+        continue;
+      }
       if (res.status === 429) {
         const after = Number(res.headers.get('Retry-After') ?? '0');
         lastError = 'HTTP 429';
         if (after > 0) await sleep(after * 1000);
         continue;
       }
-      if (res.status >= 500) { lastError = `HTTP ${res.status}`; continue; }
+      if (res.status >= 500) { lastError = ambiguous(`HTTP ${res.status}`); continue; }
       if (!res.ok) throw new Error(`monday: HTTP ${res.status}: ${await res.text()}`);
       const body = await res.json() as
         // error_message/status_code: Monday's rate-limit/auth shape — HTTP 200, NO data,
@@ -46,6 +71,7 @@ export class MondayClient {
           ? `no data — ${body.error_message}` +
             (body.status_code === undefined ? '' : ` (status_code ${body.status_code})`)
           : `no data — ${JSON.stringify(body)}`;
+        if (body.status_code !== 429) lastError = ambiguous(lastError);
         continue;
       }
       return body.data;

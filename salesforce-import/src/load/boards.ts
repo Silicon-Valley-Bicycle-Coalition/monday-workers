@@ -2,12 +2,13 @@ import { existsSync } from 'node:fs';
 import type { Config } from '../config.js';
 import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
+import { SF_ID_COLUMN } from './lookup.js';
 
 // 'Fiscal Year Ending' is deliberately 'text', not 'numbers': Monday renders every numbers
 // column with a thousands separator, so FY2025 displayed as "2,025" in the sandbox. A 4-digit
 // year sorts correctly as text, and the title says which end of SVBC's July–June year it names.
 export const COLUMN_TYPES: Record<string, string> = {
-  'Salesforce Debug': 'long_text',
+  'Salesforce Debug': 'long_text', [SF_ID_COLUMN]: 'text',
   'Personal Email': 'email', 'Household Email': 'email', 'Work Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
@@ -80,6 +81,9 @@ function statusLabelsFor(key: string, title: string): string[] | undefined {
 // Needed for debugging/reconciliation during the migration, deleted afterward — created
 // last so they sit at the far right of every board instead of next to the item name.
 export const DEBUG_COLUMNS = new Set(['Salesforce Debug']);
+// Reconciliation columns that also sit at the far right. Salesforce ID is kept after the
+// migration (unlike Salesforce Debug) — it's the only searchable link back to the source record.
+const TRAILING_COLUMNS = new Set([...DEBUG_COLUMNS, SF_ID_COLUMN]);
 
 // Dollar-amount 'numbers' columns — created with currency (not plain float) formatting.
 // 'Gift Count' and 'Hours' are 'numbers' too but aren't money, so they're excluded.
@@ -132,6 +136,7 @@ export async function ensureBoards(
   client: MondayClient, cfg: Config, boardKeys: string[],
   neededColumns: Map<string, Set<string>>,
   onRename: (boardKey: string, oldTitle: string, newTitle: string) => void = () => {},
+  onCreate: (boardKey: string) => void = () => {},
 ): Promise<BoardMap> {
   const path = dataPath('load', 'boards.json');
   const map: BoardMap = existsSync(path) ? await readJson<BoardMap>(path) : {};
@@ -171,8 +176,13 @@ export async function ensureBoards(
       for (const item of res.create_board.items_page?.items ?? []) {
         await client.gql(`mutation ($id: ID!) { delete_item (item_id: $id) { id } }`, { id: item.id });
       }
+      onCreate(key);
     }
     map[key] = { boardId, columns: {} };
+    // Persist each board id the moment it exists: a throw anywhere later in this function
+    // (a column type missing from COLUMN_TYPES, an API error) used to lose it, and the next run
+    // created a second copy of the board.
+    await writeJson(path, map);
   }
 
   const resolveTargetBoardIds = (title: string): number[] => {
@@ -203,7 +213,7 @@ export async function ensureBoards(
     // Debug columns go last so they land at the far right of the board — staff-facing
     // columns stay prominent, and Salesforce Debug is slated for deletion after the migration.
     const ordered = [...(neededColumns.get(key) ?? [])]
-      .sort((a, b) => Number(DEBUG_COLUMNS.has(a)) - Number(DEBUG_COLUMNS.has(b)));
+      .sort((a, b) => Number(TRAILING_COLUMNS.has(a)) - Number(TRAILING_COLUMNS.has(b)));
     for (const title of ordered) {
       if (entry.columns[title]) continue;
       const isConnect = CONNECT_COLUMNS.has(title);

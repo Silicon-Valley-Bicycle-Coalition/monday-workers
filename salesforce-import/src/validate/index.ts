@@ -2,9 +2,12 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
-import { dataPath, readNdjson, writeJson } from '../artifacts.js';
+import { dataPath, readJson, readNdjson, writeJson } from '../artifacts.js';
 import type { ItemPayload } from '../transform/types.js';
 import { Ledger } from '../load/ledger.js';
+import { MondayClient } from '../load/monday.js';
+import type { BoardMap } from '../load/boards.js';
+import { SF_ID_COLUMN, scanBoardSfIds } from '../load/lookup.js';
 
 interface Check { name: string; ok: boolean; detail: string }
 
@@ -33,7 +36,7 @@ const CATEGORY = (board: string): string | null =>
   : board === 'affiliations' ? 'affiliations'
   : null;
 
-export async function runValidate(args: string[]): Promise<number> {
+export async function runValidate(args: string[], deps: { client?: MondayClient } = {}): Promise<number> {
   const cfg = loadConfig();
   const tolIdx = args.indexOf('--tolerance');
   const tol = tolIdx >= 0 ? Number(args[tolIdx + 1]) : 0;
@@ -56,9 +59,11 @@ export async function runValidate(args: string[]): Promise<number> {
   let unresolvableTargets = 0;
   for (const p of payloads) {
     for (const link of p.links ?? []) {
-      const resolvedCount = link.targetSfIds.filter((id) => ledger.itemId(id) !== undefined).length;
+      const resolved = link.targetSfIds.filter((id) => ledger.itemId(id) !== undefined);
+      const resolvedCount = resolved.length;
       unresolvableTargets += link.targetSfIds.length - resolvedCount;
-      if (ledger.linkDone(p.sfId, link.column)) continue;
+      // A link written before some of its targets existed doesn't count as done.
+      if (ledger.linkCovers(p.sfId, link.column, resolved)) continue;
       if (resolvedCount > 0) linksNotWritten++;
       else skippedByDesign++; // zero resolvable targets — skipped by design, not a failure
     }
@@ -109,6 +114,34 @@ export async function runValidate(args: string[]): Promise<number> {
     registrations.filter((p) => sourceOf(p) === 'Eventbrite').length + deletedAttendees, r['eventbriteAttendees']);
   recCheck('recon-organizations',
     payloads.filter((p) => p.board === 'organizations').length, r['organizations']);
+
+  // 3b. Monday read-back (--live): everything above trusts the ledger, which can't see items
+  // created twice or lost between create and ledger append. Scan each board's ACTIVE items by
+  // their Salesforce ID column and compare against what the ledger says should be active.
+  if (args.includes('--live')) {
+    const token = process.env['MONDAY_API_TOKEN'];
+    if (!token && !deps.client) { console.error('validate --live: MONDAY_API_TOKEN not set'); return 1; }
+    const client = deps.client ?? new MondayClient({ apiUrl: cfg.monday.apiUrl, token: token! });
+    const boards = await readJson<BoardMap>(dataPath('load', 'boards.json'));
+    for (const key of [...new Set(payloads.map((p) => p.board))]) {
+      const board = boards[key];
+      const colId = board?.columns[SF_ID_COLUMN];
+      if (!board || !colId) {
+        checks.push({ name: `live-${key}`, ok: false, detail: `no board/${SF_ID_COLUMN} column in boards.json` });
+        continue;
+      }
+      const scan = await scanBoardSfIds(client, board.boardId, colId);
+      const expectedActive = ledger.successesFor(key).filter((s) => !ledger.archivedDone(s.sfId));
+      const expectedIds = new Set(expectedActive.map((s) => s.sfId));
+      const missing = expectedActive.filter((s) => !scan.bySfId.has(s.sfId)).length;
+      const unexpected = [...scan.bySfId.keys()].filter((id) => !expectedIds.has(id)).length;
+      const duplicated = [...scan.bySfId.values()].filter((ids) => ids.length > 1).length;
+      checks.push({ name: `live-${key}`, ok: missing === 0 && unexpected === 0 && duplicated === 0,
+        detail: `${scan.total} active on Monday vs ${expectedActive.length} expected — ` +
+          `${missing} missing, ${unexpected} not in ledger, ${duplicated} duplicated Salesforce Ids, ` +
+          `${scan.untagged} without a Salesforce ID` });
+    }
+  }
 
   // 4. Stratified sample sheet (~300 rows, floor 30/category, proportional above, seeded PRNG).
   const byCategory = new Map<string, ItemPayload[]>();

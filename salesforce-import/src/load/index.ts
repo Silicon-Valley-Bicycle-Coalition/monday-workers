@@ -1,12 +1,13 @@
 import { registerCommand } from '../commands.js';
 import { loadConfig } from '../config.js';
-import { dataPath, readNdjson } from '../artifacts.js';
+import { dataPath, readNdjson, writeJson } from '../artifacts.js';
 import type { ItemPayload } from '../transform/types.js';
 import { fiscalYearLoadOrder } from '../transform/schedule.js';
-import { MondayClient } from './monday.js';
+import { AmbiguousWriteError, MondayClient } from './monday.js';
 import { Ledger } from './ledger.js';
 import { ensureBoards, COLUMN_TYPES } from './boards.js';
 import { formatColumnValue } from './columnValues.js';
+import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -18,6 +19,10 @@ import { formatColumnValue } from './columnValues.js';
 // (which load later), so this position is the only valid one.
 const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliations', 'campaigns',
   'recurring-gifts', 'events', 'event-registrations', 'donations', 'volunteers', 'activities'];
+
+// How many times an ambiguous create_item failure (see AmbiguousWriteError) is re-attempted
+// after confirming by lookup that the earlier attempt didn't land.
+const CREATE_ATTEMPTS = 3;
 
 function boardOrder(keys: string[]): string[] {
   return ORDER.filter((k) => keys.includes(k));
@@ -39,6 +44,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   const dryRun = args.includes('--dry-run');
   const limitIdx = args.indexOf('--limit');
   const limit = limitIdx >= 0 ? Number(args[limitIdx + 1]) : Infinity;
+  if (!(limit > 0)) {
+    console.error(`load: --limit needs a positive number (got "${args[limitIdx + 1] ?? ''}")`);
+    return 1;
+  }
 
   const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
 
@@ -48,6 +57,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     if (byBoard.get(p.board)!.length < limit) byBoard.get(p.board)!.push(p);
   }
   const keys = boardOrder([...byBoard.keys()]);
+  // Every sfId this run is expected to create. A link target outside this set was deliberately
+  // never migrated (skipped by design); one inside it that has no item yet is PENDING — its
+  // create failed or hasn't run — and must hold back archiving until it lands.
+  const expectedSfIds = new Set([...byBoard.values()].flat().map((p) => p.sfId));
 
   if (dryRun) {
     for (const key of keys) {
@@ -68,7 +81,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
 
   const needed = new Map<string, Set<string>>();
   for (const key of keys) {
-    const set = new Set<string>();
+    const set = new Set<string>([SF_ID_COLUMN]);
     for (const p of byBoard.get(key)!) {
       for (const t of Object.keys(p.columns)) set.add(t);
       for (const l of p.links ?? []) set.add(l.column);
@@ -80,8 +93,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   // just-renamed board is a partial re-run mixing old- and new-semantics data. Detect and warn;
   // the only fix is a full re-create (delete data/load/).
   const renamedBoardKeys = new Set<string>();
+  const createdBoardKeys = new Set<string>();
   const boards = await ensureBoards(client, cfg, keys, needed,
-    (boardKey) => { renamedBoardKeys.add(boardKey); });
+    (boardKey) => { renamedBoardKeys.add(boardKey); },
+    (boardKey) => { createdBoardKeys.add(boardKey); });
   for (const key of renamedBoardKeys) {
     if (ledger.hasAnyFor(key)) {
       console.warn(`load: ${key} had a column renamed this run and the ledger already holds items ` +
@@ -90,11 +105,48 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
   }
 
+  const report = {
+    startedAt: new Date().toISOString(),
+    created: {} as Record<string, number>, adopted: {} as Record<string, number>,
+    createFailed: {} as Record<string, number>,
+    // Items Monday holds more than once for one Salesforce Id — never auto-deleted; the first
+    // is ledgered and the rest are listed here for a human to remove.
+    duplicates: [] as { board: string; sfId: string; itemIds: string[] }[],
+    untaggedItems: {} as Record<string, number>,
+    links: { written: 0, partial: 0, pending: 0, skippedByDesign: 0, failed: 0 },
+    archive: { archived: 0, deferred: 0, failed: 0 },
+  };
+  const bump = (m: Record<string, number>, key: string) => { m[key] = (m[key] ?? 0) + 1; };
+
+  // Adopt items Monday already holds that the ledger doesn't know about — a create whose response
+  // was lost, or a crash between create_item and the ledger append. Only boards that existed
+  // before this run and still have unledgered payloads need the scan.
+  for (const key of keys) {
+    if (createdBoardKeys.has(key)) continue;
+    const unledgered = byBoard.get(key)!.filter((p) => !ledger.has(p.sfId, key));
+    if (unledgered.length === 0) continue;
+    const board = boards[key]!;
+    const scan = await scanBoardSfIds(client, board.boardId, board.columns[SF_ID_COLUMN]!);
+    if (scan.untagged > 0) report.untaggedItems[key] = scan.untagged;
+    for (const p of unledgered) {
+      const itemIds = scan.bySfId.get(p.sfId);
+      if (!itemIds?.length) continue;
+      if (itemIds.length > 1) report.duplicates.push({ board: key, sfId: p.sfId, itemIds });
+      await ledger.recordSuccess({ sfId: p.sfId, board: key, itemId: itemIds[0]! });
+      bump(report.adopted, key);
+    }
+    if (report.adopted[key]) {
+      console.warn(`load: ${key} — adopted ${report.adopted[key]} items already on Monday but missing ` +
+        `from the ledger (lost create response or crash); not re-creating them`);
+    }
+  }
+
   const createItems = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;
+    const sfIdColId = board.columns[SF_ID_COLUMN]!;
     for (const p of items) {
       if (ledger.has(p.sfId, key)) continue;
-      const colValues: Record<string, unknown> = {};
+      const colValues: Record<string, unknown> = { [sfIdColId]: p.sfId };
       for (const [title, value] of Object.entries(p.columns)) {
         if (value === null || value === undefined || value === '') continue;
         const id = board.columns[title];
@@ -104,13 +156,31 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         colValues[id] = formatted;
       }
       try {
-        const res = await client.gql<{ create_item: { id: string } }>(
-          `mutation ($boardId: ID!, $itemName: String!, $cols: JSON, $create: Boolean!) {
-             create_item (board_id: $boardId, item_name: $itemName, column_values: $cols,
-               create_labels_if_missing: $create) { id } }`,
-          { boardId: String(board.boardId), itemName: p.name, cols: JSON.stringify(colValues), create: true });
-        await ledger.recordSuccess({ sfId: p.sfId, board: key, itemId: res.create_item.id });
+        let itemId: string | undefined;
+        for (let attempt = 1; itemId === undefined; attempt++) {
+          try {
+            const res = await client.gql<{ create_item: { id: string } }>(
+              `mutation ($boardId: ID!, $itemName: String!, $cols: JSON, $create: Boolean!) {
+                 create_item (board_id: $boardId, item_name: $itemName, column_values: $cols,
+                   create_labels_if_missing: $create) { id } }`,
+              { boardId: String(board.boardId), itemName: p.name, cols: JSON.stringify(colValues), create: true },
+              { idempotent: false });
+            itemId = res.create_item.id;
+            bump(report.created, key);
+          } catch (err) {
+            if (!(err instanceof AmbiguousWriteError) || attempt >= CREATE_ATTEMPTS) throw err;
+            // The create may have committed — look before re-creating.
+            const found = await findItemIdsBySfId(client, board.boardId, sfIdColId, p.sfId);
+            if (found.length > 0) {
+              itemId = found[0]!;
+              bump(report.adopted, key);
+              if (found.length > 1) report.duplicates.push({ board: key, sfId: p.sfId, itemIds: found });
+            }
+          }
+        }
+        await ledger.recordSuccess({ sfId: p.sfId, board: key, itemId });
       } catch (err) {
+        bump(report.createFailed, key);
         await ledger.recordFailure({ sfId: p.sfId, board: key, error: String(err) });
         console.error(`load: FAILED ${key}/${p.sfId}: ${String(err)}`);
       }
@@ -121,20 +191,35 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   // small worker pool runs LINK_CONCURRENCY mutations in flight; each link still ledgers
   // individually and per-call retry/backoff lives in the client.
   const LINK_CONCURRENCY = 6;
-  let skippedLinks = 0;
-  let partialLinks = 0;
+  // sfIds that must not be archived this run because a link from or into them is still waiting
+  // on a target (or source) item that is expected but doesn't exist yet.
+  const pendingArchiveBlock = new Set<string>();
   const buildLinkTasks = (entries: DeferredLink[]): LinkTask[] => {
     const tasks: LinkTask[] = [];
     for (const { key, payload: p, link } of entries) {
       const board = boards[key]!;
       const itemId = ledger.itemId(p.sfId);
-      if (!itemId) continue;
-      if (ledger.linkDone(p.sfId, link.column)) continue;
+      if (!itemId) {
+        // The source's own create failed: its link into these targets can't be written yet, so
+        // they mustn't archive (an event-registration's Payment pointing into a donation).
+        for (const t of link.targetSfIds) pendingArchiveBlock.add(t);
+        continue;
+      }
       const resolved = link.targetSfIds
         .map((sfId) => ({ sfId, targetItemId: ledger.itemId(sfId) }))
         .filter((t): t is { sfId: string; targetItemId: string } => t.targetItemId !== undefined);
-      if (resolved.length === 0) { skippedLinks++; continue; }
-      if (resolved.length < link.targetSfIds.length) partialLinks++;
+      const pendingTargets = link.targetSfIds.filter((t) => !ledger.itemId(t) && expectedSfIds.has(t));
+      if (pendingTargets.length > 0) {
+        report.links.pending++;
+        pendingArchiveBlock.add(p.sfId);
+      }
+      if (resolved.length === 0) {
+        if (pendingTargets.length === 0) report.links.skippedByDesign++;
+        continue;
+      }
+      if (resolved.length < link.targetSfIds.length) report.links.partial++;
+      // A link written earlier with fewer targets is rewritten once more of them resolve.
+      if (ledger.linkCovers(p.sfId, link.column, resolved.map((t) => t.sfId))) continue;
       const colId = board.columns[link.column];
       if (!colId) throw new Error(`load: board ${key} missing connect column "${link.column}"`);
       tasks.push({ boardId: board.boardId, itemId, colId,
@@ -158,12 +243,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
                  create_labels_if_missing: $create) { id } }`,
             { boardId: String(t.boardId), itemId: t.itemId,
               cols: JSON.stringify({ [t.colId]: { item_ids: t.targetIds } }), create: true });
-          await ledger.recordLink(t.sfId, t.column);
+          await ledger.recordLink(t.sfId, t.column, t.targetSfIds);
+          report.links.written++;
           linkedThisRun.add(t.sfId);
           // Targets count too: a retried incoming link means its target was unarchived for
           // the write to stick, so the re-archive check below must see it as touched.
           for (const target of t.targetSfIds) linkedThisRun.add(target);
         } catch (err) {
+          report.links.failed++;
           await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err),
             targetSfIds: t.targetSfIds });
         }
@@ -226,7 +313,8 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       // (e.g. an event-registration whose Payment points INTO a donation), so the gate must
       // also block every TARGET of a pending link, not just payloads that are themselves the
       // source. Pre-targetSfIds ledger entries have no target list — those can only gate by
-      // source, same as before.
+      // source, same as before. pendingArchiveBlock adds links that couldn't even be attempted
+      // because an expected item (e.g. the Donor, whose create failed) doesn't exist yet.
       const pendingLinkSfIds = new Set(
         ledger.failures().filter((f) => f.board.startsWith('link:'))
           .flatMap((f) => [f.sfId, ...(f.targetSfIds ?? [])]));
@@ -237,8 +325,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         if (ledger.archivedDone(p.sfId) && !linkedThisRun.has(p.sfId)) { archivedCount++; continue; }
         const itemId = ledger.itemId(p.sfId);
         if (!itemId) continue; // creation failed above; already ledgered as a failure
-        if (pendingLinkSfIds.has(p.sfId)) {
+        if (pendingLinkSfIds.has(p.sfId) || pendingArchiveBlock.has(p.sfId)) {
           deferredCount++;
+          report.archive.deferred++;
           console.warn(`load: NOT archiving donations/${p.sfId} — links still unresolved; ` +
             `fix links (re-run load), then it archives on the next run`);
           continue;
@@ -247,7 +336,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           await client.gql(`mutation ($id: ID!) { archive_item (item_id: $id) { id } }`, { id: itemId });
           await ledger.recordArchive(p.sfId);
           archivedCount++;
+          report.archive.archived++;
         } catch (err) {
+          report.archive.failed++;
           await ledger.recordArchiveFailure(p.sfId, String(err));
         }
       }
@@ -261,14 +352,23 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   const deferredLeftover = [...deferredByFY.values()].flat();
   if (deferredLeftover.length > 0) await runLinkTasks(buildLinkTasks(deferredLeftover));
 
-  if (skippedLinks > 0) console.warn(`load: ${skippedLinks} links skipped (target not migrated)`);
-  if (partialLinks > 0) console.warn(`load: ${partialLinks} links wrote a partial set of targets ` +
-    `(some target items not yet migrated)`);
+  const l = report.links;
+  if (l.skippedByDesign > 0) console.warn(`load: ${l.skippedByDesign} links skipped (targets not migrated)`);
+  if (l.partial > 0) console.warn(`load: ${l.partial} links wrote a partial set of targets`);
+  if (l.pending > 0) console.warn(`load: ${l.pending} links waiting on target items that failed or ` +
+    `haven't been created — re-run "load" after fixing the failures`);
+  if (report.duplicates.length > 0) {
+    console.error(`load: ${report.duplicates.length} Salesforce Ids exist more than once on Monday — ` +
+      `see data/load/report.json and remove the extras by hand`);
+  }
+  await writeJson(dataPath('load', 'report.json'), { ...report, finishedAt: new Date().toISOString() });
 
   const failures = ledger.failures();
-  if (failures.length > 0) {
-    console.error(`load: ${failures.length} unresolved failures — re-run "load" to retry just these`);
-    for (const f of failures.slice(0, 20)) console.error(`  ${f.board}/${f.sfId}: ${f.error}`);
+  if (failures.length > 0 || l.pending > 0 || report.duplicates.length > 0) {
+    if (failures.length > 0) {
+      console.error(`load: ${failures.length} unresolved failures — re-run "load" to retry just these`);
+      for (const f of failures.slice(0, 20)) console.error(`  ${f.board}/${f.sfId}: ${f.error}`);
+    }
     return 1;
   }
   console.log('load: complete, no unresolved failures');
