@@ -2,10 +2,12 @@
 
 **Status:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
 Marketplace app (both carry an ongoing cost this avoids). 133 tests passing across 19 files;
-webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. Not
-yet connected to a real QuickBooks company, sandbox or production — that needs an Intuit
-developer account and app credentials, a staff/admin task (see "Sandbox environment" and "Open
-question" below), which hasn't happened yet.
+webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. The
+sandbox environment's Cloudflare side (D1, queues, `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`) is
+provisioned and verified (2026-09-22), and the Intuit app-review question is resolved, but it's
+still not connected to a real QuickBooks company — that needs an Intuit developer account and app
+credentials, a staff/admin task (see "Sandbox environment" and "Open question" below), which
+hasn't happened yet.
 **Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
@@ -80,6 +82,28 @@ plan's Task 15): an Intuit sandbox company, development keys, a token pair seede
 Playground, and a webhook subscription. `npm run deploy:sandbox` fails until
 `env.sandbox.d1_databases[0].database_id` is replaced with the id `wrangler d1 create` prints.
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
+
+**Provisioned and verified 2026-09-22:** D1 `svbc-quickbooks-sync-sandbox` (id wired 2026-09-20)
+and both queues (`quickbooks-sync-writes-sandbox`, `-dlq`) exist. Found and closed a gap: the
+`0002_qb_events_pending_monday_item_id` migration (added 2026-09-21, after the D1 id was wired)
+had never been applied to the remote sandbox database — `wrangler d1 migrations list --env
+sandbox --remote` showed it pending, so the deployed Worker's queue consumer would have failed
+writing that column on its first real message. Applied it and confirmed
+`qb_events.pending_monday_item_id` exists via `PRAGMA table_info`. `config/split.test.ts`, the
+full unit suite, `wrangler types && tsc --noEmit`, and `wrangler deploy --dry-run --env sandbox`
+all pass; the sandbox Worker itself auto-deployed via Workers Builds on the 2026-09-21 merge to
+main. **`MONDAY_API_TOKEN` set 2026-09-22** — reused the existing shared `Sandbox Integration`
+user (`dwk+sandbox-integration@bikesiliconvalley.org`, the single sandbox-wide integration user
+the [sandbox design](../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4
+calls for; verified via a `me` query before use, not minted fresh so the other sandbox Workers
+already using it keep working). **`MONDAY_WEBHOOK_SECRET` generated and set 2026-09-22** — a
+fresh random value (this one doesn't come from an external account, so no reuse concern); a copy
+is saved in this Worker's gitignored `.dev.vars` for when the Monday webhook subscription is
+registered as `.../webhooks/monday?secret=<value>`. **Not yet done:** `QB_CLIENT_ID`,
+`QB_CLIENT_SECRET`, and `QB_WEBHOOK_VERIFIER_TOKEN` remain unset, and Monday board ids are still
+`null` — these wait on the staff prerequisites above (an Intuit sandbox company and development
+keys, a token pair seeded via the OAuth Playground) plus the Intuit app-review question below,
+now resolved.
 
 **Workers Builds:** connect a second Worker, `svbc-quickbooks-sync-sandbox`, to this repo with
 root directory `/quickbooks-sync`, production branch `main`, and deploy command
