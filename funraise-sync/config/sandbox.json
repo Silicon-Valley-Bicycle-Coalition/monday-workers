@@ -15,7 +15,7 @@
     },
     "itemNameField": "description",
     "entityIdField": "id",
-    "entityIdColumn": null,
+    "entityIdColumn": "link_mm6jhcj8",
     "thankYouSentColumn": "boolean_mm78nf5s",
     "giftTypeColumn": "text_mm6j66w3",
     "giftTypeValue": "Donation",

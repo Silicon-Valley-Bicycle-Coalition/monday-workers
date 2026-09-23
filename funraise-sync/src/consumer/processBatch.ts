@@ -42,6 +42,11 @@ const TRANSACTION_DATE_FIELD = 'donationDate';
 // Funraise facts, not per-deployment choices, hence constants.
 const SUBSCRIPTION_ID_FIELD = 'subscription.id';
 const EVENT_FIELD = 'fundraisingEvent';
+// The Donations board's Funraise ID column is a LINK column, which rejects a bare string — write
+// the same { url, text } shape salesforce-import stamps on migrated gifts (transform/fields.ts
+// funraiseTransactionLink), so a lookup by the bare id (matched against the link text) finds a
+// gift whichever writer created it.
+const FUNRAISE_TRANSACTION_URL = 'https://platform.funraise.io/transaction/';
 
 
 export async function processFunraiseQueueBatch(
@@ -127,7 +132,7 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     }
   }
   if (entityIdColumn) {
-    columnValues[entityIdColumn] = entityId;
+    columnValues[entityIdColumn] = { url: `${FUNRAISE_TRANSACTION_URL}${entityId}`, text: entityId };
   }
 
   // At-least-once delivery: an event that already has a Monday item (an earlier
@@ -139,6 +144,26 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
       writtenAt: new Date().toISOString(),
     });
     return;
+  }
+
+  // Before creating, adopt an existing item carrying this transaction's Funraise ID: a gift
+  // salesforce-import migrated (the first Funraise update after cutover — an edit or refund — has
+  // no D1 row yet), or this Worker's own earlier create whose D1 update was lost. Adopting writes
+  // the Funraise-owned columns only — never the first-write stamps below, and never the Donor
+  // link: a migrated gift's Gift Type, Thank You Sent, Fiscal Year and Donor (which can be an
+  // Organization) came from Salesforce, and an orphan of our own already got all of them at
+  // create. Items on archived fiscal years aren't visible to the lookup — see README.
+  if (entityIdColumn) {
+    const existing = await deps.mondayClient.findItemByColumnValue(boardId, entityIdColumn, entityId);
+    if (existing) {
+      const { [donorLinkColumn]: _donorLink, ...adoptValues } = columnValues;
+      await deps.mondayClient.changeColumnValues(boardId, existing.id, adoptValues);
+      await deps.eventStore.updateStatusByEntity(entityType, entityId, 'written', {
+        mondayItemId: existing.id,
+        writtenAt: new Date().toISOString(),
+      });
+      return;
+    }
   }
 
   // Funraise's own transaction-time donor receipt already covers acknowledgment for
@@ -171,21 +196,6 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
       console.warn(
         `funraise-sync consumer: transaction "${entityId}" has no parseable "${TRANSACTION_DATE_FIELD}"; leaving Fiscal Year Ending blank`
       );
-    }
-  }
-
-  // The D1 update recording mondayItemId can fail after a successful create, leaving
-  // an orphaned item the retry would duplicate — the entity-id column stamped on every
-  // created item lets the retry find and adopt it instead.
-  if (entityIdColumn) {
-    const orphan = await deps.mondayClient.findItemByColumnValue(boardId, entityIdColumn, entityId);
-    if (orphan) {
-      await deps.mondayClient.changeColumnValues(boardId, orphan.id, columnValues);
-      await deps.eventStore.updateStatusByEntity(entityType, entityId, 'written', {
-        mondayItemId: orphan.id,
-        writtenAt: new Date().toISOString(),
-      });
-      return;
     }
   }
 

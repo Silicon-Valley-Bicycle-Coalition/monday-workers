@@ -60,7 +60,7 @@ describe('processFunraiseQueueBatch', () => {
     expect(createItem).toHaveBeenCalledWith(111, 'Funraise transaction', {
       numeric_col: 100,
       connect_col: { item_ids: [55] },
-      entity_col: 'txn-1',
+      entity_col: { url: 'https://platform.funraise.io/transaction/txn-1', text: 'txn-1' },
     });
     expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'written', {
       mondayItemId: 'item-1',
@@ -101,7 +101,7 @@ describe('processFunraiseQueueBatch', () => {
     expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', {
       numeric_col: 50,
       connect_col: { item_ids: [7] },
-      entity_col: 'txn-1',
+      entity_col: { url: 'https://platform.funraise.io/transaction/txn-1', text: 'txn-1' },
     });
     expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'written', {
       writtenAt: expect.any(String),
@@ -180,7 +180,7 @@ describe('create idempotency via the entity-id column', () => {
     await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
 
     expect(createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({
-      entity_col: 'txn-1',
+      entity_col: { url: 'https://platform.funraise.io/transaction/txn-1', text: 'txn-1' },
     }));
   });
 
@@ -200,6 +200,51 @@ describe('create idempotency via the entity-id column', () => {
       mondayItemId: 'item-orphan',
       writtenAt: expect.any(String),
     });
+  });
+
+  it('adopts a gift salesforce-import migrated (first Funraise update after cutover, no D1 row) instead of duplicating it', async () => {
+    // A refund of a pre-cutover gift: no mondayItemId in D1, but the imported Donations item
+    // carries the same Funraise transaction link, found by its bare id.
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn();
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const findItemByColumnValue = vi.fn().mockResolvedValue({ id: 'item-migrated' });
+    const mondayClient: MondayClient = { findItemByColumnValue, createItem, changeColumnValues };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
+
+    expect(findItemByColumnValue).toHaveBeenCalledWith(111, 'entity_col', 'txn-1');
+    expect(createItem).not.toHaveBeenCalled();
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-migrated', {
+      numeric_col: 100,
+      entity_col: { url: 'https://platform.funraise.io/transaction/txn-1', text: 'txn-1' },
+    });
+  });
+
+  it('never overwrites the Donor link when adopting — the importer may have linked an Organization', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'item-migrated' }),
+      createItem: vi.fn(),
+      changeColumnValues,
+    };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
+
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-migrated',
+      expect.not.objectContaining({ connect_col: expect.anything() }));
+  });
+
+  it('writes the entity id as a link { url, text } — the Donations Funraise ID column rejects a bare string', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-new' });
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue(null), createItem, changeColumnValues: vi.fn() };
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config });
+
+    const cols = createItem.mock.calls[0]![2] as Record<string, unknown>;
+    expect(typeof cols['entity_col']).toBe('object');
   });
 
   it('creates directly without a lookup when entityIdColumn is null', async () => {
@@ -243,7 +288,7 @@ describe('Thank You Sent (acknowledgment decision, Option 2)', () => {
     );
   });
 
-  it('sets Thank You Sent true when adopting an orphaned Donations item', async () => {
+  it('never re-stamps Thank You Sent when adopting an existing item (a migrated gift, or our own orphan that already has it)', async () => {
     const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
     const changeColumnValues = vi.fn().mockResolvedValue(undefined);
     const mondayClient: MondayClient = {
@@ -257,7 +302,7 @@ describe('Thank You Sent (acknowledgment decision, Option 2)', () => {
     expect(changeColumnValues).toHaveBeenCalledWith(
       111,
       'item-orphan',
-      expect.objectContaining({ thank_you_col: { checked: 'true' } })
+      expect.not.objectContaining({ thank_you_col: expect.anything() })
     );
   });
 
@@ -308,12 +353,12 @@ describe('Gift Type stamp (membership renewal write path, spec 2026-09-15)', () 
     expect(createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({ gt_col: 'Donation' }));
   });
 
-  it('stamps Gift Type when adopting an orphaned Donations item', async () => {
+  it('never re-stamps Gift Type when adopting an existing item — a migrated gift keeps its Salesforce classification', async () => {
     const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
     const changeColumnValues = vi.fn().mockResolvedValue(undefined);
     const mondayClient: MondayClient = { findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'item-orphan' }), createItem: vi.fn(), changeColumnValues };
     await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: giftTypeConfig });
-    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-orphan', expect.objectContaining({ gt_col: 'Donation' }));
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-orphan', expect.not.objectContaining({ gt_col: expect.anything() }));
   });
 
   it('never touches Gift Type on a later update — staff may have reclassified the gift', async () => {
@@ -432,7 +477,7 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
     );
   });
 
-  it('stamps the fiscal year when adopting an orphaned Donations item', async () => {
+  it('never re-stamps the fiscal year when adopting an existing item', async () => {
     const eventStore = fakeStore(transactionRow('2026-08-15T18:30:12.000Z'));
     const changeColumnValues = vi.fn().mockResolvedValue(undefined);
     const mondayClient: MondayClient = {
@@ -446,7 +491,7 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
     expect(changeColumnValues).toHaveBeenCalledWith(
       111,
       'item-orphan',
-      expect.objectContaining({ fiscal_year_col: '2027' })
+      expect.not.objectContaining({ fiscal_year_col: expect.anything() })
     );
   });
 
@@ -502,7 +547,7 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
     expect(createItem).toHaveBeenCalledWith(111, expect.any(String), {
       numeric_col: 100,
       connect_col: { item_ids: [7] },
-      entity_col: 'txn-1',
+      entity_col: { url: 'https://platform.funraise.io/transaction/txn-1', text: 'txn-1' },
     });
   });
 });

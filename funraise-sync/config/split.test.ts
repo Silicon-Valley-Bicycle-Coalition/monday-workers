@@ -28,6 +28,7 @@ const COLUMN_KEYS = [
   'funraiseSync.donorExternalIdColumn',
   'funraiseSync.donorEmailColumn',
   'funraiseSync.donorLinkColumn',
+  'funraiseSync.entityIdColumn',
 ];
 
 describe('config split: board and column ids', () => {
@@ -54,6 +55,11 @@ describe('config split: board and column ids', () => {
     for (const [field, id] of Object.entries(sb)) {
       expect(prod[field], `columnMap.${field}`).not.toBe(id);
     }
+  });
+
+  it('both shipped configs enable adopt-before-create (entityIdColumn) — null duplicated migrated gifts (#24)', () => {
+    expect(sandbox.funraiseSync.entityIdColumn).toBe('link_mm6jhcj8');
+    expect(production.funraiseSync.entityIdColumn).not.toBeNull();
   });
 
   it('both shipped configs validate', () => {

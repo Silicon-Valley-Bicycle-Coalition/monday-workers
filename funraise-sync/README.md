@@ -65,9 +65,10 @@ request. The subscriptions poll is its own retry: a failed run leaves its cursor
 the next hour re-reads the page. A daily cron ("0 9 * * *") empties `raw_payload` for events
 written more than `funraiseSync.rawPayloadRetentionDays` (default 90) days ago, and for events
 that never completed their write once they're older than `unresolvedPayloadRetentionDays`
-(default 365), so raw donor PII doesn't accumulate in D1 indefinitely on either path. Created
-Donations items can be stamped with the Funraise transaction id (`funraiseSync.entityIdColumn`)
-for orphan recovery before every create — `null` on the sandbox, see "Monday targets". See
+(default 365), so raw donor PII doesn't accumulate in D1 indefinitely on either path. Every
+Donations write stamps the Funraise transaction link (`funraiseSync.entityIdColumn`), and before
+any create the consumer looks that id up and adopts an existing item instead — see "Adopt before
+create". See
 `../README.md`'s Reliability section for why the Queue shape is standard
 across every webhook-driven Worker in this plan.
 
@@ -148,7 +149,7 @@ board schemas via the Monday API on 2026-09-17.
 | `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
 | `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending; `Complete → Received` via `statusValueMap` |
 | `columnMap.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
-| `entityIdColumn` | — | `null` | see below |
+| `entityIdColumn` | Donations → Funraise ID (link) | `link_mm6jhcj8` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
 | `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm78nf5s` | |
 | `giftTypeColumn` | Donations → Gift Type (text) | `text_mm6j66w3` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
 | `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm70czyd` | |
@@ -166,18 +167,34 @@ board schemas via the Monday API on 2026-09-17.
 | `subscriptionsPoll.columns.designation` | Recurring Gifts → Designation (text) | `text_mm6jvmje` | from the subscription's `form.name` |
 | `subscriptionsPoll.columns.companyMatch` / `.matchEmployer` | Recurring Gifts → Company Match (checkbox) / Match Employer (text) | `boolean_mm6jbmvy` / `text_mm6jma3d` | from `companyMatch.companyName` |
 
-Two ids are deliberately absent:
+One id is deliberately absent:
 
 * **No `description` column.** The Donations board has no description text column; `description`
   is already the item name via `itemNameField`. The importer's `Salesforce Debug` long-text is
   provenance, not a description, and stays untouched.
-* **`entityIdColumn` is `null`.** It was meant to be a text column holding the transaction id
-  for orphan recovery. The Donations board carries the Funraise id in a **link** column
-  (`link_mm6jhcj8`, transaction URL + bare id as text); the lookup half would work (bare-id
-  search matches, verified live), but the consumer writes `entityId` as a bare string, which
-  Monday rejects on a link column, so every create would fail. `null` disables orphan recovery
-  (a retry after a lost status update can duplicate a Donations item) rather than break creates.
-  Fix, if wanted: write the same `{url, text}` shape the donor and subscription paths use.
+### Adopt before create
+
+Before creating a Donations item, the consumer looks up the transaction's Funraise id in
+`entityIdColumn` (a bare-id search matches the link's text, verified live) and, if an item
+exists, updates it instead. That covers two cases:
+
+* **Gifts `salesforce-import` migrated.** The first Funraise update to a pre-cutover gift, such as
+  an edit or a refund, arrives with no D1 row. Without the lookup it created a second Donations
+  item that `donation-rollups` then counted twice.
+* **This Worker's own orphans.** A create succeeded but the D1 update recording its item id
+  didn't.
+
+An adopted item gets only the Funraise-owned columns (amount, status, date, the Funraise link,
+the Recurring Gift link). It never gets the first-write stamps (Thank You Sent, Gift Type,
+Fiscal Year Ending), and never the Donor link. A migrated gift's values for those came from
+Salesforce, and the Donor there can deliberately be an Organization. An orphan of our own
+already got all of them when it was created.
+
+**Known gap: archived fiscal years.** `items_page_by_column_values` doesn't return archived
+items, and `salesforce-import` archives Donations older than the active fiscal-year window. A
+Funraise update to one of those old gifts finds nothing and still creates a new item. That is
+rare (refunds are almost always recent) but not impossible. Resolving it needs a decision:
+reject and flag such events for staff, or keep a Funraise-id → item map for archived gifts.
 
 Gone with the registration path (2026-09-18): the `event-registrations` board key, the
 per-entity `columnMap.recurringGift` / `.registration` maps, and the per-board column-id
