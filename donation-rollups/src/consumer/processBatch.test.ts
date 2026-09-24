@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processRecomputeBatch, rollupToColumnValues, affectedAffiliations } from './processBatch';
+import { processRecomputeBatch, rollupToColumnValues, affectedAffiliations, type ProcessBatchDeps } from './processBatch';
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
@@ -84,6 +84,7 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
     getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['dn1']]])),
     getLinkForDonation: vi.fn().mockResolvedValue(null),
     bulkUpsert: vi.fn().mockResolvedValue(0),
+    deleteLink: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -96,6 +97,7 @@ function fakeGiftsStore(): GiftsStore {
   return {
     refreshFacts: vi.fn().mockResolvedValue({ changed: 0 }),
     giftsForOwner: vi.fn().mockResolvedValue([]),
+    markRemoved: vi.fn().mockResolvedValue(null),
     actingForByIds: vi.fn().mockResolvedValue(new Map()),
     attributedTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0, lastGiftDateISO: null }),
     organizationalGivingTotals: vi.fn().mockResolvedValue({ cents: 0, count: 0 }),
@@ -127,6 +129,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
   return {
     getItemBoardId: vi.fn().mockResolvedValue('2'),
     getDonorLinkForDonation: vi.fn().mockResolvedValue('donor-1'),
+    getDonationState: vi.fn().mockResolvedValue('active'),
     getDonationsByIds: vi.fn().mockResolvedValue([]),
     getOwnerMembership: vi.fn().mockResolvedValue({ statusLabel: null, tierLabel: null, since: null, until: null }),
     listDonationOwnerLinks: vi.fn().mockResolvedValue([]),
@@ -379,7 +382,8 @@ describe('processRecomputeBatch', () => {
   it('recomputes via the D1-known owner when the Monday link reads back empty (archived representative gift)', async () => {
     // The July sweep's representative gift is often the owner's oldest, archived gift —
     // its board_relation reads back empty, but donation_links still knows the owner.
-    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null) });
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null),
+      getDonationState: vi.fn().mockResolvedValue('archived') });
     const linksStore = fakeLinksStore({
       getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }),
     });
@@ -928,5 +932,93 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(message.retry).toHaveBeenCalled();
     expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dn1', 'written', expect.anything());
+  });
+});
+
+describe('totals decrease when a gift leaves its owner (issue #26)', () => {
+  const deps = (over: { mondayClient: DonationRollupsMondayClient; linksStore?: DonationLinksStore; giftsStore?: GiftsStore;
+    pendingStore?: PendingStore; queue?: NonNullable<ProcessBatchDeps['queue']> }): ProcessBatchDeps => ({
+    pendingStore: over.pendingStore ?? fakePendingStore(), linksStore: over.linksStore ?? fakeLinksStore(),
+    giftsStore: over.giftsStore ?? fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
+    recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(),
+    mondayClient: over.mondayClient, config, now: new Date('2026-01-01'),
+    ...(over.queue ? { queue: over.queue } : {}),
+  });
+
+  for (const state of ['active', 'deleted'] as const) {
+    it(`a ${state === 'active' ? 'gift whose Donor link was cleared' : 'deleted gift'} is detached and its former owner recomputed without it`, async () => {
+      const mondayClient = fakeMondayClient({
+        getDonorLinkForDonation: vi.fn().mockResolvedValue(null),
+        getDonationState: vi.fn().mockResolvedValue(state),
+        getDonationsByIds: vi.fn().mockResolvedValue([]), // the only remaining link set is empty
+      });
+      const linksStore = fakeLinksStore({
+        getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }),
+        getLinksForOwner: vi.fn().mockResolvedValue(new Map()),
+      });
+      const giftsStore = fakeGiftsStore();
+      (giftsStore.markRemoved as ReturnType<typeof vi.fn>).mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2', actingForItemId: null });
+      const pendingStore = fakePendingStore();
+      const message = fakeMessage('dnGone');
+
+      await processRecomputeBatch([message], deps({ mondayClient, linksStore, giftsStore, pendingStore }));
+
+      expect(giftsStore.markRemoved).toHaveBeenCalledWith('dnGone', expect.any(String));
+      expect(linksStore.deleteLink).toHaveBeenCalledWith('dnGone');
+      expect(linksStore.upsertLink).not.toHaveBeenCalled(); // never re-attached to the old owner
+      // The former owner is rewritten with zeroed totals, not left holding the gift.
+      const [board, owner, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      expect([board, owner]).toEqual([2, 'donor-1']);
+      expect((values as Record<string, unknown>)['lg']).toBe('0');
+      expect((values as Record<string, unknown>)['gc']).toBe('0');
+      expect(message.ack).toHaveBeenCalled();
+      expect(pendingStore.updateStatus).toHaveBeenCalledWith('dnGone', 'written', expect.anything());
+    });
+  }
+
+  it('an archived gift still falls back to its D1 owner and is NOT detached', async () => {
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null),
+      getDonationState: vi.fn().mockResolvedValue('archived') });
+    const linksStore = fakeLinksStore({ getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }) });
+    const giftsStore = fakeGiftsStore();
+    await processRecomputeBatch([fakeMessage('dnArch')], deps({ mondayClient, linksStore, giftsStore }));
+    expect(giftsStore.markRemoved).not.toHaveBeenCalled();
+    expect(linksStore.deleteLink).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything());
+  });
+
+  it('a detached gift unknown to D1 is a clean no-op', async () => {
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null) });
+    const message = fakeMessage('dnStranger');
+    await processRecomputeBatch([message], deps({ mondayClient }));
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('a gift moved to a new owner queues a recompute of the owner it left', async () => {
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const linksStore = fakeLinksStore({
+      upsertLink: vi.fn().mockResolvedValue({ changed: true, updatedAt: '2026-01-01T00:00:00Z',
+        previousOwner: { ownerItemId: 'donor-old', ownerBoardId: '3' } }),
+    });
+    const mondayClient = fakeMondayClient();
+    await processRecomputeBatch([fakeMessage('dnMoved')], deps({ mondayClient, linksStore, queue }));
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything()); // new owner now
+    expect(queue.send).toHaveBeenCalledWith({ donationItemId: 'dnMoved', donationBoardId: '1',
+      ownerItemId: 'donor-old', ownerBoardId: '3' });
+  });
+
+  it('an owner-keyed message recomputes that owner directly, never coalesced and without touching the donation', async () => {
+    const mondayClient = fakeMondayClient();
+    const linksStore = fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map()) });
+    const pendingStore = fakePendingStore();
+    const message = { body: { donationItemId: 'dnMoved', donationBoardId: '1', ownerItemId: 'donor-old', ownerBoardId: '3' },
+      ack: vi.fn(), retry: vi.fn() };
+    await processRecomputeBatch([message], deps({ mondayClient, linksStore, pendingStore }));
+    expect(mondayClient.getDonorLinkForDonation).not.toHaveBeenCalled();
+    expect(linksStore.getLinksForOwner).toHaveBeenCalledWith('donor-old');
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-old', expect.anything());
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dnMoved', 'written', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
   });
 });

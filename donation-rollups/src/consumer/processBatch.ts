@@ -39,6 +39,9 @@ export interface ProcessBatchDeps {
   affiliationsStore: AffiliationsStore;
   mondayClient: DonationRollupsMondayClient;
   config: DonationRollupsConfig;
+  // For the owner a moved gift left (issue #26). Optional so tests and forks without it still
+  // run; production wires RECOMPUTE_QUEUE in index.ts.
+  queue?: { send(message: RecomputeQueueMessage): Promise<void> };
   now?: Date; // injectable for tests; defaults to the real current time
 }
 
@@ -66,7 +69,7 @@ export async function processRecomputeBatch(
       continue;
     }
     try {
-      await processOne(donationItemId, donationBoardId, deps);
+      await processOne(message.body, deps);
       message.ack();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -93,9 +96,17 @@ export async function processRecomputeBatch(
   }
 }
 
-async function processOne(donationItemId: string, donationBoardId: string, deps: ProcessBatchDeps): Promise<void> {
+async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
+  const { donationItemId, donationBoardId } = message;
   const { mondayClient, config } = deps;
-  const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
+  const { donationBoards } = config.donationRollups;
+
+  // An owner-keyed message: a gift moved away from this owner (issue #26). Recompute it
+  // unconditionally — its totals still include the gift until it does.
+  if (message.ownerItemId !== undefined && message.ownerBoardId !== undefined) {
+    await recomputeOwner(deps, message.ownerItemId, message.ownerBoardId, donationItemId);
+    return;
+  }
 
   // Defense in depth behind the webhook route's board allowlist: anything already in the
   // queue from an unknown board is a permanent config mismatch, not a transient failure —
@@ -107,15 +118,23 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
 
   let ownerItemId = await mondayClient.getDonorLinkForDonation(donationItemId, sourceBoard.columns.donorLink);
   if (ownerItemId === null) {
-    // An archived item's board_relation reads back empty (see projections/giftHistory.ts),
-    // and the July sweep's representative gift per owner is often archived — before
-    // concluding there's nothing to recompute, fall back to the owner D1 already knows
-    // for this donation so lapsed donors still get their fiscal-year rollover.
+    // An empty link means one of three things (issue #26), and only one of them keeps the gift
+    // on its owner. An archived item's board_relation reads back empty (see
+    // projections/giftHistory.ts), and the July sweep's representative gift per owner is often
+    // archived — fall back to the owner D1 already knows so lapsed donors still get their
+    // fiscal-year rollover. A deleted item, or an active one whose link staff cleared, no longer
+    // counts for anyone: detach it and recompute the owner it left.
+    const state = await mondayClient.getDonationState(donationItemId);
+    if (state !== 'archived') {
+      await detachDonation(deps, donationItemId, state);
+      await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
+      return;
+    }
     ownerItemId = (await deps.linksStore.getLinkForDonation(donationItemId))?.ownerItemId ?? null;
   }
   if (ownerItemId === null) {
-    // Legitimately nothing to recompute — a donation unlinked on Monday AND unknown to
-    // D1 isn't a transient failure, so this is a benign skip, not a retry candidate.
+    // Legitimately nothing to recompute — an archived donation unknown to D1 isn't a transient
+    // failure, so this is a benign skip, not a retry candidate.
     await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
     return;
   }
@@ -123,10 +142,6 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   const ownerBoardId = await mondayClient.getItemBoardId(ownerItemId);
   if (ownerBoardId === null) {
     throw new Error(`owner item "${ownerItemId}" has no resolvable board (deleted between link and lookup?)`);
-  }
-  const ownerColumns = ownerColumnsByBoard[ownerBoardId];
-  if (ownerColumns === undefined) {
-    throw new Error(`config: no ownerColumnsByBoard entry for board id "${ownerBoardId}" (this owner's board)`);
   }
 
   // Keep the reverse index current *before* reading it back — this donation's own
@@ -158,6 +173,63 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
     });
     return;
   }
+
+  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
+
+  // The gift moved here from another owner (issue #26): that owner's totals still include it.
+  // Queued rather than recomputed inline — a second full recompute in this invocation would
+  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for.
+  if (link.previousOwner !== undefined) {
+    await enqueueOwnerRecompute(deps, message, link.previousOwner);
+  }
+
+  await deps.pendingStore.updateStatus(donationItemId, 'written', {
+    ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
+  });
+}
+
+// Issue #26: a deleted donation, or an active one whose Donor link was cleared, must stop counting
+// toward the owner D1 last linked it to. Drop the link, take the gift out of the ledger's totals
+// (soft — a restore or re-link brings it back on its next recompute), then recompute that owner
+// here: this message has no other recompute to do, so it costs no more than a normal one.
+async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, state: 'active' | 'deleted'): Promise<void> {
+  const link = await deps.linksStore.getLinkForDonation(donationItemId);
+  const removed = await deps.giftsStore.markRemoved(donationItemId, new Date().toISOString());
+  await deps.linksStore.deleteLink(donationItemId);
+  const previous = link ?? (removed === null ? null : { ownerItemId: removed.ownerItemId, ownerBoardId: removed.ownerBoardId });
+  if (previous === null) return; // never linked to anyone D1 knows — nothing to recompute
+  console.log(`donation-rollups consumer: donation "${donationItemId}" ${state === 'deleted' ? 'was deleted' : 'lost its Donor link'} — recomputing former owner ${previous.ownerItemId}`);
+  const extraAffiliations = new Set<string>();
+  if (removed?.actingForItemId) extraAffiliations.add(removed.actingForItemId);
+  await recomputeOwner(deps, previous.ownerItemId, previous.ownerBoardId, donationItemId, extraAffiliations);
+}
+
+async function enqueueOwnerRecompute(
+  deps: ProcessBatchDeps, message: RecomputeQueueMessage, owner: { ownerItemId: string; ownerBoardId: string },
+): Promise<void> {
+  if (deps.queue === undefined) {
+    console.warn(`donation-rollups consumer: donation "${message.donationItemId}" moved off owner ${owner.ownerItemId} but no queue is wired — its totals stay stale until its next recompute (reconcile will flag it)`);
+    return;
+  }
+  await deps.queue.send({ donationItemId: message.donationItemId, donationBoardId: message.donationBoardId,
+    ownerItemId: owner.ownerItemId, ownerBoardId: owner.ownerBoardId });
+}
+
+// Full recompute of one owner from the D1 reverse index + a fresh Monday read: rollups, ledger
+// refresh, membership, gift-history projections, affiliations. triggeringDonationId feeds the
+// affiliation fan-out; extraAffiliations adds ones a detached gift was attributed to (it's no
+// longer among the fetched donations, so affectedAffiliations can't see it).
+async function recomputeOwner(
+  deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
+  extraAffiliations: Set<string> = new Set(),
+): Promise<void> {
+  const { mondayClient, config } = deps;
+  const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;
+  const ownerColumns = ownerColumnsByBoard[ownerBoardId];
+  if (ownerColumns === undefined) {
+    throw new Error(`config: no ownerColumnsByBoard entry for board id "${ownerBoardId}" (this owner's board)`);
+  }
+
   const fetchedAt = new Date().toISOString();
 
   // Monday has no supported filter for board_relation columns (confirmed 2026-08-24 —
@@ -268,7 +340,9 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   }
 
   if (affiliationsCfg !== null) {
-    await recomputeAffiliations(deps, affiliationsCfg, affectedAffiliations(previousActingFor, donations, donationItemId));
+    const affected = affectedAffiliations(previousActingFor, donations, donationItemId);
+    for (const a of extraAffiliations) affected.add(a);
+    await recomputeAffiliations(deps, affiliationsCfg, affected);
   }
 
   // Recorded only now — after the owner write AND the gift term stamps — so a recompute that
@@ -276,9 +350,6 @@ async function processOne(donationItemId: string, donationBoardId: string, deps:
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
   await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
-  await deps.pendingStore.updateStatus(donationItemId, 'written', {
-    ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
-  });
 }
 
 async function planMembershipWrites(

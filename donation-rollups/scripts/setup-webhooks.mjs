@@ -62,7 +62,10 @@ for (const board of config.donationRollups.donationBoards) {
   const existing = await graphql(
     'query ($id: ID!) { webhooks (board_id: $id) { id event } }', { id: String(board.boardId) });
   const have = new Set((existing.webhooks ?? []).map((w) => w.event));
-  for (const event of ['create_item', 'change_column_value']) {
+  // item_deleted / item_archived / item_restored (issue #26): a deleted gift must leave its owner's
+  // totals, and a restored one come back. Re-running this script on boards already subscribed to
+  // the first two adds only the missing three.
+  for (const event of ['create_item', 'change_column_value', 'item_deleted', 'item_archived', 'item_restored']) {
     if (have.has(event)) {
       console.error(`setup-webhooks: board ${board.boardId} already has ${event} — skipping`);
       continue;

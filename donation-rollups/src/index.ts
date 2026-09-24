@@ -99,6 +99,7 @@ export default {
       affiliationsStore: new D1AffiliationsStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
+      queue: { send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined) },
     });
   },
 
