@@ -312,3 +312,61 @@ describe("error handling", () => {
     expect(data.error).toBe("Internal error");
   });
 });
+
+describe("per-IP rate limit", () => {
+  function denyAll() {
+    return vi.spyOn(env.REQUEST_RATE_LIMITER, "limit").mockResolvedValue({ success: false });
+  }
+
+  it("serves a cached .ics feed even when the caller's IP is over the limit (subscription services share a few IPs)", async () => {
+    fetchSpy.mockImplementation(async () => new Response("[]", { status: 200 }));
+    const first = await call(req("/calendars/santa-clara.ics"));
+    expect(first.headers.get("X-Cache")).toBe("MISS");
+
+    const limit = denyAll();
+    fetchSpy.mockReset();
+    const second = await call(req("/calendars/santa-clara.ics"));
+
+    expect(second.status).toBe(200);
+    expect(second.headers.get("X-Cache")).toBe("HIT");
+    expect(limit).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("limits a cache MISS before any upstream fetch, and does not cache the 429", async () => {
+    const limit = denyAll();
+    const res = await call(req("/calendars/santa-clara.ics"));
+
+    expect(res.status).toBe(429);
+    expect(limit).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const version = env.CACHE_VERSION || "0";
+    expect(await caches.default.match(new Request(`http://worker.test/calendars/santa-clara.ics?v=${version}`))).toBeUndefined();
+  });
+
+  it("limits a miss on an unknown .ics path, so a crawler can't bypass it", async () => {
+    denyAll();
+    const res = await call(req("/calendars/some-random-crawled-path.ics"));
+    expect(res.status).toBe(429);
+  });
+
+  it("limits /events on a cache MISS", async () => {
+    denyAll();
+    const res = await call(req("/events"));
+    expect(res.status).toBe(429);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(["/widget", "/status.json", "/nonexistent", "/events?organizer=999999999"])("limits the uncached route %s", async (path) => {
+    denyAll();
+    const res = await call(req(path));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("limits non-GET methods", async () => {
+    denyAll();
+    const res = await call(req("/events", { method: "POST" }));
+    expect(res.status).toBe(429);
+  });
+});

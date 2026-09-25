@@ -22,6 +22,11 @@ const ALLOWED_ORIGINS: string[] = ['https://www.bikesiliconvalley.org', 'https:/
 // places (calendar apps, emails, web pages) where a wrong-domain link would silently stick around.
 const CALENDAR_DOMAIN = 'https://committees.bikesiliconvalley.org';
 
+// Routes served through withCache — see the rate-limit comment in fetch() for why these are
+// limited only on a cache MISS.
+const CACHED_PATHS = new Set(['/', '/events', '/calendars']);
+const ICS_PATH = /^\/calendars\/([a-z0-9-]+)\.ics$/;
+
 function handleCORS(request: Request, response: Response): Response {
   const origin = request.headers.get('Origin') || '';
   const headers = new Headers(response.headers);
@@ -113,23 +118,36 @@ export default {
         return handleCORS(request, new Response(null, { status: 204 }));
       }
 
-      // Checked before any routing, upstream fetch, or KV work — see README "Reliability:
-      // traffic and cost limits". REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
-      const limited = await checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) });
-      if (limited) return handleCORS(request, limited);
+      const url = new URL(request.url);
+      const organizerId = url.searchParams.get('organizer');
+      const organizerAllowed = !organizerId || ALLOWED_ORGANIZERS.includes(organizerId);
+      const version = env.CACHE_VERSION || '0';
+      const icsMatch = ICS_PATH.exec(url.pathname);
+
+      // Per-IP limit — see README "Reliability: traffic and cost limits". REQUEST_RATE_LIMITER is
+      // provisioned in wrangler.jsonc. A cacheable route checks it only on a cache MISS (inside
+      // withCache's `generate`), so a cache HIT is never limited: calendar-subscription services
+      // (Google, Apple, Outlook) poll every .ics feed from a handful of shared IPs, and throttling
+      // them on responses that cost nothing to serve would just break subscriptions. Every
+      // uncached request — any MISS, and every non-cacheable route — is still limited before any
+      // upstream fetch or KV work.
+      const limiter = { limit: (key: string) => env.REQUEST_RATE_LIMITER.limit({ key }) };
+      const limitedOr = async (generate: () => Promise<Response>): Promise<Response> =>
+        (await checkRequestRateLimit(request, limiter)) ?? generate();
+      const cacheable = request.method === 'GET' && organizerAllowed && (CACHED_PATHS.has(url.pathname) || icsMatch !== null);
+      if (!cacheable) {
+        const limited = await checkRequestRateLimit(request, limiter);
+        if (limited) return handleCORS(request, limited);
+      }
 
       if (request.method !== 'GET') {
         return handleCORS(request, new Response('Method not allowed', { status: 405 }));
       }
 
-      const url = new URL(request.url);
-      const organizerId = url.searchParams.get('organizer');
-      const version = env.CACHE_VERSION || '0';
-
       // Preserved from the original worker.ts: an `organizer` param outside the allowlist is
       // rejected outright, for both the JSON API and the widget — never silently ignored or
       // passed through to Eventbrite.
-      if (organizerId && !ALLOWED_ORGANIZERS.includes(organizerId)) {
+      if (!organizerAllowed) {
         return handleCORS(
           request,
           new Response(JSON.stringify({ error: 'Unknown organizer ID' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
@@ -143,7 +161,7 @@ export default {
         const pageSize = Math.min(parseInt(url.searchParams.get('page_size') || '20', 10), 50);
         const cacheTTL = parseInt(env.CACHE_TTL || '900', 10);
         const cacheKey = new Request(`${url.origin}/events?page_size=${pageSize}&organizer=${organizerId || 'all'}&v=${version}`, { method: 'GET' });
-        const response = await withCache(cacheKey, cacheTTL, ctx, () => fetchEventsResponse(env, organizerId, pageSize, cacheTTL));
+        const response = await withCache(cacheKey, cacheTTL, ctx, () => limitedOr(() => fetchEventsResponse(env, organizerId, pageSize, cacheTTL)));
         if (response.headers.get('X-Cache') === 'HIT') {
           recordMetric(env, { route: 'events', sourceId: organizerId || 'all', outcome: 'cache-hit' });
         }
@@ -152,18 +170,17 @@ export default {
       if (url.pathname === '/calendars') {
         const calendarTTL = parseInt(env.CALENDAR_CACHE_TTL || '86400', 10);
         const cacheKey = new Request(`${url.origin}/calendars?v=${version}`, { method: 'GET' });
-        const response = await withCache(cacheKey, calendarTTL, ctx, () => handleCalendarListing(env));
+        const response = await withCache(cacheKey, calendarTTL, ctx, () => limitedOr(() => handleCalendarListing(env)));
         if (response.headers.get('X-Cache') === 'HIT') {
           recordMetric(env, { route: 'calendars', sourceId: 'all', outcome: 'cache-hit' });
         }
         return handleCORS(request, response);
       }
-      const icsMatch = /^\/calendars\/([a-z0-9-]+)\.ics$/.exec(url.pathname);
       if (icsMatch) {
         const sourceId = icsMatch[1];
         const calendarTTL = parseInt(env.CALENDAR_CACHE_TTL || '86400', 10);
         const cacheKey = new Request(`${url.origin}/calendars/${sourceId}.ics?v=${version}`, { method: 'GET' });
-        const response = await withCache(cacheKey, calendarTTL, ctx, () => handleCalendarIcs(sourceId, env));
+        const response = await withCache(cacheKey, calendarTTL, ctx, () => limitedOr(() => handleCalendarIcs(sourceId, env)));
         if (response.headers.get('X-Cache') === 'HIT') {
           recordMetric(env, { route: 'calendars.ics', sourceId, outcome: 'cache-hit' });
         }
