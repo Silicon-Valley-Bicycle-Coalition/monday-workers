@@ -128,8 +128,12 @@ export class HttpMondayClient implements MondayClient {
       const json = (await response.json()) as GraphQLResponse<T>;
       if (json.errors && json.errors.length > 0) {
         lastError = json.errors.map((e) => e.message).join('; ');
+        // A single query over the per-query complexity cap fails identically every time; only
+        // the per-minute budget (and rate/concurrency limits) recover with a wait.
         const retryable = json.errors.find(
-          (e) => RETRYABLE_CODE.test(e.extensions?.code ?? '') || /complexity/i.test(e.message),
+          (e) =>
+            !/exceeds max complexity/i.test(e.message) &&
+            (RETRYABLE_CODE.test(e.extensions?.code ?? '') || /complexity/i.test(e.message)),
         );
         if (retryable === undefined) throw new Error(`monday API: ${lastError}`);
         advisedWaitMs = (retryable.extensions?.retry_in_seconds ?? 0) * 1000;

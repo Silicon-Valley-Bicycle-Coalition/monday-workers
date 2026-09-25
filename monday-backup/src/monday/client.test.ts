@@ -173,7 +173,7 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     const { c } = client(
       [
         ok({ errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 23 } }] }),
-        ok({ errors: [{ message: 'Query has complexity of 10, which exceeds max complexity of 5', extensions: { code: 'ComplexityException' } }] }),
+        ok({ errors: [{ message: 'Complexity budget exhausted, query cost 30001 budget remaining 18961 out of 1000000 reset in 32 seconds', extensions: { code: 'ComplexityException' } }] }),
         ok({ data: { boards: [] } }),
       ],
       sleeps,
@@ -186,6 +186,14 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     const { c, fetchMock } = client([ok({ error_message: 'Rate Limit Exceeded', status_code: 429 }), ok({ data: { boards: [] } })]);
     await expect(c.listBoards()).resolves.toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a query that exceeds the per-query complexity cap (it can never succeed)', async () => {
+    const { c, fetchMock } = client([
+      ok({ errors: [{ message: 'Query has complexity of 6000000, which exceeds max complexity of 5000000', extensions: { code: 'ComplexityException' } }] }),
+    ]);
+    await expect(c.listBoards()).rejects.toThrow(/exceeds max complexity/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry an ordinary GraphQL error', async () => {
