@@ -9,7 +9,9 @@ export async function sendFailureAlert(
     console.error('svbc-calendars: Slack alert skipped, SLACK_WEBHOOK_URL is not configured');
     return;
   }
-  const text = `svbc-calendars: source "${sourceName}" (${sourceId}) has failed ${consecutiveFailures} days in a row. Last error: ${lastError}`;
+  // The streak counts fetch attempts, not days: the daily cron and every .ics cache MISS each make
+  // one attempt (see calendarSource.ts), so 3 failures can happen within minutes.
+  const text = `svbc-calendars: source "${sourceName}" (${sourceId}) has failed ${consecutiveFailures} consecutive fetch attempts. Last error: ${lastError}`;
   try {
     const response = await fetch(webhookUrl, {
       method: 'POST',
