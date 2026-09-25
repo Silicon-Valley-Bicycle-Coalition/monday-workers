@@ -50,7 +50,8 @@ try {
   process.exit(1);
 }
 const columns = {
-  name: argValue('--name-column') ?? 'Name',
+  // Unset means the item's own name — see ColumnTitles.name.
+  name: argValue('--name-column'),
   lat: argValue('--lat-column') ?? 'Lat',
   lng: argValue('--lng-column') ?? 'Lng',
   zip: argValue('--zip-column') ?? 'Zip',

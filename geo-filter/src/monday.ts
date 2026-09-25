@@ -20,11 +20,18 @@ async function graphql(token: string, query: string, variables: Record<string, u
 }
 
 export interface ColumnTitles {
-  name: string;
+  /**
+   * Title of the column to report as each contact's name. Undefined means the item's own name
+   * (Monday's built-in `name` column, whatever it's titled) — the right default for Donors.
+   */
+  name?: string;
   lat: string;
   lng: string;
   zip: string;
 }
+
+// Monday's fixed column id for an item's own name, whatever the board titles it.
+const ITEM_NAME_COLUMN_ID = 'name';
 
 // Resolves each configured column title to its id (titles are what a human picks on the CLI;
 // ids are what the API actually needs), then pages through every item on the board.
@@ -34,14 +41,18 @@ export async function fetchContacts(token: string, boardId: string, columns: Col
   const latId = byTitle.get(columns.lat);
   const lngId = byTitle.get(columns.lng);
   const zipId = byTitle.get(columns.zip);
-  if (!latId || !lngId || !zipId) {
+  const nameId = columns.name === undefined ? ITEM_NAME_COLUMN_ID : byTitle.get(columns.name);
+  if (!latId || !lngId || !zipId || !nameId) {
     const missing = [
       !latId && `lat column "${columns.lat}"`,
       !lngId && `lng column "${columns.lng}"`,
       !zipId && `zip column "${columns.zip}"`,
+      !nameId && `name column "${columns.name}"`,
     ].filter(Boolean);
-    throw new Error(`fetchContacts: board ${boardId} is missing ${missing.join(', ')} — pass --lat-column/--lng-column/--zip-column to match the real titles.`);
+    throw new Error(`fetchContacts: board ${boardId} is missing ${missing.join(', ')} — pass --lat-column/--lng-column/--zip-column/--name-column to match the real titles.`);
   }
+  // The item name comes back on every item already; any other name column has to be requested.
+  const colIds = nameId === ITEM_NAME_COLUMN_ID ? [latId, lngId, zipId] : [latId, lngId, zipId, nameId];
 
   const contacts: Contact[] = [];
   let cursor: string | null = null;
@@ -55,7 +66,7 @@ export async function fetchContacts(token: string, boardId: string, columns: Col
               items { id name column_values(ids: $colIds) { id text } }
             }
           }`,
-          { cursor, colIds: [latId, lngId, zipId] }
+          { cursor, colIds }
         )
       : await graphql(
           token,
@@ -67,7 +78,7 @@ export async function fetchContacts(token: string, boardId: string, columns: Col
               }
             }
           }`,
-          { boardId, colIds: [latId, lngId, zipId] }
+          { boardId, colIds }
         );
     const itemsPage: any = cursor ? page.next_items_page : page.boards[0].items_page;
     for (const item of itemsPage.items) {
@@ -76,9 +87,11 @@ export async function fetchContacts(token: string, boardId: string, columns: Col
       const lngText = byColId.get(lngId) as string | null;
       const lat = latText ? Number(latText) : NaN;
       const lng = lngText ? Number(lngText) : NaN;
+      const nameText = nameId === ITEM_NAME_COLUMN_ID ? null : ((byColId.get(nameId) as string | null) || '').trim();
       contacts.push({
         id: item.id,
-        name: item.name,
+        // A blank name cell falls back to the item name rather than an empty CSV cell.
+        name: nameText || item.name,
         lat: Number.isFinite(lat) ? lat : null,
         lng: Number.isFinite(lng) ? lng : null,
         zip: ((byColId.get(zipId) as string | null) || '').trim() || null,

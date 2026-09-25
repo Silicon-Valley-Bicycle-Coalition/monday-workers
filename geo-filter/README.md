@@ -36,8 +36,10 @@ non-negative numbers; anything else is rejected with an error rather than silent
 nothing.
 
 Common flags: `--out matches.csv` (default `geo-filter-matches.csv`), and
-`--lat-column`/`--lng-column`/`--zip-column`/`--name-column` if the target board's columns
-aren't titled `Lat`/`Lng`/`Zip`/`Name` (`salesforce-import`'s defaults).
+`--lat-column`/`--lng-column`/`--zip-column` if the target board's columns aren't titled
+`Lat`/`Lng`/`Zip` (`salesforce-import`'s defaults). The CSV's `name` is each item's own name
+unless `--name-column <title>` points at a different column (e.g. a full-name text column); a
+blank cell there falls back to the item name.
 
 Writes a CSV of matched contacts (`id,name,lat,lng,zip`) and reports how many contacts were
 skipped for missing coordinates (`radius`/`corridor` only — `zip` mode never needs coordinates).
@@ -65,7 +67,7 @@ npm test        # vitest — the geometry logic (src/geometry.ts) and flag parsi
 npm run typecheck
 ```
 
-`src/monday.ts` (the Monday-fetching half) isn't unit-tested — it's a thin, direct mirror of the
-same `graphql()`/pagination pattern already proven elsewhere in this monorepo (e.g.
-`salesforce-import/scripts/create-letter-settings-board.mjs`), and needs a real board + token to
-exercise meaningfully.
+`src/monday.ts` (the Monday-fetching half) only has stubbed-`fetch` tests for its column
+resolution — it's a thin, direct mirror of the same `graphql()`/pagination pattern already proven
+elsewhere in this monorepo (e.g. `salesforce-import/scripts/create-letter-settings-board.mjs`),
+and needs a real board + token to exercise meaningfully.
