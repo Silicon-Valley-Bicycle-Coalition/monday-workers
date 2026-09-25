@@ -18,6 +18,8 @@
     "consumers": [
       {
         "queue": "funraise-sync-writes",
+        // The consumer backs each retry off by attempt — 1, 4, then 16 minutes
+        // (retryDelaySeconds in src/consumer/processBatch.ts) — before dead-lettering.
         "max_retries": 3,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain.

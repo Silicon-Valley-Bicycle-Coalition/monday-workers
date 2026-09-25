@@ -13,8 +13,24 @@ import { errorMessage } from '../util/errorMessage';
 
 export interface QueueMessageLike<T> {
   body: T;
+  // Cloudflare's Message.attempts (1 on first delivery) and Message.timestamp (when it was
+  // sent). Optional so tests and callers that don't care can omit them.
+  attempts?: number;
+  timestamp?: Date;
   ack(): void;
-  retry(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+// Retry backoff (#25): immediate retries let a Monday outage of a few seconds burn every attempt
+// and dead-letter the gift. 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes across wrangler.jsonc's
+// max_retries of 3 — about 21 minutes of cover — and is capped at Queues' 12-hour maximum delay.
+const RETRY_BASE_SECONDS = 60;
+const RETRY_FACTOR = 4;
+const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
+
+export function retryDelaySeconds(attempts: number | undefined): number {
+  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
+  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export interface FunraiseQueueMessage {
@@ -61,10 +77,18 @@ export async function processFunraiseQueueBatch(
     } catch (err) {
       const errMsg = errorMessage(err);
       console.error(`funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}`);
-      await deps.eventStore.updateStatusByEntity(entityType, entityId, 'failed', {
-        error: errMsg,
-      });
-      message.retry();
+      // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
+      // down with it (the throw would fail the whole batch and retry every message immediately).
+      try {
+        await deps.eventStore.updateStatusByEntity(entityType, entityId, 'failed', {
+          error: errMsg,
+        });
+      } catch (recordErr) {
+        console.error(
+          `funraise-sync consumer: could not record failure for ${entityType} "${entityId}": ${errorMessage(recordErr)}`
+        );
+      }
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
