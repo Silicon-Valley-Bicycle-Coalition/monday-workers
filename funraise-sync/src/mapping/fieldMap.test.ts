@@ -36,7 +36,7 @@ describe('mapToMondayColumns', () => {
   // The Donations board status vocabulary as seeded by salesforce-import.
   // donation-rollups counts only 'Received', so any mapped value outside this
   // set silently drops the donation from rollups.
-  const DONATIONS_STATUS_VOCABULARY = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
+  const DONATIONS_STATUS_VOCABULARY = ['Received', 'Received (Historical)', 'Failed', 'Pending', 'Refunded'];
 
   // Funraise's documented webhook payload carries the status at data.transaction.status with
   // the value "Complete" for a successful gift — "Posted" was the Salesforce stage name.
@@ -52,7 +52,7 @@ describe('mapToMondayColumns', () => {
 
   it('the shipped production config validates and carries the same status map', () => {
     const productionConfig = validateConfig(rawSvbcConfig);
-    expect(productionConfig.funraiseSync.statusValueMap).toEqual({ Complete: 'Received' });
+    expect(productionConfig.funraiseSync.statusValueMap).toEqual({ Complete: 'Received', Refunded: 'Refunded', Failed: 'Failed' });
     expect(productionConfig.monday.boards['donations:live']).toBeNull();
   });
 

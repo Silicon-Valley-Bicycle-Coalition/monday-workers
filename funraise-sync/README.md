@@ -147,7 +147,7 @@ board schemas via the Monday API on 2026-09-17.
 | `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | subscriptions poller's target |
 | `monday.boards["people-live"]` | People (sandbox v2) | `18428131737` | People (Historical) is not a match target |
 | `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
-| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending; `Complete → Received` via `statusValueMap` |
+| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
 | `columnMap.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
 | `entityIdColumn` | Donations → Funraise ID (link) | `link_mm6jhcj8` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
 | `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm78nf5s` | |
@@ -213,7 +213,8 @@ delivery, as actually sent" for the translation). One board-side constraint on t
 `config/sandbox.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
 gift as seen from Salesforce) because the Donations board's status vocabulary (seeded by
 `salesforce-import`) is exactly `Received` /
-`Received (Historical)` / `Failed` / `Pending`, and `donation-rollups` counts only `Received` —
+`Received (Historical)` / `Failed` / `Pending` (plus `Refunded`, which staff must add — #25),
+and `donation-rollups` counts only `Received` —
 mapping to any label outside that set silently drops the gift from rollups. Notably: **Pledge and
 Subscription are a confirmed 1:1 duplicate** — do not create separate items for both; **8 email
 fields collapse to one** with precedence `npe01__Preferred_Email__c` → `Primary_Email__c` →
@@ -305,9 +306,13 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
 * **Field names.** Amount and status live under `data.transaction`; the donor under
   `data.supporter` (`id`, `email`, `name`); the gift's date is `donationDate` (epoch ms, see
   "Fiscal Year Ending"); the item name is `description`. `statusValueMap` maps `Complete` — the
-  documented success value — to `Received`. Anything else (`Refunded`, `Failed`, …) is written
-  verbatim, so a value outside the Donations status vocabulary fails the write and lands in the
-  DLQ rather than silently mislabeling; extend the map when Funraise's other statuses are known.
+  documented success value — to `Received`, and `Refunded` / `Failed` to the Donations labels of
+  the same name (#25), so a refunded gift stops being `Received` and drops out of
+  `donation-rollups`' totals. **`Refunded` is not yet a label on the Donations Status column** —
+  staff must add it (sandbox and production boards) or every refund write still fails. Anything
+  else is written verbatim, so a value outside the Donations status vocabulary fails the write
+  and dead-letters (see "Failures and the dead-letter queue") rather than silently mislabeling;
+  extend the map when Funraise's other statuses are known.
 * **PII denylist** is the `data.transaction.*` card and billing fields Funraise actually sends
   (`lastFour`, `expirationDate`, `cardType`, `billingFirstName`/`LastName`/`Zip`) plus
   `transaction.errors`, the gateway response (it carries a Stripe source fingerprint). They are
