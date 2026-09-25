@@ -23,6 +23,7 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
+import { secretsMatch } from './crypto/secretsMatch';
 import {
   changeRequestsEnabled,
   configuredPrefFields,
@@ -80,6 +81,7 @@ export interface AppDeps {
 }
 
 const SESSION_COOKIE = 'session';
+export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
 // characters that would let a value break out of a GraphQL string literal), and requires an
@@ -803,10 +805,16 @@ export function createApp(deps: AppDeps) {
   });
 
   // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard mitigation
-  // used elsewhere in this repo (donation-rollups) is a shared secret in the webhook URL itself,
-  // set when subscribing and checked here.
+  // used elsewhere in this repo (donation-rollups) is a shared secret, checked here in constant
+  // time. The caller is a Monday board automation ("When button clicked → send a webhook"),
+  // whose only setting is the target URL — it can't add a header — so its deliveries carry the
+  // secret as `?secret=`. That puts the secret in the logged request URL (Workers
+  // observability); see README v2.1 for the tradeoff. Any caller that *can* set a header (a hand
+  // replay, future tooling) should send X-Webhook-Secret instead; when present it's the only
+  // value checked.
   app.post('/webhooks/monday/letters', async (c) => {
-    if (!deps.letterWebhookSecret || c.req.query('secret') !== deps.letterWebhookSecret) {
+    const presented = c.req.header(WEBHOOK_SECRET_HEADER) ?? c.req.query('secret');
+    if (!(await secretsMatch(presented, deps.letterWebhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 

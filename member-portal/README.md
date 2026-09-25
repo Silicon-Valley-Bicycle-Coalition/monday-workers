@@ -269,6 +269,19 @@ Operator setup, in addition to v1/v2 steps:
    access.
 3. Set the `LETTER_WEBHOOK_SECRET` Worker secret (`wrangler secret put LETTER_WEBHOOK_SECRET`) —
    must match the `secret` query param used in the webhook URL above.
+
+   **Why a query param, and what it costs.** Monday doesn't sign these deliveries, and the
+   automation's webhook action takes only a URL — no custom headers — so the shared secret has
+   to ride in the URL. The Worker compares it in constant time, but a URL secret also lands
+   wherever request URLs are recorded: Workers observability logs (the dashboard's invocation
+   log shows the full URL), and the automation's own config and run history in Monday. Treat
+   read access to both as access to the secret; rotate it (new `wrangler secret put`, then
+   update the automation's URL) if logs are ever exported or shared, or someone with Monday
+   board-admin access leaves. The blast radius is bounded: a leaked secret can only trigger
+   "your letter is ready" emails for donors with gifts, each donor+year at most once
+   (`letter_sends` dedupe), never read data. Callers that *can* set a header (a hand replay,
+   future tooling) should send `X-Webhook-Secret: <secret>` instead, which keeps it out of the
+   URL; when that header is present it's the only value checked.
 4. Create the `member-portal-letter-emails` queue and its `member-portal-letter-emails-dlq` dead-letter
    queue before deploying (`wrangler queues create member-portal-letter-emails` and
    `wrangler queues create member-portal-letter-emails-dlq`).

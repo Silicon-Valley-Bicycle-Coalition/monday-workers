@@ -959,6 +959,36 @@ describe('POST /webhooks/monday/letters', () => {
     expect(res.status).toBe(401);
   });
 
+  it('rejects a secret that only shares a prefix with the real one', async () => {
+    const app = createApp(makeDeps());
+    expect((await post(app, { challenge: 'abc' }, '?secret=sh')).status).toBe(401);
+    expect((await post(app, { challenge: 'abc' }, '?secret=shhh')).status).toBe(401);
+  });
+
+  // Issue #32: a header keeps the secret out of the request URL (and so out of Workers
+  // observability's logged URL) for any caller that can set one. Monday's automation webhook
+  // can't, so ?secret= stays supported.
+  it('accepts the secret in the X-Webhook-Secret header instead of the query string', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/webhooks/monday/letters', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': 'shh' },
+      body: JSON.stringify({ challenge: 'hdr' }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'hdr' });
+  });
+
+  it('rejects a wrong header secret even alongside a correct query secret (header wins)', async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request('/webhooks/monday/letters?secret=shh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': 'wrong' },
+      body: JSON.stringify({ challenge: 'abc' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
   it('rejects every request, even with no secret query param, when no webhook secret is configured (fail closed)', async () => {
     const letterQueue = { send: vi.fn() };
     const app = createApp(makeDeps({ letterWebhookSecret: '', letterQueue }));
