@@ -86,7 +86,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     disbursementStore,
     rowStore,
     config: fakeConfig(),
-    queue: { send: vi.fn().mockResolvedValue(undefined) },
+    queue: { sendBatch: vi.fn().mockResolvedValue(undefined) },
     webhookSecret: SECRET,
     fetchCsv: vi.fn().mockResolvedValue(validReport()),
     now: () => '2026-09-15T00:00:00Z',
@@ -143,8 +143,23 @@ describe('webhook route', () => {
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(
       expect.objectContaining({ transactionId: 'TXN001', status: 'ingested' })
     );
-    expect(deps.queue.send).toHaveBeenCalledWith({ transactionId: 'TXN001' });
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('enqueues every row of a block in one sendBatch call, not one send per row', async () => {
+    const report = validReport()
+      .replace(
+        /^("Acme, Inc\.".*TXN001.*)$/m,
+        (line) => `${line}\n${line.replace('TXN001', 'TXN002')}`
+      )
+      .replace('Total Donations (Gross),50.00', 'Total Donations (Gross),100.00');
+    const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(report) });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(200);
+    expect(deps.queue.sendBatch).toHaveBeenCalledTimes(1);
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }, { transactionId: 'TXN002' }]);
   });
 
   it('re-enqueues a row stuck at "ingested" from a prior attempt whose queue.send never went through', async () => {
@@ -171,7 +186,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(res.status).toBe(200);
-    expect(deps.queue.send).toHaveBeenCalledWith({ transactionId: 'TXN001' });
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
   });
 
   it('does not re-enqueue a duplicate row whose earlier attempt already completed (status "written")', async () => {
@@ -195,7 +210,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(res.status).toBe(200);
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('is a no-op for an asset already ingested', async () => {
@@ -212,7 +227,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'skipped' }));
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('creates one worklist item and marks every row needs-review for a block with a bad header, without enqueueing', async () => {
@@ -221,7 +236,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('creates one worklist item and marks rows needs-review for a block whose totals do not match, without enqueueing', async () => {
@@ -231,7 +246,7 @@ describe('webhook route', () => {
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs-review' }));
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('retries an asset stuck at "parsing" from a failed prior attempt, instead of no-op-ing past it', async () => {

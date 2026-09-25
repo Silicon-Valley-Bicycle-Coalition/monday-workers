@@ -46,7 +46,8 @@ export default {
         rowStore: new D1RowStore(env.DB),
         config,
         queue: {
-          send: (message: BenevityQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
+          sendBatch: (messages: BenevityQueueMessage[]) =>
+            env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
         },
         webhookSecret: env.BENEVITY_WEBHOOK_SECRET,
         fetchCsv,

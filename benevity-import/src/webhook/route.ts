@@ -9,10 +9,12 @@ import { isChallenge, validateUploadEvent } from './validate';
 import { createWorklistItem } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage } from '../consumer/processBatch';
+import { sendInBatches, type BatchSender } from '../util/sendBatch';
 
-export interface QueueLike {
-  send(message: BenevityQueueMessage): Promise<void>;
-}
+// Queue producer surface the route needs. Rows are sent with sendBatch (chunked to Queues' 100
+// messages / 256 KB per call, see util/sendBatch.ts) rather than one send() per row, so a large
+// bundled report doesn't spend one subrequest per row inside the webhook request.
+export type QueueLike = BatchSender<BenevityQueueMessage>;
 
 export interface AppDeps {
   mondayClient: MondayClient;
@@ -191,6 +193,10 @@ async function ingestBlock(
     return;
   }
 
+  // Collected and sent once per block, after every row is upserted. If the send fails the
+  // block throws, the upload is marked 'error', Monday redelivers, and the 'duplicate' branch
+  // below re-sends every row still at 'ingested' — the same recovery a failed single send had.
+  const toSend: BenevityQueueMessage[] = [];
   for (const row of block.rows) {
     if (row.donationDate < deps.config.benevityImport.minDonationDate) {
       await deps.rowStore.upsertRow({
@@ -211,17 +217,18 @@ async function ingestBlock(
       ingestedAt: deps.now(),
     });
     if (result === 'inserted') {
-      await deps.queue.send({ transactionId: row.transactionId });
+      toSend.push({ transactionId: row.transactionId });
     } else {
       // 'duplicate': this row already exists from an earlier attempt. If it's still sitting at
-      // 'ingested', that attempt's own queue.send never went through (it upserted the row, then
-      // threw before or during send) — nothing else will ever retry it, so send it now. A row
+      // 'ingested', that attempt's own send may never have gone through (it upserted the row,
+      // then threw before or during send) — nothing else will ever retry it, so send it now. A row
       // already 'written'/'needs-review'/'skipped' is a genuinely completed outcome and must NOT
       // be re-sent.
       const existingRow = await deps.rowStore.getRow(row.transactionId);
       if (existingRow?.status === 'ingested') {
-        await deps.queue.send({ transactionId: row.transactionId });
+        toSend.push({ transactionId: row.transactionId });
       }
     }
   }
+  await sendInBatches(deps.queue, toSend);
 }
