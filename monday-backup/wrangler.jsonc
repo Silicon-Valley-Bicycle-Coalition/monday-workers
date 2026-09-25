@@ -22,12 +22,16 @@
     // time is preferred once this is actually scheduled.
     "crons": ["0 9 * * *"]
   },
-  // Cost guardrail, not a traffic one (no public surface here) — see README "Reliability:
-  // traffic and cost limits". Free plan already hard-caps CPU at 10ms/invocation; this only
-  // starts to matter on Workers Paid (default 30s, or 15min for a >=1hr cron interval). 100ms
-  // is a starting point — raise it based on real CPU-time metrics once this Worker is actually
-  // snapshotting production board counts, rather than lower it reactively after a surprise bill.
-  "limits": { "cpu_ms": 100 },
+  // The fleet-wide 100ms cost cap (root README "Reliability: traffic and cost limits") does NOT
+  // fit this Worker — issue #29. A full-account snapshot parses and re-serializes megabytes of
+  // Monday JSON and RS256-signs a Google JWT; at 100ms the runtime kills the invocation, which is
+  // not a catchable exception (no D1 finish row, no alert). 300,000ms (5 min) is the maximum
+  // `cpu_ms` accepts. The cron's 15-minute *wall-time* cap is separate and is enforced in code by
+  // runBackup's deadline so a slow run still writes its manifest and alerts. Subrequests: every
+  // Monday page, Drive upload chunk and D1 call counts; 50,000 leaves ample headroom over the
+  // 10,000 Paid default. Requires Workers Paid — Free caps crons at 10ms CPU / 50 subrequests,
+  // which no real snapshot fits in.
+  "limits": { "cpu_ms": 300000, "subrequests": 50000 },
   "observability": { "enabled": true },
 
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
@@ -56,7 +60,7 @@
       "triggers": {
         "crons": ["0 9 * * *"]
       },
-      "limits": { "cpu_ms": 100 },
+      "limits": { "cpu_ms": 300000, "subrequests": 50000 },
       "observability": { "enabled": true }
     }
   }

@@ -129,8 +129,8 @@ HTTP surface (`workers_dev`/`preview_urls` both `false`, no routes) and is exclu
 in each Worker's `wrangler.jsonc` `ratelimits` block as real traffic patterns emerge.
 
 **A per-invocation CPU cap**, via [`limits.cpu_ms`](https://developers.cloudflare.com/workers/wrangler/configuration/#limits)
-in every Worker's `wrangler.jsonc` (`monday-backup` included, even without a public surface — a
-cost guardrail against a runaway invocation, not only a traffic one). Cloudflare's own pricing
+in every Worker's `wrangler.jsonc` — a cost guardrail against a runaway invocation, not only a
+traffic one. Cloudflare's own pricing
 docs name this the specific mitigation for "accidental runaway bills or denial-of-wallet attacks."
 It matters here because Workers Free already hard-caps CPU time at 10ms/invocation — so this has
 no effect today — but Workers Paid's *default* is 30 seconds/request (up to 5 minutes, or 15
@@ -139,7 +139,9 @@ this repo's typical CPU usage (Cloudflare's docs cite 2–20ms as normal for mos
 including ones parsing large payloads), so it shouldn't interfere with real work, but it means the
 account can never accidentally bill 30 seconds of CPU for one request. Raise it per-Worker if real
 usage ever approaches it — the Cloudflare dashboard's per-Worker CPU-time metrics are the source
-of truth for that, not a guess made here.
+of truth for that, not a guess made here. **Exception: `monday-backup`** runs at `cpu_ms: 300000`
+(the configurable maximum) — a nightly full-account snapshot cannot fit in 100ms, and a CPU-limit
+kill is uncatchable, so the cap silently killed every run (issue #29; see its `wrangler.jsonc`).
 
 **Account-level spend alerting is not code-configurable** — Cloudflare has no API/wrangler-managed
 hard spend cap, only a dashboard Notification on a usage threshold. One already exists on this
