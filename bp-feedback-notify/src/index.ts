@@ -5,6 +5,7 @@ import { sandboxEmailBinding } from './email/sandboxBinding';
 import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webhook';
 import { timingSafeEqual } from './timingSafeEqual';
 import { checkRequestRateLimit } from './rateLimit';
+import { writeSendStatus } from './sendStatus';
 import production from '../config/production.json';
 import sandbox from '../config/sandbox.json';
 
@@ -12,6 +13,8 @@ export interface Env extends EnvironmentBindings {
   EMAIL: SendEmail;
   WEBHOOK_SECRET: string;
   SANDBOX_EMAIL_SINK?: string;
+  // Only needed when config.sendStatus is set — see src/sendStatus.ts.
+  MONDAY_API_TOKEN?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
 }
@@ -74,12 +77,22 @@ app.post('/webhook/bp-feedback', async (c) => {
       : c.env.EMAIL;
 
   const sender = new CloudflareEmailSender(binding, config.fromAddress, config.fromName, config.logoUrl);
-  await sender.sendFeedbackRequestEmail({
-    to: payload.organizerEmail,
-    eventName: payload.eventName,
-    feedbackFormUrl: config.feedbackFormUrl,
-  });
+  try {
+    await sender.sendFeedbackRequestEmail({
+      to: payload.organizerEmail,
+      eventName: payload.eventName,
+      feedbackFormUrl: config.feedbackFormUrl,
+    });
+  } catch (error) {
+    // Staff only ever look at the board, so a failed send is logged (Workers observability) and,
+    // when configured, written back onto the item — otherwise it is invisible to them.
+    console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId: payload.itemId, error: error instanceof Error ? error.message : String(error) }));
+    await writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'failed');
+    return c.json({ sent: false, itemId: payload.itemId }, 500);
+  }
 
+  console.log(JSON.stringify({ event: 'bp-feedback-sent', environment, itemId: payload.itemId }));
+  await writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'sent');
   return c.json({ sent: true, itemId: payload.itemId });
 });
 

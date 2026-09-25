@@ -2,5 +2,6 @@
   "feedbackFormUrl": "https://forms.monday.com/forms/4a5ce8f0e00550987dffbcf96280094e",
   "fromAddress": "noreply@mail.bikesiliconvalley.org",
   "fromName": "SVBC Bike Valet",
-  "logoUrl": "https://member.bikesiliconvalley.org/email/logo.png"
+  "logoUrl": "https://member.bikesiliconvalley.org/email/logo.png",
+  "sendStatus": null
 }

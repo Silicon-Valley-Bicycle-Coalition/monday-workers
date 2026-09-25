@@ -28,6 +28,16 @@ describe('config split: sinks', () => {
   it('production and sandbox never point at the same form', () => {
     expect(sandbox.feedbackFormUrl).not.toBe(production.feedbackFormUrl);
   });
+
+  it('status write-back never targets the same board from both environments', () => {
+    const boardOf = (c: { sendStatus: unknown }) => (c.sendStatus as { boardId?: string } | null)?.boardId;
+    // Latent until both are configured (both ship null).
+    if (boardOf(production) !== undefined && boardOf(sandbox) !== undefined) {
+      expect(boardOf(sandbox)).not.toBe(boardOf(production));
+    }
+    expect(production).toHaveProperty('sendStatus');
+    expect(sandbox).toHaveProperty('sendStatus');
+  });
 });
 
 describe('wrangler.jsonc env.sandbox', () => {

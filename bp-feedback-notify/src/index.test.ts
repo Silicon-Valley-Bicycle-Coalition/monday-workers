@@ -100,6 +100,32 @@ describe('POST /webhook/bp-feedback', () => {
     expect(sent.subject).toContain('organizer@example.org');
   });
 
+  it('logs a failed send and answers 500 with sent: false', async () => {
+    const env = fakeEnv({ EMAIL: { send: vi.fn().mockRejectedValue(new Error('destination address is not a verified address')) } });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const res = await app.request(post(VALID_BODY), undefined, env);
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ sent: false, itemId: VALID_BODY.itemId });
+    const logged = JSON.parse(errorSpy.mock.calls.find(([line]) => String(line).includes('bp-feedback-send-failed'))![0] as string);
+    expect(logged).toMatchObject({ itemId: VALID_BODY.itemId, error: 'destination address is not a verified address' });
+    expect(JSON.stringify(logged)).not.toContain('organizer@example.org'); // no PII in logs
+    // Status write-back ships disabled (sendStatus: null in both configs), so no Monday call.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    fetchSpy.mockRestore();
+  });
+
+  it('logs a successful send', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const res = await app.request(post(VALID_BODY), undefined, fakeEnv());
+    expect(res.status).toBe(200);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-sent'));
+    logSpy.mockRestore();
+  });
+
   it('fails closed if ENVIRONMENT=sandbox but no sink is configured', async () => {
     const env = fakeEnv({ ENVIRONMENT: 'sandbox' });
     const res = await app.request(post(VALID_BODY), undefined, env);

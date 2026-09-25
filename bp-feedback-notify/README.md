@@ -79,8 +79,32 @@ sandbox mirror's actual live config on 2026-09-21, not just described genericall
    (there's no header field, hence the secret in the query string — see Data flow above). monday
    verifies the URL with a one-off `{"challenge": "..."}` POST before accepting the connection —
    the Worker already handles that ahead of normal payload validation.
-4. Staff sets the column back to `Sent to Organizer` once they've confirmed delivery (manual for
-   now — the Worker doesn't write back to monday).
+4. Staff sets the column back to `Sent to Organizer` once they've confirmed delivery — manual
+   unless the optional status write-back below is configured.
+
+### Optional: write Sent/Failed back to the item
+
+Every send is logged (`bp-feedback-sent` / `bp-feedback-send-failed`, with the item id, in
+Workers observability), but staff only watch the board, so a failed send is otherwise invisible
+to them — the webhook just gets a 500. To surface it, set `sendStatus` in `config/production.json`
+(and/or `config/sandbox.json`, pointing at the sandbox mirror board) from `null` to:
+
+```json
+"sendStatus": {
+  "boardId": "18395469629",
+  "columnId": "<the Post-Event Feedback column's id>",
+  "sentLabel": "Sent to Organizer",
+  "failedLabel": "Send Failed"
+}
+```
+
+and set a `MONDAY_API_TOKEN` secret (see Secrets). After each send the Worker sets that status
+column to `sentLabel` or `failedLabel` via `change_simple_column_value`. Add the `failedLabel`
+(e.g. `Send Failed`, red) to the column first — Monday rejects an unknown label, and the Worker
+only logs that rejection. Writing `Sent to Organizer` onto the same `Post-Event Feedback` column
+doesn't re-fire the automation, which triggers only on `Ready to Send`; staff re-trigger a
+failed send by setting it back to `Ready to Send`. A write-back failure is logged and never
+fails the webhook (the email already went out).
 
 Confirmed on the sandbox board on 2026-09-21: the connection's challenge handshake succeeded, and
 a real status-change fired the webhook end-to-end (verified via `wrangler tail`). The only
@@ -98,6 +122,15 @@ wrangler secret put WEBHOOK_SECRET --env sandbox  # sandbox
 
 Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger an email send, so
 treat it like a password, not a config value.
+
+`MONDAY_API_TOKEN` is only needed once `sendStatus` is configured (see "Optional: write
+Sent/Failed back to the item"). Mint it from a dedicated integration user with access to only
+the BP Request Form board (root README, least-privilege tokens), per environment:
+
+```sh
+wrangler secret put MONDAY_API_TOKEN               # production
+wrangler secret put MONDAY_API_TOKEN --env sandbox  # sandbox
+```
 
 Because monday's webhook action can only carry the secret in the URL (see Data flow above), it
 appears in this Worker's Cloudflare access logs (Logpush, `wrangler tail`) on every request.
