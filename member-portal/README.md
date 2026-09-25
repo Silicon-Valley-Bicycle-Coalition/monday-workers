@@ -180,7 +180,9 @@ Routing destination). A live login-link request for a real sandbox People record
 
 * Session and magic-link tokens: signed, single-use for the magic link, short expiry, stored in D1
   keyed to a hash of the token (not the raw token) so a D1 read doesn't itself leak a usable
-  credential.
+  credential. Membership-card tokens are the exception — stored in plaintext because the card's
+  QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
+  why that tradeoff was kept.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
@@ -382,7 +384,8 @@ Operator setup, in addition to v1/v2/v2.1 steps:
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
-live card (`GET /:locale/portal/card/:donorItemId`) — name, member number, tier, status, expiry — with a
+live card (a widget per donor on the dashboard, `GET /:locale/portal`; the old
+`/:locale/portal/card/:donorItemId` page now redirects there) — name, member number, tier, status, expiry — with a
 QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
 current status live from Monday, never from whatever was true when the card was viewed or
 scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"
@@ -400,11 +403,37 @@ verify link with the same care as the card itself.
 **Gated on `monday.columns.membershipExpiry`:** the whole feature shows a "not available yet"
 state until that column is set to a real Monday column id (same treatment as v2's
 `donorAddress`/`donorPhone`). If a card's link ever leaks, the donor can invalidate it and get a
-fresh one any time from `/:locale/portal/card/:donorItemId` ("Regenerate card").
+fresh one any time from the card widget's "Regenerate card" button.
 
 Operator setup for v3, in addition to the v1/v2 steps: add a Membership Expiry (date) column to
 the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migration
 `0003_create_card_tokens.sql`. No new Monday write access, no new queue, no new secret.
+
+**Card tokens are stored in plaintext in D1 — deliberately, unlike session and magic-link
+tokens** (issue #32). The difference is that a card token is re-displayed: every dashboard load
+redraws the card's QR code from the active token, so the Worker needs the token itself back, not
+just a way to recognize it. Session and login tokens are only ever *checked*, so a hash suffices.
+Storing card tokens hashed would therefore mean deriving or decrypting them from a new Worker
+secret (HMAC-derived tokens, or AES-GCM ciphertext plus a hash column for lookup). Considered and
+not done, because:
+
+* **What a leaked table unlocks is small, and D1 already holds more.** A card token opens only
+  `/verify/:token`: name, tier, membership status and expiry — the same facts printed on the
+  card the donor shows at a shop counter. Anyone who can read `card_tokens` can read
+  `change_requests` in the same database, which holds donors' old and new addresses, emails and
+  phone numbers in plaintext.
+* **HMAC re-derivation would break every card already issued.** Existing tokens are random, so
+  no key can re-derive them; switching would force a regenerate for every donor and silently
+  invalidate each Wallet pass donors created from the old QR code. The encryption route avoids
+  that (existing rows can be encrypted lazily on first read) but adds a key whose rotation also
+  invalidates every card.
+* **Existing controls cover the realistic leak.** Tokens are revocable by the donor
+  ("Regenerate card"), revoked rows are purged, `/verify` is rate-limited, and the `cardEnabled`
+  kill switch stops every token at once.
+
+Revisit if `/verify` ever starts showing more than the card itself does, or if `change_requests`
+stops holding plaintext PII: the encrypt-plus-lookup-hash design is then the migration path, and
+it keeps issued cards working.
 
 **Revoked tokens don't linger:** the daily retention cron (same one that purges `change_requests`
 — see `src/index.ts`'s `scheduled` handler) also deletes `card_tokens` rows past

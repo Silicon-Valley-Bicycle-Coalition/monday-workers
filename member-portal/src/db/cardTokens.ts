@@ -1,3 +1,7 @@
+// Unlike sessions and magic-link tokens (stored as SHA-256 hashes), card tokens are stored and
+// looked up in plaintext: getActiveToken must hand the token itself back so the dashboard can
+// redraw the card's QR code. Deliberate — see README "v3 — Digital membership card" for the
+// tradeoff and the migration path if it's ever revisited.
 export interface CardTokenStore {
   createToken(donorItemId: string, token: string, createdAtISO: string): Promise<void>;
   findActiveDonorId(token: string): Promise<string | null>;
