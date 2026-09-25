@@ -50,7 +50,7 @@ const validConfig = {
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
+  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'Silicon Valley Bicycle Coalition',
     ein: '00-0000000',
@@ -175,6 +175,24 @@ describe('validateConfig', () => {
 
   it.each([1, 72, 168])('accepts auth.letterLinkTtlHours = %s', (value) => {
     const cfg = { ...validConfig, auth: { ...validConfig.auth, letterLinkTtlHours: value } };
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('throws when rateLimit.attemptRetentionHours is missing', () => {
+    const { attemptRetentionHours, ...rest } = validConfig.rateLimit;
+    const broken = { ...validConfig, rateLimit: rest };
+    expect(() => validateConfig(broken)).toThrow(/rateLimit\.attemptRetentionHours/);
+  });
+
+  // login_attempts rows are only read inside the emailWindowSeconds window — purging any sooner
+  // would silently loosen the per-email rate limit.
+  it.each([0, -1, 0.25, '24'])('rejects rateLimit.attemptRetentionHours = %s (not beyond the 900s window)', (value) => {
+    const broken = { ...validConfig, rateLimit: { ...validConfig.rateLimit, attemptRetentionHours: value } };
+    expect(() => validateConfig(broken)).toThrow(/rateLimit\.attemptRetentionHours/);
+  });
+
+  it('accepts rateLimit.attemptRetentionHours just beyond the rate-limit window', () => {
+    const cfg = { ...validConfig, rateLimit: { ...validConfig.rateLimit, attemptRetentionHours: 0.5 } };
     expect(() => validateConfig(cfg)).not.toThrow();
   });
 

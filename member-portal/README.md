@@ -190,6 +190,10 @@ Routing destination). A live login-link request for a real sandbox People record
   why that tradeoff was kept.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
+* Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and
+  `login_attempts` rows (every email anyone submits, donor or not) older than
+  `rateLimit.attemptRetentionHours` (24; validated to exceed the rate-limit window). Deletes are
+  batched and capped per run (`src/db/authRetention.ts`); indexes in migration `0005`.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
   boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
   v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never

@@ -199,6 +199,10 @@ export interface Config {
   rateLimit: {
     emailWindowSeconds: number;
     emailMaxAttempts: number;
+    // How long login_attempts rows (every submitted email, donor or not) survive the daily
+    // purge. Only rows inside emailWindowSeconds are ever read, so this just needs to exceed
+    // that window (validated); the slack is for debugging abuse after the fact.
+    attemptRetentionHours: number;
   };
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;

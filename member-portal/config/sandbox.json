@@ -44,7 +44,8 @@
   },
   "rateLimit": {
     "emailWindowSeconds": 900,
-    "emailMaxAttempts": 5
+    "emailMaxAttempts": 5,
+    "attemptRetentionHours": 24
   },
   "taxLetter": {
     "orgLegalName": "Silicon Valley Bicycle Coalition",
