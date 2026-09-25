@@ -65,11 +65,15 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
       .fn()
       .mockImplementation((input) => Promise.resolve({ disbursement: { id: 10, worklistItemId: null, ...input }, created: true })),
     getDisbursement: vi.fn(),
+    getByWorklistItemId: vi.fn().mockResolvedValue(null),
     setWorklistItemId: vi.fn().mockResolvedValue(undefined),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
     getRow: vi.fn(),
+    getRowByWorklistItemId: vi.fn().mockResolvedValue(null),
+    requeueRow: vi.fn().mockResolvedValue([]),
+    requeueDisbursementRows: vi.fn().mockResolvedValue([]),
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
@@ -399,5 +403,123 @@ describe('webhook route', () => {
     expect(res.status).toBe(500);
     expect(deps.uploadStore.markError).toHaveBeenCalledWith(1);
     expect(deps.uploadStore.markParsed).not.toHaveBeenCalled();
+  });
+});
+
+describe('retry webhook (#34)', () => {
+  const RETRY = { column: 'retry_col', labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' } };
+
+  function retryDeps(overrides: Partial<AppDeps> = {}): AppDeps {
+    const deps = fakeDeps(overrides);
+    deps.config.benevityImport.uploadsBoard.retry = RETRY;
+    return deps;
+  }
+
+  function postRetry(app: ReturnType<typeof createApp>, body: unknown, secret: string | null = SECRET) {
+    const url = secret === null ? '/webhooks/monday/benevity-retry' : `/webhooks/monday/benevity-retry?secret=${secret}`;
+    return app.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+
+  const retryEvent = (itemId: number, label = 'Retry', columnId = 'retry_col') => ({
+    event: { pulseId: itemId, columnId, value: { label: { index: 1, text: label } } },
+  });
+
+  function rowRecord(status: 'needs-review' | 'written' | 'skipped' | 'ingested') {
+    return {
+      transactionId: 'TXN001', disbursementId: 10, status, mondayEmployeeItemId: null, mondayMatchItemId: null,
+      worklistItemId: '4242', rawRow: '{}', error: 'no match', ingestedAt: 't', writtenAt: null,
+    };
+  }
+
+  it('rejects a request with the wrong secret, and echoes the subscribe challenge', async () => {
+    const app = createApp(retryDeps());
+    expect((await postRetry(app, retryEvent(1), 'wrong')).status).toBe(401);
+    const res = await postRetry(app, { challenge: 'xyz' });
+    expect(await res.json()).toEqual({ challenge: 'xyz' });
+  });
+
+  it('ignores every event while no retry column is configured', async () => {
+    const deps = fakeDeps();
+    const app = createApp(deps);
+    const res = await postRetry(app, retryEvent(4242));
+    expect(await res.json()).toEqual({ ok: true, ignored: true });
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['another label (including the Worker\'s own Queued write)', retryEvent(4242, 'Queued')],
+    ['a cleared column', { event: { pulseId: 4242, columnId: 'retry_col', value: null } }],
+    ['another column', retryEvent(4242, 'Retry', 'other_col')],
+  ])('ignores %s', async (_name, body) => {
+    const deps = retryDeps();
+    const app = createApp(deps);
+    const res = await postRetry(app, body);
+    expect(await res.json()).toEqual({ ok: true, ignored: true });
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+  });
+
+  it('moves a needs-review row back to ingested, enqueues it, and marks the item Queued', async () => {
+    const deps = retryDeps();
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue(['TXN001']);
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, outcome: 'row', enqueued: 1 });
+    expect(deps.rowStore.getRowByWorklistItemId).toHaveBeenCalledWith('4242');
+    expect(deps.rowStore.requeueRow).toHaveBeenCalledWith('TXN001');
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', { retry_col: { label: 'Queued' } });
+  });
+
+  it('does not re-enqueue a row that is already written, and marks its item Done', async () => {
+    const deps = retryDeps();
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('written'));
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'row already written', enqueued: 0 });
+    expect(deps.rowStore.requeueRow).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', { retry_col: { label: 'Done' } });
+  });
+
+  it('releases every held-back row of a block-level item', async () => {
+    const deps = retryDeps();
+    (deps.disbursementStore.getByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 10 });
+    (deps.rowStore.requeueDisbursementRows as ReturnType<typeof vi.fn>).mockResolvedValue(['TXN001', 'TXN002']);
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(5000));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'block', enqueued: 2 });
+    expect(deps.rowStore.requeueDisbursementRows).toHaveBeenCalledWith(10);
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }, { transactionId: 'TXN002' }]);
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '5000', { retry_col: { label: 'Queued' } });
+  });
+
+  it('answers 200 without doing anything for an item this Worker never recorded', async () => {
+    const deps = retryDeps();
+    const app = createApp(deps);
+    const res = await postRetry(app, retryEvent(9999));
+    expect(await res.json()).toEqual({ ok: true, outcome: 'unknown item', enqueued: 0 });
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 so Monday redelivers when the enqueue fails', async () => {
+    const deps = retryDeps({ queue: { sendBatch: vi.fn().mockRejectedValue(new Error('queue down')) } });
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue(['TXN001']);
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(res.status).toBe(500);
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
   });
 });

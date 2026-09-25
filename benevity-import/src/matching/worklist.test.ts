@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ensureWorklistItem, type WorklistItemInput } from './worklist';
+import { ensureWorklistItem, setWorklistLabel, type WorklistItemInput } from './worklist';
 import type { MondayClient } from '../monday/client';
 import type { BenevityImportConfig } from '../types';
 
-function fakeConfig(worklistKeyColumn: string | null = 'key_c'): BenevityImportConfig {
+const RETRY = { column: 'retry_c', labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' } };
+
+function fakeConfig(worklistKeyColumn: string | null = 'key_c', retry: typeof RETRY | null = null): BenevityImportConfig {
   return {
     monday: { apiUrl: '', boards: { donations: 1, organizations: 1, people: 1, affiliations: 1, benevityUploads: 777 } },
     benevityImport: {
@@ -17,6 +19,7 @@ function fakeConfig(worklistKeyColumn: string | null = 'key_c'): BenevityImportC
         worklistGroupId: 'review',
         worklistColumns: { reason: 'reason_c', name: 'name_c', email: 'email_c', company: 'company_c', amount: 'amount_c', date: 'date_c' },
         worklistKeyColumn,
+        retry,
       },
       organizationAliases: {},
       rawRowRetentionDays: 90,
@@ -102,5 +105,28 @@ describe('ensureWorklistItem', () => {
     await ensureWorklistItem(monday as unknown as MondayClient, fakeConfig(), { ...input, name: '' }, null);
 
     expect(monday.createItem.mock.calls[0]![1]).toBe('Acme Co');
+  });
+
+  it('marks a new or re-reported item Needs review on the Retry column once that is configured', async () => {
+    const monday = fakeMonday();
+    await ensureWorklistItem(monday as unknown as MondayClient, fakeConfig('key_c', RETRY), input, null);
+    expect(monday.createItem.mock.calls[0]![2]).toMatchObject({ retry_c: { label: 'Needs review' } });
+
+    await ensureWorklistItem(monday as unknown as MondayClient, fakeConfig('key_c', RETRY), input, '77');
+    expect(monday.changeColumnValues).toHaveBeenCalledWith(777, '77', { reason_c: input.reason, retry_c: { label: 'Needs review' } });
+  });
+});
+
+describe('setWorklistLabel', () => {
+  it('writes the configured label to the Retry column', async () => {
+    const monday = fakeMonday();
+    expect(await setWorklistLabel(monday as unknown as MondayClient, fakeConfig('key_c', RETRY), '77', 'queued')).toBe(true);
+    expect(monday.changeColumnValues).toHaveBeenCalledWith(777, '77', { retry_c: { label: 'Queued' } });
+  });
+
+  it('is a no-op while no Retry column is configured', async () => {
+    const monday = fakeMonday();
+    expect(await setWorklistLabel(monday as unknown as MondayClient, fakeConfig(), '77', 'done')).toBe(false);
+    expect(monday.changeColumnValues).not.toHaveBeenCalled();
   });
 });

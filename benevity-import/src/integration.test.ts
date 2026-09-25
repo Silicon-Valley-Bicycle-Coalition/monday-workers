@@ -277,6 +277,83 @@ describe('benevity-import integration', () => {
     expect(row).toMatchObject({ status: 'needs-review', worklistItemId: worklist[0]!.id });
   });
 
+  it('a staff Retry on a needs-review row re-runs it once it can resolve, and a repeated Retry is harmless (#34)', async () => {
+    const config = fakeConfig();
+    config.benevityImport.uploadsBoard.retry = {
+      column: 'retry_c',
+      labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' },
+    };
+    // The Organization doesn't exist yet, so the row lands on the worklist.
+    let organizationExists = false;
+    (mondayClient.findItemsByName as ReturnType<typeof vi.fn>).mockImplementation((_boardId: number, name: string) =>
+      Promise.resolve(organizationExists && name === 'Acme, Inc.' ? [{ id: '99', name }] : [])
+    );
+    (mondayClient.findItemsByColumnValue as ReturnType<typeof vi.fn>).mockImplementation(
+      (boardId: number, columnId: string) =>
+        Promise.resolve(boardId === 333 && columnId === 'personal_email_c' ? [{ id: '5', name: 'Jordan Rivera' }] : [])
+    );
+    (mondayClient.createItem as ReturnType<typeof vi.fn>).mockImplementation((boardId: number) =>
+      Promise.resolve({ id: boardId === 777 ? '4242' : '501', name: 'x' })
+    );
+
+    const app = createApp({
+      mondayClient,
+      uploadStore: new D1UploadStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      rowStore: new D1RowStore(env.DB),
+      config,
+      queue: { sendBatch: async (ms) => { sentMessages.push(...ms); } },
+      webhookSecret: SECRET,
+      fetchCsv: async () => validReport(),
+      now: () => '2026-09-15T00:00:00Z',
+    });
+    const consumerDeps = {
+      rowStore: new D1RowStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      aliasStore: new D1AliasStore(env.DB),
+      mondayClient,
+      config,
+      now: () => '2026-09-15T01:00:00Z',
+    };
+    const drain = async () => {
+      const batch = sentMessages.splice(0).map((body) => ({ body, ack: vi.fn(), retry: vi.fn() }));
+      await processBenevityQueueBatch(batch, consumerDeps);
+    };
+    const retry = () =>
+      app.request(`/webhooks/monday/benevity-retry?secret=${SECRET}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: { pulseId: 4242, columnId: 'retry_c', value: { label: { text: 'Retry' } } } }),
+      });
+
+    await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+    });
+    await drain();
+    const rows = new D1RowStore(env.DB);
+    expect(await rows.getRow('TXN001')).toMatchObject({ status: 'needs-review', worklistItemId: '4242' });
+
+    // Staff create the Organization, then set the worklist item to Retry — twice, by accident.
+    organizationExists = true;
+    expect((await retry()).status).toBe(200);
+    expect((await retry()).status).toBe(200);
+    expect(sentMessages).toEqual([{ transactionId: 'TXN001' }, { transactionId: 'TXN001' }]);
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', { retry_c: { label: 'Queued' } });
+
+    await drain();
+    expect(await rows.getRow('TXN001')).toMatchObject({ status: 'written', mondayEmployeeItemId: '501' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', { retry_c: { label: 'Done' } });
+    // Two Donations items (gift + match), one worklist item — the duplicate message was a no-op.
+    const creates = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+    expect(creates.sort()).toEqual([111, 111, 777]);
+
+    // A third Retry after the row is written re-enqueues nothing.
+    expect(await (await retry()).json()).toMatchObject({ outcome: 'row already written', enqueued: 0 });
+    expect(sentMessages).toEqual([]);
+  });
+
   it('rejects webhook requests without the correct secret', async () => {
     const config = fakeConfig();
     const routeDeps: AppDeps = {

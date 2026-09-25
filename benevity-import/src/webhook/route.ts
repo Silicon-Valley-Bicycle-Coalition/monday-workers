@@ -1,12 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
 import type { DisbursementStore } from '../db/disbursements';
 import type { RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import { parseBenevityReport, type ParsedBlock } from '../parse/report';
-import { isChallenge, validateUploadEvent } from './validate';
-import { blockWorklistKey, ensureWorklistItem } from '../matching/worklist';
+import { isChallenge, validateRetryEvent, validateUploadEvent } from './validate';
+import { blockWorklistKey, ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage } from '../consumer/processBatch';
 import { sendInBatches, type BatchSender } from '../util/sendBatch';
@@ -38,20 +38,8 @@ export function createApp(deps: AppDeps) {
   app.get('/health', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/monday/benevity-upload', async (c) => {
-    if (deps.webhookSecret === undefined || c.req.query('secret') !== deps.webhookSecret) {
-      return c.json({ ok: false }, 401);
-    }
-
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ ok: false, error: 'invalid JSON body' }, 200);
-    }
-
-    if (isChallenge(body)) {
-      return c.json(body, 200);
-    }
+    const body = await readMondayWebhook(c, deps);
+    if (body instanceof Response) return body;
 
     let event;
     try {
@@ -78,6 +66,47 @@ export function createApp(deps: AppDeps) {
     }
 
     return c.json({ ok: true }, 200);
+  });
+
+  // Replay (#34): staff set a worklist item's Retry status column to the configured `retry`
+  // label once they've fixed what it reported (created the Organization, attached the Person,
+  // checked the block's totals, ...). A Monday webhook on that column lands here. The Worker
+  // moves the row — or, for a block-level item, every row of that disbursement — from
+  // 'needs-review' back to 'ingested', enqueues it, and sets the item to `queued`; the consumer
+  // later sets `done` or, if it still can't resolve the row, `needsReview` with the new reason.
+  // Idempotent: a repeated Retry re-sends only rows still pending, and the consumer ignores a
+  // message for a row that has since been written or re-reviewed.
+  app.post('/webhooks/monday/benevity-retry', async (c) => {
+    const body = await readMondayWebhook(c, deps);
+    if (body instanceof Response) return body;
+
+    const retry = deps.config.benevityImport.uploadsBoard.retry;
+    if (!retry) {
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+
+    let event;
+    try {
+      event = validateRetryEvent(body);
+    } catch (err) {
+      console.error(`benevity retry webhook: rejected delivery: ${errorMessage(err)}`);
+      return c.json({ ok: false, error: errorMessage(err) }, 200);
+    }
+    // Only a change *to* Retry on the Retry column. Every other label — including the Worker's
+    // own Queued/Done/Needs review writes, which fire this same webhook — is ignored.
+    if (event.columnId !== retry.column || event.label !== retry.labels.retry) {
+      return c.json({ ok: true, ignored: true }, 200);
+    }
+
+    let result: ReplayResult;
+    try {
+      result = await replayWorklistItem(event.itemId, deps);
+    } catch (err) {
+      console.error(`benevity retry webhook: failed to replay worklist item "${event.itemId}": ${errorMessage(err)}`);
+      return c.json({ ok: false }, 500); // Monday redelivers; the replay is safe to repeat
+    }
+    console.log(`benevity retry webhook: worklist item "${event.itemId}": ${result.outcome}, ${result.enqueued} row(s) enqueued`);
+    return c.json({ ok: true, ...result }, 200);
   });
 
   return app;
@@ -230,4 +259,62 @@ async function ingestBlock(
     }
   }
   await sendInBatches(deps.queue, toSend);
+}
+
+// Shared front half of every Monday webhook route: shared-secret check (fails closed when
+// unset), JSON parse, and the subscribe handshake. Returns the parsed body, or the Response to
+// send instead.
+async function readMondayWebhook(c: Context, deps: AppDeps): Promise<unknown> {
+  if (deps.webhookSecret === undefined || c.req.query('secret') !== deps.webhookSecret) {
+    return c.json({ ok: false }, 401);
+  }
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'invalid JSON body' }, 200);
+  }
+  if (isChallenge(body)) {
+    return c.json(body, 200);
+  }
+  return body;
+}
+
+interface ReplayResult {
+  outcome: 'row' | 'block' | 'row already written' | 'row skipped' | 'unknown item';
+  enqueued: number;
+}
+
+async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<ReplayResult> {
+  let outcome: ReplayResult['outcome'];
+  let transactionIds: string[];
+
+  const row = await deps.rowStore.getRowByWorklistItemId(itemId);
+  if (row !== null) {
+    if (row.status === 'written' || row.status === 'skipped') {
+      // Nothing to redo. Say so on the board rather than leaving the item at Retry.
+      await setWorklistLabel(deps.mondayClient, deps.config, itemId, 'done');
+      return { outcome: row.status === 'written' ? 'row already written' : 'row skipped', enqueued: 0 };
+    }
+    outcome = 'row';
+    transactionIds = await deps.rowStore.requeueRow(row.transactionId);
+  } else {
+    const disbursement = await deps.disbursementStore.getByWorklistItemId(itemId);
+    if (disbursement === null) {
+      // Not an item this Worker posted (or its D1 record is gone) — nothing to replay.
+      return { outcome: 'unknown item', enqueued: 0 };
+    }
+    // Staff have checked the block (e.g. its totals mismatch was a Benevity rounding quirk):
+    // release every row the block held back. A header-error block parsed no rows, so this is
+    // empty for it — the fix there is a corrected upload, not a Retry.
+    outcome = 'block';
+    transactionIds = await deps.rowStore.requeueDisbursementRows(disbursement.id);
+  }
+
+  await sendInBatches(
+    deps.queue,
+    transactionIds.map((transactionId) => ({ transactionId }))
+  );
+  await setWorklistLabel(deps.mondayClient, deps.config, itemId, 'queued');
+  return { outcome, enqueued: transactionIds.length };
 }

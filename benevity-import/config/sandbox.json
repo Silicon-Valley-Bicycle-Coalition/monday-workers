@@ -45,7 +45,8 @@
         "amount": "numeric_mm78bqmd",
         "date": "date_mm78e4yc"
       },
-      "worklistKeyColumn": null
+      "worklistKeyColumn": null,
+      "retry": null
     },
     "organizationAliases": {},
     "rawRowRetentionDays": 90,

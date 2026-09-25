@@ -34,6 +34,7 @@ export interface DisbursementStore {
   // race into a re-read, never a duplicate.
   findOrCreate(input: NewDisbursement): Promise<FindOrCreateResult>;
   getDisbursement(id: number): Promise<DisbursementRow | null>;
+  getByWorklistItemId(worklistItemId: string): Promise<DisbursementRow | null>;
   setWorklistItemId(id: number, worklistItemId: string): Promise<void>;
 }
 
@@ -129,6 +130,14 @@ export class D1DisbursementStore implements DisbursementStore {
     const record = await this.db
       .prepare(`SELECT ${COLUMNS} FROM disbursements WHERE id = ?1`)
       .bind(id)
+      .first<D1DisbursementRecord>();
+    return record === null ? null : toDisbursementRow(record);
+  }
+
+  async getByWorklistItemId(worklistItemId: string): Promise<DisbursementRow | null> {
+    const record = await this.db
+      .prepare(`SELECT ${COLUMNS} FROM disbursements WHERE worklist_item_id = ?1`)
+      .bind(worklistItemId)
       .first<D1DisbursementRecord>();
     return record === null ? null : toDisbursementRow(record);
   }

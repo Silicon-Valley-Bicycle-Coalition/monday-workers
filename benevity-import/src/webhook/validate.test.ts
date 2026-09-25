@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isChallenge, validateUploadEvent } from './validate';
+import { isChallenge, validateRetryEvent, validateUploadEvent } from './validate';
 
 describe('isChallenge', () => {
   it('recognizes a subscribe handshake payload', () => {
@@ -40,5 +40,33 @@ describe('validateUploadEvent', () => {
 
   it('throws when the event has no columnId', () => {
     expect(() => validateUploadEvent({ event: { pulseId: 1, value: { files: [{ assetId: 1 }] } } })).toThrow(/missing "columnId"/);
+  });
+});
+
+describe('validateRetryEvent', () => {
+  it('extracts the item id, column id, and new status label from a status-column-change event', () => {
+    const body = {
+      event: {
+        pulseId: 4242,
+        columnId: 'retry_col',
+        value: { label: { index: 1, text: 'Retry', style: {}, is_done: false }, post_id: null },
+        previousValue: { label: { index: 0, text: 'Needs review' } },
+      },
+    };
+    expect(validateRetryEvent(body)).toEqual({ itemId: '4242', columnId: 'retry_col', label: 'Retry' });
+  });
+
+  it('reads a cleared status column as an empty label', () => {
+    expect(validateRetryEvent({ event: { pulseId: '1', columnId: 'c', value: null } })).toEqual({
+      itemId: '1',
+      columnId: 'c',
+      label: '',
+    });
+  });
+
+  it('rejects a payload without pulseId or columnId', () => {
+    expect(() => validateRetryEvent({ event: { columnId: 'c' } })).toThrow(/pulseId/);
+    expect(() => validateRetryEvent({ event: { pulseId: 1 } })).toThrow(/columnId/);
+    expect(() => validateRetryEvent({})).toThrow(/event/);
   });
 });

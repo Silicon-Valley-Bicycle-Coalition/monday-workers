@@ -88,5 +88,7 @@ describe('D1DisbursementStore', () => {
 
     await store.setWorklistItemId(disbursement.id, '4242');
     expect((await store.getDisbursement(disbursement.id))?.worklistItemId).toBe('4242');
+    expect((await store.getByWorklistItemId('4242'))?.id).toBe(disbursement.id);
+    expect(await store.getByWorklistItemId('nope')).toBeNull();
   });
 });

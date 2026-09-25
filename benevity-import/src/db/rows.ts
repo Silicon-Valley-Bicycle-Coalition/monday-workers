@@ -35,6 +35,13 @@ export type UpsertRowResult = 'inserted' | 'duplicate';
 export interface RowStore {
   upsertRow(row: NewRow): Promise<UpsertRowResult>;
   getRow(transactionId: string): Promise<DonationRowRecord | null>;
+  getRowByWorklistItemId(worklistItemId: string): Promise<DonationRowRecord | null>;
+  // Replay (#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
+  // error) and returns every one of them that is now 'ingested' — including rows a previous
+  // replay already moved whose enqueue never went through — for the caller to (re-)enqueue.
+  // 'written' and 'skipped' rows are left alone and not returned. Idempotent.
+  requeueRow(transactionId: string): Promise<string[]>;
+  requeueDisbursementRows(disbursementId: number): Promise<string[]>;
   updateStatus(transactionId: string, status: RowStatus, patch?: RowStatusPatch): Promise<void>;
   purgeWrittenRawRows(writtenBefore: string): Promise<number>;
   purgeUnresolvedRawRows(ingestedBefore: string): Promise<number>;
@@ -52,6 +59,9 @@ interface D1RowRecord {
   ingested_at: string;
   written_at: string | null;
 }
+
+const ROW_COLUMNS = `transaction_id, disbursement_id, status, monday_employee_item_id, monday_match_item_id,
+                     worklist_item_id, raw_row, error, ingested_at, written_at`;
 
 function toRow(record: D1RowRecord): DonationRowRecord {
   return {
@@ -88,14 +98,40 @@ export class D1RowStore implements RowStore {
 
   async getRow(transactionId: string): Promise<DonationRowRecord | null> {
     const record = await this.db
-      .prepare(
-        `SELECT transaction_id, disbursement_id, status, monday_employee_item_id, monday_match_item_id,
-                worklist_item_id, raw_row, error, ingested_at, written_at
-         FROM rows WHERE transaction_id = ?1`
-      )
+      .prepare(`SELECT ${ROW_COLUMNS} FROM rows WHERE transaction_id = ?1`)
       .bind(transactionId)
       .first<D1RowRecord>();
     return record === null ? null : toRow(record);
+  }
+
+  async getRowByWorklistItemId(worklistItemId: string): Promise<DonationRowRecord | null> {
+    const record = await this.db
+      .prepare(`SELECT ${ROW_COLUMNS} FROM rows WHERE worklist_item_id = ?1`)
+      .bind(worklistItemId)
+      .first<D1RowRecord>();
+    return record === null ? null : toRow(record);
+  }
+
+  requeueRow(transactionId: string): Promise<string[]> {
+    return this.requeueWhere('transaction_id = ?1', transactionId);
+  }
+
+  requeueDisbursementRows(disbursementId: number): Promise<string[]> {
+    return this.requeueWhere('disbursement_id = ?1', disbursementId);
+  }
+
+  // One UPDATE … RETURNING, so D1 applies it atomically. Rows already 'ingested' match too (a
+  // no-op set) so they're returned for re-sending.
+  private async requeueWhere(predicate: string, value: string | number): Promise<string[]> {
+    const { results } = await this.db
+      .prepare(
+        `UPDATE rows SET status = 'ingested', error = NULL
+         WHERE ${predicate} AND status IN ('needs-review', 'ingested')
+         RETURNING transaction_id`
+      )
+      .bind(value)
+      .all<{ transaction_id: string }>();
+    return results.map((r) => r.transaction_id).sort();
   }
 
   async updateStatus(transactionId: string, status: RowStatus, patch: RowStatusPatch = {}): Promise<void> {

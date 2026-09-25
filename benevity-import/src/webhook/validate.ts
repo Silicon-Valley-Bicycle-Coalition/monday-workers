@@ -13,7 +13,8 @@ export interface ValidatedUploadEvent {
   assetIds: string[];
 }
 
-export function validateUploadEvent(body: unknown): ValidatedUploadEvent {
+// The fields every column-change event carries: which item, which column.
+function validateColumnChange(body: unknown): { e: Record<string, unknown>; itemId: string; columnId: string } {
   if (typeof body !== 'object' || body === null) {
     throw new Error('benevity webhook: payload must be a JSON object');
   }
@@ -30,6 +31,11 @@ export function validateUploadEvent(body: unknown): ValidatedUploadEvent {
   if (typeof columnId !== 'string' || columnId === '') {
     throw new Error('benevity webhook: event missing "columnId"');
   }
+  return { e, itemId: String(pulseId), columnId };
+}
+
+export function validateUploadEvent(body: unknown): ValidatedUploadEvent {
+  const { e, itemId, columnId } = validateColumnChange(body);
 
   const value = e.value;
   const files =
@@ -44,5 +50,24 @@ export function validateUploadEvent(body: unknown): ValidatedUploadEvent {
     throw new Error('benevity webhook: event has no file assetIds');
   }
 
-  return { itemId: String(pulseId), columnId, assetIds };
+  return { itemId, columnId, assetIds };
+}
+
+export interface ValidatedRetryEvent {
+  // The worklist item whose status changed.
+  itemId: string;
+  columnId: string;
+  // The status label it changed to; '' when the column was cleared.
+  label: string;
+}
+
+// A change on the worklist's Retry status column (`change_specific_column_value`). Monday sends a
+// status value as `{ label: { index, text, ... }, post_id }`, or null when cleared.
+export function validateRetryEvent(body: unknown): ValidatedRetryEvent {
+  const { e, itemId, columnId } = validateColumnChange(body);
+  const value = e.value;
+  const label =
+    typeof value === 'object' && value !== null ? (value as Record<string, unknown>).label : undefined;
+  const text = typeof label === 'object' && label !== null ? (label as Record<string, unknown>).text : undefined;
+  return { itemId, columnId, label: typeof text === 'string' ? text : '' };
 }

@@ -7,7 +7,7 @@ import type { ParsedRow } from '../parse/report';
 import { resolveOrganization } from '../matching/organizations';
 import { resolvePerson } from '../matching/people';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
-import { ensureWorklistItem } from '../matching/worklist';
+import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 
 export interface BenevityQueueMessage {
@@ -153,6 +153,12 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
     } else {
       matchItemId = itemId;
     }
+  }
+
+  // A row replayed from the worklist (#34): close the loop for staff. Before the D1 write, so a
+  // failure here retries the (idempotent) row rather than leaving the item showing Queued.
+  if (row.worklistItemId !== null) {
+    await setWorklistLabel(deps.mondayClient, deps.config, row.worklistItemId, 'done');
   }
 
   await deps.rowStore.updateStatus(transactionId, 'written', {

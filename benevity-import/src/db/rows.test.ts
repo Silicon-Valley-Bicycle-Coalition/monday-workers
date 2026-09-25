@@ -104,6 +104,36 @@ describe('D1RowStore', () => {
     expect((await store.getRow('TXN003'))?.worklistItemId).toBe('900');
   });
 
+  it('finds a row by its worklist item id', async () => {
+    const store = new D1RowStore(env.DB);
+    await store.upsertRow({ transactionId: 'WL1', disbursementId, rawRow: '{}', status: 'ingested', ingestedAt: 't' });
+    await store.updateStatus('WL1', 'needs-review', { error: 'x', worklistItemId: '8001' });
+    expect((await store.getRowByWorklistItemId('8001'))?.transactionId).toBe('WL1');
+    expect(await store.getRowByWorklistItemId('nope')).toBeNull();
+  });
+
+  it('requeues a needs-review row once, returns it again while still ingested, and never touches written or skipped rows', async () => {
+    const store = new D1RowStore(env.DB);
+    const add = (transactionId: string, status: 'needs-review' | 'written' | 'skipped' | 'ingested') =>
+      store.upsertRow({ transactionId, disbursementId, rawRow: '{}', status, ingestedAt: 't' });
+    await add('RQ-REVIEW', 'needs-review');
+    await store.updateStatus('RQ-REVIEW', 'needs-review', { error: 'no match' });
+    await add('RQ-WRITTEN', 'written');
+    await add('RQ-SKIPPED', 'skipped');
+
+    expect(await store.requeueRow('RQ-REVIEW')).toEqual(['RQ-REVIEW']);
+    expect(await store.getRow('RQ-REVIEW')).toMatchObject({ status: 'ingested', error: null });
+    // Repeating it is safe: the row is still pending, so it is handed back for re-sending.
+    expect(await store.requeueRow('RQ-REVIEW')).toEqual(['RQ-REVIEW']);
+    expect(await store.requeueRow('RQ-WRITTEN')).toEqual([]);
+    expect(await store.requeueRow('RQ-SKIPPED')).toEqual([]);
+    expect((await store.getRow('RQ-WRITTEN'))?.status).toBe('written');
+
+    await add('RQ-REVIEW-2', 'needs-review');
+    expect(await store.requeueDisbursementRows(disbursementId)).toEqual(['RQ-REVIEW', 'RQ-REVIEW-2']);
+    expect(await store.requeueDisbursementRows(disbursementId + 1000)).toEqual([]);
+  });
+
   it('purges raw_row for written rows older than the cutoff, and leaves newer ones alone', async () => {
     const store = new D1RowStore(env.DB);
     await store.upsertRow({

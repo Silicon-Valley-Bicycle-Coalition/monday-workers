@@ -1,5 +1,5 @@
 import type { MondayClient } from '../monday/client';
-import type { BenevityImportConfig } from '../types';
+import type { BenevityImportConfig, RetryColumnConfig } from '../types';
 
 export interface WorklistItemInput {
   // Stable identity of what the item stands for: the row's Transaction ID, or a block key (see
@@ -37,7 +37,10 @@ export async function ensureWorklistItem(
   if (boardId === null) {
     throw new Error('config: monday.boards.benevityUploads is not configured');
   }
-  const { worklistColumns, worklistGroupId, worklistKeyColumn } = config.benevityImport.uploadsBoard;
+  const { worklistColumns, worklistGroupId, worklistKeyColumn, retry } = config.benevityImport.uploadsBoard;
+  // Every new or re-reported item shows Needs review on the Retry column, so a Retry that
+  // failed again visibly drops back to it.
+  const needsReviewLabel = retry ? { [retry.column]: { label: retry.labels.needsReview } } : {};
 
   let existingId = recordedItemId;
   if (existingId === null && worklistKeyColumn) {
@@ -45,7 +48,7 @@ export async function ensureWorklistItem(
     existingId = found[0]?.id ?? null;
   }
   if (existingId !== null) {
-    await mondayClient.changeColumnValues(boardId, existingId, { [worklistColumns.reason]: input.reason });
+    await mondayClient.changeColumnValues(boardId, existingId, { [worklistColumns.reason]: input.reason, ...needsReviewLabel });
     return existingId;
   }
 
@@ -59,6 +62,7 @@ export async function ensureWorklistItem(
       [worklistColumns.amount]: input.amount,
       [worklistColumns.date]: { date: input.date },
       ...(worklistKeyColumn ? { [worklistKeyColumn]: input.key } : {}),
+      ...needsReviewLabel,
     },
     worklistGroupId
   );
@@ -69,4 +73,21 @@ export async function ensureWorklistItem(
 // in the upload that produced it (an unparseable header has no id to go by).
 export function blockWorklistKey(disbursementId: string, assetId: string, blockIndex: number): string {
   return disbursementId !== '' ? `disbursement ${disbursementId}` : `upload ${assetId} block ${blockIndex}`;
+}
+
+/**
+ * Sets a worklist item's Retry column to one of the configured labels. A no-op (returns false)
+ * while uploadsBoard.retry isn't configured.
+ */
+export async function setWorklistLabel(
+  mondayClient: MondayClient,
+  config: BenevityImportConfig,
+  itemId: string,
+  label: keyof RetryColumnConfig['labels']
+): Promise<boolean> {
+  const boardId = config.monday.boards.benevityUploads;
+  const retry = config.benevityImport.uploadsBoard.retry;
+  if (boardId === null || !retry) return false;
+  await mondayClient.changeColumnValues(boardId, itemId, { [retry.column]: { label: retry.labels[label] } });
+  return true;
 }

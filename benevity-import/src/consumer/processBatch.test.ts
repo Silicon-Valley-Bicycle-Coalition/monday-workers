@@ -71,6 +71,9 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
   const rowStore: RowStore = {
     upsertRow: vi.fn(),
     getRow: vi.fn(),
+    getRowByWorklistItemId: vi.fn(),
+    requeueRow: vi.fn(),
+    requeueDisbursementRows: vi.fn(),
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
@@ -81,6 +84,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
       id: 1, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-03-16', currency: 'USD',
       rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null, worklistItemId: null,
     }),
+    getByWorklistItemId: vi.fn(),
     setWorklistItemId: vi.fn(),
   };
   const aliasStore: AliasStore = { getAlias: vi.fn().mockResolvedValue(null), learnAlias: vi.fn() };
@@ -303,6 +307,22 @@ describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
     expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
     expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '77', { reason_c: expect.any(String) });
     expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'needs-review', expect.objectContaining({ worklistItemId: '77' }));
+  });
+
+  it("marks a replayed row's worklist item Done once its gifts are written", async () => {
+    const withheld = 'Not shared by donor'; // anonymous, so the row resolves and is written
+    const parsed = fakeParsedRow({ donorFirstName: withheld, donorLastName: withheld, email: withheld });
+    const deps = fakeDeps();
+    deps.config.benevityImport.uploadsBoard.retry = {
+      column: 'retry_c',
+      labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' },
+    };
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed, { worklistItemId: '77' }));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '77', { retry_c: { label: 'Done' } });
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'written', expect.any(Object));
   });
 
   it.each(['needs-review', 'skipped', 'written'] as const)('is a no-op for a stale message whose row is already %s', async (status) => {
