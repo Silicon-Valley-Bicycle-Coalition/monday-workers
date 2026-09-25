@@ -335,6 +335,7 @@ describe('integration: create loop (QuickBooks-created item echoed back by Monda
     const flakyMapStore = () => ({
       getByQbId: mapStore.getByQbId.bind(mapStore),
       getByMondayItemId: mapStore.getByMondayItemId.bind(mapStore),
+      repointMapping: mapStore.repointMapping.bind(mapStore),
       createMapping: vi.fn().mockRejectedValueOnce(new Error('D1_ERROR: overloaded')).mockImplementation(mapStore.createMapping.bind(mapStore)),
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -435,6 +436,46 @@ describe('integration: create loop (QuickBooks-created item echoed back by Monda
     expect(retried[0]!.ack).toHaveBeenCalled();
     expect(t.quickBooksClient.createCustomer).toHaveBeenCalledTimes(1);
     expect(t.mondayClient.items.get('staff-item-1')!.columns.qb_id_col).toBe('qb-from-monday');
+    vi.restoreAllMocks();
+  });
+
+  // #33 second review: Monday -> QuickBooks create commits at Intuit but its response is lost;
+  // Intuit's webhook for the new Customer runs before the retry and (with nothing linking it to
+  // item A yet) creates item B. A's retry gets the Customer back via requestid. That must not
+  // silently re-point the Customer to A: it's a terminal conflict naming both items, resolved by
+  // archiving the duplicate and redriving.
+  it('a lost createCustomer response surfaces as a mapping conflict, not a silent re-point', async () => {
+    const t = setup('qb-lost', 'Lost Staff Co');
+    t.mondayClient.items.set('staff-item-2', { name: 'Lost Staff Co', columns: {} });
+    t.quickBooksClient.createCustomer = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network connection lost')) // committed at Intuit, no response
+      .mockResolvedValue({ id: 'qb-lost' }); // the retry's replay of the same requestid
+
+    const staff = await t.echo('staff-item-2');
+    expect(staff[0]!.retry).toHaveBeenCalled();
+
+    const qbMessages = await t.notify();
+    await processSyncQueueBatch(qbMessages, t.consumerDeps);
+    const itemB = (await t.mapStore.getByQbId('customer', 'qb-lost'))!.mondayItemId;
+    expect(itemB).not.toBe('staff-item-2');
+
+    const retried = toConsumerMessages([staff[0]!.body]);
+    await processSyncQueueBatch(retried, t.consumerDeps);
+    expect(retried[0]!.ack).toHaveBeenCalled(); // terminal, not retried into the DLQ
+    const row = await t.mondayEventStore.getEvent('staff-item-2');
+    expect(row?.error).toMatch(new RegExp(`already has Monday item "${itemB}", and item "staff-item-2" also stands for it`));
+    expect((await t.mapStore.getByQbId('customer', 'qb-lost'))?.mondayItemId).toBe(itemB); // unchanged
+    expect(t.mondayClient.items.get('staff-item-2')!.columns.qb_id_col).toBeUndefined(); // not stamped
+
+    // Staff archive the duplicate and redrive: the link moves to the surviving item.
+    t.mondayClient.items.get(itemB)!.state = 'archived';
+    const redriven = toConsumerMessages([staff[0]!.body]);
+    await processSyncQueueBatch(redriven, t.consumerDeps);
+    expect(redriven[0]!.ack).toHaveBeenCalled();
+    expect((await t.mapStore.getByQbId('customer', 'qb-lost'))?.mondayItemId).toBe('staff-item-2');
+    expect(t.mondayClient.items.get('staff-item-2')!.columns.qb_id_col).toBe('qb-lost');
+    expect(t.quickBooksClient.createCustomer).toHaveBeenCalledTimes(2);
     vi.restoreAllMocks();
   });
 

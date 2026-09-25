@@ -1,11 +1,11 @@
-import type { MapStore } from '../db/map';
+import { MappingConflictError, type MapStore } from '../db/map';
 import { isTerminalError, TerminalError } from '../errors';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { QbEventStore } from '../db/qbEvents';
 import { getPath, mapMondayToQbCustomerFields, mapQbToMondayColumns, mondayCellScalar } from '../mapping/fieldMap';
 import type { MondayClient, MondayItemSnapshot } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
-import type { EntityType, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
+import type { EntityType, MapEntry, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -142,7 +142,7 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   if (existing || unmappedItemId !== null) {
     const mondayItemId = existing ? existing.mondayItemId : unmappedItemId!;
     if (!existing) {
-      await deps.mapStore.createMapping({
+      await linkMapping(deps, {
         entityType: event.entityType,
         qbId: event.qbId,
         mondayItemId,
@@ -168,7 +168,7 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     // of calling createItem again -- closing the duplicate-item window.
     await deps.qbEventStore.updateStatus(eventId, event.status, { pendingMondayItemId: created.id });
 
-    await deps.mapStore.createMapping({
+    await linkMapping(deps, {
       entityType: event.entityType,
       qbId: event.qbId,
       mondayItemId: created.id,
@@ -179,6 +179,25 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
 
   // fetchedPayload is kept as a record of what was written, for inspecting a row after the fact.
   await deps.qbEventStore.updateStatus(eventId, 'written', { writtenAt: new Date().toISOString(), fetchedPayload });
+}
+
+// Every mapping write goes through here (#33 review). createMapping refuses to re-point a record
+// already linked to a different item (it used to upsert silently). The one safe re-point: the
+// item it's linked to is gone — archived or deleted in Monday, which is exactly what staff do to
+// resolve the conflict ("archive the duplicate, then redrive"). While that item is live, the
+// conflict stands as a terminal failure naming both items.
+async function linkMapping(deps: ConsumerDeps, entry: MapEntry): Promise<void> {
+  try {
+    await deps.mapStore.createMapping(entry);
+  } catch (err) {
+    if (!(err instanceof MappingConflictError)) throw err;
+    const linked = await deps.mondayClient.getItem(err.existingMondayItemId);
+    if (linked !== null && linked.state === 'active') throw err;
+    console.log(
+      `quickbooks-sync consumer: re-pointing QuickBooks ${entry.entityType} ${entry.qbId} from Monday item "${err.existingMondayItemId}" (${linked === null ? 'not found' : linked.state}) to "${entry.mondayItemId}"`
+    );
+    await deps.mapStore.repointMapping(entry);
+  }
 }
 
 // Before creating a Monday item for a QuickBooks record, look for one that already stands for it
@@ -297,9 +316,11 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     await deps.mondayEventStore.updateStatus(eventId, 'fetched', { qbId });
   }
 
-  // Safe to re-run on a resumed attempt: createMapping is an idempotent UPSERT on
-  // (entity_type, qb_id).
-  await deps.mapStore.createMapping({
+  // Safe to re-run on a resumed attempt: linking the same pair again is a no-op. Linking a
+  // Customer that another live item already stands for (e.g. QuickBooks' webhook for this very
+  // Customer made its own item while our create's response was lost) is a terminal conflict,
+  // before this item is stamped with the Id.
+  await linkMapping(deps, {
     entityType: 'customer',
     qbId,
     mondayItemId: event.mondayItemId,

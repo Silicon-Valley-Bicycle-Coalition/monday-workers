@@ -46,6 +46,7 @@ function fakeMapStore(overrides: Partial<MapStore> = {}): MapStore {
     getByQbId: vi.fn().mockResolvedValue(null),
     getByMondayItemId: vi.fn().mockResolvedValue(null),
     createMapping: vi.fn().mockResolvedValue(undefined),
+    repointMapping: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

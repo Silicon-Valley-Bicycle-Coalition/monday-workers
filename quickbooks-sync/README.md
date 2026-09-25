@@ -60,7 +60,11 @@ carries — so even an item whose `create_item` response was lost is never turne
 Customer. An item carrying an Id already linked to a different item (a copied item) is refused.
 The QuickBooks → Monday path likewise looks for an item that already stands for the Customer
 (one that created it from Monday, or one found by the QuickBooks Id column) before creating one.
-Nothing defers or blocks unrelated items. **Until `customerQbIdColumn` is set, Monday →
+Nothing defers or blocks unrelated items. A mapping is never silently re-pointed: if a record
+turns out to have two live items (e.g. a Monday → QuickBooks create whose response was lost, with
+QuickBooks' own webhook making a second item before the retry), the row fails terminally with
+"QuickBooks customer … already has Monday item …, and item … also stands for it". Archive the
+duplicate item in Monday and redrive; a link whose item is archived or deleted is moved. **Until `customerQbIdColumn` is set, Monday →
 QuickBooks Customer creates are refused** ("not retried", no DLQ) — they can't be made loop-safe
 without it. Customer creates also send Intuit's `requestid`, so a retried create whose first
 response was lost returns the original Customer instead of a second one.

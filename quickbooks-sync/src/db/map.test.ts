@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { describe, it, expect } from 'vitest';
-import { D1MapStore } from './map';
+import { D1MapStore, MappingConflictError } from './map';
+import { isTerminalError } from '../errors';
 
 describe('D1MapStore', () => {
   it('creates a mapping and reads it back by qbId and by mondayItemId', async () => {
@@ -69,25 +70,38 @@ describe('D1MapStore', () => {
     );
   });
 
-  it('upserts on a second createMapping call for the same entityType/qbId', async () => {
+  it('is idempotent for the same entityType/qbId/item', async () => {
     const store = new D1MapStore(env.DB);
-    await store.createMapping({
-      entityType: 'product',
-      qbId: 'qb-2',
-      mondayItemId: 'item-2',
-      mondayBoardId: 1,
-      createdAt: '2026-08-22T00:00:00.000Z',
-    });
-    await store.createMapping({
-      entityType: 'product',
-      qbId: 'qb-2',
-      mondayItemId: 'item-2-moved',
-      mondayBoardId: 2,
-      createdAt: '2026-08-22T01:00:00.000Z',
-    });
+    const entry = { entityType: 'product' as const, qbId: 'qb-2', mondayItemId: 'item-2', mondayBoardId: 1, createdAt: '2026-08-22T00:00:00.000Z' };
+    await store.createMapping(entry);
+    await expect(store.createMapping({ ...entry, createdAt: '2026-08-22T01:00:00.000Z' })).resolves.toBeUndefined();
+    expect((await store.getByQbId('product', 'qb-2'))?.mondayItemId).toBe('item-2');
+  });
 
-    const result = await store.getByQbId('product', 'qb-2');
-    expect(result?.mondayItemId).toBe('item-2-moved');
+  // #33 review: this was an upsert, so a second item claiming a QuickBooks record silently
+  // re-pointed its mapping. It now refuses, naming both items; only repointMapping moves it.
+  it('refuses to re-point a record already mapped to another item, as a terminal conflict', async () => {
+    const store = new D1MapStore(env.DB);
+    const entry = { entityType: 'customer' as const, qbId: 'qb-c', mondayItemId: 'item-b', mondayBoardId: 1, createdAt: '2026-08-22T00:00:00.000Z' };
+    await store.createMapping(entry);
+
+    const err = await store.createMapping({ ...entry, mondayItemId: 'item-a' }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(MappingConflictError);
+    expect(isTerminalError(err)).toBe(true);
+    expect((err as MappingConflictError).existingMondayItemId).toBe('item-b');
+    expect((err as Error).message).toMatch(/QuickBooks customer qb-c already has Monday item "item-b".*item "item-a"/);
+    expect((await store.getByQbId('customer', 'qb-c'))?.mondayItemId).toBe('item-b');
+  });
+
+  it('repointMapping moves a record to another item deliberately', async () => {
+    const store = new D1MapStore(env.DB);
+    const entry = { entityType: 'customer' as const, qbId: 'qb-d', mondayItemId: 'item-old', mondayBoardId: 1, createdAt: '2026-08-22T00:00:00.000Z' };
+    await store.createMapping(entry);
+    await store.repointMapping({ ...entry, mondayItemId: 'item-new', mondayBoardId: 2 });
+
+    const result = await store.getByQbId('customer', 'qb-d');
+    expect(result?.mondayItemId).toBe('item-new');
     expect(result?.mondayBoardId).toBe(2);
   });
 });

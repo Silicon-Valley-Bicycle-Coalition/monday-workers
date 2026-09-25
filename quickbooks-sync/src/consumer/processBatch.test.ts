@@ -3,7 +3,7 @@ import { processSyncQueueBatch, retryDelaySeconds, TERMINAL_PREFIX, type QueueMe
 import { TerminalError } from '../errors';
 import type { QbEventStore } from '../db/qbEvents';
 import type { MondayEventStore } from '../db/mondayEvents';
-import type { MapStore } from '../db/map';
+import { MappingConflictError, type MapStore } from '../db/map';
 import type { MondayClient, MondayItemSnapshot } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
 import type { EntityType, MapEntry, QbEventRow, MondayEventRow, QueueMessage, QuickbooksSyncConfig } from '../types';
@@ -90,6 +90,7 @@ function fakeMapStore(overrides: Partial<MapStore> = {}): MapStore {
     getByQbId: vi.fn().mockResolvedValue(null),
     getByMondayItemId: vi.fn().mockResolvedValue(null),
     createMapping: vi.fn().mockResolvedValue(undefined),
+    repointMapping: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -799,6 +800,32 @@ describe('create-loop guard', () => {
         bumpCreateAttempt: true,
       });
       expect(message.ack).toHaveBeenCalled();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('QuickBooks -> Monday: a conflicting mapping with a live item is terminal; with an archived one it re-points', async () => {
+    for (const [state, terminal] of [['active', true], ['archived', false]] as const) {
+      const conflict = new MappingConflictError('customer', 'qb-1', 'item-live', 'item-lost');
+      const mapStore = fakeMapStore({ createMapping: vi.fn().mockRejectedValue(conflict) });
+      const qbEventStore = fakeQbEventStore();
+      const mondayClient = fakeMondayClient({
+        findItemIdsByColumnValue: vi.fn().mockResolvedValue(['item-lost']),
+        getItem: vi.fn().mockResolvedValue(mondayItem({ id: 'item-live', state })),
+      });
+      const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await processSyncQueueBatch([message], deps({ mapStore, qbEventStore, mondayClient }));
+
+      expect(message.ack, state).toHaveBeenCalled();
+      if (terminal) {
+        expect(mapStore.repointMapping).not.toHaveBeenCalled();
+        expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: `${TERMINAL_PREFIX}${conflict.message}` });
+      } else {
+        expect(mapStore.repointMapping).toHaveBeenCalledWith(expect.objectContaining({ qbId: 'qb-1', mondayItemId: 'item-lost' }));
+      }
       vi.restoreAllMocks();
     }
   });
