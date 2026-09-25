@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createApp, type AppDeps } from './route';
+import { createApp, secretsMatch, type AppDeps } from './route';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
 import type { DisbursementStore } from '../db/disbursements';
@@ -122,6 +122,17 @@ describe('webhook route', () => {
     const app = createApp(fakeDeps({ webhookSecret: undefined }));
     const res = await post(app, { event: {} });
     expect(res.status).toBe(401);
+  });
+
+  it('rejects every request, including an empty ?secret=, when the configured secret is empty', async () => {
+    const deps = fakeDeps({ webhookSecret: '' });
+    const app = createApp(deps);
+    expect((await post(app, { challenge: 'x' }, '')).status).toBe(401);
+    expect((await post(app, { challenge: 'x' }, null)).status).toBe(401);
+    const retry = await app.request('/webhooks/monday/benevity-retry?secret=', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge: 'x' }),
+    });
+    expect(retry.status).toBe(401);
   });
 
   it('echoes the Monday subscribe handshake challenge', async () => {
@@ -521,5 +532,16 @@ describe('retry webhook (#34)', () => {
 
     expect(res.status).toBe(500);
     expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+  });
+});
+
+describe('secretsMatch', () => {
+  it('matches only the exact configured secret, and never an unset or empty one', async () => {
+    expect(await secretsMatch('s3cret', 's3cret')).toBe(true);
+    expect(await secretsMatch('s3cre', 's3cret')).toBe(false);
+    expect(await secretsMatch('s3cretX', 's3cret')).toBe(false);
+    expect(await secretsMatch(undefined, 's3cret')).toBe(false);
+    expect(await secretsMatch('', '')).toBe(false);
+    expect(await secretsMatch('anything', undefined)).toBe(false);
   });
 });

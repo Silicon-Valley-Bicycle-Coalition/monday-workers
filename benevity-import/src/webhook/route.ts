@@ -16,6 +16,24 @@ import { sendInBatches, type BatchSender } from '../util/sendBatch';
 // bundled report doesn't spend one subrequest per row inside the webhook request.
 export type QueueLike = BatchSender<BenevityQueueMessage>;
 
+// Shared-secret check for the Monday webhook URLs. Fails closed when the secret is unset or
+// empty (an empty `?secret=` must never match), and compares SHA-256 digests of both sides with a
+// non-short-circuiting loop so the response time doesn't leak how much of a guess was right.
+// Same shape as funraise-sync's secretsMatch (no shared package between Workers).
+export async function secretsMatch(presented: string | undefined, expected: string | undefined): Promise<boolean> {
+  if (presented === undefined || expected === undefined || expected === '') return false;
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(presented)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i]! ^ y[i]!;
+  return diff === 0;
+}
+
 export interface AppDeps {
   mondayClient: MondayClient;
   uploadStore: UploadStore;
@@ -265,7 +283,7 @@ async function ingestBlock(
 // unset), JSON parse, and the subscribe handshake. Returns the parsed body, or the Response to
 // send instead.
 async function readMondayWebhook(c: Context, deps: AppDeps): Promise<unknown> {
-  if (deps.webhookSecret === undefined || c.req.query('secret') !== deps.webhookSecret) {
+  if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
     return c.json({ ok: false }, 401);
   }
   let body: unknown;
