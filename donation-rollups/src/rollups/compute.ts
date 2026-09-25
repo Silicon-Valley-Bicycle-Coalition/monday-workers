@@ -1,23 +1,26 @@
+// Every amount here is integer cents (issue #27) — summing dollar floats wrote values like
+// 714.9300000000001 to Monday. Cents become a decimal string only at the column write
+// (money.ts formatCents).
 export interface DonationRow {
-  amount: number;
+  amountCents: number;
   dateISO: string;
   fiscalYear: number;
   status: string;
 }
 
 export interface Rollup {
-  lifetimeGiving: number;
+  lifetimeGivingCents: number;
   giftCount: number;
   firstGiftISO: string | null;
-  thisYearAmount: number;
+  thisYearCents: number;
   thisYearCount: number;
-  lastYearAmount: number;
+  lastYearCents: number;
   lastYearCount: number;
-  largestGift: number | null;
-  smallestGift: number | null;
-  averageGift: number | null;
+  largestGiftCents: number | null;
+  smallestGiftCents: number | null;
+  averageGiftCents: number | null; // rounded to a whole cent
   lastGiftDate: string | null;
-  lastGiftAmount: number | null;
+  lastGiftCents: number | null;
 }
 
 // SVBC's fiscal year runs July->June (Organization.FiscalYearStartMonth = 7). Same
@@ -47,27 +50,28 @@ export function computeRollup(
 ): Rollup {
   const received = donations.filter((d) => d.status === receivedStatusLabel);
 
-  let lifetimeGiving = 0, thisYearAmount = 0, thisYearCount = 0, lastYearAmount = 0, lastYearCount = 0;
-  let firstGiftISO: string | null = null, lastGiftDate: string | null = null, lastGiftAmount: number | null = null;
-  let largestGift: number | null = null, smallestGift: number | null = null;
+  let lifetimeGivingCents = 0, thisYearCents = 0, thisYearCount = 0, lastYearCents = 0, lastYearCount = 0;
+  let firstGiftISO: string | null = null, lastGiftDate: string | null = null, lastGiftCents: number | null = null;
+  let largestGiftCents: number | null = null, smallestGiftCents: number | null = null;
 
   for (const d of received) {
-    lifetimeGiving += d.amount;
-    if (d.fiscalYear === thisFY) { thisYearAmount += d.amount; thisYearCount++; }
-    else if (d.fiscalYear === thisFY - 1) { lastYearAmount += d.amount; lastYearCount++; }
+    const c = d.amountCents;
+    lifetimeGivingCents += c;
+    if (d.fiscalYear === thisFY) { thisYearCents += c; thisYearCount++; }
+    else if (d.fiscalYear === thisFY - 1) { lastYearCents += c; lastYearCount++; }
 
     if (firstGiftISO === null || d.dateISO < firstGiftISO) firstGiftISO = d.dateISO;
-    if (lastGiftDate === null || d.dateISO >= lastGiftDate) { lastGiftDate = d.dateISO; lastGiftAmount = d.amount; }
+    if (lastGiftDate === null || d.dateISO >= lastGiftDate) { lastGiftDate = d.dateISO; lastGiftCents = c; }
 
-    if (largestGift === null || d.amount > largestGift) largestGift = d.amount;
-    if (smallestGift === null || d.amount < smallestGift) smallestGift = d.amount;
+    if (largestGiftCents === null || c > largestGiftCents) largestGiftCents = c;
+    if (smallestGiftCents === null || c < smallestGiftCents) smallestGiftCents = c;
   }
 
   return {
-    lifetimeGiving, giftCount: received.length, firstGiftISO,
-    thisYearAmount, thisYearCount, lastYearAmount, lastYearCount,
-    largestGift, smallestGift,
-    averageGift: received.length > 0 ? lifetimeGiving / received.length : null,
-    lastGiftDate, lastGiftAmount,
+    lifetimeGivingCents, giftCount: received.length, firstGiftISO,
+    thisYearCents, thisYearCount, lastYearCents, lastYearCount,
+    largestGiftCents, smallestGiftCents,
+    averageGiftCents: received.length > 0 ? Math.round(lifetimeGivingCents / received.length) : null,
+    lastGiftDate, lastGiftCents,
   };
 }

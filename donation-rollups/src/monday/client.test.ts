@@ -43,7 +43,7 @@ describe('getDonationsByIds', () => {
     ]));
     const result = await client.getDonationsByIds(['dn1'], COLUMNS);
     expect(result).toEqual([
-      { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined },
+      { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined },
     ]);
   });
 
@@ -85,7 +85,20 @@ describe('getDonationsByIds', () => {
       { id: 'zero', cells: { amount_1: '0', date_1: '2020-01-15', status_1: 'Received' } },
     ]));
     const result = await client.getDonationsByIds(['zero'], COLUMNS);
-    expect(result.map((d) => [d.id, d.amount])).toEqual([['zero', 0]]);
+    expect(result.map((d) => [d.id, d.amountCents])).toEqual([['zero', 0]]);
+  });
+
+  it('parses Amount text straight to integer cents — thousands separators, refunds, sub-cent decimals (issue #27)', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'comma', cells: { amount_1: '1,234.5', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'refund', cells: { amount_1: '-25.10', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'float', cells: { amount_1: '714.9300000000001', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'half', cells: { amount_1: '1.005', date_1: '2020-01-15', status_1: 'Received' } },
+    ]));
+    const result = await client.getDonationsByIds(['comma', 'refund', 'float', 'half'], COLUMNS);
+    expect(result.map((d) => [d.id, d.amountCents])).toEqual([
+      ['comma', 123450], ['refund', -2510], ['float', 71493], ['half', 101],
+    ]);
   });
 });
 

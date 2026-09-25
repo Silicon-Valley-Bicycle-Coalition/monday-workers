@@ -3,6 +3,7 @@ import type { PendingStore } from '../db/pending';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 import { currentFiscalYear } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
+import { formatCents, parseAmountCents } from '../money';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
 // keep the archive-in-place Donations board and its projections healthy. Each duty is pure
@@ -144,11 +145,11 @@ async function syncAnnualSummaryBoard(deps: CustodianDeps, changedFYs: Set<numbe
     if (!needsCreate && !changedFYs.has(s.fiscalYear)) continue;
     const byType = Object.entries(JSON.parse(s.byTypeJson) as Record<string, number>)
       .sort((a, b) => b[1] - a[1])
-      .map(([t, cents]) => `${t}: $${(cents / 100).toFixed(2)}`)
+      .map(([t, cents]) => `${t}: $${formatCents(cents)}`)
       .join('\n');
     const columnValues: Record<string, unknown> = {
       [annualSummaryColumns.fiscalYear]: String(s.fiscalYear),
-      [annualSummaryColumns.total]: String(s.totalCents / 100),
+      [annualSummaryColumns.total]: formatCents(s.totalCents),
       [annualSummaryColumns.giftCount]: String(s.giftCount),
       [annualSummaryColumns.byType]: byType,
       [annualSummaryColumns.restatedAt]: s.restatedAt ? { date: s.restatedAt.slice(0, 10) } : null,
@@ -316,10 +317,10 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
       const cols = monday.get(ownerId);
       const ledgerCents = ledger.get(ownerId)!.cents;
 
-      // Leg 1: the Lifetime Giving column. Monday stores floats (714.9300000000001) —
-      // compare in rounded cents.
+      // Leg 1: the Lifetime Giving column. Rows written before issue #27 hold float noise
+      // (714.9300000000001) — parseAmountCents rounds it to cents from the decimal string.
       const lifetimeText = cols?.get(columns.lifetimeGiving) ?? null;
-      const mondayCents = lifetimeText === null ? null : Math.round(Number(lifetimeText) * 100);
+      const mondayCents = parseAmountCents(lifetimeText);
       if (mondayCents !== ledgerCents) mismatches.push({ ownerItemId: ownerId, ledgerCents, mondayCents });
 
       // Leg 2: the Gift Ledger JSON projection. Sum its Received entries the way
@@ -392,7 +393,7 @@ async function runReconcile(deps: CustodianDeps): Promise<DutyReport> {
         summaryItemsChecked++;
         const cols = board.get(s.mondayItemId!);
         const totalText = cols?.get(annualSummaryColumns.total) ?? null;
-        const boardCents = totalText === null ? null : Math.round(Number(totalText) * 100);
+        const boardCents = parseAmountCents(totalText);
         const countText = cols?.get(annualSummaryColumns.giftCount) ?? null;
         const boardCount = countText === null ? null : Number(countText);
         if (boardCents !== s.totalCents || boardCount !== s.giftCount) {
@@ -530,7 +531,7 @@ async function compareCents(
     const monday = await mondayClient.getItemsColumnsText(chunk, [columnId]);
     for (const id of chunk) {
       const text = monday.get(id)?.get(columnId) ?? null;
-      const mondayCents = text === null ? null : Math.round(Number(text) * 100);
+      const mondayCents = parseAmountCents(text);
       const ledgerCents = ledgerCentsOf(id);
       if (mondayCents !== ledgerCents) mismatches.push({ id, ledgerCents, mondayCents });
     }

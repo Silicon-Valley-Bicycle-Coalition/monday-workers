@@ -62,7 +62,7 @@ function fakeBaselineStore(existing: BaselineRow | null = null): MembershipBasel
 }
 
 const NOW = new Date('2026-11-06T12:00:00Z');
-const renewalGift = { id: 'dn1', amount: 50, dateISO: '2026-11-05', fiscalYear: 2027, status: 'Received',
+const renewalGift = { id: 'dn1', amountCents: 5000, dateISO: '2026-11-05', fiscalYear: 2027, status: 'Received',
   giftType: 'Donation', termStart: null, termEnd: null, membershipType: null };
 
 function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
@@ -165,7 +165,7 @@ describe('gift-history projections in the recompute path', () => {
     const mondayClient = fakeMondayClient({
       changeColumnValues, setItemDescription,
       getDonationsByIds: vi.fn().mockResolvedValue([
-        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+        { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
     });
     await processRecomputeBatch([fakeMessage('dn1')],
@@ -185,7 +185,7 @@ describe('gift-history projections in the recompute path', () => {
     const mondayClient = fakeMondayClient({
       setItemDescription,
       getDonationsByIds: vi.fn().mockResolvedValue([
-        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+        { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
     });
     const message = fakeMessage('dn1');
@@ -203,7 +203,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory);
     const mondayClient = fakeMondayClient({
       getDonationsByIds: vi.fn().mockResolvedValue([
-        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+        { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
       ...overrides,
     });
@@ -279,23 +279,27 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
 describe('rollupToColumnValues', () => {
   it('maps every rollup field to its configured column id, nulls stay null', () => {
     const values = rollupToColumnValues({
-      lifetimeGiving: 100, giftCount: 2, firstGiftISO: '2020-01-01',
-      thisYearAmount: 50, thisYearCount: 1, lastYearAmount: 50, lastYearCount: 1,
-      largestGift: 75, smallestGift: 25, averageGift: 50,
-      lastGiftDate: '2024-01-01', lastGiftAmount: 75,
+      lifetimeGivingCents: 71493, giftCount: 2, firstGiftISO: '2020-01-01',
+      thisYearCents: 5000, thisYearCount: 1, lastYearCents: 66493, lastYearCount: 1,
+      largestGiftCents: 66493, smallestGiftCents: 5000, averageGiftCents: 35747,
+      lastGiftDate: '2024-01-01', lastGiftCents: 5,
     }, ownerColumns);
-    expect(values.lg).toBe('100');
-    expect(values.fg).toEqual({ date: '2020-01-01' });
-    expect(values.avg).toBe('50');
+    expect(values).toEqual({
+      lg: '714.93', gc: '2', fg: { date: '2020-01-01' },
+      tya: '50.00', tyc: '1', lya: '664.93', lyc: '1',
+      lag: '664.93', smg: '50.00', avg: '357.47',
+      lgd: { date: '2024-01-01' }, lga: '0.05',
+    });
   });
 
   it('writes empty string / null for a donor with no received gifts, not "null" text', () => {
     const values = rollupToColumnValues({
-      lifetimeGiving: 0, giftCount: 0, firstGiftISO: null,
-      thisYearAmount: 0, thisYearCount: 0, lastYearAmount: 0, lastYearCount: 0,
-      largestGift: null, smallestGift: null, averageGift: null,
-      lastGiftDate: null, lastGiftAmount: null,
+      lifetimeGivingCents: 0, giftCount: 0, firstGiftISO: null,
+      thisYearCents: 0, thisYearCount: 0, lastYearCents: 0, lastYearCount: 0,
+      largestGiftCents: null, smallestGiftCents: null, averageGiftCents: null,
+      lastGiftDate: null, lastGiftCents: null,
     }, ownerColumns);
+    expect(values.lg).toBe('0.00');
     expect(values.lag).toBe('');
     expect(values.fg).toBeNull();
   });
@@ -337,7 +341,7 @@ describe('processRecomputeBatch', () => {
 
   it('writes to whichever board the owner item actually lives on, keyed by real board id', async () => {
     const donations: DonationRecord[] = [
-      { id: 'd1', amount: 100, dateISO: '2025-08-01', fiscalYear: 2026, status: 'Received' },
+      { id: 'd1', amountCents: 10000, dateISO: '2025-08-01', fiscalYear: 2026, status: 'Received' },
     ];
     const mondayClient = fakeMondayClient({
       getItemBoardId: vi.fn().mockResolvedValue('3'), // matches the second configured owner board
@@ -348,7 +352,7 @@ describe('processRecomputeBatch', () => {
 
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore, linksStore, affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-1', expect.objectContaining({ lg: '100' }));
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-1', expect.objectContaining({ lg: '100.00' }));
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written',
       expect.objectContaining({ ownerItemId: 'donor-1', ownerBoard: '3' }));
   });
@@ -488,7 +492,7 @@ describe('membership step (spec 2026-09-15)', () => {
 
   it('a $1,000 gift makes the owner Lifetime with Until cleared and a blank Term End', async () => {
     const d = deps({ board: { statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: '2027-04-11' },
-      donations: [{ ...renewalGift, amount: 1000 }] });
+      donations: [{ ...renewalGift, amountCents: 100000 }] });
     await d.run();
     expect(d.changeColumnValues.mock.calls[0]![2]).toMatchObject({ mt: { label: 'Lifetime' }, muntil: null });
     expect(d.changeColumnValues.mock.calls[1]![2]).toEqual({ ts_1: { date: '2026-11-05' }, mty_1: 'Lifetime' });
@@ -740,31 +744,31 @@ const configWithAffiliations: DonationRollupsConfig = {
 describe('affectedAffiliations', () => {
   it('unions the triggering donation\'s previous and current acting-for ids, ignoring nulls', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-old'], ['dn2', null]]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
       'dn1')].sort())
       .toEqual(['af-new', 'af-old']);
   });
 
   it('an unchanged non-triggering gift contributes nothing', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-unchanged']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-unchanged' }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-unchanged' }],
       'dn1')])
       .toEqual(['af-trigger']);
   });
 
   it('the triggering gift\'s affiliation is included even when unchanged', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-same']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-same' }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-same' }],
       'dn1')])
       .toEqual(['af-same']);
   });
 
   it('a changed non-triggering gift contributes both its old and new affiliation', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-old']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' }],
       'dn1')].sort())
       .toEqual(['af-new', 'af-old', 'af-trigger']);
   });
@@ -775,22 +779,22 @@ describe('affectedAffiliations', () => {
   // archived attributed gift, fanning out to every affiliation an org owner ever had.
   it('a non-triggering archived gift whose fetched value reads back null contributes nothing (finding 1)', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-archived']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
       'dn1')])
       .toEqual(['af-trigger']);
   });
 
   it('the same previous/current-null shape on the TRIGGERING gift is still a genuine clear (finding 1)', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-archived']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
       'dn1')])
       .toEqual(['af-archived']);
   });
 });
 
 describe('consumer phase 2 — affiliation rollups', () => {
-  const donation = { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-1' };
+  const donation = { id: 'dn1', amountCents: 50000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-1' };
   function setup(over: { giftsStore?: Partial<GiftsStore>; affiliationsStore?: Partial<AffiliationsStore>; monday?: Partial<DonationRollupsMondayClient> } = {}) {
     const giftsStore = { ...fakeGiftsStore(), ...over.giftsStore } as GiftsStore;
     (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
@@ -811,8 +815,8 @@ describe('consumer phase 2 — affiliation rollups', () => {
     expect(giftsStore.refreshFacts).toHaveBeenCalledWith([expect.objectContaining({ mondayItemId: 'dn1', actingForItemId: 'af-1' })], 'webhook', expect.any(String));
     expect(mondayClient.getAffiliationSummary).toHaveBeenCalledWith('af-1', 'br_p');
     expect(affiliationsStore.upsert).toHaveBeenCalledWith({ affiliationItemId: 'af-1', personItemId: 'p-1', personBoardId: '2', name: 'Uma @ Beta' }, expect.any(String));
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', { n_ag: '500', n_agc: '1', d_lag: { date: '2024-02-02' } });
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', { n_ag: '500.00', n_agc: '1', d_lag: { date: '2024-02-02' } });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500.00' });
   });
 
   it('recomputes the affiliation a gift moved away from, and the person it used to belong to', async () => {
@@ -827,8 +831,8 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-old', expect.anything());
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', expect.anything());
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-old', { og: '500' });
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-old', { og: '500.00' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500.00' });
   });
 
   it('skips Organizational Giving with a warning when the person board has no such column, and skips a deleted affiliation', async () => {
@@ -860,8 +864,8 @@ describe('consumer phase 2 — affiliation rollups', () => {
     (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
     (giftsStore.organizationalGivingTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1 });
     const donations = [
-      { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'aff-a' },
-      { id: 'dn2', amount: 100, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
+      { id: 'dn1', amountCents: 50000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'aff-a' },
+      { id: 'dn2', amountCents: 10000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
     ];
     const mondayClient = fakeMondayClient({
       getDonationsByIds: vi.fn().mockResolvedValue(donations),
@@ -876,7 +880,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
     });
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500.00' });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
     warn.mockRestore();
   });
@@ -969,7 +973,7 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
       // The former owner is rewritten with zeroed totals, not left holding the gift.
       const [board, owner, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
       expect([board, owner]).toEqual([2, 'donor-1']);
-      expect((values as Record<string, unknown>)['lg']).toBe('0');
+      expect((values as Record<string, unknown>)['lg']).toBe('0.00');
       expect((values as Record<string, unknown>)['gc']).toBe('0');
       expect(message.ack).toHaveBeenCalled();
       expect(pendingStore.updateStatus).toHaveBeenCalledWith('dnGone', 'written', expect.anything());

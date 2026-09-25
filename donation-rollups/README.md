@@ -455,7 +455,8 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 * **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
   fiscal boundary (closes the staleness gap in Not-yet-done).
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
-  comparison; Monday stores float noise) plus summaries vs fresh ledger totals. First full
+  comparison — values written before issue #27 carry float noise; since then every money column
+  is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
   pass 2026-08-31: 6,886 owners, zero mismatches.
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and

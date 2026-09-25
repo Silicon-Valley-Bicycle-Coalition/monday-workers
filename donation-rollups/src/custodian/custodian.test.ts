@@ -233,7 +233,7 @@ describe('annual summary board sync', () => {
     const first = await runDuty('archive', d);
     expect((first.detail as { boardItemsWritten: number }).boardItemsWritten).toBe(2);
     expect(state.createdItems!.map((c) => [c.boardId, c.name])).toEqual([[777, 'FY2015'], [777, 'FY2016']]);
-    expect(state.createdItems![0]!.columnValues).toMatchObject({ c_fy: '2015', c_total: '5', c_n: '1', c_re: null });
+    expect(state.createdItems![0]!.columnValues).toMatchObject({ c_fy: '2015', c_total: '5.00', c_n: '1', c_re: null });
     const stored = await d.gifts.getAnnualSummaries();
     expect(stored.map((s) => s.mondayItemId)).toEqual(['summary-FY2015', 'summary-FY2016']);
 

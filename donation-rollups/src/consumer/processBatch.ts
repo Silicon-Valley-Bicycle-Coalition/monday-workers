@@ -20,6 +20,7 @@ import {
   membershipColumnValues, termColumnValues, type MembershipState,
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
+import { formatCents } from '../money';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -258,7 +259,7 @@ async function recomputeOwner(
   const refreshed = await deps.giftsStore.refreshFacts(
     donations.map((d) => ({
       mondayItemId: d.id, ownerItemId, ownerBoardId,
-      amountCents: Math.round(d.amount * 100),
+      amountCents: d.amountCents,
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
       giftType: d.giftType ?? null,
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
@@ -367,7 +368,7 @@ async function planMembershipWrites(
     ?? (await baselineStore.captureIfAbsent({ ownerItemId, ownerBoardId, ...boardState, capturedAt: new Date().toISOString() }));
 
   const gifts = perBoard.flatMap((p) => p.items.map((d) => ({
-    id: d.id, dateISO: d.dateISO, amountCents: Math.round(d.amount * 100), status: d.status, giftType: d.giftType ?? null,
+    id: d.id, dateISO: d.dateISO, amountCents: d.amountCents, status: d.status, giftType: d.giftType ?? null,
   })));
   const derived = deriveMembership({ since: baseline.since, until: baseline.until, tier: baseline.tier },
     gifts, membership, config.donationRollups.receivedStatusLabel);
@@ -438,8 +439,13 @@ async function drivenForOrganizations(
   return driven;
 }
 
-function numCol(n: number | null): string {
-  return n === null ? '' : String(n);
+function countCol(n: number): string {
+  return String(n);
+}
+
+// Integer cents -> "714.93"; null (no received gifts) -> a blank cell.
+function moneyCol(cents: number | null): string {
+  return cents === null ? '' : formatCents(cents);
 }
 
 function dateCol(iso: string | null): unknown {
@@ -448,18 +454,18 @@ function dateCol(iso: string | null): unknown {
 
 export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<string, unknown> {
   return {
-    [columns.lifetimeGiving]: numCol(r.lifetimeGiving),
-    [columns.giftCount]: numCol(r.giftCount),
+    [columns.lifetimeGiving]: moneyCol(r.lifetimeGivingCents),
+    [columns.giftCount]: countCol(r.giftCount),
     [columns.firstGift]: dateCol(r.firstGiftISO),
-    [columns.thisYearAmount]: numCol(r.thisYearAmount),
-    [columns.thisYearCount]: numCol(r.thisYearCount),
-    [columns.lastYearAmount]: numCol(r.lastYearAmount),
-    [columns.lastYearCount]: numCol(r.lastYearCount),
-    [columns.largestGift]: numCol(r.largestGift),
-    [columns.smallestGift]: numCol(r.smallestGift),
-    [columns.averageGift]: numCol(r.averageGift),
+    [columns.thisYearAmount]: moneyCol(r.thisYearCents),
+    [columns.thisYearCount]: countCol(r.thisYearCount),
+    [columns.lastYearAmount]: moneyCol(r.lastYearCents),
+    [columns.lastYearCount]: countCol(r.lastYearCount),
+    [columns.largestGift]: moneyCol(r.largestGiftCents),
+    [columns.smallestGift]: moneyCol(r.smallestGiftCents),
+    [columns.averageGift]: moneyCol(r.averageGiftCents),
     [columns.lastGiftDate]: dateCol(r.lastGiftDate),
-    [columns.lastGiftAmount]: numCol(r.lastGiftAmount),
+    [columns.lastGiftAmount]: moneyCol(r.lastGiftCents),
   };
 }
 

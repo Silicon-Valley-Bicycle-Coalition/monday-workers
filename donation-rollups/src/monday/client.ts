@@ -1,4 +1,5 @@
 import { fiscalYearFromDate } from '../rollups/compute';
+import { parseAmountCents } from '../money';
 import type { OwnerMembershipColumns } from '../types';
 
 function chunksOf<T>(items: T[], size: number): T[][] {
@@ -9,7 +10,7 @@ function chunksOf<T>(items: T[], size: number): T[][] {
 
 export interface DonationRecord {
   id: string;
-  amount: number;
+  amountCents: number; // integer cents — see money.ts
   dateISO: string;
   fiscalYear: number;
   status: string;
@@ -190,14 +191,14 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       );
       for (const item of data.items) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
-        // A blank Amount must be treated as malformed like a blank Date — Number('') is 0,
-        // not NaN, and letting it through would refresh the ledger's real (bootstrap-loaded)
-        // amount down to $0 on the next recompute (refreshFacts would see a changed amount and write it).
-        const amountText = (byId.get(columns.amount) ?? '').trim();
-        const amount = Number(amountText);
+        // A blank Amount must be treated as malformed like a blank Date — never as $0, which
+        // would refresh the ledger's real (bootstrap-loaded) amount down to $0 on the next
+        // recompute (refreshFacts would see a changed amount and write it). Parsed straight
+        // to integer cents (issue #27): "1,234.5", "-12.34", "(12.34)" all parse; blank is null.
+        const amountCents = parseAmountCents(byId.get(columns.amount));
         const dateISO = byId.get(columns.date) ?? '';
         const status = byId.get(columns.status) ?? '';
-        if (!dateISO || amountText === '' || Number.isNaN(amount)) continue; // malformed or deleted item, skip
+        if (!dateISO || amountCents === null) continue; // malformed or deleted item, skip
         // Fall back to deriving from the Date column when this board has no Fiscal
         // Year column yet, or the cell is blank — see fiscalYearFromDate in
         // rollups/compute.ts. Blank has to be checked as text, same as Amount above:
@@ -213,7 +214,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
           ? (item.column_values.find((cv) => cv.id === columns.actingForLink)?.linked_item_ids?.[0] ?? null)
           : undefined;
         donations.push({
-          id: item.id, amount, dateISO, fiscalYear, status, giftType,
+          id: item.id, amountCents, dateISO, fiscalYear, status, giftType,
           termStart: optionalDate(byId, columns.termStart),
           termEnd: optionalDate(byId, columns.termEnd),
           membershipType: optionalText(byId, columns.membershipType),
