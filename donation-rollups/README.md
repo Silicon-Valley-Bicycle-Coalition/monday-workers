@@ -174,7 +174,10 @@ backfill) would silently lose recomputes the same way.
    message with `delaySeconds` to the next midnight UTC (capped at Queues' 12 h — a message
    further out comes back once mid-way, fails without touching Monday, and defers again), and
    once one message in a batch hits it the rest of that batch is deferred to the same moment
-   without any Monday calls. Other errors still retry immediately. `max_batch_size` is 2: D1
+   without any Monday calls. Monday rate-limit and complexity-budget errors get the same
+   batch-wide deferral (issue #27): `delaySeconds` of 60 s doubling per delivery attempt, never
+   less than Monday's `retry_in_seconds` / `Retry-After` hint, capped at 12 h. Other errors
+   still retry immediately. `max_batch_size` is 2: D1
    queries count against the 50-subrequest budget and a full recompute costs ~16–26, so two
    worst-case recomputes fit and three don't (the default 10 is what produced the three
    "Too many subrequests" rows). Raise it on Workers Paid.

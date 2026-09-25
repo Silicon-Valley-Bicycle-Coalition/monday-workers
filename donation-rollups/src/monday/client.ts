@@ -79,11 +79,59 @@ export interface DonationRollupsMondayClient {
 
 const MONDAY_API_VERSION = '2026-01';
 
+interface GraphQLError {
+  message: string;
+  extensions?: { code?: string; status_code?: number; retry_in_seconds?: number };
+}
+
 interface GraphQLResponse<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: GraphQLError[];
   error_message?: string;
   status_code?: number;
+}
+
+// Monday's per-token complexity budget, per-minute and daily call limits, and concurrency cap
+// (issue #27). The consumer retries these after a delay instead of immediately; retryInSeconds
+// is Monday's own hint (extensions.retry_in_seconds, a Retry-After header, or the legacy
+// "reset in N seconds" message) when it gave one.
+export class MondayRateLimitError extends Error {
+  constructor(message: string, readonly retryInSeconds?: number) {
+    super(message);
+    this.name = 'MondayRateLimitError';
+  }
+}
+
+const RATE_LIMIT_CODES = new Set([
+  'COMPLEXITY_BUDGET_EXHAUSTED', 'ComplexityException', 'RATE_LIMIT_EXCEEDED',
+  'IP_RATE_LIMIT_EXCEEDED', 'DAILY_LIMIT_EXCEEDED', 'maxConcurrencyExceeded',
+]);
+const RATE_LIMIT_TEXT = /complexity budget exhausted|rate limit exceeded/i;
+
+function positiveSeconds(v: unknown): number | undefined {
+  const n = typeof v === 'string' ? Number(v.trim()) : v;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+// Classifies a Monday error response. Returns a MondayRateLimitError when any signal says rate
+// limit (an HTTP 429, a known extensions.code, a 429 status_code, or the legacy message text);
+// otherwise null, and the caller throws its ordinary Error.
+function rateLimitErrorFrom(
+  json: GraphQLResponse<unknown> | null, httpStatus: number, retryAfterHeader: string | null, fallbackMessage: string,
+): MondayRateLimitError | null {
+  const errors = json?.errors ?? [];
+  const limited = httpStatus === 429
+    || json?.status_code === 429
+    || errors.some((e) => RATE_LIMIT_CODES.has(e.extensions?.code ?? '') || e.extensions?.status_code === 429)
+    || RATE_LIMIT_TEXT.test(json?.error_message ?? '')
+    || errors.some((e) => RATE_LIMIT_TEXT.test(e.message));
+  if (!limited) return null;
+  const legacyHint = /reset in (\d+(?:\.\d+)?) seconds?/i.exec(json?.error_message ?? errors.map((e) => e.message).join(' '))?.[1];
+  const retryInSeconds = positiveSeconds(retryAfterHeader)
+    ?? errors.map((e) => positiveSeconds(e.extensions?.retry_in_seconds)).find((s) => s !== undefined)
+    ?? positiveSeconds(legacyHint);
+  const detail = errors.length > 0 ? errors.map((e) => e.message).join('; ') : (json?.error_message ?? fallbackMessage);
+  return new MondayRateLimitError(`monday API: ${detail}`, retryInSeconds);
 }
 
 interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
@@ -105,9 +153,15 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
+      if (response.status === 429) {
+        const body = await response.json().catch(() => null) as GraphQLResponse<T> | null;
+        throw rateLimitErrorFrom(body, 429, response.headers.get('Retry-After'), `HTTP ${response.status}`)!;
+      }
       throw new Error(`monday API: HTTP ${response.status}`);
     }
     const json = (await response.json()) as GraphQLResponse<T>;
+    const limited = rateLimitErrorFrom(json, response.status, response.headers.get('Retry-After'), 'rate limited');
+    if (limited) throw limited;
     if (json.errors && json.errors.length > 0) {
       throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
     }

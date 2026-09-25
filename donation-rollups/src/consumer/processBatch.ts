@@ -5,6 +5,7 @@ import type { MembershipBaselineStore } from '../db/membershipBaseline';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
+import { MondayRateLimitError } from '../monday/client';
 import type {
   AffiliationsConfig, DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns,
@@ -14,7 +15,7 @@ import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
 } from '../projections/giftHistory';
-import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
+import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds } from './quota';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipState,
@@ -27,6 +28,9 @@ export interface QueueMessageLike<T> {
   // When the message was sent (Cloudflare's Message.timestamp) — the dead-letter consumer
   // compares it against a pending row's written_at to spot stale dead messages.
   timestamp?: Date;
+  // Delivery attempt, 1 on first delivery (Cloudflare's Message.attempts) — drives the
+  // rate-limit backoff. Optional so test doubles needn't set it.
+  attempts?: number;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
 }
@@ -60,13 +64,14 @@ const MAX_GIFT_TERM_WRITES_PER_RECOMPUTE = 10;
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
-  // Once D1 has refused a query for the day, every later message in this batch would fail the
-  // same way after spending two Monday calls each — defer them all to the same moment instead.
-  let quotaDelaySeconds: number | null = null;
+  // Once D1 has refused a query for the day, or Monday has said the token's budget is spent,
+  // every later message in this batch would fail the same way after spending Monday calls of
+  // its own — defer them all to the same moment instead.
+  let batchDelaySeconds: number | null = null;
   for (const message of messages) {
     const { donationItemId, donationBoardId } = message.body;
-    if (quotaDelaySeconds !== null) {
-      message.retry({ delaySeconds: quotaDelaySeconds });
+    if (batchDelaySeconds !== null) {
+      message.retry({ delaySeconds: batchDelaySeconds });
       continue;
     }
     try {
@@ -87,9 +92,15 @@ export async function processRecomputeBatch(
         message.ack();
       } else if (isD1QuotaError(err)) {
         // D1's daily limit resets at midnight UTC — the retry worth making is the one after it.
-        quotaDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
-        console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${quotaDelaySeconds}s (to midnight UTC)`);
-        message.retry({ delaySeconds: quotaDelaySeconds });
+        batchDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
+        console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${batchDelaySeconds}s (to midnight UTC)`);
+        message.retry({ delaySeconds: batchDelaySeconds });
+      } else if (err instanceof MondayRateLimitError) {
+        // Issue #27: retrying straight back into an exhausted complexity budget just burns the
+        // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt.
+        batchDelaySeconds = rateLimitRetryDelaySeconds(err.retryInSeconds, message.attempts);
+        console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
+        message.retry({ delaySeconds: batchDelaySeconds });
       } else {
         message.retry();
       }

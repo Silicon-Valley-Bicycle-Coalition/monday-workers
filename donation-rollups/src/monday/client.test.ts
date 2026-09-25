@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { HttpMondayClient } from './client';
+import { HttpMondayClient, MondayRateLimitError } from './client';
 
 const COLUMNS = { amount: 'amount_1', date: 'date_1', fiscalYear: null, status: 'status_1' };
 
@@ -198,5 +198,62 @@ describe('HttpMondayClient — affiliation model reads', () => {
     expect(await clientReturningSequence([{ data: { items: [{ id: 'af-1', name: 'X @ Y', column_values: [{ id: 'br_p', linked_item_ids: [] }] }] } }])
       .getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'X @ Y', personItemId: null, personBoardId: null });
     expect(await clientReturningSequence([{ data: { items: [] } }]).getAffiliationSummary('af-gone', 'br_p')).toBeNull();
+  });
+});
+
+// Issue #27: Monday rate-limit and complexity-budget errors surface as MondayRateLimitError,
+// carrying Monday's own retry hint when it gave one, so the consumer can delay the retry.
+describe('Monday rate-limit errors', () => {
+  function clientResponding(body: unknown, init: ResponseInit = { status: 200 }): HttpMondayClient {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(
+      () => Promise.resolve(new Response(JSON.stringify(body), init))));
+    return new HttpMondayClient('https://api.monday.test/v2', 'token');
+  }
+  const read = (c: HttpMondayClient) => c.getItemBoardId('1');
+
+  it('a COMPLEXITY_BUDGET_EXHAUSTED GraphQL error carries extensions.retry_in_seconds', async () => {
+    const err = await read(clientResponding({ errors: [{ message: 'Complexity budget exhausted',
+      extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', status_code: 429, retry_in_seconds: 36 } }] })).catch((e) => e);
+    expect(err).toBeInstanceOf(MondayRateLimitError);
+    expect(err.retryInSeconds).toBe(36);
+    expect(err.message).toContain('Complexity budget exhausted');
+  });
+
+  it('recognizes the other rate-limit codes, with or without a retry hint', async () => {
+    for (const code of ['RATE_LIMIT_EXCEEDED', 'IP_RATE_LIMIT_EXCEEDED', 'DAILY_LIMIT_EXCEEDED', 'maxConcurrencyExceeded', 'ComplexityException']) {
+      const err = await read(clientResponding({ errors: [{ message: code, extensions: { code } }] })).catch((e) => e);
+      expect(err, code).toBeInstanceOf(MondayRateLimitError);
+      expect(err.retryInSeconds, code).toBeUndefined();
+    }
+  });
+
+  it('the legacy error_message form ("... reset in 23 seconds", status_code 429) parses its hint', async () => {
+    const err = await read(clientResponding({ error_message: 'Complexity budget exhausted, query cost 30001 budget remaining 1000 out of 1000000 reset in 23 seconds',
+      status_code: 429 })).catch((e) => e);
+    expect(err).toBeInstanceOf(MondayRateLimitError);
+    expect(err.retryInSeconds).toBe(23);
+  });
+
+  it('HTTP 429 honors a Retry-After header', async () => {
+    const err = await read(clientResponding({ error_message: 'Rate Limit Exceeded' },
+      { status: 429, headers: { 'Retry-After': '17' } })).catch((e) => e);
+    expect(err).toBeInstanceOf(MondayRateLimitError);
+    expect(err.retryInSeconds).toBe(17);
+  });
+
+  it('HTTP 429 with a body retry hint and no header uses the body', async () => {
+    const err = await read(clientResponding({ errors: [{ message: 'x', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 9 } }] },
+      { status: 429 })).catch((e) => e);
+    expect(err).toBeInstanceOf(MondayRateLimitError);
+    expect(err.retryInSeconds).toBe(9);
+  });
+
+  it('ordinary GraphQL and HTTP errors stay plain Errors', async () => {
+    const gql = await read(clientResponding({ errors: [{ message: 'Column not found', extensions: { code: 'InvalidColumnIdException' } }] })).catch((e) => e);
+    expect(gql).not.toBeInstanceOf(MondayRateLimitError);
+    expect(gql.message).toContain('Column not found');
+    const http = await read(clientResponding({}, { status: 500 })).catch((e) => e);
+    expect(http).not.toBeInstanceOf(MondayRateLimitError);
+    expect(http.message).toBe('monday API: HTTP 500');
   });
 });

@@ -5,6 +5,7 @@ import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
+import { MondayRateLimitError } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns } from '../types';
 import type { MembershipBaselineStore, BaselineRow } from '../db/membershipBaseline';
 import type { OwnerRecomputesStore, OwnerRecompute } from '../db/ownerRecomputes';
@@ -727,6 +728,50 @@ describe('D1 quota outage handling (fix 4)', () => {
     expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
     for (const m of messages) {
       expect(m.retry).toHaveBeenCalledWith({ delaySeconds: DELAY });
+      expect(m.ack).not.toHaveBeenCalled();
+    }
+  });
+});
+
+// Issue #27: a Monday rate-limit or complexity-budget error used to retry immediately — into
+// the same exhausted budget — and three fast retries later the message was in the DLQ.
+describe('Monday rate-limit handling (issue #27)', () => {
+  function base(mondayClient: DonationRollupsMondayClient) {
+    return {
+      pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(),
+      recomputesStore: fakeRecomputesStore(), affiliationsStore: fakeAffiliationsStore(), baselineStore: fakeBaselineStore(),
+      mondayClient, config,
+    };
+  }
+  const budget = (retryInSeconds?: number) => new MondayRateLimitError('monday API: Complexity budget exhausted', retryInSeconds);
+
+  it('retries a rate-limited message after a delay, not immediately, and does not ack', async () => {
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(budget()) })));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it("honors Monday's retry_in_seconds and backs off by delivery attempt", async () => {
+    const hinted = fakeMessage('dn1');
+    await processRecomputeBatch([hinted], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(budget(300)) })));
+    expect(hinted.retry).toHaveBeenCalledWith({ delaySeconds: 300 });
+
+    const third = { ...fakeMessage('dn1'), attempts: 3 };
+    await processRecomputeBatch([third], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(budget(5)) })));
+    expect(third.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+  });
+
+  it('defers the rest of the batch with the same delay without calling Monday again', async () => {
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(budget(90)) });
+    const messages = [fakeMessage('dn1'), fakeMessage('dn2')];
+
+    await processRecomputeBatch(messages, base(mondayClient));
+
+    expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
+    for (const m of messages) {
+      expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 90 });
       expect(m.ack).not.toHaveBeenCalled();
     }
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isD1QuotaError, secondsUntilMidnightUTC, MAX_QUEUE_DELAY_SECONDS } from './quota';
+import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds, MAX_QUEUE_DELAY_SECONDS } from './quota';
 
 // D1's Free-tier daily limit errors (enforced since 2026-09-01) — the exact texts from
 // developers.cloudflare.com/d1/observability/debug-d1/#error-list.
@@ -35,5 +35,30 @@ describe('secondsUntilMidnightUTC', () => {
 
   it('never returns less than a minute right before midnight', () => {
     expect(secondsUntilMidnightUTC(new Date('2026-09-03T23:59:59.500Z'))).toBe(60);
+  });
+});
+
+describe('rateLimitRetryDelaySeconds (issue #27)', () => {
+  it('backs off exponentially from a minute by delivery attempt when Monday gave no hint', () => {
+    expect(rateLimitRetryDelaySeconds(undefined, 1)).toBe(60);
+    expect(rateLimitRetryDelaySeconds(undefined, 2)).toBe(120);
+    expect(rateLimitRetryDelaySeconds(undefined, 3)).toBe(240);
+  });
+
+  it('treats a missing or nonsense attempt count as the first attempt', () => {
+    expect(rateLimitRetryDelaySeconds(undefined, undefined)).toBe(60);
+    expect(rateLimitRetryDelaySeconds(undefined, 0)).toBe(60);
+    expect(rateLimitRetryDelaySeconds(undefined, Number.NaN)).toBe(60);
+  });
+
+  it("honors Monday's retry_in_seconds when it asks for longer than the backoff", () => {
+    expect(rateLimitRetryDelaySeconds(90, 1)).toBe(90);
+    expect(rateLimitRetryDelaySeconds(36.2, 1)).toBe(60); // backoff already covers it
+    expect(rateLimitRetryDelaySeconds(3600.4, 2)).toBe(3601);
+  });
+
+  it('caps at the 12-hour queue maximum', () => {
+    expect(rateLimitRetryDelaySeconds(86_400, 1)).toBe(MAX_QUEUE_DELAY_SECONDS);
+    expect(rateLimitRetryDelaySeconds(undefined, 40)).toBe(MAX_QUEUE_DELAY_SECONDS);
   });
 });
