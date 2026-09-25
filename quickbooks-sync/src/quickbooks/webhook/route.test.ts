@@ -60,13 +60,23 @@ const notificationPayload = {
 };
 
 describe('createQbWebhookApp', () => {
-  function app(eventStore: QbEventStore, queue: QueueLike) {
-    return createQbWebhookApp({ qbEventStore: eventStore, queue, verifierToken });
+  function app(eventStore: QbEventStore, queue: QueueLike, connectedRealmId: string | null = '123') {
+    return createQbWebhookApp({
+      qbEventStore: eventStore,
+      queue,
+      verifierToken,
+      connectedRealmId: async () => connectedRealmId,
+    });
   }
 
-  async function post(eventStore: QbEventStore, queue: QueueLike, payload: unknown = notificationPayload) {
+  async function post(
+    eventStore: QbEventStore,
+    queue: QueueLike,
+    payload: unknown = notificationPayload,
+    connectedRealmId: string | null = '123'
+  ) {
     const { body, signature } = await signedBody(payload);
-    return app(eventStore, queue).request('/webhooks/quickbooks', {
+    return app(eventStore, queue, connectedRealmId).request('/webhooks/quickbooks', {
       method: 'POST',
       body,
       headers: { 'intuit-signature': signature },
@@ -180,6 +190,59 @@ describe('createQbWebhookApp', () => {
     expect(res.status).toBe(500);
     expect(queue.send).toHaveBeenCalledTimes(2);
     expect(eventStore.updateStatus).toHaveBeenCalledWith('123:Invoice:7:2026-08-22T00:00:01.000Z', 'queued');
+    vi.restoreAllMocks();
+  });
+
+  // #33: the consumer fetches every entity from the connected company, so a notification for a
+  // different company (another realm connected to the same Intuit app) would sync whatever
+  // record happens to share its id in ours.
+  it('ignores notifications for a company other than the connected one', async () => {
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, notificationPayload, 'some-other-realm');
+
+    expect(res.status).toBe(200);
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('realm "123"'));
+    warnSpy.mockRestore();
+  });
+
+  it('keeps the matching notifications from a payload that mixes companies', async () => {
+    const payload = {
+      eventNotifications: [
+        notificationPayload.eventNotifications[0],
+        {
+          realmId: '999',
+          dataChangeEvent: {
+            entities: [{ name: 'Customer', id: '61', operation: 'Update', lastUpdated: '2026-08-22T00:00:00.000Z' }],
+          },
+        },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(200);
+    expect(queue.send).toHaveBeenCalledTimes(1);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'qb-to-monday', eventId: '123:Customer:60:2026-08-22T00:00:00.000Z' });
+    vi.restoreAllMocks();
+  });
+
+  it('answers 503 (so Intuit redelivers) while no company is connected yet', async () => {
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn() };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, notificationPayload, null);
+
+    expect(res.status).toBe(503);
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
 });

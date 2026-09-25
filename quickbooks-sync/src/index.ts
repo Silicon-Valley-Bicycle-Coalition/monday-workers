@@ -64,6 +64,7 @@ export default {
           qbEventStore: new D1QbEventStore(env.DB),
           queue,
           verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
+          connectedRealmId: async () => (await new D1TokenStore(env.DB).getTokens())?.realmId ?? null,
         })
       );
       app.route(

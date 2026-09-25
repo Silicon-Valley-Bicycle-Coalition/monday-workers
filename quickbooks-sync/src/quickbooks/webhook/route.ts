@@ -21,6 +21,9 @@ export interface QbWebhookDeps {
   qbEventStore: QbEventStore;
   queue: QueueLike;
   verifierToken: string;
+  // The realm (company) id of the connected QuickBooks company — the one the stored OAuth tokens
+  // belong to — or null before the initial handshake. Read-only: never refreshes a token.
+  connectedRealmId: () => Promise<string | null>;
 }
 
 // The webhook only records and enqueues (#33). It used to fetch the changed entity from
@@ -51,8 +54,25 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
       return c.json({ ok: false, error: (err as Error).message }, 200);
     }
 
+    if (notifications.length === 0) return c.json({ ok: true }, 200);
+
+    // A valid signature proves the payload came from Intuit for this app, not that it's about
+    // this company: an app connected to several companies gets notifications for all of them.
+    // The consumer fetches every entity from the connected company by id, so a foreign
+    // notification would sync an unrelated record that happens to share the id (#33).
+    const realmId = await deps.connectedRealmId();
+    if (realmId === null) {
+      console.error('quickbooks-sync qb webhook: no QuickBooks company connected yet (qb_oauth_tokens is empty) — asking Intuit to redeliver');
+      return c.json({ ok: false }, 503);
+    }
+
     let enqueueFailed = false;
     for (const notification of notifications) {
+      if (notification.realmId !== realmId) {
+        console.warn(`quickbooks-sync qb webhook: ignoring notification for realm "${notification.realmId}" (connected company is another realm)`);
+        continue;
+      }
+
       const insertResult = await deps.qbEventStore.insertEvent({
         eventId: notification.eventId,
         entityType: notification.entityType,

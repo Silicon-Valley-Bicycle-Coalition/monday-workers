@@ -100,7 +100,7 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
     const quickBooksClient = fakeQuickBooksClient();
     const mondayClient = fakeMondayClient();
 
-    const app = createQbWebhookApp({ qbEventStore, queue, verifierToken });
+    const app = createQbWebhookApp({ qbEventStore, queue, verifierToken, connectedRealmId: async () => '123' });
     const body = JSON.stringify(qbNotification);
     const res = await app.request('/webhooks/quickbooks', {
       method: 'POST',
