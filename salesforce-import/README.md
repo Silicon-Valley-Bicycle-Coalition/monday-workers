@@ -304,7 +304,8 @@ a live sync. Build the stratified validation-sample script (Accounts, Donations,
 Participation, proportional sizing, ~300 records total, floor of 30 per category) so the office
 admin can run it live during cutover weekend. Rollback threshold: 5% of the sample showing a core
 relational-integrity failure (broken donation→contact→household links, duplicate-merge corruption,
-failed-to-migrate records) — pending Deanna's sign-off.
+failed-to-migrate records) — approved by SVBC's Deputy Director 2026-09-25, with a second or third
+cutover weekend available if the first attempt fails.
 
 ## Sources
 
