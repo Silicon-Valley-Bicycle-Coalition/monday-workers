@@ -31,6 +31,7 @@ function mondayRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow {
     receivedAt: '2026-09-25T00:00:00.000Z',
     writtenAt: null,
     createAttempt: 0,
+    createSends: 0,
     ...overrides,
   };
 }
@@ -47,6 +48,7 @@ function stores(qb: QbEventRow | null, monday: MondayEventRow | null) {
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(monday),
     findByQbId: vi.fn(),
+    markCreateSent: vi.fn(),
   };
   return { qbEventStore, mondayEventStore };
 }

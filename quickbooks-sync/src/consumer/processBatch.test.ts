@@ -50,6 +50,7 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
     receivedAt: '2026-08-22T00:00:00.000Z',
     writtenAt: null,
     createAttempt: 0,
+    createSends: 0,
     ...overrides,
   };
 }
@@ -70,6 +71,7 @@ function fakeMondayEventStore(overrides: Partial<MondayEventStore> = {}): Monday
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(mondayEventRow()),
     findByQbId: vi.fn().mockResolvedValue(null),
+    markCreateSent: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -551,6 +553,53 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
     });
 
     expect(createCustomer).toHaveBeenCalledWith({ DisplayName: 'New Co' }, 'monday-item-42-r2');
+  });
+
+  // #33 second review: attempt 1's create committed but its response was lost; a later attempt
+  // is rejected (e.g. 6240 Duplicate Name — possibly against that very Customer). Advancing the
+  // requestid then would let a rename-and-redrive create a second Customer.
+  it('counts each send, and after an unanswered earlier send keeps the requestid and says what to check', async () => {
+    const mondayEventStore = fakeMondayEventStore({
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'failed', createSends: 1 })),
+    });
+    const createCustomer = vi.fn().mockRejectedValue(new TerminalError('quickbooks API: HTTP 400 creating customer — ValidationFault 6240 Duplicate Name Exists Error'));
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ createCustomer }),
+      config,
+    });
+
+    expect(mondayEventStore.markCreateSent).toHaveBeenCalledWith('42');
+    expect((mondayEventStore.markCreateSent as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!).toBeLessThan(createCustomer.mock.invocationCallOrder[0]!);
+    expect(message.ack).toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', {
+      error: expect.stringMatching(/6240 Duplicate Name.*may have succeeded.*Search QuickBooks Customers for "New Co"/),
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('advances the requestid on a rejection when every earlier send was answered', async () => {
+    const mondayEventStore = fakeMondayEventStore(); // createSends 0: this is the first send
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ createCustomer: vi.fn().mockRejectedValue(new TerminalError('6240 Duplicate Name')) }),
+      config,
+    });
+
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: `${TERMINAL_PREFIX}6240 Duplicate Name`, bumpCreateAttempt: true });
+    vi.restoreAllMocks();
   });
 
   it('refuses to send QuickBooks a customer with no name, naming the problem', async () => {

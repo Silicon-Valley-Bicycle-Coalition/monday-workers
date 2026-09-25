@@ -15,6 +15,7 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
     receivedAt: '2026-08-22T00:00:00.000Z',
     writtenAt: null,
     createAttempt: 0,
+    createSends: 0,
     ...overrides,
   };
 }
@@ -37,6 +38,7 @@ function fakeMondayEventStore(overrides: Partial<MondayEventStore> = {}): Monday
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
     findByQbId: vi.fn().mockResolvedValue(null),
+    markCreateSent: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

@@ -24,6 +24,8 @@ export interface MondayEventRow {
   writtenAt: string | null;
   // Terminal create failures so far (migration 0005); part of the create's Intuit requestid.
   createAttempt: number;
+  // Creates sent to Intuit under the current requestid (migration 0006).
+  createSends: number;
 }
 
 export interface MapEntry {

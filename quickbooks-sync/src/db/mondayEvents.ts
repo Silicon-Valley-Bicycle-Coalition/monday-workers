@@ -12,7 +12,7 @@ export interface MondayEventStatusPatch {
   error?: string;
   writtenAt?: string;
   // Count a terminal create failure (migration 0005), so the next create — a redrive — sends a
-  // new Intuit requestid instead of being answered with the cached failure.
+  // new Intuit requestid instead of being answered with the cached failure. Resets createSends.
   bumpCreateAttempt?: boolean;
 }
 
@@ -23,6 +23,8 @@ export interface MondayEventStore {
   // The row whose Monday -> QuickBooks create produced Customer `qbId` (recorded right after
   // the create, before the mapping) — create-loop guard for the other direction (#33).
   findByQbId(qbId: string): Promise<MondayEventRow | null>;
+  // Records that a Customer create is about to be sent under the current requestid (0006).
+  markCreateSent(eventId: string): Promise<void>;
 }
 
 interface D1MondayEventRecord {
@@ -35,9 +37,11 @@ interface D1MondayEventRecord {
   received_at: string;
   written_at: string | null;
   create_attempt: number;
+  create_sends: number;
 }
 
-const SELECT_COLUMNS = 'event_id, monday_item_id, raw_payload, status, qb_id, error, received_at, written_at, create_attempt';
+const SELECT_COLUMNS =
+  'event_id, monday_item_id, raw_payload, status, qb_id, error, received_at, written_at, create_attempt, create_sends';
 
 function toMondayEventRow(record: D1MondayEventRecord): MondayEventRow {
   return {
@@ -50,6 +54,7 @@ function toMondayEventRow(record: D1MondayEventRecord): MondayEventRow {
     receivedAt: record.received_at,
     writtenAt: record.written_at,
     createAttempt: record.create_attempt,
+    createSends: record.create_sends,
   };
 }
 
@@ -76,7 +81,8 @@ export class D1MondayEventStore implements MondayEventStore {
            qb_id = COALESCE(?3, qb_id),
            error = ?4,
            written_at = COALESCE(?5, written_at),
-           create_attempt = create_attempt + ?6
+           create_attempt = create_attempt + ?6,
+           create_sends = CASE WHEN ?6 = 1 THEN 0 ELSE create_sends END
          WHERE event_id = ?1`
       )
       .bind(eventId, status, patch.qbId ?? null, patch.error ?? null, patch.writtenAt ?? null, patch.bumpCreateAttempt ? 1 : 0)
@@ -89,6 +95,10 @@ export class D1MondayEventStore implements MondayEventStore {
       .bind(eventId)
       .first<D1MondayEventRecord>();
     return record === null ? null : toMondayEventRow(record);
+  }
+
+  async markCreateSent(eventId: string): Promise<void> {
+    await this.db.prepare('UPDATE monday_events SET create_sends = create_sends + 1 WHERE event_id = ?1').bind(eventId).run();
   }
 
   async findByQbId(qbId: string): Promise<MondayEventRow | null> {

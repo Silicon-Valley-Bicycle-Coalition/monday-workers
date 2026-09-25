@@ -81,7 +81,8 @@ export async function processSyncQueueBatch(
           // A terminal failure also advances the create's requestid (migration 0005): Intuit
           // replays a failed response for a repeated requestid, and the fix-then-redrive path
           // needs a genuinely new request. Transient failures keep the same one.
-          await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', terminal ? { error, bumpCreateAttempt: true } : { error });
+          const bump = terminal && !(err as TerminalError).keepRequestId;
+          await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', bump ? { error, bumpCreateAttempt: true } : { error });
         }
         recorded = true;
       } catch (recordErr) {
@@ -307,7 +308,26 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     // original Customer back instead of a second one. The -r<n> suffix changes only after a
     // terminal failure, so a redrive after fixing the item isn't answered with that failure.
     const requestId = `monday-item-${event.mondayItemId}${event.createAttempt > 0 ? `-r${event.createAttempt}` : ''}`;
-    const created = await deps.quickBooksClient.createCustomer(qbFields, requestId);
+    // Count the send before making it (migration 0006). If an earlier send under this requestid
+    // got no answer (a transient failure after sending), it may have created the Customer — so
+    // a rejection now (e.g. 6240 Duplicate Name, possibly against that very Customer) must not
+    // advance the requestid, and staff must check QuickBooks before redriving.
+    const priorSends = event.createSends;
+    await deps.mondayEventStore.markCreateSent(eventId);
+    let created: { id: string };
+    try {
+      created = await deps.quickBooksClient.createCustomer(qbFields, requestId);
+    } catch (err) {
+      if (isTerminalError(err) && priorSends > 0) {
+        const displayName = typeof qbFields.DisplayName === 'string' ? qbFields.DisplayName : current.name;
+        throw new TerminalError(
+          `${err.message} — but an earlier attempt to create this Customer (requestid ${requestId}) got no answer and may have succeeded, so QuickBooks may already hold this item's own Customer. ` +
+            `Search QuickBooks Customers for "${displayName}": if it's there, put its Id in this item's QuickBooks Id column and redrive; if not, see README "Dead letters and redrive" before redriving`,
+          { keepRequestId: true }
+        );
+      }
+      throw err;
+    }
     qbId = created.id;
 
     // Durably record the new id before doing anything else. 'fetched' is the intermediate

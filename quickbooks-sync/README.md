@@ -108,6 +108,19 @@ advances on each terminal failure, so a redrive after one is a new request rathe
 of the cached failure, while retries and redrives after transient failures reuse it (a create
 whose response was lost must return the original Customer).
 
+One exception: if an earlier send under the same requestid got no answer
+(`monday_events.create_sends` > 1 at the rejection), that send may have created this item's own
+Customer — and the rejection (e.g. 6240 Duplicate Name) may be against it. Then the requestid is
+*not* advanced, and the error says "may have succeeded". Search QuickBooks Customers for the
+name. If the Customer is there, put its Id in the item's QuickBooks Id column and redrive (the
+item is adopted, nothing is created). If it's genuinely not there, advance the requestid by hand,
+then redrive:
+
+```sh
+npx wrangler d1 execute <db> --remote [--env sandbox] --command "
+  UPDATE monday_events SET create_attempt = create_attempt + 1, create_sends = 0 WHERE event_id = '<Monday item id>'"
+```
+
 ## APIs & auth
 
 * **QuickBooks Online Accounting API** — free up to 500,000 read operations/month on the Builder

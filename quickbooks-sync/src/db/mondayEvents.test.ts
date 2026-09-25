@@ -24,6 +24,7 @@ describe('D1MondayEventStore', () => {
       receivedAt: '2026-08-22T00:00:00.000Z',
       writtenAt: null,
       createAttempt: 0,
+      createSends: 0,
     });
   });
 
@@ -81,6 +82,21 @@ describe('D1MondayEventStore', () => {
     await store.updateStatus('item-10', 'failed', { error: 'not retried: duplicate name', bumpCreateAttempt: true });
     await store.updateStatus('item-10', 'failed', { error: 'not retried: duplicate name', bumpCreateAttempt: true });
     expect((await store.getEvent('item-10'))?.createAttempt).toBe(2);
+  });
+
+  it('counts creates sent under the current requestid, reset when the requestid advances', async () => {
+    const store = new D1MondayEventStore(env.DB);
+    await store.insertEvent({ eventId: 'item-11', mondayItemId: 'item-11', rawPayload: '{}', receivedAt: '2026-09-25T00:00:00.000Z' });
+    expect((await store.getEvent('item-11'))?.createSends).toBe(0);
+
+    await store.markCreateSent('item-11');
+    await store.markCreateSent('item-11');
+    expect((await store.getEvent('item-11'))?.createSends).toBe(2);
+
+    await store.updateStatus('item-11', 'failed', { error: 'not retried: x', bumpCreateAttempt: true });
+    const row = await store.getEvent('item-11');
+    expect(row?.createSends).toBe(0);
+    expect(row?.createAttempt).toBe(1);
   });
 
   // #33 review: the QuickBooks -> Monday path uses this to recognize a Customer that a Monday item
