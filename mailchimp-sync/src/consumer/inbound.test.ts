@@ -10,9 +10,10 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
   } },
   mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never },
-  lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active',
+  lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
 function fakeMessage(email: string): { body: InboundSyncMessage; ack: () => void; retry: () => void } {
@@ -31,6 +32,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
 function fakeMailchimp(overrides: Partial<MailchimpClient> = {}): MailchimpClient {
   return {
     updateMember: vi.fn(),
+    unsubscribeMember: vi.fn(),
     getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { int1: true, int2: false } }),
     listInterests: vi.fn().mockResolvedValue([]),
     ...overrides,

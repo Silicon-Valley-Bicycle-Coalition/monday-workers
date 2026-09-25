@@ -12,6 +12,7 @@ export interface MailchimpTagsConfig {
   lapsedMember: string;
   lifetimeMember: string;
   hasDonated: string;
+  doNotSolicit: string;
 }
 
 export interface MondayColumnsConfig {
@@ -26,6 +27,8 @@ export interface MondayColumnsConfig {
   email: string;
   totalGiven: string;
   mailchimpCampaigns: string;
+  doNotSolicit: string; // checkbox
+  dnsReasonStatus: string; // status: OK / Missing / Confirmed
 }
 
 export interface Config {
@@ -43,6 +46,9 @@ export interface Config {
   };
   lifetimeTierValue: string;
   activeStatusValue: string;
+  // The DNS Reason Status label a reviewer sets once a Do Not Solicit reason has been checked.
+  // Only then does the Worker unsubscribe the contact in Mailchimp — see consumer/outbound.ts.
+  dnsConfirmedValue: string;
 }
 
 export interface Env {
@@ -85,6 +91,8 @@ export interface DonorRecord {
   state: string;
   zip: string;
   totalGiven: string;
+  doNotSolicit: boolean;
+  dnsReasonStatus: string;
 }
 
 export interface MailchimpInterest {

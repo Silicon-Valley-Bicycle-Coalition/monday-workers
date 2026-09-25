@@ -1,4 +1,5 @@
 import type { PendingOutboundStore } from '../db/pendingOutbound';
+import type { DnsUnsubscribeLog } from '../db/dnsUnsubscribes';
 import type { MondayClient } from '../monday/client';
 import type { MailchimpClient } from '../mailchimp/client';
 import { MailchimpPermanentError } from '../mailchimp/client';
@@ -16,6 +17,7 @@ export interface OutboundConsumerDeps {
   mondayClient: MondayClient;
   mailchimpClient: MailchimpClient;
   config: Config;
+  dnsLog: DnsUnsubscribeLog;
 }
 
 export async function processOutboundBatch(
@@ -56,5 +58,15 @@ async function processOne(donorItemId: string, deps: OutboundConsumerDeps): Prom
     await pendingStore.updateStatus(donorItemId, 'skipped', `"${donor.email}" is not in the Mailchimp audience`);
     return;
   }
+
+  // A reviewed Do Not Solicit unsubscribes the person's own address — never the Household
+  // Email, which other people may share. The log makes this once per address: later column
+  // changes on the same person don't call Mailchimp again, and unchecking the box never
+  // resubscribes (only the person can, through Mailchimp).
+  if (donor.doNotSolicit && donor.dnsReasonStatus === config.dnsConfirmedValue && !(await deps.dnsLog.has(donor.email))) {
+    const result = await mailchimpClient.unsubscribeMember(donor.email);
+    await deps.dnsLog.record(donor.email, donorItemId, result, new Date().toISOString());
+  }
+
   await pendingStore.updateStatus(donorItemId, 'written', undefined, new Date().toISOString());
 }

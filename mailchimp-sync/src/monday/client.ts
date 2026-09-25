@@ -63,7 +63,7 @@ export class HttpMondayClient implements MondayClient {
     const columnIds = [
       columns.email, columns.membershipStatus, columns.membershipTier,
       columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
-      columns.state, columns.zip, columns.totalGiven,
+      columns.state, columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
     ];
     const data = await this.graphql<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
       `query ($itemId: ID!, $columnIds: [String!]) {
@@ -87,6 +87,9 @@ export class HttpMondayClient implements MondayClient {
       state: byId.get(columns.state) ?? '',
       zip: byId.get(columns.zip) ?? '',
       totalGiven: byId.get(columns.totalGiven) ?? '',
+      // A checkbox column's text is "v" when checked and "" when not.
+      doNotSolicit: (byId.get(columns.doNotSolicit) ?? '') !== '',
+      dnsReasonStatus: byId.get(columns.dnsReasonStatus) ?? '',
     };
   }
 
