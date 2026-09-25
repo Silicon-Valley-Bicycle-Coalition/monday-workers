@@ -53,6 +53,7 @@ export const fil: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Ang iyong member portal',
+  'portal.someRecordsUnavailable': 'Hindi ma-load ngayon ang ilan sa iyong mga record. Pakisubukang muli pagkalipas ng ilang minuto.',
   'portal.membership': 'Katayuan ng membership: {{status}} ({{tier}})',
   'portal.totalLabel': 'Kabuuang na-donate',
   'portal.tableDate': 'Petsa',
@@ -158,6 +159,7 @@ export const fil: Record<TranslationKey, string> = {
   'title.pledges': 'Ang Iyong Mga Pangakong Donasyon',
   'title.matchingGifts': 'Matching Gifts',
   'error.pledgesLoadFailed': 'Hindi namin ma-load ang iyong mga pangakong donasyon sa ngayon. Pakisubukang muli pagkalipas ng ilang minuto.',
+  'error.changeRequestLoadFailed': 'Hindi namin ma-load ngayon ang iyong contact details. Pakisubukang muli pagkalipas ng ilang minuto.',
   'portal.pledgesLink': 'Ang iyong mga pangakong donasyon',
   'portal.matchingGiftsLink': 'Matching gifts mula sa employer',
   'pledges.heading': 'Ang iyong mga pangakong donasyon',

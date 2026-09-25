@@ -289,7 +289,12 @@ export interface DonorVolunteerHistory {
 
 export interface PortalView {
   donors: MemberPortalData[];
-  discounts: DiscountOrganization[];
+  // How many of the session's donor items failed to load (and so are missing from `donors`).
+  // Views show a "some records couldn't be loaded" note when > 0; absent means 0.
+  unavailableDonorCount?: number;
+  // null when the Organizations read failed — views omit the discounts section rather than
+  // show a misleading empty list.
+  discounts: DiscountOrganization[] | null;
   // Keyed by donor item id; null when the volunteer-history feature is disabled (unset
   // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
   // section for null, a missing key, and an empty shift list alike.

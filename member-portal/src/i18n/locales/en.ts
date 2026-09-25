@@ -53,10 +53,12 @@ export const en = {
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
   'error.eventsLoadFailed': 'We could not load your event registrations right now. Please try again in a few minutes.',
   'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
+  'error.changeRequestLoadFailed': 'We could not load your contact details right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
 
   // Portal
   'portal.heading': 'Your member portal',
+  'portal.someRecordsUnavailable': 'Some of your records could not be loaded right now. Please try again in a few minutes.',
   'portal.membership': 'Membership: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total donated',
   'portal.tableDate': 'Date',

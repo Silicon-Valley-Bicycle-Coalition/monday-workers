@@ -53,6 +53,7 @@ export const zhHans: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '您的捐赠者门户',
+  'portal.someRecordsUnavailable': '暂时无法加载您的部分记录，请几分钟后重试。',
   'portal.membership': '会员状态：{{status}}（{{tier}}）',
   'portal.totalLabel': '捐款总额',
   'portal.tableDate': '日期',
@@ -158,6 +159,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'title.pledges': '您的认捐',
   'title.matchingGifts': '雇主配捐',
   'error.pledgesLoadFailed': '目前无法加载您的认捐信息,请几分钟后再试。',
+  'error.changeRequestLoadFailed': '暂时无法加载您的联系信息，请几分钟后重试。',
   'portal.pledgesLink': '您的认捐',
   'portal.matchingGiftsLink': '雇主配捐',
   'pledges.heading': '您的认捐',

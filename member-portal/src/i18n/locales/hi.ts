@@ -53,6 +53,7 @@ export const hi: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'आपका डोनर पोर्टल',
+  'portal.someRecordsUnavailable': 'आपके कुछ रिकॉर्ड अभी लोड नहीं हो सके। कृपया कुछ मिनट बाद फिर से प्रयास करें।',
   'portal.membership': 'सदस्यता: {{status}} ({{tier}})',
   'portal.totalLabel': 'कुल दान',
   'portal.tableDate': 'तारीख़',
@@ -158,6 +159,7 @@ export const hi: Record<TranslationKey, string> = {
   'title.pledges': 'आपकी प्रतिज्ञाएँ',
   'title.matchingGifts': 'मैचिंग गिफ़्ट',
   'error.pledgesLoadFailed': 'हम अभी आपकी प्रतिज्ञाएँ लोड नहीं कर सके। कृपया कुछ मिनटों में फिर से कोशिश करें।',
+  'error.changeRequestLoadFailed': 'हम अभी आपकी संपर्क जानकारी लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से प्रयास करें।',
   'portal.pledgesLink': 'आपकी प्रतिज्ञाएँ',
   'portal.matchingGiftsLink': 'नियोक्ता मैचिंग गिफ़्ट',
   'pledges.heading': 'आपकी प्रतिज्ञाएँ',

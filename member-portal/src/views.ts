@@ -1,4 +1,4 @@
-import type { DonorVolunteerHistory, EventRegistrationRecord, FunraiseLinkUrls, PortalView } from './types';
+import type { DiscountOrganization, DonorVolunteerHistory, EventRegistrationRecord, FunraiseLinkUrls, PortalView } from './types';
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 import { SVBC_LOGO_SVG } from './assets/logo';
@@ -745,7 +745,13 @@ function funraiseSection(links: FunraiseLinkUrls, locale: Locale): string {
   `;
 }
 
-function discountRow(discount: PortalView['discounts'][number]): string {
+// Shown when some of a household's donor items failed to load (issue #31) — the page renders the
+// rest rather than failing, but must not silently look complete.
+export function someRecordsUnavailableNote(count: number, locale: Locale): string {
+  return count > 0 ? `<p role="status">${escapeHtml(t(locale, 'portal.someRecordsUnavailable'))}</p>` : '';
+}
+
+function discountRow(discount: DiscountOrganization): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
@@ -758,14 +764,19 @@ export function portalView(
 ): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
+    ${someRecordsUnavailableNote(data.unavailableDonorCount ?? 0, locale)}
     ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id], data.donationHistoryEnabled)).join('')}
     ${funraiseSection(funraise, locale)}
-    <section>
+    ${
+      data.discounts === null
+        ? ''
+        : `<section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>
         ${data.discounts.map(discountRow).join('')}
       </ul>
-    </section>
+    </section>`
+    }
     <p><a href="/${locale}/portal/events">${escapeHtml(t(locale, 'portal.eventsLink'))}</a></p>
     <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
     <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>

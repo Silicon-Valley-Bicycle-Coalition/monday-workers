@@ -53,6 +53,7 @@ export const ptBR: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Seu portal do doador',
+  'portal.someRecordsUnavailable': 'Não foi possível carregar alguns dos seus registros agora. Tente novamente em alguns minutos.',
   'portal.membership': 'Associação: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total doado',
   'portal.tableDate': 'Data',
@@ -158,6 +159,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'title.pledges': 'Suas Promessas de Doação',
   'title.matchingGifts': 'Doações Correspondentes',
   'error.pledgesLoadFailed': 'Não foi possível carregar suas promessas de doação agora. Tente novamente em alguns minutos.',
+  'error.changeRequestLoadFailed': 'Não foi possível carregar seus dados de contato agora. Tente novamente em alguns minutos.',
   'portal.pledgesLink': 'Suas promessas de doação',
   'portal.matchingGiftsLink': 'Doações correspondentes do empregador',
   'pledges.heading': 'Suas promessas de doação',

@@ -53,6 +53,7 @@ export const vi: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',
+  'portal.someRecordsUnavailable': 'Hiện không thể tải một số hồ sơ của bạn. Vui lòng thử lại sau vài phút.',
   'portal.membership': 'Tư cách thành viên: {{status}} ({{tier}})',
   'portal.totalLabel': 'Tổng số tiền đã quyên góp',
   'portal.tableDate': 'Ngày',
@@ -158,6 +159,7 @@ export const vi: Record<TranslationKey, string> = {
   'title.pledges': 'Cam Kết Quyên Góp Của Bạn',
   'title.matchingGifts': 'Quyên Góp Đối Ứng',
   'error.pledgesLoadFailed': 'Hiện không thể tải thông tin cam kết quyên góp của bạn. Vui lòng thử lại sau vài phút.',
+  'error.changeRequestLoadFailed': 'Hiện chúng tôi không thể tải thông tin liên hệ của bạn. Vui lòng thử lại sau vài phút.',
   'portal.pledgesLink': 'Cam kết quyên góp của bạn',
   'portal.matchingGiftsLink': 'Quyên góp đối ứng từ nơi làm việc',
   'pledges.heading': 'Cam kết quyên góp của bạn',

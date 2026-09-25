@@ -53,6 +53,7 @@ export const ko: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '기부자 포털',
+  'portal.someRecordsUnavailable': '일부 기록을 지금 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'portal.membership': '회원 자격: {{status}} ({{tier}})',
   'portal.totalLabel': '총 기부금',
   'portal.tableDate': '날짜',
@@ -158,6 +159,7 @@ export const ko: Record<TranslationKey, string> = {
   'title.pledges': '나의 서약 기부',
   'title.matchingGifts': '매칭 기프트',
   'error.pledgesLoadFailed': '지금은 서약 기부 정보를 불러올 수 없습니다. 몇 분 후 다시 시도해 주세요.',
+  'error.changeRequestLoadFailed': '지금 연락처 정보를 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'portal.pledgesLink': '나의 서약 기부',
   'portal.matchingGiftsLink': '고용주 매칭 기프트',
   'pledges.heading': '나의 서약 기부',

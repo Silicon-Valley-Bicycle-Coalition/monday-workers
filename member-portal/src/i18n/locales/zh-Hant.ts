@@ -53,6 +53,7 @@ export const zhHant: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '您的捐款者入口網站',
+  'portal.someRecordsUnavailable': '暫時無法載入您的部分記錄，請於幾分鐘後再試。',
   'portal.membership': '會員狀態：{{status}}（{{tier}}）',
   'portal.totalLabel': '捐款總額',
   'portal.tableDate': '日期',
@@ -158,6 +159,7 @@ export const zhHant: Record<TranslationKey, string> = {
   'title.pledges': '您的認捐',
   'title.matchingGifts': '雇主配捐',
   'error.pledgesLoadFailed': '目前無法載入您的認捐資訊,請幾分鐘後再試。',
+  'error.changeRequestLoadFailed': '暫時無法載入您的聯絡資料，請於幾分鐘後再試。',
   'portal.pledgesLink': '您的認捐',
   'portal.matchingGiftsLink': '雇主配捐',
   'pledges.heading': '您的認捐',

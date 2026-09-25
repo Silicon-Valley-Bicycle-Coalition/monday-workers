@@ -1003,6 +1003,46 @@ describe('GET /:locale/portal/change-request', () => {
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
   });
 
+  // Issue #31: this route had no error handling at all — one donor's failed contact read
+  // (Promise.all) took the page down through the generic onError.
+  it('renders the form for the donors that loaded when one household record fails', async () => {
+    const monday = fakeMonday({ 'family@example.org': [{ id: 'donor-1', name: 'Jane' }, { id: 'donor-2', name: 'Jim' }] });
+    (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'donor-2'
+        ? Promise.reject(new Error('monday: HTTP 500'))
+        : Promise.resolve({ id, name: 'Jane', email: 'family@example.org', address: '1 Old St', phone: '555-0100', preferredLanguage: '' })
+    );
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'family@example.org');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('1 Old St');
+    expect(html).toContain('value="donor-1"');
+    expect(html).not.toContain('value="donor-2"');
+    expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
+    vi.restoreAllMocks();
+  });
+
+  it('shows a load-failed page, not the login-flavored generic error, when no record loads', async () => {
+    const monday = fakeMondayWithDonations();
+    (monday.getDonorContactInfo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain(t('en', 'error.changeRequestLoadFailed'));
+    vi.restoreAllMocks();
+  });
+
   it('shows the unavailable state when the board is not configured', async () => {
     const gatedConfig = structuredClone(config);
     gatedConfig.changeRequests.boardId = null;

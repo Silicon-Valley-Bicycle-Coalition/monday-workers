@@ -53,6 +53,7 @@ export const ja: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '寄付者ポータル',
+  'portal.someRecordsUnavailable': '一部の記録を現在読み込めませんでした。数分後にもう一度お試しください。',
   'portal.membership': '会員資格: {{status}}（{{tier}}）',
   'portal.totalLabel': '寄付合計額',
   'portal.tableDate': '日付',
@@ -158,6 +159,7 @@ export const ja: Record<TranslationKey, string> = {
   'title.pledges': 'ご寄付の誓約',
   'title.matchingGifts': 'マッチングギフト',
   'error.pledgesLoadFailed': '現在、誓約情報を読み込めません。数分後にもう一度お試しください。',
+  'error.changeRequestLoadFailed': '現在、連絡先情報を読み込めませんでした。数分後にもう一度お試しください。',
   'portal.pledgesLink': 'ご寄付の誓約',
   'portal.matchingGiftsLink': '勤務先のマッチングギフト',
   'pledges.heading': 'ご寄付の誓約',

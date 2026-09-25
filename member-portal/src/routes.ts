@@ -564,11 +564,23 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
-    const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
+    // Per donor (issue #31): one household record's failed read drops that donor from the form
+    // instead of failing the page; only when none load is it an error — and then this route's
+    // own copy, not the global onError's login-flavored one.
+    const results = await Promise.allSettled(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
+    const donors = results.flatMap((result, index) => {
+      if (result.status === 'fulfilled') return [result.value];
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      console.error(`member-portal change-request form load failed for donor "${donorItemIds[index]}": ${reason}`);
+      return [];
+    });
+    if (donors.length === 0) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.changeRequestLoadFailed', locale), locale, { authenticated: true }), 500);
+    }
     return c.html(
       page(
         t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'),
-        changeRequestFormView(donors, locale, configuredPrefFields(deps.config)),
+        changeRequestFormView(donors, locale, configuredPrefFields(deps.config), results.length - donors.length),
         locale,
         { authenticated: true }
       )

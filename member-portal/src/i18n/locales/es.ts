@@ -53,6 +53,7 @@ export const es: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Tu portal de donante',
+  'portal.someRecordsUnavailable': 'Algunos de tus registros no se pudieron cargar en este momento. Inténtalo de nuevo en unos minutos.',
   'portal.membership': 'Membresía: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total donado',
   'portal.tableDate': 'Fecha',
@@ -158,6 +159,7 @@ export const es: Record<TranslationKey, string> = {
   'title.pledges': 'Tus promesas de donación',
   'title.matchingGifts': 'Donaciones igualadas',
   'error.pledgesLoadFailed': 'No pudimos cargar tus promesas de donación en este momento. Inténtalo de nuevo en unos minutos.',
+  'error.changeRequestLoadFailed': 'No pudimos cargar tus datos de contacto en este momento. Inténtalo de nuevo en unos minutos.',
   'portal.pledgesLink': 'Tus promesas de donación',
   'portal.matchingGiftsLink': 'Donaciones igualadas por tu empleador',
   'pledges.heading': 'Tus promesas de donación',
