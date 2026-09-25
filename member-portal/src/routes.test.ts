@@ -444,7 +444,9 @@ describe('GET /:locale/portal locale handling', () => {
     expect(await res.text()).toContain('<html lang="es">');
   });
 
-  it('an unrecognized :locale falls back to en instead of 404ing', async () => {
+  // Issue #32 review: a silent fallback let any first segment — including "webhooks" — reach
+  // the authenticated routes, which is how /webhooks/portal/... slipped past the CSRF exemption.
+  it('404s an unrecognized :locale instead of falling back to en', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
     const app = createApp(makeDeps({ monday, emailSender }));
@@ -452,8 +454,7 @@ describe('GET /:locale/portal locale handling', () => {
 
     const res = await app.request('/xx/portal', { headers: { cookie } });
 
-    expect(res.status).toBe(200);
-    expect(await res.text()).toContain('<html lang="en">');
+    expect(res.status).toBe(404);
   });
 
   it('shows a logout button once signed in', async () => {
@@ -2278,6 +2279,63 @@ describe('CSRF', () => {
     }
   });
 
+  // Issue #32 review: the exemption used to be a "/webhooks/" path prefix, and the authenticated
+  // routes take a wildcard :locale — so locale "webhooks" (or its percent-encoded form, which
+  // Hono decodes before both the check and routing) skipped CSRF on real state-changing routes.
+  describe.each([
+    ['/webhooks/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/webhooks/portal/change-request/preferences', { donorItemId: 'donor-1' }],
+    ['/webhooks/portal/card/donor-1/regenerate', {}],
+    ['/%77ebhooks/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/%77ebhooks/portal/card/donor-1/regenerate', {}],
+    ['/webhooks/monday/letters/extra', {}],
+    ['/Webhooks/monday/letters', {}],
+  ] as [string, Record<string, string>][])('POST %s (webhook-exemption lookalike)', (path, body) => {
+    it('is rejected cross-site with no side effects', async () => {
+      const { app, cookie, changeStore, cardTokenStore } = await loggedIn();
+      const before = await cardTokenStore.getActiveToken('donor-1');
+      const res = await app.request(path, {
+        method: 'POST',
+        body: new URLSearchParams(body),
+        headers: { Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site', 'Content-Type': FORM, Cookie: cookie },
+        redirect: 'manual',
+      });
+      expect([403, 404]).toContain(res.status);
+      expect(changeStore.createRequest).not.toHaveBeenCalled();
+      expect(await cardTokenStore.getActiveToken('donor-1')).toBe(before);
+    });
+
+    it('is not served even same-origin (no such route)', async () => {
+      const { app, cookie, changeStore } = await loggedIn();
+      const res = await app.request(path, {
+        method: 'POST',
+        body: new URLSearchParams(body),
+        headers: { ...SAME_ORIGIN, 'Content-Type': FORM, Cookie: cookie },
+        redirect: 'manual',
+      });
+      expect(res.status).toBe(404);
+      expect(changeStore.createRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  it('still runs the real Monday webhook with no Origin', async () => {
+    const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const monday = fakeMonday({});
+    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Member', totalDonated: '$50.00',
+      donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+    });
+    const app = createApp(makeDeps({ letterQueue, monday }));
+    const res = await app.request('/webhooks/monday/letters?secret=shh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { type: 'update_column_value', pulseId: 555, boardId: 1 } }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, result: 'queued' });
+    expect(letterQueue.send).toHaveBeenCalled();
+  });
+
   it('leaves safe methods alone (the language switcher is a cross-origin-linkable GET)', async () => {
     const res = await createApp(makeDeps()).request('/lang/es?to=%2F', { headers: { Origin: 'https://evil.example' }, redirect: 'manual' });
     expect(res.status).toBe(302);
@@ -2286,6 +2344,48 @@ describe('CSRF', () => {
 
 // Issue #32: frame-ancestors used to be set only on the matching-gifts page, leaving the
 // dashboard and its state-changing forms frameable, and there was no HSTS.
+describe('unsupported :locale segments', () => {
+  const GETS = [
+    '/webhooks/portal',
+    '/xx/portal',
+    '/xx/portal/letters',
+    '/xx/portal/letters/donor-1/2025',
+    '/xx/portal/events',
+    '/xx/portal/change-request',
+    '/xx/portal/pledges',
+    '/xx/portal/matching-gifts',
+    '/xx/portal/card/donor-1',
+    '/EN/portal',
+  ];
+  it.each(GETS)('GET %s is 404 even with a valid session', async (path) => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const res = await app.request(path, { headers: { Cookie: cookie }, redirect: 'manual' });
+    expect(res.status).toBe(404);
+  });
+
+  // The un-prefixed back-compat redirects and every supported locale keep working.
+  it.each(['/portal', '/portal/letters', '/portal/events', '/portal/change-request', '/portal/pledges', '/portal/matching-gifts', '/portal/card/donor-1'])(
+    'GET %s still redirects to the default-locale page',
+    async (path) => {
+      const res = await createApp(makeDeps()).request(path, { redirect: 'manual' });
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toMatch(/^\/en\/portal/);
+    }
+  );
+
+  it.each(SUPPORTED_LOCALES)('GET /%s/portal/matching-gifts is served', async (locale) => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    const res = await app.request(`/${locale}/portal/matching-gifts`, { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('security headers', () => {
   async function loggedIn() {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });

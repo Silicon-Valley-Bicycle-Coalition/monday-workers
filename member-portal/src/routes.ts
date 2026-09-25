@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { csrf } from 'hono/csrf';
 import { HTTPException } from 'hono/http-exception';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -107,13 +107,19 @@ async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] |
   return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
 }
 
-// Shared by every authenticated route from this task on: the authenticated zone's locale comes
-// from the `:locale` path param (not cookie/header sniffing like detectLocale), falling back to
-// the default rather than 404ing on an unrecognized code.
+// Shared by every authenticated route: the authenticated zone's locale comes from the `:locale`
+// path param (not cookie/header sniffing like detectLocale). An unsupported code never reaches a
+// handler — the requireSupportedLocale middleware in createApp 404s it — so the fallback below
+// is only a type-level default.
 function resolvePathLocale(c: Context): Locale {
   const raw = c.req.param('locale');
   return raw !== undefined && isLocale(raw) ? raw : DEFAULT_LOCALE;
 }
+
+// Server-to-server endpoints exempt from the CSRF check, by exact method + path. Deliberately not
+// a prefix: every authenticated route starts with a wildcard `:locale` segment, so a "/webhooks/"
+// prefix exemption also matched /webhooks/portal/change-request (issue #32 review).
+const CSRF_EXEMPT = new Set(['POST /webhooks/monday/letters']);
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
@@ -132,9 +138,21 @@ export function createApp(deps: AppDeps) {
   // Sec-Fetch-Site is same-origin or Origin is exactly the portal origin. Every form here posts
   // from the portal's own pages; nothing on the main site posts into it. The Monday webhook is
   // server-to-server (no Origin, no Sec-Fetch-Site) and authenticates with its shared secret
-  // instead, so it's exempt.
+  // instead, so it alone is exempt (CSRF_EXEMPT — exact paths, never a prefix).
   const csrfCheck = csrf({ origin: portalOrigin });
-  app.use('*', (c, next) => (c.req.path.startsWith('/webhooks/') ? next() : csrfCheck(c, next)));
+  app.use('*', (c, next) => (CSRF_EXEMPT.has(`${c.req.method} ${c.req.path}`) ? next() : csrfCheck(c, next)));
+
+  // Every locale-prefixed route 404s an unsupported locale rather than silently rendering the
+  // default one: a wildcard first segment that accepts anything is how "webhooks" became a
+  // valid locale. The un-prefixed back-compat redirects (/portal, /portal/letters, ...) don't
+  // match these patterns, so they're unaffected.
+  const requireSupportedLocale: MiddlewareHandler = async (c, next) => {
+    const raw = c.req.param('locale');
+    if (raw === undefined || !isLocale(raw)) return c.notFound();
+    await next();
+  };
+  app.use('/:locale/portal', requireSupportedLocale);
+  app.use('/:locale/portal/*', requireSupportedLocale);
 
   app.onError((err, c) => {
     const locale = detectLocale(c);
