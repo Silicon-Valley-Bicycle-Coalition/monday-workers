@@ -178,6 +178,34 @@ describe('benevity-import integration', () => {
     expect(mondayClient.createItem).toHaveBeenCalledTimes(2);
   });
 
+  it('re-uploading the same report as a new asset reuses its disbursement and posts no second worklist item', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),150.00', 'Total Donations (Gross),999.00');
+    const app = createApp({
+      mondayClient,
+      uploadStore: new D1UploadStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      rowStore: new D1RowStore(env.DB),
+      config: fakeConfig(),
+      queue: { sendBatch: async (ms) => { sentMessages.push(...ms); } },
+      webhookSecret: SECRET,
+      fetchCsv: async () => mismatched,
+      now: () => '2026-09-15T00:00:00Z',
+    });
+    for (const assetId of ['a1', 'a2']) {
+      const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId }] } } }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const { results } = await env.DB.prepare(`SELECT disbursement_id FROM disbursements`).all();
+    expect(results).toEqual([{ disbursement_id: 'ABC123' }]);
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1); // the one block-level worklist item
+    expect(sentMessages).toEqual([]);
+  });
+
   it('rejects webhook requests without the correct secret', async () => {
     const config = fakeConfig();
     const routeDeps: AppDeps = {

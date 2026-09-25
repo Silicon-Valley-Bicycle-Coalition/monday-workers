@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
-import type { DisbursementStore, DisbursementRow } from '../db/disbursements';
+import type { DisbursementStore } from '../db/disbursements';
 import type { RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import { parseBenevityReport, type ParsedBlock } from '../parse/report';
@@ -110,24 +110,16 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
     return;
   }
 
-  // Resume, don't restart — but resume at the RIGHT granularity. A retry re-fetches and
-  // re-parses the SAME asset (a pure function of its bytes), so block order and content are
-  // stable across attempts: `existingDisbursements[i]` (if present) IS block `i`'s own row from
-  // a prior attempt, by construction (blocks are always created via a single sequential,
-  // awaited loop). Passed into `ingestBlock`, it lets that block skip re-creating its
-  // `disbursements` row and re-posting its worklist item (neither is safe to repeat — no
-  // dedup), while ALWAYS re-running its row-upsert loop regardless (row upserts ARE safe to
-  // repeat — `rows.upsertRow`'s `ON CONFLICT (transaction_id) DO NOTHING` makes an already-
-  // written row a no-op). That combination is what closes the gap a coarser
-  // "already-has-a-disbursement-row = fully done" check left open: a block that fails
-  // *mid*-processing (after its disbursement row commits, before every row is upserted or, for
-  // a needs-review block, before its worklist item posts) resumes exactly where it left off on
-  // retry instead of being silently skipped as "done" or fully re-run as "not started."
-  const existingDisbursements = await deps.disbursementStore.listByUpload(upload.id);
-
+  // Resume, don't restart. A retry re-fetches and re-parses the SAME asset (a pure function of
+  // its bytes), so block order and content are stable across attempts, and each block finds
+  // its own disbursements row from a prior attempt by (upload, position) — or, for the same
+  // report re-uploaded as a new asset, by its Benevity Disbursement ID (#34). Either way the
+  // row and its worklist item are reused, never created twice, while the row-upsert loop always
+  // re-runs (row upserts are safe to repeat — `ON CONFLICT (transaction_id) DO NOTHING`), so a
+  // block that failed mid-processing resumes exactly where it left off.
   try {
     for (const [i, block] of blocks.entries()) {
-      await ingestBlock(block, upload.id, deps, existingDisbursements[i] ?? null);
+      await ingestBlock(block, i, upload.id, deps);
     }
   } catch (err) {
     // Mark it visibly failed (not stuck silently at 'parsing') and rethrow so the webhook
@@ -140,35 +132,29 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
   await deps.uploadStore.markParsed(upload.id, blocks.length);
 }
 
-async function ingestBlock(
-  block: ParsedBlock,
-  uploadId: number,
-  deps: AppDeps,
-  existingDisbursement: DisbursementRow | null
-): Promise<void> {
+async function ingestBlock(block: ParsedBlock, blockIndex: number, uploadId: number, deps: AppDeps): Promise<void> {
   const needsReview = block.headerError !== null || block.sumMismatch;
   const reviewReason =
     block.headerError ?? (block.sumMismatch ? 'row totals do not match the reported gross total' : null);
 
-  const disbursement =
-    existingDisbursement ??
-    (await deps.disbursementStore.createDisbursement({
-      uploadId,
-      disbursementId: block.disbursementId,
-      periodEnding: block.periodEnding,
-      currency: block.currency,
-      rowCount: block.rows.length,
-      reportedGrossTotal: block.reportedGrossTotal,
-      reportedNetTotal: block.reportedNetTotal,
-      needsReview,
-      reviewReason,
-    }));
+  const { disbursement, created } = await deps.disbursementStore.findOrCreate({
+    uploadId,
+    blockIndex,
+    disbursementId: block.disbursementId,
+    periodEnding: block.periodEnding,
+    currency: block.currency,
+    rowCount: block.rows.length,
+    reportedGrossTotal: block.reportedGrossTotal,
+    reportedNetTotal: block.reportedNetTotal,
+    needsReview,
+    reviewReason,
+  });
 
   if (needsReview) {
-    if (existingDisbursement === null) {
-      // Only post the worklist item the first time this block is attempted — createItem has no
-      // dedup of its own, so re-posting it on every redelivery would spam duplicate items onto
-      // the live board.
+    if (created) {
+      // Only post the worklist item the first time this disbursement is seen — createItem has
+      // no dedup of its own, so re-posting it on every redelivery or re-upload would spam
+      // duplicate items onto the live board.
       await createWorklistItem(deps.mondayClient, deps.config, {
         reason: reviewReason ?? 'block needs review',
         name: `Disbursement ${block.disbursementId || '(unknown)'}`,

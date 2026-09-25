@@ -1,8 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1UploadStore } from './uploads';
-import { D1DisbursementStore } from './disbursements';
+import { D1DisbursementStore, type NewDisbursement } from './disbursements';
 import { applyMigrations } from '../../test/apply-migrations';
+
+function block(uploadId: number, overrides: Partial<NewDisbursement> = {}): NewDisbursement {
+  return {
+    uploadId,
+    blockIndex: 0,
+    disbursementId: 'ABC123',
+    periodEnding: '2025-12-16',
+    currency: 'USD',
+    rowCount: 1,
+    reportedGrossTotal: 150,
+    reportedNetTotal: 150,
+    needsReview: false,
+    reviewReason: null,
+    ...overrides,
+  };
+}
 
 describe('D1DisbursementStore', () => {
   beforeEach(async () => {
@@ -10,26 +26,16 @@ describe('D1DisbursementStore', () => {
   });
 
   it('creates a disbursement and reads it back', async () => {
-    const uploads = new D1UploadStore(env.DB);
-    const uploadId = (await uploads.createUpload('asset-1', '2026-09-15T00:00:00Z')).id;
-
+    const uploadId = (await new D1UploadStore(env.DB).createUpload('asset-1', '2026-09-15T00:00:00Z')).id;
     const store = new D1DisbursementStore(env.DB);
-    const created = await store.createDisbursement({
-      uploadId,
-      disbursementId: 'ABC123',
-      periodEnding: '2025-12-16',
-      currency: 'USD',
-      rowCount: 1,
-      reportedGrossTotal: 150,
-      reportedNetTotal: 150,
-      needsReview: false,
-      reviewReason: null,
-    });
-    expect(created.id).toBeGreaterThan(0);
 
-    const found = await store.getDisbursement(created.id);
-    expect(found).toMatchObject({
+    const { disbursement, created } = await store.findOrCreate(block(uploadId));
+    expect(created).toBe(true);
+    expect(disbursement.id).toBeGreaterThan(0);
+
+    expect(await store.getDisbursement(disbursement.id)).toMatchObject({
       uploadId,
+      blockIndex: 0,
       disbursementId: 'ABC123',
       periodEnding: '2025-12-16',
       needsReview: false,
@@ -37,22 +43,12 @@ describe('D1DisbursementStore', () => {
   });
 
   it('persists a needs-review disbursement with its reason', async () => {
-    const uploads = new D1UploadStore(env.DB);
-    const uploadId = (await uploads.createUpload('asset-2', '2026-09-15T00:00:00Z')).id;
-
+    const uploadId = (await new D1UploadStore(env.DB).createUpload('asset-2', '2026-09-15T00:00:00Z')).id;
     const store = new D1DisbursementStore(env.DB);
-    const created = await store.createDisbursement({
-      uploadId,
-      disbursementId: 'BAD01',
-      periodEnding: '2025-12-16',
-      currency: 'USD',
-      rowCount: 0,
-      reportedGrossTotal: 0,
-      reportedNetTotal: 0,
-      needsReview: true,
-      reviewReason: 'row totals do not match the reported gross total',
-    });
-    const found = await store.getDisbursement(created.id);
+    const { disbursement } = await store.findOrCreate(
+      block(uploadId, { disbursementId: 'BAD01', needsReview: true, reviewReason: 'row totals do not match the reported gross total' })
+    );
+    const found = await store.getDisbursement(disbursement.id);
     expect(found?.needsReview).toBe(true);
     expect(found?.reviewReason).toBe('row totals do not match the reported gross total');
   });
@@ -62,20 +58,25 @@ describe('D1DisbursementStore', () => {
     expect(await store.getDisbursement(999999)).toBeNull();
   });
 
-  it('lists disbursements for an upload in creation order, empty for an upload with none', async () => {
-    const uploads = new D1UploadStore(env.DB);
-    const uploadId = (await uploads.createUpload('asset-3', '2026-09-15T00:00:00Z')).id;
-
+  it('finds the same block again on a resumed attempt of the same upload', async () => {
+    const uploadId = (await new D1UploadStore(env.DB).createUpload('asset-3', '2026-09-15T00:00:00Z')).id;
     const store = new D1DisbursementStore(env.DB);
-    const first = await store.createDisbursement({
-      uploadId, disbursementId: 'FIRST', periodEnding: '2025-12-16', currency: 'USD',
-      rowCount: 1, reportedGrossTotal: 50, reportedNetTotal: 50, needsReview: false, reviewReason: null,
-    });
-    const second = await store.createDisbursement({
-      uploadId, disbursementId: 'SECOND', periodEnding: '2025-12-16', currency: 'USD',
-      rowCount: 1, reportedGrossTotal: 60, reportedNetTotal: 60, needsReview: false, reviewReason: null,
-    });
-    expect((await store.listByUpload(uploadId)).map((d) => d.id)).toEqual([first.id, second.id]);
-    expect(await store.listByUpload(999999)).toEqual([]);
+    const first = await store.findOrCreate(block(uploadId, { disbursementId: '', blockIndex: 1 }));
+    const again = await store.findOrCreate(block(uploadId, { disbursementId: '', blockIndex: 1 }));
+    expect(again).toEqual({ disbursement: first.disbursement, created: false });
+    // A different position in the same upload with no Benevity id is a different block.
+    const other = await store.findOrCreate(block(uploadId, { disbursementId: '', blockIndex: 2 }));
+    expect(other.created).toBe(true);
+  });
+
+  it('reuses the existing row when the same Benevity disbursement arrives in a new upload', async () => {
+    const uploads = new D1UploadStore(env.DB);
+    const firstUpload = (await uploads.createUpload('asset-4', '2026-09-15T00:00:00Z')).id;
+    const reUpload = (await uploads.createUpload('asset-5', '2026-09-16T00:00:00Z')).id;
+    const store = new D1DisbursementStore(env.DB);
+
+    const first = await store.findOrCreate(block(firstUpload, { disbursementId: 'REUP01' }));
+    const second = await store.findOrCreate(block(reUpload, { disbursementId: 'REUP01', blockIndex: 3 }));
+    expect(second).toEqual({ disbursement: first.disbursement, created: false });
   });
 });

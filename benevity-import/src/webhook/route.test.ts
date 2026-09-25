@@ -61,9 +61,8 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     markError: vi.fn(),
   };
   const disbursementStore: DisbursementStore = {
-    createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 10, ...input })),
+    findOrCreate: vi.fn().mockImplementation((input) => Promise.resolve({ disbursement: { id: 10, ...input }, created: true })),
     getDisbursement: vi.fn(),
-    listByUpload: vi.fn().mockResolvedValue([]),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
@@ -281,18 +280,19 @@ describe('webhook route', () => {
           .fn()
           .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
       },
-      disbursementStore: {
-        ...fakeDeps().disbursementStore,
-        listByUpload: vi.fn().mockResolvedValue([{ id: 10, disbursementId: 'FIRST01' } as never]), // 1 block already done
-        createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 11, ...input })),
-      },
     });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    // Only the second (never-completed) block creates a new disbursement row.
-    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledTimes(1);
-    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledWith(
-      expect.objectContaining({ disbursementId: 'SECOND02' })
+    // Each block is looked up by its own position in this upload, so the store can hand back
+    // block 0's row from the prior attempt instead of creating it again.
+    expect(deps.disbursementStore.findOrCreate).toHaveBeenCalledTimes(2);
+    expect(deps.disbursementStore.findOrCreate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ uploadId: 1, blockIndex: 0, disbursementId: 'FIRST01' })
+    );
+    expect(deps.disbursementStore.findOrCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ uploadId: 1, blockIndex: 1, disbursementId: 'SECOND02' })
     );
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 2);
   });
@@ -311,19 +311,19 @@ describe('webhook route', () => {
       },
       disbursementStore: {
         ...fakeDeps().disbursementStore,
-        listByUpload: vi.fn().mockResolvedValue([
-          { id: 10, uploadId: 1, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
-            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x' } as never,
-        ]),
+        findOrCreate: vi.fn().mockResolvedValue({
+          disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
+            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x' },
+          created: false,
+        }),
       },
     });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    // Reused the existing row — never created a second one, never re-posted the worklist item.
-    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
+    // Reused the existing row — never re-posted the worklist item.
     expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
     // A header-error block has zero rows to upsert, so this only proves the code path taken
-    // (existingDisbursement !== null -> skip worklist post) without needing row-level fixtures;
+    // (created === false -> skip worklist post) without needing row-level fixtures;
     // the sum-mismatch case below covers the "rows still get upserted" half.
   });
 
@@ -339,15 +339,15 @@ describe('webhook route', () => {
       },
       disbursementStore: {
         ...fakeDeps().disbursementStore,
-        listByUpload: vi.fn().mockResolvedValue([
-          { id: 10, uploadId: 1, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
-            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x' } as never,
-        ]),
+        findOrCreate: vi.fn().mockResolvedValue({
+          disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x' },
+          created: false,
+        }),
       },
     });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
     expect(deps.mondayClient.createItem).not.toHaveBeenCalled(); // no re-posted worklist item
     // The row IS still upserted against the reused disbursement id — proves a row upsert a
     // partial prior attempt never reached still gets recorded on this retry.
@@ -360,7 +360,7 @@ describe('webhook route', () => {
     const deps = fakeDeps({
       disbursementStore: {
         ...fakeDeps().disbursementStore,
-        createDisbursement: vi.fn().mockRejectedValue(new Error('D1 write failed')),
+        findOrCreate: vi.fn().mockRejectedValue(new Error('D1 write failed')),
       },
     });
     const app = createApp(deps);

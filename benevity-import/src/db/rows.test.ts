@@ -13,12 +13,12 @@ describe('D1RowStore', () => {
     await applyMigrations(env.DB);
     const uploads = new D1UploadStore(env.DB);
     const uploadId = (await uploads.createUpload(`asset-${testIndex}`, '2026-09-15T00:00:00Z')).id;
-    testIndex++;
     const disbursements = new D1DisbursementStore(env.DB);
     disbursementId = (
-      await disbursements.createDisbursement({
+      await disbursements.findOrCreate({
         uploadId,
-        disbursementId: 'ABC123',
+        blockIndex: 0,
+        disbursementId: `ABC${testIndex++}`,
         periodEnding: '2025-12-16',
         currency: 'USD',
         rowCount: 1,
@@ -27,7 +27,7 @@ describe('D1RowStore', () => {
         needsReview: false,
         reviewReason: null,
       })
-    ).id;
+    ).disbursement.id;
   });
 
   it('inserts a new row as ingested', async () => {

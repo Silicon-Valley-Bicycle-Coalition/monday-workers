@@ -198,9 +198,14 @@ several disbursements:
 
 * **`uploads`** — one row per Monday file asset: id, Monday asset id, uploaded-at, status
   (`parsing` / `parsed` / `error`), block count.
-* **`disbursements`** — one row per preamble block found in a file: id, upload id (FK), Benevity's
-  own `Disbursement ID` (not assumed unique across files — a redelivered file repeats it), `Period
-  Ending`, disbursement-level currency, row count, and the trailer's reported gross/net totals. On
+* **`disbursements`** — one row per Benevity disbursement: id, upload id (FK, the upload that
+  first produced it) and block position within it, Benevity's own `Disbursement ID`, `Period
+  Ending`, disbursement-level currency, row count, and the trailer's reported gross/net totals.
+  `Disbursement ID` is unique (migration `0002`, a partial index that exempts the empty id of a
+  block whose header didn't parse): the same report re-uploaded as a new file, or bundled into a
+  later download, finds its existing row — and its existing worklist item — instead of adding a
+  second one. The route looks a block up by (upload, position) first, so a retried upload
+  resumes its own blocks, then by `Disbursement ID`, and inserts only on a miss. On
   parse, the sum of the block's own rows is checked against its own reported gross total; a
   mismatch marks the whole block `needs-review` rather than writing partial data from a block the
   parser may have mis-split.
