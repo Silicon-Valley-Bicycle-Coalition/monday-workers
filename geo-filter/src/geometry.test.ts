@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterContacts, type Contact } from './geometry.js';
+import { filterContacts, normalizeZip, type Contact } from './geometry.js';
 
 const contact = (overrides: Partial<Contact>): Contact => ({
   id: 'c1', name: 'Test Contact', lat: null, lng: null, zip: null, ...overrides,
@@ -17,6 +17,29 @@ describe('zip mode', () => {
     expect(matched.map((c) => c.id)).toEqual(['1', '2']);
     // Zip mode never needs coordinates -- a missing zip is a non-match, not a skip.
     expect(skippedNoLocation).toEqual([]);
+  });
+
+  it('matches a ZIP+4 on file against a requested 5-digit ZIP, and vice versa', () => {
+    const contacts = [
+      contact({ id: 'plus4', zip: '95113-1234' }),
+      contact({ id: 'plus4-nodash', zip: '951101234' }),
+      contact({ id: 'five', zip: '95126' }),
+      contact({ id: 'other', zip: '95125-0001' }),
+    ];
+    const { matched } = filterContacts(contacts, { kind: 'zip', zips: ['95113', '95110', '95126-9999'] });
+    expect(matched.map((c) => c.id)).toEqual(['plus4', 'plus4-nodash', 'five']);
+  });
+});
+
+describe('normalizeZip', () => {
+  it.each([
+    ['95113', '95113'],
+    [' 95113-1234 ', '95113'],
+    ['951131234', '95113'],
+    ['9511', '9511'], // not a ZIP shape -- left alone rather than guessed at
+    ['K1A 0B1', 'K1A 0B1'],
+  ])('%s -> %s', (input, expected) => {
+    expect(normalizeZip(input)).toBe(expected);
   });
 });
 
