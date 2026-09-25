@@ -78,14 +78,28 @@ Commit the fill (config is deliberately in-repo; it holds ids, not secrets).
 From `member-portal/`, in order:
 
 ```sh
-wrangler d1 create svbc-member-portal        # paste the returned id into wrangler.jsonc database_id
-wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001 + 0002
+# SVBC: the D1 already exists and its id is in wrangler.jsonc — skip the create. Forks: run it
+# and paste the returned id into wrangler.jsonc database_id.
+wrangler d1 create svbc-member-portal
+wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0004
 wrangler queues create member-portal-change-requests
 wrangler queues create member-portal-change-requests-dlq
+wrangler queues create member-portal-letter-emails
+wrangler queues create member-portal-letter-emails-dlq
 wrangler secret put MONDAY_API_TOKEN        # paste Phase 1 token
+wrangler secret put LETTER_WEBHOOK_SECRET   # a fresh random string — never the sandbox value
                                              # (no email secret to set — the send_email binding
                                              # in wrangler.jsonc needs no API key)
 ```
+
+Every queue above is bound in `wrangler.jsonc`, so a missing one fails the deploy — create all
+four even if letters aren't turned on yet.
+
+**"Send Giving Letter" button** (README "Operator setup", steps 1–2): add a Button column to the
+Donors board and a Monday automation "When button column changes → Send a webhook to
+`https://member.bikesiliconvalley.org/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>`".
+Do this after the deploy below, and confirm one real delivery's payload shape before telling
+staff it works.
 
 The custom domain is already declared in `wrangler.jsonc` (`workers_dev` is disabled, so without
 it the Worker would deploy unreachable):

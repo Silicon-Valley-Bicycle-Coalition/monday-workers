@@ -166,6 +166,10 @@ composer can't run this repo's code.
 
 ## Deploys
 
+**First production deploy at cutover:** follow
+[`docs/production-deploy-checklist.md`](docs/production-deploy-checklist.md) — the ordered,
+cross-Worker checklist around the `salesforce-import` production load.
+
 The live Workers deploy automatically via [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/):
 a merge to `main` builds and deploys each connected Worker from its subdirectory (root directory
 set per Worker in the Cloudflare dashboard, e.g. `/svbc-calendars`), and non-production branches

@@ -32,9 +32,30 @@ describe('config split: the QuickBooks sink', () => {
     }
   });
 
-  it('the column map and item-name fields are the same in both — they are shapes, not ids, until boards exist', () => {
-    expect(sandbox.quickbooksSync).toEqual(production.quickbooksSync);
+  it('both map the same QuickBooks fields — only the Monday column ids may differ', () => {
+    expect(sandbox.quickbooksSync.itemNameField).toEqual(production.quickbooksSync.itemNameField);
+    for (const entity of ['customer', 'invoice', 'product'] as const) {
+      expect(Object.keys(production.quickbooksSync.columnMap[entity])).toEqual(
+        Object.keys(sandbox.quickbooksSync.columnMap[entity])
+      );
+    }
+    expect(Object.values(production.quickbooksSync.customerCreateFieldMap).sort()).toEqual(
+      Object.values(sandbox.quickbooksSync.customerCreateFieldMap).sort()
+    );
     expect(sandbox.monday.apiUrl).toBe(production.monday.apiUrl);
+  });
+
+  it('no real sandbox column id appears in production (the generic stand-ins may be shared until boards exist)', () => {
+    const columnIds = (sync: typeof sandbox.quickbooksSync): string[] => [
+      ...Object.values(sync.columnMap).flatMap((fields) => Object.values(fields)),
+      ...Object.values(sync.linkColumn),
+      ...Object.keys(sync.customerCreateFieldMap),
+    ];
+    const isStandIn = (id: string) => id.endsWith('_column_id');
+    const productionIds = new Set(columnIds(production.quickbooksSync));
+    for (const id of columnIds(sandbox.quickbooksSync).filter((id) => !isStandIn(id))) {
+      expect(productionIds.has(id), id).toBe(false);
+    }
   });
 
   it('both shipped configs validate', () => {
