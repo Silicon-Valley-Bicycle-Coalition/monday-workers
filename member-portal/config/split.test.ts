@@ -34,6 +34,18 @@ describe('config split: sinks', () => {
     const routes = sandboxEnv.routes as { pattern: string }[];
     expect(get(sandbox, 'auth.portalBaseUrl')).toBe(`https://${routes[0]!.pattern}`);
   });
+
+  // portalBaseUrl's origin is the only Origin the CSRF check accepts (src/routes.ts), so it must
+  // be exactly the host each environment is actually served from.
+  it('production portalBaseUrl is the production custom domain from wrangler.jsonc', () => {
+    const routes = wrangler.routes as { pattern: string }[];
+    expect(routes).toHaveLength(1);
+    expect(get(production, 'auth.portalBaseUrl')).toBe(`https://${routes[0]!.pattern}`);
+  });
+
+  it('sandbox is served from exactly one custom domain', () => {
+    expect(sandboxEnv.routes as unknown[]).toHaveLength(1);
+  });
 });
 
 // Latent until production boards exist: every production board id is null and every production

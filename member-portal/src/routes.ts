@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { csrf } from 'hono/csrf';
+import { HTTPException } from 'hono/http-exception';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
@@ -114,12 +116,33 @@ function resolvePathLocale(c: Context): Locale {
 export function createApp(deps: AppDeps) {
   const app = new Hono();
 
+  // The one origin this deployment serves (member.bikesiliconvalley.org in production,
+  // member.sandbox.bikesiliconvalley.org in the sandbox — config/split.test.ts pins each to its
+  // wrangler.jsonc custom domain). Used by the CSRF check and the language-switch redirect.
+  const portalOrigin = new URL(deps.config.auth.portalBaseUrl).origin;
+
   // First, so it wraps every response — including onError's and the 404 fallback.
   app.use('*', ...securityHeaders());
 
+  // CSRF (issue #32): the session cookie is SameSite=Lax, which still rides along on a form POST
+  // from any *.bikesiliconvalley.org sibling — same-site, just not same-origin. Hono's csrf()
+  // rejects a form-encodable POST (urlencoded, multipart, text/plain, or no Content-Type) unless
+  // Sec-Fetch-Site is same-origin or Origin is exactly the portal origin. Every form here posts
+  // from the portal's own pages; nothing on the main site posts into it. The Monday webhook is
+  // server-to-server (no Origin, no Sec-Fetch-Site) and authenticates with its shared secret
+  // instead, so it's exempt.
+  const csrfCheck = csrf({ origin: portalOrigin });
+  app.use('*', (c, next) => (c.req.path.startsWith('/webhooks/') ? next() : csrfCheck(c, next)));
+
   app.onError((err, c) => {
-    console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
     const locale = detectLocale(c);
+    if (err instanceof HTTPException && err.status === 403) {
+      // The CSRF rejection. A real donor only lands here from a stale/odd browser state, so give
+      // them the same recoverable page as any other failure rather than a bare "Forbidden".
+      console.warn(`member-portal: rejected cross-origin ${c.req.method} ${c.req.path} (Origin: ${c.req.header('origin') ?? 'none'})`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 403);
+    }
+    console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
     return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 500);
   });
 
@@ -166,7 +189,6 @@ export function createApp(deps: AppDeps) {
   // with the same WHATWG URL parser the browser uses, requiring the portal's own origin, and
   // re-emitting only the parser's normalized pathname + search means what we send is exactly
   // what the browser will follow. Returns null for anything off-origin.
-  const portalOrigin = new URL(deps.config.auth.portalBaseUrl).origin;
   function sameOriginRedirectPath(to: string): { pathname: string; search: string } | null {
     let url: URL;
     try {

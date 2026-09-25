@@ -234,6 +234,10 @@ const config: Config = {
   },
 };
 
+// What a browser attaches to a form POST from the portal's own pages (config.auth.portalBaseUrl);
+// every state-changing route sits behind the CSRF check (see the 'CSRF' describe block).
+const SAME_ORIGIN = { Origin: 'https://portal.example.org' } as const;
+
 function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   return {
     monday: fakeMonday({}),
@@ -270,12 +274,12 @@ describe('POST /', () => {
     const matchingRes = await appMatching.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const nonMatchingRes = await appNonMatching.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'nobody@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     expect(await matchingRes.text()).toBe(await nonMatchingRes.text());
@@ -296,7 +300,7 @@ describe('full login flow', () => {
     await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
@@ -329,7 +333,7 @@ describe('full login flow', () => {
     await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
@@ -361,7 +365,7 @@ describe('GET /auth/callback error handling', () => {
     await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
@@ -382,7 +386,7 @@ describe('GET /auth/callback locale handling', () => {
     await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
@@ -399,7 +403,7 @@ describe('GET /auth/callback locale handling', () => {
     await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
@@ -529,7 +533,7 @@ describe('POST / rate limiting', () => {
     const res = await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     expect(res.status).toBe(200);
@@ -546,12 +550,12 @@ describe('POST / email validation', () => {
     const malformedRes = await appMalformed.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'weird"email@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const nonMatchingRes = await appNonMatching.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'nobody@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     expect(malformedRes.status).toBe(nonMatchingRes.status);
@@ -567,7 +571,7 @@ describe('POST / email validation', () => {
     const res = await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: tooLong }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     expect(res.status).toBe(200);
@@ -603,7 +607,7 @@ describe('GET /:locale/portal error handling', () => {
     await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
@@ -640,7 +644,7 @@ describe('POST / error handling', () => {
     const res = await app.request('/', {
       method: 'POST',
       body: new URLSearchParams({ email: 'donor@example.org' }),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 
     expect(res.status).toBe(200);
@@ -656,7 +660,7 @@ async function loginAndGetCookie(
   await app.request('/', {
     method: 'POST',
     body: new URLSearchParams({ email }),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
   });
   const loginUrl = emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl;
   const callbackRes = await app.request(`/auth/callback?token=${extractToken(loginUrl)}`);
@@ -869,7 +873,7 @@ describe('POST /:locale/portal/change-request', () => {
     return app.request('/en/portal/change-request', {
       method: 'POST',
       body: new URLSearchParams(fields),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
     });
   }
 
@@ -1190,7 +1194,7 @@ describe('GET /portal/card/:donorItemId (old standalone card page)', () => {
 
 describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
   it('redirects to / without a session', async () => {
-    const res = await createApp(makeDeps()).request('/en/portal/card/donor-1/regenerate', { method: 'POST' });
+    const res = await createApp(makeDeps()).request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: SAME_ORIGIN });
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/');
   });
@@ -1201,7 +1205,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/other-donor/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/other-donor/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(res.status).toBe(404);
   });
 
@@ -1225,7 +1229,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     gatedConfig.monday.columns.membershipExpiry = 'REPLACE_WITH_COLUMN_ID';
     const gatedApp = createApp({ ...enabledDeps, config: gatedConfig });
 
-    const regenRes = await gatedApp.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const regenRes = await gatedApp.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
     expect(regenRes.headers.get('location')).toBe('/en/portal');
 
@@ -1244,7 +1248,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     await app.request('/en/portal', { headers: { Cookie: cookie } });
     const oldToken = await cardTokenStore.getActiveToken('donor-1');
 
-    const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const regenRes = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(regenRes.status).toBe(302);
     expect(regenRes.headers.get('location')).toBe('/en/portal');
 
@@ -1290,7 +1294,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
 
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/en/portal');
@@ -1317,7 +1321,7 @@ describe('POST /:locale/portal/card/:donorItemId/regenerate', () => {
     const app = createApp(makeDeps({ monday, emailSender, cardTokenStore }));
     const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
 
-    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('We could not regenerate your card right now');
   });
@@ -2043,7 +2047,7 @@ describe('POST /:locale/portal/change-request/preferences', () => {
     return app.request('/en/portal/change-request/preferences', {
       method: 'POST',
       body: new URLSearchParams(fields),
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', Cookie: cookie },
     });
   }
 
@@ -2105,7 +2109,7 @@ describe('POST /:locale/portal/change-request/preferences', () => {
 
   it('redirects to / without a session', async () => {
     const app = createApp(makeDeps({ config: prefsConfig() }));
-    const res = await app.request('/en/portal/change-request/preferences', { method: 'POST' });
+    const res = await app.request('/en/portal/change-request/preferences', { method: 'POST', headers: SAME_ORIGIN });
     expect(res.status).toBe(302);
   });
 
@@ -2132,6 +2136,121 @@ describe('POST /:locale/portal/change-request/preferences', () => {
 
     const res = await postPrefs(limitedApp, cookie, { donorItemId: 'donor-1', emailOptOut: 'yes' });
     expect(res.status).toBe(429);
+  });
+});
+
+// Issue #32: the session cookie is SameSite=Lax, which rides along on form POSTs from any
+// *.bikesiliconvalley.org sibling (same-site, cross-origin). Every state-changing form route must
+// accept only the portal's own origin; the Monday webhook (server-to-server, no Origin) must not.
+describe('CSRF', () => {
+  async function loggedIn() {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const changeStore = fakeChangeStore();
+    const cardTokenStore = inMemoryCardTokenStore();
+    const app = createApp(makeDeps({ monday, emailSender, changeStore, cardTokenStore }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    emailSender.sendLoginEmail.mockClear();
+    return { app, cookie, emailSender, changeStore, cardTokenStore };
+  }
+
+  const FORM = 'application/x-www-form-urlencoded';
+
+  // [path, body] for every state-changing form route.
+  const ROUTES: [string, Record<string, string>][] = [
+    ['/', { email: 'donor@example.org' }],
+    ['/logout', {}],
+    ['/en/portal/change-request', { donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }],
+    ['/en/portal/change-request/preferences', { donorItemId: 'donor-1' }],
+    ['/en/portal/card/donor-1/regenerate', {}],
+  ];
+
+  const HOSTILE: [string, Record<string, string>][] = [
+    ['a cross-site Origin', { Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site' }],
+    ['a sibling-subdomain Origin (same-site, cross-origin)', { Origin: 'https://www.example.org', 'Sec-Fetch-Site': 'same-site' }],
+    ['the portal host over plain http', { Origin: 'http://portal.example.org' }],
+    ['an opaque "null" Origin', { Origin: 'null' }],
+    ['neither Origin nor Sec-Fetch-Site', {}],
+  ];
+
+  describe.each(ROUTES)('POST %s', (path, body) => {
+    it.each(HOSTILE)('rejects %s with 403 and no side effects', async (_label, headers) => {
+      const { app, cookie, emailSender, changeStore, cardTokenStore } = await loggedIn();
+      const before = await cardTokenStore.getActiveToken('donor-1');
+      const res = await app.request(path, {
+        method: 'POST',
+        body: new URLSearchParams(body),
+        headers: { ...headers, 'Content-Type': FORM, Cookie: cookie },
+        redirect: 'manual',
+      });
+      expect(res.status).toBe(403);
+      expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+      expect(changeStore.createRequest).not.toHaveBeenCalled();
+      expect(await cardTokenStore.getActiveToken('donor-1')).toBe(before);
+      // Session survives a forged logout.
+      const stillIn = await app.request('/en/portal', { headers: { Cookie: cookie }, redirect: 'manual' });
+      expect(stillIn.status).toBe(200);
+    });
+
+    it('rejects a text/plain body (the other CORS-simple form encoding) cross-site', async () => {
+      const { app, cookie } = await loggedIn();
+      const res = await app.request(path, {
+        method: 'POST',
+        body: 'email=donor@example.org',
+        headers: { Origin: 'https://evil.example', 'Content-Type': 'text/plain', Cookie: cookie },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('accepts the portal origin', async () => {
+      const { app, cookie } = await loggedIn();
+      const res = await app.request(path, {
+        method: 'POST',
+        body: new URLSearchParams(body),
+        headers: { Origin: 'https://portal.example.org', 'Content-Type': FORM, Cookie: cookie },
+        redirect: 'manual',
+      });
+      expect(res.status).not.toBe(403);
+      expect(res.status).toBeLessThan(400);
+    });
+
+    it('accepts Sec-Fetch-Site: same-origin without an Origin header', async () => {
+      const { app, cookie } = await loggedIn();
+      const res = await app.request(path, {
+        method: 'POST',
+        body: new URLSearchParams(body),
+        headers: { 'Sec-Fetch-Site': 'same-origin', 'Content-Type': FORM, Cookie: cookie },
+        redirect: 'manual',
+      });
+      expect(res.status).toBeLessThan(400);
+    });
+  });
+
+  it('renders the generic error page (not a bare 500) for a rejected POST', async () => {
+    const res = await createApp(makeDeps()).request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { Origin: 'https://evil.example', 'Content-Type': FORM },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain(t('en', 'error.generic'));
+  });
+
+  it('leaves the Monday webhook (server-to-server, no Origin) alone, whatever its content type', async () => {
+    const app = createApp(makeDeps());
+    for (const contentType of ['application/json', 'text/plain', undefined]) {
+      const res = await app.request('/webhooks/monday/letters?secret=shh', {
+        method: 'POST',
+        headers: contentType ? { 'Content-Type': contentType } : {},
+        body: JSON.stringify({ challenge: 'abc' }),
+      });
+      expect(res.status, String(contentType)).not.toBe(403);
+    }
+  });
+
+  it('leaves safe methods alone (the language switcher is a cross-origin-linkable GET)', async () => {
+    const res = await createApp(makeDeps()).request('/lang/es?to=%2F', { headers: { Origin: 'https://evil.example' }, redirect: 'manual' });
+    expect(res.status).toBe(302);
   });
 });
 

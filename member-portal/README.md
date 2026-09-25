@@ -192,6 +192,13 @@ Routing destination). A live login-link request for a real sandbox People record
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
   never accepts a donor-id or email as a client-supplied parameter for "whose data to show."
 * HTTPS only, on its own subdomain, separate from any staff-facing tooling.
+* CSRF: every state-changing form POST (login, logout, change requests, preferences, card
+  regenerate) passes Hono's `csrf()` — `Sec-Fetch-Site: same-origin` or an `Origin` exactly equal
+  to `auth.portalBaseUrl`'s origin, else 403. `SameSite=Lax` alone isn't enough here: it still
+  sends the session cookie on POSTs from sibling `*.bikesiliconvalley.org` hosts (same-site,
+  cross-origin). `config/split.test.ts` pins each environment's `portalBaseUrl` to its
+  `wrangler.jsonc` custom domain, so the allowed origin is exactly the served one. The Monday
+  webhook is exempt (server-to-server, no `Origin`; it authenticates with its shared secret).
 * Response headers on every route (`src/securityHeaders.ts`, Hono `secureHeaders()`): no framing
   (`X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` — nothing embeds the portal), a
   baseline CSP of `frame-ancestors`/`base-uri`/`object-src`/`form-action` only (the pages use
