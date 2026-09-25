@@ -49,6 +49,7 @@ beforeEach(async () => {
   const cache = caches.default;
   const version = env.CACHE_VERSION || "0";
   for (const key of [
+    `http://worker.test/events?page_size=1&organizer=all&v=${version}`,
     `http://worker.test/events?page_size=20&organizer=all&v=${version}`,
     `http://worker.test/events?page_size=50&organizer=all&v=${version}`,
   ]) {
@@ -150,6 +151,24 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     });
     const res = await call(req("/events?page_size=999"));
     expect(res.status).toBe(200);
+  });
+
+  it.each(["abc", "", "NaN"])("falls back to the default page size for a non-numeric page_size=%s, sharing the default's cache entry", async (value) => {
+    mockEventbrite();
+    const res = await call(req(`/events?page_size=${value}`));
+    expect(res.status).toBe(200);
+    const data = await res.json<{ events: unknown[] }>();
+    expect(data.events).toHaveLength(3);
+    const version = env.CACHE_VERSION || "0";
+    expect(await caches.default.match(new Request(`http://worker.test/events?page_size=NaN&organizer=all&v=${version}`))).toBeUndefined();
+  });
+
+  it.each(["0", "-5"])("clamps page_size=%s up to 1", async (value) => {
+    mockEventbrite();
+    const res = await call(req(`/events?page_size=${value}`));
+    expect(res.status).toBe(200);
+    const data = await res.json<{ events: unknown[] }>();
+    expect(data.events).toHaveLength(1);
   });
 
   it("propagates an Eventbrite fetch failure as a 502 error", async () => {

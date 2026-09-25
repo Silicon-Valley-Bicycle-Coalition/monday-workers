@@ -27,6 +27,20 @@ const CALENDAR_DOMAIN = 'https://committees.bikesiliconvalley.org';
 const CACHED_PATHS = new Set(['/', '/events', '/calendars']);
 const ICS_PATH = /^\/calendars\/([a-z0-9-]+)\.ics$/;
 
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 50;
+
+/**
+ * `page_size` for /events, clamped to 1..MAX_PAGE_SIZE. Anything missing or non-numeric
+ * (`abc`, `NaN`) falls back to the default rather than flowing through as NaN — `slice(0, NaN)`
+ * is an empty list, which would then be cached as a valid 200 under its own cache key.
+ */
+function parsePageSize(raw: string | null): number {
+  const parsed = raw === null ? NaN : parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_PAGE_SIZE;
+  return Math.min(Math.max(parsed, 1), MAX_PAGE_SIZE);
+}
+
 function handleCORS(request: Request, response: Response): Response {
   const origin = request.headers.get('Origin') || '';
   const headers = new Headers(response.headers);
@@ -158,7 +172,7 @@ export default {
         return handleCORS(request, widgetResponse(url, organizerId, env.CF_WEB_ANALYTICS_TOKEN ?? ''));
       }
       if (url.pathname === '/' || url.pathname === '/events') {
-        const pageSize = Math.min(parseInt(url.searchParams.get('page_size') || '20', 10), 50);
+        const pageSize = parsePageSize(url.searchParams.get('page_size'));
         const cacheTTL = parseInt(env.CACHE_TTL || '900', 10);
         const cacheKey = new Request(`${url.origin}/events?page_size=${pageSize}&organizer=${organizerId || 'all'}&v=${version}`, { method: 'GET' });
         const response = await withCache(cacheKey, cacheTTL, ctx, () => limitedOr(() => fetchEventsResponse(env, organizerId, pageSize, cacheTTL)));
