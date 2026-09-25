@@ -645,6 +645,23 @@ unaffected — they remain full-history stewardship rollups for staff.
 always-on, no-floor behavior... except that `historyVisibleFromISO: null` hides the tab, so a
 fork that wants history visible immediately should set it to any past date.
 
+## Development
+
+```sh
+npm install
+npm test            # vitest in workerd (@cloudflare/vitest-plugin), D1 migrations applied per run
+npm run typecheck   # wrangler types, then tsc --noEmit — the only supported typecheck
+```
+
+Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types (`DB`, the queues,
+`LOGIN_RATE_LIMITER`, `REQUEST_RATE_LIMITER`, …) come from `worker-configuration.d.ts`, which
+`wrangler types` generates from `wrangler.jsonc` and which is deliberately not committed (root
+`.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
+`tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
+and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
+say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+`npm run typecheck`. The local preview's driver is `.claude/skills/run-member-portal/`.
+
 ## Future candidates
 
 The candidate list from the v2 brainstorm (discussed 2026-08-24) is no longer tracked here —

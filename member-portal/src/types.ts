@@ -318,7 +318,8 @@ export interface LetterSendQueueMessage {
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
-// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// (`npm run typecheck` regenerates the gitignored worker-configuration.d.ts from wrangler.jsonc —
+// a bare `tsc --noEmit` reads a missing or stale copy; see README "Development");
 // only secrets and narrowed queue message types are declared here.
 export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;
