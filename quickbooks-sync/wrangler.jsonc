@@ -28,6 +28,8 @@
     "consumers": [
       {
         "queue": "quickbooks-sync-writes",
+        // Retries back off 1, 4, 16 min (src/consumer/processBatch.ts retryDelaySeconds, #33) —
+        // about 21 minutes of cover for a Monday or QuickBooks outage before the DLQ.
         "max_retries": 3,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain.

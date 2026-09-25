@@ -8,8 +8,25 @@ import type { EntityType, MondayBoards, QueueMessage, QuickbooksSyncConfig } fro
 
 export interface QueueMessageLike<T> {
   body: T;
+  // Cloudflare's Message.attempts (1 on first delivery) and Message.timestamp (when it was
+  // sent). Optional so tests and callers that don't care can omit them.
+  attempts?: number;
+  timestamp?: Date;
   ack(): void;
-  retry(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+// Retry backoff (#33): immediate retries let a Monday or QuickBooks outage of a few seconds burn
+// every attempt and dead-letter the change. 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes across
+// wrangler.jsonc's max_retries of 3 — about 21 minutes of cover — capped at Queues' 12-hour
+// maximum delay. Same schedule as funraise-sync.
+const RETRY_BASE_SECONDS = 60;
+const RETRY_FACTOR = 4;
+const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
+
+export function retryDelaySeconds(attempts: number | undefined): number {
+  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
+  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export interface ConsumerDeps {
@@ -19,6 +36,10 @@ export interface ConsumerDeps {
   mondayClient: MondayClient;
   quickBooksClient: QuickBooksClient;
   config: QuickbooksSyncConfig;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 const BOARD_KEY_FOR_ENTITY: Record<EntityType, keyof MondayBoards> = {
@@ -40,13 +61,20 @@ export async function processSyncQueueBatch(
       }
       message.ack();
     } catch (err) {
-      const error = (err as Error).message;
-      if (message.body.direction === 'qb-to-monday') {
-        await deps.qbEventStore.updateStatus(message.body.eventId, 'failed', { error });
-      } else {
-        await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', { error });
+      const error = errorMessage(err);
+      console.error(`quickbooks-sync consumer: ${message.body.direction} "${message.body.eventId}" failed: ${error}`);
+      // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
+      // down with it (the throw would fail the whole batch and retry every message immediately).
+      try {
+        if (message.body.direction === 'qb-to-monday') {
+          await deps.qbEventStore.updateStatus(message.body.eventId, 'failed', { error });
+        } else {
+          await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', { error });
+        }
+      } catch (recordErr) {
+        console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorMessage(recordErr)}`);
       }
-      message.retry();
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processSyncQueueBatch, type QueueMessageLike } from './processBatch';
+import { processSyncQueueBatch, retryDelaySeconds, type QueueMessageLike } from './processBatch';
 import type { QbEventStore } from '../db/qbEvents';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { MapStore } from '../db/map';
@@ -444,5 +444,57 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
 
     expect(message.retry).toHaveBeenCalled();
     expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('missing-item', 'failed', { error: expect.any(String) });
+  });
+});
+
+// #33: retries were immediate, so a Monday or QuickBooks outage of a few seconds burned all three
+// attempts at once and dead-lettered the change. They now back off by attempt number.
+describe('retry backoff', () => {
+  it("grows by attempt: 1 min, 4 min, 16 min, capped at Queues' 12 h maximum", () => {
+    expect(retryDelaySeconds(1)).toBe(60);
+    expect(retryDelaySeconds(2)).toBe(240);
+    expect(retryDelaySeconds(3)).toBe(960);
+    expect(retryDelaySeconds(20)).toBe(43200);
+  });
+
+  it('treats a missing or nonsensical attempt count as the first attempt', () => {
+    expect(retryDelaySeconds(undefined)).toBe(60);
+    expect(retryDelaySeconds(0)).toBe(60);
+    expect(retryDelaySeconds(Number.NaN)).toBe(60);
+  });
+
+  it('retries a failed message with the delay for its attempt number', async () => {
+    const mondayClient = fakeMondayClient({ createItem: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) });
+    const message = { ...fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' }), attempts: 2 };
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      mondayClient,
+      quickBooksClient: fakeQuickBooksClient(),
+      config,
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+  });
+
+  it('still retries the message (with backoff) when recording the failure in D1 also fails', async () => {
+    const qbEventStore = fakeQbEventStore({
+      getEvent: vi.fn().mockRejectedValue(new Error('D1_ERROR: overloaded')),
+      updateStatus: vi.fn().mockRejectedValue(new Error('D1_ERROR: overloaded')),
+    });
+    const message = { ...fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' }), attempts: 1 };
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient(),
+      config,
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
   });
 });
