@@ -2134,3 +2134,77 @@ describe('POST /:locale/portal/change-request/preferences', () => {
     expect(res.status).toBe(429);
   });
 });
+
+// Issue #32: frame-ancestors used to be set only on the matching-gifts page, leaving the
+// dashboard and its state-changing forms frameable, and there was no HSTS.
+describe('security headers', () => {
+  async function loggedIn() {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    const cookie = await loginAndGetCookie(app, emailSender, 'donor@example.org');
+    return { app, cookie };
+  }
+
+  function expectBaseline(res: Response) {
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('strict-transport-security')).toBe('max-age=31536000');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
+    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+  }
+
+  it.each(['/', '/health', '/verify/nope', '/lang/es', '/no-such-page'])('sets the baseline on GET %s', async (path) => {
+    const res = await createApp(makeDeps()).request(path, { redirect: 'manual' });
+    expectBaseline(res);
+    expect(res.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+  });
+
+  it('never sends includeSubDomains or preload (single host under a shared domain)', async () => {
+    const hsts = (await createApp(makeDeps()).request('/')).headers.get('strict-transport-security') ?? '';
+    expect(hsts).not.toMatch(/includeSubDomains|preload/i);
+  });
+
+  it('keeps the baseline CSP compatible with the inline <style> and inline handlers pages rely on', async () => {
+    const csp = (await createApp(makeDeps()).request('/')).headers.get('content-security-policy') ?? '';
+    expect(csp).not.toMatch(/(default|script|style)-src/);
+  });
+
+  it('frame-protects the authenticated dashboard (card regenerate lives here)', async () => {
+    const { app, cookie } = await loggedIn();
+    const res = await app.request('/en/portal', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expectBaseline(res);
+  });
+
+  it('frame-protects the change-request form', async () => {
+    const { app, cookie } = await loggedIn();
+    const res = await app.request('/en/portal/change-request', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expectBaseline(res);
+  });
+
+  it("does not clobber the matching-gifts page's own CSP", async () => {
+    const { app, cookie } = await loggedIn();
+    const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
+    const csp = res.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain('connect-src https://doublethedonation.com');
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("base-uri 'none'");
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  it('lets webmail clients load the email logo cross-origin', async () => {
+    const res = await createApp(makeDeps()).request('/email/logo.png');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
+  });
+
+  it('sets the baseline on the error page too', async () => {
+    const deps = makeDeps();
+    deps.sessionStore.getSession = vi.fn().mockRejectedValue(new Error('D1 down'));
+    const res = await createApp(deps).request('/en/portal', { headers: { Cookie: 'session=x' } });
+    expect(res.status).toBe(500);
+    expectBaseline(res);
+  });
+});

@@ -192,6 +192,15 @@ Routing destination). A live login-link request for a real sandbox People record
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
   never accepts a donor-id or email as a client-supplied parameter for "whose data to show."
 * HTTPS only, on its own subdomain, separate from any staff-facing tooling.
+* Response headers on every route (`src/securityHeaders.ts`, Hono `secureHeaders()`): no framing
+  (`X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` — nothing embeds the portal), a
+  baseline CSP of `frame-ancestors`/`base-uri`/`object-src`/`form-action` only (the pages use
+  an inline `<style>` and inline event handlers, so a `script-src`/`style-src` policy needs a
+  nonce refactor first), `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and
+  `Strict-Transport-Security: max-age=31536000` **without** `includeSubDomains` or `preload` —
+  this is one host under a domain whose apex and siblings are run elsewhere, and preload is
+  only possible for the apex. `/email/logo.png` alone is `Cross-Origin-Resource-Policy:
+  cross-origin`, since webmail clients load it from their own origins.
 * No permanent duplicate of donation records in D1 — read live from Monday (or cache with a short
   TTL, e.g. a few minutes, purely for rate-limit headroom against Monday's API), so Monday stays
   the single place donation data actually lives.
@@ -438,8 +447,9 @@ features, both read-only — no new D1 tables, queues, secrets, or Monday write 
   employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
   SVBC buys a DTD subscription, which it currently has not — the board item notes this was
   "discussed, not prioritized"). This is the only portal page that may load third-party
-  JavaScript, so it deliberately renders **zero donor PII** and ships the app's only
-  Content-Security-Policy — the load-bearing directive is `connect-src` excluding `'self'`, so
+  JavaScript, so it deliberately renders **zero donor PII** and ships its own full
+  Content-Security-Policy in place of the app-wide baseline (see Security notes) — the
+  load-bearing directive is `connect-src` excluding `'self'`, so
   a compromised widget script can't fetch sibling `/portal` pages (which carry the session
   cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
   shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since

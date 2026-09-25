@@ -58,6 +58,7 @@ import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
 import { decodeEmailLogoPng } from './assets/emailLogo';
+import { securityHeaders } from './securityHeaders';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -113,6 +114,9 @@ function resolvePathLocale(c: Context): Locale {
 export function createApp(deps: AppDeps) {
   const app = new Hono();
 
+  // First, so it wraps every response — including onError's and the 404 fallback.
+  app.use('*', ...securityHeaders());
+
   app.onError((err, c) => {
     console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
     const locale = detectLocale(c);
@@ -143,7 +147,13 @@ export function createApp(deps: AppDeps) {
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
     return new Response(buffer, {
-      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' },
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        // Loaded as an <img> by webmail clients on their own origins — the one cross-origin
+        // resource here (see securityHeaders.ts's same-origin default).
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+      },
     });
   });
 
@@ -627,7 +637,8 @@ export function createApp(deps: AppDeps) {
     if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
-    // The app's only CSP, on its only page that may run third-party JS. The load-bearing part
+    // Replaces the app-wide baseline CSP (securityHeaders.ts) on the only page that may run
+    // third-party JS, so it repeats the baseline's frame-ancestors/base-uri. The load-bearing part
     // is connect-src excluding 'self': the DTD script executes on the authenticated portal
     // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
     // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
@@ -638,7 +649,7 @@ export function createApp(deps: AppDeps) {
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
         "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
-        "connect-src https://doublethedonation.com; frame-ancestors 'none'"
+        "connect-src https://doublethedonation.com; frame-ancestors 'none'; base-uri 'none'"
     );
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
