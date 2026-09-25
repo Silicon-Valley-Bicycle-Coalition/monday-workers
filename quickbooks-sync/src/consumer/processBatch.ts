@@ -278,10 +278,16 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
       const carriedQbId = String(carried);
       const other = await deps.mapStore.getByQbId('customer', carriedQbId);
       if (other !== null && other.mondayItemId !== event.mondayItemId) {
-        // Most likely a copied item. Adopting it would re-point the Customer's mapping.
-        throw new TerminalError(
-          `monday item "${event.mondayItemId}" carries QuickBooks Id ${carriedQbId}, already linked to item "${other.mondayItemId}" — a copied item? Clear its QuickBooks Id column, then redrive`
-        );
+        // Another item already stands for this Customer: a copied item, or (after a lost create
+        // response) the item QuickBooks' own webhook made for it. Same rule as linkMapping: while
+        // that item is live it's a conflict for staff; once it's archived or deleted, adopt and
+        // let linkMapping move the link here.
+        const otherItem = await deps.mondayClient.getItem(other.mondayItemId);
+        if (otherItem !== null && otherItem.state === 'active') {
+          throw new TerminalError(
+            `monday item "${event.mondayItemId}" carries QuickBooks Id ${carriedQbId}, which Monday item "${other.mondayItemId}" already stands for — archive whichever of the two is the duplicate (or clear this item's QuickBooks Id column if it was copied), then redrive`
+          );
+        }
       }
       qbId = carriedQbId;
     }
@@ -322,7 +328,7 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
         const displayName = typeof qbFields.DisplayName === 'string' ? qbFields.DisplayName : current.name;
         throw new TerminalError(
           `${err.message} — but an earlier attempt to create this Customer (requestid ${requestId}) got no answer and may have succeeded, so QuickBooks may already hold this item's own Customer. ` +
-            `Search QuickBooks Customers for "${displayName}": if it's there, put its Id in this item's QuickBooks Id column and redrive; if not, see README "Dead letters and redrive" before redriving`,
+            `Search QuickBooks Customers for "${displayName}": if it's there, put its Id in this item's QuickBooks Id column (and if a Monday item already exists for that Customer, archive the duplicate first), then redrive; if not, see README "Dead letters and redrive" before redriving`,
           { keepRequestId: true }
         );
       }

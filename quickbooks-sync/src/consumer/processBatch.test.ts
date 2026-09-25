@@ -781,7 +781,40 @@ describe('create-loop guard', () => {
 
     expect(createCustomer).not.toHaveBeenCalled();
     expect(mapStore.createMapping).not.toHaveBeenCalled();
-    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/already linked to item "original"/), bumpCreateAttempt: true });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', {
+      error: expect.stringMatching(/Monday item "original" already stands for — archive whichever of the two is the duplicate/),
+      bumpCreateAttempt: true,
+    });
+    expect(message.ack).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  // #33 focused check: staff follow the "may have succeeded" advice — put the Customer's Id on
+  // this item and archive the item QuickBooks' webhook made for it. The guard must honor the
+  // archive (as linkMapping does) and adopt, re-pointing the link, without creating a Customer.
+  it('adopts a carried Id whose currently linked item is archived, re-pointing the link', async () => {
+    const createCustomer = vi.fn();
+    const existing = { entityType: 'customer' as const, qbId: '77', mondayItemId: 'webhook-made', mondayBoardId: 111, createdAt: '' };
+    const mapStore = fakeMapStore({
+      getByQbId: vi.fn().mockResolvedValue(existing),
+      createMapping: vi.fn().mockRejectedValue(new MappingConflictError('customer', '77', 'webhook-made', '42')),
+    });
+    const mondayEventStore = fakeMondayEventStore();
+    const mondayClient = fakeMondayClient({
+      getItem: vi.fn(async (itemId: string) =>
+        itemId === 'webhook-made'
+          ? mondayItem({ id: 'webhook-made', state: 'archived' })
+          : mondayItem({ columnValues: { qb_id_col: { text: '77', value: '"77"' } } })
+      ),
+    });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], deps({ mapStore, mondayEventStore, mondayClient, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mapStore.repointMapping).toHaveBeenCalledWith(expect.objectContaining({ qbId: '77', mondayItemId: '42' }));
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'written', { qbId: '77', writtenAt: expect.any(String) });
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
   });

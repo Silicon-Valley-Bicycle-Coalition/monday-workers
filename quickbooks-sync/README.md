@@ -57,7 +57,9 @@ after every Customer it creates. Before creating a Customer, the Monday → Quic
 (1) re-checks the mapping, (2) adopts the item if a `qb_events` row recorded it as
 `pending_monday_item_id`, then (3) re-reads the item from Monday and adopts the QuickBooks Id it
 carries — so even an item whose `create_item` response was lost is never turned into a second
-Customer. An item carrying an Id already linked to a different item (a copied item) is refused.
+Customer. An item carrying an Id that a different *live* item already stands for (a copied item, or a
+duplicate) is refused until one of them is archived; if that other item is archived or deleted,
+the link moves to this item.
 The QuickBooks → Monday path likewise looks for an item that already stands for the Customer
 (one that created it from Monday, or one found by the QuickBooks Id column) before creating one.
 Nothing defers or blocks unrelated items. A mapping is never silently re-pointed: if a record
@@ -112,8 +114,10 @@ One exception: if an earlier send under the same requestid got no answer
 (`monday_events.create_sends` > 1 at the rejection), that send may have created this item's own
 Customer — and the rejection (e.g. 6240 Duplicate Name) may be against it. Then the requestid is
 *not* advanced, and the error says "may have succeeded". Search QuickBooks Customers for the
-name. If the Customer is there, put its Id in the item's QuickBooks Id column and redrive (the
-item is adopted, nothing is created). If it's genuinely not there, advance the requestid by hand,
+name. If the Customer is there, put its Id in the item's QuickBooks Id column; if a Monday item
+already exists for that Customer (QuickBooks' own webhook may have made one while the create's
+response was lost), archive whichever item is the duplicate first. Then redrive: the item is
+adopted, the link moves to it if the other item was archived, and nothing is created. If it's genuinely not there, advance the requestid by hand,
 then redrive:
 
 ```sh
