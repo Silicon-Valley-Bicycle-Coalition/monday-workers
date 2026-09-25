@@ -33,6 +33,20 @@ describe('parseAmountCents', () => {
     },
   );
 
+  // Ambiguous shapes are rejected, not guessed at: "1.234,56" is a European-format 1234.56 that
+  // stripping commas would misread as 1.23456; "(-5)" is a double negative.
+  it.each([['1.234,56'], ['1.2,3'], ['0.5,'], ['(-5)'], ['(+5)'], ['($-5)'], ['(- 5)']])(
+    'returns null for ambiguous %j',
+    (text) => {
+      expect(parseAmountCents(text)).toBeNull();
+    },
+  );
+
+  it('still accepts thousands separators before the decimal point', () => {
+    expect(parseAmountCents('1,234,567.89')).toBe(123456789);
+    expect(parseAmountCents('(1,234.50)')).toBe(-123450);
+  });
+
   it('returns null for amounts past safe-integer cents', () => {
     expect(parseAmountCents('999999999999999999999')).toBeNull();
   });

@@ -11,10 +11,18 @@ const DECIMAL = /^([+-])?(\d*)(?:\.(\d*))?$/;
 // number at all (callers treat null as malformed, never as $0).
 export function parseAmountCents(text: string | null | undefined): number | null {
   if (text === null || text === undefined) return null;
-  let s = text.trim().replace(/[\s,$]/g, '');
+  let s = text.trim().replace(/[\s$]/g, '');
+  // A comma is a thousands separator only before the decimal point; one after it ("1.234,56",
+  // European 1234.56) would otherwise be stripped into a wrong amount.
+  if (/\..*,/.test(s)) return null;
+  s = s.replace(/,/g, '');
   let negative = false;
   const paren = /^\((.*)\)$/.exec(s);
-  if (paren) { negative = true; s = paren[1]!; }
+  if (paren) {
+    // "(12.34)" already means negative; a sign inside ("(-5)", "(+5)") is ambiguous.
+    if (/^[+-]/.test(paren[1]!)) return null;
+    negative = true; s = paren[1]!;
+  }
 
   const m = DECIMAL.exec(s);
   if (m === null) {
