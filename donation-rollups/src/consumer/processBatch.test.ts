@@ -20,6 +20,7 @@ const ownerColumns: OwnerColumns = {
 
 const config: DonationRollupsConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', accountUrl: 'https://acme.monday.com' },
+  fiscalYear: { startMonth: 7, timeZone: 'America/Los_Angeles' },
   custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
     annualSummaryBoardId: null, annualSummaryColumns: null },
   affiliations: null,
@@ -327,8 +328,8 @@ describe('processRecomputeBatch', () => {
     await processRecomputeBatch([fakeMessage('dn1', '1')],
       { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(2); // both boards the index has links on
-    expect(getDonationsByIds).toHaveBeenCalledWith(['dn1', 'dnOld'], expect.objectContaining({ fiscalYear: 'fy_1' }));
-    expect(getDonationsByIds).toHaveBeenCalledWith(['dnHist'], expect.objectContaining({ fiscalYear: null }));
+    expect(getDonationsByIds).toHaveBeenCalledWith(['dn1', 'dnOld'], expect.objectContaining({ fiscalYear: 'fy_1' }), 7);
+    expect(getDonationsByIds).toHaveBeenCalledWith(['dnHist'], expect.objectContaining({ fiscalYear: null }), 7);
   });
 
   it('skips a configured board entirely when the index has no links there for this owner', async () => {
@@ -338,6 +339,24 @@ describe('processRecomputeBatch', () => {
     await processRecomputeBatch([fakeMessage('dn1')],
       { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #27: "This Year" is the configured fiscal year in the configured zone — at 5pm Pacific
+  // on June 30 (00:00 UTC July 1) FY2026 is still this year.
+  it('splits This/Last Year by the fiscal year in config.fiscalYear.timeZone, not UTC', async () => {
+    const donations: DonationRecord[] = [
+      { id: 'd1', amountCents: 10000, dateISO: '2026-06-15', fiscalYear: 2026, status: 'Received' },
+    ];
+    const mondayClient = fakeMondayClient({ getDonationsByIds: vi.fn().mockResolvedValue(donations) });
+    const run = (now: string) => processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(),
+      linksStore: fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['d1']]])) }),
+      affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(),
+      baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date(now) });
+
+    await run('2026-07-01T00:00:00Z'); // 5pm PDT June 30
+    expect(mondayClient.changeColumnValues).toHaveBeenLastCalledWith(2, 'donor-1', expect.objectContaining({ tya: '100.00', lya: '0.00' }));
+    await run('2026-07-01T07:00:00Z'); // midnight PDT July 1
+    expect(mondayClient.changeColumnValues).toHaveBeenLastCalledWith(2, 'donor-1', expect.objectContaining({ tya: '0.00', lya: '100.00' }));
   });
 
   it('writes to whichever board the owner item actually lives on, keyed by real board id', async () => {
@@ -856,7 +875,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
     const { giftsStore, mondayClient, affiliationsStore } = setup();
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
-    expect(mondayClient.getDonationsByIds).toHaveBeenCalledWith(['dn1'], expect.objectContaining({ actingForLink: 'af_1' }));
+    expect(mondayClient.getDonationsByIds).toHaveBeenCalledWith(['dn1'], expect.objectContaining({ actingForLink: 'af_1' }), 7);
     expect(giftsStore.refreshFacts).toHaveBeenCalledWith([expect.objectContaining({ mondayItemId: 'dn1', actingForItemId: 'af-1' })], 'webhook', expect.any(String));
     expect(mondayClient.getAffiliationSummary).toHaveBeenCalledWith('af-1', 'br_p');
     expect(affiliationsStore.upsert).toHaveBeenCalledWith({ affiliationItemId: 'af-1', personItemId: 'p-1', personBoardId: '2', name: 'Uma @ Beta' }, expect.any(String));

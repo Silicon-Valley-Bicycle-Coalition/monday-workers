@@ -252,7 +252,7 @@ async function recomputeOwner(
   const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
   const perBoard = await Promise.all(donationBoards
     .filter((b) => linksByBoard.has(String(b.boardId)))
-    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns) })));
+    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns, config.fiscalYear.startMonth) })));
   const donations = perBoard.flatMap((p) => p.items);
 
   // Affiliations phase 2 (spec "Rollups"): capture the ledger's acting_for *before* this
@@ -280,7 +280,7 @@ async function recomputeOwner(
     console.log(`donation-rollups consumer: owner ${ownerItemId}: ${refreshed.changed} of ${donations.length} gift facts changed`);
   }
 
-  const thisFY = currentFiscalYear(deps.now ?? new Date());
+  const thisFY = currentFiscalYear(deps.now ?? new Date(), config.fiscalYear);
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
 
   // Membership renewal write path (spec 2026-09-15): only for owners on a board with the four

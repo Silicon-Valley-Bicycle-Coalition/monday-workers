@@ -3,6 +3,7 @@
     "apiUrl": "https://api.monday.com/v2",
     "accountUrl": "https://bikesiliconvalley.monday.com"
   },
+  "fiscalYear": { "startMonth": 7, "timeZone": "America/Los_Angeles" },
   "donationRollups": {
     "receivedStatusLabel": "Received",
     "donationBoards": [

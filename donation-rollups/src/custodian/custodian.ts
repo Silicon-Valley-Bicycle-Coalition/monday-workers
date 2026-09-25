@@ -1,7 +1,7 @@
 import type { GiftsStore } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
-import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
-import { currentFiscalYear } from '../rollups/compute';
+import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage } from '../types';
+import { currentFiscalYear, localDateParts } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
 import { formatCents, parseAmountCents } from '../money';
 
@@ -50,11 +50,16 @@ export type Duty = (typeof DUTIES)[number];
 // Without this, a start-date run that couldn't finish in one slice would never get its
 // continuation from cron (and the year-end summaries, gated on remaining === 0, would never
 // materialize). Cursor resume inside each duty picks up where the last slice stopped.
-export function dutiesForDate(now: Date, lastRuns: { duty: string; report: unknown }[] = []): Duty[] {
+// The sweep's and archive's start dates follow config "fiscalYear" (issue #27): day 1 and day 15
+// of the fiscal start month (SVBC: July 1 and July 15), read in the org's time zone.
+export function dutiesForDate(
+  now: Date, fiscalYear: FiscalYearConfig, lastRuns: { duty: string; report: unknown }[] = [],
+): Duty[] {
+  const { year, month, day } = localDateParts(now, fiscalYear.timeZone);
   const duties: Duty[] = ['reconcile', 'requeue']; // requeue: fix 5, nightly with reconcile
-  if (now.getUTCDay() === 1) duties.push('capacity');
-  if (now.getUTCMonth() === 6 && now.getUTCDate() === 1) duties.push('sweep');
-  if (now.getUTCMonth() === 6 && now.getUTCDate() === 15) duties.push('archive');
+  if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1) duties.push('capacity');
+  if (month === fiscalYear.startMonth && day === 1) duties.push('sweep');
+  if (month === fiscalYear.startMonth && day === 15) duties.push('archive');
   for (const duty of ['sweep', 'archive'] as const) {
     if (duties.includes(duty)) continue;
     const last = lastRuns.find((r) => r.duty === duty)?.report as
@@ -92,7 +97,7 @@ const ARCHIVE_PER_RUN = 40;
 async function runArchive(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const { activeFiscalYears } = deps.config.custodian;
   const { receivedStatusLabel } = deps.config.donationRollups;
-  const cutoffFY = currentFiscalYear(now) - activeFiscalYears + 1;
+  const cutoffFY = currentFiscalYear(now, deps.config.fiscalYear) - activeFiscalYears + 1;
   const work = await deps.gifts.getArchivable(cutoffFY);
   const slice = work.slice(0, ARCHIVE_PER_RUN);
   const remaining = work.length - slice.length;

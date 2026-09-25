@@ -629,6 +629,11 @@ fallback but show a blank Fiscal Year Ending on the board.
 placeholders — re-verify against production board ids before deploying for real, since the
 sandbox gets rebuilt before cutover:
 
+* `fiscalYear` — required, `{ "startMonth": 7, "timeZone": "America/Los_Angeles" }` for SVBC
+  (July–June, named for the year it ends in, matching the Fiscal Year Ending column). "Today" for
+  This/Last Year and for the custodian's sweep (day 1 of `startMonth`) and archive (day 15) is
+  read in `timeZone` — before issue #27 it was UTC, so This Year rolled over at 5pm Pacific on
+  June 30. `startMonth` also derives a gift's fiscal year from its Date when the column is blank.
 * `donationRollups.donationBoards` — now a single entry: the archive-in-place Donations board
   (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
   Status, and Fiscal Year Ending — `null` still supported for boards without one; this Worker derives it

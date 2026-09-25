@@ -23,22 +23,37 @@ export interface Rollup {
   lastGiftCents: number | null;
 }
 
-// SVBC's fiscal year runs July->June (Organization.FiscalYearStartMonth = 7). Same
-// integer-parsing approach as salesforce-import's fiscalYear() — no Date-object
-// arithmetic needed since only the month/year matter, not a full timestamp.
-export function currentFiscalYear(now: Date): number {
-  const month = now.getUTCMonth() + 1; // getUTCMonth is 0-indexed
-  const year = now.getUTCFullYear();
-  return month >= 7 ? year + 1 : year;
+// The org's fiscal year, from config ("fiscalYear" — SVBC's runs July->June in Pacific time,
+// Salesforce's Organization.FiscalYearStartMonth = 7). A fiscal year is named for the calendar
+// year it ends in, matching salesforce-import's fiscalYear() and the Fiscal Year Ending column;
+// startMonth 1 makes it the calendar year.
+import type { FiscalYearConfig } from '../types';
+
+function fiscalYearOf(year: number, month: number, startMonth: number): number {
+  return startMonth > 1 && month >= startMonth ? year + 1 : year;
 }
 
-// Same rule, applied to a plain "YYYY-MM-DD" date rather than "now" — used when a
-// Donations board has no Fiscal Year Ending column configured, or the cell is blank
-// (hand-entered gifts, or gifts stamped into a column config no longer points at), so
-// this Worker isn't hard-blocked on that column before it can compute This/Last Year.
-export function fiscalYearFromDate(dateISO: string): number {
+// The calendar date `now` falls on in `timeZone`. Intl, not getUTC*: in UTC the fiscal year
+// (issue #27) rolled over at 5pm Pacific on June 30.
+export function localDateParts(now: Date, timeZone: string): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
+    .formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value);
+  return { year: part('year'), month: part('month'), day: part('day') };
+}
+
+export function currentFiscalYear(now: Date, fy: FiscalYearConfig): number {
+  const { year, month } = localDateParts(now, fy.timeZone);
+  return fiscalYearOf(year, month, fy.startMonth);
+}
+
+// Same rule, applied to a plain "YYYY-MM-DD" date (already a local calendar date, so no zone
+// conversion) — used when a Donations board has no Fiscal Year Ending column configured, or the
+// cell is blank (hand-entered gifts, or gifts stamped into a column config no longer points at),
+// so this Worker isn't hard-blocked on that column before it can compute This/Last Year.
+export function fiscalYearFromDate(dateISO: string, startMonth: number): number {
   const [y, m] = dateISO.slice(0, 10).split('-').map(Number);
-  return (m ?? 0) >= 7 ? (y ?? 0) + 1 : (y ?? 0);
+  return fiscalYearOf(y ?? 0, m ?? 0, startMonth);
 }
 
 // Only rows whose Status is exactly the configured "Received" label count — this

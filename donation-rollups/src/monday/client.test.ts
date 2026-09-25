@@ -41,7 +41,7 @@ describe('getDonationsByIds', () => {
     const client = clientReturning(itemsResponse([
       { id: 'dn1', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' } },
     ]));
-    const result = await client.getDonationsByIds(['dn1'], COLUMNS);
+    const result = await client.getDonationsByIds(['dn1'], COLUMNS, 7);
     expect(result).toEqual([
       { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined },
     ]);
@@ -54,7 +54,7 @@ describe('getDonationsByIds', () => {
       { id: 'spaces', cells: { amount_1: '   ', date_1: '2020-01-15', status_1: 'Received' } },
       { id: 'ok', cells: { amount_1: '25', date_1: '2020-01-15', status_1: 'Received' } },
     ]));
-    const result = await client.getDonationsByIds(['blank', 'nullcell', 'spaces', 'ok'], COLUMNS);
+    const result = await client.getDonationsByIds(['blank', 'nullcell', 'spaces', 'ok'], COLUMNS, 7);
     expect(result.map((d) => d.id)).toEqual(['ok']);
   });
 
@@ -63,7 +63,7 @@ describe('getDonationsByIds', () => {
       { id: 'nodate', cells: { amount_1: '50', date_1: '', status_1: 'Received' } },
       { id: 'nan', cells: { amount_1: 'not a number', date_1: '2020-01-15', status_1: 'Received' } },
     ]));
-    expect(await client.getDonationsByIds(['nodate', 'nan'], COLUMNS)).toEqual([]);
+    expect(await client.getDonationsByIds(['nodate', 'nan'], COLUMNS, 7)).toEqual([]);
   });
 
   it('derives fiscal year from Date when the configured Fiscal Year cell is blank — Number("") is 0, not NaN, which would bucket the gift into fiscal year 0 and drop it from This/Last Year', async () => {
@@ -74,7 +74,7 @@ describe('getDonationsByIds', () => {
       { id: 'spaces', cells: { amount_1: '50', date_1: '2020-08-15', text_fy: '   ', status_1: 'Received' } },
       { id: 'stamped', cells: { amount_1: '50', date_1: '2020-08-15', text_fy: '2022', status_1: 'Received' } },
     ]));
-    const result = await client.getDonationsByIds(['blank', 'nullcell', 'spaces', 'stamped'], withFY);
+    const result = await client.getDonationsByIds(['blank', 'nullcell', 'spaces', 'stamped'], withFY, 7);
     expect(result.map((d) => [d.id, d.fiscalYear])).toEqual([
       ['blank', 2020], ['nullcell', 2021], ['spaces', 2021], ['stamped', 2022],
     ]);
@@ -84,7 +84,7 @@ describe('getDonationsByIds', () => {
     const client = clientReturning(itemsResponse([
       { id: 'zero', cells: { amount_1: '0', date_1: '2020-01-15', status_1: 'Received' } },
     ]));
-    const result = await client.getDonationsByIds(['zero'], COLUMNS);
+    const result = await client.getDonationsByIds(['zero'], COLUMNS, 7);
     expect(result.map((d) => [d.id, d.amountCents])).toEqual([['zero', 0]]);
   });
 
@@ -95,7 +95,7 @@ describe('getDonationsByIds', () => {
       { id: 'float', cells: { amount_1: '714.9300000000001', date_1: '2020-01-15', status_1: 'Received' } },
       { id: 'half', cells: { amount_1: '1.005', date_1: '2020-01-15', status_1: 'Received' } },
     ]));
-    const result = await client.getDonationsByIds(['comma', 'refund', 'float', 'half'], COLUMNS);
+    const result = await client.getDonationsByIds(['comma', 'refund', 'float', 'half'], COLUMNS, 7);
     expect(result.map((d) => [d.id, d.amountCents])).toEqual([
       ['comma', 123450], ['refund', -2510], ['float', 71493], ['half', 101],
     ]);
@@ -110,7 +110,7 @@ describe('getDonationsByIds — membership term columns', () => {
       { id: 'dn1', cells: { amount_1: '50', date_1: '2026-11-05', status_1: 'Received', gt_1: 'Donation',
         ts_1: '2026-11-05', te_1: '', mty_1: 'Lifetime' } },
     ]));
-    const [d] = await client.getDonationsByIds(['dn1'], TERM_COLUMNS);
+    const [d] = await client.getDonationsByIds(['dn1'], TERM_COLUMNS, 7);
     expect(d).toMatchObject({ giftType: 'Donation', termStart: '2026-11-05', termEnd: null, membershipType: 'Lifetime' });
   });
 
@@ -118,7 +118,7 @@ describe('getDonationsByIds — membership term columns', () => {
     const client = clientReturning(itemsResponse([
       { id: 'dn1', cells: { amount_1: '50', date_1: '2026-11-05', status_1: 'Received' } },
     ]));
-    const [d] = await client.getDonationsByIds(['dn1'], COLUMNS);
+    const [d] = await client.getDonationsByIds(['dn1'], COLUMNS, 7);
     expect(d!.termStart).toBeUndefined();
     expect(d!.termEnd).toBeUndefined();
     expect(d!.membershipType).toBeUndefined();
@@ -126,7 +126,7 @@ describe('getDonationsByIds — membership term columns', () => {
 
   it('requests the term column ids from Monday', async () => {
     const client = clientReturning(itemsResponse([]));
-    await client.getDonationsByIds(['dn1'], TERM_COLUMNS);
+    await client.getDonationsByIds(['dn1'], TERM_COLUMNS, 7);
     const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
     expect(body.variables.columnIds).toEqual(expect.arrayContaining(['ts_1', 'te_1', 'mty_1']));
   });
@@ -136,7 +136,7 @@ describe('getDonationsByIds — membership term columns', () => {
       { id: 'dn1', cells: { amount_1: '50', date_1: '2026-11-05', status_1: 'Received', gt_1: 'Donation',
         ts_1: '2026-11-05 00:00', te_1: '2027-11-05 13:30', mty_1: 'Renewal' } },
     ]));
-    const [d] = await client.getDonationsByIds(['dn1'], TERM_COLUMNS);
+    const [d] = await client.getDonationsByIds(['dn1'], TERM_COLUMNS, 7);
     expect(d).toMatchObject({ termStart: '2026-11-05', termEnd: '2027-11-05', membershipType: 'Renewal' });
   });
 });
@@ -174,16 +174,16 @@ describe('HttpMondayClient — affiliation model reads', () => {
       { id: 'amount_1', text: '50' }, { id: 'date_1', text: '2024-02-02' }, { id: 'status_1', text: 'Received' },
       { id: 'af_1', text: 'Ada @ Acme', linked_item_ids: ['af-1'] } ] }] };
     const client = clientReturning({ data: respond });
-    const [withAf] = await client.getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null, actingForLink: 'af_1' });
+    const [withAf] = await client.getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null, actingForLink: 'af_1' }, 7);
     expect(withAf!.actingForItemId).toBe('af-1');
-    const [without] = await client.getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null });
+    const [without] = await client.getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null }, 7);
     expect(without!.actingForItemId).toBeUndefined();
   });
   it('getDonationsByIds reports null when the configured Acting for column is empty', async () => {
     const respond = { items: [{ id: 'dn1', column_values: [
       { id: 'amount_1', text: '50' }, { id: 'date_1', text: '2024-02-02' }, { id: 'status_1', text: 'Received' },
       { id: 'af_1', text: '', linked_item_ids: [] } ] }] };
-    const [d] = await clientReturning({ data: respond }).getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null, actingForLink: 'af_1' });
+    const [d] = await clientReturning({ data: respond }).getDonationsByIds(['dn1'], { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null, actingForLink: 'af_1' }, 7);
     expect(d!.actingForItemId).toBeNull();
   });
   it('getAffiliationSummary returns the item name and its Person link + board', async () => {

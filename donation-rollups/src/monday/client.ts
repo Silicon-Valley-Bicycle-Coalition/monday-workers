@@ -52,9 +52,12 @@ export interface DonationRollupsMondayClient {
   // 2026-08-24: items_page_by_column_values rejects it outright). Callers get the id
   // list from the D1 donation_links reverse index (db/links.ts), grouped by which
   // Donations board each id lives on, since column ids differ per board.
+  // fiscalYearStartMonth (config "fiscalYear.startMonth") derives a gift's fiscal year from its
+  // Date when the board has no Fiscal Year column or the cell is blank.
   getDonationsByIds(
     itemIds: string[],
     columns: DonationReadColumns,
+    fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]>;
   // The four membership columns on a People-type owner, as label/date text — the membership
   // step's "what does the board hold" read (spec §"Merge with the board"). A missing item
@@ -212,6 +215,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   async getDonationsByIds(
     itemIds: string[],
     columns: DonationReadColumns,
+    fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]> {
     if (itemIds.length === 0) return [];
     const columnIds = [columns.amount, columns.date, columns.status,
@@ -262,7 +266,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         // (observed live on the CRM Sandbox 2026-09-17).
         const fyText = columns.fiscalYear ? (byId.get(columns.fiscalYear) ?? '').trim() : '';
         const rawFY = fyText === '' ? NaN : Number(fyText);
-        const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
+        const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : rawFY;
         const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
         const actingForItemId = columns.actingForLink
           ? (item.column_values.find((cv) => cv.id === columns.actingForLink)?.linked_item_ids?.[0] ?? null)

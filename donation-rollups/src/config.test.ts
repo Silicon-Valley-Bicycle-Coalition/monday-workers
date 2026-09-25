@@ -22,6 +22,7 @@ const donationBoard = {
 };
 const base = {
   monday: { apiUrl: 'https://api.monday.com/v2', accountUrl: 'https://acme.monday.com' },
+  fiscalYear: { startMonth: 7, timeZone: 'America/Los_Angeles' },
   custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
     annualSummaryBoardId: null, annualSummaryColumns: null },
   donationRollups: {
@@ -31,6 +32,34 @@ const base = {
     membership,
   },
 };
+
+describe('validateConfig — fiscalYear block (issue #27)', () => {
+  it('passes a valid block through', () => {
+    expect(validateConfig(base).fiscalYear).toEqual({ startMonth: 7, timeZone: 'America/Los_Angeles' });
+  });
+
+  it('both shipped configs start the fiscal year on July 1, Pacific time', () => {
+    expect(validateConfig(rawConfig).fiscalYear).toEqual({ startMonth: 7, timeZone: 'America/Los_Angeles' });
+    expect(validateConfig(rawSandboxConfig).fiscalYear).toEqual({ startMonth: 7, timeZone: 'America/Los_Angeles' });
+  });
+
+  it('is required — there is no built-in default', () => {
+    const { fiscalYear: _f, ...rest } = base;
+    expect(() => validateConfig(rest)).toThrow(/fiscalYear/);
+  });
+
+  it.each([
+    [{ startMonth: 0, timeZone: 'America/Los_Angeles' }],
+    [{ startMonth: 13, timeZone: 'America/Los_Angeles' }],
+    [{ startMonth: 7.5, timeZone: 'America/Los_Angeles' }],
+    [{ startMonth: '7', timeZone: 'America/Los_Angeles' }],
+    [{ startMonth: 7, timeZone: '' }],
+    [{ startMonth: 7, timeZone: 'Pacific/Nowhere' }],
+    [{ startMonth: 7 }],
+  ])('rejects %j', (fiscalYear) => {
+    expect(() => validateConfig({ ...base, fiscalYear })).toThrow(/fiscalYear/);
+  });
+});
 
 // The block the README tells the operator to paste in AFTER migration 0005 is applied.
 const documentedMembershipBlock = {

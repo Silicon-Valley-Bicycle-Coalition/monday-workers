@@ -1,14 +1,54 @@
 import { describe, it, expect } from 'vitest';
-import { computeRollup, currentFiscalYear, type DonationRow } from './compute';
+import { computeRollup, currentFiscalYear, fiscalYearFromDate, localDateParts, type DonationRow } from './compute';
+
+// SVBC's shipped config (config/svbc.json "fiscalYear"); the functions take it as a parameter.
+const JULY_PACIFIC = { startMonth: 7, timeZone: 'America/Los_Angeles' };
 
 describe('currentFiscalYear', () => {
   it('rolls July onward into next fiscal year', () => {
-    expect(currentFiscalYear(new Date('2025-07-01T00:00:00Z'))).toBe(2026);
-    expect(currentFiscalYear(new Date('2025-12-31T23:59:59Z'))).toBe(2026);
+    expect(currentFiscalYear(new Date('2025-07-01T12:00:00Z'), JULY_PACIFIC)).toBe(2026);
+    expect(currentFiscalYear(new Date('2025-12-31T20:00:00Z'), JULY_PACIFIC)).toBe(2026);
   });
   it('keeps January-June in the current fiscal year', () => {
-    expect(currentFiscalYear(new Date('2026-01-01T00:00:00Z'))).toBe(2026);
-    expect(currentFiscalYear(new Date('2026-06-30T00:00:00Z'))).toBe(2026);
+    expect(currentFiscalYear(new Date('2026-01-01T12:00:00Z'), JULY_PACIFIC)).toBe(2026);
+    expect(currentFiscalYear(new Date('2026-06-30T12:00:00Z'), JULY_PACIFIC)).toBe(2026);
+  });
+
+  // Issue #27: in UTC, "This Year" rolled over at 5pm Pacific on June 30.
+  it('rolls over at midnight in the configured time zone, not at midnight UTC', () => {
+    expect(currentFiscalYear(new Date('2026-07-01T00:00:00Z'), JULY_PACIFIC)).toBe(2026); // 5pm PDT June 30
+    expect(currentFiscalYear(new Date('2026-07-01T06:59:59Z'), JULY_PACIFIC)).toBe(2026); // 11:59:59pm PDT
+    expect(currentFiscalYear(new Date('2026-07-01T07:00:00Z'), JULY_PACIFIC)).toBe(2027); // midnight PDT July 1
+  });
+
+  it('honors a different start month and time zone from config', () => {
+    const aprilLondon = { startMonth: 4, timeZone: 'Europe/London' };
+    expect(currentFiscalYear(new Date('2026-03-31T22:59:59Z'), aprilLondon)).toBe(2026); // 11:59pm BST Mar 31
+    expect(currentFiscalYear(new Date('2026-03-31T23:00:00Z'), aprilLondon)).toBe(2027); // midnight BST Apr 1
+  });
+
+  it('a January start makes the fiscal year the calendar year', () => {
+    const calendar = { startMonth: 1, timeZone: 'UTC' };
+    expect(currentFiscalYear(new Date('2026-01-01T00:00:00Z'), calendar)).toBe(2026);
+    expect(currentFiscalYear(new Date('2026-12-31T23:59:59Z'), calendar)).toBe(2026);
+  });
+});
+
+describe('fiscalYearFromDate', () => {
+  it('applies the configured start month to a plain calendar date', () => {
+    expect(fiscalYearFromDate('2026-06-30', 7)).toBe(2026);
+    expect(fiscalYearFromDate('2026-07-01', 7)).toBe(2027);
+    expect(fiscalYearFromDate('2026-07-01 00:00', 7)).toBe(2027);
+    expect(fiscalYearFromDate('2026-03-31', 4)).toBe(2026);
+    expect(fiscalYearFromDate('2026-04-01', 4)).toBe(2027);
+    expect(fiscalYearFromDate('2026-12-31', 1)).toBe(2026);
+  });
+});
+
+describe('localDateParts', () => {
+  it('reads the calendar date in the given zone', () => {
+    expect(localDateParts(new Date('2026-07-01T06:59:59Z'), 'America/Los_Angeles')).toEqual({ year: 2026, month: 6, day: 30 });
+    expect(localDateParts(new Date('2026-07-01T07:00:00Z'), 'America/Los_Angeles')).toEqual({ year: 2026, month: 7, day: 1 });
   });
 });
 

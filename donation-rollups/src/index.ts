@@ -113,7 +113,7 @@ export default {
   // continued daily until it reports remaining === 0.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const deps = custodianDeps(env);
-    for (const duty of dutiesForDate(new Date(), await deps.gifts.lastRuns())) {
+    for (const duty of dutiesForDate(new Date(), deps.config.fiscalYear, await deps.gifts.lastRuns())) {
       const report = await runDuty(duty, deps);
       console.log(`custodian ${duty}: ${report.ok ? 'ok' : 'ATTENTION'} — ${report.summary}`);
     }
