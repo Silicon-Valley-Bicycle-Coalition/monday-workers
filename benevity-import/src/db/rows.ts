@@ -32,6 +32,14 @@ export interface RowStatusPatch {
 
 export type UpsertRowResult = 'inserted' | 'duplicate';
 
+export interface RequeueResult {
+  requeued: string[];
+  purged: number;
+}
+
+// What purgeWrittenRawRows/purgeUnresolvedRawRows leave in raw_row.
+export const PURGED_RAW_ROW = '{}';
+
 export interface RowStore {
   upsertRow(row: NewRow): Promise<UpsertRowResult>;
   getRow(transactionId: string): Promise<DonationRowRecord | null>;
@@ -39,9 +47,11 @@ export interface RowStore {
   // Replay (#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
   // error) and returns every one of them that is now 'ingested' — including rows a previous
   // replay already moved whose enqueue never went through — for the caller to (re-)enqueue.
-  // 'written' and 'skipped' rows are left alone and not returned. Idempotent.
-  requeueRow(transactionId: string): Promise<string[]>;
-  requeueDisbursementRows(disbursementId: number): Promise<string[]>;
+  // 'written' and 'skipped' rows are left alone and not returned. A pending row whose raw_row
+  // the retention purge already emptied can't be re-run (the consumer would parse `{}`), so it
+  // is left as-is and only counted in `purged`. Idempotent.
+  requeueRow(transactionId: string): Promise<RequeueResult>;
+  requeueDisbursementRows(disbursementId: number): Promise<RequeueResult>;
   updateStatus(transactionId: string, status: RowStatus, patch?: RowStatusPatch): Promise<void>;
   purgeWrittenRawRows(writtenBefore: string): Promise<number>;
   purgeUnresolvedRawRows(ingestedBefore: string): Promise<number>;
@@ -112,26 +122,36 @@ export class D1RowStore implements RowStore {
     return record === null ? null : toRow(record);
   }
 
-  requeueRow(transactionId: string): Promise<string[]> {
+  requeueRow(transactionId: string): Promise<RequeueResult> {
     return this.requeueWhere('transaction_id = ?1', transactionId);
   }
 
-  requeueDisbursementRows(disbursementId: number): Promise<string[]> {
+  requeueDisbursementRows(disbursementId: number): Promise<RequeueResult> {
     return this.requeueWhere('disbursement_id = ?1', disbursementId);
   }
 
   // One UPDATE … RETURNING, so D1 applies it atomically. Rows already 'ingested' match too (a
   // no-op set) so they're returned for re-sending.
-  private async requeueWhere(predicate: string, value: string | number): Promise<string[]> {
-    const { results } = await this.db
-      .prepare(
-        `UPDATE rows SET status = 'ingested', error = NULL
-         WHERE ${predicate} AND status IN ('needs-review', 'ingested')
-         RETURNING transaction_id`
-      )
-      .bind(value)
-      .all<{ transaction_id: string }>();
-    return results.map((r) => r.transaction_id).sort();
+  private async requeueWhere(predicate: string, value: string | number): Promise<RequeueResult> {
+    const [updated, purged] = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE rows SET status = 'ingested', error = NULL
+           WHERE ${predicate} AND status IN ('needs-review', 'ingested') AND raw_row != ?2
+           RETURNING transaction_id`
+        )
+        .bind(value, PURGED_RAW_ROW),
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM rows
+           WHERE ${predicate} AND status IN ('needs-review', 'ingested') AND raw_row = ?2`
+        )
+        .bind(value, PURGED_RAW_ROW),
+    ]);
+    return {
+      requeued: (updated!.results as { transaction_id: string }[]).map((r) => r.transaction_id).sort(),
+      purged: (purged!.results as { n: number }[])[0]?.n ?? 0,
+    };
   }
 
   async updateStatus(transactionId: string, status: RowStatus, patch: RowStatusPatch = {}): Promise<void> {

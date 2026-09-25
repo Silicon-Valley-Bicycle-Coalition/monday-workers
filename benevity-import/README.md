@@ -223,6 +223,11 @@ can't resolve get their own row items. The block item itself stays at Queued. A 
 *header* failed has no parsed rows — Retry does nothing for it; fix the file and upload it again
 as a new file.
 
+A Retry the Worker can't carry out puts the item back to **Needs review** with the reason in
+its Reason column instead of leaving it at Retry. The main case: a row's Benevity details are
+deleted `unresolvedRowRetentionDays` (365) days after import (see PII), so a row left on the
+worklist that long can no longer be re-run — enter that gift by hand from the report.
+
 Retry is safe to repeat: a row already written isn't re-run (the item just goes to Done), and a
 duplicate Retry doesn't create duplicate Donations items. **Re-uploading the same report is not
 a retry** — rows and disbursements the Worker has already seen are skipped, so only new rows in

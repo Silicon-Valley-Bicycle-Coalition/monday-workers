@@ -76,6 +76,25 @@ export function blockWorklistKey(disbursementId: string, assetId: string, blockI
 }
 
 /**
+ * Writes a reason onto an existing worklist item and sets it back to Needs review — for a Retry
+ * the Worker can't carry out, so the item says why instead of sitting at Retry.
+ */
+export async function annotateWorklistItem(
+  mondayClient: MondayClient,
+  config: BenevityImportConfig,
+  itemId: string,
+  reason: string
+): Promise<void> {
+  const boardId = config.monday.boards.benevityUploads;
+  if (boardId === null) return;
+  const { worklistColumns, retry } = config.benevityImport.uploadsBoard;
+  await mondayClient.changeColumnValues(boardId, itemId, {
+    [worklistColumns.reason]: reason,
+    ...(retry ? { [retry.column]: { label: retry.labels.needsReview } } : {}),
+  });
+}
+
+/**
  * Sets a worklist item's Retry column to one of the configured labels. A no-op (returns false)
  * while uploadsBoard.retry isn't configured.
  */

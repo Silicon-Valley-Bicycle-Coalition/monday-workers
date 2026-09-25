@@ -6,7 +6,7 @@ import type { RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import { parseBenevityReport, type ParsedBlock } from '../parse/report';
 import { isChallenge, validateRetryEvent, validateUploadEvent } from './validate';
-import { blockWorklistKey, ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
+import { annotateWorklistItem, blockWorklistKey, ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage } from '../consumer/processBatch';
 import { sendInBatches, type BatchSender } from '../util/sendBatch';
@@ -299,13 +299,24 @@ async function readMondayWebhook(c: Context, deps: AppDeps): Promise<unknown> {
 }
 
 interface ReplayResult {
-  outcome: 'row' | 'block' | 'row already written' | 'row skipped' | 'unknown item';
+  outcome: 'row' | 'block' | 'row already written' | 'row skipped' | 'row purged' | 'nothing to retry' | 'unknown item';
   enqueued: number;
+  purged?: number;
+}
+
+function purgedReason(count: number, retentionDays: number, ofBlock: boolean): string {
+  const which = ofBlock ? `${count} row(s) in this block` : 'this row';
+  return (
+    `Can't retry ${which}: the Worker deletes a row's Benevity details ${retentionDays} days after import ` +
+    `(unresolvedRowRetentionDays), so there is nothing left to re-run. Enter the gift by hand on the ` +
+    `Donations board from the original report — re-uploading the report won't re-import a row the Worker has already seen.`
+  );
 }
 
 async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<ReplayResult> {
   let outcome: ReplayResult['outcome'];
   let transactionIds: string[];
+  const retentionDays = deps.config.benevityImport.unresolvedRowRetentionDays;
 
   const row = await deps.rowStore.getRowByWorklistItemId(itemId);
   if (row !== null) {
@@ -314,8 +325,13 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
       await setWorklistLabel(deps.mondayClient, deps.config, itemId, 'done');
       return { outcome: row.status === 'written' ? 'row already written' : 'row skipped', enqueued: 0 };
     }
+    const { requeued, purged } = await deps.rowStore.requeueRow(row.transactionId);
+    if (purged > 0) {
+      await annotateWorklistItem(deps.mondayClient, deps.config, itemId, purgedReason(1, retentionDays, false));
+      return { outcome: 'row purged', enqueued: 0, purged };
+    }
     outcome = 'row';
-    transactionIds = await deps.rowStore.requeueRow(row.transactionId);
+    transactionIds = requeued;
   } else {
     const disbursement = await deps.disbursementStore.getByWorklistItemId(itemId);
     if (disbursement === null) {
@@ -325,8 +341,25 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
     // Staff have checked the block (e.g. its totals mismatch was a Benevity rounding quirk):
     // release every row the block held back. A header-error block parsed no rows, so this is
     // empty for it — the fix there is a corrected upload, not a Retry.
+    const { requeued, purged } = await deps.rowStore.requeueDisbursementRows(disbursement.id);
+    if (requeued.length === 0) {
+      await annotateWorklistItem(
+        deps.mondayClient,
+        deps.config,
+        itemId,
+        purged > 0
+          ? purgedReason(purged, retentionDays, true)
+          : "Nothing to retry: this block has no held-back rows (its header didn't parse, or every row has " +
+              'since been written or skipped). If the file was wrong, fix it and upload it as a new file.'
+      );
+      return { outcome: purged > 0 ? 'row purged' : 'nothing to retry', enqueued: 0, purged };
+    }
+    if (purged > 0) {
+      // Release what can be released; say on the item which rows can't be.
+      await annotateWorklistItem(deps.mondayClient, deps.config, itemId, purgedReason(purged, retentionDays, true));
+    }
     outcome = 'block';
-    transactionIds = await deps.rowStore.requeueDisbursementRows(disbursement.id);
+    transactionIds = requeued;
   }
 
   // Queued goes on BEFORE the enqueue: once a message is sent the consumer may finish and write
