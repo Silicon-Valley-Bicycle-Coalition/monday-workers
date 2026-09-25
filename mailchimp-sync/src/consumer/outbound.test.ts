@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processOutboundBatch } from './outbound';
-import { MailchimpPermanentError, MailchimpRateLimitError } from '../mailchimp/client';
+import { MailchimpAuthError, MailchimpPermanentError, MailchimpRateLimitError } from '../mailchimp/client';
 import { MondayApiError } from '../monday/client';
 import type { MondayClient } from '../monday/client';
 import type { MailchimpClient } from '../mailchimp/client';
@@ -292,6 +292,18 @@ describe('processOutboundBatch', () => {
       expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
       expect(message.ack).not.toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
+      errorSpy.mockRestore();
+    });
+
+    it('retries (never acks) when Mailchimp rejects the API key, and says so in the log', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      for (const status of [401, 403]) {
+        const message = fakeMessage('6', 2);
+        await processOutboundBatch([message], depsFailingWith(new MailchimpAuthError(`mailchimp updateMember: HTTP ${status}`)));
+        expect(message.ack).not.toHaveBeenCalled();
+        expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+      }
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('MAILCHIMP CREDENTIALS REJECTED'));
       errorSpy.mockRestore();
     });
 

@@ -10,6 +10,11 @@ const RETRY_BASE_SECONDS = 60;
 const RETRY_FACTOR = 4;
 export const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
 
+// One greppable line when Mailchimp rejects the API key, naming the secret but never its value.
+export function credentialsRejectedLog(consumer: 'inbound' | 'outbound'): string {
+  return `mailchimp-sync ${consumer} consumer: MAILCHIMP CREDENTIALS REJECTED (HTTP 401/403) — the MAILCHIMP_API_KEY secret is invalid, revoked, or lacks access. Retrying with backoff so messages dead-letter rather than drop; fix the secret, then replay the DLQ.`;
+}
+
 export function backoffSeconds(attempts: number | undefined): number {
   const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
   return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);

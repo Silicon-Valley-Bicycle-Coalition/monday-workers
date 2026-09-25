@@ -12,8 +12,14 @@ export class MailchimpRateLimitError extends MailchimpTransientError {
   }
 }
 
-// 429 → rate-limited, 5xx → transient, other 4xx → permanent (retrying a malformed request fails
-// identically). `transientOn4xx` is for reads, where any failure has always been retried.
+// A 401/403 — the API key is invalid, revoked, or lacks access. A deployment problem, not a
+// problem with the message: transient so the consumers never ack it — the backlog retries with
+// backoff and dead-letters, replayable once the key is fixed, instead of being silently dropped.
+export class MailchimpAuthError extends MailchimpTransientError {}
+
+// 429 → rate-limited, 401/403 → auth, 5xx → transient, other 4xx → permanent (retrying a
+// malformed request fails identically). `transientOn4xx` is for reads, where any failure has
+// always been retried.
 async function httpError(op: string, response: Response, transientOn4xx = false): Promise<MailchimpTransientError | MailchimpPermanentError> {
   let detail = '';
   try {
@@ -22,6 +28,9 @@ async function httpError(op: string, response: Response, transientOn4xx = false)
     // Body unreadable — the status alone still classifies the error.
   }
   const message = `mailchimp ${op}: HTTP ${response.status}${detail === '' ? '' : `: ${detail}`}`;
+  if (response.status === 401 || response.status === 403) {
+    return new MailchimpAuthError(`${message} (credentials rejected — check the MAILCHIMP_API_KEY secret)`);
+  }
   if (response.status === 429) return new MailchimpRateLimitError(message, parseRetryAfter(retryAfterHeader(response)));
   if (response.status >= 500 || transientOn4xx) return new MailchimpTransientError(message);
   return new MailchimpPermanentError(message);

@@ -59,7 +59,9 @@ across the queue's 3 retries — before landing in its `-dlq` dead-letter queue.
 retry waits at least that long; Monday's `DAILY_LIMIT_EXCEEDED` with no hint waits until
 midnight UTC. Every delay is capped at Queues' 12-hour maximum. A permanent Mailchimp rejection
 (malformed address, other 4xx) on the outbound side is acked instead, since it would fail
-identically every time.
+identically every time — except a 401/403, which means the `MAILCHIMP_API_KEY` secret is bad or
+rotated: those always retry and dead-letter (logged as `MAILCHIMP CREDENTIALS REJECTED`), so the
+backlog can be replayed once the key is fixed.
 
 ## Do Not Solicit
 
