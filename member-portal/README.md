@@ -79,6 +79,11 @@ Cloudflare Worker (Hono + TypeScript, D1 for tokens/sessions)
   │  emails a magic link containing the token
   ▼
 Donor clicks the link
+  │  GET only renders a "Continue to your portal" button (no script, no auto-submit) — mail
+  │  scanners (Safe Links, Mimecast, Proofpoint) prefetch links, and a consuming GET burned
+  │  the token before the donor arrived (issue #31)
+  ▼
+Donor presses the button (a same-origin POST, CSRF-checked like every other form)
   │  Worker verifies the token against D1 (single-use — invalidate on first use), issues a
   │  signed, httpOnly session cookie
   ▼

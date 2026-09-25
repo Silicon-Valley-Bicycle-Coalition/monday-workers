@@ -183,8 +183,9 @@ Use `dev:sandbox` to debug a code change against real sandbox data before runnin
 
 1. From `https://member.sandbox.bikesiliconvalley.org`, request a login link for a real donor
    email that exists on the sandbox People board. It must arrive **only** at `sandbox@`, with
-   subject `[sandbox → <that address>] Your SVBC member portal login link`. Follow the link;
-   the portal renders that donor's sandbox data.
+   subject `[sandbox → <that address>] Your SVBC member portal login link`. Follow the link
+   and press **Continue to your portal** (the link itself only shows that button — see README
+   "Data flow"); the portal renders that donor's sandbox data.
 2. `wrangler tail --env sandbox` shows one `{"sandboxOutbound":"email",…}` line per send.
 3. Platform layer alone: in a scratch copy of `src/index.ts` make `emailBindingFor` return
    `env.EMAIL` unconditionally (do not commit), run `wrangler dev --env sandbox --remote`,

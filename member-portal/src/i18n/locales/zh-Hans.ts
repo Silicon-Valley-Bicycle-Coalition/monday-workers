@@ -15,6 +15,7 @@ export const zhHans: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '登录',
   'title.checkEmail': '请查收邮件',
+  'title.confirmLogin': '继续进入您的门户',
   'title.error': '出现问题',
   'title.portal': '您的捐赠者门户',
   'title.lettersList': '税务文件',
@@ -30,6 +31,9 @@ export const zhHans: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': '请查收邮件',
   'checkEmail.body': '请查收您的电子邮箱：如果该地址在我们的记录中，登录链接即将发送到您的邮箱。链接很快会失效，且只能使用一次。',
+  'confirmLogin.heading': '继续进入您的门户',
+  'confirmLogin.body': '请点击下方按钮完成登录。',
+  'confirmLogin.submit': '继续进入您的门户',
 
   // Error page + route-level error messages
   'error.heading': '出现问题',

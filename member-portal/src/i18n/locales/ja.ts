@@ -15,6 +15,7 @@ export const ja: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'ログイン',
   'title.checkEmail': 'メールをご確認ください',
+  'title.confirmLogin': 'ポータルへ進む',
   'title.error': 'エラーが発生しました',
   'title.portal': '寄付者ポータル',
   'title.lettersList': '税務書類',
@@ -30,6 +31,9 @@ export const ja: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'メールをご確認ください',
   'checkEmail.body': 'メールをご確認ください。ご登録のメールアドレスであれば、まもなくログインリンクが届きます。このリンクは有効期限が短く、1回のみご利用いただけます。',
+  'confirmLogin.heading': 'ポータルへ進む',
+  'confirmLogin.body': '下のボタンを押してログインを完了してください。',
+  'confirmLogin.submit': 'ポータルへ進む',
 
   // Error page + route-level error messages
   'error.heading': 'エラーが発生しました',

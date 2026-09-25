@@ -13,6 +13,7 @@ export const en = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Log In',
   'title.checkEmail': 'Check Your Email',
+  'title.confirmLogin': 'Continue to Your Portal',
   'title.error': 'Something Went Wrong',
   'title.portal': 'Your Member Portal',
   'title.lettersList': 'Tax Documents',
@@ -30,6 +31,12 @@ export const en = {
   // Check email
   'checkEmail.heading': 'Check your email',
   'checkEmail.body': 'Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.',
+
+  // Magic-link confirmation (GET /auth/callback) — a button, not an automatic login, so mail
+  // scanners that prefetch links can't burn the single-use token (issue #31).
+  'confirmLogin.heading': 'Continue to your portal',
+  'confirmLogin.body': 'Use the button below to finish logging in.',
+  'confirmLogin.submit': 'Continue to your portal',
 
   // Error page + route-level error messages
   'error.heading': 'Something went wrong',

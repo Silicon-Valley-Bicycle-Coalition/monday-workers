@@ -15,6 +15,7 @@ export const es: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Iniciar sesión',
   'title.checkEmail': 'Revisa tu correo',
+  'title.confirmLogin': 'Continúa a tu portal',
   'title.error': 'Algo salió mal',
   'title.portal': 'Tu portal de donante',
   'title.lettersList': 'Documentos fiscales',
@@ -30,6 +31,9 @@ export const es: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Revisa tu correo',
   'checkEmail.body': 'Revisa tu correo electrónico: si esa dirección está registrada, un enlace de acceso está en camino. Caduca pronto y solo se puede usar una vez.',
+  'confirmLogin.heading': 'Continúa a tu portal',
+  'confirmLogin.body': 'Usa el botón de abajo para terminar de iniciar sesión.',
+  'confirmLogin.submit': 'Continuar a tu portal',
 
   // Error page + route-level error messages
   'error.heading': 'Algo salió mal',

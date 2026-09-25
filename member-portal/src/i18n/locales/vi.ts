@@ -15,6 +15,7 @@ export const vi: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Đăng nhập',
   'title.checkEmail': 'Kiểm tra email của bạn',
+  'title.confirmLogin': 'Tiếp tục đến cổng thông tin của bạn',
   'title.error': 'Đã xảy ra lỗi',
   'title.portal': 'Cổng thông tin nhà tài trợ của bạn',
   'title.lettersList': 'Tài liệu thuế',
@@ -30,6 +31,9 @@ export const vi: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Kiểm tra email của bạn',
   'checkEmail.body': 'Vui lòng kiểm tra email của bạn: nếu địa chỉ đó có trong hồ sơ của chúng tôi, một liên kết đăng nhập đang được gửi đến. Liên kết sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
+  'confirmLogin.heading': 'Tiếp tục đến cổng thông tin của bạn',
+  'confirmLogin.body': 'Nhấn nút bên dưới để hoàn tất đăng nhập.',
+  'confirmLogin.submit': 'Tiếp tục đến cổng thông tin',
 
   // Error page + route-level error messages
   'error.heading': 'Đã xảy ra lỗi',

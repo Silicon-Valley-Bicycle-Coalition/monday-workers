@@ -265,6 +265,21 @@ function extractToken(loginUrl: string): string {
   return new URL(loginUrl).searchParams.get('token') as string;
 }
 
+// The second half of the magic-link flow: what the "Continue to your portal" button on GET
+// /auth/callback's confirmation page submits (issue #31 — the GET itself never consumes).
+function completeLogin(
+  app: ReturnType<typeof createApp>,
+  fields: Record<string, string>,
+  headers: Record<string, string> = SAME_ORIGIN
+): Promise<Response> | Response {
+  return app.request('/auth/callback', {
+    method: 'POST',
+    body: new URLSearchParams(fields),
+    headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+    redirect: 'manual',
+  });
+}
+
 describe('POST /', () => {
   it('returns the identical response for a matching and a non-matching email', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
@@ -306,8 +321,8 @@ describe('full login flow', () => {
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
 
-    const callbackRes = await app.request(`/auth/callback?token=${token}`);
-    expect(callbackRes.status).toBe(302);
+    const callbackRes = await completeLogin(app, { token });
+    expect(callbackRes.status).toBe(303);
     const setCookie = callbackRes.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain('session=');
 
@@ -338,16 +353,16 @@ describe('full login flow', () => {
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
 
-    const first = await app.request(`/auth/callback?token=${token}`);
-    expect(first.status).toBe(302);
+    const first = await completeLogin(app, { token });
+    expect(first.status).toBe(303);
 
-    const second = await app.request(`/auth/callback?token=${token}`);
+    const second = await completeLogin(app, { token });
     const secondBody = await second.text();
     expect(secondBody).toContain('expired or was already used');
   });
 });
 
-describe('GET /auth/callback error handling', () => {
+describe('POST /auth/callback error handling', () => {
   it('shows the recovery error page, not a raw 500, when session creation throws', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = {
@@ -370,14 +385,14 @@ describe('GET /auth/callback error handling', () => {
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
 
-    const res = await app.request(`/auth/callback?token=${token}`);
+    const res = await completeLogin(app, { token });
 
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('expired or was already used');
   });
 });
 
-describe('GET /auth/callback locale handling', () => {
+describe('POST /auth/callback locale handling', () => {
   it('redirects to the locale carried on the callback URL', async () => {
     const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
     const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
@@ -391,7 +406,7 @@ describe('GET /auth/callback locale handling', () => {
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
 
-    const res = await app.request(`/auth/callback?token=${token}&lang=es`, { redirect: 'manual' });
+    const res = await completeLogin(app, { token, lang: 'es' });
     expect(res.headers.get('location')).toBe('/es/portal');
   });
 
@@ -408,8 +423,152 @@ describe('GET /auth/callback locale handling', () => {
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
 
-    const res = await app.request(`/auth/callback?token=${token}`, { redirect: 'manual' });
+    const res = await completeLogin(app, { token });
     expect(res.headers.get('location')).toBe('/en/portal');
+  });
+});
+
+// Issue #31: corporate mail scanners (Outlook Safe Links, Mimecast, Proofpoint) prefetch — and
+// often execute the JS of — every link in an inbound email. A GET that consumed the single-use
+// token burned it before the donor ever clicked. The GET is now inert: it renders a button that
+// POSTs the token, and only the POST consumes it.
+describe('GET /auth/callback confirmation page', () => {
+  async function requestToken(lang?: string) {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const tokenStore = inMemoryTokenStore();
+    const consumeSpy = vi.spyOn(tokenStore, 'consumeToken');
+    const app = createApp(makeDeps({ monday, emailSender, tokenStore }));
+    await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded', ...(lang ? { Cookie: `lang=${lang}` } : {}) },
+    });
+    const loginUrl = emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl as string;
+    return { app, token: extractToken(loginUrl), consumeSpy };
+  }
+
+  it('renders a POST form carrying the token and does not consume it or set a session', async () => {
+    const { app, token, consumeSpy } = await requestToken();
+
+    const res = await app.request(`/auth/callback?token=${token}&lang=en`, { redirect: 'manual' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(consumeSpy).not.toHaveBeenCalled();
+    const html = await res.text();
+    expect(html).toContain('<form action="/auth/callback" method="post"');
+    expect(html).toContain(`<input type="hidden" name="token" value="${token}" />`);
+    expect(html).toContain('<input type="hidden" name="lang" value="en" />');
+    expect(html).toContain('Continue to your portal');
+  });
+
+  it('survives any number of scanner prefetches: the donor can still log in afterwards', async () => {
+    const { app, token } = await requestToken();
+
+    await app.request(`/auth/callback?token=${token}`);
+    await app.request(`/auth/callback?token=${token}`);
+    const res = await completeLogin(app, { token });
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('set-cookie')).toContain('session=');
+  });
+
+  // Scanners that execute JS would otherwise submit the form themselves.
+  it('never auto-submits: no script and no load-time handlers on the page', async () => {
+    const { app, token } = await requestToken();
+    const html = await (await app.request(`/auth/callback?token=${token}`)).text();
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/\sonload=|autofocus/i);
+  });
+
+  // The token is in this page's URL. no-referrer would make browsers send `Origin: null` on the
+  // page's own same-origin form POST, which fails the CSRF Origin check (securityHeaders.ts);
+  // same-origin sends nothing cross-origin but keeps Origin intact for our own POST.
+  it('keeps the token URL out of every cross-origin Referer without breaking the CSRF Origin check', async () => {
+    const { app, token } = await requestToken();
+    const res = await app.request(`/auth/callback?token=${token}`);
+    expect(res.headers.get('referrer-policy')).toBe('same-origin');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
+    expect(res.headers.get('content-security-policy')).toContain("form-action 'self'");
+  });
+
+  it('renders in the language carried on the link and carries it through the form', async () => {
+    const { app, token } = await requestToken();
+    const res = await app.request(`/auth/callback?token=${token}&lang=es`);
+    const html = await res.text();
+    expect(html).toContain('<html lang="es">');
+    expect(html).toContain('<input type="hidden" name="lang" value="es" />');
+    expect(html).toContain(t('es', 'confirmLogin.submit'));
+  });
+
+  it('drops an unsupported lang instead of reflecting it into the form', async () => {
+    const { app, token } = await requestToken();
+    const html = await (await app.request(`/auth/callback?token=${token}&lang="><b>x`)).text();
+    expect(html).not.toContain('<b>x');
+    expect(html).not.toContain('name="lang"');
+  });
+
+  it('HTML-escapes the token it reflects', async () => {
+    const res = await createApp(makeDeps()).request(`/auth/callback?token=${encodeURIComponent('"><script>x</script>')}`);
+    const html = await res.text();
+    expect(html).not.toContain('<script>x');
+    expect(html).toContain('&quot;&gt;&lt;script&gt;');
+  });
+
+  it('shows the invalid-link page when the token is missing', async () => {
+    const res = await createApp(makeDeps()).request('/auth/callback');
+    expect(await res.text()).toContain('This link is invalid');
+  });
+});
+
+describe('POST /auth/callback', () => {
+  it('rejects a cross-origin submission without consuming the token (CSRF)', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const token = extractToken(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+
+    const crossSite = await completeLogin(app, { token }, { Origin: 'https://evil.example' });
+    expect(crossSite.status).toBe(403);
+    expect(crossSite.headers.get('set-cookie')).toBeNull();
+
+    // Still unconsumed, so the real donor's same-origin submit works.
+    const real = await completeLogin(app, { token });
+    expect(real.status).toBe(303);
+  });
+
+  it('accepts a same-origin submission identified by Sec-Fetch-Site alone', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const app = createApp(makeDeps({ monday, emailSender }));
+    await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    const token = extractToken(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+
+    const res = await completeLogin(app, { token }, { 'Sec-Fetch-Site': 'same-origin' });
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/en/portal');
+  });
+
+  it('shows the invalid-link page when the form carries no token', async () => {
+    const res = await completeLogin(createApp(makeDeps()), {});
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('This link is invalid');
+  });
+
+  it('shows the expired page for an unknown token', async () => {
+    const res = await completeLogin(createApp(makeDeps()), { token: 'not-a-real-token' });
+    expect(await res.text()).toContain('expired or was already used');
   });
 });
 
@@ -612,7 +771,7 @@ describe('GET /:locale/portal error handling', () => {
     });
     const loginUrl = (emailSender.sendLoginEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0].loginUrl;
     const token = extractToken(loginUrl);
-    const callbackRes = await app.request(`/auth/callback?token=${token}`);
+    const callbackRes = await completeLogin(app, { token });
     const sessionCookie = (callbackRes.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
 
     // Now make the portal data lookup fail on the otherwise-valid session.
@@ -664,7 +823,7 @@ async function loginAndGetCookie(
     headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
   });
   const loginUrl = emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl;
-  const callbackRes = await app.request(`/auth/callback?token=${extractToken(loginUrl)}`);
+  const callbackRes = await completeLogin(app, { token: extractToken(loginUrl) });
   return (callbackRes.headers.get('set-cookie') as string).split(';')[0]!;
 }
 

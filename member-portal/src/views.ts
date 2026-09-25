@@ -477,6 +477,24 @@ export function checkEmailView(locale: Locale): string {
   `;
 }
 
+// GET /auth/callback's body (issue #31): a plain button that POSTs the magic-link token back,
+// because mail scanners prefetch links and a GET that consumed the single-use token burned it
+// before the donor clicked. Deliberately no script, no autofocus, no auto-submit — scanners that
+// execute JS must not be able to complete the login. `lang` is only emitted when it's a
+// supported locale (the caller validates), so nothing attacker-shaped is reflected besides the
+// escaped token.
+export function confirmLoginView(token: string, lang: Locale | null, locale: Locale): string {
+  const langField = lang === null ? '' : `\n      <input type="hidden" name="lang" value="${escapeHtml(lang)}" />`;
+  return `
+    <h1>${escapeHtml(t(locale, 'confirmLogin.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'confirmLogin.body'))}</p>
+    <form action="/auth/callback" method="post">
+      <input type="hidden" name="token" value="${escapeHtml(token)}" />${langField}
+      <button type="submit">${escapeHtml(t(locale, 'confirmLogin.submit'))}</button>
+    </form>
+  `;
+}
+
 export function errorView(messageKey: TranslationKey, locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'error.heading'))}</h1>

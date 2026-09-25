@@ -15,6 +15,7 @@ export const fil: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Mag-log In',
   'title.checkEmail': 'Tingnan ang Iyong Email',
+  'title.confirmLogin': 'Magpatuloy sa Iyong Portal',
   'title.error': 'May Naganap na Problema',
   'title.portal': 'Ang Iyong Member Portal',
   'title.lettersList': 'Mga Dokumento sa Buwis',
@@ -30,6 +31,9 @@ export const fil: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Tingnan ang iyong email',
   'checkEmail.body': 'Pakitingnan ang iyong email: kung nasa records namin ang address na iyon, paparating na ang isang login link. Malapit na itong mag-expire at isang beses lang magagamit.',
+  'confirmLogin.heading': 'Magpatuloy sa iyong portal',
+  'confirmLogin.body': 'Gamitin ang button sa ibaba para tapusin ang pag-log in.',
+  'confirmLogin.submit': 'Magpatuloy sa iyong portal',
 
   // Error page + route-level error messages
   'error.heading': 'May naganap na problema',

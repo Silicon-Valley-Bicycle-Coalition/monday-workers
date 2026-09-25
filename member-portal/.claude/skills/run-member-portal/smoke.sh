@@ -80,7 +80,9 @@ login() {
   local email="${1:-family@example.com}"
   rm -f "$COOKIES"
   reset_rate_limit
+  # Origin: form POSTs without a same-origin Origin/Sec-Fetch-Site are rejected (CSRF).
   curl -sS -X POST "http://localhost:$PORT/" \
+    -H "Origin: http://localhost:$PORT" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode "email=$email" -o /dev/null
 
@@ -99,9 +101,17 @@ login() {
   fi
   echo "magic link: $link"
 
-  # -L: the callback 302-redirects straight to /:locale/portal, which is the page we
-  # actually want to assert against. -c saves the session cookie for later requests.
-  curl -sS -c "$COOKIES" -L "$link" -o "$RUN_DIR/portal.html"
+  # GET on the link only renders a "Continue to your portal" button (mail scanners
+  # prefetch links — issue #31); the button POSTs token + lang back, and that POST is
+  # what consumes the token. Do the POST directly, with the Origin the CSRF check wants.
+  # -L: the POST 303-redirects to /:locale/portal, which is the page we actually want to
+  # assert against. -c saves the session cookie for later requests.
+  local query="${link#*\?}"
+  # (--data implies POST; no -X POST, which curl would wrongly keep across the 303.)
+  curl -sS -c "$COOKIES" -L "http://localhost:$PORT/auth/callback" \
+    -H "Origin: http://localhost:$PORT" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data "$query" -o "$RUN_DIR/portal.html"
   echo "cookie jar: $COOKIES"
   echo "portal html: $RUN_DIR/portal.html"
 }
