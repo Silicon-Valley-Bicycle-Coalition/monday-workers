@@ -118,7 +118,9 @@ included on every plan, no upgrade needed. Every publicly-reachable Worker (`mem
 `REQUEST_RATE_LIMITER` binding — keyed on `CF-Connecting-IP` — before any routing, D1, or Monday
 work happens, in each Worker's own `src/rateLimit.ts` (`member-portal`'s is
 `src/requestRateLimit.ts`, since this filesystem is case-insensitive and it already has a
-`ratelimit.ts` for its login-specific limiting). This is deliberately coarser than each Worker's
+`ratelimit.ts` for its login-specific limiting). One exception to "before any routing":
+`svbc-calendars` checks it only on a cache MISS for its cached routes, since calendar apps poll
+`.ics` feeds from a few shared IPs and a cache HIT costs nothing to serve. This is deliberately coarser than each Worker's
 own webhook-secret or signature check: that check still runs and still rejects a bogus delivery,
 but a flood of requests — valid secret or not — now costs at most the configured rate instead of
 one full request (D1 lookup, JSON parse, Monday-shaped work) per delivery. Webhook receivers are
