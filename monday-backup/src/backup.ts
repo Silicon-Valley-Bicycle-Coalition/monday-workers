@@ -68,9 +68,10 @@ async function backupBoard(
   folderId: string,
   board: BoardSummary,
   pastDeadline: () => boolean,
-): Promise<{ itemCount: number; subitemBoardIds: string[] }> {
+): Promise<{ itemCount: number; updateCount: number; subitemBoardIds: string[] }> {
   const schema = await deps.monday.getBoardSchema(board.id);
   let itemCount = 0;
+  let updateCount = 0;
   await streamFile(deps.drive, folderId, `board-${board.id}.jsonl`, async (writer) => {
     await writer.write(line({ type: 'board', board, schema }));
     for await (const page of deps.monday.boardItemPages(board.id)) {
@@ -79,8 +80,14 @@ async function backupBoard(
       itemCount += page.length;
       if (pastDeadline()) throw new Error(`stopped mid-board — ${BUDGET_EXHAUSTED}`);
     }
+    // Updates after items, so a restore has created every item before it replays comments.
+    for await (const page of deps.monday.boardUpdatePages(board.id)) {
+      await writer.write(page.map((update) => line({ type: 'update', update })).join(''));
+      updateCount += page.length;
+      if (pastDeadline()) throw new Error(`stopped mid-board — ${BUDGET_EXHAUSTED}`);
+    }
   });
-  return { itemCount, subitemBoardIds: subitemBoardIds(schema) };
+  return { itemCount, updateCount, subitemBoardIds: subitemBoardIds(schema) };
 }
 
 async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary): Promise<number> {
@@ -114,6 +121,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
 
     const errors: string[] = [];
     const itemCountsByBoard: Record<string, number> = {};
+    const updateCountsByBoard: Record<string, number> = {};
     const blockCountsByDoc: Record<string, number> = {};
     let boardCount = 0;
     let docCount = 0;
@@ -141,6 +149,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
       try {
         const result = await backupBoard(deps, folderId, board, pastDeadline);
         itemCountsByBoard[board.id] = result.itemCount;
+        updateCountsByBoard[board.id] = result.updateCount;
         boardCount++;
         for (const subBoardId of result.subitemBoardIds) {
           if (queued.has(subBoardId)) continue;
@@ -188,6 +197,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
       boardCount,
       docCount,
       itemCountsByBoard,
+      updateCountsByBoard,
       blockCountsByDoc,
       deletedBoardsSkipped,
       errors,

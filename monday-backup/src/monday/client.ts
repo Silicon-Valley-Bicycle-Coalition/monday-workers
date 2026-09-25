@@ -1,4 +1,14 @@
-import type { AssetRecord, BoardSchema, BoardSummary, ColumnValue, DocBlock, DocSummary, ItemRecord } from '../types';
+import type {
+  AssetRecord,
+  BoardSchema,
+  BoardSummary,
+  ColumnValue,
+  DocBlock,
+  DocSummary,
+  ItemRecord,
+  UpdateRecord,
+  UpdateReply,
+} from '../types';
 
 // Pinned explicitly: Monday serves a request for a deprecated version as the *maintenance*
 // version, so an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of
@@ -10,6 +20,37 @@ const BOARDS_PAGE_SIZE = 50;
 // fragments and asset metadata — 100 keeps one page's complexity and response size modest.
 const ITEMS_PAGE_SIZE = 100;
 const DOCS_PAGE_SIZE = 50;
+const UPDATES_PAGE_SIZE = 100; // the documented maximum for `updates`
+
+const ASSET_FIELDS = 'id name file_extension file_size created_at url uploaded_by { id }';
+
+interface RawReply {
+  id: string;
+  body: string;
+  text_body: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  creator_id: string | null;
+}
+
+interface RawUpdate extends RawReply {
+  item_id: string | null;
+  replies: RawReply[] | null;
+  assets: RawAsset[] | null;
+}
+
+function toReply(r: RawReply): UpdateReply {
+  return { id: r.id, body: r.body, textBody: r.text_body, createdAt: r.created_at, updatedAt: r.updated_at, creatorId: r.creator_id };
+}
+
+function toUpdate(u: RawUpdate): UpdateRecord {
+  return {
+    ...toReply(u),
+    itemId: u.item_id,
+    replies: (u.replies ?? []).map(toReply),
+    assets: (u.assets ?? []).map(toAsset),
+  };
+}
 
 interface GraphQLError {
   message: string;
@@ -47,7 +88,7 @@ const ITEM_FIELDS = `
     ... on DependencyValue { linked_item_ids display_value }
     ... on MirrorValue { display_value }
   }
-  assets { id name file_extension file_size created_at url uploaded_by { id } }
+  assets { ${ASSET_FIELDS} }
 `;
 
 interface RawColumnValue {
@@ -159,6 +200,8 @@ export interface MondayClient {
   // One page of items at a time, so a caller can stream a board to Drive without ever holding
   // the whole board in memory (issue #29).
   boardItemPages(boardId: string): AsyncIterable<ItemRecord[]>;
+  // Every update (comment) on the board and its items, with replies, a page at a time.
+  boardUpdatePages(boardId: string): AsyncIterable<UpdateRecord[]>;
   listDocs(): Promise<DocSummary[]>;
   getDocBlocks(docId: string): Promise<DocBlock[]>;
 }
@@ -348,6 +391,34 @@ export class HttpMondayClient implements MondayClient {
         { cursor: page.cursor, limit: ITEMS_PAGE_SIZE },
       );
       page = next.next_items_page;
+    }
+  }
+
+  // Kept out of the items query on purpose: nesting updates under 100 items multiplies that
+  // query's complexity, while the board-level `updates` field pages them on their own.
+  async *boardUpdatePages(boardId: string): AsyncGenerator<UpdateRecord[]> {
+    for (let page = 1; ; page++) {
+      const data = await this.graphql<{ boards: { updates: RawUpdate[] | null }[] }>(
+        `query ($boardId: [ID!], $limit: Int!, $page: Int!) {
+          boards(ids: $boardId) {
+            updates(limit: $limit, page: $page) {
+              id
+              item_id
+              body
+              text_body
+              created_at
+              updated_at
+              creator_id
+              replies { id body text_body created_at updated_at creator_id }
+              assets { ${ASSET_FIELDS} }
+            }
+          }
+        }`,
+        { boardId: [boardId], limit: UPDATES_PAGE_SIZE, page },
+      );
+      const updates = data.boards[0]?.updates ?? [];
+      if (updates.length > 0) yield updates.map(toUpdate);
+      if (updates.length < UPDATES_PAGE_SIZE) return;
     }
   }
 

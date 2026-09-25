@@ -210,6 +210,43 @@ describe('HttpMondayClient', () => {
     expect(query).toContain('parent_item { id }');
   });
 
+  // Issue #30: updates (comments) and their replies were not captured at all.
+  it('pages a board’s updates, with replies and asset metadata, until a short page', async () => {
+    const rawUpdate = (id: string) => ({
+      id,
+      item_id: 'i1',
+      body: `<p>Update ${id}</p>`,
+      text_body: `Update ${id}`,
+      created_at: '2026-04-01T10:00:00Z',
+      updated_at: '2026-04-01T10:00:00Z',
+      creator_id: '77',
+      replies: [{ id: `r${id}`, body: '<p>Thanks</p>', text_body: 'Thanks', created_at: '2026-04-02T10:00:00Z', updated_at: null, creator_id: '78' }],
+      assets: [],
+    });
+    const fullPage = Array.from({ length: 100 }, (_, i) => rawUpdate(`u${i}`));
+    const fetchMock = mockFetchSequence([
+      { data: { boards: [{ updates: fullPage }] } },
+      { data: { boards: [{ updates: [rawUpdate('u100')] }] } },
+    ]);
+    const pages = [];
+    for await (const page of new HttpMondayClient('https://api.monday.com/v2', 'token-123').boardUpdatePages('1')) pages.push(page);
+
+    expect(pages.map((p) => p.length)).toEqual([100, 1]);
+    expect(pages[1]![0]).toEqual({
+      id: 'u100',
+      itemId: 'i1',
+      body: '<p>Update u100</p>',
+      textBody: 'Update u100',
+      createdAt: '2026-04-01T10:00:00Z',
+      updatedAt: '2026-04-01T10:00:00Z',
+      creatorId: '77',
+      replies: [{ id: 'ru100', body: '<p>Thanks</p>', textBody: 'Thanks', createdAt: '2026-04-02T10:00:00Z', updatedAt: null, creatorId: '78' }],
+      assets: [],
+    });
+    const second = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
+    expect(second.variables).toMatchObject({ boardId: ['1'], limit: 100, page: 2 });
+  });
+
   it('lists docs, stopping when docs is null', async () => {
     mockFetchSequence([{ data: { docs: null } }]);
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');

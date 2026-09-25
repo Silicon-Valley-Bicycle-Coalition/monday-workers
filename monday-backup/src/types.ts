@@ -79,6 +79,28 @@ export interface ItemRecord {
   assets?: AssetRecord[];
 }
 
+export interface UpdateReply {
+  id: string;
+  body: string;
+  textBody: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  creatorId: string | null;
+}
+
+// An update (comment) on an item — or on the board itself, when itemId is null.
+export interface UpdateRecord {
+  id: string;
+  itemId: string | null;
+  body: string;
+  textBody: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  creatorId: string | null;
+  replies: UpdateReply[];
+  assets: AssetRecord[];
+}
+
 export interface DocSummary {
   id: string;
   name: string;

@@ -10,6 +10,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     listBoards: async () => [],
     getBoardSchema: async () => ({ columns: [], groups: [] }),
     async *boardItemPages() {},
+    async *boardUpdatePages() {},
     listDocs: async () => [],
     getDocBlocks: async () => [],
     ...overrides,
@@ -254,6 +255,38 @@ describe('runBackup', () => {
     const header = fake.records('board-99.jsonl')[0]!;
     expect(header.board).toMatchObject({ id: '99', type: 'sub_items_board', workspaceId: 'ws-1', parentBoardId: '1' });
     expect((fake.records('board-99.jsonl')[1]!.item as ItemRecord).parentItemId).toBe('p1');
+  });
+
+  it("appends the board's updates after its items, and counts them in the manifest", async () => {
+    const update = (id: string, itemId: string | null) => ({
+      id,
+      itemId,
+      body: '<p>hi</p>',
+      textBody: 'hi',
+      createdAt: null,
+      updatedAt: null,
+      creatorId: null,
+      replies: [],
+      assets: [],
+    });
+    const fake = fakeDrive();
+    await runBackup(
+      deps({
+        monday: fakeMonday({
+          listBoards: async () => [board('1')],
+          async *boardItemPages() {
+            yield [item('a')];
+          },
+          async *boardUpdatePages() {
+            yield [update('u1', 'a'), update('u2', null)];
+            yield [update('u3', 'a')];
+          },
+        }),
+        drive: fake.drive,
+      }),
+    );
+    expect(fake.records('board-1.jsonl').map((r) => r.type)).toEqual(['board', 'item', 'update', 'update', 'update']);
+    expect(fake.manifest().updateCountsByBoard).toEqual({ '1': 3 });
   });
 
   it('writes a board one page at a time rather than buffering it whole', async () => {
