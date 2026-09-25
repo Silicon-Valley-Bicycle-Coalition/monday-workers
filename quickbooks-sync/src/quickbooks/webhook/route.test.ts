@@ -235,6 +235,50 @@ describe('createQbWebhookApp', () => {
     vi.restoreAllMocks();
   });
 
+  // #33 review: a Delete used to be enqueued like an update; its fetch can only fail (Object Not
+  // Found), so it burned retries into the DLQ. It is acknowledged and logged instead.
+  it('acknowledges a Delete without recording or enqueueing it', async () => {
+    const payload = {
+      eventNotifications: [
+        { realmId: '123', dataChangeEvent: { entities: [{ name: 'Invoice', id: '7', operation: 'Delete', lastUpdated: '2026-08-22T00:00:00.000Z' }] } },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn() };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(200);
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Delete of invoice 7'));
+    vi.restoreAllMocks();
+  });
+
+  it('syncs the survivor of a Merge like an update and logs the merged-away id', async () => {
+    const payload = {
+      eventNotifications: [
+        {
+          realmId: '123',
+          dataChangeEvent: {
+            entities: [{ name: 'Customer', id: '60', operation: 'Merge', lastUpdated: '2026-08-22T00:00:00.000Z', deletedId: '61' }],
+          },
+        },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(200);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'qb-to-monday', eventId: '123:Customer:60:2026-08-22T00:00:00.000Z' });
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('merged into customer 60'));
+    vi.restoreAllMocks();
+  });
+
   it('answers 503 (so Intuit redelivers) while no company is connected yet', async () => {
     const eventStore = fakeEventStore();
     const queue = { send: vi.fn() };

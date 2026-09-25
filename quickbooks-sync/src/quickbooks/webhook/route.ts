@@ -72,6 +72,18 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
         console.warn(`quickbooks-sync qb webhook: ignoring notification for realm "${notification.realmId}" (connected company is another realm)`);
         continue;
       }
+      // Delete (#33 review): the record is gone, so the consumer's fetch could only fail and
+      // dead-letter. Acknowledge and log it; the Monday item is deliberately left in place for
+      // staff to archive (README "Deletes and merges") rather than deleted by a webhook.
+      if (notification.operation === 'Delete') {
+        console.log(`quickbooks-sync qb webhook: QuickBooks Delete of ${notification.entityType} ${notification.qbId} — not synced; its Monday item (if any) is left in place`);
+        continue;
+      }
+      // Merge: `qbId` is the survivor and is synced like an update below; the merged-away record's
+      // Monday item and mapping are left in place for staff to reconcile.
+      if (notification.operation === 'Merge' && notification.deletedId !== null) {
+        console.log(`quickbooks-sync qb webhook: QuickBooks ${notification.entityType} ${notification.deletedId} merged into ${notification.entityType} ${notification.qbId} — syncing the survivor; the merged-away item is left in place`);
+      }
 
       const insertResult = await deps.qbEventStore.insertEvent({
         eventId: notification.eventId,

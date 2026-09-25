@@ -65,6 +65,16 @@ QuickBooks Customer creates are refused** ("not retried", no DLQ) — they can't
 without it. Customer creates also send Intuit's `requestid`, so a retried create whose first
 response was lost returns the original Customer instead of a second one.
 
+## Deletes and merges
+
+Intuit notifications carry an `operation`. A **Delete** is acknowledged and logged but not synced
+— the record can no longer be fetched — and its Monday item is left in place for staff to archive;
+the Worker never deletes Monday items. A **Merge** syncs the surviving record like an update and
+logs the merged-away id (`deletedId`); that record's Monday item and `qb_monday_map` row are left
+for staff to reconcile. A record deleted before its update is processed fails the fetch with
+`610 Object Not Found`, which is terminal (recorded, not retried). Other operations (Create,
+Update, Void, Emailed) sync as updates.
+
 ## Dead letters and redrive
 
 A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds` in
