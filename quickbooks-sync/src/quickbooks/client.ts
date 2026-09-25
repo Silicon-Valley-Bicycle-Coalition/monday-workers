@@ -3,7 +3,10 @@ import type { QbTokens, StoredQbTokens, TokenStore } from './tokenStore';
 
 export interface QuickBooksClient {
   getEntity(entityType: EntityType, qbId: string): Promise<Record<string, unknown>>;
-  createCustomer(fields: Record<string, unknown>): Promise<{ id: string }>;
+  // requestId is sent as Intuit's `requestid` query parameter: a repeat of the same id returns the
+  // original response instead of creating a second Customer. Derive it from the triggering event
+  // so every retry of that event reuses it.
+  createCustomer(fields: Record<string, unknown>, requestId: string): Promise<{ id: string }>;
 }
 
 const QB_ENTITY_PATH: Record<EntityType, string> = {
@@ -165,14 +168,14 @@ export class HttpQuickBooksClient implements QuickBooksClient {
     return json[entityKey] as Record<string, unknown>;
   }
 
-  async createCustomer(fields: Record<string, unknown>): Promise<{ id: string }> {
+  async createCustomer(fields: Record<string, unknown>, requestId: string): Promise<{ id: string }> {
     if (!sinkLogged) {
       sinkLogged = true;
       // Design doc §6: one line per isolate naming the sink this deployment writes to.
       console.log(JSON.stringify({ sandboxOutbound: 'quickbooks', apiBaseUrl: this.apiBaseUrl }));
     }
     const { realmId, accessToken } = await this.getValidAccessToken();
-    const response = await fetch(`${this.apiBaseUrl}/${realmId}/customer`, {
+    const response = await fetch(`${this.apiBaseUrl}/${realmId}/customer?requestid=${encodeURIComponent(requestId)}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,

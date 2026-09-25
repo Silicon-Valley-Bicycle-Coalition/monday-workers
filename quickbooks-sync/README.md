@@ -48,6 +48,15 @@ See `../README.md`'s Reliability section — this Queue step is standard across 
 Worker in this plan, not QuickBooks-specific. Without it, a transient Monday API failure on the
 final write just silently disappears.
 
+**Create loop guard (#33).** A Customer created in QuickBooks becomes a Monday item before its
+`qb_monday_map` row exists, and Monday's `create_pulse` webhook for that item can arrive in
+between. So the consumer stamps `qb_events.monday_create_started_at` before `create_item`, and the
+Monday → QuickBooks path, before creating a Customer, (1) re-checks the mapping, (2) adopts the
+item if a `qb_events` row recorded it as `pending_monday_item_id`, and (3) defers (retry with
+backoff) while any customer create claim younger than 10 minutes is unresolved. Customer creates
+also send Intuit's `requestid` (`monday-item-<id>`), so a retried create whose first response was
+lost returns the original Customer instead of a second one.
+
 ## Dead letters and redrive
 
 A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds` in

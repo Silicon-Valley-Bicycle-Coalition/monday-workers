@@ -23,6 +23,9 @@ function fakeEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
     insertEvent: vi.fn().mockResolvedValue('inserted'),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
+    markMondayCreateStarted: vi.fn(),
+    findByPendingMondayItemId: vi.fn(),
+    hasMondayCreateInFlight: vi.fn(),
     ...overrides,
   };
 }

@@ -56,6 +56,9 @@ function fakeQbEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
     insertEvent: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(qbEventRow()),
+    markMondayCreateStarted: vi.fn().mockResolvedValue(undefined),
+    findByPendingMondayItemId: vi.fn().mockResolvedValue(null),
+    hasMondayCreateInFlight: vi.fn().mockResolvedValue(false),
     ...overrides,
   };
 }
@@ -388,7 +391,8 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
       config,
     });
 
-    expect(createCustomer).toHaveBeenCalledWith({ DisplayName: 'New Co' });
+    // requestid makes QuickBooks answer a repeat of this create with the original Customer.
+    expect(createCustomer).toHaveBeenCalledWith({ DisplayName: 'New Co' }, 'monday-item-42');
     expect(mapStore.createMapping).toHaveBeenCalledWith({
       entityType: 'customer',
       qbId: 'qb-new',
@@ -543,6 +547,105 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
 
     expect(message.retry).toHaveBeenCalled();
     expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('missing-item', 'failed', { error: expect.any(String) });
+  });
+});
+
+// #33: the create loop. A QuickBooks-originated Customer is created on Monday before its mapping
+// exists; Monday's create_pulse webhook can arrive in between, miss the mapping check, and turn
+// the item back into a duplicate QuickBooks Customer (or a 400 on the duplicate DisplayName).
+describe('create-loop guard', () => {
+  const deps = (overrides: Partial<Parameters<typeof processSyncQueueBatch>[1]> = {}) => ({
+    qbEventStore: fakeQbEventStore(),
+    mondayEventStore: fakeMondayEventStore(),
+    mapStore: fakeMapStore(),
+    mondayClient: fakeMondayClient(),
+    quickBooksClient: fakeQuickBooksClient(),
+    config,
+    ...overrides,
+  });
+
+  it('claims the create in D1 before calling Monday create_item', async () => {
+    const qbEventStore = fakeQbEventStore();
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-1' });
+
+    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ qbEventStore, mondayClient: fakeMondayClient({ createItem }) }));
+
+    const markOrder = (qbEventStore.markMondayCreateStarted as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(qbEventStore.markMondayCreateStarted).toHaveBeenCalledWith('evt-1', expect.any(String));
+    expect(markOrder).toBeLessThan(createItem.mock.invocationCallOrder[0]!);
+  });
+
+  it('does not claim when it updates an existing item or resumes a recorded one', async () => {
+    const qbEventStore = fakeQbEventStore({
+      getEvent: vi.fn().mockResolvedValue(qbEventRow({ pendingMondayItemId: 'item-earlier' })),
+    });
+    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ qbEventStore }));
+    expect(qbEventStore.markMondayCreateStarted).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the mapping in the consumer and skips an item already linked to a Customer', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const createCustomer = vi.fn();
+    const mapStore = fakeMapStore({
+      getByMondayItemId: vi.fn().mockResolvedValue({ entityType: 'customer', qbId: 'qb-7', mondayItemId: '42', mondayBoardId: 111, createdAt: '' }),
+    });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], deps({ mondayEventStore, mapStore, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'written', { qbId: 'qb-7', writtenAt: expect.any(String) });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('adopts an item the QuickBooks side created but has not mapped yet, instead of creating a Customer', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const createCustomer = vi.fn();
+    const mapStore = fakeMapStore();
+    const qbEventStore = fakeQbEventStore({
+      findByPendingMondayItemId: vi.fn().mockResolvedValue(qbEventRow({ qbId: 'qb-9', pendingMondayItemId: '42', status: 'failed' })),
+    });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], deps({ qbEventStore, mondayEventStore, mapStore, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+
+    expect(qbEventStore.findByPendingMondayItemId).toHaveBeenCalledWith('customer', '42');
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mapStore.createMapping).toHaveBeenCalledWith({
+      entityType: 'customer',
+      qbId: 'qb-9',
+      mondayItemId: '42',
+      mondayBoardId: 111,
+      createdAt: expect.any(String),
+    });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'written', { qbId: 'qb-9', writtenAt: expect.any(String) });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('defers (retries with backoff) while a QuickBooks-side customer create is still unresolved', async () => {
+    const createCustomer = vi.fn();
+    const qbEventStore = fakeQbEventStore({ hasMondayCreateInFlight: vi.fn().mockResolvedValue(true) });
+    const message = { ...fakeMessage({ direction: 'monday-to-qb', eventId: '42' }), attempts: 1 };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], deps({ qbEventStore, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+
+    expect(qbEventStore.hasMondayCreateInFlight).toHaveBeenCalledWith('customer', expect.any(String));
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    vi.restoreAllMocks();
+  });
+
+  it('skips the guards on a resumed row that already created its Customer', async () => {
+    const mondayEventStore = fakeMondayEventStore({
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'fetched', qbId: 'qb-already' })),
+    });
+    const qbEventStore = fakeQbEventStore({ hasMondayCreateInFlight: vi.fn().mockResolvedValue(true) });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], deps({ qbEventStore, mondayEventStore }));
+
+    expect(message.ack).toHaveBeenCalled();
   });
 });
 

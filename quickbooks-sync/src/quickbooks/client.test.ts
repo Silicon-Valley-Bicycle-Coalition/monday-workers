@@ -226,8 +226,8 @@ describe('HttpQuickBooksClient', () => {
     ]);
     const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://sandbox-quickbooks.api.intuit.com/v3/company');
 
-    await client.createCustomer({ DisplayName: 'New Co' });
-    await client.createCustomer({ DisplayName: 'New Co' });
+    await client.createCustomer({ DisplayName: 'New Co' }, 'req-1');
+    await client.createCustomer({ DisplayName: 'New Co' }, 'req-1');
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(logSpy).toHaveBeenCalledTimes(1);
@@ -244,13 +244,15 @@ describe('HttpQuickBooksClient', () => {
     const fetchMock = mockFetchSequence([{ ok: true, json: { Customer: { Id: '99' } } }]);
     const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', 'https://quickbooks.api.intuit.com/v3/company');
 
-    const result = await client.createCustomer({ DisplayName: 'New Co' });
+    const result = await client.createCustomer({ DisplayName: 'New Co' }, 'monday-item-42');
 
     expect(result).toEqual({ id: '99' });
     const call = fetchMock.mock.calls[0];
     expect(call).toBeDefined();
     const [url, init] = call!;
-    expect(url).toBe('https://quickbooks.api.intuit.com/v3/company/realm-1/customer');
+    // requestid (#33): QuickBooks answers a repeat of the same requestid with the original
+    // response instead of creating a second Customer.
+    expect(url).toBe('https://quickbooks.api.intuit.com/v3/company/realm-1/customer?requestid=monday-item-42');
     expect(JSON.parse((init as Record<string, unknown>).body as string)).toEqual({ DisplayName: 'New Co' });
   });
 

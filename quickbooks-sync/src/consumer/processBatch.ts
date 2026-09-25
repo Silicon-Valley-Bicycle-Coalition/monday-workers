@@ -42,6 +42,12 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// How long an unresolved QuickBooks -> Monday create claim blocks Monday -> QuickBooks creates.
+// A live create resolves in seconds; a claim this old belongs to a writer that died between
+// create_item and recording the item id, and must not block staff-created Customers forever.
+// Comfortably covers the first two retry delays (1 and 4 minutes).
+const CREATE_CLAIM_TTL_MS = 10 * 60 * 1000;
+
 const QB_CUSTOMER_NAME_FIELDS = ['DisplayName', 'Title', 'GivenName', 'MiddleName', 'FamilyName', 'Suffix'];
 
 const BOARD_KEY_FOR_ENTITY: Record<EntityType, keyof MondayBoards> = {
@@ -129,6 +135,10 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   } else {
     let mondayItemId = event.pendingMondayItemId;
     if (mondayItemId === null) {
+      // Claim before creating (#33). Monday fires create_pulse for the new item, and it can reach
+      // the Monday -> QuickBooks path before the mapping below exists; the claim makes that path
+      // wait instead of turning our own item into a second QuickBooks Customer.
+      await deps.qbEventStore.markMondayCreateStarted(eventId, new Date().toISOString());
       const created = await deps.mondayClient.createItem(boardId, itemName, columnValues);
       mondayItemId = created.id;
 
@@ -171,6 +181,28 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
   let qbId = event.qbId;
 
   if (qbId === null) {
+    // Create-loop guards (#33) — is this item one the QuickBooks -> Monday path created? The
+    // webhook checked the mapping too, but it can run before that path has written it.
+    const linked = await deps.mapStore.getByMondayItemId('customer', event.mondayItemId);
+    if (linked !== null) {
+      await deps.mondayEventStore.updateStatus(eventId, 'written', { qbId: linked.qbId, writtenAt: new Date().toISOString() });
+      return;
+    }
+    // Created from QuickBooks, item id recorded, mapping not written yet (a retry is pending):
+    // adopt it — write the mapping here from the recorded QuickBooks id.
+    const creator = await deps.qbEventStore.findByPendingMondayItemId('customer', event.mondayItemId);
+    if (creator !== null) {
+      qbId = creator.qbId;
+    } else if (await deps.qbEventStore.hasMondayCreateInFlight('customer', new Date(Date.now() - CREATE_CLAIM_TTL_MS).toISOString())) {
+      // A QuickBooks -> Monday create is between create_item and recording the item id, so this
+      // item may be that one. Defer; the retry (with backoff) sees the recorded id or mapping.
+      throw new Error(
+        `monday item "${event.mondayItemId}": a QuickBooks -> Monday customer create is still unresolved; deferring so it isn't turned into a duplicate Customer`
+      );
+    }
+  }
+
+  if (qbId === null) {
     const columnValues = JSON.parse(event.rawPayload) as Record<string, unknown>;
     const qbFields = mapMondayToQbCustomerFields(columnValues, deps.config);
     // QuickBooks rejects a Customer with none of these (DisplayName is derived from the others
@@ -180,7 +212,10 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
         `monday item "${event.mondayItemId}" has no name to create a QuickBooks Customer from — check config customerCreateFieldMap maps "name" (the item name) to DisplayName`
       );
     }
-    const created = await deps.quickBooksClient.createCustomer(qbFields);
+    // requestid makes the create itself idempotent at QuickBooks: if a previous attempt's create
+    // succeeded but its response was lost (so qbId was never recorded), the retry gets the
+    // original Customer back instead of a second one.
+    const created = await deps.quickBooksClient.createCustomer(qbFields, `monday-item-${event.mondayItemId}`);
     qbId = created.id;
 
     // Durably record the new id before doing anything else. 'fetched' is the intermediate
