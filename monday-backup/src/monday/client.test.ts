@@ -28,20 +28,63 @@ describe('HttpMondayClient', () => {
     const boards = await client.listBoards();
 
     expect(boards).toHaveLength(51);
-    expect(boards[0]).toEqual({ id: '0', name: 'Board 0', workspaceId: 'ws-1' });
+    expect(boards[0]).toMatchObject({ id: '0', name: 'Board 0', workspaceId: 'ws-1' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const secondBody = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
     expect(secondBody.variables.page).toBe(2);
   });
 
-  it('fetches board schema', async () => {
+  // Issue #30: archived boards and the board metadata needed to recreate a board.
+  it('lists boards in every state, with the metadata a restore needs', async () => {
+    const fetchMock = mockFetchSequence([
+      {
+        data: {
+          boards: [
+            {
+              id: '1',
+              name: 'Donations',
+              workspace_id: 'ws-1',
+              state: 'archived',
+              type: 'board',
+              board_kind: 'private',
+              description: 'All gifts',
+              board_folder_id: 'f-9',
+              permissions: 'everyone',
+              item_terminology: 'donation',
+              updated_at: '2026-08-01T00:00:00Z',
+            },
+          ],
+        },
+      },
+    ]);
+    const boards = await new HttpMondayClient('https://api.monday.com/v2', 'token-123').listBoards();
+    expect(boards).toEqual([
+      {
+        id: '1',
+        name: 'Donations',
+        workspaceId: 'ws-1',
+        state: 'archived',
+        type: 'board',
+        boardKind: 'private',
+        description: 'All gifts',
+        folderId: 'f-9',
+        permissions: 'everyone',
+        itemTerminology: 'donation',
+        updatedAt: '2026-08-01T00:00:00Z',
+      },
+    ]);
+    const query = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string).query as string;
+    expect(query).toMatch(/boards\(limit: \$limit, page: \$page, state: all\)/);
+  });
+
+  it('fetches board schema, including column descriptions and group colour/position', async () => {
     mockFetchSequence([
       {
         data: {
           boards: [
             {
-              columns: [{ id: 'c1', title: 'Status', type: 'status', settings_str: '{}' }],
-              groups: [{ id: 'g1', title: 'Group 1' }],
+              columns: [{ id: 'c1', title: 'Status', type: 'status', settings_str: '{}', description: 'Stage' }],
+              groups: [{ id: 'g1', title: 'Group 1', color: '#037f4c', position: '65536' }],
             },
           ],
         },
@@ -49,8 +92,8 @@ describe('HttpMondayClient', () => {
     ]);
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
     const schema = await client.getBoardSchema('123');
-    expect(schema.columns).toEqual([{ id: 'c1', title: 'Status', type: 'status', settingsStr: '{}' }]);
-    expect(schema.groups).toEqual([{ id: 'g1', title: 'Group 1' }]);
+    expect(schema.columns).toEqual([{ id: 'c1', title: 'Status', type: 'status', settingsStr: '{}', description: 'Stage' }]);
+    expect(schema.groups).toEqual([{ id: 'g1', title: 'Group 1', color: '#037f4c', position: '65536' }]);
   });
 
   it('throws when a board is not found for schema lookup', async () => {
@@ -59,44 +102,112 @@ describe('HttpMondayClient', () => {
     await expect(client.getBoardSchema('123')).rejects.toThrow(/board 123 not found/);
   });
 
-  it('yields boardItemPages page by page, following the cursor until it is null', async () => {
+  it('yields boardItemPages page by page: items_page first, then next_items_page until the cursor is null', async () => {
+    const rawItem = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      name: `Item ${id}`,
+      state: 'active',
+      created_at: '2026-01-02T03:04:05Z',
+      updated_at: '2026-02-03T04:05:06Z',
+      creator_id: '77',
+      group: { id: 'g1' },
+      parent_item: null,
+      column_values: [],
+      assets: [],
+      ...extra,
+    });
+    const fetchMock = mockFetchSequence([
+      { data: { boards: [{ items_page: { cursor: 'next-cursor', items: [rawItem('i1')] } }] } },
+      { data: { next_items_page: { cursor: null, items: [rawItem('i2', { group: null, parent_item: { id: 'i1' } })] } } },
+    ]);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const pages = [];
+    for await (const page of client.boardItemPages('123')) pages.push(page);
+
+    const common = {
+      state: 'active',
+      createdAt: '2026-01-02T03:04:05Z',
+      updatedAt: '2026-02-03T04:05:06Z',
+      creatorId: '77',
+      columnValues: [],
+      assets: [],
+    };
+    expect(pages).toEqual([
+      [{ id: 'i1', name: 'Item i1', groupId: 'g1', parentItemId: null, ...common }],
+      [{ id: 'i2', name: 'Item i2', groupId: null, parentItemId: 'i1', ...common }],
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const second = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
+    expect(second.query).toContain('next_items_page(cursor: $cursor');
+    expect(second.variables.cursor).toBe('next-cursor');
+  });
+
+  // Issue #30: connect-boards/mirror columns return text: null on current API versions.
+  it('captures linked item ids and display values for connect, dependency and mirror columns, plus asset metadata', async () => {
     const fetchMock = mockFetchSequence([
       {
         data: {
           boards: [
             {
               items_page: {
-                cursor: 'next-cursor',
-                items: [{ id: 'i1', name: 'Item 1', group: { id: 'g1' }, column_values: [{ id: 'c1', text: 'a', value: '"a"' }] }],
-              },
-            },
-          ],
-        },
-      },
-      {
-        data: {
-          boards: [
-            {
-              items_page: {
                 cursor: null,
-                items: [{ id: 'i2', name: 'Item 2', group: null, column_values: [] }],
+                items: [
+                  {
+                    id: 'i1',
+                    name: 'Gift',
+                    state: 'active',
+                    created_at: null,
+                    updated_at: null,
+                    creator_id: null,
+                    group: { id: 'g1' },
+                    parent_item: null,
+                    column_values: [
+                      { id: 'donor', type: 'board_relation', text: null, value: null, linked_item_ids: ['501', 502], display_value: 'Ada, Grace' },
+                      { id: 'donor_email', type: 'mirror', text: null, value: null, display_value: 'ada@example.org' },
+                      { id: 'status', type: 'status', text: 'Received', value: '{"index":1}' },
+                    ],
+                    assets: [
+                      {
+                        id: 'a1',
+                        name: 'receipt.pdf',
+                        file_extension: '.pdf',
+                        file_size: 1234,
+                        created_at: '2026-03-01T00:00:00Z',
+                        url: 'https://svbc.monday.com/protected_static/1/resources/a1/receipt.pdf',
+                        uploaded_by: { id: '77' },
+                      },
+                    ],
+                  },
+                ],
               },
             },
           ],
         },
       },
     ]);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
     const pages = [];
-    for await (const page of client.boardItemPages('123')) pages.push(page);
-
-    expect(pages).toEqual([
-      [{ id: 'i1', name: 'Item 1', groupId: 'g1', columnValues: [{ id: 'c1', text: 'a', value: '"a"' }] }],
-      [{ id: 'i2', name: 'Item 2', groupId: null, columnValues: [] }],
+    for await (const page of new HttpMondayClient('https://api.monday.com/v2', 'token-123').boardItemPages('1')) pages.push(page);
+    const item = pages[0]![0]!;
+    expect(item.columnValues).toEqual([
+      { id: 'donor', type: 'board_relation', text: null, value: null, linkedItemIds: ['501', '502'], displayValue: 'Ada, Grace' },
+      { id: 'donor_email', type: 'mirror', text: null, value: null, displayValue: 'ada@example.org' },
+      { id: 'status', type: 'status', text: 'Received', value: '{"index":1}' },
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const secondBody = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
-    expect(secondBody.variables.cursor).toBe('next-cursor');
+    expect(item.assets).toEqual([
+      {
+        id: 'a1',
+        name: 'receipt.pdf',
+        fileExtension: '.pdf',
+        fileSize: 1234,
+        createdAt: '2026-03-01T00:00:00Z',
+        url: 'https://svbc.monday.com/protected_static/1/resources/a1/receipt.pdf',
+        uploadedById: '77',
+      },
+    ]);
+    const query = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string).query as string;
+    expect(query).toContain('... on BoardRelationValue { linked_item_ids display_value }');
+    expect(query).toContain('... on MirrorValue { display_value }');
+    expect(query).toContain('parent_item { id }');
   });
 
   it('lists docs, stopping when docs is null', async () => {

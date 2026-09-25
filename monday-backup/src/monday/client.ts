@@ -1,4 +1,4 @@
-import type { BoardSummary, ColumnDef, DocBlock, DocSummary, GroupDef, ItemRecord } from '../types';
+import type { AssetRecord, BoardSchema, BoardSummary, ColumnValue, DocBlock, DocSummary, ItemRecord } from '../types';
 
 // Pinned explicitly: Monday serves a request for a deprecated version as the *maintenance*
 // version, so an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of
@@ -6,6 +6,8 @@ import type { BoardSummary, ColumnDef, DocBlock, DocSummary, GroupDef, ItemRecor
 // queries here. Re-check developer.monday.com/api-reference/docs/api-versioning when bumping.
 export const MONDAY_API_VERSION = '2026-07';
 const BOARDS_PAGE_SIZE = 50;
+// items_page allows up to 500, but each item now carries column values, typed connect/mirror
+// fragments and asset metadata — 100 keeps one page's complexity and response size modest.
 const ITEMS_PAGE_SIZE = 100;
 const DOCS_PAGE_SIZE = 50;
 
@@ -22,27 +24,138 @@ interface GraphQLResponse<T> {
   status_code?: number;
 }
 
-interface ItemsPageItem {
+// Everything a restore needs from an item (issue #30). Connect-boards, mirror and dependency
+// columns return `text: null` (and connect-boards `value: null`) on current API versions, so the
+// linked item ids and display values are captured through their typed fragments explicitly.
+// Subitems are items of their own `sub_items_board`, backed up like any board; `parent_item`
+// is the link back.
+const ITEM_FIELDS = `
+  id
+  name
+  state
+  created_at
+  updated_at
+  creator_id
+  group { id }
+  parent_item { id }
+  column_values {
+    id
+    type
+    text
+    value
+    ... on BoardRelationValue { linked_item_ids display_value }
+    ... on DependencyValue { linked_item_ids display_value }
+    ... on MirrorValue { display_value }
+  }
+  assets { id name file_extension file_size created_at url uploaded_by { id } }
+`;
+
+interface RawColumnValue {
+  id: string;
+  type: string;
+  text: string | null;
+  value: string | null;
+  linked_item_ids?: (string | number)[] | null;
+  display_value?: string | null;
+}
+
+interface RawAsset {
   id: string;
   name: string;
+  file_extension: string | null;
+  file_size: number | null;
+  created_at: string | null;
+  url: string | null;
+  uploaded_by: { id: string } | null;
+}
+
+interface RawItem {
+  id: string;
+  name: string;
+  state: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  creator_id: string | null;
   group: { id: string } | null;
-  column_values: { id: string; text: string | null; value: string | null }[];
+  parent_item: { id: string } | null;
+  column_values: RawColumnValue[];
+  assets: RawAsset[] | null;
 }
 
 interface ItemsPage {
   cursor: string | null;
-  items: ItemsPageItem[];
+  items: RawItem[];
 }
 
-interface ItemsPageResponse {
-  boards: { items_page: ItemsPage }[];
+interface RawBoard {
+  id: string;
+  name: string;
+  workspace_id: string | null;
+  state: string | null;
+  type: string | null;
+  board_kind: string | null;
+  description: string | null;
+  board_folder_id: string | null;
+  permissions: string | null;
+  item_terminology: string | null;
+  updated_at: string | null;
+}
+
+function toColumnValue(cv: RawColumnValue): ColumnValue {
+  const out: ColumnValue = { id: cv.id, type: cv.type, text: cv.text, value: cv.value };
+  if (cv.linked_item_ids !== undefined && cv.linked_item_ids !== null) out.linkedItemIds = cv.linked_item_ids.map(String);
+  if (cv.display_value !== undefined && cv.display_value !== null) out.displayValue = cv.display_value;
+  return out;
+}
+
+function toAsset(a: RawAsset): AssetRecord {
+  return {
+    id: a.id,
+    name: a.name,
+    fileExtension: a.file_extension,
+    fileSize: a.file_size,
+    createdAt: a.created_at,
+    url: a.url,
+    uploadedById: a.uploaded_by?.id ?? null,
+  };
+}
+
+function toItem(item: RawItem): ItemRecord {
+  return {
+    id: item.id,
+    name: item.name,
+    state: item.state,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+    creatorId: item.creator_id,
+    groupId: item.group?.id ?? null,
+    parentItemId: item.parent_item?.id ?? null,
+    columnValues: item.column_values.map(toColumnValue),
+    assets: (item.assets ?? []).map(toAsset),
+  };
+}
+
+function toBoard(b: RawBoard): BoardSummary {
+  return {
+    id: b.id,
+    name: b.name,
+    workspaceId: b.workspace_id,
+    state: b.state,
+    type: b.type,
+    boardKind: b.board_kind,
+    description: b.description,
+    folderId: b.board_folder_id,
+    permissions: b.permissions,
+    itemTerminology: b.item_terminology,
+    updatedAt: b.updated_at,
+  };
 }
 
 export interface MondayClient {
-  // Every board across every workspace this token can see — top-level `boards` pagination
-  // is page-based (not cursor-based like items_page within a board).
+  // Every board across every workspace this token can see, in every state (active, archived,
+  // deleted — the caller decides what to skip). Top-level `boards` pagination is page-based.
   listBoards(): Promise<BoardSummary[]>;
-  getBoardSchema(boardId: string): Promise<{ columns: ColumnDef[]; groups: GroupDef[] }>;
+  getBoardSchema(boardId: string): Promise<BoardSchema>;
   // One page of items at a time, so a caller can stream a board to Drive without ever holding
   // the whole board in memory (issue #29).
   boardItemPages(boardId: string): AsyncIterable<ItemRecord[]>;
@@ -157,38 +270,42 @@ export class HttpMondayClient implements MondayClient {
     const out: BoardSummary[] = [];
     let page = 1;
     for (;;) {
-      const data = await this.graphql<{
-        boards: { id: string; name: string; workspace_id: string | null }[];
-      }>(
+      const data = await this.graphql<{ boards: RawBoard[] }>(
         `query ($limit: Int!, $page: Int!) {
-          boards(limit: $limit, page: $page) {
+          boards(limit: $limit, page: $page, state: all) {
             id
             name
             workspace_id
+            state
+            type
+            board_kind
+            description
+            board_folder_id
+            permissions
+            item_terminology
+            updated_at
           }
         }`,
         { limit: BOARDS_PAGE_SIZE, page },
       );
-      for (const board of data.boards) {
-        out.push({ id: board.id, name: board.name, workspaceId: board.workspace_id });
-      }
+      out.push(...data.boards.map(toBoard));
       if (data.boards.length < BOARDS_PAGE_SIZE) break;
       page++;
     }
     return out;
   }
 
-  async getBoardSchema(boardId: string): Promise<{ columns: ColumnDef[]; groups: GroupDef[] }> {
+  async getBoardSchema(boardId: string): Promise<BoardSchema> {
     const data = await this.graphql<{
       boards: {
-        columns: { id: string; title: string; type: string; settings_str: string }[];
-        groups: { id: string; title: string }[];
+        columns: { id: string; title: string; type: string; settings_str: string; description: string | null }[];
+        groups: { id: string; title: string; color: string | null; position: string | null }[];
       }[];
     }>(
       `query ($boardId: [ID!]) {
         boards(ids: $boardId) {
-          columns { id title type settings_str }
-          groups { id title }
+          columns { id title type settings_str description }
+          groups { id title color position }
         }
       }`,
       { boardId: [boardId] },
@@ -198,40 +315,40 @@ export class HttpMondayClient implements MondayClient {
       throw new Error(`monday API: board ${boardId} not found`);
     }
     return {
-      columns: board.columns.map((c) => ({ id: c.id, title: c.title, type: c.type, settingsStr: c.settings_str })),
-      groups: board.groups.map((g) => ({ id: g.id, title: g.title })),
+      columns: board.columns.map((c) => ({
+        id: c.id,
+        title: c.title,
+        type: c.type,
+        settingsStr: c.settings_str,
+        description: c.description,
+      })),
+      groups: board.groups.map((g) => ({ id: g.id, title: g.title, color: g.color, position: g.position })),
     };
   }
 
+  // First page through boards { items_page }, then the cheaper root next_items_page with the
+  // cursor (cursors stay valid for 60 minutes — far longer than one run's budget).
   async *boardItemPages(boardId: string): AsyncGenerator<ItemRecord[]> {
-    let cursor: string | null = null;
-    do {
-      const data: ItemsPageResponse = await this.graphql<ItemsPageResponse>(
-        `query ($boardId: [ID!], $limit: Int!, $cursor: String) {
-          boards(ids: $boardId) {
-            items_page(limit: $limit, cursor: $cursor) {
-              cursor
-              items {
-                id
-                name
-                group { id }
-                column_values { id text value }
-              }
-            }
-          }
+    const first = await this.graphql<{ boards: { items_page: ItemsPage }[] }>(
+      `query ($boardId: [ID!], $limit: Int!) {
+        boards(ids: $boardId) {
+          items_page(limit: $limit) { cursor items { ${ITEM_FIELDS} } }
+        }
+      }`,
+      { boardId: [boardId], limit: ITEMS_PAGE_SIZE },
+    );
+    let page: ItemsPage | undefined = first.boards[0]?.items_page;
+    while (page !== undefined) {
+      yield page.items.map(toItem);
+      if (page.cursor === null) return;
+      const next: { next_items_page: ItemsPage } = await this.graphql<{ next_items_page: ItemsPage }>(
+        `query ($cursor: String!, $limit: Int!) {
+          next_items_page(cursor: $cursor, limit: $limit) { cursor items { ${ITEM_FIELDS} } }
         }`,
-        { boardId: [boardId], limit: ITEMS_PAGE_SIZE, cursor },
+        { cursor: page.cursor, limit: ITEMS_PAGE_SIZE },
       );
-      const page: ItemsPage | undefined = data.boards[0]?.items_page;
-      if (page === undefined) break;
-      yield page.items.map((item) => ({
-        id: item.id,
-        name: item.name,
-        groupId: item.group?.id ?? null,
-        columnValues: item.column_values.map((cv) => ({ id: cv.id, text: cv.text, value: cv.value })),
-      }));
-      cursor = page.cursor;
-    } while (cursor !== null);
+      page = next.next_items_page;
+    }
   }
 
   async listDocs(): Promise<DocSummary[]> {

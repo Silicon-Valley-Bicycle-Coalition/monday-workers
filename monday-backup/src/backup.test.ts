@@ -208,6 +208,54 @@ describe('runBackup', () => {
     expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 2, errorCount: 2 });
   });
 
+  // Issue #30: archived boards are captured (listBoards asks for every state); boards already in
+  // Monday's trash are not — their items can't be paged and trash is Monday's own 30-day undo.
+  it('backs up archived boards, skips deleted ones, and lists the skipped ids in the manifest', async () => {
+    const fake = fakeDrive();
+    await runBackup(
+      deps({
+        monday: fakeMonday({
+          listBoards: async () => [
+            { ...board('1'), state: 'active' },
+            { ...board('2'), state: 'archived' },
+            { ...board('3'), state: 'deleted' },
+          ],
+        }),
+        drive: fake.drive,
+      }),
+    );
+    expect(fake.filenames()).toEqual(['board-1.jsonl', 'board-2.jsonl', 'manifest.json']);
+    expect(fake.manifest().deletedBoardsSkipped).toEqual(['3']);
+    expect(fake.manifest().errors).toEqual([]);
+  });
+
+  // Issue #30: subitems live on their own sub_items_board. Normally `boards` lists it, but the
+  // parent's subtasks column names it too — back it up either way, exactly once.
+  it("backs up a board's subitems board even when listBoards omits it, and only once", async () => {
+    const subtasksColumn = { id: 'subitems', title: 'Subitems', type: 'subtasks', settingsStr: '{"boardIds":[99]}' };
+    const fake = fakeDrive();
+    await runBackup(
+      deps({
+        monday: fakeMonday({
+          listBoards: async () => [board('1', 'Volunteers'), board('2', 'Events')],
+          getBoardSchema: async (boardId) => ({
+            columns: boardId === '1' || boardId === '2' ? [{ ...subtasksColumn, settingsStr: `{"boardIds":[${boardId === '1' ? 99 : 98}]}` }] : [],
+            groups: [],
+          }),
+          async *boardItemPages(boardId) {
+            if (boardId === '99') yield [{ ...item('s1'), parentItemId: 'p1' }];
+          },
+        }),
+        drive: fake.drive,
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: ['98'] },
+      }),
+    );
+    expect(fake.filenames()).toEqual(['board-1.jsonl', 'board-2.jsonl', 'board-99.jsonl', 'manifest.json']);
+    const header = fake.records('board-99.jsonl')[0]!;
+    expect(header.board).toMatchObject({ id: '99', type: 'sub_items_board', workspaceId: 'ws-1', parentBoardId: '1' });
+    expect((fake.records('board-99.jsonl')[1]!.item as ItemRecord).parentItemId).toBe('p1');
+  });
+
   it('writes a board one page at a time rather than buffering it whole', async () => {
     const monday = fakeMonday({
       listBoards: async () => [board('1')],

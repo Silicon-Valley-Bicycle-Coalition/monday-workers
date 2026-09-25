@@ -2,7 +2,7 @@ import { sendFailureAlert } from './alert';
 import type { DriveClient, DriveFileWriter } from './drive/client';
 import type { SnapshotRunStore } from './db/runs';
 import type { MondayClient } from './monday/client';
-import type { BackupConfig, BoardSummary, DocSummary } from './types';
+import type { BackupConfig, BoardSchema, BoardSummary, DocSummary } from './types';
 import { errorMessage } from './util/errorMessage';
 
 // Snapshot layout, recorded in every manifest so a restore tool can tell what it is reading.
@@ -48,7 +48,27 @@ async function streamFile(
   }
 }
 
-async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSummary, pastDeadline: () => boolean): Promise<number> {
+// A board's subitems live on a separate sub_items_board, named in its `subtasks` column settings.
+function subitemBoardIds(schema: BoardSchema): string[] {
+  const ids: string[] = [];
+  for (const column of schema.columns) {
+    if (column.type !== 'subtasks') continue;
+    try {
+      const settings = JSON.parse(column.settingsStr) as { boardIds?: (string | number)[] };
+      for (const id of settings.boardIds ?? []) ids.push(String(id));
+    } catch {
+      // Unparseable settings: nothing to discover; the board itself still backs up.
+    }
+  }
+  return ids;
+}
+
+async function backupBoard(
+  deps: BackupDeps,
+  folderId: string,
+  board: BoardSummary,
+  pastDeadline: () => boolean,
+): Promise<{ itemCount: number; subitemBoardIds: string[] }> {
   const schema = await deps.monday.getBoardSchema(board.id);
   let itemCount = 0;
   await streamFile(deps.drive, folderId, `board-${board.id}.jsonl`, async (writer) => {
@@ -60,7 +80,7 @@ async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSumma
       if (pastDeadline()) throw new Error(`stopped mid-board — ${BUDGET_EXHAUSTED}`);
     }
   });
-  return itemCount;
+  return { itemCount, subitemBoardIds: subitemBoardIds(schema) };
 }
 
 async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary): Promise<number> {
@@ -98,17 +118,42 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     let boardCount = 0;
     let docCount = 0;
 
+    const deletedBoardsSkipped: string[] = [];
+
+    // A queue, not a plain loop: backing up a board can discover its subitems board, which is
+    // appended if `boards` didn't already list it (issue #30).
     const boards = await deps.monday.listBoards();
-    for (const board of boards) {
+    const queued = new Set(boards.map((b) => b.id));
+    for (let i = 0; i < boards.length; i++) {
+      const board = boards[i]!;
       if (deps.config.excludeBoardIds.includes(board.id)) continue;
       if (!inScope(board.workspaceId)) continue;
+      // Deleted boards sit in Monday's own 30-day trash (restorable there); their items can't be
+      // paged, so trying would only turn every nightly run partial.
+      if (board.state === 'deleted') {
+        deletedBoardsSkipped.push(board.id);
+        continue;
+      }
       if (pastDeadline()) {
         errors.push(`board ${board.id} (${board.name}): skipped — ${BUDGET_EXHAUSTED}`);
         continue;
       }
       try {
-        itemCountsByBoard[board.id] = await backupBoard(deps, folderId, board, pastDeadline);
+        const result = await backupBoard(deps, folderId, board, pastDeadline);
+        itemCountsByBoard[board.id] = result.itemCount;
         boardCount++;
+        for (const subBoardId of result.subitemBoardIds) {
+          if (queued.has(subBoardId)) continue;
+          queued.add(subBoardId);
+          boards.push({
+            id: subBoardId,
+            name: `Subitems of ${board.name}`,
+            workspaceId: board.workspaceId,
+            state: board.state ?? null,
+            type: 'sub_items_board',
+            parentBoardId: board.id,
+          });
+        }
       } catch (err) {
         const message = errorMessage(err);
         errors.push(`board ${board.id} (${board.name}): ${message}`);
@@ -144,6 +189,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
       docCount,
       itemCountsByBoard,
       blockCountsByDoc,
+      deletedBoardsSkipped,
       errors,
     });
 
