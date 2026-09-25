@@ -11,8 +11,9 @@ See `monday-workers/README.md` for why this deliberately isn't a Cloudflare Work
 
 ## Three modes
 
-- **`zip`** — exact zip-code match, on the 5-digit ZIP (a ZIP+4 like `95113-1234`, on the board
-  or on the command line, matches `95113`). No geometry involved: the geocoding backfill in
+- **`zip`** — exact zip-code match, on the 5-digit ZIP (a ZIP+4 like `95113-1234` or
+  `95113 1234`, on the board or on the command line, matches `95113`; a 3–4-digit value whose
+  leading zeros a numbers column dropped, like `2134`, matches `02134`). No geometry involved: the geocoding backfill in
   `salesforce-import` already writes Zip directly onto every Donors item.
 - **`radius`** — an N-mile radius around a single point (e.g. a transit station, a project's
   center point).

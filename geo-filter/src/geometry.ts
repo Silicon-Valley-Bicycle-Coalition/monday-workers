@@ -37,13 +37,17 @@ function hasCoordinates(c: Contact): c is Contact & { lat: number; lng: number }
 }
 
 /**
- * Reduces a US ZIP or ZIP+4 (`95113-1234`, `951131234`) to its 5-digit ZIP so the two forms
- * match each other; anything else is just trimmed and compared as-is.
+ * Reduces a US ZIP or ZIP+4 (`95113-1234`, `95113 1234`, `951131234`) to its 5-digit ZIP so the
+ * forms match each other. A 3–4-digit number is left-padded with zeros (`2134` → `02134`): a
+ * Monday numbers column drops a ZIP's leading zeros. Anything else is just trimmed and compared
+ * as-is.
  */
 export function normalizeZip(zip: string): string {
   const trimmed = zip.trim();
-  const match = /^(\d{5})(?:-?\d{4})?$/.exec(trimmed);
-  return match ? match[1]! : trimmed;
+  const match = /^(\d{5})(?:[-\s]?\d{4})?$/.exec(trimmed);
+  if (match) return match[1]!;
+  if (/^\d{3,4}$/.test(trimmed)) return trimmed.padStart(5, '0');
+  return trimmed;
 }
 
 export function filterContacts(contacts: Contact[], mode: FilterMode): FilterResult {

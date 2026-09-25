@@ -29,6 +29,12 @@ describe('zip mode', () => {
     const { matched } = filterContacts(contacts, { kind: 'zip', zips: ['95113', '95110', '95126-9999'] });
     expect(matched.map((c) => c.id)).toEqual(['plus4', 'plus4-nodash', 'five']);
   });
+
+  it('matches a ZIP whose leading zero a numbers column dropped', () => {
+    const contacts = [contact({ id: 'boston', zip: '2134' }), contact({ id: 'spaced', zip: '95112 1234' })];
+    const { matched } = filterContacts(contacts, { kind: 'zip', zips: ['02134', '95112'] });
+    expect(matched.map((c) => c.id)).toEqual(['boston', 'spaced']);
+  });
 });
 
 describe('normalizeZip', () => {
@@ -36,7 +42,12 @@ describe('normalizeZip', () => {
     ['95113', '95113'],
     [' 95113-1234 ', '95113'],
     ['951131234', '95113'],
-    ['9511', '9511'], // not a ZIP shape -- left alone rather than guessed at
+    ['95112 1234', '95112'],
+    ['2134', '02134'], // leading zero dropped by a Monday numbers column
+    ['501', '00501'],
+    ['02134-5678', '02134'],
+    ['12', '12'], // too short to be a ZIP -- left alone rather than guessed at
+    ['95112  1234', '95112  1234'], // two spaces isn't a ZIP+4 shape
     ['K1A 0B1', 'K1A 0B1'],
   ])('%s -> %s', (input, expected) => {
     expect(normalizeZip(input)).toBe(expected);
