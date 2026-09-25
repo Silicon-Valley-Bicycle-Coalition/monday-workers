@@ -522,6 +522,21 @@ describe('retry webhook (#34)', () => {
     expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
   });
 
+  it('marks the item Queued before enqueueing, so the consumer\'s Done/Needs review always lands last', async () => {
+    const order: string[] = [];
+    const deps = retryDeps({
+      queue: { sendBatch: vi.fn().mockImplementation(async () => { order.push('send'); }) },
+    });
+    (deps.mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mockImplementation(async () => { order.push('label'); });
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue(['TXN001']);
+    const app = createApp(deps);
+
+    await postRetry(app, retryEvent(4242));
+
+    expect(order).toEqual(['label', 'send']);
+  });
+
   it('returns 500 so Monday redelivers when the enqueue fails', async () => {
     const deps = retryDeps({ queue: { sendBatch: vi.fn().mockRejectedValue(new Error('queue down')) } });
     (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
@@ -531,7 +546,6 @@ describe('retry webhook (#34)', () => {
     const res = await postRetry(app, retryEvent(4242));
 
     expect(res.status).toBe(500);
-    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
   });
 });
 

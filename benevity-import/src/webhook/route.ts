@@ -329,10 +329,12 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
     transactionIds = await deps.rowStore.requeueDisbursementRows(disbursement.id);
   }
 
+  // Queued goes on BEFORE the enqueue: once a message is sent the consumer may finish and write
+  // Done/Needs review at any moment, and that final label must never be overwritten by Queued.
+  await setWorklistLabel(deps.mondayClient, deps.config, itemId, 'queued');
   await sendInBatches(
     deps.queue,
     transactionIds.map((transactionId) => ({ transactionId }))
   );
-  await setWorklistLabel(deps.mondayClient, deps.config, itemId, 'queued');
   return { outcome, enqueued: transactionIds.length };
 }
