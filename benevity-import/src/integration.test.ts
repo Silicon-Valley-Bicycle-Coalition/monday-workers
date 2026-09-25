@@ -74,6 +74,7 @@ describe('benevity-import integration', () => {
       getLinkedItemIds: vi.fn().mockResolvedValue([]),
       createItem: vi.fn().mockResolvedValue({ id: '501', name: 'x' }),
       changeColumnValues: vi.fn(),
+      archiveItem: vi.fn().mockResolvedValue(undefined),
       fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
     };
   });

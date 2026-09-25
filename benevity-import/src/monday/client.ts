@@ -20,6 +20,8 @@ export interface MondayClient {
     groupId?: string
   ): Promise<MondayItem>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  // Archive, not delete: reversible from the board's archive if it was ever the wrong item.
+  archiveItem(itemId: string): Promise<void>;
   fetchAsset(assetId: string): Promise<MondayAsset>;
 }
 
@@ -127,6 +129,15 @@ export class HttpMondayClient implements MondayClient {
         }
       }`,
       { boardId, itemId, columnValues: JSON.stringify(columnValues) }
+    );
+  }
+
+  async archiveItem(itemId: string): Promise<void> {
+    await this.graphql<{ archive_item: { id: string } }>(
+      `mutation ($itemId: ID!) {
+        archive_item(item_id: $itemId) { id }
+      }`,
+      { itemId }
     );
   }
 

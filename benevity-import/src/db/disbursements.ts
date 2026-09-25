@@ -35,7 +35,10 @@ export interface DisbursementStore {
   findOrCreate(input: NewDisbursement): Promise<FindOrCreateResult>;
   getDisbursement(id: number): Promise<DisbursementRow | null>;
   getByWorklistItemId(worklistItemId: string): Promise<DisbursementRow | null>;
-  setWorklistItemId(id: number, worklistItemId: string): Promise<void>;
+  // Records the block's worklist item id only if none is recorded yet (two uploads of the same
+  // disbursement can race to post one), and returns whichever id is recorded afterwards — the
+  // caller's own when it won, the other writer's when it lost.
+  claimWorklistItemId(id: number, worklistItemId: string): Promise<string>;
 }
 
 interface D1DisbursementRecord {
@@ -142,7 +145,17 @@ export class D1DisbursementStore implements DisbursementStore {
     return record === null ? null : toDisbursementRow(record);
   }
 
-  async setWorklistItemId(id: number, worklistItemId: string): Promise<void> {
-    await this.db.prepare(`UPDATE disbursements SET worklist_item_id = ?2 WHERE id = ?1`).bind(id, worklistItemId).run();
+  async claimWorklistItemId(id: number, worklistItemId: string): Promise<string> {
+    const [, current] = await this.db.batch([
+      this.db
+        .prepare(`UPDATE disbursements SET worklist_item_id = ?2 WHERE id = ?1 AND worklist_item_id IS NULL`)
+        .bind(id, worklistItemId),
+      this.db.prepare(`SELECT worklist_item_id FROM disbursements WHERE id = ?1`).bind(id),
+    ]);
+    const recorded = (current!.results as { worklist_item_id: string | null }[])[0]?.worklist_item_id ?? null;
+    if (recorded === null) {
+      throw new Error(`db: no disbursement ${id} to record worklist item "${worklistItemId}" on`);
+    }
+    return recorded;
   }
 }

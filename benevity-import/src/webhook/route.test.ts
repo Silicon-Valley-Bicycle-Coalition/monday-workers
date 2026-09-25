@@ -66,7 +66,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
       .mockImplementation((input) => Promise.resolve({ disbursement: { id: 10, worklistItemId: null, ...input }, created: true })),
     getDisbursement: vi.fn(),
     getByWorklistItemId: vi.fn().mockResolvedValue(null),
-    setWorklistItemId: vi.fn().mockResolvedValue(undefined),
+    claimWorklistItemId: vi.fn().mockImplementation((_id: number, itemId: string) => Promise.resolve(itemId)),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
@@ -84,6 +84,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
     createItem: vi.fn().mockResolvedValue({ id: '1', name: 'x' }),
     changeColumnValues: vi.fn(),
+    archiveItem: vi.fn().mockResolvedValue(undefined),
     fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
   };
   return {
@@ -380,7 +381,8 @@ describe('webhook route', () => {
     (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '321', name: 'x' });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    expect(deps.disbursementStore.setWorklistItemId).toHaveBeenCalledWith(10, '321');
+    expect(deps.disbursementStore.claimWorklistItemId).toHaveBeenCalledWith(10, '321');
+    expect(deps.mondayClient.archiveItem).not.toHaveBeenCalled();
   });
 
   it('posts the worklist item for a known needs-review block that has none recorded yet (a prior attempt died before posting it)', async () => {
@@ -399,7 +401,40 @@ describe('webhook route', () => {
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
-    expect(deps.disbursementStore.setWorklistItemId).toHaveBeenCalledWith(10, '1');
+    expect(deps.disbursementStore.claimWorklistItemId).toHaveBeenCalledWith(10, '1');
+  });
+
+  it('keeps the worklist item another concurrent delivery recorded first, and archives its own duplicate', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        claimWorklistItemId: vi.fn().mockResolvedValue('900'), // the other delivery won
+      },
+    });
+    (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '321', name: 'x' });
+    const app = createApp(deps);
+
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+
+    expect(res.status).toBe(200);
+    expect(deps.mondayClient.archiveItem).toHaveBeenCalledWith('321');
+  });
+
+  it('still completes the upload when archiving the duplicate worklist item fails', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      disbursementStore: { ...fakeDeps().disbursementStore, claimWorklistItemId: vi.fn().mockResolvedValue('900') },
+    });
+    (deps.mondayClient.archiveItem as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 500'));
+    const app = createApp(deps);
+
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+
+    expect(res.status).toBe(200);
+    expect(deps.uploadStore.markParsed).toHaveBeenCalled();
   });
 
   it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {

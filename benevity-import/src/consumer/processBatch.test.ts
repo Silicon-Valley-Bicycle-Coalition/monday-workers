@@ -85,7 +85,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
       rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null, worklistItemId: null,
     }),
     getByWorklistItemId: vi.fn(),
-    setWorklistItemId: vi.fn(),
+    claimWorklistItemId: vi.fn(),
   };
   const aliasStore: AliasStore = { getAlias: vi.fn().mockResolvedValue(null), learnAlias: vi.fn() };
   const mondayClient = {
@@ -94,6 +94,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
     createItem: vi.fn().mockResolvedValue({ id: '501', name: 'x' }),
     changeColumnValues: vi.fn(),
+    archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
   };
   return {
@@ -151,6 +152,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn(),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -206,6 +208,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn().mockResolvedValue({ id: '1', name: 'x' }),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -227,6 +230,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn(),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -249,6 +253,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn(),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -282,6 +287,7 @@ describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn().mockResolvedValue({ id: '900', name: 'x' }),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });

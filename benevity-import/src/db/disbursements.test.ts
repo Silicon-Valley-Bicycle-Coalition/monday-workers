@@ -86,7 +86,10 @@ describe('D1DisbursementStore', () => {
     const { disbursement } = await store.findOrCreate(block(uploadId, { disbursementId: 'WL01' }));
     expect(disbursement.worklistItemId).toBeNull();
 
-    await store.setWorklistItemId(disbursement.id, '4242');
+    expect(await store.claimWorklistItemId(disbursement.id, '4242')).toBe('4242');
+    expect((await store.getDisbursement(disbursement.id))?.worklistItemId).toBe('4242');
+    // A second writer that lost the race gets the first writer's id back; the record is unchanged.
+    expect(await store.claimWorklistItemId(disbursement.id, '5353')).toBe('4242');
     expect((await store.getDisbursement(disbursement.id))?.worklistItemId).toBe('4242');
     expect((await store.getByWorklistItemId('4242'))?.id).toBe(disbursement.id);
     expect(await store.getByWorklistItemId('nope')).toBeNull();

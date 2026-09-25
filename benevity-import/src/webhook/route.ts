@@ -222,7 +222,20 @@ async function ingestBlock(
         },
         null
       );
-      await deps.disbursementStore.setWorklistItemId(disbursement.id, worklistItemId);
+      const recorded = await deps.disbursementStore.claimWorklistItemId(disbursement.id, worklistItemId);
+      if (recorded !== worklistItemId) {
+        // Another delivery (e.g. the same report uploaded twice at once) recorded its item first.
+        // Keep that one; archive ours so the block has a single worklist item. Best-effort: a
+        // leftover duplicate is untidy, not wrong, and must not fail the upload.
+        console.warn(
+          `benevity webhook: block "${block.disbursementId}" already has worklist item "${recorded}"; archiving duplicate "${worklistItemId}"`
+        );
+        try {
+          await deps.mondayClient.archiveItem(worklistItemId);
+        } catch (err) {
+          console.error(`benevity webhook: could not archive duplicate worklist item "${worklistItemId}": ${errorMessage(err)}`);
+        }
+      }
     }
     // Every row is (re-)recorded so nothing is silently lost, but none are enqueued — spec: "a
     // mismatch marks the whole block needs-review rather than writing partial data from a
