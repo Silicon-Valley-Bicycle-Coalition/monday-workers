@@ -53,6 +53,14 @@ Three independent flows — see the design doc for full sequence diagrams:
    Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
    the full current set to the Donor's connect column.
 
+**Retries.** A failed queue message is retried with exponential backoff — 1, 4, then 16 minutes
+across the queue's 3 retries — before landing in its `-dlq` dead-letter queue. When Mailchimp
+(429, `Retry-After`) or Monday (`retry_in_seconds`, `Retry-After`) says how long to wait, the
+retry waits at least that long; Monday's `DAILY_LIMIT_EXCEEDED` with no hint waits until
+midnight UTC. Every delay is capped at Queues' 12-hour maximum. A permanent Mailchimp rejection
+(malformed address, other 4xx) on the outbound side is acked instead, since it would fail
+identically every time.
+
 ## Do Not Solicit
 
 Two steps, so a mis-clicked checkbox can't silently lose a subscriber:

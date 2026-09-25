@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processOutboundBatch } from './outbound';
-import { MailchimpPermanentError } from '../mailchimp/client';
+import { MailchimpPermanentError, MailchimpRateLimitError } from '../mailchimp/client';
+import { MondayApiError } from '../monday/client';
 import type { MondayClient } from '../monday/client';
 import type { MailchimpClient } from '../mailchimp/client';
 import type { PendingOutboundStore } from '../db/pendingOutbound';
@@ -27,8 +28,8 @@ function fakeDnsLog(alreadyLogged: string[] = []): DnsUnsubscribeLog {
   return { has: vi.fn(async (email: string) => alreadyLogged.includes(email)), record: vi.fn() };
 }
 
-function fakeMessage(donorItemId: string): { body: OutboundSyncMessage; ack: () => void; retry: () => void } {
-  return { body: { donorItemId }, ack: vi.fn(), retry: vi.fn() };
+function fakeMessage(donorItemId: string, attempts = 1): { body: OutboundSyncMessage; attempts: number; ack: () => void; retry: () => void } {
+  return { body: { donorItemId }, attempts, ack: vi.fn(), retry: vi.fn() };
 }
 
 function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
@@ -137,7 +138,7 @@ describe('processOutboundBatch', () => {
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
 
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('4', 'failed', 'rate limited');
-    expect(message.retry).toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(message.ack).not.toHaveBeenCalled();
   });
 
@@ -238,7 +239,70 @@ describe('processOutboundBatch', () => {
       await processOutboundBatch([message], d);
 
       expect(d.dnsLog.record).not.toHaveBeenCalled();
-      expect(message.retry).toHaveBeenCalled();
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    });
+  });
+
+  describe('retry backoff (#35)', () => {
+    function depsFailingWith(err: Error, pendingStore?: PendingOutboundStore) {
+      const mondayClient: MondayClient = {
+        getDonorById: vi.fn().mockResolvedValue(donor()),
+        createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+        findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+      };
+      const mailchimpClient: MailchimpClient = {
+        updateMember: vi.fn().mockRejectedValue(err),
+        getMemberInterests: vi.fn(), listInterests: vi.fn(), unsubscribeMember: vi.fn(),
+      };
+      return {
+        mondayClient, mailchimpClient, config: CONFIG, dnsLog: fakeDnsLog(),
+        pendingStore: pendingStore ?? { upsertPending: vi.fn(), updateStatus: vi.fn() },
+      };
+    }
+
+    it('backs off exponentially by delivery attempt', async () => {
+      for (const [attempts, delaySeconds] of [[1, 60], [2, 240], [3, 960]] as const) {
+        const message = fakeMessage('6', attempts);
+        await processOutboundBatch([message], depsFailingWith(new Error('503')));
+        expect(message.retry).toHaveBeenCalledWith({ delaySeconds });
+      }
+    });
+
+    it('waits at least a Mailchimp Retry-After on a 429', async () => {
+      const message = fakeMessage('6', 1);
+      await processOutboundBatch([message], depsFailingWith(new MailchimpRateLimitError('429', 600)));
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 600 });
+    });
+
+    it("waits at least Monday's retry_in_seconds", async () => {
+      const message = fakeMessage('6', 1);
+      const d = depsFailingWith(new Error('unused'));
+      (d.mondayClient.getDonorById as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new MondayApiError('monday: HTTP 429', 429, 'RATE_LIMIT_EXCEEDED', 75),
+      );
+      await processOutboundBatch([message], d);
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 75 });
+    });
+
+    it('still retries with backoff when recording the failure in D1 throws', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
+      const message = fakeMessage('6', 2);
+      await processOutboundBatch([message], depsFailingWith(new Error('503'), pendingStore));
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
+      errorSpy.mockRestore();
+    });
+
+    it('still acks a permanent failure when recording it in D1 throws', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
+      const message = fakeMessage('6', 1);
+      await processOutboundBatch([message], depsFailingWith(new MailchimpPermanentError('invalid email'), pendingStore));
+      expect(message.ack).toHaveBeenCalled();
+      expect(message.retry).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
     });
   });
 });
