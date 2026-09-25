@@ -23,6 +23,7 @@
 import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { argValueFrom, buildFilterMode } from './args.js';
+import { toCsv } from './csv.js';
 import { filterContacts, type FilterMode } from './geometry.js';
 import { fetchContacts } from './monday.js';
 
@@ -61,16 +62,8 @@ const outPath = argValue('--out') ?? 'geo-filter-matches.csv';
 const contacts = await fetchContacts(token, boardId, columns);
 const { matched, skippedNoLocation } = filterContacts(contacts, filterMode);
 
-const csvCell = (v: unknown) => {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 const rows = matched.map((c) => [c.id, c.name, c.lat, c.lng, c.zip]);
-writeFileSync(
-  outPath,
-  ['id,name,lat,lng,zip', ...rows.map((r) => r.map(csvCell).join(','))].join('\n') + '\n',
-  'utf8'
-);
+writeFileSync(outPath, toCsv(['id', 'name', 'lat', 'lng', 'zip'], rows), 'utf8');
 
 console.error(
   `geo-filter: ${matched.length} match(es) out of ${contacts.length} contacts on board ${boardId} ` +

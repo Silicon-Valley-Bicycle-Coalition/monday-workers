@@ -41,7 +41,8 @@ Common flags: `--out matches.csv` (default `geo-filter-matches.csv`), and
 unless `--name-column <title>` points at a different column (e.g. a full-name text column); a
 blank cell there falls back to the item name.
 
-Writes a CSV of matched contacts (`id,name,lat,lng,zip`) and reports how many contacts were
+Writes a CSV of matched contacts (`id,name,lat,lng,zip`) — any text cell starting with `=`, `+`,
+`-`, `@`, tab, or CR gets a leading `'` so a spreadsheet won't run it as a formula — and reports how many contacts were
 skipped for missing coordinates (`radius`/`corridor` only — `zip` mode never needs coordinates).
 
 ## Getting a corridor's geometry
