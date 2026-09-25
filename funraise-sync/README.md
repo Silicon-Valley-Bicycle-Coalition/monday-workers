@@ -51,9 +51,10 @@ Cloudflare Queue → consumer
 Donations board (+ Donor and Recurring Gift links; board ids in config/sandbox.json, or svbc.json for production)
 
 Cloudflare cron, hourly ("0 * * * *")
-  │  GET /api/v1/crm/subscription?q=updtime >= <cursor> order by updtime asc&page=N …
+  │  GET /api/v1/crm/subscription?q=updtime > T order by updtime asc          (keyset on
+  │      …or q=updtime = T and id > I order by id asc  (walking a tie group)   (updtime, id))
   │  each row → Recurring Gifts item (adopt by Funraise ID, else create; update in place);
-  │  D1 `subscriptions` ledger + `poll_cursors`; cursor advances after each full page
+  │  D1 `subscriptions` ledger + `poll_cursors`; cursors advance after each page lands
   ▼
 Recurring Gifts board (+ Donor link)
 ```
@@ -452,17 +453,28 @@ tests: `docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.m
 **Built 2026-09-18** (`src/subscriptions/`, `src/funraise/client.ts`, `src/db/subscriptions.ts`,
 migration `0004`, `src/scheduled.ts`). How it runs:
 
-* **Hourly cron** `0 * * * *` → `pollSubscriptions`: `GET /api/v1/crm/subscription` with
-  `q = updtime >= <cursor> order by updtime asc`, pages of 10 via `page=N`, until a short page.
-  Every row goes through `upsertSubscription`. Three cursors in `poll_cursors`: `subscriptions`
-  (the timestamp the query filters on), `subscriptions:page` (the next page of that query) and
-  `subscriptions:max` (the largest `updtime` seen in it). A run walks pages and persists the page
-  index; the timestamp cursor moves only when a short page proves the query exhausted, to that
-  max, and the page index resets. It cannot be moved sooner: a bulk import gave hundreds of
-  subscriptions one identical `updtime`, and a cursor equal to it re-selects the same first page
-  forever (seen live 2026-09-18). A failed page leaves every cursor untouched, so the next run
-  re-reads it and the ledger's per-row `updtime` makes already-landed rows no-ops; `>=` re-reads
-  the boundary rows on purpose. Idle cost: one request per run. Two more Funraise quirks live in
+* **Hourly cron** `0 * * * *` → `pollSubscriptions`: **keyset pagination on (`updtime`, `id`)**
+  (#25), always `page=0`. Two cursors in `poll_cursors`: `subscriptions` (T) and
+  `subscriptions:id` (I, or `-1` for none). Each request is either the forward query
+  `updtime > T order by updtime asc` or, while walking a tie group, `updtime = T and id > I
+  order by id asc`. A short forward page means caught up (T moves to its max `updtime`); a full
+  one moves T to its max `updtime` M and walks M's tie group by id from 0, because Funraise
+  promises no order among rows sharing an `updtime` — a bulk import gave hundreds of
+  subscriptions one identical `updtime` (seen live 2026-09-18). Every row goes through
+  `upsertSubscription`; the ledger's per-row `updtime` makes re-reads no-ops. A failed page
+  leaves the cursors untouched, so the next run re-reads it. Idle cost: one request per run.
+  **Why keyset:** this used to page by offset (`updtime >= cursor`, `page=N`, cursors
+  `subscriptions:page` / `subscriptions:max`, now unused). `updtime` changes during a walk that
+  spans hours at one page per run: an edited row jumps to the end and every later row shifts up
+  a slot, so the row sliding onto an already-read page was never read — and once the cursor
+  passed its `updtime`, never would be, cancellation included. A keyset query selects by value,
+  so rows moving elsewhere can't push an unread one behind the cursor. On the first run after
+  upgrading, `subscriptions:id` is absent, so the poll re-walks the tie group at the stored
+  cursor (no-ops) and carries on. **Before deploying, confirm Funraise accepts `and` in `q`**
+  (the 2026-09-18 probes exercised `>`, `>=`, `=`, `order by` and exact id, each alone): one
+  read-only `GET /api/v1/crm/subscription?q=updtime = <a real updtime> and id > 0 order by id
+  asc&page=0` should return only rows at that `updtime`; an HTTP 500 or rows at other times
+  means the tie query needs rewriting. Two more Funraise quirks live in
   `src/funraise/client.ts`: the list answers HTTP 500 to any `updtime` filter below about 2001,
   so a fresh cursor is floored there, and the page size is fixed at 10.
 * **One page per run on Workers Free.** A Free-plan invocation may make 50 external
@@ -495,9 +507,8 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   from `env.sandbox`; before it, `--var ENVIRONMENT:sandbox` against the top-level binding), and hit
   `http://localhost:8788/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
   deployed-shaped run that advances the cursors. Read the `subscriptions poll read …` log line
-  each time. The walk is done when a run reads **only unchanged rows** — never `0 rows`, because
-  `>=` re-reads the boundary rows that share the last `updtime` on every idle run (that is the
-  one-request idle cost). Then `select count(*) from subscriptions` on the remote D1 should equal
+  each time. The walk is done when the log line ends `caught up` (since #25's keyset change an
+  idle run reads `0 rows`; before it, `>=` re-read the boundary rows every run). Then `select count(*) from subscriptions` on the remote D1 should equal
   the board's item count and Funraise's own subscription count.
   **Do it while the deployed hourly cron cannot fire** (deploy with `subscriptionsPoll.enabled:
   false`, or finish between two top-of-the-hour runs): on 2026-09-19 the 02:00 cron and the local

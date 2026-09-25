@@ -93,7 +93,7 @@ export default {
           maxPages: config.subscriptionsPoll.maxPagesPerRun,
         });
         console.log(
-          `funraise-sync scheduled: subscriptions poll read ${result.rows} rows over ${result.pages} pages — created ${result.actions.created}, adopted ${result.actions.adopted}, updated ${result.actions.updated}, unchanged ${result.actions.noop}; cursor ${result.cursor}`
+          `funraise-sync scheduled: subscriptions poll read ${result.rows} rows over ${result.pages} pages — created ${result.actions.created}, adopted ${result.actions.adopted}, updated ${result.actions.updated}, unchanged ${result.actions.noop}; cursor ${result.cursor}${result.tieId === null ? '' : ` (tie walk at id > ${result.tieId})`}${result.caughtUp ? ', caught up' : ''}`
         );
       },
 

@@ -25,8 +25,13 @@ export interface FunraiseSubscription {
   [key: string]: unknown;
 }
 
+// The two keyset queries the poller pages with (#25; see src/subscriptions/poll.ts). Always
+// page 0 — the position comes from the filter, never an offset.
 export interface FunraiseClient {
-  listSubscriptionsUpdatedSince(cursorMs: number, page: number): Promise<FunraiseSubscription[]>;
+  // `updtime > afterMs order by updtime asc`
+  listSubscriptionsUpdatedAfter(afterMs: number): Promise<FunraiseSubscription[]>;
+  // `updtime = updtimeMs and id > afterId order by id asc`
+  listSubscriptionsAtUpdtime(updtimeMs: number, afterId: number): Promise<FunraiseSubscription[]>;
   getSubscription(id: string): Promise<FunraiseSubscription | null>;
 }
 
@@ -53,11 +58,21 @@ export class HttpFunraiseClient implements FunraiseClient {
     });
   }
 
-  async listSubscriptionsUpdatedSince(cursorMs: number, page: number): Promise<FunraiseSubscription[]> {
-    const res = await this.request('crm/subscription', {
-      q: `updtime >= ${Math.max(cursorMs, MIN_QUERYABLE_UPDTIME_MS)} order by updtime asc`,
-      page: String(page),
-    });
+  async listSubscriptionsUpdatedAfter(afterMs: number): Promise<FunraiseSubscription[]> {
+    return this.listSubscriptions(`updtime > ${Math.max(afterMs, MIN_QUERYABLE_UPDTIME_MS)} order by updtime asc`);
+  }
+
+  // NOTE: the `and` conjunction is the one piece of this query language not yet exercised against
+  // the live API (2026-09-18 verified `>`, `>=`, `=`, `order by`, and exact id, each alone).
+  // Confirm with one read-only probe before deploying — see README "Recurring gifts".
+  async listSubscriptionsAtUpdtime(updtimeMs: number, afterId: number): Promise<FunraiseSubscription[]> {
+    // Nothing is dated before the floor, and Funraise 500s on an updtime filter below it.
+    if (updtimeMs < MIN_QUERYABLE_UPDTIME_MS) return [];
+    return this.listSubscriptions(`updtime = ${updtimeMs} and id > ${Math.trunc(afterId)} order by id asc`);
+  }
+
+  private async listSubscriptions(q: string): Promise<FunraiseSubscription[]> {
+    const res = await this.request('crm/subscription', { q, page: '0' });
     if (!res.ok) {
       throw new Error(`funraise api: list subscriptions failed with HTTP ${res.status}`);
     }

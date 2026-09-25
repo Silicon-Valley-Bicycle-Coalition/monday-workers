@@ -12,16 +12,22 @@ describe('HttpFunraiseClient cursor floor', () => {
 
   it('floors a zero cursor to the earliest updtime Funraise will filter on', async () => {
     const { client, fetchImpl } = clientCapturing();
-    await client.listSubscriptionsUpdatedSince(0, 0);
+    await client.listSubscriptionsUpdatedAfter(0);
     const q = new URL((fetchImpl.mock.calls[0] as [string])[0]).searchParams.get('q');
-    expect(q).toBe(`updtime >= ${MIN_QUERYABLE_UPDTIME_MS} order by updtime asc`);
+    expect(q).toBe(`updtime > ${MIN_QUERYABLE_UPDTIME_MS} order by updtime asc`);
     expect(MIN_QUERYABLE_UPDTIME_MS).toBe(1000000000000);
   });
 
   it('passes a real cursor through unchanged', async () => {
     const { client, fetchImpl } = clientCapturing();
-    await client.listSubscriptionsUpdatedSince(1789000000000, 3);
+    await client.listSubscriptionsUpdatedAfter(1789000000000);
     const q = new URL((fetchImpl.mock.calls[0] as [string])[0]).searchParams.get('q');
-    expect(q).toBe('updtime >= 1789000000000 order by updtime asc');
+    expect(q).toBe('updtime > 1789000000000 order by updtime asc');
+  });
+
+  it('answers a tie query below the floor with no rows and no request (nothing is dated there)', async () => {
+    const { client, fetchImpl } = clientCapturing();
+    expect(await client.listSubscriptionsAtUpdtime(0, 0)).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
