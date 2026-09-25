@@ -121,7 +121,10 @@ export class HttpMailchimpClient implements MailchimpClient {
     if (lookup.status === 404) return 'not-in-audience';
     if (!lookup.ok) {
       const detail = await lookup.text();
-      throw new MailchimpTransientError(`mailchimp unsubscribeMember lookup: HTTP ${lookup.status}: ${detail}`);
+      if (lookup.status === 429 || lookup.status >= 500) {
+        throw new MailchimpTransientError(`mailchimp unsubscribeMember lookup: HTTP ${lookup.status}: ${detail}`);
+      }
+      throw new MailchimpPermanentError(`mailchimp unsubscribeMember lookup: HTTP ${lookup.status}: ${detail}`);
     }
     const { status } = (await lookup.json()) as { status: string };
     if (status === 'unsubscribed' || status === 'cleaned') return 'already-unsubscribed';

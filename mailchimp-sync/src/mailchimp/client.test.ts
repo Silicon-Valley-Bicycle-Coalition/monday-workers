@@ -218,8 +218,11 @@ describe('HttpMailchimpClient.unsubscribeMember', () => {
     await expect(permanent.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpPermanentError);
   });
 
-  it('throws transient when the status lookup fails', async () => {
-    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 500 }));
-    await expect(client.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+  it('classifies a failed status lookup the same way: 429/5xx transient, other 4xx permanent', async () => {
+    const transient = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 500 }));
+    await expect(transient.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+
+    const permanent = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 401 }));
+    await expect(permanent.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpPermanentError);
   });
 });
