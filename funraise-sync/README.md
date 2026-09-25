@@ -328,6 +328,31 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
   stripped before the row reaches D1. Not stripped, flagged for a decision: `dedication.*`
   (a third party's name and email, "⚠ PII screen" in docs/03) and `comment`.
 
+## Failures and the dead-letter queue (#25)
+
+A failed consumer run marks the `events` row `failed` with the error and retries the message
+with backoff — 1, 4, then 16 minutes (`retryDelaySeconds` in `src/consumer/processBatch.ts`).
+Once `max_retries` (3) is exhausted the message goes to `funraise-sync-writes-dlq`
+(`…-sandbox-dlq` in the sandbox), which this Worker **also consumes**
+(`src/consumer/processDeadLetters.ts`, same shape as `donation-rollups`'): the row's error is
+prefixed `dead-lettered after retries: ` and each batch logs one `console.error` naming the
+transactions, so a dead gift is visible in Workers Logs and in D1 instead of expiring from the
+DLQ unseen after ~4 days. A dead message is evidence only as of when it was sent: a row written,
+or replaced by a newer Funraise delivery, since then is left alone. Nothing re-drives from the
+DLQ automatically — fix the cause, then:
+
+```sh
+FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox] --dry-run
+FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox]
+```
+
+It reads `failed` rows older than an hour from the remote D1 and POSTs each stored payload back
+as the envelope it arrived in (secret in the `X-Webhook-Secret` header); the route's
+duplicate-recovery path re-enqueues it, so the write happens on the normal path. Rows whose
+payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are listed for
+manual recovery from Funraise. To find dead gifts directly:
+`select entity_id, error, received_at from events where error like 'dead-lettered%'`.
+
 ## Deployed and verified (CRM Sandbox, 2026-09-18)
 
 **The running deployment is `svbc-funraise-sync-sandbox`** (`npm run deploy:sandbox`; D1

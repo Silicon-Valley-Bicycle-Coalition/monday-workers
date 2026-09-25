@@ -8,6 +8,7 @@ import { D1SubscriptionStore } from './db/subscriptions';
 import { HttpFunraiseClient } from './funraise/client';
 import { HttpMondayClient } from './monday/client';
 import { processFunraiseQueueBatch, type FunraiseQueueMessage } from './consumer/processBatch';
+import { processDeadLetters } from './consumer/processDeadLetters';
 import { pollSubscriptions } from './subscriptions/poll';
 import { dispatchScheduled } from './scheduled';
 import { checkRequestRateLimit } from './rateLimit';
@@ -20,6 +21,16 @@ const configFor = createConfigSelector({ production: productionConfig, sandbox: 
 // Funraise's REST API host; the reference's "Live Server". Only the subscriptions poller and the
 // consumer's never-seen-subscription lookup talk to it.
 const FUNRAISE_API_URL = 'https://api.funraise.io';
+
+// Must match the dead_letter_queue names in wrangler.jsonc: the production name at the top level
+// and the same name with "-sandbox" before "-dlq" under env.sandbox (same shape as
+// donation-rollups). Exported for tests.
+const DEAD_LETTER_QUEUE = 'funraise-sync-writes-dlq';
+const SANDBOX_DEAD_LETTER_QUEUE = 'funraise-sync-writes-sandbox-dlq';
+
+export function isDeadLetterBatch(queueName: string): boolean {
+  return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE;
+}
 
 function funraiseClient(env: Env): HttpFunraiseClient | undefined {
   return env.FUNRAISE_API_KEY ? new HttpFunraiseClient(FUNRAISE_API_URL, env.FUNRAISE_API_KEY) : undefined;
@@ -48,8 +59,13 @@ export default {
     });
   },
 
+  // Both the write queue and its dead-letter queue are consumed here; wrangler.jsonc names them.
   async queue(batch: MessageBatch<FunraiseQueueMessage>, env: Env): Promise<void> {
     const config = configFor(env);
+    if (isDeadLetterBatch(batch.queue)) {
+      await processDeadLetters([...batch.messages], { eventStore: new D1EventStore(env.DB) });
+      return;
+    }
     await processFunraiseQueueBatch([...batch.messages], {
       eventStore: new D1EventStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),

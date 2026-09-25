@@ -1,6 +1,18 @@
 import { env } from 'cloudflare:workers';
 import { describe, it, expect } from 'vitest';
-import worker from './index';
+import worker, { isDeadLetterBatch } from './index';
+
+describe('isDeadLetterBatch', () => {
+  it('recognizes the production and sandbox dead-letter queues', () => {
+    expect(isDeadLetterBatch('funraise-sync-writes-dlq')).toBe(true);
+    expect(isDeadLetterBatch('funraise-sync-writes-sandbox-dlq')).toBe(true);
+  });
+
+  it('does not treat either write queue as dead letters', () => {
+    expect(isDeadLetterBatch('funraise-sync-writes')).toBe(false);
+    expect(isDeadLetterBatch('funraise-sync-writes-sandbox')).toBe(false);
+  });
+});
 
 describe('scaffold', () => {
   it('applies the events table migration', async () => {
