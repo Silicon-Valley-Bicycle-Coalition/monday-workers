@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createApp } from './route';
+import { createApp, secretsMatch } from './route';
 import type { EventStore } from '../db/events';
 import { testConfig } from '../test/testConfig';
 
@@ -283,5 +283,68 @@ describe('redelivery of a stranded event', () => {
 
     expect(await res.json()).toEqual({ ok: true, duplicate: true });
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// #25: the secret is compared in constant time, and callers that can set headers (the redrive
+// script, a hand replay) send it as X-Webhook-Secret so it stays out of URLs and logs. Funraise
+// itself can't set a header (its webhook config is a URL and a contact email), so ?secret= stays.
+describe('shared secret via header', () => {
+  const event = { sentAt: 1, event: 'DONATION', data: { id: 9, transactionId: 'txn-9' } };
+
+  it('accepts the secret in the X-Webhook-Secret header with no query param', async () => {
+    const eventStore = fakeEventStore();
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request('/webhooks/funraise/transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': SECRET },
+      body: JSON.stringify(event),
+    });
+
+    expect(res.status).toBe(200);
+    expect(eventStore.upsertEvent).toHaveBeenCalled();
+  });
+
+  it('rejects a wrong header secret with 401 before touching the store', async () => {
+    const eventStore = fakeEventStore();
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request('/webhooks/funraise/transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': 'test-secreT' },
+      body: JSON.stringify(event),
+    });
+
+    expect(res.status).toBe(401);
+    expect(eventStore.upsertEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects a secret that is only a prefix of the real one', async () => {
+    const eventStore = fakeEventStore();
+    const app = createApp({ eventStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+
+    const res = await app.request('/webhooks/funraise/transaction?secret=test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('secretsMatch', () => {
+  it('matches equal strings and rejects different or differently sized ones', async () => {
+    expect(await secretsMatch('abc', 'abc')).toBe(true);
+    expect(await secretsMatch('abc', 'abd')).toBe(false);
+    expect(await secretsMatch('abc', 'abcd')).toBe(false);
+    expect(await secretsMatch('', 'abc')).toBe(false);
+  });
+
+  it('never matches when either side is missing', async () => {
+    expect(await secretsMatch(undefined, 'abc')).toBe(false);
+    expect(await secretsMatch('abc', undefined)).toBe(false);
+    expect(await secretsMatch(undefined, undefined)).toBe(false);
   });
 });

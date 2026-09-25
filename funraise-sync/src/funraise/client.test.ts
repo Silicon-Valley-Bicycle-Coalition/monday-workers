@@ -10,19 +10,30 @@ function fetchReturning(status: number, body: unknown) {
 }
 
 describe('HttpFunraiseClient', () => {
-  it('lists subscriptions updated since a cursor, ordered by updtime, for a given page', async () => {
+  it('lists subscriptions updated strictly after a cursor, ordered by updtime, always page 0 (keyset, #25)', async () => {
     const fetchImpl = fetchReturning(200, [{ id: 1, updtime: 5 }]);
     const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchImpl);
 
-    const rows = await client.listSubscriptionsUpdatedSince(1789000000000, 2);
+    const rows = await client.listSubscriptionsUpdatedAfter(1789000000000);
 
     expect(rows).toEqual([{ id: 1, updtime: 5 }]);
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe('https://api.funraise.io/api/v1/crm/subscription');
-    expect(parsed.searchParams.get('q')).toBe('updtime >= 1789000000000 order by updtime asc');
-    expect(parsed.searchParams.get('page')).toBe('2');
+    expect(parsed.searchParams.get('q')).toBe('updtime > 1789000000000 order by updtime asc');
+    expect(parsed.searchParams.get('page')).toBe('0');
     expect((init.headers as Record<string, string>)['X-Api-Key']).toBe('key-1');
+  });
+
+  it('lists the rows tied at one updtime after an id, ordered by id', async () => {
+    const fetchImpl = fetchReturning(200, []);
+    const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchImpl);
+
+    await client.listSubscriptionsAtUpdtime(1789000000000, 257753);
+
+    const parsed = new URL((fetchImpl.mock.calls[0] as [string])[0]);
+    expect(parsed.searchParams.get('q')).toBe('updtime = 1789000000000 and id > 257753 order by id asc');
+    expect(parsed.searchParams.get('page')).toBe('0');
   });
 
   it('fetches one subscription by id', async () => {
@@ -42,11 +53,11 @@ describe('HttpFunraiseClient', () => {
 
   it('throws with the status on any other non-2xx, so the cron retries next run', async () => {
     const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchReturning(429, { message: 'slow down' }));
-    await expect(client.listSubscriptionsUpdatedSince(0, 0)).rejects.toThrow(/429/);
+    await expect(client.listSubscriptionsUpdatedAfter(0)).rejects.toThrow(/429/);
   });
 
   it('throws when a list response is not an array, so a shape change is loud', async () => {
     const client = new HttpFunraiseClient('https://api.funraise.io', 'key-1', fetchReturning(200, { content: [] }));
-    await expect(client.listSubscriptionsUpdatedSince(0, 0)).rejects.toThrow(/expected an array/);
+    await expect(client.listSubscriptionsUpdatedAfter(0)).rejects.toThrow(/expected an array/);
   });
 });

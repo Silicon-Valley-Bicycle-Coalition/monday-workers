@@ -42,6 +42,37 @@ describe('D1SubscriptionStore', () => {
     expect((await store.getByFunraiseId('adopted'))?.updtime).toBeNull();
   });
 
+  // #25: the poll and the queue consumer could both create the same Recurring Gift.
+  describe('create claims', () => {
+    it('lets exactly one token claim a subscription', async () => {
+      const store = new D1SubscriptionStore(env.DB);
+      expect(await store.claimCreate('c1', 'poll', 600_000)).toBe(true);
+      expect(await store.claimCreate('c1', 'consumer', 600_000)).toBe(false);
+    });
+
+    it('lets two racing claims produce exactly one winner', async () => {
+      const store = new D1SubscriptionStore(env.DB);
+      const results = await Promise.all([store.claimCreate('c2', 'a', 600_000), store.claimCreate('c2', 'b', 600_000)]);
+      expect(results.filter(Boolean)).toHaveLength(1);
+    });
+
+    it('lets a stale claim (its writer died) be taken over', async () => {
+      const store = new D1SubscriptionStore(env.DB);
+      expect(await store.claimCreate('c3', 'dead', 600_000)).toBe(true);
+      // ttl -1 s: every existing claim counts as stale
+      expect(await store.claimCreate('c3', 'alive', -1000)).toBe(true);
+    });
+
+    it('releases only its own claim', async () => {
+      const store = new D1SubscriptionStore(env.DB);
+      await store.claimCreate('c4', 'mine', 600_000);
+      await store.releaseCreate('c4', 'theirs');
+      expect(await store.claimCreate('c4', 'other', 600_000)).toBe(false);
+      await store.releaseCreate('c4', 'mine');
+      expect(await store.claimCreate('c4', 'other', 600_000)).toBe(true);
+    });
+  });
+
   describe('poll cursors', () => {
     it('reads 0 for a cursor that was never set', async () => {
       const store = new D1SubscriptionStore(env.DB);

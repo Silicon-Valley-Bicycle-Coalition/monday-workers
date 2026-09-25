@@ -18,6 +18,12 @@ export interface SubscriptionStore {
   count(): Promise<number>;
   getCursor(name: string): Promise<number>;
   setCursor(name: string, value: number): Promise<void>;
+  // Atomically claim the right to adopt-or-create the Monday item for a subscription the ledger
+  // doesn't know (#25). True when this token now holds the claim: no claim existed, or the
+  // existing one is older than ttlMs (its writer died). False when another writer holds it.
+  claimCreate(funraiseId: string, token: string, ttlMs: number): Promise<boolean>;
+  // Drop the claim, only if this token still holds it.
+  releaseCreate(funraiseId: string, token: string): Promise<void>;
 }
 
 interface D1SubscriptionRecord {
@@ -82,5 +88,24 @@ export class D1SubscriptionStore implements SubscriptionStore {
       )
       .bind(name, value, new Date().toISOString())
       .run();
+  }
+
+  async claimCreate(funraiseId: string, token: string, ttlMs: number): Promise<boolean> {
+    const now = Date.now();
+    // One statement, so D1 serializes it: an insert wins outright; on conflict the row is taken
+    // over only when stale, and `changes` tells the caller which happened.
+    const result = await this.db
+      .prepare(
+        `INSERT INTO subscription_claims (funraise_id, token, claimed_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT (funraise_id) DO UPDATE SET token = excluded.token, claimed_at = excluded.claimed_at
+         WHERE subscription_claims.claimed_at < ?4`
+      )
+      .bind(funraiseId, token, new Date(now).toISOString(), new Date(now - ttlMs).toISOString())
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  async releaseCreate(funraiseId: string, token: string): Promise<void> {
+    await this.db.prepare(`DELETE FROM subscription_claims WHERE funraise_id = ?1 AND token = ?2`).bind(funraiseId, token).run();
   }
 }

@@ -12,7 +12,7 @@ const active: FunraiseSubscription = {
   frequency: 'Monthly',
   sourceAmount: 25,
   currency: 'USD',
-  nextPaymentDate: 1791000000000, // 2026-10-03T…Z
+  nextPaymentDate: 1791000000000, // 2026-10-03T03:20Z = 2026-10-02 20:20 Pacific (dates are Pacific, #25)
   lastPaymentDate: 1788400000000,
   cancelDate: null,
   updtime: 1789000000000,
@@ -34,7 +34,7 @@ describe('mapSubscriptionToColumns', () => {
       rg_annualized: 300,
       rg_frequency: { label: 'Monthly' },
       rg_status: { label: 'Active' },
-      rg_next_payment: { date: '2026-10-03' },
+      rg_next_payment: { date: '2026-10-02' },
       rg_designation: 'General Donations',
       rg_company_match: { checked: 'true' },
       rg_match_employer: 'Acme Corp',

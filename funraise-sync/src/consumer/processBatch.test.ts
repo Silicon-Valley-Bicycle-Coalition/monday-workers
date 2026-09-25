@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processFunraiseQueueBatch, type QueueMessageLike, type FunraiseQueueMessage } from './processBatch';
+import { processFunraiseQueueBatch, retryDelaySeconds, type QueueMessageLike, type FunraiseQueueMessage } from './processBatch';
 import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
 import type { EventRow, FunraiseSyncConfig } from '../types';
@@ -549,5 +549,46 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
       connect_col: { item_ids: [7] },
       entity_col: { url: 'https://platform.funraise.io/transaction/txn-1', text: 'txn-1' },
     });
+  });
+});
+
+// #25: retries were immediate, so a Monday outage of more than a few seconds burned all three
+// attempts at once and dead-lettered the gift. They now back off by attempt number.
+describe('retry backoff', () => {
+  it("grows by attempt: 1 min, 4 min, 16 min, capped at Queues' 12 h maximum", () => {
+    expect(retryDelaySeconds(1)).toBe(60);
+    expect(retryDelaySeconds(2)).toBe(240);
+    expect(retryDelaySeconds(3)).toBe(960);
+    expect(retryDelaySeconds(20)).toBe(43200);
+  });
+
+  it('treats a missing or nonsensical attempt count as the first attempt', () => {
+    expect(retryDelaySeconds(undefined)).toBe(60);
+    expect(retryDelaySeconds(0)).toBe(60);
+  });
+
+  it('retries a failed message with the delay for its attempt number', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn(),
+      createItem: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')),
+      changeColumnValues: vi.fn(),
+    };
+    const message = { ...fakeMessage(), attempts: 2 };
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+  });
+
+  it('still retries the message (with backoff) when recording the failure in D1 also fails', async () => {
+    const eventStore = fakeStore(null);
+    (eventStore.updateStatusByEntity as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1_ERROR: overloaded'));
+    const mondayClient: MondayClient = { findItemByColumnValue: vi.fn(), createItem: vi.fn(), changeColumnValues: vi.fn() };
+    const message = { ...fakeMessage(), attempts: 1 };
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
   });
 });

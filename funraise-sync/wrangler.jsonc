@@ -18,18 +18,29 @@
     "consumers": [
       {
         "queue": "funraise-sync-writes",
+        // The consumer backs each retry off by attempt — 1, 4, then 16 minutes
+        // (retryDelaySeconds in src/consumer/processBatch.ts) — before dead-lettering.
         "max_retries": 3,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain.
         "max_concurrency": 1,
         "dead_letter_queue": "funraise-sync-writes-dlq"
+      },
+      {
+        // #25: dead messages stamp their events row "dead-lettered after retries: …" and log one
+        // error per batch (src/consumer/processDeadLetters.ts) instead of expiring unseen. Two D1
+        // ops per message; no further dead-letter queue. Re-drive: scripts/redrive-failed.mjs.
+        "queue": "funraise-sync-writes-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
       }
     ]
   },
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP is
   // generous against real Funraise volume (a few hundred transactions a month) while blunting a
-  // flood against the webhook route, which does D1 work before the shared-secret check ever
-  // rejects a bogus delivery.
+  // flood against the webhook route. The shared-secret check runs first in the route (before any
+  // D1 or queue work), so the limiter bounds invocation count and cost, not bogus D1 writes.
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2031", "simple": { "limit": 60, "period": 60 } }],
   // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
   // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
@@ -74,6 +85,12 @@
             "max_retries": 3,
             "max_concurrency": 1,
             "dead_letter_queue": "funraise-sync-writes-sandbox-dlq"
+          },
+          {
+            "queue": "funraise-sync-writes-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
           }
         ]
       },

@@ -32,7 +32,9 @@
     "emailFieldPrecedence": ["supporter.email"],
     "statusField": "transaction.status",
     "statusValueMap": {
-      "Complete": "Received"
+      "Complete": "Received",
+      "Refunded": "Refunded",
+      "Failed": "Failed"
     },
     "doNotMigrateFields": [
       "transaction.lastFour",

@@ -1,12 +1,39 @@
 import { Hono } from 'hono';
 import type { EventStore } from '../db/events';
 import type { EntityType, FunraiseSyncConfig } from '../types';
-
-const ENTITY_TYPE: EntityType = 'transaction';
 import { validateEnvelope, extractEntityId } from './validate';
 import { stripDenylistedFields } from '../util/stripFields';
 import { errorMessage } from '../util/errorMessage';
 import type { FunraiseQueueMessage } from '../consumer/processBatch';
+
+const ENTITY_TYPE: EntityType = 'transaction';
+
+// Header form of the shared secret, for callers that can set one (scripts/redrive-failed.mjs, a
+// hand replay). Funraise itself cannot: its webhook config is only a target URL and a contact
+// email (help.funraise.io "Webhooks", checked 2026-09-25), so its deliveries keep `?secret=`.
+export const SECRET_HEADER = 'X-Webhook-Secret';
+
+/**
+ * Constant-time comparison of a presented secret against the configured one (#25). Both sides
+ * are hashed to fixed-length SHA-256 digests first, so neither the content nor the length of the
+ * real secret leaks through timing, then every digest byte is compared with no early exit.
+ * (Hand-rolled rather than workerd's crypto.subtle.timingSafeEqual only because this project's
+ * tsconfig resolves the global `crypto` to the DOM typing, which lacks it.) A missing value on
+ * either side never matches.
+ */
+export async function secretsMatch(presented: string | undefined, expected: string | undefined): Promise<boolean> {
+  if (presented === undefined || expected === undefined || expected === '') return false;
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(presented)),
+    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i]! ^ y[i]!;
+  return diff === 0;
+}
 
 export interface QueueLike {
   send(message: FunraiseQueueMessage): Promise<void>;
@@ -18,9 +45,10 @@ export interface AppDeps {
   queue: QueueLike;
   // Funraise webhook deliveries carry no per-event signature we can rely on, so the
   // mitigation is a shared secret embedded in the registered webhook URL
-  // (`?secret=...`), checked on every POST. Fails closed: when unset (secret not yet
-  // provisioned), every delivery is rejected with 401 rather than accepted blind —
-  // this endpoint writes to the live Donations board.
+  // (`?secret=...`) — Funraise can't send custom headers — or, for our own tooling, the
+  // X-Webhook-Secret header; checked in constant time on every POST. Fails closed: when
+  // unset (secret not yet provisioned), every delivery is rejected with 401 rather than
+  // accepted blind — this endpoint writes to the live Donations board.
   webhookSecret: string | undefined;
 }
 
@@ -35,7 +63,8 @@ export function createApp(deps: AppDeps) {
   // Funraise has one webhook per organization and it fires only for transactions (decided
   // 2026-09-18; see README "Recurring gifts and registrations"). This is the registered URL.
   app.post('/webhooks/funraise/transaction', async (c) => {
-    if (deps.webhookSecret === undefined || c.req.query('secret') !== deps.webhookSecret) {
+    const presented = c.req.header(SECRET_HEADER) ?? c.req.query('secret');
+    if (!(await secretsMatch(presented, deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 

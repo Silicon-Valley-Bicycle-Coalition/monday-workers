@@ -1,6 +1,7 @@
+import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
 import { upsertSubscription } from './upsert';
-import type { SubscriptionStore, SubscriptionRow } from '../db/subscriptions';
+import { D1SubscriptionStore, type SubscriptionStore, type SubscriptionRow } from '../db/subscriptions';
 import type { MondayClient } from '../monday/client';
 import type { FunraiseSubscription } from '../funraise/client';
 import { testConfig } from '../test/testConfig';
@@ -27,6 +28,8 @@ function fakeStore(existing: SubscriptionRow | null = null): SubscriptionStore {
     count: vi.fn().mockResolvedValue(0),
     getCursor: vi.fn().mockResolvedValue(0),
     setCursor: vi.fn().mockResolvedValue(undefined),
+    claimCreate: vi.fn().mockResolvedValue(true),
+    releaseCreate: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -168,5 +171,81 @@ describe('upsertSubscription', () => {
     await expect(
       upsertSubscription(row, { subscriptionStore: fakeStore(null), mondayClient: fakeMonday(), config: unconfigured })
     ).rejects.toThrow(/recurring-gifts.*not configured/);
+  });
+});
+
+// #25: the hourly poll and the queue consumer could both miss the ledger for one subscription,
+// both find nothing on the board, and both create a Recurring Gifts item.
+describe('upsertSubscription create claim', () => {
+  it('claims before any Monday call on a ledger miss and releases after recording', async () => {
+    const store = fakeStore(null);
+    const monday = fakeMonday({ donor: '9001', adopt: null });
+
+    await upsertSubscription(row, { subscriptionStore: store, mondayClient: monday, config });
+
+    const claimOrder = (store.claimCreate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    const firstMonday = (monday.findItemByColumnValue as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(claimOrder).toBeLessThan(firstMonday);
+    const [claimedId, token] = (store.claimCreate as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(claimedId).toBe('257753');
+    expect(store.releaseCreate).toHaveBeenCalledWith('257753', token);
+    const recordOrder = (store.upsert as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(recordOrder).toBeLessThan((store.releaseCreate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!);
+  });
+
+  it('throws without touching Monday when another writer holds the claim', async () => {
+    const store = fakeStore(null);
+    (store.claimCreate as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const monday = fakeMonday({ donor: '9001' });
+
+    await expect(upsertSubscription(row, { subscriptionStore: store, mondayClient: monday, config })).rejects.toThrow(/another writer/);
+
+    expect(monday.findItemByColumnValue).not.toHaveBeenCalled();
+    expect(monday.createItem).not.toHaveBeenCalled();
+    expect(store.upsert).not.toHaveBeenCalled();
+  });
+
+  it('updates the item the other writer just recorded instead of creating a second one', async () => {
+    const store = fakeStore(null);
+    (store.getByFunraiseId as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ funraiseId: '257753', mondayItemId: 'rg-theirs', donorItemId: null, status: 'Active', updtime: null, writtenAt: 'x' });
+    const monday = fakeMonday({ donor: '9001' });
+
+    const result = await upsertSubscription(row, { subscriptionStore: store, mondayClient: monday, config });
+
+    expect(result).toEqual({ mondayItemId: 'rg-theirs', action: 'updated' });
+    expect(monday.createItem).not.toHaveBeenCalled();
+  });
+
+  it('keeps the claim when the write fails midway, so it expires rather than inviting a duplicate', async () => {
+    const store = fakeStore(null);
+    const monday = fakeMonday({ donor: '9001' });
+    (monday.createItem as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday 500'));
+
+    await expect(upsertSubscription(row, { subscriptionStore: store, mondayClient: monday, config })).rejects.toThrow(/monday 500/);
+
+    expect(store.releaseCreate).not.toHaveBeenCalled();
+  });
+
+  it('never claims on a ledger hit', async () => {
+    const store = fakeStore({ funraiseId: '257753', mondayItemId: 'rg-1', donorItemId: null, status: 'Active', updtime: 1, writtenAt: 'x' });
+    await upsertSubscription(row, { subscriptionStore: store, mondayClient: fakeMonday({ donor: '9001' }), config });
+    expect(store.claimCreate).not.toHaveBeenCalled();
+  });
+
+  it('creates exactly one item when the poll and the consumer race on the real D1 ledger', async () => {
+    const store = new D1SubscriptionStore(env.DB);
+    const monday = fakeMonday({ donor: '9001', adopt: null });
+    const racer = { ...row, id: 197170 };
+
+    const results = await Promise.allSettled([
+      upsertSubscription(racer, { subscriptionStore: store, mondayClient: monday, config }),
+      upsertSubscription(racer, { subscriptionStore: store, mondayClient: monday, config }),
+    ]);
+
+    expect(monday.createItem).toHaveBeenCalledTimes(1);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await store.getByFunraiseId('197170'))?.mondayItemId).toBe('rg-new');
   });
 });

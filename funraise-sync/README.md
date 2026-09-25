@@ -51,9 +51,10 @@ Cloudflare Queue → consumer
 Donations board (+ Donor and Recurring Gift links; board ids in config/sandbox.json, or svbc.json for production)
 
 Cloudflare cron, hourly ("0 * * * *")
-  │  GET /api/v1/crm/subscription?q=updtime >= <cursor> order by updtime asc&page=N …
+  │  GET /api/v1/crm/subscription?q=updtime > T order by updtime asc          (keyset on
+  │      …or q=updtime = T and id > I order by id asc  (walking a tie group)   (updtime, id))
   │  each row → Recurring Gifts item (adopt by Funraise ID, else create; update in place);
-  │  D1 `subscriptions` ledger + `poll_cursors`; cursor advances after each full page
+  │  D1 `subscriptions` ledger + `poll_cursors`; cursors advance after each page lands
   ▼
 Recurring Gifts board (+ Donor link)
 ```
@@ -88,8 +89,17 @@ across every webhook-driven Worker in this plan.
   2. Register the webhook URL in Funraise **with that secret embedded**:
      `https://<worker-host>/webhooks/funraise/transaction?secret=<value>`.
 
-  The route **fails closed**: any POST whose `secret` query param doesn't match — including
-  every POST while the secret is unset — is rejected with 401. The `x-hook-secret` handshake is
+  The route **fails closed**: any POST whose secret doesn't match — including every POST while
+  the secret is unset — is rejected with 401. The comparison is constant-time (SHA-256 both
+  sides, then an early-exit-free byte compare; #25). Callers that can set headers — the
+  redrive script, a hand replay — send the secret as the `X-Webhook-Secret` header instead,
+  which is checked first. **Funraise itself can't:** its webhook configuration is only a target
+  URL and a contact email, so its deliveries keep `?secret=`. The tradeoff: a URL secret lands
+  wherever the full request URL is recorded — Cloudflare's Workers Logs / observability
+  invocation records for this Worker, and anyone with dashboard access to them. Mitigations:
+  keep observability access limited to people who could read the secret anyway, never log
+  `c.req.url` in this Worker, and rotate the secret (new `wrangler secret put` + Edit the URL
+  in Funraise) if logs are ever shared. The `x-hook-secret` handshake is
   still honored, but only after the secret check passes, and only when the request body isn't a
   valid event payload (empty body or non-event shape); a valid event that happens to carry an
   `x-hook-secret` header is processed normally, so a per-delivery secret can never swallow real
@@ -147,7 +157,7 @@ board schemas via the Monday API on 2026-09-17.
 | `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | subscriptions poller's target |
 | `monday.boards["people-live"]` | People (sandbox v2) | `18428131737` | People (Historical) is not a match target |
 | `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
-| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending; `Complete → Received` via `statusValueMap` |
+| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
 | `columnMap.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
 | `entityIdColumn` | Donations → Funraise ID (link) | `link_mm6jhcj8` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
 | `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm78nf5s` | |
@@ -213,7 +223,8 @@ delivery, as actually sent" for the translation). One board-side constraint on t
 `config/sandbox.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
 gift as seen from Salesforce) because the Donations board's status vocabulary (seeded by
 `salesforce-import`) is exactly `Received` /
-`Received (Historical)` / `Failed` / `Pending`, and `donation-rollups` counts only `Received` —
+`Received (Historical)` / `Failed` / `Pending` (plus `Refunded`, which staff must add — #25),
+and `donation-rollups` counts only `Received` —
 mapping to any label outside that set silently drops the gift from rollups. Notably: **Pledge and
 Subscription are a confirmed 1:1 duplicate** — do not create separate items for both; **8 email
 fields collapse to one** with precedence `npe01__Preferred_Email__c` → `Primary_Email__c` →
@@ -225,7 +236,8 @@ text `Fiscal Year Ending` column that `salesforce-import` writes on every migrat
 July–June fiscal year, named for the year it ends in, so a 2026-08-15 gift is FY 2027 and a
 2026-06-30 gift is FY 2026). It isn't a Funraise field, so `columnMap` can't map it;
 instead the consumer derives it from the transaction's `donationDate` (Funraise sends epoch
-milliseconds; `toISODate` in `src/util/isoDate.ts` normalizes it to a UTC `YYYY-MM-DD`, which is
+milliseconds; `toISODate` in `src/util/isoDate.ts` normalizes it to an `America/Los_Angeles`
+`YYYY-MM-DD`, which is
 also the value written to the Date column as `{ date }`, so the two never disagree) with
 `fiscalYearEnding()` in `src/mapping/fiscalYear.ts` (same July rule as `salesforce-import`'s
 `fiscalYear()` and `donation-rollups`' `fiscalYearFromDate`) and writes it as a string to
@@ -240,9 +252,11 @@ from whatever Date holds). Set `fiscalYearColumn` to `null`
 for a board without the column. `config/sandbox.json` points it at `text_mm70czyd`, the text column
 titled "Fiscal Year Ending" on the sandbox v2 Donations board (`18428131791`, verified live
 2026-09-17) — the same one `donation-rollups` reads — not the older numbers column titled "Fiscal
-Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. Known edge: the year is read
-from the UTC date of `donationDate`, the same way the Date column is written, so a gift made
-between 5 pm and midnight Pacific on June 30 lands in the new fiscal year on both columns.
+Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. The date is the **Pacific**
+calendar day of `donationDate` (#25): it used to be the UTC day, which put a gift made between
+~5 pm and midnight Pacific on June 30 (or Dec 31) into the next fiscal (or calendar) year on both
+columns, disagreeing with the local-date CloseDates `salesforce-import` migrated. Recurring
+Gifts' Next Payment goes through the same function.
 
 ## Acknowledgment / receipting
 
@@ -305,14 +319,43 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
 * **Field names.** Amount and status live under `data.transaction`; the donor under
   `data.supporter` (`id`, `email`, `name`); the gift's date is `donationDate` (epoch ms, see
   "Fiscal Year Ending"); the item name is `description`. `statusValueMap` maps `Complete` — the
-  documented success value — to `Received`. Anything else (`Refunded`, `Failed`, …) is written
-  verbatim, so a value outside the Donations status vocabulary fails the write and lands in the
-  DLQ rather than silently mislabeling; extend the map when Funraise's other statuses are known.
+  documented success value — to `Received`, and `Refunded` / `Failed` to the Donations labels of
+  the same name (#25), so a refunded gift stops being `Received` and drops out of
+  `donation-rollups`' totals. **`Refunded` is not yet a label on the Donations Status column** —
+  staff must add it (sandbox and production boards) or every refund write still fails. Anything
+  else is written verbatim, so a value outside the Donations status vocabulary fails the write
+  and dead-letters (see "Failures and the dead-letter queue") rather than silently mislabeling;
+  extend the map when Funraise's other statuses are known.
 * **PII denylist** is the `data.transaction.*` card and billing fields Funraise actually sends
   (`lastFour`, `expirationDate`, `cardType`, `billingFirstName`/`LastName`/`Zip`) plus
   `transaction.errors`, the gateway response (it carries a Stripe source fingerprint). They are
   stripped before the row reaches D1. Not stripped, flagged for a decision: `dedication.*`
   (a third party's name and email, "⚠ PII screen" in docs/03) and `comment`.
+
+## Failures and the dead-letter queue (#25)
+
+A failed consumer run marks the `events` row `failed` with the error and retries the message
+with backoff — 1, 4, then 16 minutes (`retryDelaySeconds` in `src/consumer/processBatch.ts`).
+Once `max_retries` (3) is exhausted the message goes to `funraise-sync-writes-dlq`
+(`…-sandbox-dlq` in the sandbox), which this Worker **also consumes**
+(`src/consumer/processDeadLetters.ts`, same shape as `donation-rollups`'): the row's error is
+prefixed `dead-lettered after retries: ` and each batch logs one `console.error` naming the
+transactions, so a dead gift is visible in Workers Logs and in D1 instead of expiring from the
+DLQ unseen after ~4 days. A dead message is evidence only as of when it was sent: a row written,
+or replaced by a newer Funraise delivery, since then is left alone. Nothing re-drives from the
+DLQ automatically — fix the cause, then:
+
+```sh
+FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox] --dry-run
+FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox]
+```
+
+It reads `failed` rows older than an hour from the remote D1 and POSTs each stored payload back
+as the envelope it arrived in (secret in the `X-Webhook-Secret` header); the route's
+duplicate-recovery path re-enqueues it, so the write happens on the normal path. Rows whose
+payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are listed for
+manual recovery from Funraise. To find dead gifts directly:
+`select entity_id, error, received_at from events where error like 'dead-lettered%'`.
 
 ## Deployed and verified (CRM Sandbox, 2026-09-18)
 
@@ -410,17 +453,28 @@ tests: `docs/superpowers/specs/2026-09-18-funraise-subscriptions-poller-design.m
 **Built 2026-09-18** (`src/subscriptions/`, `src/funraise/client.ts`, `src/db/subscriptions.ts`,
 migration `0004`, `src/scheduled.ts`). How it runs:
 
-* **Hourly cron** `0 * * * *` → `pollSubscriptions`: `GET /api/v1/crm/subscription` with
-  `q = updtime >= <cursor> order by updtime asc`, pages of 10 via `page=N`, until a short page.
-  Every row goes through `upsertSubscription`. Three cursors in `poll_cursors`: `subscriptions`
-  (the timestamp the query filters on), `subscriptions:page` (the next page of that query) and
-  `subscriptions:max` (the largest `updtime` seen in it). A run walks pages and persists the page
-  index; the timestamp cursor moves only when a short page proves the query exhausted, to that
-  max, and the page index resets. It cannot be moved sooner: a bulk import gave hundreds of
-  subscriptions one identical `updtime`, and a cursor equal to it re-selects the same first page
-  forever (seen live 2026-09-18). A failed page leaves every cursor untouched, so the next run
-  re-reads it and the ledger's per-row `updtime` makes already-landed rows no-ops; `>=` re-reads
-  the boundary rows on purpose. Idle cost: one request per run. Two more Funraise quirks live in
+* **Hourly cron** `0 * * * *` → `pollSubscriptions`: **keyset pagination on (`updtime`, `id`)**
+  (#25), always `page=0`. Two cursors in `poll_cursors`: `subscriptions` (T) and
+  `subscriptions:id` (I, or `-1` for none). Each request is either the forward query
+  `updtime > T order by updtime asc` or, while walking a tie group, `updtime = T and id > I
+  order by id asc`. A short forward page means caught up (T moves to its max `updtime`); a full
+  one moves T to its max `updtime` M and walks M's tie group by id from 0, because Funraise
+  promises no order among rows sharing an `updtime` — a bulk import gave hundreds of
+  subscriptions one identical `updtime` (seen live 2026-09-18). Every row goes through
+  `upsertSubscription`; the ledger's per-row `updtime` makes re-reads no-ops. A failed page
+  leaves the cursors untouched, so the next run re-reads it. Idle cost: one request per run.
+  **Why keyset:** this used to page by offset (`updtime >= cursor`, `page=N`, cursors
+  `subscriptions:page` / `subscriptions:max`, now unused). `updtime` changes during a walk that
+  spans hours at one page per run: an edited row jumps to the end and every later row shifts up
+  a slot, so the row sliding onto an already-read page was never read — and once the cursor
+  passed its `updtime`, never would be, cancellation included. A keyset query selects by value,
+  so rows moving elsewhere can't push an unread one behind the cursor. On the first run after
+  upgrading, `subscriptions:id` is absent, so the poll re-walks the tie group at the stored
+  cursor (no-ops) and carries on. **Before deploying, confirm Funraise accepts `and` in `q`**
+  (the 2026-09-18 probes exercised `>`, `>=`, `=`, `order by` and exact id, each alone): one
+  read-only `GET /api/v1/crm/subscription?q=updtime = <a real updtime> and id > 0 order by id
+  asc&page=0` should return only rows at that `updtime`; an HTTP 500 or rows at other times
+  means the tie query needs rewriting. Two more Funraise quirks live in
   `src/funraise/client.ts`: the list answers HTTP 500 to any `updtime` filter below about 2001,
   so a fresh cursor is floored there, and the page size is fixed at 10.
 * **One page per run on Workers Free.** A Free-plan invocation may make 50 external
@@ -431,6 +485,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   value when the account moves to Workers Paid (10,000 subrequests, 15 min CPU per hourly cron).
 * **Adopt before create.** A subscription the ledger doesn't know is looked up on the board by
   bare id in the Funraise ID link column; found → updated and recorded, not found → created.
+  **Claim first (#25):** the poll and the queue consumer's never-seen-subscription path can miss
+  the ledger for one subscription at the same moment, and both used to create an item. A ledger
+  miss now takes a D1 claim (`subscription_claims`, one atomic `INSERT … ON CONFLICT`) before
+  any Monday call; the loser throws having written nothing (the poll re-reads the page next run;
+  the consumer leaves that gift's Recurring Gift link unset, as for any lookup failure), and the
+  winner re-reads the ledger in case the other writer just finished. The claim is released once
+  the ledger records the item; a writer that dies midway leaves it to expire after 10 minutes.
   **The first run on a board `salesforce-import` has loaded therefore adopts its ~600 existing
   Recurring Gifts items** (expect `adopted ≈ board count, created ≈ 0` in the run's log line)
   instead of duplicating them. A row older than the ledger is a no-op, so nothing regresses.
@@ -453,14 +514,16 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   from `env.sandbox`; before it, `--var ENVIRONMENT:sandbox` against the top-level binding), and hit
   `http://localhost:8788/__scheduled?cron=0+*+*+*+*` once per page — each invocation is one
   deployed-shaped run that advances the cursors. Read the `subscriptions poll read …` log line
-  each time. The walk is done when a run reads **only unchanged rows** — never `0 rows`, because
-  `>=` re-reads the boundary rows that share the last `updtime` on every idle run (that is the
-  one-request idle cost). Then `select count(*) from subscriptions` on the remote D1 should equal
+  each time. The walk is done when the log line ends `caught up` (since #25's keyset change an
+  idle run reads `0 rows`; before it, `>=` re-read the boundary rows every run). Then `select count(*) from subscriptions` on the remote D1 should equal
   the board's item count and Funraise's own subscription count.
   **Do it while the deployed hourly cron cannot fire** (deploy with `subscriptionsPoll.enabled:
   false`, or finish between two top-of-the-hour runs): on 2026-09-19 the 02:00 cron and the local
   loop reached the same page within a second and both created subscription 197170 before either
-  had recorded it; the copy the ledger didn't own was deleted by hand. Funraise's webhook Test
+  had recorded it; the copy the ledger didn't own was deleted by hand. (Since #25 a ledger miss
+  first takes an atomic D1 claim — `subscription_claims`, migration `0005` — so two writers can
+  no longer both create; the loser skips that row until the next run. Still prefer a quiet
+  window: a loser's page is simply re-read.) Funraise's webhook Test
   payload has no `subscription`, so its Donations item must show an empty Recurring Gift column.
 * **Done 2026-09-19 (CRM Sandbox, run locally as above, ~140 invocations).** Funraise holds
   1,175 subscriptions — 542 Active, 61 Cancelled, 4 Failed, 568 Redacted. The importer had put
