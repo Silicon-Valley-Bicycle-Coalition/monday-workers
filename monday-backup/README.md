@@ -5,9 +5,13 @@
 (`MONDAY_API_TOKEN`), a Google service account added as a member (Content manager) of the
 destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
 and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
-that Shared Drive (or the Shared Drive's own id). The
-`Doc.blocks` GraphQL query in `src/monday/client.ts` hasn't been exercised against a live
-account — confirm its shape against Monday's API Explorer before the first real run.
+that Shared Drive (or the Shared Drive's own id). Requires **Workers Paid** (see Cloudflare
+config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
+paginated `Doc.blocks`) nor the restore mutations in `src/restore/api.ts` have been exercised
+against a live account yet — confirm them in Monday's API Explorer before the first real run.
+**Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
+[`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
+outstanding** (it needs the provisioned sandbox, issue #14).
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
 runs: from that point on, Monday is holding real donor/donation data with no Salesforce copy to
 fall back on if something goes wrong.
@@ -50,11 +54,15 @@ Cloudflare Cron Trigger (proposed: daily)
   │
   ▼
 Cloudflare Worker
-  │  1. Enumerate every board across every workspace (Monday GraphQL API)
-  │  2. Per board: pull full item + column-value data, paginated, plus the board's own schema
-  │     (columns, groups, settings) — enough to reconstruct the board's shape, not just its rows
-  │  3. Pull every monday Doc's content (blocks) too — the one thing the native export explicitly
-  │     doesn't cover
+  │  1. Enumerate every board across every workspace (Monday GraphQL API), active and archived,
+  │     with its metadata (kind, description, folder, permissions, state, type)
+  │  2. Per board: its schema (columns with settings, groups), then every item, paginated —
+  │     column values (connect-boards/dependency linked item ids and mirror display values via
+  │     their typed fragments, since `text` is null for those), state, created/updated time,
+  │     creator, parent item (subitems), file metadata — then every update with its replies.
+  │     Subitems boards are backed up like any other board.
+  │  3. Pull every monday Doc's blocks, paginated, with nesting and position — the one thing the
+  │     native export explicitly doesn't cover
   │  4. Stream each board and each doc, page by page, as JSON Lines (`board-<id>.jsonl`,
   │     `doc-<id>.jsonl`) into a Drive resumable upload — memory holds one page, never a board
   │  5. …into one folder per run inside the Shared Drive, named for the date and D1 run id
@@ -151,20 +159,31 @@ once there's a real base of snapshots to look at, not before.
 
 ## What this does *not* cover
 
-* **Native Monday file-column attachments.** Per the Attachment & Note Migration Workstream
-  (`migration-plan.md`, private planning repo), real documents are already moving *out* of Monday
-  into Google Drive directly (linked from Monday items, not stored as native Monday files) as the
-  long-term design — so file-column content should be minimal going forward, not the primary
-  document store this Worker needs to protect. Worth a one-time check for any board still using
-  File columns for anything substantive before assuming this is a non-issue.
+* **File contents (item files and update attachments) — metadata only, by decision.** Each
+  file's name, extension, size, upload time, uploader and Monday URL are in the snapshot; the
+  bytes are not. Monday's `public_url` expires after an hour, so a durable copy would mean
+  downloading every file and re-uploading it to Drive *every night* — with indefinite retention
+  that is N full copies of every attachment, and the transfer competes with the board data for
+  the cron's 15-minute wall-time budget. It also cuts against the Attachment & Note Migration
+  Workstream (`migration-plan.md`, private planning repo): real documents are moving *out* of
+  Monday into Google Drive directly (linked from items, not stored as Monday files), so file
+  columns should be minimal. If a board turns out to rely on File columns for something that
+  matters, the right fix is an incremental, content-addressed asset archive (download each asset
+  id once, ever), not nightly copies — worth a one-time check before assuming it's a non-issue.
+* **Archived *items* on active boards.** Monday's `items_page` returns active items only, and
+  there's no API to list archived item ids. An archived item stays restorable from Monday's own
+  board Archive, and every nightly snapshot taken while it was active still has it. Archived
+  *boards* are backed up in full; deleted boards (Monday's 30-day trash) are skipped and listed in
+  the manifest.
 * **Automation and integration configuration** — recipe definitions, webhook subscriptions,
   column-automation rules. Nothing here fetches or reconstructs those; if an automation gets
   deleted or misconfigured, this backup won't help recreate it. Flagged as an honest gap, not
   solved by this Worker.
-* **One-click restore.** This Worker only produces the snapshot. Turning a JSON snapshot back into
-  live Monday boards would need its own tool — likely reusable logic from `salesforce-import`'s
-  `load` stage, which already knows how to create Monday items from structured data — but that's
-  explicitly out of scope here, not assumed solved.
+* **Things the restore tool can't put back exactly** — original item/update ids, authorship and
+  timestamps (restored updates carry an "originally posted by … at …" line instead), board-level
+  updates, board owners/subscribers and folder placement, mirror/formula column wiring (created,
+  but check settings), and label colours/indexes (labels are restored by text). The restore
+  reports each of these as a warning. Full list and procedure: [`RESTORE.md`](RESTORE.md).
 
 ## Related, not yet in scope here
 
