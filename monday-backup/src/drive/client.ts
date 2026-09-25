@@ -2,12 +2,22 @@ import { signServiceAccountJwt, type ServiceAccountCredentials } from './jwt';
 
 // Full `drive` scope rather than `drive.file`, since ensureDatedFolder needs to *list*
 // existing children of a folder the service account didn't necessarily create itself
-// (the destination folder is shared to it as a collaborator — see README's "APIs & auth").
+// (the service account is a member of the destination Shared Drive — see README's "APIs & auth").
 // Narrow this to `drive.file` if SVBC's Drive setup moves to domain-wide delegation instead.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const MULTIPART_BOUNDARY = 'monday-backup-boundary';
+
+// Service accounts have no Drive storage quota: an upload into a My Drive folder merely *shared*
+// with one fails 403 storageQuotaExceeded. The destination must be a Shared Drive (the files are
+// then owned by the drive, not the account), and every call that touches a Shared Drive item has
+// to opt in with supportsAllDrives — without it Drive answers 404 for the parent folder
+// (issue #29). corpora=allDrives + includeItemsFromAllDrives lets the folder lookup see Shared
+// Drive children without having to configure the drive id separately; the `'<id>' in parents`
+// clause keeps that query narrow.
+const ALL_DRIVES = 'supportsAllDrives=true';
+const LIST_ALL_DRIVES = `${ALL_DRIVES}&includeItemsFromAllDrives=true&corpora=allDrives`;
 
 export interface DriveClient {
   ensureDatedFolder(parentFolderId: string, dateFolderName: string): Promise<string>;
@@ -70,14 +80,14 @@ export class GoogleDriveClient implements DriveClient {
       `'${escapeDriveQueryValue(parentFolderId)}' in parents` +
       ` and name = '${escapeDriveQueryValue(dateFolderName)}'` +
       ` and mimeType = '${FOLDER_MIME_TYPE}' and trashed = false`;
-    const listResponse = await this.driveFetch(`/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)`);
+    const listResponse = await this.driveFetch(`/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)&${LIST_ALL_DRIVES}`);
     const listed = (await listResponse.json()) as { files: { id: string }[] };
     const existing = listed.files[0];
     if (existing !== undefined) {
       return existing.id;
     }
 
-    const createResponse = await this.driveFetch('/drive/v3/files?fields=id', {
+    const createResponse = await this.driveFetch(`/drive/v3/files?fields=id&${ALL_DRIVES}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: dateFolderName, mimeType: FOLDER_MIME_TYPE, parents: [parentFolderId] }),
@@ -97,7 +107,7 @@ export class GoogleDriveClient implements DriveClient {
       `${JSON.stringify(data)}\r\n` +
       `--${MULTIPART_BOUNDARY}--`;
 
-    await this.driveFetch('/upload/drive/v3/files?uploadType=multipart', {
+    await this.driveFetch(`/upload/drive/v3/files?uploadType=multipart&${ALL_DRIVES}`, {
       method: 'POST',
       headers: { 'content-type': `multipart/related; boundary=${MULTIPART_BOUNDARY}` },
       body: multipartBody,

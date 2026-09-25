@@ -2,9 +2,10 @@
 
 **Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
 `wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
-(`MONDAY_API_TOKEN`), a Google service account with access to the destination Drive folder
-(`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`), and
-`config/backup.json`'s `destinationParentFolderId` filled in with that folder's real id. The
+(`MONDAY_API_TOKEN`), a Google service account added as a member (Content manager) of the
+destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
+and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
+that Shared Drive (or the Shared Drive's own id). The
 `Doc.blocks` GraphQL query in `src/monday/client.ts` hasn't been exercised against a live
 account — confirm its shape against Monday's API Explorer before the first real run.
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
@@ -69,10 +70,15 @@ Google Drive, one dated snapshot per run, kept indefinitely (see Retention below
   with view access to every workspace, not a staff member's personal token. Follows the same
   least-privilege principle `../README.md` already states for every other Worker here: a token
   compromise should expose only what this Worker needs, not one person's full account access.
-* **Google Drive API** — a service account added as a collaborator on the destination folder
-  (or domain-wide delegation, if SVBC's Google Workspace setup supports it), not a personal OAuth
-  grant tied to one staff member's account — a personal grant breaks the day that person leaves
-  or changes their password.
+* **Google Drive API** — a service account that is a **member of a Shared Drive** (role:
+  Content manager), not a personal OAuth grant tied to one staff member's account — a personal
+  grant breaks the day that person leaves or changes their password. It must be a Shared Drive,
+  not a My Drive folder shared with the service account: [service accounts have no storage
+  quota](https://developers.google.com/workspace/drive/api/guides/about-shareddrives), so uploads
+  into a shared My Drive folder fail `403 storageQuotaExceeded`. Every Drive call passes
+  `supportsAllDrives=true` (and the folder lookup `includeItemsFromAllDrives=true&corpora=allDrives`);
+  without those, Drive answers 404 for Shared Drive items. Snapshots count against the Shared
+  Drive's (i.e. the Workspace's pooled) storage.
 
 ## Cloudflare config (fleet standard)
 
