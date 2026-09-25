@@ -1,8 +1,11 @@
 # member-portal
 
-**Status:** Live — v1 deployed (login + read-only donation history and member discounts). v2 in
-development. Donation history is date-gated (see "v7 — Clean-start donation history"): hidden
-until 2027-01-01, and from then on showing only gifts dated 2026-01-01 or later.
+**Status:** Not yet deployed to production — no version has been live. Code-complete through v7
+(the sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
+[production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
+live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
+date-gated (see "v7 — Clean-start donation history"): hidden until 2027-01-01, and from then on
+showing only gifts dated 2026-01-01 or later.
 **Priority:** Post-migration, non-blocking on the October cutover.
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript, D1 (tokens/sessions and queued change requests — Monday stays the
