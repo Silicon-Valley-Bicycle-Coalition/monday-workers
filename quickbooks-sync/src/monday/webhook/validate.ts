@@ -17,7 +17,7 @@ export function validateMondayEvent(body: unknown): MondayItemCreatedEvent {
     throw new Error('monday webhook: missing "event" object');
   }
 
-  const { pulseId, boardId, columnValues } = event as Record<string, unknown>;
+  const { pulseId, pulseName, boardId, columnValues } = event as Record<string, unknown>;
   if (typeof pulseId !== 'number' && typeof pulseId !== 'string') {
     throw new Error('monday webhook: event missing "pulseId"');
   }
@@ -25,12 +25,15 @@ export function validateMondayEvent(body: unknown): MondayItemCreatedEvent {
     throw new Error('monday webhook: event missing "boardId"');
   }
 
+  const values = { ...(typeof columnValues === 'object' && columnValues !== null ? columnValues : {}) } as Record<string, unknown>;
+  // create_pulse carries the item's name as pulseName, outside columnValues. Keep it under
+  // "name" — Monday's own column id for the Name column — so customerCreateFieldMap can map it
+  // like any other column (#33).
+  if (typeof pulseName === 'string') values.name = pulseName;
+
   return {
     mondayItemId: String(pulseId),
     boardId,
-    columnValues: (typeof columnValues === 'object' && columnValues !== null ? columnValues : {}) as Record<
-      string,
-      unknown
-    >,
+    columnValues: values,
   };
 }

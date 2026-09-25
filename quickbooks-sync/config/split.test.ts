@@ -52,7 +52,9 @@ describe('config split: the QuickBooks sink', () => {
       ...Object.values(sync.linkColumn),
       ...Object.keys(sync.customerCreateFieldMap),
     ];
-    const isStandIn = (id: string) => id.endsWith('_column_id');
+    // "name" is Monday's fixed id for every board's Name column (the item name), the same on
+    // both accounts by design — not a board-specific id that could leak between them.
+    const isStandIn = (id: string) => id.endsWith('_column_id') || id === 'name';
     const productionIds = new Set(columnIds(production.quickbooksSync));
     for (const id of columnIds(sandbox.quickbooksSync).filter((id) => !isStandIn(id))) {
       expect(productionIds.has(id), id).toBe(false);

@@ -25,7 +25,7 @@ const config: QuickbooksSyncConfig = {
     },
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
-    customerCreateFieldMap: { text_col: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
+    customerCreateFieldMap: { name: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
   },
 };
 
@@ -165,7 +165,15 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
     return app.request('/webhooks/monday?secret=integration-secret', {
       method: 'POST',
       body: JSON.stringify({
-        event: { pulseId, boardId: 789, columnValues: { text_col: 'New Org', email_col: 'hello@neworg.test' } },
+        // The shape Monday's create_pulse webhook actually sends: the name as pulseName, and
+        // column values in their raw per-type shapes.
+        event: {
+          type: 'create_pulse',
+          pulseId,
+          pulseName: 'New Org',
+          boardId: 789,
+          columnValues: { email_col: { email: 'hello@neworg.test', text: 'hello@neworg.test' } },
+        },
       }),
       headers: { 'Content-Type': 'application/json' },
     });

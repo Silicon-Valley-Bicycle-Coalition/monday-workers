@@ -42,6 +42,8 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const QB_CUSTOMER_NAME_FIELDS = ['DisplayName', 'Title', 'GivenName', 'MiddleName', 'FamilyName', 'Suffix'];
+
 const BOARD_KEY_FOR_ENTITY: Record<EntityType, keyof MondayBoards> = {
   customer: 'customers',
   invoice: 'invoices',
@@ -171,6 +173,13 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
   if (qbId === null) {
     const columnValues = JSON.parse(event.rawPayload) as Record<string, unknown>;
     const qbFields = mapMondayToQbCustomerFields(columnValues, deps.config);
+    // QuickBooks rejects a Customer with none of these (DisplayName is derived from the others
+    // when absent). Fail with a readable error instead of a bare HTTP 400.
+    if (!QB_CUSTOMER_NAME_FIELDS.some((field) => qbFields[field] !== undefined)) {
+      throw new Error(
+        `monday item "${event.mondayItemId}" has no name to create a QuickBooks Customer from — check config customerCreateFieldMap maps "name" (the item name) to DisplayName`
+      );
+    }
     const created = await deps.quickBooksClient.createCustomer(qbFields);
     qbId = created.id;
 

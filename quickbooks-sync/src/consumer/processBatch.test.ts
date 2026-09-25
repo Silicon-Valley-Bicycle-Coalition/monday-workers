@@ -480,6 +480,54 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
+  // #33: a staff-typed Customer arrives as a create_pulse whose name is the item name and whose
+  // columns are raw Monday shapes; both used to reach QuickBooks unmapped and 400.
+  it('creates the customer from the item name and normalized raw column values', async () => {
+    const withName: QuickbooksSyncConfig = {
+      ...config,
+      quickbooksSync: { ...config.quickbooksSync, customerCreateFieldMap: { name: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' } },
+    };
+    const mondayEventStore = fakeMondayEventStore({
+      getEvent: vi.fn().mockResolvedValue(
+        mondayEventRow({ rawPayload: JSON.stringify({ name: 'Staff Typed Co', email_col: { email: 'ap@staff.test', text: 'ap@staff.test' } }) })
+      ),
+    });
+    const createCustomer = vi.fn().mockResolvedValue({ id: 'qb-new' });
+
+    await processSyncQueueBatch([fakeMessage({ direction: 'monday-to-qb', eventId: '42' })], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ createCustomer }),
+      config: withName,
+    });
+
+    expect(createCustomer.mock.calls[0]![0]).toEqual({ DisplayName: 'Staff Typed Co', PrimaryEmailAddr: { Address: 'ap@staff.test' } });
+  });
+
+  it('refuses to send QuickBooks a customer with no name, naming the problem', async () => {
+    const mondayEventStore = fakeMondayEventStore({
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ rawPayload: JSON.stringify({ text_col: { value: '' } }) })),
+    });
+    const createCustomer = vi.fn();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ createCustomer }),
+      config,
+    });
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no name/) });
+    vi.restoreAllMocks();
+  });
+
   it('fails and retries when the monday_events row is missing', async () => {
     const mondayEventStore = fakeMondayEventStore({ getEvent: vi.fn().mockResolvedValue(null) });
     const message = fakeMessage({ direction: 'monday-to-qb', eventId: 'missing-item' });
