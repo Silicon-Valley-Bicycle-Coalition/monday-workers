@@ -10,7 +10,7 @@ function validRaw() {
       columns: {
         membershipStatus: 'c1', membershipTier: 'c2', memberSince: 'c3', memberUntil: 'c4',
         addr1: 'c5', city: 'c6', state: 'c7', zip: 'c8', email: 'c9', totalGiven: 'c10',
-        mailchimpCampaigns: 'c11',
+        mailchimpCampaigns: 'c11', doNotSolicit: 'c12', dnsReasonStatus: 'c13',
       },
     },
     mailchimp: {
@@ -22,11 +22,12 @@ function validRaw() {
       },
       tags: {
         activeMember: 'active-member', lapsedMember: 'lapsed-member',
-        lifetimeMember: 'lifetime-member', hasDonated: 'has-donated',
+        lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit',
       },
     },
     lifetimeTierValue: 'Lifetime',
     activeStatusValue: 'Active',
+    dnsConfirmedValue: 'Confirmed',
   };
 }
 
@@ -63,6 +64,20 @@ describe('validateConfig', () => {
     const raw = validRaw();
     delete (raw as Record<string, unknown>).lifetimeTierValue;
     expect(() => validateConfig(raw)).toThrow('config: missing required key "lifetimeTierValue"');
+  });
+
+  it('requires the Do Not Solicit columns, tag, and confirmed value', () => {
+    for (const [mutate, message] of [
+      [(r: ReturnType<typeof validRaw>) => delete (r.monday.columns as Record<string, unknown>).doNotSolicit, 'monday.columns.doNotSolicit'],
+      [(r: ReturnType<typeof validRaw>) => delete (r.monday.columns as Record<string, unknown>).dnsReasonStatus, 'monday.columns.dnsReasonStatus'],
+      [(r: ReturnType<typeof validRaw>) => delete (r.mailchimp.tags as Record<string, unknown>).doNotSolicit, 'mailchimp.tags.doNotSolicit'],
+      [(r: ReturnType<typeof validRaw>) => delete (r as Record<string, unknown>).dnsConfirmedValue, 'dnsConfirmedValue'],
+    ] as const) {
+      const raw = validRaw();
+      mutate(raw);
+      expect(() => validateConfig(raw)).toThrow(`config: missing required key "${message}"`);
+    }
+    expect(validateConfig(validRaw()).dnsConfirmedValue).toBe('Confirmed');
   });
 
   it('accepts a real numeric donorsBoardId/campaignsBoardId', () => {

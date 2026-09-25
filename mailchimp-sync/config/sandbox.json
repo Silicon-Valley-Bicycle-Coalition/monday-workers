@@ -14,7 +14,9 @@
       "zip": "text_mm79w5wm",
       "email": "email_mm79m5qa",
       "totalGiven": "numeric_mm79zsgp",
-      "mailchimpCampaigns": "board_relation_mm7eg3jz"
+      "mailchimpCampaigns": "board_relation_mm7eg3jz",
+      "doNotSolicit": "boolean_mm79xbdh",
+      "dnsReasonStatus": "color_mm7dc4z7"
     }
   },
   "mailchimp": {
@@ -32,9 +34,11 @@
       "activeMember": "active-member",
       "lapsedMember": "lapsed-member",
       "lifetimeMember": "lifetime-member",
-      "hasDonated": "has-donated"
+      "hasDonated": "has-donated",
+      "doNotSolicit": "do-not-solicit"
     }
   },
   "lifetimeTierValue": "Lifetime",
-  "activeStatusValue": "Active"
+  "activeStatusValue": "Active",
+  "dnsConfirmedValue": "Confirmed"
 }

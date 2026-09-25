@@ -46,6 +46,13 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
     out.push(tags.hasDonated);
   }
 
+  // Tagged as soon as the box is checked, before anyone reviews the reason — fundraising sends
+  // exclude this tag. Unchecking drops it (managedTags deactivates it). The unsubscribe itself
+  // waits for review; see consumer/outbound.ts.
+  if (donor.doNotSolicit) {
+    out.push(tags.doNotSolicit);
+  }
+
   return out;
 }
 
@@ -54,5 +61,5 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
 // possible buildTags output; anything outside this set is left alone in Mailchimp.
 export function managedTags(config: Config): string[] {
   const tags = config.mailchimp.tags;
-  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated];
+  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit];
 }

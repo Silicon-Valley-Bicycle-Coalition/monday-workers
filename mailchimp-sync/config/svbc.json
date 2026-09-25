@@ -14,7 +14,9 @@
       "zip": "REPLACE_WITH_COLUMN_ID",
       "email": "REPLACE_WITH_COLUMN_ID",
       "totalGiven": "REPLACE_WITH_COLUMN_ID",
-      "mailchimpCampaigns": "REPLACE_WITH_COLUMN_ID"
+      "mailchimpCampaigns": "REPLACE_WITH_COLUMN_ID",
+      "doNotSolicit": "REPLACE_WITH_COLUMN_ID",
+      "dnsReasonStatus": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "mailchimp": {
@@ -32,9 +34,11 @@
       "activeMember": "active-member",
       "lapsedMember": "lapsed-member",
       "lifetimeMember": "lifetime-member",
-      "hasDonated": "has-donated"
+      "hasDonated": "has-donated",
+      "doNotSolicit": "do-not-solicit"
     }
   },
   "lifetimeTierValue": "Lifetime",
-  "activeStatusValue": "Active"
+  "activeStatusValue": "Active",
+  "dnsConfirmedValue": "Confirmed"
 }

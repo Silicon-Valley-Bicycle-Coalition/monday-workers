@@ -7,9 +7,10 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
   } },
   mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never },
-  lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active',
+  lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
 const SECRET = 'test-webhook-secret';

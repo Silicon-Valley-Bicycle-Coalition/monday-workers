@@ -8,6 +8,7 @@ import { HttpMailchimpClient } from './mailchimp/client';
 import { D1PendingOutboundStore } from './db/pendingOutbound';
 import { D1PendingInboundStore } from './db/pendingInbound';
 import { D1CampaignItemsStore } from './db/campaignItems';
+import { D1DnsUnsubscribeLog } from './db/dnsUnsubscribes';
 import { createOutboundApp } from './webhook/outboundRoute';
 import { createInboundApp } from './webhook/inboundRoute';
 import { processOutboundBatch } from './consumer/outbound';
@@ -62,6 +63,7 @@ export default {
         mondayClient,
         mailchimpClient,
         config,
+        dnsLog: new D1DnsUnsubscribeLog(env.DB),
       });
       return;
     }

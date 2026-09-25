@@ -5,7 +5,7 @@ import type { MondayColumnsConfig } from '../types';
 const COLUMNS: MondayColumnsConfig = {
   membershipStatus: 'status', membershipTier: 'tier', memberSince: 'since', memberUntil: 'until',
   addr1: 'addr1', city: 'city', state: 'state', zip: 'zip', email: 'email', totalGiven: 'given',
-  mailchimpCampaigns: 'campaigns',
+  mailchimpCampaigns: 'campaigns', doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
 };
 
 function fakeFetch(data: unknown) {
@@ -44,7 +44,7 @@ describe('HttpMondayClient.getDonorById', () => {
           { id: 'email', text: 'a@b.com' }, { id: 'status', text: 'Active' }, { id: 'tier', text: 'Standard' },
           { id: 'since', text: '2026-01-01' }, { id: 'until', text: null }, { id: 'addr1', text: '1 Main St' },
           { id: 'city', text: 'San Jose' }, { id: 'state', text: 'CA' }, { id: 'zip', text: '95110' },
-          { id: 'given', text: '150' },
+          { id: 'given', text: '150' }, { id: 'dns', text: '' }, { id: 'dnsStatus', text: null },
         ],
       }],
     });
@@ -55,8 +55,22 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor).toEqual({
       id: '42', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
       memberSince: '2026-01-01', memberUntil: '', addr1: '1 Main St', city: 'San Jose',
-      state: 'CA', zip: '95110', totalGiven: '150',
+      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '',
     });
+  });
+
+  it("reads a checked Do Not Solicit box (Monday's checkbox text is 'v') and the reason status", async () => {
+    const fetchFn = fakeFetch({
+      items: [{ id: '42', column_values: [{ id: 'email', text: 'a@b.com' }, { id: 'dns', text: 'v' }, { id: 'dnsStatus', text: 'Confirmed' }] }],
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+
+    const donor = await client.getDonorById('42', COLUMNS);
+
+    expect(donor?.doNotSolicit).toBe(true);
+    expect(donor?.dnsReasonStatus).toBe('Confirmed');
+    const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).toEqual(expect.arrayContaining(['dns', 'dnsStatus']));
   });
 
   it('returns null when the item no longer exists', async () => {

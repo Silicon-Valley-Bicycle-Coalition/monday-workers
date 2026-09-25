@@ -12,18 +12,19 @@ const CONFIG: Config = {
     },
     tags: {
       activeMember: 'active-member', lapsedMember: 'lapsed-member',
-      lifetimeMember: 'lifetime-member', hasDonated: 'has-donated',
+      lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit',
     },
   },
   lifetimeTierValue: 'Lifetime',
   activeStatusValue: 'Active',
+  dnsConfirmedValue: 'Confirmed',
 };
 
 function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '2027-01-01', addr1: '1 Main St', city: 'San Jose',
-    state: 'CA', zip: '95110', totalGiven: '0', ...overrides,
+    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', ...overrides,
   };
 }
 
@@ -75,16 +76,27 @@ describe('buildTags', () => {
   });
 });
 
+describe('buildTags — Do Not Solicit', () => {
+  it('adds do-not-solicit as soon as the box is checked, whatever the reason status', () => {
+    expect(buildTags(donor({ doNotSolicit: true, dnsReasonStatus: 'Missing' }), CONFIG)).toContain('do-not-solicit');
+    expect(buildTags(donor({ doNotSolicit: true, dnsReasonStatus: '' }), CONFIG)).toContain('do-not-solicit');
+  });
+
+  it('omits do-not-solicit when the box is unchecked, so syncTags deactivates it', () => {
+    expect(buildTags(donor({ doNotSolicit: false, dnsReasonStatus: 'Confirmed' }), CONFIG)).not.toContain('do-not-solicit');
+  });
+});
+
 describe('managedTags', () => {
   it('enumerates every configured tag this worker owns, and only those', () => {
     expect(managedTags(CONFIG).sort()).toEqual(
-      ['active-member', 'has-donated', 'lapsed-member', 'lifetime-member'],
+      ['active-member', 'do-not-solicit', 'has-donated', 'lapsed-member', 'lifetime-member'],
     );
   });
 
   it('always contains whatever buildTags produces', () => {
     const managed = managedTags(CONFIG);
-    for (const d of [donor(), donor({ membershipTier: 'Lifetime' }), donor({ membershipStatus: 'Lapsed', totalGiven: '150' })]) {
+    for (const d of [donor(), donor({ membershipTier: 'Lifetime' }), donor({ membershipStatus: 'Lapsed', totalGiven: '150' }), donor({ doNotSolicit: true })]) {
       for (const tag of buildTags(d, CONFIG)) {
         expect(managed).toContain(tag);
       }

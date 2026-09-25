@@ -10,6 +10,7 @@ export interface MailchimpMemberInterests {
 }
 
 export type UpdateMemberResult = 'updated' | 'not-in-audience';
+export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-in-audience';
 
 export interface MailchimpClient {
   /**
@@ -21,6 +22,13 @@ export interface MailchimpClient {
    * never touched.
    */
   updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult>;
+  /**
+   * Set an existing member to unsubscribed — the one status change this worker ever makes, and
+   * only for a reviewed Do Not Solicit. One-way: nothing here resubscribes anyone. Returns
+   * 'already-unsubscribed' (no write) for an unsubscribed or cleaned member, and
+   * 'not-in-audience' (no write) for an address Mailchimp doesn't hold.
+   */
+  unsubscribeMember(email: string): Promise<UnsubscribeResult>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
   listInterests(): Promise<MailchimpInterest[]>;
 }
@@ -103,6 +111,32 @@ export class HttpMailchimpClient implements MailchimpClient {
       throw new MailchimpTransientError(`mailchimp syncTags: HTTP ${response.status}: ${detail}`);
     }
     throw new MailchimpPermanentError(`mailchimp syncTags: HTTP ${response.status}: ${detail}`);
+  }
+
+  async unsubscribeMember(email: string): Promise<UnsubscribeResult> {
+    const memberUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members/${subscriberHash(email)}`;
+    // Look first: Mailchimp refuses a status change on a cleaned address, and an unsubscribed
+    // one needs no write.
+    const lookup = await this.fetchFn(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
+    if (lookup.status === 404) return 'not-in-audience';
+    if (!lookup.ok) {
+      const detail = await lookup.text();
+      throw new MailchimpTransientError(`mailchimp unsubscribeMember lookup: HTTP ${lookup.status}: ${detail}`);
+    }
+    const { status } = (await lookup.json()) as { status: string };
+    if (status === 'unsubscribed' || status === 'cleaned') return 'already-unsubscribed';
+
+    const response = await this.fetchFn(memberUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
+      body: JSON.stringify({ status: 'unsubscribed' }),
+    });
+    if (response.ok) return 'unsubscribed';
+    const detail = await response.text();
+    if (response.status === 429 || response.status >= 500) {
+      throw new MailchimpTransientError(`mailchimp unsubscribeMember: HTTP ${response.status}: ${detail}`);
+    }
+    throw new MailchimpPermanentError(`mailchimp unsubscribeMember: HTTP ${response.status}: ${detail}`);
   }
 
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {

@@ -43,7 +43,8 @@ Three independent flows — see the design doc for full sequence diagrams:
    in the audience (they never opted in) is recorded as `skipped` and left out; the write is a
    `PATCH`, which 404s rather than creating, and never sends a `status`, so an unsubscribed or
    cleaned contact stays that way. People join the audience only through Mailchimp's own
-   signup forms or the cutover consent import.
+   signup forms or the cutover consent import. **One exception, one-way:** a reviewed Do Not
+   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below.
 2. **Campaign catalog reconciliation:** daily cron diffs Mailchimp's Interest Categories against a
    D1-tracked set of Monday items on the Campaigns board — creates, renames, or archives as
    needed. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
@@ -51,6 +52,30 @@ Three independent flows — see the design doc for full sequence diagrams:
 3. **Inbound:** Mailchimp subscribe/unsubscribe/profile event → webhook → D1 idempotency →
    Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
    the full current set to the Donor's connect column.
+
+## Do Not Solicit
+
+Two steps, so a mis-clicked checkbox can't silently lose a subscriber:
+
+1. **Do Not Solicit checked → `do-not-solicit` tag, right away.** Added on the next outbound
+   sync regardless of the reason; fundraising sends and Customer Journeys exclude that tag, while
+   newsletters still go out. Unchecking the box removes the tag (it's a managed tag).
+2. **Do Not Solicit checked *and* DNS Reason Status = `dnsConfirmedValue` ("Confirmed") →
+   unsubscribed.** "Confirmed" is set by the compliance owner after reviewing the reason — the
+   board's automations only ever set Missing/OK. The Worker then sets the Personal Email's
+   Mailchimp status to `unsubscribed` (`unsubscribeMember`: looks the member up first; an
+   already-unsubscribed or cleaned address needs no write) and records it in the D1
+   `dns_unsubscribes` table — email, Monday item, result, timestamp. That row is the audit trail,
+   and it stops later column changes on the same person from calling Mailchimp again.
+
+Deliberate limits:
+* **Never resubscribes.** Unchecking the box, or moving the status off Confirmed, removes the
+  tag but leaves the unsubscribe in place; only the person can opt back in, through Mailchimp.
+* **Personal Email only.** The Household Email may be shared by other people in the household,
+  so it is never unsubscribed on one person's flag (it isn't synced at all yet — see below).
+* **People board only.** People (Historical) and Organizations carry the same columns but
+  aren't watched by this Worker.
+* **Nothing flows back.** An unsubscribe that starts in Mailchimp doesn't check Do Not Solicit.
 
 ## Prerequisites before this can run against real data
 
@@ -62,6 +87,7 @@ Three independent flows — see the design doc for full sequence diagrams:
   won't match `config/*.json`'s `mailchimp.mergeFields` and silently drops those two fields
   from every sync. Discovered provisioning the sandbox audience 2026-09-22; use the 9-char
   tags above instead.
+* Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
   independently.
@@ -84,6 +110,9 @@ Three independent flows — see the design doc for full sequence diagrams:
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
   (addr1/city/state/zip), Email — written by `salesforce-import`.
 * The Total Given / Last Gift rollup columns `donation-rollups` maintains.
+* Do Not Solicit (checkbox) and DNS Reason Status (status) — both built by `salesforce-import`'s
+  `configure` step — with a **Confirmed** label added to DNS Reason Status next to OK / Missing.
+  Its text must match `dnsConfirmedValue` in `config/*.json`.
 * **Subscription state is per email address, not per Donor** — and this Worker keys both
   directions on the Donors board's single `email` column: outbound updates that one address,
   and inbound resolves a Mailchimp contact back to a Donor by matching that column only. A

@@ -160,3 +160,66 @@ describe('HttpMailchimpClient.listInterests', () => {
     ]);
   });
 });
+
+function sequenceFetch(...responses: { status: number; json?: unknown }[]) {
+  const fn = vi.fn();
+  for (const r of responses) {
+    fn.mockResolvedValueOnce({
+      ok: r.status >= 200 && r.status < 300,
+      status: r.status,
+      json: async () => r.json ?? {},
+      text: async () => JSON.stringify(r.json ?? {}),
+    } as Response);
+  }
+  return fn;
+}
+
+describe('HttpMailchimpClient.unsubscribeMember', () => {
+  const HASH_URL = 'https://us1.api.mailchimp.com/3.0/lists/aud1/members/357a20e8c56e69d6f9734d23ef9517e8';
+
+  it('PATCHes status to unsubscribed for a subscribed member', async () => {
+    const fetchFn = sequenceFetch({ status: 200, json: { status: 'subscribed' } }, { status: 200 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await expect(client.unsubscribeMember('A@B.com ')).resolves.toBe('unsubscribed');
+
+    expect(fetchFn).toHaveBeenNthCalledWith(1, `${HASH_URL}?fields=status`, expect.anything());
+    const [url, init] = fetchFn.mock.calls[1]!;
+    expect(url).toBe(HASH_URL);
+    expect((init as RequestInit).method).toBe('PATCH');
+    // Only the status — never merge fields or anything that could re-subscribe.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ status: 'unsubscribed' });
+  });
+
+  it('returns not-in-audience without writing when the address is not a member', async () => {
+    const fetchFn = sequenceFetch({ status: 404 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await expect(client.unsubscribeMember('a@b.com')).resolves.toBe('not-in-audience');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['unsubscribed', 'cleaned'])('returns already-unsubscribed without writing when the member is %s', async (status) => {
+    // Mailchimp rejects a status change on a cleaned address; an unsubscribed one needs nothing.
+    const fetchFn = sequenceFetch({ status: 200, json: { status } });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await expect(client.unsubscribeMember('a@b.com')).resolves.toBe('already-unsubscribed');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws transient on 429/5xx and permanent on other 4xx from the PATCH', async () => {
+    const transient = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1',
+      sequenceFetch({ status: 200, json: { status: 'subscribed' } }, { status: 503 }));
+    await expect(transient.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+
+    const permanent = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1',
+      sequenceFetch({ status: 200, json: { status: 'pending' } }, { status: 400 }));
+    await expect(permanent.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpPermanentError);
+  });
+
+  it('throws transient when the status lookup fails', async () => {
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 500 }));
+    await expect(client.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+  });
+});

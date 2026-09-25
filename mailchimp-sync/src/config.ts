@@ -1,10 +1,11 @@
 import type { Config, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
-const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue'] as const;
+const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue'] as const;
 
 const REQUIRED_MONDAY_COLUMNS: (keyof MondayColumnsConfig)[] = [
   'membershipStatus', 'membershipTier', 'memberSince', 'memberUntil',
   'addr1', 'city', 'state', 'zip', 'email', 'totalGiven', 'mailchimpCampaigns',
+  'doNotSolicit', 'dnsReasonStatus',
 ];
 
 const REQUIRED_MERGE_FIELDS: (keyof MailchimpMergeFieldsConfig)[] = [
@@ -12,7 +13,7 @@ const REQUIRED_MERGE_FIELDS: (keyof MailchimpMergeFieldsConfig)[] = [
 ];
 
 const REQUIRED_TAGS: (keyof MailchimpTagsConfig)[] = [
-  'activeMember', 'lapsedMember', 'lifetimeMember', 'hasDonated',
+  'activeMember', 'lapsedMember', 'lifetimeMember', 'hasDonated', 'doNotSolicit',
 ];
 
 function requireObject(value: unknown, path: string): Record<string, unknown> {
@@ -75,6 +76,9 @@ export function validateConfig(raw: unknown): Config {
   if (typeof cfg.activeStatusValue !== 'string' || cfg.activeStatusValue === '') {
     throw new Error('config: missing required key "activeStatusValue"');
   }
+  if (typeof cfg.dnsConfirmedValue !== 'string' || cfg.dnsConfirmedValue === '') {
+    throw new Error('config: missing required key "dnsConfirmedValue"');
+  }
 
   return {
     monday: {
@@ -91,5 +95,6 @@ export function validateConfig(raw: unknown): Config {
     },
     lifetimeTierValue: cfg.lifetimeTierValue,
     activeStatusValue: cfg.activeStatusValue,
+    dnsConfirmedValue: cfg.dnsConfirmedValue,
   };
 }
