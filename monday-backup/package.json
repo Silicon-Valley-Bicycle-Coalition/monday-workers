@@ -8,7 +8,8 @@
     "dev:sandbox": "wrangler dev --env sandbox",
     "deploy": "wrangler deploy",
     "deploy:sandbox": "wrangler deploy --env sandbox",
-    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
+    "restore": "tsx scripts/restore.ts"
   },
   "type": "module",
   "private": true,
@@ -18,6 +19,8 @@
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",
     "@cloudflare/workers-types": "^5.20260822.1",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.125.0"

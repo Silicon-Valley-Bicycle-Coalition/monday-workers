@@ -1,0 +1,9 @@
+{
+  // Type-checks the Node-only operator scripts (scripts/restore.ts) against Node's types instead
+  // of the Workers runtime's. Anything they import from src/ is checked under Node types too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["scripts"]
+}

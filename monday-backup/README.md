@@ -2,11 +2,16 @@
 
 **Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
 `wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
-(`MONDAY_API_TOKEN`), a Google service account with access to the destination Drive folder
-(`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`), and
-`config/backup.json`'s `destinationParentFolderId` filled in with that folder's real id. The
-`Doc.blocks` GraphQL query in `src/monday/client.ts` hasn't been exercised against a live
-account — confirm its shape against Monday's API Explorer before the first real run.
+(`MONDAY_API_TOKEN`), a Google service account added as a member (Content manager) of the
+destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
+and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
+that Shared Drive (or the Shared Drive's own id). Requires **Workers Paid** (see Cloudflare
+config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
+paginated `Doc.blocks`) nor the restore mutations in `src/restore/api.ts` have been exercised
+against a live account yet — confirm them in Monday's API Explorer before the first real run.
+**Restore:** `npm run restore` rebuilds a snapshot into a workspace — procedure in
+[`RESTORE.md`](RESTORE.md). The end-to-end **restore rehearsal into the sandbox is still
+outstanding** (it needs the provisioned sandbox, issue #14).
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
 runs: from that point on, Monday is holding real donor/donation data with no Salesforce copy to
 fall back on if something goes wrong.
@@ -49,18 +54,24 @@ Cloudflare Cron Trigger (proposed: daily)
   │
   ▼
 Cloudflare Worker
-  │  1. Enumerate every board across every workspace (Monday GraphQL API)
-  │  2. Per board: pull full item + column-value data, paginated, plus the board's own schema
-  │     (columns, groups, settings) — enough to reconstruct the board's shape, not just its rows
-  │  3. Pull every monday Doc's content (blocks) too — the one thing the native export explicitly
-  │     doesn't cover
-  │  4. Serialize each board and each doc to JSON
-  │  5. Upload to Google Drive via the Drive API, into a dated folder
-  │     (e.g. `SVBC Monday Backups/2026-08-25/`)
-  │  6. Write a manifest alongside the snapshot (board count, item counts per board, any errors)
-  │     so a stale or partial backup is obvious at a glance, not discovered at restore time
+  │  1. Enumerate every board across every workspace (Monday GraphQL API), active and archived,
+  │     with its metadata (kind, description, folder, permissions, state, type)
+  │  2. Per board: its schema (columns with settings, groups), then every item, paginated —
+  │     column values (connect-boards/dependency linked item ids and mirror display values via
+  │     their typed fragments, since `text` is null for those), state, created/updated time,
+  │     creator, parent item (subitems), file metadata — then every update with its replies.
+  │     Subitems boards are backed up like any other board.
+  │  3. Pull every monday Doc's blocks, paginated, with nesting and position — the one thing the
+  │     native export explicitly doesn't cover
+  │  4. Stream each board and each doc, page by page, as JSON Lines (`board-<id>.jsonl`,
+  │     `doc-<id>.jsonl`) into a Drive resumable upload — memory holds one page, never a board
+  │  5. …into one folder per run inside the Shared Drive, named for the date and D1 run id
+  │     (e.g. `SVBC Monday Backups/2026-08-25 run-17/`), so a same-day rerun never collides
+  │  6. Write a manifest alongside the snapshot (format, run id, item counts per board, block
+  │     counts per doc, any errors) so a stale or partial backup is obvious at a glance, not
+  │     discovered at restore time
   ▼
-Google Drive, one dated snapshot per run, kept indefinitely (see Retention below)
+Google Drive, one snapshot folder per run, kept indefinitely (see Retention below)
 ```
 
 ## APIs & auth
@@ -69,10 +80,15 @@ Google Drive, one dated snapshot per run, kept indefinitely (see Retention below
   with view access to every workspace, not a staff member's personal token. Follows the same
   least-privilege principle `../README.md` already states for every other Worker here: a token
   compromise should expose only what this Worker needs, not one person's full account access.
-* **Google Drive API** — a service account added as a collaborator on the destination folder
-  (or domain-wide delegation, if SVBC's Google Workspace setup supports it), not a personal OAuth
-  grant tied to one staff member's account — a personal grant breaks the day that person leaves
-  or changes their password.
+* **Google Drive API** — a service account that is a **member of a Shared Drive** (role:
+  Content manager), not a personal OAuth grant tied to one staff member's account — a personal
+  grant breaks the day that person leaves or changes their password. It must be a Shared Drive,
+  not a My Drive folder shared with the service account: [service accounts have no storage
+  quota](https://developers.google.com/workspace/drive/api/guides/about-shareddrives), so uploads
+  into a shared My Drive folder fail `403 storageQuotaExceeded`. Every Drive call passes
+  `supportsAllDrives=true` (and the folder lookup `includeItemsFromAllDrives=true&corpora=allDrives`);
+  without those, Drive answers 404 for Shared Drive items. Snapshots count against the Shared
+  Drive's (i.e. the Workspace's pooled) storage.
 
 ## Cloudflare config (fleet standard)
 
@@ -89,11 +105,22 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   `/monday-backup`; after that, routine changes deploy by merging to `main`, and manual
   `wrangler deploy` is for provisioning or emergencies only (see the root README's Deploys
   section for why hand-deploys are distrusted here).
-* **Plan limits.** A full-account snapshot in a single cron invocation can brush against
-  Free-plan CPU and subrequest limits. This is moot if the Workers Paid upgrade (already
-  required by `funraise-sync`/`quickbooks-sync` for Queues) has landed by build time;
-  otherwise, budget for paginating the snapshot across invocations rather than assuming one
-  run covers every board.
+* **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50
+  subrequests; no real snapshot fits. On Paid, `wrangler.jsonc` sets `cpu_ms: 300000` (the
+  configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue #29) and
+  `subrequests: 50000`. The hard constraint is the cron trigger's **15-minute wall-time** limit:
+  `runBackup` stops starting new boards/docs at 12 minutes (`DEFAULT_WALL_TIME_BUDGET_MS` in
+  `src/backup.ts`); a shared deadline (`src/deadline.ts`) makes any Monday or Drive call still
+  retrying give up at 13 minutes — every request timeout and retry wait is capped to the time
+  left — and is then extended to 14.5 minutes for the manifest upload. Whatever was skipped is
+  recorded in the manifest, so an oversized run ends as a visible *partial* snapshot with an
+  alert, not a silent kill. If real runs start hitting that
+  budget, the next step is splitting the snapshot across invocations (a Workflow step per board),
+  not a bigger single run.
+* **Failure visibility.** Any partial run and any total failure alerts Slack immediately. A
+  second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and
+  alerts if a run is stuck in `running` for over an hour (the runtime killed it — marked
+  `abandoned` in D1) or if no snapshot has succeeded in 36 hours.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -135,20 +162,31 @@ once there's a real base of snapshots to look at, not before.
 
 ## What this does *not* cover
 
-* **Native Monday file-column attachments.** Per the Attachment & Note Migration Workstream
-  (`migration-plan.md`, private planning repo), real documents are already moving *out* of Monday
-  into Google Drive directly (linked from Monday items, not stored as native Monday files) as the
-  long-term design — so file-column content should be minimal going forward, not the primary
-  document store this Worker needs to protect. Worth a one-time check for any board still using
-  File columns for anything substantive before assuming this is a non-issue.
+* **File contents (item files and update attachments) — metadata only, by decision.** Each
+  file's name, extension, size, upload time, uploader and Monday URL are in the snapshot; the
+  bytes are not. Monday's `public_url` expires after an hour, so a durable copy would mean
+  downloading every file and re-uploading it to Drive *every night* — with indefinite retention
+  that is N full copies of every attachment, and the transfer competes with the board data for
+  the cron's 15-minute wall-time budget. It also cuts against the Attachment & Note Migration
+  Workstream (`migration-plan.md`, private planning repo): real documents are moving *out* of
+  Monday into Google Drive directly (linked from items, not stored as Monday files), so file
+  columns should be minimal. If a board turns out to rely on File columns for something that
+  matters, the right fix is an incremental, content-addressed asset archive (download each asset
+  id once, ever), not nightly copies — worth a one-time check before assuming it's a non-issue.
+* **Archived *items* on active boards.** Monday's `items_page` returns active items only, and
+  there's no API to list archived item ids. An archived item stays restorable from Monday's own
+  board Archive, and every nightly snapshot taken while it was active still has it. Archived
+  *boards* are backed up in full; deleted boards (Monday's 30-day trash) are skipped and listed in
+  the manifest.
 * **Automation and integration configuration** — recipe definitions, webhook subscriptions,
   column-automation rules. Nothing here fetches or reconstructs those; if an automation gets
   deleted or misconfigured, this backup won't help recreate it. Flagged as an honest gap, not
   solved by this Worker.
-* **One-click restore.** This Worker only produces the snapshot. Turning a JSON snapshot back into
-  live Monday boards would need its own tool — likely reusable logic from `salesforce-import`'s
-  `load` stage, which already knows how to create Monday items from structured data — but that's
-  explicitly out of scope here, not assumed solved.
+* **Things the restore tool can't put back exactly** — original item/update ids, authorship and
+  timestamps (restored updates carry an "originally posted by … at …" line instead), board-level
+  updates, board owners/subscribers and folder placement, mirror/formula column wiring (created,
+  but check settings), and label colours/indexes (labels are restored by text). The restore
+  reports each of these as a warning. Full list and procedure: [`RESTORE.md`](RESTORE.md).
 
 ## Related, not yet in scope here
 

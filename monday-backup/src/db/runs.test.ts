@@ -56,3 +56,63 @@ describe('D1SnapshotRunStore', () => {
     expect(row).toMatchObject({ status: 'partial', error_count: 1, last_error: 'board 42 (Donors): HTTP 500' });
   });
 });
+
+describe('D1SnapshotRunStore watchdog queries', () => {
+  const ok = { status: 'success', boardCount: 1, docCount: 0, errorCount: 0, lastError: null } as const;
+
+  it('abandonStaleRuns marks only running rows started before the cutoff, and counts them as failures', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    const stale = await store.recordRunStart('2026-08-25T09:00:00.000Z');
+    const fresh = await store.recordRunStart('2026-08-25T10:30:00.000Z');
+    const done = await store.recordRunStart('2026-08-25T08:00:00.000Z');
+    await store.recordRunFinish(done, '2026-08-25T08:05:00.000Z', ok);
+
+    const abandoned = await store.abandonStaleRuns('2026-08-25T10:00:00.000Z', '2026-08-25T11:00:00.000Z');
+    expect(abandoned).toEqual([{ id: stale, startedAt: '2026-08-25T09:00:00.000Z' }]);
+
+    const { results } = await env.DB.prepare('SELECT id, status, finished_at, last_error FROM snapshot_runs').all<{
+      id: number;
+      status: string;
+      finished_at: string | null;
+      last_error: string | null;
+    }>();
+    const byId = new Map(results.map((r) => [r.id, r]));
+    expect(byId.get(stale)).toMatchObject({ status: 'abandoned', finished_at: '2026-08-25T11:00:00.000Z' });
+    expect(byId.get(stale)!.last_error).toMatch(/never finished/);
+    expect(byId.get(fresh)!.status).toBe('running');
+    expect(byId.get(done)!.status).toBe('success');
+
+    const alertState = await env.DB.prepare('SELECT consecutive_failures FROM run_alert_state WHERE id = 1').first<{
+      consecutive_failures: number;
+    }>();
+    expect(alertState?.consecutive_failures).toBe(1);
+
+    // Idempotent: a second sweep finds nothing new.
+    expect(await store.abandonStaleRuns('2026-08-25T10:00:00.000Z', '2026-08-25T11:00:00.000Z')).toEqual([]);
+  });
+
+  it('lastSnapshotAt returns the latest success or partial finish, ignoring failures', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    expect(await store.lastSnapshotAt()).toBeNull();
+    const a = await store.recordRunStart('2026-08-24T09:00:00.000Z');
+    await store.recordRunFinish(a, '2026-08-24T09:05:00.000Z', ok);
+    const b = await store.recordRunStart('2026-08-25T09:00:00.000Z');
+    await store.recordRunFinish(b, '2026-08-25T09:05:00.000Z', { ...ok, status: 'partial', errorCount: 1, lastError: 'x' });
+    const c = await store.recordRunStart('2026-08-26T09:00:00.000Z');
+    await store.recordRunFailure(c, '2026-08-26T09:01:00.000Z', 'boom');
+    expect(await store.lastSnapshotAt()).toBe('2026-08-25T09:05:00.000Z');
+  });
+
+  it('armWatchdog records the first arm time and keeps it', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    expect(await store.armWatchdog('2026-08-25T09:00:00.000Z')).toBe('2026-08-25T09:00:00.000Z');
+    expect(await store.armWatchdog('2026-08-26T09:00:00.000Z')).toBe('2026-08-25T09:00:00.000Z');
+  });
+
+  it('records and returns the last stale alert time', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    expect(await store.lastStaleAlertAt()).toBeNull();
+    await store.recordStaleAlert('2026-08-25T09:00:00.000Z');
+    expect(await store.lastStaleAlertAt()).toBe('2026-08-25T09:00:00.000Z');
+  });
+});

@@ -9,6 +9,8 @@ export async function sendFailureAlert(webhookUrl: string, summary: string, deta
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
+      // Bounded so a hung webhook can't carry a finishing run past the cron's wall-time kill.
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
       console.error(`monday-backup: Slack alert POST failed: ${response.status} ${response.statusText}`);
