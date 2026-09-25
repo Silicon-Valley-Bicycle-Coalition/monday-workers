@@ -110,8 +110,11 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue #29) and
   `subrequests: 50000`. The hard constraint is the cron trigger's **15-minute wall-time** limit:
   `runBackup` stops starting new boards/docs at 12 minutes (`DEFAULT_WALL_TIME_BUDGET_MS` in
-  `src/backup.ts`) and records whatever it skipped in the manifest, so an oversized run ends as a
-  visible *partial* snapshot with an alert, not a silent kill. If real runs start hitting that
+  `src/backup.ts`); a shared deadline (`src/deadline.ts`) makes any Monday or Drive call still
+  retrying give up at 13 minutes — every request timeout and retry wait is capped to the time
+  left — and is then extended to 14.5 minutes for the manifest upload. Whatever was skipped is
+  recorded in the manifest, so an oversized run ends as a visible *partial* snapshot with an
+  alert, not a silent kill. If real runs start hitting that
   budget, the next step is splitting the snapshot across invocations (a Workflow step per board),
   not a bigger single run.
 * **Failure visibility.** Any partial run and any total failure alerts Slack immediately. A

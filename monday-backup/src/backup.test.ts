@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runBackup, SNAPSHOT_FORMAT, type BackupDeps } from './backup';
 import type { RunResult, SnapshotRunStore } from './db/runs';
 import type { DriveClient } from './drive/client';
-import type { MondayClient } from './monday/client';
+import { Deadline } from './deadline';
+import { HttpMondayClient, type MondayClient } from './monday/client';
 import type { BackupConfig, BoardSummary, DocSummary, ItemRecord } from './types';
 
 function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
@@ -207,7 +208,7 @@ describe('runBackup', () => {
     const errors = fake.manifest().errors as string[];
     expect(errors).toHaveLength(2);
     expect(errors[0]).toMatch(/board 3 .*wall-time budget/);
-    expect(errors[1]).toMatch(/doc d1 .*skipped.*wall-time budget/);
+    expect(errors[1]).toMatch(/docs: skipped — wall-time budget/); // not even listed once out of budget
     expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 2, errorCount: 2 });
   });
 
@@ -289,6 +290,61 @@ describe('runBackup', () => {
     );
     expect(fake.records('board-1.jsonl').map((r) => r.type)).toEqual(['board', 'item', 'update', 'update', 'update']);
     expect(fake.manifest().updateCountsByBoard).toEqual({ '1': 3 });
+  });
+
+  // Issue #29 review: a single Monday call stuck retrying (slow 5xx responses, backoff) must not
+  // carry the run past the cron's 15-minute kill. With the shared Deadline the call gives up at
+  // 13 minutes and the run still records itself: manifest, D1 finish row, alert.
+  it('a call stuck retrying stops at the deadline, and the run still writes manifest, D1 row and alert', async () => {
+    const start = Date.parse('2026-08-25T09:00:00.000Z');
+    let t = start;
+    const deadline = new Deadline(Number.POSITIVE_INFINITY, () => t);
+    const slack: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (url === 'https://hooks.example/webhook') {
+          slack.push(JSON.parse(init.body as string).text as string);
+          return new Response('ok');
+        }
+        const { query } = JSON.parse(init.body as string) as { query: string };
+        if (query.includes('workspace_id') && query.includes('state: all')) {
+          return Response.json({ data: { boards: [{ id: '1', name: 'People', workspace_id: 'ws-1', state: 'active' }] } });
+        }
+        if (query.includes('settings_str')) return Response.json({ data: { boards: [{ columns: [], groups: [] }] } });
+        if (query.includes('docs(')) return Response.json({ data: { docs: [] } });
+        // The items query: Monday is struggling — every attempt takes 50s (just under the 60s
+        // request timeout), then 503s. Ten attempts plus backoff would run ~25 minutes.
+        t += 50_000;
+        return new Response('upstream timeout', { status: 503 });
+      }),
+    );
+    const monday = new HttpMondayClient('https://api.monday.com/v2', 'token', {
+      deadline,
+      maxAttempts: 10,
+      sleepFn: async (ms) => void (t += ms),
+    });
+    const manifestUploadedWith: number[] = [];
+    const fake = fakeDrive({
+      uploadJson: async (folderId, filename, data) => {
+        manifestUploadedWith.push(deadline.remainingMs());
+        fake.files.push({ folderId, filename, mimeType: 'application/json', writes: [JSON.stringify(data)], closed: true, aborted: false });
+      },
+    });
+    const runStore = fakeRunStore();
+
+    await runBackup(
+      deps({ monday, drive: fake.drive, runStore, deadline, now: () => new Date(t), slackWebhookUrl: 'https://hooks.example/webhook' }),
+    );
+
+    expect(t - start).toBeLessThan(15 * 60_000); // never reached the cron's kill
+    const errors = fake.manifest().errors as string[];
+    expect(errors[0]).toMatch(/^board 1 \(People\): wall-time budget exhausted/);
+    expect(manifestUploadedWith).toHaveLength(1);
+    expect(manifestUploadedWith[0]).toBeGreaterThan(0); // finalize phase had room
+    expect(runStore.finishes).toEqual([expect.objectContaining({ status: 'partial', errorCount: errors.length })]);
+    expect(slack).toHaveLength(1);
+    expect(slack[0]).toContain('partial snapshot');
   });
 
   it('writes a board one page at a time rather than buffering it whole', async () => {

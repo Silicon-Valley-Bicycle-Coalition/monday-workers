@@ -1,3 +1,4 @@
+import { Deadline } from '../deadline';
 import { signServiceAccountJwt, type ServiceAccountCredentials } from './jwt';
 
 // Full `drive` scope rather than `drive.file`, since ensureFolder needs to *list*
@@ -47,7 +48,13 @@ export interface GoogleDriveClientOptions {
   now?: () => Date;
   sleepFn?: (ms: number) => Promise<void>;
   chunkSize?: number;
+  // The run's wall-clock deadline: request timeouts and retry waits are capped to it, and a retry
+  // that would cross it throws BudgetExhaustedError. Unbounded when absent.
+  deadline?: Deadline;
 }
+
+// No Drive request may hang indefinitely; the deadline can shorten this further.
+const REQUEST_TIMEOUT_MS = 60_000;
 
 interface CachedToken {
   value: string;
@@ -113,12 +120,14 @@ export class GoogleDriveClient implements DriveClient {
   private readonly now: () => Date;
   readonly sleep: (ms: number) => Promise<void>;
   readonly chunkSize: number;
+  readonly deadline: Deadline;
 
   constructor(
     private credentials: ServiceAccountCredentials,
     options: GoogleDriveClientOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.deadline = options.deadline ?? new Deadline();
     this.sleep = options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
     if (this.chunkSize <= 0 || this.chunkSize % RESUMABLE_CHUNK_ALIGNMENT !== 0) {
@@ -139,6 +148,7 @@ export class GoogleDriveClient implements DriveClient {
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         assertion,
       }),
+      signal: AbortSignal.timeout(this.deadline.timeoutMs(REQUEST_TIMEOUT_MS)),
     });
     if (!response.ok) {
       throw new Error(`Google OAuth token exchange failed: HTTP ${response.status}`);
@@ -154,13 +164,19 @@ export class GoogleDriveClient implements DriveClient {
   private async driveFetch(path: string, init: RequestInit = {}): Promise<Response> {
     let lastError = '';
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (attempt > 0) await this.sleep(backoffMs(attempt));
+      if (attempt > 0) await this.deadline.sleepBeforeRetry(this.sleep, backoffMs(attempt), `Drive ${path} (last error: ${lastError})`);
+      this.deadline.check(`Drive ${path}`);
       const headers = new Headers(init.headers);
       headers.set('Authorization', `Bearer ${await this.getAccessToken()}`);
       let response: Response;
       try {
-        response = await fetch(`${DRIVE_ORIGIN}${path}`, { ...init, headers });
+        response = await fetch(`${DRIVE_ORIGIN}${path}`, {
+          ...init,
+          headers,
+          signal: AbortSignal.timeout(this.deadline.timeoutMs(REQUEST_TIMEOUT_MS)),
+        });
       } catch (err) {
+        this.deadline.check(`Drive ${path} (request cut off: ${String(err)})`);
         lastError = `network error: ${String(err)}`;
         continue;
       }
@@ -275,7 +291,7 @@ class ResumableUpload implements DriveFileWriter {
       if (attempt >= MAX_ATTEMPTS) {
         throw new Error(`Drive upload of ${this.filename}: exhausted ${MAX_ATTEMPTS} attempts at offset ${this.acked}`);
       }
-      await this.drive.sleep(backoffMs(attempt));
+      await this.drive.deadline.sleepBeforeRetry(this.drive.sleep, backoffMs(attempt), `Drive upload of ${this.filename}`);
       response = await this.put(new Uint8Array(0), `bytes */${totalLabel}`);
     }
 
@@ -299,11 +315,14 @@ class ResumableUpload implements DriveFileWriter {
   // Returns the response, or null for a transient failure (network, 5xx, rate limit) that the
   // caller should recover from with a status query.
   private async put(body: Uint8Array<ArrayBuffer>, contentRange: string): Promise<Response | null> {
+    const deadline = this.drive.deadline;
+    deadline.check(`Drive upload of ${this.filename}`);
     try {
       const response = await fetch(this.sessionUri, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${await this.drive.getAccessToken()}`, 'Content-Range': contentRange },
         body,
+        signal: AbortSignal.timeout(deadline.timeoutMs(REQUEST_TIMEOUT_MS)),
       });
       return (await isRetryable(response)) ? null : response;
     } catch {

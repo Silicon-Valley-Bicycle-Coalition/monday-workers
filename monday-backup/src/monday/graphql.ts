@@ -4,6 +4,8 @@
 // Modelled on salesforce-import/src/load/monday.ts — a local copy, not a shared package
 // (cross-Worker sharing is issue #35). Keep the two in step when either learns a new failure mode.
 
+import { Deadline } from '../deadline';
+
 // Pinned explicitly: Monday serves a request for a deprecated version as the *maintenance*
 // version, so an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of
 // its breaking changes (users pagination, connection_board_ids, columns.capabilities) touch the
@@ -45,6 +47,9 @@ export interface MondayGraphQLOptions {
   sleepFn?: (ms: number) => Promise<void>;
   maxAttempts?: number;
   requestTimeoutMs?: number;
+  // The run's wall-clock deadline. Attempt timeouts and retry waits are capped to it, and a
+  // retry that would cross it throws BudgetExhaustedError. Unbounded when absent.
+  deadline?: Deadline;
 }
 
 export interface RequestOptions {
@@ -57,6 +62,7 @@ export class MondayGraphQL {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxAttempts: number;
   private readonly requestTimeoutMs: number;
+  private readonly deadline: Deadline;
 
   constructor(
     private apiUrl: string,
@@ -66,6 +72,7 @@ export class MondayGraphQL {
     this.sleep = options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.maxAttempts = options.maxAttempts ?? 5;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
+    this.deadline = options.deadline ?? new Deadline();
   }
 
   async request<T>(query: string, variables: Record<string, unknown>, { idempotent = true }: RequestOptions = {}): Promise<T> {
@@ -78,9 +85,11 @@ export class MondayGraphQL {
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       if (attempt > 0) {
         const backoffMs = 2 ** attempt * 1000 + Math.random() * 500;
-        await this.sleep(Math.max(backoffMs, Math.min(advisedWaitMs, MAX_ADVISED_WAIT_MS)));
+        const waitMs = Math.max(backoffMs, Math.min(advisedWaitMs, MAX_ADVISED_WAIT_MS));
+        await this.deadline.sleepBeforeRetry(this.sleep, waitMs, `monday API (last error: ${lastError})`);
         advisedWaitMs = 0;
       }
+      this.deadline.check(`monday API${lastError === '' ? '' : ` (last error: ${lastError})`}`);
 
       let response: Response;
       try {
@@ -93,9 +102,11 @@ export class MondayGraphQL {
             'API-Version': MONDAY_API_VERSION,
           },
           body: JSON.stringify({ query, variables }),
-          signal: AbortSignal.timeout(this.requestTimeoutMs),
+          signal: AbortSignal.timeout(this.deadline.timeoutMs(this.requestTimeoutMs)),
         });
       } catch (err) {
+        // A timeout cut short by the deadline is the budget running out, not a network fault.
+        this.deadline.check(`monday API (request cut off: ${String(err)})`);
         lastError = ambiguous(`network error: ${String(err)}`);
         continue;
       }

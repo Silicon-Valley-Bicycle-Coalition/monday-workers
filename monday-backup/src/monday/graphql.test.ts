@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BudgetExhaustedError, Deadline } from '../deadline';
 import { AmbiguousWriteError, MondayGraphQL } from './graphql';
 
 // Read-path retry behaviour is covered through HttpMondayClient in client.test.ts; this file
@@ -43,6 +44,56 @@ describe('MondayGraphQL non-idempotent requests', () => {
   });
 
   it('retries a 5xx for idempotent requests (the default)', async () => {
+    const { gql } = transport([new Response('oops', { status: 502 }), Response.json({ data: { ok: true } })]);
+    await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: true });
+  });
+});
+
+// Issue #29 review: one call's retries (5 × 60s timeouts + advised waits) could outlast the
+// cron's 15-minute wall-time kill. With a deadline, every wait is capped and retrying stops.
+describe('MondayGraphQL with a run deadline', () => {
+  function clocked(deadlineInMs: number, responses: () => Response) {
+    let t = 0;
+    const slept: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      t += 1_000; // each request takes a second
+      return responses();
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', {
+      maxAttempts: 10,
+      deadline: new Deadline(deadlineInMs, () => t),
+      sleepFn: async (ms) => {
+        slept.push(ms);
+        t += ms;
+      },
+    });
+    return { gql, fetchMock, slept, now: () => t };
+  }
+
+  it('stops retrying a persistent 5xx before the deadline instead of exhausting its attempts', async () => {
+    const { gql, fetchMock, now } = clocked(10_000, () => new Response('down', { status: 503 }));
+    await expect(gql.request('query { ok }', {})).rejects.toBeInstanceOf(BudgetExhaustedError);
+    expect(fetchMock.mock.calls.length).toBeLessThan(10);
+    expect(now()).toBeLessThanOrEqual(10_000);
+  });
+
+  it('does not honour a Retry-After that would cross the deadline', async () => {
+    const { gql, fetchMock, slept } = clocked(30_000, () => new Response('slow down', { status: 429, headers: { 'Retry-After': '60' } }));
+    await expect(gql.request('query { ok }', {})).rejects.toThrow(/wall-time budget exhausted.*HTTP 429/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(slept).toEqual([]);
+  });
+
+  it('makes no request at all once the deadline has passed', async () => {
+    const { gql, fetchMock } = clocked(0, () => Response.json({ data: { ok: true } }));
+    await expect(gql.request('query { ok }', {})).rejects.toBeInstanceOf(BudgetExhaustedError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('MondayGraphQL (unbounded)', () => {
+  it('still retries normally without a deadline', async () => {
     const { gql } = transport([new Response('oops', { status: 502 }), Response.json({ data: { ok: true } })]);
     await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: true });
   });

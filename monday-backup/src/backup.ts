@@ -1,4 +1,5 @@
 import { sendFailureAlert } from './alert';
+import { BUDGET_EXHAUSTED, BudgetExhaustedError, Deadline } from './deadline';
 import { SNAPSHOT_FORMAT } from './format';
 import type { DriveClient, DriveFileWriter } from './drive/client';
 import type { SnapshotRunStore } from './db/runs';
@@ -11,10 +12,15 @@ export { SNAPSHOT_FORMAT };
 const JSONL = 'application/x-ndjson';
 
 // Cron invocations are killed at 15 minutes of wall time, and like a CPU-limit kill that is not
-// catchable (issue #29). Stop starting new work at 12 minutes so the manifest, the D1 finish row
-// and the partial-run alert still get written; whatever was cut off is listed in the manifest.
+// catchable (issue #29). Three marks, relative to the run's start:
+//  - 12 min (the budget): start no new board or doc;
+//  - +1 min (13): the shared Deadline — any Monday/Drive call still retrying gives up with
+//    BudgetExhaustedError instead of sleeping or waiting past it;
+//  - +2.5 min (14.5): the Deadline is extended for the finalize phase, so the manifest upload,
+//    the D1 finish row and the partial-run alert still land before the kill.
 const DEFAULT_WALL_TIME_BUDGET_MS = 12 * 60_000;
-const BUDGET_EXHAUSTED = 'wall-time budget exhausted';
+const IN_FLIGHT_GRACE_MS = 60_000;
+const FINALIZE_GRACE_MS = 150_000;
 
 export interface BackupDeps {
   monday: MondayClient;
@@ -24,6 +30,8 @@ export interface BackupDeps {
   slackWebhookUrl: string;
   now: () => Date;
   wallTimeBudgetMs?: number;
+  // Shared with the Monday and Drive clients (src/index.ts); runBackup sets its phases.
+  deadline?: Deadline;
 }
 
 const line = (record: Record<string, unknown>): string => `${JSON.stringify(record)}\n`;
@@ -115,8 +123,10 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
   const inScope = (workspaceId: string | null): boolean =>
     workspaceIds === undefined || workspaceIds.length === 0 || (workspaceId !== null && workspaceIds.includes(workspaceId));
 
-  const deadline = Date.parse(startedAtUtc) + (deps.wallTimeBudgetMs ?? DEFAULT_WALL_TIME_BUDGET_MS);
-  const pastDeadline = (): boolean => deps.now().getTime() >= deadline;
+  const budgetEndsAt = Date.parse(startedAtUtc) + (deps.wallTimeBudgetMs ?? DEFAULT_WALL_TIME_BUDGET_MS);
+  const pastDeadline = (): boolean => deps.now().getTime() >= budgetEndsAt;
+  const clientDeadline = deps.deadline ?? new Deadline();
+  clientDeadline.atMs = budgetEndsAt + IN_FLIGHT_GRACE_MS;
 
   try {
     const folderId = await deps.drive.ensureFolder(deps.config.destinationParentFolderId, snapshotFolder);
@@ -130,9 +140,25 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
 
     const deletedBoardsSkipped: string[] = [];
 
+    // Running out of budget while *listing* still ends as a recorded partial run, not a total
+    // failure; any other listing error is a real failure and propagates.
+    const listWithinBudget = async <T>(what: string, list: () => Promise<T[]>): Promise<T[]> => {
+      if (pastDeadline()) {
+        errors.push(`${what}: skipped — ${BUDGET_EXHAUSTED}`);
+        return [];
+      }
+      try {
+        return await list();
+      } catch (err) {
+        if (!(err instanceof BudgetExhaustedError)) throw err;
+        errors.push(`${what}: ${errorMessage(err)}`);
+        return [];
+      }
+    };
+
     // A queue, not a plain loop: backing up a board can discover its subitems board, which is
     // appended if `boards` didn't already list it (issue #30).
-    const boards = await deps.monday.listBoards();
+    const boards = await listWithinBudget('boards', () => deps.monday.listBoards());
     const queued = new Set(boards.map((b) => b.id));
     for (let i = 0; i < boards.length; i++) {
       const board = boards[i]!;
@@ -172,7 +198,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
       }
     }
 
-    const docs = await deps.monday.listDocs();
+    const docs = await listWithinBudget('docs', () => deps.monday.listDocs());
     for (const doc of docs) {
       if (!inScope(doc.workspaceId)) continue;
       if (pastDeadline()) {
@@ -191,6 +217,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
 
     // Written last, after every board/doc attempt, so a partial run is obvious from the
     // manifest itself rather than discovered only at restore time (per README's ask).
+    clientDeadline.atMs = budgetEndsAt + FINALIZE_GRACE_MS; // finalize phase: room for the manifest
     await deps.drive.uploadJson(folderId, 'manifest.json', {
       format: SNAPSHOT_FORMAT,
       runId,

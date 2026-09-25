@@ -7,6 +7,7 @@ import { validateConfig } from './config';
 import { D1SnapshotRunStore } from './db/runs';
 import { GoogleDriveClient } from './drive/client';
 import { HttpMondayClient } from './monday/client';
+import { Deadline } from './deadline';
 import { runWatchdog } from './watchdog';
 import type { Env } from './env';
 
@@ -42,12 +43,18 @@ export default {
     }
 
     const config = configFor(env);
+    // One deadline shared by both clients; runBackup sets and extends it (src/deadline.ts).
+    const deadline = new Deadline();
     await runBackup({
-      monday: new HttpMondayClient(MONDAY_API_URL, env.MONDAY_API_TOKEN),
-      drive: new GoogleDriveClient({
-        clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        privateKeyPem: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-      }),
+      monday: new HttpMondayClient(MONDAY_API_URL, env.MONDAY_API_TOKEN, { deadline }),
+      drive: new GoogleDriveClient(
+        {
+          clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          privateKeyPem: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
+        },
+        { deadline },
+      ),
+      deadline,
       runStore: new D1SnapshotRunStore(env.DB),
       config,
       slackWebhookUrl: env.SLACK_WEBHOOK_URL,

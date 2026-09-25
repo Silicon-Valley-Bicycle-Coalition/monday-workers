@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { BudgetExhaustedError, Deadline } from '../deadline';
 import { GoogleDriveClient, RESUMABLE_CHUNK_ALIGNMENT } from './client';
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -185,6 +186,22 @@ describe('GoogleDriveClient auth and folders', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  it('stops retrying a metadata call at the run deadline', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 't', expires_in: 3600 })))
+      .mockImplementation(async () => new Response('oops', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    let t = 0;
+    const client = new GoogleDriveClient(
+      { clientEmail: 'x@y.iam.gserviceaccount.com', privateKeyPem },
+      { deadline: new Deadline(5_000, () => t), sleepFn: async (ms) => void (t += ms) },
+    );
+    await expect(client.ensureFolder('parent-1', '2026-08-25 run-1')).rejects.toThrow(/wall-time budget exhausted.*HTTP 503/);
+    expect(t).toBeLessThanOrEqual(5_000);
+    expect(fetchMock.mock.calls.length).toBeLessThan(6); // token + fewer than MAX_ATTEMPTS tries
+  });
+
   it('throws when the OAuth token exchange fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('no', { status: 401 })));
     await expect(newClient().ensureFolder('parent-1', '2026-08-25')).rejects.toThrow(/token exchange failed/);
@@ -270,6 +287,23 @@ describe('GoogleDriveClient resumable uploads', () => {
     await expect(writer.write(bytesOf(300 * KIB))).rejects.toThrow(/HTTP 404/);
     await writer.abort();
     expect(state.deletes).toBe(1);
+  });
+
+  // Issue #29 review: retries must not carry a run past the cron's wall-time kill.
+  it('stops retrying an upload chunk at the run deadline', async () => {
+    const { state } = fakeDrive();
+    let t = 0;
+    const deadline = new Deadline(Number.POSITIVE_INFINITY, () => t);
+    const client = new GoogleDriveClient(
+      { clientEmail: 'x@y.iam.gserviceaccount.com', privateKeyPem },
+      { chunkSize: CHUNK, deadline, sleepFn: async (ms) => void (t += ms) },
+    );
+    const writer = await client.createFile('folder-1', 'slow.jsonl', 'application/x-ndjson');
+    deadline.atMs = 5_000;
+    state.putFailures.push(503, 503, 503, 503, 503, 503);
+    await expect(writer.write(bytesOf(300 * KIB))).rejects.toBeInstanceOf(BudgetExhaustedError);
+    expect(t).toBeLessThanOrEqual(5_000);
+    expect(state.puts.length).toBeLessThan(6);
   });
 
   it('uploadJson goes through a resumable session', async () => {
