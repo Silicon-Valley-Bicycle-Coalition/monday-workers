@@ -96,7 +96,8 @@ export class HttpMondayClient implements MondayClient {
       // Monday's 429s (and some 4xx/5xx) still carry a GraphQL error body with the code and
       // retry_in_seconds — read it so the consumer can honor the hint.
       const body = await readJson(response);
-      const messages = body?.errors?.map((e) => e.message).join('; ') ?? body?.error_message;
+      // `||`, not `??`: an empty errors array joins to '', which should still fall back.
+      const messages = body?.errors?.map((e) => e.message).join('; ') || body?.error_message;
       throw mondayError(`monday: HTTP ${response.status}${messages ? `: ${messages}` : ''}`, response.status, body, retryAfter);
     }
     const json = (await response.json()) as GraphQLResponse<T>;

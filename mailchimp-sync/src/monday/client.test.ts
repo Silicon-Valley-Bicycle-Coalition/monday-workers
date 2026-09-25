@@ -218,6 +218,14 @@ describe('HttpMondayClient rate-limit errors', () => {
     expect(err.message).toBe('monday: HTTP 429');
   });
 
+  it('falls back to error_message when a non-2xx body has an empty errors array', async () => {
+    const err = await errorFrom(respond({
+      ok: false, status: 429,
+      body: { errors: [], error_message: 'Rate limit exceeded' },
+    }));
+    expect(err.message).toBe('monday: HTTP 429: Rate limit exceeded');
+  });
+
   it('parses the legacy "reset in N seconds" complexity message', async () => {
     const err = await errorFrom(respond({
       ok: true, status: 200,
