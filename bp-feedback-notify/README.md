@@ -106,7 +106,7 @@ and rotate the secret if that access ever widens.
 
 ## Sandbox environment
 
-Same convention as `donor-portal`: `wrangler deploy --env sandbox` deploys
+Same convention as `member-portal`: `wrangler deploy --env sandbox` deploys
 `svbc-bp-feedback-notify-sandbox`, whose `EMAIL` binding can only deliver to
 `sandbox@bikesiliconvalley.org` (Cloudflare-enforced via `allowed_destination_addresses`, plus a
 code-layer rewrite in `src/email/sandboxBinding.ts` — see that file's comment). `config/sandbox.json`
@@ -124,7 +124,7 @@ initially failed with `destination address is not a verified address` — Cloudf
 to it (Compute → Email Service → Email Routing → Destination Addresses in the dashboard, which
 emails a verification link to the address itself). Added and verified; a real monday automation
 run (not just a direct curl call) was then confirmed landing via `wrangler tail`. This was an
-account-level prerequisite, not per-Worker config — it also unblocks `donor-portal`'s own sandbox
+account-level prerequisite, not per-Worker config — it also unblocks `member-portal`'s own sandbox
 email testing, which hadn't hit it yet.
 
 **Workers Builds:** connect a second Worker, `svbc-bp-feedback-notify-sandbox`, to this repo with

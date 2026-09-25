@@ -1,5 +1,5 @@
 // Which deployment this isolate is: production (the default) or sandbox (`wrangler deploy --env
-// sandbox`, which sets the ENVIRONMENT var). Mirrors donor-portal/src/environment.ts — kept as
+// sandbox`, which sets the ENVIRONMENT var). Mirrors member-portal/src/environment.ts — kept as
 // its own copy per this repo's "each Worker is self-contained" convention.
 export type Environment = 'production' | 'sandbox';
 

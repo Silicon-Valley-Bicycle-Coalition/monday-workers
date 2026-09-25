@@ -3,7 +3,7 @@ import { escapeHtml } from './escapeHtml';
 // Wraps the EMAIL send binding in the sandbox environment so that no message can leave for a
 // real organizer: every recipient is replaced with the sink address and the original recipient
 // is preserved in the subject, a body notice, and a header for whoever reads the sandbox inbox.
-// Copied from donor-portal/src/email/sandboxBinding.ts — same shape, same invariant. See that
+// Copied from member-portal/src/email/sandboxBinding.ts — same shape, same invariant. See that
 // file's comment for why this is a code-layer belt to wrangler.jsonc's platform-layer suspenders
 // (env.sandbox.send_email[0].allowed_destination_addresses); config/split.test.ts checks both
 // name the same address.

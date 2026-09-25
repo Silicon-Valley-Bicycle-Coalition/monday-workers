@@ -5,7 +5,7 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 
 // Guards the "inbound only, no outbound data" rule at the repo level — same intent as
-// donor-portal/config/split.test.ts, scaled to this Worker's smaller config.
+// member-portal/config/split.test.ts, scaled to this Worker's smaller config.
 
 const SINK = 'sandbox@bikesiliconvalley.org';
 
