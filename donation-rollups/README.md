@@ -662,7 +662,10 @@ sandbox gets rebuilt before cutover:
   Donations board, pointed at the deployment's `/webhooks/monday/donations` route
   (`https://svbc-donation-rollups-sandbox.svbc-account.workers.dev` for the sandbox environment;
   the production-named Worker once production boards exist) with the
-  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
+  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`;
+  Monday doesn't sign API-created webhooks, so this is the only authentication). Compared in
+  constant time and **fails closed** since issue #27: with the secret unset or empty every
+  delivery — handshake included — gets a 401, so local dev needs it in `.dev.vars` too.
   Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
   era boards' 18 old ones). Pass `--config config/sandbox.json` to subscribe the sandbox
   boards; the default reads `config/svbc.json`. The subscription-creation handshake POSTs `{"challenge": "..."}` to

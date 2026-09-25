@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { PendingStore } from '../db/pending';
 import { validateWebhookBody } from './validate';
 import type { RecomputeQueueMessage } from '../types';
+import { secretsMatch } from '../secret';
 
 export interface QueueLike {
   send(message: RecomputeQueueMessage): Promise<void>;
@@ -17,10 +18,11 @@ export interface AppDeps {
   // every delivery, and a 4xx would make Monday retry or eventually disable the
   // subscription. We want stale subscriptions visibly ignored, not churning.
   donationBoardIds: ReadonlySet<string>;
-  // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard
-  // mitigation is a shared secret embedded in the webhook URL itself, set when
-  // subscribing (e.g. .../webhooks/monday/donations?secret=...) and checked here.
-  // undefined/empty disables the check — never do that outside local dev.
+  // Monday doesn't sign webhooks created through the API's create_webhook mutation (no HMAC
+  // or JWT to verify) — the standard mitigation is a shared secret embedded in the webhook URL
+  // itself, set when subscribing (e.g. .../webhooks/monday/donations?secret=...) and checked
+  // here in constant time. Fails closed (issue #27): undefined/empty rejects every request,
+  // including the subscription handshake — set MONDAY_WEBHOOK_SECRET in .dev.vars for local dev.
   webhookSecret?: string;
 }
 
@@ -34,7 +36,7 @@ export function createApp(deps: AppDeps) {
   app.get('/health', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/monday/donations', async (c) => {
-    if (deps.webhookSecret && c.req.query('secret') !== deps.webhookSecret) {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 
