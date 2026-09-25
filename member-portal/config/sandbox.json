@@ -38,6 +38,7 @@
   },
   "auth": {
     "magicLinkTtlMinutes": 15,
+    "letterLinkTtlHours": 168,
     "sessionTtlHours": 24,
     "portalBaseUrl": "https://member.sandbox.bikesiliconvalley.org"
   },

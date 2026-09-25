@@ -77,7 +77,11 @@ const PLACEHOLDER_COLUMN_VALUE = 'REPLACE_WITH_COLUMN_ID';
 const SIGNOFF_PLACEHOLDER = 'REPLACE_AFTER_SIGNOFF';
 
 const REQUIRED_EMAIL_KEYS = ['fromAddress', 'fromName', 'logoUrl'] as const;
-const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'sessionTtlHours', 'portalBaseUrl'] as const;
+const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'letterLinkTtlHours', 'sessionTtlHours', 'portalBaseUrl'] as const;
+// Upper bound on the letter email's login-link lifetime: long enough that a donor who opens the
+// January email days later still gets in (issue #31), short enough that a typo can't mint
+// month-long bearer credentials sitting in inboxes.
+const MAX_LETTER_LINK_TTL_HOURS = 168;
 const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts'] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
   'orgLegalName',
@@ -170,6 +174,15 @@ export function validateConfig(raw: unknown): Config {
 
   const auth = requireObject(cfg, 'auth');
   requireKeys(auth, 'auth', REQUIRED_AUTH_KEYS);
+  const letterLinkTtlHours = auth.letterLinkTtlHours;
+  if (
+    typeof letterLinkTtlHours !== 'number' ||
+    !Number.isFinite(letterLinkTtlHours) ||
+    letterLinkTtlHours <= 0 ||
+    letterLinkTtlHours > MAX_LETTER_LINK_TTL_HOURS
+  ) {
+    throw new Error(`config: "auth.letterLinkTtlHours" must be a number of hours in (0, ${MAX_LETTER_LINK_TTL_HOURS}]`);
+  }
 
   const rateLimit = requireObject(cfg, 'rateLimit');
   requireKeys(rateLimit, 'rateLimit', REQUIRED_RATE_LIMIT_KEYS);

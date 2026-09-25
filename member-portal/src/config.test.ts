@@ -49,7 +49,7 @@ const validConfig = {
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
-  auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
+  auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {
     orgLegalName: 'Silicon Valley Bicycle Coalition',
@@ -157,6 +157,25 @@ describe('validateConfig', () => {
     const { portalBaseUrl, ...rest } = validConfig.auth;
     const broken = { ...validConfig, auth: rest };
     expect(() => validateConfig(broken)).toThrow(/portalBaseUrl/);
+  });
+
+  it('throws when auth.letterLinkTtlHours is missing', () => {
+    const { letterLinkTtlHours, ...rest } = validConfig.auth;
+    const broken = { ...validConfig, auth: rest };
+    expect(() => validateConfig(broken)).toThrow(/auth\.letterLinkTtlHours/);
+  });
+
+  // The letter email's login link is a bearer credential that sits in an inbox for days — long
+  // enough to be useful (issue #31: 15 minutes produced dead January links), capped at a week so
+  // a typo can't mint month-long credentials.
+  it.each([0, -1, 169, '72', Number.NaN])('rejects auth.letterLinkTtlHours = %s', (value) => {
+    const broken = { ...validConfig, auth: { ...validConfig.auth, letterLinkTtlHours: value } };
+    expect(() => validateConfig(broken)).toThrow(/auth\.letterLinkTtlHours/);
+  });
+
+  it.each([1, 72, 168])('accepts auth.letterLinkTtlHours = %s', (value) => {
+    const cfg = { ...validConfig, auth: { ...validConfig.auth, letterLinkTtlHours: value } };
+    expect(() => validateConfig(cfg)).not.toThrow();
   });
 
   it('throws when rateLimit is missing a key', () => {

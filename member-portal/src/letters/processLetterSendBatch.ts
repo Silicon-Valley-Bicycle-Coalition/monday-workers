@@ -120,7 +120,9 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
 
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
-  const expiresAt = new Date(deps.now().getTime() + deps.config.auth.magicLinkTtlMinutes * 60_000).toISOString();
+  // letterLinkTtlHours, not magicLinkTtlMinutes: this email is read whenever the donor gets to
+  // it, not while they wait on a login form (issue #31). Still single-use — consumeToken claims it.
+  const expiresAt = new Date(deps.now().getTime() + deps.config.auth.letterLinkTtlHours * 3_600_000).toISOString();
   await deps.tokenStore.createToken({ tokenHash, donorItemIds: [row.donorItemId], expiresAt });
 
   // Same Monday-preference resolution as requestLogin: the Preferred Language label maps to a

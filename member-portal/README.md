@@ -249,7 +249,10 @@ Requests board only**; create the `member-portal-change-requests` queue and its
 
 Design: `../docs/superpowers/specs/2026-08-24-donor-letter-emails-design.md`. A Button column on
 the Donors board lets staff email a donor a "your letter is ready" notification — a magic link to
-the portal home, not the letter content itself. Always sends the most recently completed year with
+the portal home, not the letter content itself. That link's single-use token lives
+`auth.letterLinkTtlHours` (168 — a week; validated to at most 168), not the interactive login
+link's 15-minute `auth.magicLinkTtlMinutes`: donors open this email whenever they get to it, and a
+15-minute link was dead by then (issue #31). Always sends the most recently completed year with
 gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 table). Inert until
 `taxLetter` is signed off, same as the portal-facing letters.
 

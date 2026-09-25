@@ -18,7 +18,7 @@ const row: LetterSendRow = {
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
-  auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
+  auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
   rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
   taxLetter: {
     orgLegalName: 'SVBC',
@@ -134,6 +134,22 @@ describe('processLetterSendBatch', () => {
     expect(store.markSent).toHaveBeenCalledWith(42, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  // Issue #31: the letter email sits in an inbox until the donor gets to it — the login link
+  // must outlive the 15-minute interactive magic-link TTL, using its own letterLinkTtlHours.
+  it('mints the letter link token with auth.letterLinkTtlHours, not the magic-link minutes', async () => {
+    const tokenStore = fakeTokenStore();
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row),
+      monday: fakeMonday(),
+      tokenStore,
+      emailSender: fakeEmailSender(),
+      config: { ...config, auth: { ...config.auth, letterLinkTtlHours: 72 } },
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(tokenStore.createToken).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: '2026-08-27T10:00:00.000Z' }));
   });
 
   it('acks an already-sent row without re-sending (redelivery idempotency)', async () => {

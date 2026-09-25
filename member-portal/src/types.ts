@@ -187,7 +187,12 @@ export interface Config {
     replyTo?: string;
   };
   auth: {
+    // Interactive login link (POST /): the donor just asked for it and is waiting on the email.
     magicLinkTtlMinutes: number;
+    // The "your tax letter is ready" email's login link (processLetterSendBatch) — read whenever
+    // the donor gets to it, often days later, so it needs its own, much longer TTL. Still a
+    // single-use token in the same magic_link_tokens table. Validated to (0, 168].
+    letterLinkTtlHours: number;
     sessionTtlHours: number;
     portalBaseUrl: string;
   };
