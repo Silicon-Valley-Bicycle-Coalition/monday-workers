@@ -118,11 +118,85 @@ describe('HttpMondayClient', () => {
     await expect(client.listBoards()).rejects.toThrow(/nope/);
   });
 
-  it('throws on a non-OK HTTP response', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+  it('throws on a non-retryable HTTP response without retrying', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'unauthorized', headers: new Headers() });
     vi.stubGlobal('fetch', fetchMock);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
-    await expect(client.listBoards()).rejects.toThrow(/HTTP 500/);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123', { sleepFn: async () => {} });
+    await expect(client.listBoards()).rejects.toThrow(/HTTP 401/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('HttpMondayClient retry/backoff (issue #29)', () => {
+  const ok = (body: unknown) => ({ ok: true, status: 200, headers: new Headers(), json: async () => body });
+  const httpStatus = (status: number, headers: Record<string, string> = {}) => ({
+    ok: false,
+    status,
+    headers: new Headers(headers),
+    text: async () => `status ${status}`,
+    json: async () => ({}),
+  });
+
+  function client(fetchResponses: unknown[], sleeps: number[] = []) {
+    const fetchMock = vi.fn();
+    for (const r of fetchResponses) {
+      if (r instanceof Error) fetchMock.mockRejectedValueOnce(r);
+      else fetchMock.mockResolvedValueOnce(r);
+    }
+    vi.stubGlobal('fetch', fetchMock);
+    const c = new HttpMondayClient('https://api.monday.com/v2', 'token-123', {
+      sleepFn: async (ms) => {
+        sleeps.push(ms);
+      },
+      maxAttempts: 4,
+    });
+    return { c, fetchMock };
+  }
+
+  it('retries HTTP 429, honouring Retry-After', async () => {
+    const sleeps: number[] = [];
+    const { c, fetchMock } = client([httpStatus(429, { 'Retry-After': '7' }), ok({ data: { boards: [] } })], sleeps);
+    await expect(c.listBoards()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sleeps).toContain(7000);
+  });
+
+  it('retries 5xx and network errors', async () => {
+    const { c, fetchMock } = client([httpStatus(502), new TypeError('network down'), ok({ data: { boards: [] } })]);
+    await expect(c.listBoards()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries complexity-budget errors, waiting retry_in_seconds', async () => {
+    const sleeps: number[] = [];
+    const { c } = client(
+      [
+        ok({ errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 23 } }] }),
+        ok({ errors: [{ message: 'Query has complexity of 10, which exceeds max complexity of 5', extensions: { code: 'ComplexityException' } }] }),
+        ok({ data: { boards: [] } }),
+      ],
+      sleeps,
+    );
+    await expect(c.listBoards()).resolves.toEqual([]);
+    expect(sleeps).toContain(23000);
+  });
+
+  it('retries the HTTP-200 no-data rate-limit shape', async () => {
+    const { c, fetchMock } = client([ok({ error_message: 'Rate Limit Exceeded', status_code: 429 }), ok({ data: { boards: [] } })]);
+    await expect(c.listBoards()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry an ordinary GraphQL error', async () => {
+    const { c, fetchMock } = client([ok({ errors: [{ message: 'Field x does not exist' }] })]);
+    await expect(c.listBoards()).rejects.toThrow(/does not exist/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up after maxAttempts with the last error in the message', async () => {
+    const { c, fetchMock } = client([httpStatus(503), httpStatus(503), httpStatus(503), httpStatus(503)]);
+    await expect(c.listBoards()).rejects.toThrow(/exhausted 4 attempts.*HTTP 503/);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('sends the bare token as Authorization', async () => {

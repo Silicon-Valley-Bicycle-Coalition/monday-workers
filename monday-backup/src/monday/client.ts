@@ -5,9 +5,14 @@ const BOARDS_PAGE_SIZE = 50;
 const ITEMS_PAGE_SIZE = 100;
 const DOCS_PAGE_SIZE = 50;
 
+interface GraphQLError {
+  message: string;
+  extensions?: { code?: string; retry_in_seconds?: number };
+}
+
 interface GraphQLResponse<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: GraphQLError[];
   // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
   error_message?: string;
   status_code?: number;
@@ -39,38 +44,103 @@ export interface MondayClient {
   getDocBlocks(docId: string): Promise<DocBlock[]>;
 }
 
+export interface HttpMondayClientOptions {
+  sleepFn?: (ms: number) => Promise<void>;
+  maxAttempts?: number;
+  requestTimeoutMs?: number;
+}
+
+// Server-advised waits are honoured but capped, so one odd header can't eat the cron's
+// 15-minute wall-time budget.
+const MAX_ADVISED_WAIT_MS = 60_000;
+
+// Retryable GraphQL error codes: the complexity budget (per-minute, per-query) and the
+// rate/concurrency limits. Monday reports these in `errors[].extensions.code`, sometimes with
+// `retry_in_seconds`.
+const RETRYABLE_CODE = /complexity|rate_limit|concurrency/i;
+
 export class HttpMondayClient implements MondayClient {
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly maxAttempts: number;
+  private readonly requestTimeoutMs: number;
+
   constructor(
     private apiUrl: string,
     private apiToken: string,
-  ) {}
+    options: HttpMondayClientOptions = {},
+  ) {
+    this.sleep = options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.maxAttempts = options.maxAttempts ?? 5;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
+  }
 
+  // Retry/backoff modelled on salesforce-import/src/load/monday.ts (a local copy, not a shared
+  // package — cross-Worker sharing is issue #35). Every query here is a read, so unlike that
+  // client there is no "ambiguous write" case: 429s, 5xx, network errors, complexity/rate-limit
+  // GraphQL errors and Monday's HTTP-200-no-data rate-limit shape are all safe to retry.
   private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-    const response = await fetch(this.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Monday expects the bare token, no "Bearer " prefix.
-        Authorization: this.apiToken,
-        'API-Version': MONDAY_API_VERSION,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (!response.ok) {
-      throw new Error(`monday API: HTTP ${response.status}`);
+    let lastError = '';
+    let advisedWaitMs = 0;
+    for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
+      if (attempt > 0) {
+        const backoffMs = 2 ** attempt * 1000 + Math.random() * 500;
+        await this.sleep(Math.max(backoffMs, Math.min(advisedWaitMs, MAX_ADVISED_WAIT_MS)));
+        advisedWaitMs = 0;
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(this.apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Monday expects the bare token, no "Bearer " prefix.
+            Authorization: this.apiToken,
+            'API-Version': MONDAY_API_VERSION,
+          },
+          body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(this.requestTimeoutMs),
+        });
+      } catch (err) {
+        lastError = `network error: ${String(err)}`;
+        continue;
+      }
+
+      if (response.status === 429) {
+        advisedWaitMs = Number(response.headers.get('Retry-After') ?? '0') * 1000;
+        lastError = 'HTTP 429';
+        continue;
+      }
+      if (response.status >= 500) {
+        lastError = `HTTP ${response.status}`;
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`monday API: HTTP ${response.status}: ${await response.text()}`);
+      }
+
+      const json = (await response.json()) as GraphQLResponse<T>;
+      if (json.errors && json.errors.length > 0) {
+        lastError = json.errors.map((e) => e.message).join('; ');
+        const retryable = json.errors.find(
+          (e) => RETRYABLE_CODE.test(e.extensions?.code ?? '') || /complexity/i.test(e.message),
+        );
+        if (retryable === undefined) throw new Error(`monday API: ${lastError}`);
+        advisedWaitMs = (retryable.extensions?.retry_in_seconds ?? 0) * 1000;
+        continue;
+      }
+      if (!json.data) {
+        // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
+        // Usually a rate limit, so retry; the exhausted-attempts error carries the detail.
+        lastError =
+          typeof json.error_message === 'string'
+            ? `response contained no data — ${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
+            : `response contained no data — ${JSON.stringify(json)}`;
+        continue;
+      }
+      return json.data;
     }
-    const json = (await response.json()) as GraphQLResponse<T>;
-    if (json.errors && json.errors.length > 0) {
-      throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
-    }
-    if (!json.data) {
-      const detail =
-        typeof json.error_message === 'string'
-          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
-          : JSON.stringify(json);
-      throw new Error(`monday API: response contained no data — ${detail}`);
-    }
-    return json.data;
+    throw new Error(`monday API: exhausted ${this.maxAttempts} attempts — last error: ${lastError}`);
   }
 
   async listBoards(): Promise<BoardSummary[]> {
