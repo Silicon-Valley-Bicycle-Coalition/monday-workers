@@ -1,8 +1,31 @@
 import md5 from 'md5';
 import type { MailchimpInterest } from '../types';
+import { parseRetryAfter, retryAfterHeader } from '../retryAfter';
 
 export class MailchimpTransientError extends Error {}
 export class MailchimpPermanentError extends Error {}
+// A 429 — Mailchimp's concurrent-connection limit. Transient, and carries Retry-After (whole
+// seconds) when Mailchimp sends one so the queue consumer can wait at least that long.
+export class MailchimpRateLimitError extends MailchimpTransientError {
+  constructor(message: string, readonly retryAfterSeconds: number | undefined) {
+    super(message);
+  }
+}
+
+// 429 → rate-limited, 5xx → transient, other 4xx → permanent (retrying a malformed request fails
+// identically). `transientOn4xx` is for reads, where any failure has always been retried.
+async function httpError(op: string, response: Response, transientOn4xx = false): Promise<MailchimpTransientError | MailchimpPermanentError> {
+  let detail = '';
+  try {
+    detail = await response.text();
+  } catch {
+    // Body unreadable — the status alone still classifies the error.
+  }
+  const message = `mailchimp ${op}: HTTP ${response.status}${detail === '' ? '' : `: ${detail}`}`;
+  if (response.status === 429) return new MailchimpRateLimitError(message, parseRetryAfter(retryAfterHeader(response)));
+  if (response.status >= 500 || transientOn4xx) return new MailchimpTransientError(message);
+  return new MailchimpPermanentError(message);
+}
 
 export interface MailchimpMemberInterests {
   status: string;
@@ -77,13 +100,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       },
     );
     if (response.status === 404) return 'not-in-audience';
-    if (!response.ok) {
-      const detail = await response.text();
-      if (response.status === 429 || response.status >= 500) {
-        throw new MailchimpTransientError(`mailchimp updateMember: HTTP ${response.status}: ${detail}`);
-      }
-      throw new MailchimpPermanentError(`mailchimp updateMember: HTTP ${response.status}: ${detail}`);
-    }
+    if (!response.ok) throw await httpError('updateMember', response);
     await this.syncTags(hash, tags, managedTags);
     return 'updated';
   }
@@ -105,12 +122,7 @@ export class HttpMailchimpClient implements MailchimpClient {
         body: JSON.stringify({ tags }),
       },
     );
-    if (response.ok) return;
-    const detail = await response.text();
-    if (response.status === 429 || response.status >= 500) {
-      throw new MailchimpTransientError(`mailchimp syncTags: HTTP ${response.status}: ${detail}`);
-    }
-    throw new MailchimpPermanentError(`mailchimp syncTags: HTTP ${response.status}: ${detail}`);
+    if (!response.ok) throw await httpError('syncTags', response);
   }
 
   async unsubscribeMember(email: string): Promise<UnsubscribeResult> {
@@ -119,13 +131,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     // one needs no write.
     const lookup = await this.fetchFn(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
     if (lookup.status === 404) return 'not-in-audience';
-    if (!lookup.ok) {
-      const detail = await lookup.text();
-      if (lookup.status === 429 || lookup.status >= 500) {
-        throw new MailchimpTransientError(`mailchimp unsubscribeMember lookup: HTTP ${lookup.status}: ${detail}`);
-      }
-      throw new MailchimpPermanentError(`mailchimp unsubscribeMember lookup: HTTP ${lookup.status}: ${detail}`);
-    }
+    if (!lookup.ok) throw await httpError('unsubscribeMember lookup', lookup);
     const { status } = (await lookup.json()) as { status: string };
     if (status === 'unsubscribed' || status === 'cleaned') return 'already-unsubscribed';
 
@@ -135,11 +141,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       body: JSON.stringify({ status: 'unsubscribed' }),
     });
     if (response.ok) return 'unsubscribed';
-    const detail = await response.text();
-    if (response.status === 429 || response.status >= 500) {
-      throw new MailchimpTransientError(`mailchimp unsubscribeMember: HTTP ${response.status}: ${detail}`);
-    }
-    throw new MailchimpPermanentError(`mailchimp unsubscribeMember: HTTP ${response.status}: ${detail}`);
+    throw await httpError('unsubscribeMember', response);
   }
 
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {
@@ -148,10 +150,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       { headers: { Authorization: this.authHeader() } },
     );
     if (response.status === 404) return null;
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new MailchimpTransientError(`mailchimp getMemberInterests: HTTP ${response.status}: ${detail}`);
-    }
+    if (!response.ok) throw await httpError('getMemberInterests', response, true);
     const json = (await response.json()) as { status: string; interests?: Record<string, boolean> };
     return { status: json.status, interests: json.interests ?? {} };
   }
@@ -161,9 +160,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories?count=100`,
       { headers: { Authorization: this.authHeader() } },
     );
-    if (!categoriesResponse.ok) {
-      throw new MailchimpTransientError(`mailchimp listInterests: HTTP ${categoriesResponse.status}`);
-    }
+    if (!categoriesResponse.ok) throw await httpError('listInterests', categoriesResponse, true);
     const categoriesJson = (await categoriesResponse.json()) as { categories: { id: string }[] };
 
     const out: MailchimpInterest[] = [];
@@ -172,9 +169,7 @@ export class HttpMailchimpClient implements MailchimpClient {
         `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories/${category.id}/interests?count=100`,
         { headers: { Authorization: this.authHeader() } },
       );
-      if (!interestsResponse.ok) {
-        throw new MailchimpTransientError(`mailchimp listInterests: HTTP ${interestsResponse.status}`);
-      }
+      if (!interestsResponse.ok) throw await httpError('listInterests', interestsResponse, true);
       const interestsJson = (await interestsResponse.json()) as { interests: { id: string; name: string }[] };
       for (const interest of interestsJson.interests) {
         out.push({ categoryId: category.id, interestId: interest.id, name: interest.name });

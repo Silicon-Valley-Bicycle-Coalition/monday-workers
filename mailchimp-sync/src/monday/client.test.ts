@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpMondayClient } from './client';
+import { HttpMondayClient, MondayApiError } from './client';
 import type { MondayColumnsConfig } from '../types';
 
 const COLUMNS: MondayColumnsConfig = {
@@ -171,5 +171,72 @@ describe('HttpMondayClient.setConnectColumn', () => {
       'https://api.monday.com/v2',
       expect.objectContaining({ body: expect.stringContaining('"item_ids\\":[1,2]') }),
     );
+  });
+});
+
+describe('HttpMondayClient rate-limit errors', () => {
+  function respond(init: { ok: boolean; status: number; body?: unknown; headers?: Record<string, string> }) {
+    return vi.fn().mockResolvedValue({
+      ok: init.ok, status: init.status, headers: new Headers(init.headers ?? {}),
+      json: async () => {
+        if (init.body === undefined) throw new SyntaxError('no body');
+        return init.body;
+      },
+    } as unknown as Response);
+  }
+
+  async function errorFrom(fetchFn: ReturnType<typeof respond>): Promise<MondayApiError> {
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const err = await client.getDonorById('42', COLUMNS).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MondayApiError);
+    return err as MondayApiError;
+  }
+
+  it('reads code and retry_in_seconds from a 429 GraphQL error body', async () => {
+    const err = await errorFrom(respond({
+      ok: false, status: 429,
+      body: { errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 22 } }] },
+    }));
+    expect(err.httpStatus).toBe(429);
+    expect(err.code).toBe('COMPLEXITY_BUDGET_EXHAUSTED');
+    expect(err.retryAfterSeconds).toBe(22);
+    expect(err.message).toBe('monday: HTTP 429: Complexity budget exhausted');
+  });
+
+  it('reads the same hint from an HTTP 200 GraphQL errors array', async () => {
+    const err = await errorFrom(respond({
+      ok: true, status: 200,
+      body: { errors: [{ message: 'Rate limit exceeded', extensions: { code: 'RATE_LIMIT_EXCEEDED', retry_in_seconds: 40 } }] },
+    }));
+    expect(err.code).toBe('RATE_LIMIT_EXCEEDED');
+    expect(err.retryAfterSeconds).toBe(40);
+  });
+
+  it('falls back to the Retry-After header when the body has no hint', async () => {
+    const err = await errorFrom(respond({ ok: false, status: 429, headers: { 'Retry-After': '15' } }));
+    expect(err.retryAfterSeconds).toBe(15);
+    expect(err.message).toBe('monday: HTTP 429');
+  });
+
+  it('parses the legacy "reset in N seconds" complexity message', async () => {
+    const err = await errorFrom(respond({
+      ok: true, status: 200,
+      body: {
+        error_code: 'ComplexityException', status_code: 429,
+        error_message: 'Complexity budget exhausted, query cost 30001 budget remaining 7897 out of 1000000 reset in 13 seconds',
+      },
+    }));
+    expect(err.code).toBe('ComplexityException');
+    expect(err.httpStatus).toBe(429);
+    expect(err.retryAfterSeconds).toBe(13);
+  });
+
+  it('reports DAILY_LIMIT_EXCEEDED with no hint when Monday gives none', async () => {
+    const err = await errorFrom(respond({
+      ok: false, status: 429,
+      body: { errors: [{ message: 'Daily limit exceeded', extensions: { code: 'DAILY_LIMIT_EXCEEDED' } }] },
+    }));
+    expect(err.code).toBe('DAILY_LIMIT_EXCEEDED');
+    expect(err.retryAfterSeconds).toBeUndefined();
   });
 });
