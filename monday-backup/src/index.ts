@@ -8,7 +8,7 @@ import { D1SnapshotRunStore } from './db/runs';
 import { GoogleDriveClient } from './drive/client';
 import { HttpMondayClient } from './monday/client';
 import { runWatchdog } from './watchdog';
-import type { Env } from './types';
+import type { Env } from './env';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts. In the sandbox,

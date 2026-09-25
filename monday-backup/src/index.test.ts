@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import worker, { BACKUP_CRON, WATCHDOG_CRON } from './index';
 import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
-import type { Env } from './types';
+import type { Env } from './env';
 
 type Json = Record<string, unknown>;
 

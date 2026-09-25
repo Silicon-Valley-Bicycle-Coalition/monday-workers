@@ -1,15 +1,13 @@
 import { sendFailureAlert } from './alert';
+import { SNAPSHOT_FORMAT } from './format';
 import type { DriveClient, DriveFileWriter } from './drive/client';
 import type { SnapshotRunStore } from './db/runs';
 import type { MondayClient } from './monday/client';
 import type { BackupConfig, BoardSchema, BoardSummary, DocSummary } from './types';
 import { errorMessage } from './util/errorMessage';
 
-// Snapshot layout, recorded in every manifest so a restore tool can tell what it is reading.
-// v2: one JSON Lines file per board and per doc, streamed page by page (issue #29) — each line is
-// a self-describing record `{ type, <type>: payload }` (payloads are nested, never spread, since
-// Monday objects carry their own `type` fields); the first line is always the board/doc header.
-export const SNAPSHOT_FORMAT = 'monday-backup/2';
+// Re-exported for existing importers; the layout is documented in ./format.
+export { SNAPSHOT_FORMAT };
 const JSONL = 'application/x-ndjson';
 
 // Cron invocations are killed at 15 minutes of wall time, and like a CPU-limit kill that is not
