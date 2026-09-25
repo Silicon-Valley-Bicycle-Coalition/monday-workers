@@ -80,6 +80,14 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
     // rather than acking it into silence.
     throw new Error(`no letter_sends row for id ${sendId}`);
   }
+  if (row.status === 'sending') {
+    // An earlier delivery claimed this row and then either sent the email but failed to record
+    // it, or died between claim and send. We can't tell which, and a duplicate tax-letter email
+    // is the failure issue #31 set out to remove — so never resend automatically. The letter
+    // itself is always in the portal; the email is only a notification.
+    console.warn(`member-portal consumer: letter send ${row.id} was already claimed by an earlier attempt — not re-sending`);
+    return;
+  }
   if (row.status !== 'queued') {
     return; // redelivery after a crash between send/skip and ack — nothing to do
   }
@@ -113,6 +121,15 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
     return;
   }
 
+  // At-most-once: claim the row (queued → sending) before anything leaves the building. The email
+  // and the D1 status write are two systems with no shared transaction; previously a markSent
+  // failure after a successful send left the row 'queued' and the retry emailed the donor again.
+  // Now a redelivery sees 'sending' and stops. Tradeoff: a crash between this claim and the send
+  // loses that one notification (logged above on redelivery) rather than risking a duplicate.
+  if (!(await deps.store.claimForSending(row.id, deps.now().toISOString()))) {
+    return; // a concurrent delivery won the claim
+  }
+
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
   // letterLinkTtlHours, not magicLinkTtlMinutes: this email is read whenever the donor gets to
@@ -126,14 +143,30 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   const locale: Locale = localeFromMondayLabel(contact.preferredLanguage) ?? DEFAULT_LOCALE;
   const template = templates.byLocale[locale]?.trim();
   const loginUrl = `${deps.config.auth.portalBaseUrl}/auth/callback?token=${rawToken}&lang=${locale}`;
-  await deps.emailSender.sendLetterReadyEmail({
-    to: contact.email,
-    donorName: contact.name,
-    year: row.year,
-    loginUrl,
-    locale,
-    bodyTemplate: template ? template : templates.default,
-  });
+  try {
+    await deps.emailSender.sendLetterReadyEmail({
+      to: contact.email,
+      donorName: contact.name,
+      year: row.year,
+      loginUrl,
+      locale,
+      bodyTemplate: template ? template : templates.default,
+    });
+  } catch (err) {
+    // The send itself failed, so nothing went out — hand the row back for the retry.
+    await deps.store.releaseClaim(row.id);
+    throw err;
+  }
 
-  await deps.store.markSent(row.id, deps.now().toISOString());
+  try {
+    await deps.store.markSent(row.id, deps.now().toISOString());
+  } catch (err) {
+    // The email is out; the row stays 'sending', which already blocks any resend. Retrying would
+    // accomplish nothing, so log and let the message ack.
+    console.error(
+      `member-portal consumer: letter send ${row.id} was emailed but not marked sent (row stays 'sending'): ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
 }

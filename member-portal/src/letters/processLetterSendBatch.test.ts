@@ -85,6 +85,8 @@ function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
     markSkipped: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
     listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
+    claimForSending: vi.fn().mockResolvedValue(true),
+    releaseClaim: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -169,6 +171,84 @@ describe('processLetterSendBatch', () => {
 
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  // Issue #31: the send and the markSent are two systems; if markSent failed after a successful
+  // send, the retry used to see 'queued' and email the donor again.
+  it('claims the row before sending the email', async () => {
+    const store = fakeStore(row);
+    const emailSender = fakeEmailSender();
+    await processLetterSendBatch([makeMessage(42)], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(store.claimForSending).toHaveBeenCalledWith(42, '2026-08-24T10:00:00.000Z');
+    const claimOrder = (store.claimForSending as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    const sendOrder = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(claimOrder).toBeLessThan(sendOrder);
+  });
+
+  it('acks without retrying when markSent fails after a successful send (no duplicate email)', async () => {
+    const store = fakeStore(row);
+    (store.markSent as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 write failed'));
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledTimes(1);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('never re-sends a row already claimed by an earlier attempt', async () => {
+    const store = fakeStore({ ...row, status: 'sending' });
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('skips the send when another consumer won the claim', async () => {
+    const store = fakeStore(row);
+    (store.claimForSending as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('releases the claim and retries when the send itself fails', async () => {
+    const store = fakeStore(row);
+    const emailSender = fakeEmailSender();
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('E_DELIVERY_FAILED'));
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(store.releaseClaim).toHaveBeenCalledWith(42);
+    expect(store.markSent).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('acks an already-sent row without re-sending (redelivery idempotency)', async () => {

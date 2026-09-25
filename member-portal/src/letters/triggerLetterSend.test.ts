@@ -12,6 +12,8 @@ function fakeStore(overrides: Partial<LetterSendStore> = {}): LetterSendStore {
     markSkipped: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
     listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
+    claimForSending: vi.fn().mockResolvedValue(true),
+    releaseClaim: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

@@ -30,6 +30,31 @@ describe('D1LetterSendStore', () => {
     expect(await store.findByDonorYear('other-donor', 2024)).toBeNull();
   });
 
+  // Issue #31: the send path claims the row (queued → sending) before emailing, so a crash or a
+  // failed markSent after a successful send can never lead a redelivery to send again.
+  it('claims a queued row exactly once', async () => {
+    const store = new D1LetterSendStore(env.DB);
+    const id = await store.createQueued({ donorItemId: 'donor-claim', year: 2025, createdAt: '2026-08-24T10:00:00.000Z' });
+
+    expect(await store.claimForSending(id, '2026-08-24T10:05:00.000Z')).toBe(true);
+    expect(await store.claimForSending(id, '2026-08-24T10:06:00.000Z')).toBe(false);
+    expect((await store.getById(id))?.status).toBe('sending');
+  });
+
+  it('releases a claim back to queued, and only a claim', async () => {
+    const store = new D1LetterSendStore(env.DB);
+    const id = await store.createQueued({ donorItemId: 'donor-release', year: 2025, createdAt: '2026-08-24T10:00:00.000Z' });
+    await store.claimForSending(id, '2026-08-24T10:05:00.000Z');
+
+    await store.releaseClaim(id);
+    expect((await store.getById(id))?.status).toBe('queued');
+
+    await store.claimForSending(id, '2026-08-24T10:07:00.000Z');
+    await store.markSent(id, '2026-08-24T10:08:00.000Z');
+    await store.releaseClaim(id);
+    expect((await store.getById(id))?.status).toBe('sent');
+  });
+
   it('rejects a second row for the same donor and year', async () => {
     const store = new D1LetterSendStore(env.DB);
     await store.createQueued({ donorItemId: 'donor-3', year: 2025, createdAt: '2026-08-24T10:00:00.000Z' });

@@ -100,6 +100,8 @@ function fakeLetterStore(): LetterSendStore {
     markSkipped: vi.fn(),
     requeue: vi.fn(),
     listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
+    claimForSending: vi.fn().mockResolvedValue(true),
+    releaseClaim: vi.fn().mockResolvedValue(undefined),
   };
 }
 

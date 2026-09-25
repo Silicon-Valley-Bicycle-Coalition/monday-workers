@@ -54,7 +54,9 @@ export async function triggerLetterSend(donorItemId: string, deps: TriggerLetter
       await deps.queue.send({ sendId: existing.id });
       return { kind: 'queued' };
     }
-    return { kind: 'duplicate' }; // status === 'sent' — genuinely already sent, true no-op
+    // 'sent', or 'sending' (claimed by a consumer that may already have emailed — never resent
+    // automatically; see processLetterSendBatch) — a true no-op either way.
+    return { kind: 'duplicate' };
   }
 
   const id = await deps.store.createQueued({ donorItemId, year, createdAt: now.toISOString() });

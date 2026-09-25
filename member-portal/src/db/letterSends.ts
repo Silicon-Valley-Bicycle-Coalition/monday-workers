@@ -1,16 +1,25 @@
+// 'sending': the consumer claimed the row just before emailing (claimForSending). A row left in
+// 'sending' means an email may have gone out — it is never sent again automatically; see
+// processLetterSendBatch for the at-most-once tradeoff.
+export type LetterSendStatus = 'queued' | 'sending' | 'sent' | 'skipped';
+
 export interface LetterSendRow {
   id: number;
   donorItemId: string;
   year: number;
-  status: 'queued' | 'sent' | 'skipped';
+  status: LetterSendStatus;
   createdAt: string;
   sentAt: string | null;
 }
 
 export interface LetterSendStore {
-  findByDonorYear(donorItemId: string, year: number): Promise<{ id: number; status: 'queued' | 'sent' | 'skipped' } | null>;
+  findByDonorYear(donorItemId: string, year: number): Promise<{ id: number; status: LetterSendStatus } | null>;
   createQueued(params: { donorItemId: string; year: number; createdAt: string }): Promise<number>;
   getById(id: number): Promise<LetterSendRow | null>;
+  // queued → sending, atomically; false when the row isn't 'queued' (another delivery claimed it).
+  claimForSending(id: number, atISO: string): Promise<boolean>;
+  // sending → queued, only when the send itself failed (nothing went out) so a retry may send.
+  releaseClaim(id: number): Promise<void>;
   markSent(id: number, sentAtISO: string): Promise<void>;
   markSkipped(id: number, atISO: string): Promise<void>;
   requeue(id: number, atISO: string): Promise<void>;
@@ -22,11 +31,11 @@ export interface LetterSendStore {
 export class D1LetterSendStore implements LetterSendStore {
   constructor(private db: D1Database) {}
 
-  async findByDonorYear(donorItemId: string, year: number): Promise<{ id: number; status: 'queued' | 'sent' | 'skipped' } | null> {
+  async findByDonorYear(donorItemId: string, year: number): Promise<{ id: number; status: LetterSendStatus } | null> {
     const row = await this.db
       .prepare(`SELECT id, status FROM letter_sends WHERE donor_item_id = ?1 AND year = ?2`)
       .bind(donorItemId, year)
-      .first<{ id: number; status: 'queued' | 'sent' | 'skipped' }>();
+      .first<{ id: number; status: LetterSendStatus }>();
     return row === null ? null : { id: row.id, status: row.status };
   }
 
@@ -46,7 +55,7 @@ export class D1LetterSendStore implements LetterSendStore {
         id: number;
         donor_item_id: string;
         year: number;
-        status: 'queued' | 'sent' | 'skipped';
+        status: LetterSendStatus;
         created_at: string;
         sent_at: string | null;
       }>();
@@ -59,6 +68,21 @@ export class D1LetterSendStore implements LetterSendStore {
       createdAt: row.created_at,
       sentAt: row.sent_at,
     };
+  }
+
+  async claimForSending(id: number, atISO: string): Promise<boolean> {
+    const result = await this.db
+      .prepare(`UPDATE letter_sends SET status = 'sending', sent_at = ?1 WHERE id = ?2 AND status = 'queued'`)
+      .bind(atISO, id)
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  async releaseClaim(id: number): Promise<void> {
+    await this.db
+      .prepare(`UPDATE letter_sends SET status = 'queued', sent_at = NULL WHERE id = ?1 AND status = 'sending'`)
+      .bind(id)
+      .run();
   }
 
   async markSent(id: number, sentAtISO: string): Promise<void> {
