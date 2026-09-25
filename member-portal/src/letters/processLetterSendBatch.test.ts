@@ -251,6 +251,45 @@ describe('processLetterSendBatch', () => {
     errorSpy.mockRestore();
   });
 
+  // Review of #31: a D1 failure minting the token after the claim left the row 'sending' with no
+  // email sent — and 'sending' is never resent, so it was stranded for good. The token is now
+  // minted before the claim, so its failure retries a still-'queued' row.
+  it('mints the token before claiming, so a token-store failure leaves the row unclaimed', async () => {
+    const store = fakeStore(row);
+    const tokenStore = fakeTokenStore();
+    (tokenStore.createToken as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 insert failed'));
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore, emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(store.claimForSending).not.toHaveBeenCalled();
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('still surfaces the send error (and retries) when releasing the claim also fails', async () => {
+    const store = fakeStore(row);
+    (store.releaseClaim as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 update failed'));
+    const emailSender = fakeEmailSender();
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('E_DELIVERY_FAILED'));
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(message.retry).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('D1 update failed'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('E_DELIVERY_FAILED'));
+    errorSpy.mockRestore();
+  });
+
   it('acks an already-sent row without re-sending (redelivery idempotency)', async () => {
     const store = fakeStore({ ...row, status: 'sent' });
     const emailSender = fakeEmailSender();

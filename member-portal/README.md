@@ -377,7 +377,7 @@ Sends are **at most once** per donor+year (issue #31): the consumer claims the r
 (`queued` → `sending`) before emailing and marks it `sent` after. If the send itself fails, the
 claim is released and the queue retries; if the email went out but the `sent` write failed, the
 row stays `sending` and nothing resends it — neither the retry, the cron, nor the staff button.
-A row stuck in `sending` with no email received (the Worker died between claim and send — rare)
+A row stuck in `sending` with no email received (the Worker died between claim and send, or a failed send's claim couldn't be released — both rare and logged)
 needs a manual `UPDATE letter_sends SET status = 'queued' WHERE id = …` and a button click.
 
 Gates, all required before a single email goes out: `letterCron` config filled in,

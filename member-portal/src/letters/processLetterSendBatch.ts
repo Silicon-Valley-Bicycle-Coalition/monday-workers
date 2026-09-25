@@ -121,15 +121,10 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
     return;
   }
 
-  // At-most-once: claim the row (queued → sending) before anything leaves the building. The email
-  // and the D1 status write are two systems with no shared transaction; previously a markSent
-  // failure after a successful send left the row 'queued' and the retry emailed the donor again.
-  // Now a redelivery sees 'sending' and stops. Tradeoff: a crash between this claim and the send
-  // loses that one notification (logged above on redelivery) rather than risking a duplicate.
-  if (!(await deps.store.claimForSending(row.id, deps.now().toISOString()))) {
-    return; // a concurrent delivery won the claim
-  }
-
+  // Mint the login token first, before claiming the row: a D1 failure here must leave the row
+  // 'queued' so the retry can try again. (Minted after the claim, it stranded the row in
+  // 'sending' with no email ever sent.) If a later step fails, this token is simply never used
+  // and expires — harmless.
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
   // letterLinkTtlHours, not magicLinkTtlMinutes: this email is read whenever the donor gets to
@@ -143,6 +138,19 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   const locale: Locale = localeFromMondayLabel(contact.preferredLanguage) ?? DEFAULT_LOCALE;
   const template = templates.byLocale[locale]?.trim();
   const loginUrl = `${deps.config.auth.portalBaseUrl}/auth/callback?token=${rawToken}&lang=${locale}`;
+
+  // At-most-once: claim the row (queued → sending) immediately before the send, which is the only
+  // step inside the claim window. The email and the D1 status write are two systems with no
+  // shared transaction; previously a markSent failure after a successful send left the row
+  // 'queued' and the retry emailed the donor again. Now a redelivery sees 'sending' and stops.
+  // Every failure we can observe returns the row to 'queued' (send error → releaseClaim) or is
+  // harmless ('sending' after a real send). The one residual gap: the Worker dying between this
+  // claim and the send completing, or releaseClaim itself failing — the row then stays 'sending'
+  // and needs the manual requeue documented in the README, rather than risking a duplicate.
+  if (!(await deps.store.claimForSending(row.id, deps.now().toISOString()))) {
+    return; // a concurrent delivery won the claim
+  }
+
   try {
     await deps.emailSender.sendLetterReadyEmail({
       to: contact.email,
@@ -152,10 +160,19 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
       locale,
       bodyTemplate: template ? template : templates.default,
     });
-  } catch (err) {
-    // The send itself failed, so nothing went out — hand the row back for the retry.
-    await deps.store.releaseClaim(row.id);
-    throw err;
+  } catch (sendErr) {
+    // The send itself failed, so nothing went out — hand the row back for the retry. A failure
+    // to release is logged but must not mask the send error, which is what the retry is for.
+    try {
+      await deps.store.releaseClaim(row.id);
+    } catch (releaseErr) {
+      console.error(
+        `member-portal consumer: letter send ${row.id} failed and its claim could not be released (row stays 'sending' — requeue by hand): ${
+          releaseErr instanceof Error ? releaseErr.message : String(releaseErr)
+        }`
+      );
+    }
+    throw sendErr;
   }
 
   try {
