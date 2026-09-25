@@ -23,6 +23,7 @@ describe('D1MondayEventStore', () => {
       error: null,
       receivedAt: '2026-08-22T00:00:00.000Z',
       writtenAt: null,
+      createAttempt: 0,
     });
   });
 
@@ -68,6 +69,18 @@ describe('D1MondayEventStore', () => {
   it('returns null for an unknown event id', async () => {
     const store = new D1MondayEventStore(env.DB);
     expect(await store.getEvent('does-not-exist')).toBeNull();
+  });
+
+  it('counts terminal create failures, so a redrive uses a fresh requestid', async () => {
+    const store = new D1MondayEventStore(env.DB);
+    await store.insertEvent({ eventId: 'item-10', mondayItemId: 'item-10', rawPayload: '{}', receivedAt: '2026-09-25T00:00:00.000Z' });
+    expect((await store.getEvent('item-10'))?.createAttempt).toBe(0);
+
+    await store.updateStatus('item-10', 'failed', { error: 'transient' });
+    expect((await store.getEvent('item-10'))?.createAttempt).toBe(0);
+    await store.updateStatus('item-10', 'failed', { error: 'not retried: duplicate name', bumpCreateAttempt: true });
+    await store.updateStatus('item-10', 'failed', { error: 'not retried: duplicate name', bumpCreateAttempt: true });
+    expect((await store.getEvent('item-10'))?.createAttempt).toBe(2);
   });
 
   // #33 review: the QuickBooks -> Monday path uses this to recognize a Customer that a Monday item

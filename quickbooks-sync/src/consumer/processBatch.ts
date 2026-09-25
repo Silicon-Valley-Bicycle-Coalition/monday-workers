@@ -3,7 +3,7 @@ import { isTerminalError, TerminalError } from '../errors';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { QbEventStore } from '../db/qbEvents';
 import { getPath, mapMondayToQbCustomerFields, mapQbToMondayColumns, mondayCellScalar } from '../mapping/fieldMap';
-import type { MondayClient } from '../monday/client';
+import type { MondayClient, MondayItemSnapshot } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
 import type { EntityType, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
 
@@ -78,7 +78,10 @@ export async function processSyncQueueBatch(
         if (message.body.direction === 'qb-to-monday') {
           await deps.qbEventStore.updateStatus(message.body.eventId, 'failed', { error });
         } else {
-          await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', { error });
+          // A terminal failure also advances the create's requestid (migration 0005): Intuit
+          // replays a failed response for a repeated requestid, and the fix-then-redrive path
+          // needs a genuinely new request. Transient failures keep the same one.
+          await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', terminal ? { error, bumpCreateAttempt: true } : { error });
         }
         recorded = true;
       } catch (recordErr) {
@@ -232,6 +235,7 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     if (creator !== null) qbId = creator.qbId;
   }
 
+  let item: MondayItemSnapshot | null = null;
   if (qbId === null) {
     // The decisive guard is the item itself. QuickBooks -> Monday writes the QuickBooks Id into
     // qbIdColumn in the same create_item call that makes the item, so an item created from
@@ -244,7 +248,7 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
       );
     }
     // Re-read the item: the create_pulse payload need not include column values set at creation.
-    const item = await deps.mondayClient.getItem(event.mondayItemId);
+    item = await deps.mondayClient.getItem(event.mondayItemId);
     if (item === null) {
       throw new TerminalError(`monday item "${event.mondayItemId}" no longer exists`);
     }
@@ -263,7 +267,13 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
   }
 
   if (qbId === null) {
-    const columnValues = JSON.parse(event.rawPayload) as Record<string, unknown>;
+    // Build the Customer from the item as it stands now, not the create_pulse payload stored at
+    // webhook time (#33 review): a create that failed terminally (say, a duplicate name) is fixed
+    // by editing the item in Monday and redriving the row. raw_payload is kept only as a record.
+    // (item is set here: every path that leaves qbId null above read it or threw.)
+    const current = item!;
+    const columnValues: Record<string, unknown> = { name: current.name };
+    for (const [columnId, cell] of Object.entries(current.columnValues)) columnValues[columnId] = mondayCellScalar(cell);
     const qbFields = mapMondayToQbCustomerFields(columnValues, deps.config);
     // QuickBooks rejects a Customer with none of these (DisplayName is derived from the others
     // when absent). Fail with a readable error instead of a bare HTTP 400.
@@ -274,8 +284,10 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     }
     // requestid makes the create itself idempotent at QuickBooks: if a previous attempt's create
     // succeeded but its response was lost (so qbId was never recorded), the retry gets the
-    // original Customer back instead of a second one.
-    const created = await deps.quickBooksClient.createCustomer(qbFields, `monday-item-${event.mondayItemId}`);
+    // original Customer back instead of a second one. The -r<n> suffix changes only after a
+    // terminal failure, so a redrive after fixing the item isn't answered with that failure.
+    const requestId = `monday-item-${event.mondayItemId}${event.createAttempt > 0 ? `-r${event.createAttempt}` : ''}`;
+    const created = await deps.quickBooksClient.createCustomer(qbFields, requestId);
     qbId = created.id;
 
     // Durably record the new id before doing anything else. 'fetched' is the intermediate

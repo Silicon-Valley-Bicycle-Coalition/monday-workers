@@ -74,12 +74,25 @@ A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds
 `status = 'failed'` and its last error gains the prefix `dead-lettered after retries: `, and each
 batch logs one `console.error`. Nothing is retried from there automatically.
 
-To find dead rows: `wrangler d1 execute <db> --remote --command "SELECT event_id, error FROM
-qb_events WHERE error LIKE 'dead-lettered%'"` (same for `monday_events`). Once the cause is
-fixed, redrive a row by sending its message to the write queue — Cloudflare dashboard → Queues →
-`quickbooks-sync-writes` → *Send message*, body `{"direction":"qb-to-monday","eventId":"<event_id>"}`
-(or `"monday-to-qb"` with the Monday item id). Every consumer step is idempotent against its D1
-row, so a redrive of a row that half-finished resumes rather than duplicates.
+**Terminal failures are not retried at all.** When QuickBooks rejects the data itself (a 400
+`ValidationFault` — e.g. `6240 Duplicate Name Exists`, a missing required field, `610 Object Not
+Found`), or a Monday item no longer exists / has no name / carries a QuickBooks Id already linked
+elsewhere, the consumer records `not retried: <Intuit's code, message and detail>` on the row and
+acks the message — no retries, no DLQ.
+
+To find rows needing attention: `wrangler d1 execute <db> --remote --command "SELECT event_id,
+error FROM monday_events WHERE status = 'failed'"` (same for `qb_events`); the error says whether
+it was dead-lettered or not retried. Fix the cause first — for a Monday → QuickBooks create, that
+usually means editing the item in Monday (rename a duplicate, fill in the name); the consumer
+re-reads the item on every attempt, so the fix is what gets sent. Then redrive by sending the
+row's message to the write queue — Cloudflare dashboard → Queues → `quickbooks-sync-writes` →
+*Send message*, body `{"direction":"monday-to-qb","eventId":"<Monday item id>"}` (or
+`"qb-to-monday"` with the `qb_events.event_id`). Every consumer step is idempotent against its D1
+row, so a redrive of a row that half-finished resumes rather than duplicates. A Monday → QuickBooks
+create sends Intuit `requestid=monday-item-<id>[-r<n>]`: `n` (`monday_events.create_attempt`)
+advances on each terminal failure, so a redrive after one is a new request rather than a replay
+of the cached failure, while retries and redrives after transient failures reuse it (a create
+whose response was lost must return the original Customer).
 
 ## APIs & auth
 

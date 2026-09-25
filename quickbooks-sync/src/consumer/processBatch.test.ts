@@ -49,6 +49,7 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
     error: null,
     receivedAt: '2026-08-22T00:00:00.000Z',
     writtenAt: null,
+    createAttempt: 0,
     ...overrides,
   };
 }
@@ -500,14 +501,22 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
 
   // #33: a staff-typed Customer arrives as a create_pulse whose name is the item name and whose
   // columns are raw Monday shapes; both used to reach QuickBooks unmapped and 400.
-  it('creates the customer from the item name and normalized raw column values', async () => {
+  // #33 review: fields come from the item as it stands now (re-read from Monday), not the
+  // create_pulse payload stored at webhook time — so fixing the item in Monday and redriving works.
+  it('creates the customer from the re-read item, not the stored webhook payload', async () => {
     const withName: QuickbooksSyncConfig = {
       ...config,
       quickbooksSync: { ...config.quickbooksSync, customerCreateFieldMap: { name: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' } },
     };
     const mondayEventStore = fakeMondayEventStore({
-      getEvent: vi.fn().mockResolvedValue(
-        mondayEventRow({ rawPayload: JSON.stringify({ name: 'Staff Typed Co', email_col: { email: 'ap@staff.test', text: 'ap@staff.test' } }) })
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ rawPayload: JSON.stringify({ name: 'Stale Name' }) })),
+    });
+    const mondayClient = fakeMondayClient({
+      getItem: vi.fn().mockResolvedValue(
+        mondayItem({
+          name: 'Staff Typed Co',
+          columnValues: { email_col: { text: 'ap@staff.test', value: '{"email":"ap@staff.test","text":"AP"}' }, qb_id_col: { text: '', value: null } },
+        })
       ),
     });
     const createCustomer = vi.fn().mockResolvedValue({ id: 'qb-new' });
@@ -516,7 +525,7 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
       qbEventStore: fakeQbEventStore(),
       mondayEventStore,
       mapStore: fakeMapStore(),
-      mondayClient: fakeMondayClient(),
+      mondayClient,
       quickBooksClient: fakeQuickBooksClient({ createCustomer }),
       config: withName,
     });
@@ -524,9 +533,28 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
     expect(createCustomer.mock.calls[0]![0]).toEqual({ DisplayName: 'Staff Typed Co', PrimaryEmailAddr: { Address: 'ap@staff.test' } });
   });
 
-  it('refuses to send QuickBooks a customer with no name, naming the problem', async () => {
+  it('uses a fresh requestid after a terminal failure, so a redrive is not answered with the cached failure', async () => {
+    const createCustomer = vi.fn().mockResolvedValue({ id: 'qb-new' });
     const mondayEventStore = fakeMondayEventStore({
-      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ rawPayload: JSON.stringify({ text_col: { value: '' } }) })),
+      getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'failed', createAttempt: 2 })),
+    });
+
+    await processSyncQueueBatch([fakeMessage({ direction: 'monday-to-qb', eventId: '42' })], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ createCustomer }),
+      config,
+    });
+
+    expect(createCustomer).toHaveBeenCalledWith({ DisplayName: 'New Co' }, 'monday-item-42-r2');
+  });
+
+  it('refuses to send QuickBooks a customer with no name, naming the problem', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const mondayClient = fakeMondayClient({
+      getItem: vi.fn().mockResolvedValue(mondayItem({ name: '', columnValues: { text_col: { text: '', value: null } } })),
     });
     const createCustomer = vi.fn();
     const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
@@ -536,13 +564,13 @@ describe('processSyncQueueBatch — monday-to-qb', () => {
       qbEventStore: fakeQbEventStore(),
       mondayEventStore,
       mapStore: fakeMapStore(),
-      mondayClient: fakeMondayClient(),
+      mondayClient,
       quickBooksClient: fakeQuickBooksClient({ createCustomer }),
       config,
     });
 
     expect(createCustomer).not.toHaveBeenCalled();
-    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no name/) });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no name/), bumpCreateAttempt: true });
     vi.restoreAllMocks();
   });
 
@@ -702,7 +730,7 @@ describe('create-loop guard', () => {
 
     expect(createCustomer).not.toHaveBeenCalled();
     expect(mapStore.createMapping).not.toHaveBeenCalled();
-    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/already linked to item "original"/) });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/already linked to item "original"/), bumpCreateAttempt: true });
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
   });
@@ -735,7 +763,7 @@ describe('create-loop guard', () => {
     );
 
     expect(createCustomer).not.toHaveBeenCalled();
-    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/customerQbIdColumn/) });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/customerQbIdColumn/), bumpCreateAttempt: true });
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
   });
@@ -747,7 +775,7 @@ describe('create-loop guard', () => {
 
     await processSyncQueueBatch([message], deps({ mondayEventStore, mondayClient: fakeMondayClient({ getItem: vi.fn().mockResolvedValue(null) }) }));
 
-    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no longer exists/) });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no longer exists/), bumpCreateAttempt: true });
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
   });
@@ -786,7 +814,7 @@ describe('terminal failures', () => {
 
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
-    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: `${TERMINAL_PREFIX}${reason}` });
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: `${TERMINAL_PREFIX}${reason}`, bumpCreateAttempt: true });
     vi.restoreAllMocks();
   });
 

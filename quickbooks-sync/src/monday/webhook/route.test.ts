@@ -14,6 +14,7 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
     error: null,
     receivedAt: '2026-08-22T00:00:00.000Z',
     writtenAt: null,
+    createAttempt: 0,
     ...overrides,
   };
 }

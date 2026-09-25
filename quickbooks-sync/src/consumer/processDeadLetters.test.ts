@@ -30,6 +30,7 @@ function mondayRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow {
     error: 'quickbooks API: HTTP 400 creating customer',
     receivedAt: '2026-09-25T00:00:00.000Z',
     writtenAt: null,
+    createAttempt: 0,
     ...overrides,
   };
 }
