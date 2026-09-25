@@ -108,12 +108,20 @@ For a Worker built on the standard Hono + D1 stack (e.g. `funraise-sync`, `mailc
 npm test                    # vitest run
 npm test -- path/to/file.test.ts   # single test file
 npm test -- -t "test name"         # single test by name
-npm run typecheck           # tsc --noEmit
+npm run typecheck           # wrangler types --include-runtime=false && tsc --noEmit
 npm run dev                 # wrangler dev — local Worker + D1 + queue simulation
 npm run deploy               # wrangler deploy
 npm run deploy:sandbox       # wrangler deploy --env sandbox — every migration Worker has an env.sandbox block
 npm run dev:sandbox          # wrangler dev --env sandbox — local dev against the sandbox config; plain `npm run dev` is production and writes to production sinks once .dev.vars holds real secrets
 ```
+
+Always type-check a Worker with `npm run typecheck`, never a bare `tsc --noEmit`: binding types
+(`DB`, queues, `REQUEST_RATE_LIMITER`, …) live in `worker-configuration.d.ts`, which `wrangler
+types` regenerates from `wrangler.jsonc` and which is gitignored (it can absorb local `.dev.vars`
+names). A bare `tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a
+binding is added — and fails on binding names that say nothing about the code. (`monday-backup`'s
+script also type-checks `tsconfig.scripts.json`.) The two non-Worker CLIs, `salesforce-import`
+and `geo-filter`, have no Wrangler config, so theirs is a plain `tsc --noEmit`.
 
 `salesforce-import` is a one-time batch CLI, not a deployed Worker, so it has no `dev`/`deploy`
 scripts — instead:
