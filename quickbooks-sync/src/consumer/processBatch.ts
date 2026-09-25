@@ -91,7 +91,11 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     throw new Error(`config: monday.boards.${boardKey} is not configured`);
   }
 
-  const record = JSON.parse(event.fetchedPayload ?? '{}') as Record<string, unknown>;
+  // Read the entity now, not at webhook time (#33): a retried or delayed message must write the
+  // record as it currently stands, never an older snapshot over a newer one. A fetch failure
+  // throws into the queue's retry/backoff/DLQ path like any other failure.
+  const record = await deps.quickBooksClient.getEntity(event.entityType, event.qbId);
+  const fetchedPayload = JSON.stringify(record);
   const columnValues = mapQbToMondayColumns(event.entityType, record, deps.config);
 
   if (event.entityType === 'invoice') {
@@ -142,7 +146,8 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     });
   }
 
-  await deps.qbEventStore.updateStatus(eventId, 'written', { writtenAt: new Date().toISOString() });
+  // fetchedPayload is kept as a record of what was written, for inspecting a row after the fact.
+  await deps.qbEventStore.updateStatus(eventId, 'written', { writtenAt: new Date().toISOString(), fetchedPayload });
 }
 
 async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<void> {

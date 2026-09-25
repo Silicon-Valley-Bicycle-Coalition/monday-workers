@@ -100,7 +100,7 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
     const quickBooksClient = fakeQuickBooksClient();
     const mondayClient = fakeMondayClient();
 
-    const app = createQbWebhookApp({ qbEventStore, quickBooksClient, queue, verifierToken });
+    const app = createQbWebhookApp({ qbEventStore, queue, verifierToken });
     const body = JSON.stringify(qbNotification);
     const res = await app.request('/webhooks/quickbooks', {
       method: 'POST',
@@ -114,7 +114,9 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
     const queuedRow = await qbEventStore.getEvent(qbEventId);
     expect(queuedRow?.status).toBe('queued');
     expect(queuedRow?.qbId).toBe('60');
-    expect(JSON.parse(queuedRow!.fetchedPayload!).DisplayName).toBe('Acme Co');
+    // The webhook no longer calls QuickBooks (#33); the consumer fetches.
+    expect(quickBooksClient.getEntity).not.toHaveBeenCalled();
+    expect(queuedRow?.fetchedPayload).toBeNull();
 
     const messages = toConsumerMessages(queue.sent);
     await processSyncQueueBatch(messages, {
@@ -133,9 +135,11 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
       email_col: 'ap@acme.test',
     });
 
+    expect(quickBooksClient.getEntity).toHaveBeenCalledWith('customer', '60');
     const writtenRow = await qbEventStore.getEvent(qbEventId);
     expect(writtenRow?.status).toBe('written');
     expect(writtenRow?.writtenAt).not.toBeNull();
+    expect(JSON.parse(writtenRow!.fetchedPayload!).DisplayName).toBe('Acme Co');
 
     expect(await mapStore.getByQbId('customer', '60')).toEqual({
       entityType: 'customer',

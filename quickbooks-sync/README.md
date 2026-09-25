@@ -28,15 +28,21 @@ QuickBooks Online
   ▼
 Cloudflare Worker (webhook handler)
   │  1. webhook receiver logs the notification to D1
-  │  2. follow-up step calls the QuickBooks API to fetch the actual changed record
-  │  3. enqueues a Cloudflare Queue message with the fetched record
+  │  2. enqueues a Cloudflare Queue message naming the D1 row (a failed enqueue answers 500, so
+  │     Intuit redelivers)
   ▼
 Cloudflare Queue → consumer Worker
-  │  writes the record to the relevant Monday board; on failure, Queues retries automatically
-  │  and, once exhausted, routes to a Dead Letter Queue rather than dropping the write
+  │  calls the QuickBooks API to fetch the changed record as it stands now, then writes it to the
+  │  relevant Monday board; on failure, Queues retries with backoff and, once exhausted, routes
+  │  to a Dead Letter Queue rather than dropping the write
   ▼
 Monday.com
 ```
+
+The fetch lives in the consumer, not the webhook (#33): a fetch failure inside the webhook used
+to mark the row failed and still answer 200, so Intuit never redelivered and the change was lost;
+and a snapshot taken at webhook time could later overwrite Monday with stale data. The webhook
+now never calls QuickBooks — which also means only the consumer ever refreshes the OAuth token.
 
 See `../README.md`'s Reliability section — this Queue step is standard across every webhook-driven
 Worker in this plan, not QuickBooks-specific. Without it, a transient Monday API failure on the

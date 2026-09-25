@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import type { QbEventStore } from '../../db/qbEvents';
 import type { QueueMessage, SyncStatus } from '../../types';
-import type { QuickBooksClient } from '../client';
 import { parseQbNotifications, verifyQbSignature } from './validate';
 
 // Statuses that prove an event actually reached the queue. Anything else on an existing row
 // means the row was inserted but the Worker died (CPU limit, timeout, throw) before enqueueing,
-// so the change never made it downstream — those rows are resumed rather than skipped.
+// or the enqueue failed, so the change never made it downstream — those rows are resumed rather
+// than skipped.
 const REACHED_QUEUE_STATUSES: readonly SyncStatus[] = ['queued', 'written'];
 
 export function hasReachedQueue(status: SyncStatus): boolean {
@@ -19,11 +19,20 @@ export interface QueueLike {
 
 export interface QbWebhookDeps {
   qbEventStore: QbEventStore;
-  quickBooksClient: QuickBooksClient;
   queue: QueueLike;
   verifierToken: string;
 }
 
+// The webhook only records and enqueues (#33). It used to fetch the changed entity from
+// QuickBooks inline and answer 200 even when that fetch failed, so Intuit never redelivered and
+// nothing else resumed the row — the change was silently lost. The fetch now happens in the
+// queue consumer, which has retries with backoff and a DLQ behind it, reads the entity as of
+// processing time (not as of the webhook), and is the only code path that needs an OAuth token.
+// This route never touches QuickBooks, which also keeps it inside Intuit's 3-second response
+// window.
+//
+// A failed enqueue answers 500: Intuit retries non-200 deliveries, and the row left 'failed'
+// (not hasReachedQueue) takes the resume branch on the redelivery.
 export function createQbWebhookApp(deps: QbWebhookDeps) {
   const app = new Hono();
 
@@ -42,6 +51,7 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
       return c.json({ ok: false, error: (err as Error).message }, 200);
     }
 
+    let enqueueFailed = false;
     for (const notification of notifications) {
       const insertResult = await deps.qbEventStore.insertEvent({
         eventId: notification.eventId,
@@ -53,25 +63,25 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
       if (insertResult === 'duplicate') {
         // "A row already exists" is not the same as "this was already processed" — see
         // hasReachedQueue. Only skip when the existing row genuinely reached the queue,
-        // otherwise fall through and resume it using the row that's already there.
+        // otherwise fall through and resume it.
         const existing = await deps.qbEventStore.getEvent(notification.eventId);
         if (existing === null || hasReachedQueue(existing.status)) continue;
       }
 
       try {
-        const record = await deps.quickBooksClient.getEntity(notification.entityType, notification.qbId);
-        await deps.qbEventStore.updateStatus(notification.eventId, 'fetched', {
-          fetchedPayload: JSON.stringify(record),
-        });
         await deps.queue.send({ direction: 'qb-to-monday', eventId: notification.eventId });
         await deps.qbEventStore.updateStatus(notification.eventId, 'queued');
       } catch (err) {
-        await deps.qbEventStore.updateStatus(notification.eventId, 'failed', {
-          error: (err as Error).message,
-        });
+        // Keep going: the other notifications in this payload can still be enqueued, and the
+        // redelivery skips whichever of them reached the queue.
+        enqueueFailed = true;
+        const errMsg = (err as Error).message;
+        console.error(`quickbooks-sync qb webhook: enqueue failed for "${notification.eventId}": ${errMsg}`);
+        await deps.qbEventStore.updateStatus(notification.eventId, 'failed', { error: errMsg });
       }
     }
 
+    if (enqueueFailed) return c.json({ ok: false }, 500);
     return c.json({ ok: true }, 200);
   });
 

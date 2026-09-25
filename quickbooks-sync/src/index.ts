@@ -53,21 +53,15 @@ export default {
       if (limited) return limited;
 
       const mapStore = new D1MapStore(env.DB);
-      const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
-      const quickBooksClient = new HttpQuickBooksClient(
-        new D1TokenStore(env.DB),
-        env.QB_CLIENT_ID,
-        env.QB_CLIENT_SECRET,
-        config.quickbooks.apiBaseUrl
-      );
       const queue = toQueueLike(env.SYNC_QUEUE);
 
+      // Neither webhook route calls QuickBooks or Monday: they record and enqueue, and the queue
+      // consumer below does every outbound call (#33).
       const app = new Hono();
       app.route(
         '/',
         createQbWebhookApp({
           qbEventStore: new D1QbEventStore(env.DB),
-          quickBooksClient,
           queue,
           verifierToken: env.QB_WEBHOOK_VERIFIER_TOKEN,
         })

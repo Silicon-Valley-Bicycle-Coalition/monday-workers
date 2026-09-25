@@ -27,7 +27,7 @@ function qbEventRow(overrides: Partial<QbEventRow> = {}): QbEventRow {
     eventId: 'evt-1',
     entityType: 'customer',
     qbId: 'qb-1',
-    fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Acme Co' }),
+    fetchedPayload: null,
     pendingMondayItemId: null,
     status: 'queued',
     error: null,
@@ -88,7 +88,7 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
 
 function fakeQuickBooksClient(overrides: Partial<QuickBooksClient> = {}): QuickBooksClient {
   return {
-    getEntity: vi.fn(),
+    getEntity: vi.fn().mockResolvedValue({ Id: 'qb-1', DisplayName: 'Acme Co' }),
     createCustomer: vi.fn().mockResolvedValue({ id: 'qb-new' }),
     ...overrides,
   };
@@ -123,8 +123,60 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       mondayBoardId: 111,
       createdAt: expect.any(String),
     });
-    expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'written', { writtenAt: expect.any(String) });
+    expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'written', {
+      writtenAt: expect.any(String),
+      fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Acme Co' }),
+    });
     expect(message.ack).toHaveBeenCalled();
+  });
+
+  // #33: the webhook used to capture the entity at notification time and the consumer wrote that
+  // snapshot, so a retried or delayed message could overwrite Monday with stale data. The
+  // consumer now reads the entity from QuickBooks when it processes the message.
+  it('fetches the entity from QuickBooks at processing time rather than using a stored snapshot', async () => {
+    const qbEventStore = fakeQbEventStore({
+      getEvent: vi.fn().mockResolvedValue(qbEventRow({ fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Stale Name' }) })),
+    });
+    const getEntity = vi.fn().mockResolvedValue({ Id: 'qb-1', DisplayName: 'Fresh Name' });
+    const createItem = vi.fn().mockResolvedValue({ id: 'item-1' });
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient({ createItem }),
+      quickBooksClient: fakeQuickBooksClient({ getEntity }),
+      config,
+    });
+
+    expect(getEntity).toHaveBeenCalledWith('customer', 'qb-1');
+    expect(createItem).toHaveBeenCalledWith(111, 'Fresh Name', { text_col: 'Fresh Name' });
+  });
+
+  it('retries the message with backoff when the QuickBooks fetch fails', async () => {
+    const qbEventStore = fakeQbEventStore();
+    const getEntity = vi.fn().mockRejectedValue(new Error('quickbooks API: HTTP 503 fetching customer qb-1'));
+    const createItem = vi.fn();
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient({ createItem }),
+      quickBooksClient: fakeQuickBooksClient({ getEntity }),
+      config,
+    });
+
+    expect(createItem).not.toHaveBeenCalled();
+    expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', {
+      error: 'quickbooks API: HTTP 503 fetching customer qb-1',
+    });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 
   it('durably records the created Monday item id before writing the mapping', async () => {
@@ -150,6 +202,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
     });
     expect(qbEventStore.updateStatus).toHaveBeenNthCalledWith(2, 'evt-1', 'written', {
       writtenAt: expect.any(String),
+      fetchedPayload: expect.any(String),
     });
   });
 
@@ -212,10 +265,9 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
   });
 
   it('renames the Monday item when the QuickBooks name field has changed', async () => {
-    const qbEventStore = fakeQbEventStore({
-      getEvent: vi.fn().mockResolvedValue(
-        qbEventRow({ fetchedPayload: JSON.stringify({ Id: 'qb-1', DisplayName: 'Acme Co (renamed)' }) })
-      ),
+    const qbEventStore = fakeQbEventStore();
+    const quickBooksClient = fakeQuickBooksClient({
+      getEntity: vi.fn().mockResolvedValue({ Id: 'qb-1', DisplayName: 'Acme Co (renamed)' }),
     });
     const mapStore = fakeMapStore({
       getByQbId: vi.fn().mockResolvedValue({
@@ -235,7 +287,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       mondayEventStore: fakeMondayEventStore(),
       mapStore,
       mondayClient,
-      quickBooksClient: fakeQuickBooksClient(),
+      quickBooksClient,
       config,
     });
 
@@ -248,12 +300,11 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
   it('links an invoice to its customer via qb_monday_map when the customer is already mapped', async () => {
     const qbEventStore = fakeQbEventStore({
       getEvent: vi.fn().mockResolvedValue(
-        qbEventRow({
-          entityType: 'invoice',
-          qbId: 'inv-1',
-          fetchedPayload: JSON.stringify({ DocNumber: '1001', TotalAmt: 250, CustomerRef: { value: 'qb-1' } }),
-        })
+        qbEventRow({ entityType: 'invoice', qbId: 'inv-1' })
       ),
+    });
+    const quickBooksClient = fakeQuickBooksClient({
+      getEntity: vi.fn().mockResolvedValue({ DocNumber: '1001', TotalAmt: 250, CustomerRef: { value: 'qb-1' } }),
     });
     const mapStore = fakeMapStore({
       getByQbId: vi.fn(async (entityType: EntityType, qbId: string): Promise<MapEntry | null> => {
@@ -272,7 +323,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       mondayEventStore: fakeMondayEventStore(),
       mapStore,
       mondayClient,
-      quickBooksClient: fakeQuickBooksClient(),
+      quickBooksClient,
       config,
     });
 
