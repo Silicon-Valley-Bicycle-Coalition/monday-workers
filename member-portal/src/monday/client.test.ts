@@ -478,6 +478,52 @@ describe('HttpMondayClient donation status filtering', () => {
   });
 });
 
+describe('HttpMondayClient.getDiscountOrganizations pagination', () => {
+  // Issue #31: the query asked for `cursor` but never used it, silently dropping every active
+  // discount past the first 500.
+  it('follows the cursor past the first page', async () => {
+    const bodies: { query: string; variables: Record<string, unknown> }[] = [];
+    const pages = [
+      {
+        data: {
+          boards: [
+            {
+              items_page: {
+                cursor: 'cursor-1',
+                items: [{ id: 'org-1', name: 'Local Bikes', column_values: [{ id: 'offer_col', text: '10% off' }] }],
+              },
+            },
+          ],
+        },
+      },
+      {
+        data: {
+          next_items_page: {
+            cursor: null,
+            items: [{ id: 'org-2', name: 'Café Velo', column_values: [{ id: 'offer_col', text: 'Free coffee' }] }],
+          },
+        },
+      },
+    ];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string));
+      return { ok: true, status: 200, json: async () => pages[bodies.length - 1] };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    const orgs = await client.getDiscountOrganizations();
+
+    expect(orgs).toEqual([
+      { name: 'Local Bikes', discountOffered: '10% off' },
+      { name: 'Café Velo', discountOffered: 'Free coffee' },
+    ]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]!.query).toContain('next_items_page');
+    expect(bodies[1]!.query).toContain('offer_col');
+    expect(bodies[1]!.variables).toEqual({ cursor: 'cursor-1' });
+  });
+});
+
 describe('HttpMondayClient.getDiscountOrganizations', () => {
   it('returns only organizations with an active discount', async () => {
     const fetchMock = fetchReturning({

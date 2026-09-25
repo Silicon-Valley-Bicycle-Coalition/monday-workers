@@ -10,6 +10,7 @@ import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
 import { HttpMondayClient } from './monday/client';
+import { discountOrganizationsCache, withCachedDiscounts } from './monday/discountCache';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
@@ -110,20 +111,25 @@ export default {
       if (limited) return limited;
 
       const app = createApp({
-        monday: new HttpMondayClient(
-          config.monday.apiUrl,
-          env.MONDAY_API_TOKEN,
-          config.monday.columns,
-          donorsBoardId,
-          donationsBoardId,
-          organizationsBoardId,
-          config.donations,
-          // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
-          // non-null assertion below can't fire on a placeholder config.
-          pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
-          // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
-          // null board id rather than querying a sentinel.
-          config.monday.volunteersBoardId
+        // Discount list cached per isolate — see monday/discountCache.ts.
+        monday: withCachedDiscounts(
+          new HttpMondayClient(
+            config.monday.apiUrl,
+            env.MONDAY_API_TOKEN,
+            config.monday.columns,
+            donorsBoardId,
+            donationsBoardId,
+            organizationsBoardId,
+            config.donations,
+            // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
+            // non-null assertion below can't fire on a placeholder config.
+            pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
+            // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
+            // null board id rather than querying a sentinel.
+            config.monday.volunteersBoardId
+          ),
+          discountOrganizationsCache,
+          `${config.monday.apiUrl}#${organizationsBoardId}`
         ),
         tokenStore: new D1MagicLinkTokenStore(env.DB),
         sessionStore: new D1SessionStore(env.DB),
