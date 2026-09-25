@@ -35,6 +35,15 @@
         // concurrent writers during a backlog drain.
         "max_concurrency": 1,
         "dead_letter_queue": "quickbooks-sync-writes-dlq"
+      },
+      {
+        // #33: dead messages stamp their qb_events / monday_events row "dead-lettered after
+        // retries: …" and log one error per batch (src/consumer/processDeadLetters.ts) instead of
+        // expiring unseen. Two D1 ops per message; no further dead-letter queue.
+        "queue": "quickbooks-sync-writes-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
       }
     ]
   },
@@ -79,6 +88,12 @@
             "max_retries": 3,
             "max_concurrency": 1,
             "dead_letter_queue": "quickbooks-sync-writes-sandbox-dlq"
+          },
+          {
+            "queue": "quickbooks-sync-writes-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
           }
         ]
       },

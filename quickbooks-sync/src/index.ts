@@ -3,6 +3,7 @@ import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
 import { validateConfig } from './config';
 import { processSyncQueueBatch } from './consumer/processBatch';
+import { processDeadLetters } from './consumer/processDeadLetters';
 import { D1MapStore } from './db/map';
 import { D1MondayEventStore } from './db/mondayEvents';
 import { D1QbEventStore } from './db/qbEvents';
@@ -18,6 +19,16 @@ import type { Env, QueueMessage } from './types';
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts.
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
+
+// Must match the dead_letter_queue names in wrangler.jsonc: the production name at the top level
+// and the same name with "-sandbox" before "-dlq" under env.sandbox (same shape as
+// donation-rollups and funraise-sync). Exported for tests.
+const DEAD_LETTER_QUEUE = 'quickbooks-sync-writes-dlq';
+const SANDBOX_DEAD_LETTER_QUEUE = 'quickbooks-sync-writes-sandbox-dlq';
+
+export function isDeadLetterBatch(queueName: string): boolean {
+  return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE;
+}
 
 // env.SYNC_QUEUE is a Cloudflare Queue<QueueMessage>, whose send() resolves to a
 // QueueSendResponse rather than void. Adapt it to the QueueLike interface shared by
@@ -76,8 +87,16 @@ export default {
     });
   },
 
+  // Both the write queue and its dead-letter queue are consumed here; wrangler.jsonc names them.
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
     const config = configFor(env);
+    if (isDeadLetterBatch(batch.queue)) {
+      await processDeadLetters([...batch.messages], {
+        qbEventStore: new D1QbEventStore(env.DB),
+        mondayEventStore: new D1MondayEventStore(env.DB),
+      });
+      return;
+    }
     await processSyncQueueBatch([...batch.messages], {
       qbEventStore: new D1QbEventStore(env.DB),
       mondayEventStore: new D1MondayEventStore(env.DB),

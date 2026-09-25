@@ -42,6 +42,22 @@ See `../README.md`'s Reliability section — this Queue step is standard across 
 Worker in this plan, not QuickBooks-specific. Without it, a transient Monday API failure on the
 final write just silently disappears.
 
+## Dead letters and redrive
+
+A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds` in
+`src/consumer/processBatch.ts`); after three retries the message lands in
+`quickbooks-sync-writes-dlq` (`-sandbox-dlq` in the sandbox). The Worker consumes that queue too
+(`src/consumer/processDeadLetters.ts`): the row in `qb_events` / `monday_events` keeps
+`status = 'failed'` and its last error gains the prefix `dead-lettered after retries: `, and each
+batch logs one `console.error`. Nothing is retried from there automatically.
+
+To find dead rows: `wrangler d1 execute <db> --remote --command "SELECT event_id, error FROM
+qb_events WHERE error LIKE 'dead-lettered%'"` (same for `monday_events`). Once the cause is
+fixed, redrive a row by sending its message to the write queue — Cloudflare dashboard → Queues →
+`quickbooks-sync-writes` → *Send message*, body `{"direction":"qb-to-monday","eventId":"<event_id>"}`
+(or `"monday-to-qb"` with the Monday item id). Every consumer step is idempotent against its D1
+row, so a redrive of a row that half-finished resumes rather than duplicates.
+
 ## APIs & auth
 
 * **QuickBooks Online Accounting API** — free up to 500,000 read operations/month on the Builder

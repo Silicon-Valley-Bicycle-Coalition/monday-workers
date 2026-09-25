@@ -5,6 +5,7 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 import { validateConfig } from '../src/config';
 import { queueBaseName } from '../src/environment';
+import { isDeadLetterBatch } from '../src/index';
 
 // Guards the "inbound only, no outbound data" rule for this Worker's one outbound sink (the
 // QuickBooks company behind quickbooks.apiBaseUrl) and keeps the two deployments apart.
@@ -77,9 +78,23 @@ describe('wrangler.jsonc env.sandbox', () => {
       expect(producer.queue.endsWith('-sandbox')).toBe(true);
       expect(prodProducers).toContain(queueBaseName(producer.queue));
     }
-    for (const consumer of sbQueues.consumers as { queue: string; dead_letter_queue: string }[]) {
+    const consumers = sbQueues.consumers as { queue: string; dead_letter_queue?: string }[];
+    const writers = consumers.filter((c) => c.dead_letter_queue !== undefined);
+    expect(writers.length).toBeGreaterThan(0);
+    for (const consumer of writers) {
       expect(consumer.queue.endsWith('-sandbox')).toBe(true);
       expect(consumer.dead_letter_queue).toBe(`${consumer.queue}-dlq`);
+    }
+  });
+
+  it('routes each dead-letter queue to the dead-letter consumer, in both environments (#33)', () => {
+    for (const queues of [wrangler.queues as Json, sandboxEnv.queues as Json]) {
+      const consumers = queues.consumers as { queue: string; dead_letter_queue?: string }[];
+      const writer = consumers.find((c) => c.dead_letter_queue !== undefined)!;
+      const dlq = consumers.find((c) => c.dead_letter_queue === undefined)!;
+      expect(dlq.queue).toBe(writer.dead_letter_queue);
+      expect(isDeadLetterBatch(dlq.queue)).toBe(true);
+      expect(isDeadLetterBatch(writer.queue)).toBe(false);
     }
   });
 
