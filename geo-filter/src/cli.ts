@@ -22,14 +22,11 @@
 
 import { writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import type { Geometry } from 'geojson';
+import { argValueFrom, buildFilterMode } from './args.js';
 import { filterContacts, type FilterMode } from './geometry.js';
 import { fetchContacts } from './monday.js';
 
-function argValue(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i === -1 ? undefined : process.argv[i + 1];
-}
+const argValue = argValueFrom(process.argv);
 
 const token = process.env.MONDAY_API_TOKEN;
 if (!token) {
@@ -44,37 +41,14 @@ if (!boardId || !mode) {
   process.exit(1);
 }
 
-async function buildFilterMode(): Promise<FilterMode> {
-  if (mode === 'zip') {
-    const zips = argValue('--zips');
-    if (!zips) throw new Error('--mode zip requires --zips <comma,separated,list>');
-    return { kind: 'zip', zips: zips.split(',').map((z) => z.trim()).filter(Boolean) };
-  }
-  if (mode === 'radius') {
-    const lat = argValue('--lat');
-    const lng = argValue('--lng');
-    const radiusMiles = argValue('--radius-miles');
-    if (!lat || !lng || !radiusMiles) throw new Error('--mode radius requires --lat, --lng, and --radius-miles');
-    return { kind: 'radius', center: { lat: Number(lat), lng: Number(lng) }, radiusMiles: Number(radiusMiles) };
-  }
-  if (mode === 'corridor') {
-    const geojsonPath = argValue('--geojson');
-    const bufferMiles = argValue('--buffer-miles');
-    if (!geojsonPath || !bufferMiles) throw new Error('--mode corridor requires --geojson <path> and --buffer-miles');
-    const raw = JSON.parse(await readFile(geojsonPath, 'utf8'));
-    // Accept a bare Geometry, a Feature, or a FeatureCollection (buffering the first feature) —
-    // whatever shape a human copied out of an Overpass query result or a city GIS export.
-    const geometry: Geometry =
-      raw.type === 'FeatureCollection' ? raw.features[0]?.geometry
-      : raw.type === 'Feature' ? raw.geometry
-      : raw;
-    if (!geometry) throw new Error(`${geojsonPath} has no usable geometry`);
-    return { kind: 'corridor', geometry, bufferMiles: Number(bufferMiles) };
-  }
-  throw new Error(`geo-filter: unknown --mode "${mode}" (expected zip, radius, or corridor)`);
+let filterMode: FilterMode;
+try {
+  filterMode = await buildFilterMode(mode, argValue, (path) => readFile(path, 'utf8'));
+} catch (err) {
+  // Argument errors are the user's to fix — print the message, not a stack trace.
+  console.error(`geo-filter: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
 }
-
-const filterMode = await buildFilterMode();
 const columns = {
   name: argValue('--name-column') ?? 'Name',
   lat: argValue('--lat-column') ?? 'Lat',

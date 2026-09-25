@@ -31,6 +31,10 @@ MONDAY_API_TOKEN=... npm run cli -- --board <boardId> --mode corridor \
   --geojson route.geojson --buffer-miles 1
 ```
 
+`--lat`/`--lng` must be valid coordinates (-90..90 / -180..180) and the mile distances
+non-negative numbers; anything else is rejected with an error rather than silently matching
+nothing.
+
 Common flags: `--out matches.csv` (default `geo-filter-matches.csv`), and
 `--lat-column`/`--lng-column`/`--zip-column`/`--name-column` if the target board's columns
 aren't titled `Lat`/`Lng`/`Zip`/`Name` (`salesforce-import`'s defaults).
@@ -56,8 +60,8 @@ geometry is used) — whatever shape either source hands back.
 
 ```sh
 npm install
-npm test        # vitest — the geometry logic (src/geometry.ts) is fully unit-tested,
-                 # no Monday API or network needed
+npm test        # vitest — the geometry logic (src/geometry.ts) and flag parsing
+                 # (src/args.ts) are unit-tested, no Monday API or network needed
 npm run typecheck
 ```
 
