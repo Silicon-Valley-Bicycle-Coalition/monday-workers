@@ -249,8 +249,9 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     }
     // Re-read the item: the create_pulse payload need not include column values set at creation.
     item = await deps.mondayClient.getItem(event.mondayItemId);
-    if (item === null) {
-      throw new TerminalError(`monday item "${event.mondayItemId}" no longer exists`);
+    if (item === null || item.state !== 'active') {
+      // items(ids:) returns archived and deleted items too — never create a Customer from one.
+      throw new TerminalError(`monday item "${event.mondayItemId}" no longer exists (${item === null ? 'not found' : item.state})`);
     }
     const carried = mondayCellScalar(item.columnValues[qbIdColumn]);
     if (carried !== undefined) {

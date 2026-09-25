@@ -3,10 +3,12 @@ export interface MondayItem {
 }
 
 // An item as it stands now. `value` is Monday's raw JSON-encoded column value (null when empty),
-// `text` its display text.
+// `text` its display text. `state` matters: items(ids:) also returns archived and deleted items
+// (API 2026-01), so callers must check for 'active'.
 export interface MondayItemSnapshot {
   id: string;
   name: string;
+  state: 'active' | 'archived' | 'deleted' | string;
   columnValues: Record<string, { text: string | null; value: string | null }>;
 }
 
@@ -78,12 +80,13 @@ export class HttpMondayClient implements MondayClient {
 
   async getItem(itemId: string): Promise<MondayItemSnapshot | null> {
     const data = await this.graphql<{
-      items: { id: string; name: string; column_values: { id: string; text: string | null; value: string | null }[] }[];
+      items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[];
     }>(
       `query ($ids: [ID!]) {
         items(ids: $ids) {
           id
           name
+          state
           column_values { id text value }
         }
       }`,
@@ -94,6 +97,7 @@ export class HttpMondayClient implements MondayClient {
     return {
       id: item.id,
       name: item.name,
+      state: item.state,
       columnValues: Object.fromEntries(item.column_values.map((c) => [c.id, { text: c.text, value: c.value }])),
     };
   }

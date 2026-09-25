@@ -79,6 +79,7 @@ function mondayItem(overrides: Partial<MondayItemSnapshot> = {}): MondayItemSnap
   return {
     id: '42',
     name: 'New Co',
+    state: 'active',
     columnValues: { text_col: { text: 'New Co', value: '"New Co"' }, qb_id_col: { text: '', value: null } },
     ...overrides,
   };
@@ -778,6 +779,28 @@ describe('create-loop guard', () => {
     expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no longer exists/), bumpCreateAttempt: true });
     expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+
+  it('refuses (terminally) an archived or deleted item — items(ids:) still returns those', async () => {
+    for (const state of ['archived', 'deleted']) {
+      const mondayEventStore = fakeMondayEventStore();
+      const createCustomer = vi.fn();
+      const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await processSyncQueueBatch(
+        [message],
+        deps({ mondayEventStore, mondayClient: fakeMondayClient({ getItem: vi.fn().mockResolvedValue(mondayItem({ state })) }), quickBooksClient: fakeQuickBooksClient({ createCustomer }) })
+      );
+
+      expect(createCustomer, state).not.toHaveBeenCalled();
+      expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', {
+        error: expect.stringMatching(new RegExp(`no longer exists \\(${state}\\)`)),
+        bumpCreateAttempt: true,
+      });
+      expect(message.ack).toHaveBeenCalled();
+      vi.restoreAllMocks();
+    }
   });
 
   it('skips the guards on a resumed row that already created its Customer', async () => {

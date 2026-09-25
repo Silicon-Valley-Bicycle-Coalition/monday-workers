@@ -50,6 +50,7 @@ describe('HttpMondayClient', () => {
           {
             id: '456',
             name: 'Acme Co',
+            state: 'active',
             column_values: [
               { id: 'email_col', text: 'ap@acme.test', value: '{"email":"ap@acme.test","text":"AP"}' },
               { id: 'qb_id_col', text: '', value: null },
@@ -65,6 +66,7 @@ describe('HttpMondayClient', () => {
     expect(item).toEqual({
       id: '456',
       name: 'Acme Co',
+      state: 'active',
       columnValues: {
         email_col: { text: 'ap@acme.test', value: '{"email":"ap@acme.test","text":"AP"}' },
         qb_id_col: { text: '', value: null },
@@ -81,6 +83,16 @@ describe('HttpMondayClient', () => {
     expect(await client.findItemIdsByColumnValue(999, 'qb_id_col', '60')).toEqual(['456']);
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as Record<string, unknown>).body as string);
     expect(body.variables).toEqual({ boardId: 999, columnId: 'qb_id_col', value: '60' });
+  });
+
+  // #33 review: items(ids:) returns archived and deleted items too (API 2026-01); state says which.
+  it("reports an archived or deleted item's state rather than hiding it", async () => {
+    const fetchMock = mockFetchOnce({ data: { items: [{ id: '456', name: 'Old Co', state: 'archived', column_values: [] }] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+
+    expect((await client.getItem('456'))?.state).toBe('archived');
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as Record<string, unknown>).body as string);
+    expect(body.query).toMatch(/\bstate\b/);
   });
 
   it('returns null for an item that no longer exists', async () => {

@@ -67,7 +67,7 @@ let nextMondayItemId = 1;
  * changed with, so getItem and the column-value search see what create_item/changes wrote —
  * which is what the create-loop guard relies on. `seed` pre-creates items (e.g. staff-typed).
  */
-function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<string, { name: string; columns: Record<string, unknown> }> = {}) {
+function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<string, { name: string; state?: string; columns: Record<string, unknown> }> = {}) {
   const items = new Map(Object.entries(seed).map(([id, item]) => [id, { ...item, columns: { ...item.columns } }]));
   const cell = (value: unknown) => ({
     text: typeof value === 'string' ? value : value === undefined ? null : JSON.stringify(value),
@@ -88,7 +88,7 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<st
     getItem: vi.fn(async (itemId: string) => {
       const item = items.get(itemId);
       if (!item) return null;
-      return { id: itemId, name: item.name, columnValues: Object.fromEntries(Object.entries(item.columns).map(([k, v]) => [k, cell(v)])) };
+      return { id: itemId, name: item.name, state: item.state ?? 'active', columnValues: Object.fromEntries(Object.entries(item.columns).map(([k, v]) => [k, cell(v)])) };
     }),
     findItemIdsByColumnValue: vi.fn(async (_boardId: number, columnId: string, value: string) =>
       [...items].filter(([, item]) => item.columns[columnId] === value).map(([id]) => id)
