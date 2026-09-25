@@ -8,12 +8,7 @@ import { lettersEnabled, letterCronConfigured } from '../config';
 import { localeFromMondayLabel, DEFAULT_LOCALE, type Locale } from '../i18n/locales';
 import { generateToken } from '../crypto/token';
 import { sha256Hex } from '../crypto/hash';
-
-export interface QueueMessageLike<T> {
-  body: T;
-  ack(): void;
-  retry(): void;
-}
+import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 
 export interface ProcessLetterSendBatchDeps {
   store: LetterSendStore;
@@ -39,7 +34,7 @@ export async function processLetterSendBatch(
           err instanceof Error ? err.message : String(err)
         }`
       );
-      message.retry();
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }

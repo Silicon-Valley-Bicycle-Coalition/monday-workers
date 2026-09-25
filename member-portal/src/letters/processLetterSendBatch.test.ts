@@ -72,8 +72,8 @@ const configWithLetterCron: Config = {
   letterCron: { ...config.letterCron, boardId: 456 },
 };
 
-function makeMessage(sendId: number) {
-  return { body: { sendId }, ack: vi.fn(), retry: vi.fn() };
+function makeMessage(sendId: number, attempts = 1) {
+  return { body: { sendId }, attempts, ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
@@ -150,6 +150,25 @@ describe('processLetterSendBatch', () => {
     });
 
     expect(tokenStore.createToken).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: '2026-08-27T10:00:00.000Z' }));
+  });
+
+  // Issue #31: same backoff as the change-request consumer — see queueRetry.ts.
+  it('retries a failed send with exponential backoff', async () => {
+    const emailSender = fakeEmailSender();
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('send failed'));
+    const message = makeMessage(42, 2);
+
+    await processLetterSendBatch([message], {
+      store: fakeStore(row),
+      monday: fakeMonday(),
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(message.ack).not.toHaveBeenCalled();
   });
 
   it('acks an already-sent row without re-sending (redelivery idempotency)', async () => {

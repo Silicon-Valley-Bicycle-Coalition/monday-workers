@@ -69,8 +69,8 @@ const config: Config = {
   },
 };
 
-function makeMessage(requestId: number) {
-  return { body: { requestId }, ack: vi.fn(), retry: vi.fn() };
+function makeMessage(requestId: number, attempts = 1) {
+  return { body: { requestId }, attempts, ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeStore(getResult: ChangeRequestRow | null): ChangeRequestStore {
@@ -137,6 +137,22 @@ describe('processChangeQueueBatch', () => {
     expect(store.markWritten).not.toHaveBeenCalled();
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  // Issue #31: an immediate retry during a Monday rate-limit window (60s) burns every attempt
+  // inside the same window and lands a January backlog in the DLQ. Back off exponentially.
+  it.each([
+    [1, 120],
+    [2, 240],
+    [3, 480],
+  ])('backs off exponentially on attempt %i (delaySeconds %i)', async (attempts, delaySeconds) => {
+    const monday = fakeMonday();
+    (monday.createChangeRequestItem as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 429'));
+    const message = makeMessage(42, attempts);
+
+    await processChangeQueueBatch([message], { store: fakeStore(row), monday, config });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds });
   });
 
   it('retries when the row is missing (DLQ makes it visible)', async () => {
