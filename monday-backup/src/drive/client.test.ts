@@ -73,6 +73,8 @@ function fakeDrive(opts: { existingFolders?: string[] } = {}) {
       return new Response(null, { status: 200, headers: { Location: SESSION_URI } });
     }
     if (url.href === SESSION_URI && method === 'DELETE') {
+      // Drive only cancels a session for an authorized caller.
+      if (new Headers(init.headers).get('Authorization') !== 'Bearer token-abc') return new Response('unauthorized', { status: 401 });
       state.deletes++;
       return new Response(null, { status: 499 });
     }

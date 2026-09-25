@@ -272,7 +272,12 @@ class ResumableUpload implements DriveFileWriter {
 
   async abort(): Promise<void> {
     try {
-      await fetch(this.sessionUri, { method: 'DELETE' });
+      // Drive only cancels a session for an authorized caller; unauthenticated, this was a no-op.
+      await fetch(this.sessionUri, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${await this.drive.getAccessToken()}` },
+        signal: AbortSignal.timeout(10_000),
+      });
     } catch {
       // Best effort — an abandoned session expires on its own and never becomes a file.
     }
