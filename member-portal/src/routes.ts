@@ -150,11 +150,25 @@ export function createApp(deps: AppDeps) {
   // The language switcher lives in the shared site footer (see views.ts's siteFooter) and so
   // appears on every route, submitting the browser's current location.pathname as `to` — rather
   // than hand-maintain an exact-match allowlist of every page shape that can now show it, this
-  // accepts any same-origin relative path and only blocks the open-redirect shapes: an absolute
-  // URL, a protocol-relative "//evil.example", and the backslash-tolerant "/\evil.example" some
-  // browsers still treat as protocol-relative.
-  function isAllowedLangRedirect(path: string): boolean {
-    return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+  // accepts any same-origin target. It does so by parsing, not by prefix-matching: a blocklist
+  // of string prefixes ("//", "/\") missed "/<TAB>/evil.example" (issue #32), because browsers
+  // strip ASCII tab/newline and leading C0 controls while parsing a Location value. Resolving
+  // with the same WHATWG URL parser the browser uses, requiring the portal's own origin, and
+  // re-emitting only the parser's normalized pathname + search means what we send is exactly
+  // what the browser will follow. Returns null for anything off-origin.
+  const portalOrigin = new URL(deps.config.auth.portalBaseUrl).origin;
+  function sameOriginRedirectPath(to: string): { pathname: string; search: string } | null {
+    let url: URL;
+    try {
+      url = new URL(to, portalOrigin);
+    } catch {
+      return null;
+    }
+    if (url.origin !== portalOrigin) return null;
+    // Dot-segment normalization can still yield a "//host" pathname (e.g. "/.//evil.example"),
+    // which is protocol-relative once it stands alone in a Location header.
+    if (url.pathname.startsWith('//')) return null;
+    return { pathname: url.pathname, search: url.search };
   }
 
   // Sets the lang cookie and returns the resolved locale (falling back to the default for an
@@ -177,9 +191,9 @@ export function createApp(deps: AppDeps) {
   }
 
   function langRedirectTarget(c: Context, locale: Locale): string {
-    const requestedTo = c.req.query('to') ?? '/';
-    const target = isAllowedLangRedirect(requestedTo) ? requestedTo : '/';
-    return applyLocaleToPath(target, locale);
+    const target = sameOriginRedirectPath(c.req.query('to') ?? '/');
+    if (target === null) return '/';
+    return applyLocaleToPath(target.pathname, locale) + target.search;
   }
 
   app.get('/lang/:code', (c) => {

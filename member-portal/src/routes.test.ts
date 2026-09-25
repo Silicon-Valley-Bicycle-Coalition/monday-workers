@@ -1414,6 +1414,88 @@ describe('GET /lang', () => {
   });
 });
 
+// Issue #32: a prefix blocklist ("starts with / but not // or /\") let "/<TAB>/evil.example"
+// through — the tab went into Location verbatim, browsers strip ASCII tab/newline while parsing
+// a URL, and "//evil.example" is protocol-relative. Every shape below must end up same-origin
+// no matter how a browser normalizes it.
+describe('language-switch redirect: open-redirect shapes', () => {
+  const PORTAL_ORIGIN = new URL(config.auth.portalBaseUrl).origin;
+
+  // Resolve a Location value the way a browser would: the WHATWG URL parser strips leading/
+  // trailing C0 controls and spaces, removes every ASCII tab/newline, and treats "\" as "/" for
+  // http(s).
+  function browserResolvedOrigin(location: string): string {
+    return new URL(location, PORTAL_ORIGIN).origin;
+  }
+
+  // Raw query-string values (already percent-encoded as a browser would send them).
+  const HOSTILE_TO = [
+    '/%09/evil.example', // the issue's confirmed repro: tab between the slashes
+    '/%0A/evil.example', // LF
+    '/%0D/evil.example', // CR
+    '/%0D%0A/evil.example', // CRLF (header-splitting shape too)
+    '%09//evil.example', // leading tab, stripped by the URL parser
+    '%20//evil.example', // leading space, likewise stripped
+    '%00//evil.example', // leading NUL (C0 control)
+    '//evil.example',
+    '///evil.example',
+    '/%5Cevil.example', // "/\evil.example"
+    '%5C%5Cevil.example', // "\\evil.example"
+    '/%09%5Cevil.example', // tab then backslash
+    '%5C/evil.example',
+    '/.//evil.example', // dot-segment that normalizes to a "//" path
+    '/..//evil.example',
+    '%2F%2Fevil.example', // single-encoded "//" (decoded once by the query parser)
+    'https://evil.example/',
+    'https:%2F%2Fevil.example',
+    'HTTPS://evil.example',
+    'http://portal.example.org/', // same host, wrong scheme — still cross-origin
+    'javascript:alert(1)',
+    'data:text/html,hi',
+    'mailto:x@evil.example',
+  ];
+
+  describe.each(['/lang/es?to=', '/lang?code=es&to='])('%s', (prefix) => {
+    it.each(HOSTILE_TO)('redirects "to=%s" to / (never off-origin)', async (to) => {
+      const app = createApp(makeDeps());
+      const res = await app.request(`${prefix}${to}`, { redirect: 'manual' });
+      expect(res.status).toBe(302);
+      const location = res.headers.get('location') ?? '';
+      expect(location).toBe('/');
+    });
+
+    // Double-encoding survives the query parser's single decode as a literal "%2F" in the path,
+    // and a mid-path C0 control the browser doesn't strip (e.g. 0x1F) is percent-encoded by the
+    // URL parser — both are same-origin paths, not authorities, so fine to follow, but they must
+    // still resolve to the portal origin and carry no raw control characters into Location.
+    it.each(['/%252F%252Fevil.example', '/%255Cevil.example', '/%2509/evil.example', '/%1F/evil.example', '/%7F/evil.example'])(
+      'keeps "to=%s" same-origin with no raw control characters',
+      async (to) => {
+        const app = createApp(makeDeps());
+        const res = await app.request(`${prefix}${to}`, { redirect: 'manual' });
+        const location = res.headers.get('location') ?? '';
+        // eslint-disable-next-line no-control-regex
+        expect(location).not.toMatch(/[\u0000-\u001f\u007f\\]/);
+        expect(location.startsWith('/')).toBe(true);
+        expect(location.startsWith('//')).toBe(false);
+        expect(browserResolvedOrigin(location)).toBe(PORTAL_ORIGIN);
+      }
+    );
+
+    it('keeps a legitimate path and its query string', async () => {
+      const app = createApp(makeDeps());
+      const res = await app.request(`${prefix}${encodeURIComponent('/verify/abc?x=1')}`, { redirect: 'manual' });
+      expect(res.headers.get('location')).toBe('/verify/abc?x=1');
+    });
+
+    it('drops a fragment rather than echoing it', async () => {
+      const app = createApp(makeDeps());
+      const res = await app.request(`${prefix}${encodeURIComponent('/en/portal#x')}`, { redirect: 'manual' });
+      expect(res.headers.get('location')).toBe('/es/portal');
+    });
+  });
+});
+
 describe('GET /verify/:token', () => {
   // The dashboard's QR encodes the verify URL as a scannable pattern, not visible/extractable
   // text (see the "shouldn't be visible in plain text" requirement in views.ts's
