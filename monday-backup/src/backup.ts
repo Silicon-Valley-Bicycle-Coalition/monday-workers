@@ -1,9 +1,16 @@
 import { sendFailureAlert } from './alert';
-import type { DriveClient } from './drive/client';
+import type { DriveClient, DriveFileWriter } from './drive/client';
 import type { SnapshotRunStore } from './db/runs';
 import type { MondayClient } from './monday/client';
-import type { BackupConfig } from './types';
+import type { BackupConfig, BoardSummary, DocSummary } from './types';
 import { errorMessage } from './util/errorMessage';
+
+// Snapshot layout, recorded in every manifest so a restore tool can tell what it is reading.
+// v2: one JSON Lines file per board and per doc, streamed page by page (issue #29) — each line is
+// a self-describing record `{ type, <type>: payload }` (payloads are nested, never spread, since
+// Monday objects carry their own `type` fields); the first line is always the board/doc header.
+export const SNAPSHOT_FORMAT = 'monday-backup/2';
+const JSONL = 'application/x-ndjson';
 
 export interface BackupDeps {
   monday: MondayClient;
@@ -12,6 +19,49 @@ export interface BackupDeps {
   config: BackupConfig;
   slackWebhookUrl: string;
   now: () => Date;
+}
+
+const line = (record: Record<string, unknown>): string => `${JSON.stringify(record)}\n`;
+
+// Writes one file through `produce`, closing it on success and cancelling the upload on failure
+// so a half-written board never shows up in Drive looking complete.
+async function streamFile(
+  drive: DriveClient,
+  folderId: string,
+  filename: string,
+  produce: (writer: DriveFileWriter) => Promise<void>,
+): Promise<void> {
+  const writer = await drive.createFile(folderId, filename, JSONL);
+  try {
+    await produce(writer);
+    await writer.close();
+  } catch (err) {
+    await writer.abort();
+    throw err;
+  }
+}
+
+async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSummary): Promise<number> {
+  const schema = await deps.monday.getBoardSchema(board.id);
+  let itemCount = 0;
+  await streamFile(deps.drive, folderId, `board-${board.id}.jsonl`, async (writer) => {
+    await writer.write(line({ type: 'board', board, schema }));
+    for await (const page of deps.monday.boardItemPages(board.id)) {
+      // One write per page: memory holds a single page, never the whole board.
+      await writer.write(page.map((item) => line({ type: 'item', item })).join(''));
+      itemCount += page.length;
+    }
+  });
+  return itemCount;
+}
+
+async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary): Promise<number> {
+  const blocks = await deps.monday.getDocBlocks(doc.id);
+  await streamFile(deps.drive, folderId, `doc-${doc.id}.jsonl`, async (writer) => {
+    await writer.write(line({ type: 'doc', doc }));
+    await writer.write(blocks.map((block) => line({ type: 'block', block })).join(''));
+  });
+  return blocks.length;
 }
 
 export async function runBackup(deps: BackupDeps): Promise<void> {
@@ -31,6 +81,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
 
     const errors: string[] = [];
     const itemCountsByBoard: Record<string, number> = {};
+    const blockCountsByDoc: Record<string, number> = {};
     let boardCount = 0;
     let docCount = 0;
 
@@ -39,11 +90,8 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
       if (deps.config.excludeBoardIds.includes(board.id)) continue;
       if (!inScope(board.workspaceId)) continue;
       try {
-        const schema = await deps.monday.getBoardSchema(board.id);
-        const items = await deps.monday.getBoardItems(board.id);
-        itemCountsByBoard[board.id] = items.length;
+        itemCountsByBoard[board.id] = await backupBoard(deps, folderId, board);
         boardCount++;
-        await deps.drive.uploadJson(folderId, `board-${board.id}.json`, { board, schema, items });
       } catch (err) {
         const message = errorMessage(err);
         errors.push(`board ${board.id} (${board.name}): ${message}`);
@@ -55,9 +103,8 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     for (const doc of docs) {
       if (!inScope(doc.workspaceId)) continue;
       try {
-        const blocks = await deps.monday.getDocBlocks(doc.id);
+        blockCountsByDoc[doc.id] = await backupDoc(deps, folderId, doc);
         docCount++;
-        await deps.drive.uploadJson(folderId, `doc-${doc.id}.json`, { doc, blocks });
       } catch (err) {
         const message = errorMessage(err);
         errors.push(`doc ${doc.id} (${doc.name}): ${message}`);
@@ -68,10 +115,12 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     // Written last, after every board/doc attempt, so a partial run is obvious from the
     // manifest itself rather than discovered only at restore time (per README's ask).
     await deps.drive.uploadJson(folderId, 'manifest.json', {
+      format: SNAPSHOT_FORMAT,
       runAt: startedAtUtc,
       boardCount,
       docCount,
       itemCountsByBoard,
+      blockCountsByDoc,
       errors,
     });
 

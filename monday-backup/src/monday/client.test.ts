@@ -59,7 +59,7 @@ describe('HttpMondayClient', () => {
     await expect(client.getBoardSchema('123')).rejects.toThrow(/board 123 not found/);
   });
 
-  it('paginates getBoardItems by cursor until cursor is null', async () => {
+  it('yields boardItemPages page by page, following the cursor until it is null', async () => {
     const fetchMock = mockFetchSequence([
       {
         data: {
@@ -87,11 +87,12 @@ describe('HttpMondayClient', () => {
       },
     ]);
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
-    const items = await client.getBoardItems('123');
+    const pages = [];
+    for await (const page of client.boardItemPages('123')) pages.push(page);
 
-    expect(items).toEqual([
-      { id: 'i1', name: 'Item 1', groupId: 'g1', columnValues: [{ id: 'c1', text: 'a', value: '"a"' }] },
-      { id: 'i2', name: 'Item 2', groupId: null, columnValues: [] },
+    expect(pages).toEqual([
+      [{ id: 'i1', name: 'Item 1', groupId: 'g1', columnValues: [{ id: 'c1', text: 'a', value: '"a"' }] }],
+      [{ id: 'i2', name: 'Item 2', groupId: null, columnValues: [] }],
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const secondBody = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);

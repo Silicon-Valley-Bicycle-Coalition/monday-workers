@@ -39,7 +39,9 @@ export interface MondayClient {
   // is page-based (not cursor-based like items_page within a board).
   listBoards(): Promise<BoardSummary[]>;
   getBoardSchema(boardId: string): Promise<{ columns: ColumnDef[]; groups: GroupDef[] }>;
-  getBoardItems(boardId: string): Promise<ItemRecord[]>;
+  // One page of items at a time, so a caller can stream a board to Drive without ever holding
+  // the whole board in memory (issue #29).
+  boardItemPages(boardId: string): AsyncIterable<ItemRecord[]>;
   listDocs(): Promise<DocSummary[]>;
   getDocBlocks(docId: string): Promise<DocBlock[]>;
 }
@@ -193,8 +195,7 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
-  async getBoardItems(boardId: string): Promise<ItemRecord[]> {
-    const out: ItemRecord[] = [];
+  async *boardItemPages(boardId: string): AsyncGenerator<ItemRecord[]> {
     let cursor: string | null = null;
     do {
       const data: ItemsPageResponse = await this.graphql<ItemsPageResponse>(
@@ -215,17 +216,14 @@ export class HttpMondayClient implements MondayClient {
       );
       const page: ItemsPage | undefined = data.boards[0]?.items_page;
       if (page === undefined) break;
-      for (const item of page.items) {
-        out.push({
-          id: item.id,
-          name: item.name,
-          groupId: item.group?.id ?? null,
-          columnValues: item.column_values.map((cv) => ({ id: cv.id, text: cv.text, value: cv.value })),
-        });
-      }
+      yield page.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        groupId: item.group?.id ?? null,
+        columnValues: item.column_values.map((cv) => ({ id: cv.id, text: cv.text, value: cv.value })),
+      }));
       cursor = page.cursor;
     } while (cursor !== null);
-    return out;
   }
 
   async listDocs(): Promise<DocSummary[]> {
