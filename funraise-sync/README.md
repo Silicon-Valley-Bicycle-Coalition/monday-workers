@@ -485,6 +485,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   value when the account moves to Workers Paid (10,000 subrequests, 15 min CPU per hourly cron).
 * **Adopt before create.** A subscription the ledger doesn't know is looked up on the board by
   bare id in the Funraise ID link column; found → updated and recorded, not found → created.
+  **Claim first (#25):** the poll and the queue consumer's never-seen-subscription path can miss
+  the ledger for one subscription at the same moment, and both used to create an item. A ledger
+  miss now takes a D1 claim (`subscription_claims`, one atomic `INSERT … ON CONFLICT`) before
+  any Monday call; the loser throws having written nothing (the poll re-reads the page next run;
+  the consumer leaves that gift's Recurring Gift link unset, as for any lookup failure), and the
+  winner re-reads the ledger in case the other writer just finished. The claim is released once
+  the ledger records the item; a writer that dies midway leaves it to expire after 10 minutes.
   **The first run on a board `salesforce-import` has loaded therefore adopts its ~600 existing
   Recurring Gifts items** (expect `adopted ≈ board count, created ≈ 0` in the run's log line)
   instead of duplicating them. A row older than the ledger is a no-op, so nothing regresses.
@@ -513,7 +520,10 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   **Do it while the deployed hourly cron cannot fire** (deploy with `subscriptionsPoll.enabled:
   false`, or finish between two top-of-the-hour runs): on 2026-09-19 the 02:00 cron and the local
   loop reached the same page within a second and both created subscription 197170 before either
-  had recorded it; the copy the ledger didn't own was deleted by hand. Funraise's webhook Test
+  had recorded it; the copy the ledger didn't own was deleted by hand. (Since #25 a ledger miss
+  first takes an atomic D1 claim — `subscription_claims`, migration `0005` — so two writers can
+  no longer both create; the loser skips that row until the next run. Still prefer a quiet
+  window: a loser's page is simply re-read.) Funraise's webhook Test
   payload has no `subscription`, so its Donations item must show an empty Recurring Gift column.
 * **Done 2026-09-19 (CRM Sandbox, run locally as above, ~140 invocations).** Funraise holds
   1,175 subscriptions — 542 Active, 61 Cancelled, 4 Failed, 568 Redacted. The importer had put

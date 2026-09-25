@@ -64,6 +64,8 @@ function fakeSubscriptionStore(known: { funraiseId: string; mondayItemId: string
     count: vi.fn().mockResolvedValue(0),
     getCursor: vi.fn().mockResolvedValue(0),
     setCursor: vi.fn().mockResolvedValue(undefined),
+    claimCreate: vi.fn().mockResolvedValue(true),
+    releaseCreate: vi.fn().mockResolvedValue(undefined),
   };
 }
 

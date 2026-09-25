@@ -30,6 +30,8 @@ function memoryStore(): SubscriptionStore & { rows: Map<string, { mondayItemId: 
     setCursor: async (name, value) => {
       cursors.set(name, value);
     },
+    claimCreate: async () => true,
+    releaseCreate: async () => {},
   };
 }
 
