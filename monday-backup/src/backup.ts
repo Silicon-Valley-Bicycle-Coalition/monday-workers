@@ -12,6 +12,12 @@ import { errorMessage } from './util/errorMessage';
 export const SNAPSHOT_FORMAT = 'monday-backup/2';
 const JSONL = 'application/x-ndjson';
 
+// Cron invocations are killed at 15 minutes of wall time, and like a CPU-limit kill that is not
+// catchable (issue #29). Stop starting new work at 12 minutes so the manifest, the D1 finish row
+// and the partial-run alert still get written; whatever was cut off is listed in the manifest.
+const DEFAULT_WALL_TIME_BUDGET_MS = 12 * 60_000;
+const BUDGET_EXHAUSTED = 'wall-time budget exhausted';
+
 export interface BackupDeps {
   monday: MondayClient;
   drive: DriveClient;
@@ -19,6 +25,7 @@ export interface BackupDeps {
   config: BackupConfig;
   slackWebhookUrl: string;
   now: () => Date;
+  wallTimeBudgetMs?: number;
 }
 
 const line = (record: Record<string, unknown>): string => `${JSON.stringify(record)}\n`;
@@ -41,7 +48,7 @@ async function streamFile(
   }
 }
 
-async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSummary): Promise<number> {
+async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSummary, pastDeadline: () => boolean): Promise<number> {
   const schema = await deps.monday.getBoardSchema(board.id);
   let itemCount = 0;
   await streamFile(deps.drive, folderId, `board-${board.id}.jsonl`, async (writer) => {
@@ -50,6 +57,7 @@ async function backupBoard(deps: BackupDeps, folderId: string, board: BoardSumma
       // One write per page: memory holds a single page, never the whole board.
       await writer.write(page.map((item) => line({ type: 'item', item })).join(''));
       itemCount += page.length;
+      if (pastDeadline()) throw new Error(`stopped mid-board — ${BUDGET_EXHAUSTED}`);
     }
   });
   return itemCount;
@@ -78,6 +86,9 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
   const inScope = (workspaceId: string | null): boolean =>
     workspaceIds === undefined || workspaceIds.length === 0 || (workspaceId !== null && workspaceIds.includes(workspaceId));
 
+  const deadline = Date.parse(startedAtUtc) + (deps.wallTimeBudgetMs ?? DEFAULT_WALL_TIME_BUDGET_MS);
+  const pastDeadline = (): boolean => deps.now().getTime() >= deadline;
+
   try {
     const folderId = await deps.drive.ensureFolder(deps.config.destinationParentFolderId, snapshotFolder);
 
@@ -91,8 +102,12 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     for (const board of boards) {
       if (deps.config.excludeBoardIds.includes(board.id)) continue;
       if (!inScope(board.workspaceId)) continue;
+      if (pastDeadline()) {
+        errors.push(`board ${board.id} (${board.name}): skipped — ${BUDGET_EXHAUSTED}`);
+        continue;
+      }
       try {
-        itemCountsByBoard[board.id] = await backupBoard(deps, folderId, board);
+        itemCountsByBoard[board.id] = await backupBoard(deps, folderId, board, pastDeadline);
         boardCount++;
       } catch (err) {
         const message = errorMessage(err);
@@ -104,6 +119,10 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     const docs = await deps.monday.listDocs();
     for (const doc of docs) {
       if (!inScope(doc.workspaceId)) continue;
+      if (pastDeadline()) {
+        errors.push(`doc ${doc.id} (${doc.name}): skipped — ${BUDGET_EXHAUSTED}`);
+        continue;
+      }
       try {
         blockCountsByDoc[doc.id] = await backupDoc(deps, folderId, doc);
         docCount++;

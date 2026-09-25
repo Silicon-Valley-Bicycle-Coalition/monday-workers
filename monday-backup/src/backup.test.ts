@@ -180,6 +180,34 @@ describe('runBackup', () => {
     expect(JSON.parse(manifests[0]!.writes.join(''))).toMatchObject({ runId: 17, snapshotFolder: '2026-08-25 run-17' });
   });
 
+  // Issue #29: cron invocations are killed at 15 minutes of wall time — like a CPU kill, that is
+  // uncatchable. Stop starting new work at the budget so the manifest, D1 row and alert still land.
+  it('stops at the wall-time budget, skipping remaining boards and docs, and reports a partial run', async () => {
+    const start = Date.parse('2026-08-25T09:00:00.000Z');
+    let t = start;
+    const monday = fakeMonday({
+      listBoards: async () => [board('1'), board('2'), board('3')],
+      async *boardItemPages(boardId) {
+        yield [item(`${boardId}-a`)];
+        t += 4 * 60_000; // each board's page takes four minutes
+        yield [item(`${boardId}-b`)];
+      },
+      listDocs: async () => [doc('d1')],
+    });
+    const fake = fakeDrive();
+    const runStore = fakeRunStore();
+    await runBackup(deps({ monday, drive: fake.drive, runStore, now: () => new Date(t), wallTimeBudgetMs: 10 * 60_000 }));
+
+    // Boards 1 and 2 finish (t = 8 min); board 3 is started (under budget) but crosses it mid-page.
+    expect(fake.filenames()).toEqual(['board-1.jsonl', 'board-2.jsonl', 'manifest.json']);
+    expect(fake.files.find((f) => f.filename === 'board-3.jsonl')!.aborted).toBe(true);
+    const errors = fake.manifest().errors as string[];
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatch(/board 3 .*wall-time budget/);
+    expect(errors[1]).toMatch(/doc d1 .*skipped.*wall-time budget/);
+    expect(runStore.finishes[0]).toMatchObject({ status: 'partial', boardCount: 2, errorCount: 2 });
+  });
+
   it('writes a board one page at a time rather than buffering it whole', async () => {
     const monday = fakeMonday({
       listBoards: async () => [board('1')],

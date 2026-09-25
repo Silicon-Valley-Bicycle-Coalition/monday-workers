@@ -97,11 +97,19 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
   `/monday-backup`; after that, routine changes deploy by merging to `main`, and manual
   `wrangler deploy` is for provisioning or emergencies only (see the root README's Deploys
   section for why hand-deploys are distrusted here).
-* **Plan limits.** A full-account snapshot in a single cron invocation can brush against
-  Free-plan CPU and subrequest limits. This is moot if the Workers Paid upgrade (already
-  required by `funraise-sync`/`quickbooks-sync` for Queues) has landed by build time;
-  otherwise, budget for paginating the snapshot across invocations rather than assuming one
-  run covers every board.
+* **Plan limits — requires Workers Paid.** Workers Free caps a cron at 10ms CPU and 50
+  subrequests; no real snapshot fits. On Paid, `wrangler.jsonc` sets `cpu_ms: 300000` (the
+  configurable maximum — the fleet-wide 100ms cost cap silently killed every run, issue #29) and
+  `subrequests: 50000`. The hard constraint is the cron trigger's **15-minute wall-time** limit:
+  `runBackup` stops starting new boards/docs at 12 minutes (`DEFAULT_WALL_TIME_BUDGET_MS` in
+  `src/backup.ts`) and records whatever it skipped in the manifest, so an oversized run ends as a
+  visible *partial* snapshot with an alert, not a silent kill. If real runs start hitting that
+  budget, the next step is splitting the snapshot across invocations (a Workflow step per board),
+  not a bigger single run.
+* **Failure visibility.** Any partial run and any total failure alerts Slack immediately. A
+  second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and
+  alerts if a run is stuck in `running` for over an hour (the runtime killed it — marked
+  `abandoned` in D1) or if no snapshot has succeeded in 36 hours.
 
 ## Sandbox environment — inbound only, no outbound data
 
