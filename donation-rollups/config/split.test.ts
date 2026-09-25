@@ -27,23 +27,34 @@ function columnIds(columns: Record<string, unknown>): string[] {
   );
 }
 
+// Production ids are placeholders (0 or null) until the production boards exist at cutover;
+// once they're real, they must differ from every sandbox id. Either state passes.
+const isPlaceholder = (id: unknown) => id === 0 || id === '0' || id === null;
+
 describe('config split: board ids', () => {
-  it('the sandbox Donations board is the CRM Sandbox one and production is the placeholder', () => {
+  it('the sandbox Donations board is the CRM Sandbox one; production is a placeholder or a different board', () => {
     expect(sandbox.donationRollups.donationBoards[0]!.boardId).toBe(18431577310);
-    expect(production.donationRollups.donationBoards[0]!.boardId).toBe(0);
+    const sandboxBoards = new Set(sandbox.donationRollups.donationBoards.map((b) => b.boardId));
+    for (const { boardId } of production.donationRollups.donationBoards) {
+      expect(isPlaceholder(boardId) || !sandboxBoards.has(boardId), String(boardId)).toBe(true);
+    }
   });
 
-  it('owner boards are the three CRM Sandbox boards in sandbox and a placeholder in production', () => {
-    expect(Object.keys(sandbox.donationRollups.ownerColumnsByBoard).sort()).toEqual(['18431577213', '18431577220', '18431577228']);
-    expect(Object.keys(production.donationRollups.ownerColumnsByBoard)).toEqual(['0']);
+  it('owner boards are the three CRM Sandbox boards in sandbox; production shares none of them', () => {
+    const sandboxOwners = Object.keys(sandbox.donationRollups.ownerColumnsByBoard).sort();
+    expect(sandboxOwners).toEqual(['18431577213', '18431577220', '18431577228']);
+    for (const key of Object.keys(production.donationRollups.ownerColumnsByBoard)) {
+      expect(isPlaceholder(key) || !sandboxOwners.includes(key), key).toBe(true);
+    }
   });
 
-  it('custodian ids are real in sandbox and null or placeholder in production', () => {
+  it('custodian ids are real in sandbox; production is a placeholder or a different id', () => {
     expect(sandbox.custodian.workspaceId).toBe(17141226);
     expect(sandbox.custodian.annualSummaryBoardId).toBe(18431966690);
-    expect(production.custodian.workspaceId).toBe(0);
-    expect(production.custodian.alertItemId).toBeNull();
-    expect(production.custodian.annualSummaryBoardId).toBeNull();
+    for (const key of ['workspaceId', 'alertItemId', 'annualSummaryBoardId'] as const) {
+      const prod = production.custodian[key];
+      expect(isPlaceholder(prod) || prod !== sandbox.custodian[key], key).toBe(true);
+    }
   });
 });
 
