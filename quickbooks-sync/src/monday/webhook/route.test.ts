@@ -26,6 +26,7 @@ const config: QuickbooksSyncConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: {},
+    customerQbIdColumn: null,
   },
 };
 
@@ -34,6 +35,7 @@ function fakeMondayEventStore(overrides: Partial<MondayEventStore> = {}): Monday
     insertEvent: vi.fn().mockResolvedValue('inserted'),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
+    findByQbId: vi.fn().mockResolvedValue(null),
     ...overrides,
   };
 }

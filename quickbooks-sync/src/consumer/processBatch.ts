@@ -2,7 +2,7 @@ import type { MapStore } from '../db/map';
 import { isTerminalError, TerminalError } from '../errors';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { QbEventStore } from '../db/qbEvents';
-import { getPath, mapMondayToQbCustomerFields, mapQbToMondayColumns } from '../mapping/fieldMap';
+import { getPath, mapMondayToQbCustomerFields, mapQbToMondayColumns, mondayCellScalar } from '../mapping/fieldMap';
 import type { MondayClient } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
 import type { EntityType, MondayBoards, QueueMessage, QuickbooksSyncConfig } from '../types';
@@ -46,12 +46,6 @@ export const TERMINAL_PREFIX = 'not retried: ';
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
-
-// How long an unresolved QuickBooks -> Monday create claim blocks Monday -> QuickBooks creates.
-// A live create resolves in seconds; a claim this old belongs to a writer that died between
-// create_item and recording the item id, and must not block staff-created Customers forever.
-// Comfortably covers the first two retry delays (1 and 4 minutes).
-const CREATE_CLAIM_TTL_MS = 10 * 60 * 1000;
 
 const QB_CUSTOMER_NAME_FIELDS = ['DisplayName', 'Title', 'GivenName', 'MiddleName', 'FamilyName', 'Suffix'];
 
@@ -129,41 +123,52 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
     }
   }
 
+  // Stamp the QuickBooks Id on the customer's Monday item (#33 review) — in the same create_item
+  // mutation, so the item carries it from the instant it exists. Monday's create_pulse echo of an
+  // item we create is recognized by it in processMondayToQb.
+  const qbIdColumn = event.entityType === 'customer' ? deps.config.quickbooksSync.customerQbIdColumn : null;
+  if (qbIdColumn !== null) columnValues[qbIdColumn] = event.qbId;
+
   const existing = await deps.mapStore.getByQbId(event.entityType, event.qbId);
   const itemNameValue = getPath(record, deps.config.quickbooksSync.itemNameField[event.entityType]);
   const itemName = typeof itemNameValue === 'string' && itemNameValue.length > 0 ? itemNameValue : event.qbId;
 
-  if (existing) {
+  // The Monday item that already stands for this record, when the mapping doesn't say so yet.
+  const unmappedItemId = existing ? null : (event.pendingMondayItemId ?? (await findUnmappedItem(event.entityType, event.qbId, boardId, deps)));
+
+  if (existing || unmappedItemId !== null) {
+    const mondayItemId = existing ? existing.mondayItemId : unmappedItemId!;
+    if (!existing) {
+      await deps.mapStore.createMapping({
+        entityType: event.entityType,
+        qbId: event.qbId,
+        mondayItemId,
+        mondayBoardId: boardId,
+        createdAt: new Date().toISOString(),
+      });
+    }
     // monday.com's Name column is a reserved pseudo-column addressable as column_id "name"
     // through the same change_multiple_column_values mutation used for every other mapped
     // column (developer.monday.com/api-reference/reference/name) — confirmed against monday's
     // public API docs, not yet exercised against a live account. This keeps the item's title in
     // sync with the QuickBooks-side name field (DisplayName, DocNumber, ...) on every update.
-    await deps.mondayClient.changeColumnValues(boardId, existing.mondayItemId, {
+    await deps.mondayClient.changeColumnValues(boardId, mondayItemId, {
       ...columnValues,
       name: itemName,
     });
   } else {
-    let mondayItemId = event.pendingMondayItemId;
-    if (mondayItemId === null) {
-      // Claim before creating (#33). Monday fires create_pulse for the new item, and it can reach
-      // the Monday -> QuickBooks path before the mapping below exists; the claim makes that path
-      // wait instead of turning our own item into a second QuickBooks Customer.
-      await deps.qbEventStore.markMondayCreateStarted(eventId, new Date().toISOString());
-      const created = await deps.mondayClient.createItem(boardId, itemName, columnValues);
-      mondayItemId = created.id;
+    const created = await deps.mondayClient.createItem(boardId, itemName, columnValues);
 
-      // Durably record the created item's id, status unchanged, before writing the mapping.
-      // A queue retry that resumes here (the mapping lookup above still misses, because
-      // createMapping below is what's about to fail or hasn't run yet) reuses this id instead
-      // of calling createItem again -- closing the duplicate-item window.
-      await deps.qbEventStore.updateStatus(eventId, event.status, { pendingMondayItemId: mondayItemId });
-    }
+    // Durably record the created item's id, status unchanged, before writing the mapping.
+    // A queue retry that resumes here (the mapping lookup above still misses, because
+    // createMapping below is what's about to fail or hasn't run yet) reuses this id instead
+    // of calling createItem again -- closing the duplicate-item window.
+    await deps.qbEventStore.updateStatus(eventId, event.status, { pendingMondayItemId: created.id });
 
     await deps.mapStore.createMapping({
       entityType: event.entityType,
       qbId: event.qbId,
-      mondayItemId,
+      mondayItemId: created.id,
       mondayBoardId: boardId,
       createdAt: new Date().toISOString(),
     });
@@ -171,6 +176,26 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
 
   // fetchedPayload is kept as a record of what was written, for inspecting a row after the fact.
   await deps.qbEventStore.updateStatus(eventId, 'written', { writtenAt: new Date().toISOString(), fetchedPayload });
+}
+
+// Before creating a Monday item for a QuickBooks record, look for one that already stands for it
+// but isn't mapped yet (#33 review):
+//   - a Customer created *from* Monday: its monday_events row recorded the new QuickBooks id right
+//     after createCustomer, before the mapping — so QuickBooks' own webhook for that Customer
+//     must not make a second Monday item;
+//   - an item this path created earlier whose create_item response was lost (so no
+//     pending_monday_item_id): found on the board by the QuickBooks Id it was stamped with.
+async function findUnmappedItem(entityType: EntityType, qbId: string, boardId: number, deps: ConsumerDeps): Promise<string | null> {
+  if (entityType !== 'customer') return null;
+  const origin = await deps.mondayEventStore.findByQbId(qbId);
+  if (origin !== null) return origin.mondayItemId;
+  const qbIdColumn = deps.config.quickbooksSync.customerQbIdColumn;
+  if (qbIdColumn === null) return null;
+  const ids = await deps.mondayClient.findItemIdsByColumnValue(boardId, qbIdColumn, qbId);
+  if (ids.length > 1) {
+    console.error(`quickbooks-sync consumer: ${ids.length} Monday items carry QuickBooks Customer ${qbId} (${ids.join(', ')}); using ${ids[0]}`);
+  }
+  return ids[0] ?? null;
 }
 
 async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<void> {
@@ -191,6 +216,8 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
   // already created the Customer — resume from that id instead of creating another.
   let qbId = event.qbId;
 
+  const qbIdColumn = deps.config.quickbooksSync.customerQbIdColumn;
+
   if (qbId === null) {
     // Create-loop guards (#33) — is this item one the QuickBooks -> Monday path created? The
     // webhook checked the mapping too, but it can run before that path has written it.
@@ -202,14 +229,36 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     // Created from QuickBooks, item id recorded, mapping not written yet (a retry is pending):
     // adopt it — write the mapping here from the recorded QuickBooks id.
     const creator = await deps.qbEventStore.findByPendingMondayItemId('customer', event.mondayItemId);
-    if (creator !== null) {
-      qbId = creator.qbId;
-    } else if (await deps.qbEventStore.hasMondayCreateInFlight('customer', new Date(Date.now() - CREATE_CLAIM_TTL_MS).toISOString())) {
-      // A QuickBooks -> Monday create is between create_item and recording the item id, so this
-      // item may be that one. Defer; the retry (with backoff) sees the recorded id or mapping.
-      throw new Error(
-        `monday item "${event.mondayItemId}": a QuickBooks -> Monday customer create is still unresolved; deferring so it isn't turned into a duplicate Customer`
+    if (creator !== null) qbId = creator.qbId;
+  }
+
+  if (qbId === null) {
+    // The decisive guard is the item itself. QuickBooks -> Monday writes the QuickBooks Id into
+    // qbIdColumn in the same create_item call that makes the item, so an item created from
+    // QuickBooks carries it however far that side got — even if create_item's response was lost
+    // and nothing in D1 knows the item. Without the column that can't be told, so creating is
+    // refused rather than risking a duplicate Customer in the books.
+    if (qbIdColumn === null) {
+      throw new TerminalError(
+        'Monday -> QuickBooks Customer creates are disabled until config quickbooksSync.customerQbIdColumn names the Customers board’s QuickBooks Id column'
       );
+    }
+    // Re-read the item: the create_pulse payload need not include column values set at creation.
+    const item = await deps.mondayClient.getItem(event.mondayItemId);
+    if (item === null) {
+      throw new TerminalError(`monday item "${event.mondayItemId}" no longer exists`);
+    }
+    const carried = mondayCellScalar(item.columnValues[qbIdColumn]);
+    if (carried !== undefined) {
+      const carriedQbId = String(carried);
+      const other = await deps.mapStore.getByQbId('customer', carriedQbId);
+      if (other !== null && other.mondayItemId !== event.mondayItemId) {
+        // Most likely a copied item. Adopting it would re-point the Customer's mapping.
+        throw new TerminalError(
+          `monday item "${event.mondayItemId}" carries QuickBooks Id ${carriedQbId}, already linked to item "${other.mondayItemId}" — a copied item? Clear its QuickBooks Id column, then redrive`
+        );
+      }
+      qbId = carriedQbId;
     }
   }
 
@@ -244,6 +293,12 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     mondayBoardId: customersBoardId,
     createdAt: new Date().toISOString(),
   });
+
+  // Mark the item with its Customer's id too, so an item that stands for a QuickBooks Customer
+  // always says so on the item (idempotent; covers adopted items as well).
+  if (qbIdColumn !== null) {
+    await deps.mondayClient.changeColumnValues(customersBoardId, event.mondayItemId, { [qbIdColumn]: qbId });
+  }
 
   await deps.mondayEventStore.updateStatus(eventId, 'written', {
     qbId,

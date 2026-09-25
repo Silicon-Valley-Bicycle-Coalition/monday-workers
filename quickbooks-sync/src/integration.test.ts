@@ -26,6 +26,7 @@ const config: QuickbooksSyncConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { name: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
+    customerQbIdColumn: 'qb_id_col',
   },
 };
 
@@ -59,12 +60,41 @@ async function signQbBody(body: string): Promise<string> {
   return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
-function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
-  return {
-    createItem: vi.fn().mockResolvedValue({ id: 'monday-item-1' }),
-    changeColumnValues: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  };
+let nextMondayItemId = 1;
+
+/**
+ * In-memory stand-in for one Monday account: items keep the column values they were created or
+ * changed with, so getItem and the column-value search see what create_item/changes wrote —
+ * which is what the create-loop guard relies on. `seed` pre-creates items (e.g. staff-typed).
+ */
+function fakeMondayClient(overrides: Partial<MondayClient> = {}, seed: Record<string, { name: string; columns: Record<string, unknown> }> = {}) {
+  const items = new Map(Object.entries(seed).map(([id, item]) => [id, { ...item, columns: { ...item.columns } }]));
+  const cell = (value: unknown) => ({
+    text: typeof value === 'string' ? value : value === undefined ? null : JSON.stringify(value),
+    value: value === undefined ? null : JSON.stringify(value),
+  });
+  const client = {
+    items,
+    createItem: vi.fn(async (_boardId: number, itemName: string, columnValues: Record<string, unknown>) => {
+      // Unique across the file: D1 (and so every mapping and monday_events row) is shared by all tests.
+      const id = `monday-item-${nextMondayItemId++}`;
+      items.set(id, { name: itemName, columns: { ...columnValues } });
+      return { id };
+    }),
+    changeColumnValues: vi.fn(async (_boardId: number, itemId: string, columnValues: Record<string, unknown>) => {
+      const item = items.get(itemId);
+      if (item) Object.assign(item.columns, columnValues);
+    }),
+    getItem: vi.fn(async (itemId: string) => {
+      const item = items.get(itemId);
+      if (!item) return null;
+      return { id: itemId, name: item.name, columnValues: Object.fromEntries(Object.entries(item.columns).map(([k, v]) => [k, cell(v)])) };
+    }),
+    findItemIdsByColumnValue: vi.fn(async (_boardId: number, columnId: string, value: string) =>
+      [...items].filter(([, item]) => item.columns[columnId] === value).map(([id]) => id)
+    ),
+  } satisfies MondayClient & { items: unknown };
+  return Object.assign(client, overrides);
 }
 
 function fakeQuickBooksClient(overrides: Partial<QuickBooksClient> = {}): QuickBooksClient {
@@ -133,6 +163,7 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
     expect(mondayClient.createItem).toHaveBeenCalledWith(789, 'Acme Co', {
       text_col: 'Acme Co',
       email_col: 'ap@acme.test',
+      qb_id_col: '60',
     });
 
     expect(quickBooksClient.getEntity).toHaveBeenCalledWith('customer', '60');
@@ -152,6 +183,9 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
 });
 
 describe('integration: Monday → D1 → queue → consumer → QuickBooks', () => {
+  // A staff-typed item as Monday stores it; the consumer re-reads it before creating.
+  const staffTypedItem = { name: 'New Org', columns: { email_col: { email: 'hello@neworg.test', text: 'hello@neworg.test' } } };
+
   // D1 state is shared across tests in this harness, so each test drives a distinct Monday item.
   async function runMondayWebhook(
     pulseId: number,
@@ -195,7 +229,7 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
       qbEventStore: new D1QbEventStore(env.DB),
       mondayEventStore,
       mapStore,
-      mondayClient: fakeMondayClient(),
+      mondayClient: fakeMondayClient({}, { '42': staffTypedItem }),
       quickBooksClient,
       config,
     });
@@ -233,7 +267,7 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
       qbEventStore: new D1QbEventStore(env.DB),
       mondayEventStore,
       mapStore,
-      mondayClient: fakeMondayClient(),
+      mondayClient: fakeMondayClient({}, { '43': staffTypedItem }),
       quickBooksClient,
       config,
     };
@@ -258,119 +292,172 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
 
 // #33: the create loop, end to end against real D1. A QuickBooks-originated Customer is created
 // on Monday before its mapping exists; Monday's create_pulse webhook for that new item arrives in
-// between. It must never become a second QuickBooks Customer.
+// between. It must never become a second QuickBooks Customer, and must not hold up unrelated
+// staff-created Customers. The Monday fake is stateful, so the QuickBooks Id column that
+// create_item writes is what getItem and the column search read back.
 describe('integration: create loop (QuickBooks-created item echoed back by Monday)', () => {
   const realmId = '123';
 
-  async function qbNotificationFor(qbId: string, lastUpdated: string) {
-    const body = JSON.stringify({
-      eventNotifications: [{ realmId, dataChangeEvent: { entities: [{ name: 'Customer', id: qbId, operation: 'Create', lastUpdated }] } }],
-    });
-    return { body, signature: await signQbBody(body) };
-  }
-
-  function mondayEcho(pulseId: number) {
-    return JSON.stringify({
-      event: { type: 'create_pulse', pulseId, pulseName: 'Echo Co', boardId: 789, columnValues: {} },
-    });
-  }
-
-  it('defers the echo while create_item is in flight, then links it without creating a Customer', async () => {
+  function setup(qbId: string, displayName: string) {
     const qbEventStore = new D1QbEventStore(env.DB);
     const mondayEventStore = new D1MondayEventStore(env.DB);
     const mapStore = new D1MapStore(env.DB);
     const qbQueue = fakeQueue();
     const mondayQueue = fakeQueue();
     const quickBooksClient = fakeQuickBooksClient({
-      getEntity: vi.fn().mockResolvedValue({ Id: '500', DisplayName: 'Echo Co' }),
+      getEntity: vi.fn().mockResolvedValue({ Id: qbId, DisplayName: displayName }),
       createCustomer: vi.fn(),
     });
-    const mondayApp = createMondayWebhookApp({ mondayEventStore, mapStore, queue: mondayQueue, config, mondayWebhookSecret: 's' });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    // Monday's webhook for the new item — and a consumer run for it — land while create_item is
-    // still returning, i.e. before the item id or mapping is recorded anywhere.
-    const echoMessages: ReturnType<typeof toConsumerMessages> = [];
-    const consumerDeps = {
-      qbEventStore,
-      mondayEventStore,
-      mapStore,
-      quickBooksClient,
-      config,
-      mondayClient: fakeMondayClient({
-        createItem: vi.fn(async () => {
-          await mondayApp.request('/webhooks/monday?secret=s', { method: 'POST', body: mondayEcho(9001) });
-          echoMessages.push(...toConsumerMessages(mondayQueue.sent.splice(0)));
-          await processSyncQueueBatch(echoMessages, consumerDeps);
-          return { id: '9001' };
-        }),
-      }),
-    };
-
+    const mondayClient = fakeMondayClient();
     const qbApp = createQbWebhookApp({ qbEventStore, queue: qbQueue, verifierToken, connectedRealmId: async () => realmId });
-    const { body, signature } = await qbNotificationFor('500', '2026-09-25T00:00:00.000Z');
-    await qbApp.request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': signature } });
-    await processSyncQueueBatch(toConsumerMessages(qbQueue.sent), consumerDeps);
+    const mondayApp = createMondayWebhookApp({ mondayEventStore, mapStore, queue: mondayQueue, config, mondayWebhookSecret: 's' });
+    const consumerDeps: Parameters<typeof processSyncQueueBatch>[1] = { qbEventStore, mondayEventStore, mapStore, mondayClient, quickBooksClient, config };
+    // Monday's create_pulse for an item, and a consumer run for it.
+    const echo = async (itemId: string, deps = consumerDeps) => {
+      await mondayApp.request('/webhooks/monday?secret=s', {
+        method: 'POST',
+        body: JSON.stringify({ event: { type: 'create_pulse', pulseId: itemId, pulseName: 'Echo', boardId: 789, columnValues: {} } }),
+      });
+      const messages = toConsumerMessages(mondayQueue.sent.splice(0));
+      await processSyncQueueBatch(messages, deps);
+      return messages;
+    };
+    // Intuit's change notification for the Customer, recorded and enqueued (not yet consumed).
+    const notify = async () => {
+      const body = JSON.stringify({
+        eventNotifications: [
+          { realmId, dataChangeEvent: { entities: [{ name: 'Customer', id: qbId, operation: 'Create', lastUpdated: '2026-09-25T00:00:00.000Z' }] } },
+        ],
+      });
+      await qbApp.request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': await signQbBody(body) } });
+      return toConsumerMessages(qbQueue.sent.splice(0));
+    };
+    const flakyMapStore = () => ({
+      getByQbId: mapStore.getByQbId.bind(mapStore),
+      getByMondayItemId: mapStore.getByMondayItemId.bind(mapStore),
+      createMapping: vi.fn().mockRejectedValueOnce(new Error('D1_ERROR: overloaded')).mockImplementation(mapStore.createMapping.bind(mapStore)),
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    return { qbEventStore, mondayEventStore, mapStore, mondayClient, quickBooksClient, consumerDeps, echo, notify, flakyMapStore };
+  }
 
-    // The echo was deferred, not turned into a Customer.
-    expect(echoMessages[0]!.retry).toHaveBeenCalled();
-    expect(quickBooksClient.createCustomer).not.toHaveBeenCalled();
-    expect((await mapStore.getByQbId('customer', '500'))?.mondayItemId).toBe('9001');
+  it('the echo arrives while create_item is still returning: adopted from the item, not deferred, no Customer', async () => {
+    const t = setup('500', 'Echo Co');
+    const store = t.mondayClient.createItem.getMockImplementation()!;
+    let echoMessages: ReturnType<typeof toConsumerMessages> = [];
+    t.mondayClient.createItem.mockImplementationOnce(async (...args) => {
+      const created = await store(...args);
+      echoMessages = await t.echo(created.id); // before the item id or mapping is anywhere in D1
+      return created;
+    });
 
-    // The retry of the echo finds the mapping and just records the link.
-    const retried = toConsumerMessages([echoMessages[0]!.body]);
-    await processSyncQueueBatch(retried, consumerDeps);
+    const qbMessages = await t.notify();
+    await processSyncQueueBatch(qbMessages, t.consumerDeps);
+
+    expect(echoMessages[0]!.ack).toHaveBeenCalled();
+    expect(echoMessages[0]!.retry).not.toHaveBeenCalled(); // no deferral, no burned attempt
+    expect(qbMessages[0]!.ack).toHaveBeenCalled();
+    expect(t.quickBooksClient.createCustomer).not.toHaveBeenCalled();
+    expect(t.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    const itemId = (await t.mapStore.getByQbId('customer', '500'))!.mondayItemId;
+    expect((await t.mondayEventStore.getEvent(itemId))?.qbId).toBe('500');
+    vi.restoreAllMocks();
+  });
+
+  it("create_item's response is lost, then the echo: adopted; the retry reuses the item — no duplicates", async () => {
+    const t = setup('502', 'Lost Response Co');
+    const store = t.mondayClient.createItem.getMockImplementation()!;
+    let lostId = '';
+    t.mondayClient.createItem.mockImplementationOnce(async (...args) => {
+      lostId = (await store(...args)).id; // Monday made the item...
+      throw new Error('monday API: HTTP 504'); // ...but we never heard back
+    });
+
+    const qbMessages = await t.notify();
+    await processSyncQueueBatch(qbMessages, t.consumerDeps);
+    expect(qbMessages[0]!.retry).toHaveBeenCalled();
+
+    const echo = await t.echo(lostId);
+    expect(echo[0]!.ack).toHaveBeenCalled();
+    expect(t.quickBooksClient.createCustomer).not.toHaveBeenCalled();
+
+    const retried = toConsumerMessages([qbMessages[0]!.body]);
+    await processSyncQueueBatch(retried, t.consumerDeps);
     expect(retried[0]!.ack).toHaveBeenCalled();
-    expect(quickBooksClient.createCustomer).not.toHaveBeenCalled();
-    expect((await mondayEventStore.getEvent('9001'))?.qbId).toBe('500');
+    expect(t.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect((await t.mapStore.getByQbId('customer', '502'))?.mondayItemId).toBe(lostId);
+    vi.restoreAllMocks();
+  });
+
+  it("create_item's response is lost and the retry runs first: it finds the item by its QuickBooks Id", async () => {
+    const t = setup('503', 'Retry First Co');
+    const store = t.mondayClient.createItem.getMockImplementation()!;
+    let lostId = '';
+    t.mondayClient.createItem.mockImplementationOnce(async (...args) => {
+      lostId = (await store(...args)).id;
+      throw new Error('monday API: HTTP 504');
+    });
+
+    const qbMessages = await t.notify();
+    await processSyncQueueBatch(qbMessages, t.consumerDeps);
+    const retried = toConsumerMessages([qbMessages[0]!.body]);
+    await processSyncQueueBatch(retried, t.consumerDeps);
+
+    expect(retried[0]!.ack).toHaveBeenCalled();
+    expect(t.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect((await t.mapStore.getByQbId('customer', '503'))?.mondayItemId).toBe(lostId);
+
+    // The echo now finds the mapping at the webhook and is never enqueued.
+    const echo = await t.echo(lostId);
+    expect(echo).toEqual([]);
+    expect(t.quickBooksClient.createCustomer).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  // Review #5: the other direction. A staff-typed item becomes a QuickBooks Customer, the mapping
+  // write fails, and QuickBooks' own notification for that new Customer is consumed first.
+  it('a Customer created from a Monday item is linked back to it, not turned into a second item', async () => {
+    const t = setup('qb-from-monday', 'Staff Co');
+    t.mondayClient.items.set('staff-item-1', { name: 'Staff Co', columns: {} });
+    t.quickBooksClient.createCustomer = vi.fn().mockResolvedValue({ id: 'qb-from-monday' });
+
+    const staff = await t.echo('staff-item-1', { ...t.consumerDeps, mapStore: t.flakyMapStore() });
+    expect(staff[0]!.retry).toHaveBeenCalled(); // Customer created, mapping write failed
+
+    const qbMessages = await t.notify();
+    await processSyncQueueBatch(qbMessages, t.consumerDeps);
+    expect(qbMessages[0]!.ack).toHaveBeenCalled();
+    expect(t.mondayClient.createItem).not.toHaveBeenCalled();
+    expect((await t.mapStore.getByQbId('customer', 'qb-from-monday'))?.mondayItemId).toBe('staff-item-1');
+
+    const retried = toConsumerMessages([staff[0]!.body]);
+    await processSyncQueueBatch(retried, t.consumerDeps);
+    expect(retried[0]!.ack).toHaveBeenCalled();
+    expect(t.quickBooksClient.createCustomer).toHaveBeenCalledTimes(1);
+    expect(t.mondayClient.items.get('staff-item-1')!.columns.qb_id_col).toBe('qb-from-monday');
     vi.restoreAllMocks();
   });
 
   it('adopts the echo when the QuickBooks side recorded the item id but failed to write the mapping', async () => {
-    const qbEventStore = new D1QbEventStore(env.DB);
-    const mondayEventStore = new D1MondayEventStore(env.DB);
-    const realMapStore = new D1MapStore(env.DB);
-    const qbQueue = fakeQueue();
-    const mondayQueue = fakeQueue();
-    const quickBooksClient = fakeQuickBooksClient({
-      getEntity: vi.fn().mockResolvedValue({ Id: '501', DisplayName: 'Echo Two' }),
-      createCustomer: vi.fn(),
-    });
-    // The QuickBooks side's mapping write fails once, after create_item and the recorded id.
-    const flakyMapStore = {
-      getByQbId: realMapStore.getByQbId.bind(realMapStore),
-      getByMondayItemId: realMapStore.getByMondayItemId.bind(realMapStore),
-      createMapping: vi
-        .fn()
-        .mockRejectedValueOnce(new Error('D1_ERROR: overloaded'))
-        .mockImplementation(realMapStore.createMapping.bind(realMapStore)),
-    };
-    const mondayClient = fakeMondayClient({ createItem: vi.fn().mockResolvedValue({ id: '9002' }) });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const t = setup('501', 'Echo Two');
 
-    const qbApp = createQbWebhookApp({ qbEventStore, queue: qbQueue, verifierToken, connectedRealmId: async () => realmId });
-    const { body, signature } = await qbNotificationFor('501', '2026-09-25T00:00:00.000Z');
-    await qbApp.request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': signature } });
-    const qbMessages = toConsumerMessages(qbQueue.sent);
-    await processSyncQueueBatch(qbMessages, { qbEventStore, mondayEventStore, mapStore: flakyMapStore, mondayClient, quickBooksClient, config });
+    const qbMessages = await t.notify();
+    await processSyncQueueBatch(qbMessages, { ...t.consumerDeps, mapStore: t.flakyMapStore() });
     expect(qbMessages[0]!.retry).toHaveBeenCalled();
+    const itemId = (await t.qbEventStore.getEvent(qbMessages[0]!.body.eventId))!.pendingMondayItemId!;
 
     // Monday's echo arrives before the QuickBooks-side retry (which is delayed by backoff).
-    const mondayApp = createMondayWebhookApp({ mondayEventStore, mapStore: realMapStore, queue: mondayQueue, config, mondayWebhookSecret: 's' });
-    await mondayApp.request('/webhooks/monday?secret=s', { method: 'POST', body: mondayEcho(9002) });
-    const echo = toConsumerMessages(mondayQueue.sent);
-    await processSyncQueueBatch(echo, { qbEventStore, mondayEventStore, mapStore: realMapStore, mondayClient, quickBooksClient, config });
-
+    const echo = await t.echo(itemId);
     expect(echo[0]!.ack).toHaveBeenCalled();
-    expect(quickBooksClient.createCustomer).not.toHaveBeenCalled();
-    expect((await realMapStore.getByMondayItemId('customer', '9002'))?.qbId).toBe('501');
+    expect(t.quickBooksClient.createCustomer).not.toHaveBeenCalled();
+    expect((await t.mapStore.getByMondayItemId('customer', itemId))?.qbId).toBe('501');
 
     // The QuickBooks-side retry then finds the mapping and updates instead of creating again.
     const retried = toConsumerMessages([qbMessages[0]!.body]);
-    await processSyncQueueBatch(retried, { qbEventStore, mondayEventStore, mapStore: realMapStore, mondayClient, quickBooksClient, config });
+    await processSyncQueueBatch(retried, t.consumerDeps);
     expect(retried[0]!.ack).toHaveBeenCalled();
-    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(789, '9002', expect.objectContaining({ name: 'Echo Two' }));
+    expect(t.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(t.mondayClient.changeColumnValues).toHaveBeenCalledWith(789, itemId, expect.objectContaining({ name: 'Echo Two' }));
     vi.restoreAllMocks();
   });
 });

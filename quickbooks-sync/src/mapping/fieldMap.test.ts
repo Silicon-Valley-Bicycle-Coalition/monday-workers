@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapQbToMondayColumns, mapMondayToQbCustomerFields } from './fieldMap';
+import { mapQbToMondayColumns, mapMondayToQbCustomerFields, mondayCellScalar } from './fieldMap';
 import type { QuickbooksSyncConfig } from '../types';
 
 const config: QuickbooksSyncConfig = {
@@ -17,6 +17,7 @@ const config: QuickbooksSyncConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
+    customerQbIdColumn: null,
   },
 };
 
@@ -86,6 +87,20 @@ describe('mapMondayToQbCustomerFields', () => {
       for (const value of [null, '', '   ', { value: '' }, { value: null }, { unexpected: true }, []]) {
         expect(mapMondayToQbCustomerFields({ text_col: value }, config), JSON.stringify(value)).toEqual({});
       }
+    });
+  });
+
+  describe('mondayCellScalar (an item read back from the API)', () => {
+    it('prefers the parsed raw value', () => {
+      expect(mondayCellScalar({ text: 'AP', value: '{"email":"ap@x.test","text":"AP"}' })).toBe('ap@x.test');
+      expect(mondayCellScalar({ text: '60', value: '"60"' })).toBe('60');
+    });
+    it('falls back to the display text when the value has no readable part (status)', () => {
+      expect(mondayCellScalar({ text: 'Active', value: '{"index":1}' })).toBe('Active');
+    });
+    it('is undefined for an empty or missing cell', () => {
+      expect(mondayCellScalar({ text: '', value: null })).toBeUndefined();
+      expect(mondayCellScalar(undefined)).toBeUndefined();
     });
   });
 

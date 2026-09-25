@@ -39,14 +39,13 @@ function stores(qb: QbEventRow | null, monday: MondayEventRow | null) {
     insertEvent: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(qb),
-    markMondayCreateStarted: vi.fn(),
     findByPendingMondayItemId: vi.fn(),
-    hasMondayCreateInFlight: vi.fn(),
   };
   const mondayEventStore: MondayEventStore = {
     insertEvent: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(monday),
+    findByQbId: vi.fn(),
   };
   return { qbEventStore, mondayEventStore };
 }

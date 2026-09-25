@@ -17,6 +17,9 @@ export interface MondayEventStore {
   insertEvent(row: NewMondayEvent): Promise<'inserted' | 'duplicate'>;
   updateStatus(eventId: string, status: SyncStatus, patch?: MondayEventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<MondayEventRow | null>;
+  // The row whose Monday -> QuickBooks create produced Customer `qbId` (recorded right after
+  // the create, before the mapping) — create-loop guard for the other direction (#33).
+  findByQbId(qbId: string): Promise<MondayEventRow | null>;
 }
 
 interface D1MondayEventRecord {
@@ -79,6 +82,17 @@ export class D1MondayEventStore implements MondayEventStore {
          FROM monday_events WHERE event_id = ?1`
       )
       .bind(eventId)
+      .first<D1MondayEventRecord>();
+    return record === null ? null : toMondayEventRow(record);
+  }
+
+  async findByQbId(qbId: string): Promise<MondayEventRow | null> {
+    const record = await this.db
+      .prepare(
+        `SELECT event_id, monday_item_id, raw_payload, status, qb_id, error, received_at, written_at
+         FROM monday_events WHERE qb_id = ?1 ORDER BY received_at DESC LIMIT 1`
+      )
+      .bind(qbId)
       .first<D1MondayEventRecord>();
     return record === null ? null : toMondayEventRow(record);
   }

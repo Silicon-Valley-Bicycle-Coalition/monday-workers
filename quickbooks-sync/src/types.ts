@@ -64,6 +64,12 @@ export interface QuickbooksSyncConfig {
       invoice: string;
     };
     customerCreateFieldMap: Record<string, string>;
+    // Id of the Customers board's text column holding the QuickBooks Customer Id (#33 review).
+    // Written on every QuickBooks -> Monday customer create/update and after every Monday ->
+    // QuickBooks create, so an item that already stands for a QuickBooks Customer says so on
+    // the item itself — the create-loop guard reads it. null until staff add the column; while
+    // null, Monday -> QuickBooks Customer creates are refused (they can't be made loop-safe).
+    customerQbIdColumn: string | null;
   };
 }
 

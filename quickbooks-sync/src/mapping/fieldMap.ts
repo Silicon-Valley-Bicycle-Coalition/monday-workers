@@ -66,6 +66,22 @@ export function normalizeMondayColumnValue(value: unknown): string | number | un
   return scalar(v.text);
 }
 
+// One cell of an item read back from Monday (getItem): the raw JSON `value` in the same per-type
+// shapes webhooks use, and the display `text`. Prefer the value; fall back to text for types whose
+// value lacks the human-readable part (a status value holds only the label index).
+export function mondayCellScalar(cell: { text: string | null; value: string | null } | undefined): string | number | undefined {
+  if (cell === undefined) return undefined;
+  if (cell.value !== null) {
+    try {
+      const parsed = normalizeMondayColumnValue(JSON.parse(cell.value));
+      if (parsed !== undefined) return parsed;
+    } catch {
+      // not JSON — fall through to the text
+    }
+  }
+  return normalizeMondayColumnValue(cell.text);
+}
+
 export function mapMondayToQbCustomerFields(
   mondayColumnValues: Record<string, unknown>,
   config: QuickbooksSyncConfig

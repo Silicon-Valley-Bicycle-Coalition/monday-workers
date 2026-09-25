@@ -4,7 +4,7 @@ import { TerminalError } from '../errors';
 import type { QbEventStore } from '../db/qbEvents';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { MapStore } from '../db/map';
-import type { MondayClient } from '../monday/client';
+import type { MondayClient, MondayItemSnapshot } from '../monday/client';
 import type { QuickBooksClient } from '../quickbooks/client';
 import type { EntityType, MapEntry, QbEventRow, MondayEventRow, QueueMessage, QuickbooksSyncConfig } from '../types';
 
@@ -20,6 +20,7 @@ const config: QuickbooksSyncConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName' },
+    customerQbIdColumn: 'qb_id_col',
   },
 };
 
@@ -57,9 +58,7 @@ function fakeQbEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
     insertEvent: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(qbEventRow()),
-    markMondayCreateStarted: vi.fn().mockResolvedValue(undefined),
     findByPendingMondayItemId: vi.fn().mockResolvedValue(null),
-    hasMondayCreateInFlight: vi.fn().mockResolvedValue(false),
     ...overrides,
   };
 }
@@ -69,6 +68,17 @@ function fakeMondayEventStore(overrides: Partial<MondayEventStore> = {}): Monday
     insertEvent: vi.fn(),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(mondayEventRow()),
+    findByQbId: vi.fn().mockResolvedValue(null),
+    ...overrides,
+  };
+}
+
+// The Monday item '42' as the API returns it: named, with the QuickBooks Id column empty.
+function mondayItem(overrides: Partial<MondayItemSnapshot> = {}): MondayItemSnapshot {
+  return {
+    id: '42',
+    name: 'New Co',
+    columnValues: { text_col: { text: 'New Co', value: '"New Co"' }, qb_id_col: { text: '', value: null } },
     ...overrides,
   };
 }
@@ -86,6 +96,8 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
   return {
     createItem: vi.fn().mockResolvedValue({ id: 'item-new' }),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
+    getItem: vi.fn().mockResolvedValue(mondayItem()),
+    findItemIdsByColumnValue: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -119,7 +131,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       config,
     });
 
-    expect(createItem).toHaveBeenCalledWith(111, 'Acme Co', { text_col: 'Acme Co' });
+    expect(createItem).toHaveBeenCalledWith(111, 'Acme Co', { text_col: 'Acme Co', qb_id_col: 'qb-1' });
     expect(mapStore.createMapping).toHaveBeenCalledWith({
       entityType: 'customer',
       qbId: 'qb-1',
@@ -155,7 +167,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
     });
 
     expect(getEntity).toHaveBeenCalledWith('customer', 'qb-1');
-    expect(createItem).toHaveBeenCalledWith(111, 'Fresh Name', { text_col: 'Fresh Name' });
+    expect(createItem).toHaveBeenCalledWith(111, 'Fresh Name', { text_col: 'Fresh Name', qb_id_col: 'qb-1' });
   });
 
   it('retries the message with backoff when the QuickBooks fetch fails', async () => {
@@ -263,7 +275,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       config,
     });
 
-    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', { text_col: 'Acme Co', name: 'Acme Co' });
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', { text_col: 'Acme Co', qb_id_col: 'qb-1', name: 'Acme Co' });
     expect(createItem).not.toHaveBeenCalled();
     expect(mapStore.createMapping).not.toHaveBeenCalled();
   });
@@ -297,6 +309,7 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
 
     expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', {
       text_col: 'Acme Co (renamed)',
+      qb_id_col: 'qb-1',
       name: 'Acme Co (renamed)',
     });
   });
@@ -565,23 +578,52 @@ describe('create-loop guard', () => {
     ...overrides,
   });
 
-  it('claims the create in D1 before calling Monday create_item', async () => {
-    const qbEventStore = fakeQbEventStore();
+  it('stamps the QuickBooks Id on the Monday item in the create_item call itself', async () => {
     const createItem = vi.fn().mockResolvedValue({ id: 'item-1' });
 
-    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ qbEventStore, mondayClient: fakeMondayClient({ createItem }) }));
+    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ mondayClient: fakeMondayClient({ createItem }) }));
 
-    const markOrder = (qbEventStore.markMondayCreateStarted as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
-    expect(qbEventStore.markMondayCreateStarted).toHaveBeenCalledWith('evt-1', expect.any(String));
-    expect(markOrder).toBeLessThan(createItem.mock.invocationCallOrder[0]!);
+    expect(createItem).toHaveBeenCalledWith(111, 'Acme Co', { text_col: 'Acme Co', qb_id_col: 'qb-1' });
   });
 
-  it('does not claim when it updates an existing item or resumes a recorded one', async () => {
-    const qbEventStore = fakeQbEventStore({
-      getEvent: vi.fn().mockResolvedValue(qbEventRow({ pendingMondayItemId: 'item-earlier' })),
+  it('keeps the QuickBooks Id column on updates too (backfills older items)', async () => {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mapStore = fakeMapStore({
+      getByQbId: vi.fn().mockResolvedValue({ entityType: 'customer', qbId: 'qb-1', mondayItemId: 'item-x', mondayBoardId: 111, createdAt: '' }),
     });
-    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ qbEventStore }));
-    expect(qbEventStore.markMondayCreateStarted).not.toHaveBeenCalled();
+
+    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ mapStore, mondayClient: fakeMondayClient({ changeColumnValues }) }));
+
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-x', { text_col: 'Acme Co', qb_id_col: 'qb-1', name: 'Acme Co' });
+  });
+
+  it("finds its own earlier item by the QuickBooks Id column when create_item's response was lost", async () => {
+    const createItem = vi.fn();
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const mapStore = fakeMapStore();
+    const mondayClient = fakeMondayClient({ createItem, changeColumnValues, findItemIdsByColumnValue: vi.fn().mockResolvedValue(['item-lost']) });
+
+    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ mapStore, mondayClient }));
+
+    expect(mondayClient.findItemIdsByColumnValue).toHaveBeenCalledWith(111, 'qb_id_col', 'qb-1');
+    expect(createItem).not.toHaveBeenCalled();
+    expect(mapStore.createMapping).toHaveBeenCalledWith(expect.objectContaining({ qbId: 'qb-1', mondayItemId: 'item-lost' }));
+    expect(changeColumnValues).toHaveBeenCalledWith(111, 'item-lost', expect.objectContaining({ qb_id_col: 'qb-1' }));
+  });
+
+  // Review #5: a Customer created from Monday whose mapping write failed; QuickBooks' own webhook
+  // for that new Customer must not make a second Monday item.
+  it('links a Customer created from a Monday item to that item instead of creating another', async () => {
+    const createItem = vi.fn();
+    const mapStore = fakeMapStore();
+    const mondayEventStore = fakeMondayEventStore({
+      findByQbId: vi.fn().mockResolvedValue(mondayEventRow({ mondayItemId: '42', qbId: 'qb-1', status: 'failed' })),
+    });
+
+    await processSyncQueueBatch([fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' })], deps({ mapStore, mondayEventStore, mondayClient: fakeMondayClient({ createItem }) }));
+
+    expect(createItem).not.toHaveBeenCalled();
+    expect(mapStore.createMapping).toHaveBeenCalledWith(expect.objectContaining({ qbId: 'qb-1', mondayItemId: '42' }));
   });
 
   it('re-checks the mapping in the consumer and skips an item already linked to a Customer', async () => {
@@ -623,17 +665,90 @@ describe('create-loop guard', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 
-  it('defers (retries with backoff) while a QuickBooks-side customer create is still unresolved', async () => {
+  // Review #1/#2: the echo of an item created from QuickBooks carries the QuickBooks Id on the item
+  // itself, however far the QuickBooks side got (even a lost create_item response) — no global
+  // claim, no deferral, nothing blocks unrelated staff-created Customers.
+  it('adopts an item that carries a QuickBooks Id instead of creating a Customer', async () => {
     const createCustomer = vi.fn();
-    const qbEventStore = fakeQbEventStore({ hasMondayCreateInFlight: vi.fn().mockResolvedValue(true) });
-    const message = { ...fakeMessage({ direction: 'monday-to-qb', eventId: '42' }), attempts: 1 };
+    const mapStore = fakeMapStore();
+    const mondayEventStore = fakeMondayEventStore();
+    const mondayClient = fakeMondayClient({
+      getItem: vi.fn().mockResolvedValue(mondayItem({ columnValues: { qb_id_col: { text: '77', value: '"77"' } } })),
+    });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], deps({ mapStore, mondayEventStore, mondayClient, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+
+    expect(mondayClient.getItem).toHaveBeenCalledWith('42');
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mapStore.createMapping).toHaveBeenCalledWith(expect.objectContaining({ qbId: '77', mondayItemId: '42' }));
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'written', { qbId: '77', writtenAt: expect.any(String) });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('refuses (terminally) an item whose QuickBooks Id is already linked to another item — a copy', async () => {
+    const createCustomer = vi.fn();
+    const mapStore = fakeMapStore({
+      getByQbId: vi.fn().mockResolvedValue({ entityType: 'customer', qbId: '77', mondayItemId: 'original', mondayBoardId: 111, createdAt: '' }),
+    });
+    const mondayEventStore = fakeMondayEventStore();
+    const mondayClient = fakeMondayClient({
+      getItem: vi.fn().mockResolvedValue(mondayItem({ columnValues: { qb_id_col: { text: '77', value: '"77"' } } })),
+    });
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await processSyncQueueBatch([message], deps({ qbEventStore, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+    await processSyncQueueBatch([message], deps({ mapStore, mondayEventStore, mondayClient, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
 
-    expect(qbEventStore.hasMondayCreateInFlight).toHaveBeenCalledWith('customer', expect.any(String));
     expect(createCustomer).not.toHaveBeenCalled();
-    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(mapStore.createMapping).not.toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/already linked to item "original"/) });
+    expect(message.ack).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('never defers: an unrelated staff-created item is created at once, and marked with its new id', async () => {
+    const createCustomer = vi.fn().mockResolvedValue({ id: 'qb-new' });
+    const mondayClient = fakeMondayClient();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+
+    await processSyncQueueBatch([message], deps({ mondayClient, quickBooksClient: fakeQuickBooksClient({ createCustomer }) }));
+
+    expect(createCustomer).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(111, '42', { qb_id_col: 'qb-new' });
+  });
+
+  it('refuses creates (terminally, no retries) while customerQbIdColumn is not configured', async () => {
+    const createCustomer = vi.fn();
+    const mondayEventStore = fakeMondayEventStore();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch(
+      [message],
+      deps({
+        mondayEventStore,
+        quickBooksClient: fakeQuickBooksClient({ createCustomer }),
+        config: { ...config, quickbooksSync: { ...config.quickbooksSync, customerQbIdColumn: null } },
+      })
+    );
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/customerQbIdColumn/) });
+    expect(message.ack).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('refuses (terminally) an item that no longer exists', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], deps({ mondayEventStore, mondayClient: fakeMondayClient({ getItem: vi.fn().mockResolvedValue(null) }) }));
+
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: expect.stringMatching(/no longer exists/) });
+    expect(message.ack).toHaveBeenCalled();
     vi.restoreAllMocks();
   });
 
@@ -641,11 +756,12 @@ describe('create-loop guard', () => {
     const mondayEventStore = fakeMondayEventStore({
       getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'fetched', qbId: 'qb-already' })),
     });
-    const qbEventStore = fakeQbEventStore({ hasMondayCreateInFlight: vi.fn().mockResolvedValue(true) });
+    const mondayClient = fakeMondayClient();
     const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
 
-    await processSyncQueueBatch([message], deps({ qbEventStore, mondayEventStore }));
+    await processSyncQueueBatch([message], deps({ mondayEventStore, mondayClient }));
 
+    expect(mondayClient.getItem).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
   });
 });

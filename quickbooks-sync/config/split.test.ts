@@ -51,6 +51,7 @@ describe('config split: the QuickBooks sink', () => {
       ...Object.values(sync.columnMap).flatMap((fields) => Object.values(fields)),
       ...Object.values(sync.linkColumn),
       ...Object.keys(sync.customerCreateFieldMap),
+      ...(sync.customerQbIdColumn === null ? [] : [sync.customerQbIdColumn]),
     ];
     // "name" is Monday's fixed id for every board's Name column (the item name), the same on
     // both accounts by design — not a board-specific id that could leak between them.

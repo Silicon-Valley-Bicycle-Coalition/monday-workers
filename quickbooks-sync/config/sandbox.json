@@ -39,6 +39,7 @@
     "customerCreateFieldMap": {
       "name": "DisplayName",
       "email_column_id": "PrimaryEmailAddr.Address"
-    }
+    },
+    "customerQbIdColumn": null
   }
 }

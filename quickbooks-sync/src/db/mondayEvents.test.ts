@@ -69,4 +69,15 @@ describe('D1MondayEventStore', () => {
     const store = new D1MondayEventStore(env.DB);
     expect(await store.getEvent('does-not-exist')).toBeNull();
   });
+
+  // #33 review: the QuickBooks -> Monday path uses this to recognize a Customer that a Monday item
+  // created, before that item's mapping is written, instead of creating a second Monday item.
+  it('finds the row that created a given QuickBooks Customer', async () => {
+    const store = new D1MondayEventStore(env.DB);
+    await store.insertEvent({ eventId: 'item-9', mondayItemId: 'item-9', rawPayload: '{}', receivedAt: '2026-09-25T00:00:00.000Z' });
+    await store.updateStatus('item-9', 'fetched', { qbId: 'qb-from-monday' });
+
+    expect((await store.findByQbId('qb-from-monday'))?.mondayItemId).toBe('item-9');
+    expect(await store.findByQbId('qb-unknown')).toBeNull();
+  });
 });

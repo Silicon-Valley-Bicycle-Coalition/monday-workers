@@ -50,12 +50,20 @@ final write just silently disappears.
 
 **Create loop guard (#33).** A Customer created in QuickBooks becomes a Monday item before its
 `qb_monday_map` row exists, and Monday's `create_pulse` webhook for that item can arrive in
-between. So the consumer stamps `qb_events.monday_create_started_at` before `create_item`, and the
-Monday → QuickBooks path, before creating a Customer, (1) re-checks the mapping, (2) adopts the
-item if a `qb_events` row recorded it as `pending_monday_item_id`, and (3) defers (retry with
-backoff) while any customer create claim younger than 10 minutes is unresolved. Customer creates
-also send Intuit's `requestid` (`monday-item-<id>`), so a retried create whose first response was
-lost returns the original Customer instead of a second one.
+between. The guard lives on the item itself: the Customers board has a **QuickBooks Id** text
+column (`config` `quickbooksSync.customerQbIdColumn`), which QuickBooks → Monday writes in the
+same `create_item` call that makes the item (and on every update), and Monday → QuickBooks writes
+after every Customer it creates. Before creating a Customer, the Monday → QuickBooks path
+(1) re-checks the mapping, (2) adopts the item if a `qb_events` row recorded it as
+`pending_monday_item_id`, then (3) re-reads the item from Monday and adopts the QuickBooks Id it
+carries — so even an item whose `create_item` response was lost is never turned into a second
+Customer. An item carrying an Id already linked to a different item (a copied item) is refused.
+The QuickBooks → Monday path likewise looks for an item that already stands for the Customer
+(one that created it from Monday, or one found by the QuickBooks Id column) before creating one.
+Nothing defers or blocks unrelated items. **Until `customerQbIdColumn` is set, Monday →
+QuickBooks Customer creates are refused** ("not retried", no DLQ) — they can't be made loop-safe
+without it. Customer creates also send Intuit's `requestid`, so a retried create whose first
+response was lost returns the original Customer instead of a second one.
 
 ## Dead letters and redrive
 

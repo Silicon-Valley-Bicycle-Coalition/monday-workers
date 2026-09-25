@@ -101,23 +101,8 @@ describe('D1QbEventStore', () => {
 
 // #33: the create-loop guard. The Monday side must be able to tell that an item it's about to
 // turn into a QuickBooks Customer was itself created from QuickBooks.
-describe('D1QbEventStore Monday-create claims', () => {
+describe('D1QbEventStore create-loop lookup', () => {
   const since = '2026-09-25T00:00:00.000Z';
-
-  it('reports a customer create in flight from the claim until the item id is recorded', async () => {
-    const store = new D1QbEventStore(env.DB);
-    await store.insertEvent({ eventId: 'claim-1', entityType: 'customer', qbId: 'qb-c1', receivedAt: since });
-    expect(await store.hasMondayCreateInFlight('customer', since)).toBe(false);
-
-    await store.markMondayCreateStarted('claim-1', '2026-09-25T00:05:00.000Z');
-    expect(await store.hasMondayCreateInFlight('customer', since)).toBe(true);
-    expect(await store.hasMondayCreateInFlight('invoice', since)).toBe(false);
-    // A claim older than the cutoff (a writer that died before recording an id) stops blocking.
-    expect(await store.hasMondayCreateInFlight('customer', '2026-09-25T00:06:00.000Z')).toBe(false);
-
-    await store.updateStatus('claim-1', 'queued', { pendingMondayItemId: 'item-c1' });
-    expect(await store.hasMondayCreateInFlight('customer', since)).toBe(false);
-  });
 
   it('finds the row that created a Monday item by its recorded item id', async () => {
     const store = new D1QbEventStore(env.DB);
@@ -127,13 +112,5 @@ describe('D1QbEventStore Monday-create claims', () => {
     expect((await store.findByPendingMondayItemId('customer', 'item-c2'))?.qbId).toBe('qb-c2');
     expect(await store.findByPendingMondayItemId('customer', 'item-nope')).toBeNull();
     expect(await store.findByPendingMondayItemId('invoice', 'item-c2')).toBeNull();
-  });
-
-  it('no longer reports a written row as in flight', async () => {
-    const store = new D1QbEventStore(env.DB);
-    await store.insertEvent({ eventId: 'claim-3', entityType: 'customer', qbId: 'qb-c3', receivedAt: since });
-    await store.markMondayCreateStarted('claim-3', '2026-09-25T00:05:00.000Z');
-    await store.updateStatus('claim-3', 'written', { writtenAt: '2026-09-25T00:06:00.000Z' });
-    expect(await store.hasMondayCreateInFlight('customer', since)).toBe(false);
   });
 });
