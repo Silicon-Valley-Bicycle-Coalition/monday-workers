@@ -228,7 +228,7 @@ and nothing else.
 ### 4. Monday-side guard: workspace-scoped integration users
 
 Sandbox `MONDAY_API_TOKEN` secrets are minted from a **single shared sandbox integration user**
-(`sandbox-integrations@bikesiliconvalley.org`) whose only board access is the CRM Sandbox
+(`sandbox-integration@bikesiliconvalley.org`) whose only board access is the CRM Sandbox
 workspace. Production tokens come from the per-exposure-class users the root README already
 requires, none of which can see the sandbox workspace. So a production board id in a sandbox
 config — or the reverse — fails at Monday with `USER_UNAUTHORIZED` rather than writing to the
