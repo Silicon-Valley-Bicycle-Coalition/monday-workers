@@ -5,7 +5,7 @@
 // cell is blank) — reimplemented here because Workers in this repo don't share code.
 //
 // Reads only the YYYY-MM-DD prefix. The consumer passes the transaction's `donationDate` after
-// `toISODate` has normalized Funraise's epoch milliseconds to a UTC calendar date — the same
+// `toISODate` has normalized Funraise's epoch milliseconds to a Pacific calendar date — the same
 // value it writes to the Date column — so the two columns can never disagree. Returns null
 // rather than guessing when the value isn't a date-prefixed string, so the caller can leave the
 // column blank instead of writing garbage.

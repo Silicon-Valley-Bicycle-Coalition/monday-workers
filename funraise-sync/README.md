@@ -235,7 +235,8 @@ text `Fiscal Year Ending` column that `salesforce-import` writes on every migrat
 July–June fiscal year, named for the year it ends in, so a 2026-08-15 gift is FY 2027 and a
 2026-06-30 gift is FY 2026). It isn't a Funraise field, so `columnMap` can't map it;
 instead the consumer derives it from the transaction's `donationDate` (Funraise sends epoch
-milliseconds; `toISODate` in `src/util/isoDate.ts` normalizes it to a UTC `YYYY-MM-DD`, which is
+milliseconds; `toISODate` in `src/util/isoDate.ts` normalizes it to an `America/Los_Angeles`
+`YYYY-MM-DD`, which is
 also the value written to the Date column as `{ date }`, so the two never disagree) with
 `fiscalYearEnding()` in `src/mapping/fiscalYear.ts` (same July rule as `salesforce-import`'s
 `fiscalYear()` and `donation-rollups`' `fiscalYearFromDate`) and writes it as a string to
@@ -250,9 +251,11 @@ from whatever Date holds). Set `fiscalYearColumn` to `null`
 for a board without the column. `config/sandbox.json` points it at `text_mm70czyd`, the text column
 titled "Fiscal Year Ending" on the sandbox v2 Donations board (`18428131791`, verified live
 2026-09-17) — the same one `donation-rollups` reads — not the older numbers column titled "Fiscal
-Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. Known edge: the year is read
-from the UTC date of `donationDate`, the same way the Date column is written, so a gift made
-between 5 pm and midnight Pacific on June 30 lands in the new fiscal year on both columns.
+Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. The date is the **Pacific**
+calendar day of `donationDate` (#25): it used to be the UTC day, which put a gift made between
+~5 pm and midnight Pacific on June 30 (or Dec 31) into the next fiscal (or calendar) year on both
+columns, disagreeing with the local-date CloseDates `salesforce-import` migrated. Recurring
+Gifts' Next Payment goes through the same function.
 
 ## Acknowledgment / receipting
 
