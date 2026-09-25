@@ -86,7 +86,12 @@ async function seed() {
     { Id: 'af2', npe5__Contact__c: 'c3', npe5__Organization__c: 'a-org', npe5__Status__c: 'Former', ...prov },
     { Id: 'af3', npe5__Contact__c: 'c3', npe5__Organization__c: 'a-ind', ...prov },   // individual → dropped
   ]);
-  for (const empty of ['payments', 'relationships', 'subscriptions', 'pledges',
+  await writeNdjson(dataPath('extract', 'contact_roles.ndjson'), [
+    { Id: 'ocr1', OpportunityId: 'o3', ContactId: 'c3', Role: 'Donor', IsPrimary: true },
+    { Id: 'ocr2', OpportunityId: 'o3', ContactId: 'c1', Role: 'Fundraiser', IsPrimary: false },
+    { Id: 'ocr3', OpportunityId: 'o3', ContactId: 'c2', Role: 'Influencer', IsPrimary: false }, // c2 isn't migrated
+  ]);
+  for (const empty of ['relationships', 'subscriptions', 'pledges',
     'campaigns', 'clickpledge_transactions', 'volunteer_hours',
     'tasks_recent', 'emails_recent', 'consent']) {
     await writeNdjson(dataPath('extract', `${empty}.ndjson`), []);
@@ -163,6 +168,13 @@ describe('runTransform', () => {
       .toBe('contactSfId,name,email,domain,candidateAffiliations\n');
     expect(report.warnings.some((w) => w.startsWith('emails: 1 work, 1 household, 0 review, 0 swapped'))).toBe(true);
     expect(report.warnings.some((w) => w.includes('1 org gifts have no affiliation'))).toBe(true);
+
+    // Soft credits: c1 fundraised o3 (org gift, Donor = Beta Org, c3 in Acting for); c3's own
+    // primary role isn't a credit; c2 isn't a migrated Person, so it's counted but not dropped here.
+    expect(bySf.get('o3')!.links).toContainEqual({ column: 'Soft Credit', targetSfIds: ['c1', 'c2'] });
+    expect(report.warnings).toContain(
+      "soft credits: 2 on 1 gifts; 1 name a contact who isn't a migrated Person (skipped at load)");
+    expect(report.warnings.some((w) => w.includes('unrecognised stage'))).toBe(false);
   });
 
   it('excludes a work email shared by multiple affiliations from attribution matching, with a warning', async () => {

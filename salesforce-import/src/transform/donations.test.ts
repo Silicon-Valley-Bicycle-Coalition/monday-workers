@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { opportunityToPayload, cnpToPayload, cnpOverlapCheck } from './donations.js';
+import { opportunityToPayload, cnpToPayload, cnpOverlapCheck, softCreditsByGift, unknownStages } from './donations.js';
 
 describe('opportunityToPayload', () => {
   const base = { Id: 'o1', Name: 'Gift', Amount: 50, CloseDate: '2026-01-15', StageName: 'Posted',
@@ -28,6 +28,23 @@ describe('opportunityToPayload', () => {
   it('maps Closed Won to a distinct label, not plain Received', () => {
     const p = opportunityToPayload({ ...base, StageName: 'Closed Won' }, { termCols: new Map() });
     expect(p.columns['Status']).toEqual({ label: 'Received (Historical)' });
+  });
+
+  it('maps Withdrawn→Failed and the not-yet stages to Pending', () => {
+    const status = (StageName: string | null) =>
+      opportunityToPayload({ ...base, StageName }, { termCols: new Map() }).columns['Status'];
+    expect(status('Withdrawn')).toEqual({ label: 'Failed' });
+    for (const s of ['Prospecting', 'Pledged', 'Invoiced', 'Not Posted', 'Engaged with Organization']) {
+      expect(status(s), s).toEqual({ label: 'Pending' });
+    }
+    expect(status('constructor')).toEqual({ label: 'Pending' });
+  });
+
+  it('links soft credits to their own column, leaving Donor alone', () => {
+    const p = opportunityToPayload(base, { termCols: new Map(), softCredits: ['c7', 'c8'] });
+    expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
+    expect(p.links).toContainEqual({ column: 'Soft Credit', targetSfIds: ['c7', 'c8'] });
+    expect(opportunityToPayload(base, { termCols: new Map() }).links!.some((l) => l.column === 'Soft Credit')).toBe(false);
   });
 
   it('keeps old gifts on the same board and maps Closed Lost→Failed', () => {
@@ -159,5 +176,43 @@ describe('click & pledge', () => {
     expect(p.columns['Status']).toEqual({ label: 'Received' });
     expect(p.columns['Fiscal Year Ending']).toBe('2016');
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c9'] });
+  });
+});
+
+describe('unknownStages', () => {
+  it('counts only stages the Status mapping does not recognise', () => {
+    const opps = ['Posted', 'Closed Won', 'Closed Lost', 'Withdrawn', 'Pledged', 'Prospecting', 'Invoiced',
+      'Not Posted', 'Engaged with Organization', 'Qualification', 'Qualification', null]
+      .map((StageName, i) => ({ Id: `o${i}`, StageName }));
+    expect([...unknownStages(opps)]).toEqual([['Qualification', 2], ['(blank)', 1]]);
+  });
+});
+
+describe('softCreditsByGift', () => {
+  const opps = [
+    { Id: 'o1', npsp__Primary_Contact__c: 'c1' },
+    { Id: 'o2', npsp__Primary_Contact__c: null, funraise__fr_Donor__c: 'c2' },
+  ];
+  const role = (OpportunityId: string, ContactId: string | null, Role: string | null, IsPrimary = false) =>
+    ({ OpportunityId, ContactId, Role, IsPrimary });
+
+  it('keeps roles naming someone other than the Primary Contact, household members aside', () => {
+    const credits = softCreditsByGift([
+      role('o1', 'c1', 'Donor', true),          // the Primary Contact itself → already Donor
+      role('o1', 'c1', 'Soft Credit', true),    // NPSP's other stamp on the Primary Contact
+      role('o1', 'c9', 'Fundraiser'),
+      role('o1', 'c5', 'Household Member'),     // derivable from the household → skipped
+      role('o1', 'c4', null),                   // blank role still names a real person
+      role('o1', 'c9', 'Team Captain'),         // same person twice → one link
+      role('o2', 'c2', 'Donor'),                // Funraise donor stands in for the Primary Contact
+      role('o2', 'c6', 'Soft Credit', true),    // primary role on someone else → a real credit
+      role('o3', 'c7', 'Influencer'),           // gift not extracted → no payload to carry it
+      role('o1', null, 'Influencer'),
+    ], opps);
+    expect([...credits]).toEqual([['o1', ['c4', 'c9']], ['o2', ['c6']]]);
+  });
+
+  it('never credits the placeholder Anonymous Person', () => {
+    expect(softCreditsByGift([role('o1', 'anon', 'Influencer')], opps, new Set(['anon'])).size).toBe(0);
   });
 });

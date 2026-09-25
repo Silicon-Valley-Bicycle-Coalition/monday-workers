@@ -16,8 +16,16 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         AccountId, npsp__Primary_Contact__c, CampaignId, funraise__fr_ID__c, funraise__fr_Donor__c,
         funraise__Subscription__c, funraise__Funraise_Pledge__c, CnP_PaaS__CnP_OrderNumber__c, dtd__company__c,
         Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Opportunity` },
-    { name: 'payments', paginate: true, soql: `SELECT Id, npe01__Opportunity__c, npe01__Payment_Amount__c,
-        npe01__Payment_Date__c, npe01__Paid__c FROM npe01__OppPayment__c` },
+    // Descoped 2026-09-23 (issue #23): Opportunity Amount/CloseDate is the gift of record — it's
+    // what NPSP's rollups summed and what Donations carries. 41,870 of 48,022 gifts have payments,
+    // almost all one payment mirroring the gift; 123 split into installments and 422 disagree on
+    // amount (mostly 2013–2017 entry noise). Kept in the backup archive, not transformed.
+    { name: 'payments', backupOnly: true, paginate: true, soql: `SELECT Id, npe01__Opportunity__c,
+        npe01__Payment_Amount__c, npe01__Payment_Date__c, npe01__Paid__c FROM npe01__OppPayment__c` },
+    // Soft credits (~54k roles, ~45k of them the Primary Contact again) — transform keeps the
+    // roles naming someone other than the gift's Primary Contact (donations.ts softCreditsByGift).
+    { name: 'contact_roles', paginate: true, soql: `SELECT Id, OpportunityId, ContactId, Role, IsPrimary
+        FROM OpportunityContactRole` },
     { name: 'memberships', soql: `SELECT Id, Contact__c, Opportunity__c, Type__c, Start_Date__c,
         WEC_End_Date_Manual__c, CreatedDate FROM Membership__c` },
     { name: 'affiliations', soql: `SELECT Id, npe5__Contact__c, npe5__Organization__c, npe5__Role__c,

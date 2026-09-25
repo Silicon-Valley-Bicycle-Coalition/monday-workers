@@ -184,6 +184,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         "placeholder 'Anonymous Person' contact.",
       'Matched By': 'The company that paid an employer matching gift (Gift Type = Matching ' +
         'Donation). The employee stays in Donor.',
+      'Soft Credit': 'Other people Salesforce credited on this gift — a fundraiser, team captain, ' +
+        'recruiter or influencer. Reference only: soft credits count toward nobody’s Lifetime Giving.',
       'Benevity Transaction ID': 'Set by the benevity-import integration so a Benevity report ' +
         'row is never entered twice. Blank on migrated history.',
       'Campaign': 'The Salesforce campaign the gift came in under, where known. Reference only.',
