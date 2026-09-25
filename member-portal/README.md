@@ -75,7 +75,7 @@ Donor visits the portal (a subdomain, e.g. member.bikesiliconvalley.org), enters
   ▼
 Cloudflare Worker (Hono + TypeScript, D1 for tokens/sessions)
   │  looks up the email against the Donors board via Monday's GraphQL API
-  │  generates a signed, single-use token (short expiry — e.g. 15 min) and stores it in D1
+  │  generates a random, single-use token (short expiry — 15 min) and stores its SHA-256 in D1
   │  emails a magic link containing the token
   ▼
 Donor clicks the link
@@ -84,8 +84,8 @@ Donor clicks the link
   │  the token before the donor arrived (issue #31)
   ▼
 Donor presses the button (a same-origin POST, CSRF-checked like every other form)
-  │  Worker verifies the token against D1 (single-use — invalidate on first use), issues a
-  │  signed, httpOnly session cookie
+  │  Worker verifies the token against D1 (single-use — invalidate on first use), issues an
+  │  opaque random session token in an httpOnly, Secure, SameSite=Lax cookie
   ▼
 Portal renders, server-side (Hono — no SPA framework needed for a page this small), reading
 live from Monday, scoped only to the authenticated Donor's own item id (never client-supplied):
@@ -183,9 +183,10 @@ Routing destination). A live login-link request for a real sandbox People record
 
 ## Security notes
 
-* Session and magic-link tokens: signed, single-use for the magic link, short expiry, stored in D1
-  keyed to a hash of the token (not the raw token) so a D1 read doesn't itself leak a usable
-  credential. Membership-card tokens are the exception — stored in plaintext because the card's
+* Session and magic-link tokens: 256 random bits from `crypto.getRandomValues` (not signed — there
+  is no signing key; the server looks each one up), single-use for the magic link, short expiry
+  (the letter-ready link's is `auth.letterLinkTtlHours`), stored in D1 keyed to a SHA-256 of the
+  token (not the raw token) so a D1 read doesn't itself leak a usable credential. Membership-card tokens are the exception — stored in plaintext because the card's
   QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
