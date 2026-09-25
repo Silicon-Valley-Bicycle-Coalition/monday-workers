@@ -559,13 +559,16 @@ describe('retry webhook (#34)', () => {
     });
   });
 
-  it('answers 200 without doing anything for an item this Worker never recorded', async () => {
+  it('enqueues nothing for an item with no D1 record (pre-0003 or hand-made), and says why on it', async () => {
     const deps = retryDeps();
     const app = createApp(deps);
     const res = await postRetry(app, retryEvent(9999));
     expect(await res.json()).toEqual({ ok: true, outcome: 'unknown item', enqueued: 0 });
     expect(deps.queue.sendBatch).not.toHaveBeenCalled();
-    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '9999', {
+      reason_c: expect.stringMatching(/^Can't retry this item: the Worker has no record/),
+      retry_col: { label: 'Needs review' },
+    });
   });
 
   it('marks the item Queued before enqueueing, so the consumer\'s Done/Needs review always lands last', async () => {

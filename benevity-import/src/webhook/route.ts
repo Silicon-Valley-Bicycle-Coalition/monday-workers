@@ -304,6 +304,11 @@ interface ReplayResult {
   purged?: number;
 }
 
+const UNKNOWN_ITEM_REASON =
+  "Can't retry this item: the Worker has no record linking it to a Benevity row — it was created before " +
+  'Retry support was added (#34), or by hand. Enter the gift by hand on the Donations board from the ' +
+  "report (re-uploading won't re-import a row the Worker has already seen), or ask engineering to re-queue it.";
+
 function purgedReason(count: number, retentionDays: number, ofBlock: boolean): string {
   const which = ofBlock ? `${count} row(s) in this block` : 'this row';
   return (
@@ -335,7 +340,10 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
   } else {
     const disbursement = await deps.disbursementStore.getByWorklistItemId(itemId);
     if (disbursement === null) {
-      // Not an item this Worker posted (or its D1 record is gone) — nothing to replay.
+      // No D1 record links this item to a row or block: it was posted before worklist item ids
+      // were recorded (migration 0003), or made by hand. Say so on the item rather than leaving
+      // it sitting at Retry.
+      await annotateWorklistItem(deps.mondayClient, deps.config, itemId, UNKNOWN_ITEM_REASON);
       return { outcome: 'unknown item', enqueued: 0 };
     }
     // Staff have checked the block (e.g. its totals mismatch was a Benevity rounding quirk):
