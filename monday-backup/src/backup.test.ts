@@ -23,6 +23,9 @@ function fakeDrive(overrides: Partial<DriveClient> = {}): DriveClient & { upload
     uploadJson: async (folderId, filename, data) => {
       uploads.push({ folderId, filename, data });
     },
+    createFile: async () => {
+      throw new Error('not used yet');
+    },
     uploads,
     ...overrides,
   };
