@@ -1,7 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import app, { type Env } from './index';
 
+// The real write-back is unit-tested in sendStatus.test.ts; here it's a spy so a test can make it
+// hang and check the webhook response doesn't wait for it.
+const { writeSendStatus } = vi.hoisted(() => ({ writeSendStatus: vi.fn(async () => {}) }));
+vi.mock('./sendStatus', () => ({ writeSendStatus }));
+
 const SECRET = 'test-secret';
+
+function fakeCtx() {
+  return { waitUntil: vi.fn(), passThroughOnException: vi.fn(), props: {} } as unknown as ExecutionContext & {
+    waitUntil: ReturnType<typeof vi.fn>;
+  };
+}
 
 function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -30,35 +41,35 @@ function post(body: unknown, headers: Record<string, string> = { 'X-Webhook-Secr
 describe('POST /webhook/bp-feedback', () => {
   it('rejects a request with no secret header', async () => {
     const env = fakeEnv();
-    const res = await app.request(post(VALID_BODY, {}), undefined, env);
+    const res = await app.request(post(VALID_BODY, {}), undefined, env, fakeCtx());
     expect(res.status).toBe(401);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
   });
 
   it('rejects a request with the wrong secret', async () => {
     const env = fakeEnv();
-    const res = await app.request(post(VALID_BODY, { 'X-Webhook-Secret': 'nope' }), undefined, env);
+    const res = await app.request(post(VALID_BODY, { 'X-Webhook-Secret': 'nope' }), undefined, env, fakeCtx());
     expect(res.status).toBe(401);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
   });
 
   it('accepts the secret as a ?secret= query param, since monday.com\'s webhook action has no custom-header field', async () => {
     const env = fakeEnv();
-    const res = await app.request(post(VALID_BODY, {}, `?secret=${SECRET}`), undefined, env);
+    const res = await app.request(post(VALID_BODY, {}, `?secret=${SECRET}`), undefined, env, fakeCtx());
     expect(res.status).toBe(200);
     expect(env.EMAIL.send).toHaveBeenCalledTimes(1);
   });
 
   it('rejects the wrong secret given as a query param', async () => {
     const env = fakeEnv();
-    const res = await app.request(post(VALID_BODY, {}, '?secret=nope'), undefined, env);
+    const res = await app.request(post(VALID_BODY, {}, '?secret=nope'), undefined, env, fakeCtx());
     expect(res.status).toBe(401);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
   });
 
   it('echoes back a monday.com connection-verification challenge instead of treating it as a feedback payload', async () => {
     const env = fakeEnv();
-    const res = await app.request(post({ challenge: 'abc123' }), undefined, env);
+    const res = await app.request(post({ challenge: 'abc123' }), undefined, env, fakeCtx());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ challenge: 'abc123' });
     expect(env.EMAIL.send).not.toHaveBeenCalled();
@@ -66,20 +77,20 @@ describe('POST /webhook/bp-feedback', () => {
 
   it('still requires the secret before answering a challenge', async () => {
     const env = fakeEnv();
-    const res = await app.request(post({ challenge: 'abc123' }, {}), undefined, env);
+    const res = await app.request(post({ challenge: 'abc123' }, {}), undefined, env, fakeCtx());
     expect(res.status).toBe(401);
   });
 
   it('rejects an invalid payload with 400 and does not send', async () => {
     const env = fakeEnv();
-    const res = await app.request(post({ ...VALID_BODY, organizerEmail: 'not-an-email' }), undefined, env);
+    const res = await app.request(post({ ...VALID_BODY, organizerEmail: 'not-an-email' }), undefined, env, fakeCtx());
     expect(res.status).toBe(400);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
   });
 
   it('sends the feedback email straight to the organizer in production', async () => {
     const env = fakeEnv();
-    const res = await app.request(post(VALID_BODY), undefined, env);
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ sent: true, itemId: VALID_BODY.itemId });
@@ -91,7 +102,7 @@ describe('POST /webhook/bp-feedback', () => {
 
   it('redirects to the sandbox sink instead of the organizer when ENVIRONMENT=sandbox', async () => {
     const env = fakeEnv({ ENVIRONMENT: 'sandbox', SANDBOX_EMAIL_SINK: 'sandbox@bikesiliconvalley.org' });
-    const res = await app.request(post(VALID_BODY), undefined, env);
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
 
     expect(res.status).toBe(200);
     expect(env.EMAIL.send).toHaveBeenCalledTimes(1);
@@ -105,7 +116,7 @@ describe('POST /webhook/bp-feedback', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
-    const res = await app.request(post(VALID_BODY), undefined, env);
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ sent: false, itemId: VALID_BODY.itemId });
@@ -118,9 +129,26 @@ describe('POST /webhook/bp-feedback', () => {
     fetchSpy.mockRestore();
   });
 
+  it.each([
+    ['sent', 200, vi.fn().mockResolvedValue({ messageId: 'test-id' })],
+    ['failed', 500, vi.fn().mockRejectedValue(new Error('boom'))],
+  ] as const)('answers without waiting on the %s status write-back, handing it to waitUntil', async (outcome, status, send) => {
+    writeSendStatus.mockReturnValueOnce(new Promise<void>(() => {})); // a Monday API that never answers
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ctx = fakeCtx();
+
+    const res = await app.request(post(VALID_BODY), undefined, fakeEnv({ EMAIL: { send } }), ctx);
+
+    expect(res.status).toBe(status);
+    expect(writeSendStatus).toHaveBeenLastCalledWith(null, undefined, VALID_BODY.itemId, outcome);
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
+    expect(ctx.waitUntil.mock.calls[0]![0]).toBe(writeSendStatus.mock.results.at(-1)!.value);
+    errorSpy.mockRestore();
+  });
+
   it('logs a successful send', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const res = await app.request(post(VALID_BODY), undefined, fakeEnv());
+    const res = await app.request(post(VALID_BODY), undefined, fakeEnv(), fakeCtx());
     expect(res.status).toBe(200);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-sent'));
     logSpy.mockRestore();
@@ -128,7 +156,7 @@ describe('POST /webhook/bp-feedback', () => {
 
   it('fails closed if ENVIRONMENT=sandbox but no sink is configured', async () => {
     const env = fakeEnv({ ENVIRONMENT: 'sandbox' });
-    const res = await app.request(post(VALID_BODY), undefined, env);
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
     expect(res.status).toBe(500);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
   });

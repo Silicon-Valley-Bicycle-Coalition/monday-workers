@@ -87,12 +87,15 @@ app.post('/webhook/bp-feedback', async (c) => {
     // Staff only ever look at the board, so a failed send is logged (Workers observability) and,
     // when configured, written back onto the item — otherwise it is invisible to them.
     console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId: payload.itemId, error: error instanceof Error ? error.message : String(error) }));
-    await writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'failed');
+    c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'failed'));
     return c.json({ sent: false, itemId: payload.itemId }, 500);
   }
 
   console.log(JSON.stringify({ event: 'bp-feedback-sent', environment, itemId: payload.itemId }));
-  await writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'sent');
+  // Answer monday immediately and write the status back in the background: awaiting a slow
+  // Monday API here could hold the webhook past monday's timeout, and a retried webhook would
+  // email the organizer again.
+  c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'sent'));
   return c.json({ sent: true, itemId: payload.itemId });
 });
 

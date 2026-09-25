@@ -55,7 +55,17 @@ describe('writeSendStatus', () => {
     expect(body.variables).toEqual({ boardId: '18431960612', itemId: '13089808285', columnId: 'color_feedback', value: label });
   });
 
+  it('bounds the Monday call with a 10s abort timeout', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    const fetchMock = stubFetch(ok());
+    await writeSendStatus(CONFIG, 'token', 1, 'sent');
+    expect(timeoutSpy).toHaveBeenCalledWith(10_000);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.signal).toBe(timeoutSpy.mock.results[0]!.value);
+  });
+
   it.each([
+    ['a timeout', new DOMException('The operation was aborted due to timeout', 'TimeoutError')],
     ['an HTTP error', new Response('nope', { status: 500 })],
     ['a GraphQL error', new Response(JSON.stringify({ errors: [{ message: 'label not found' }] }), { status: 200 })],
     ['a data-less 200', new Response(JSON.stringify({ error_message: 'rate limited' }), { status: 200 })],

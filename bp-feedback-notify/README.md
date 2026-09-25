@@ -99,7 +99,9 @@ to them — the webhook just gets a 500. To surface it, set `sendStatus` in `con
 ```
 
 and set a `MONDAY_API_TOKEN` secret (see Secrets). After each send the Worker sets that status
-column to `sentLabel` or `failedLabel` via `change_simple_column_value`. Add the `failedLabel`
+column to `sentLabel` or `failedLabel` via `change_simple_column_value` — in the background
+(`waitUntil`, 10-second timeout) after the webhook has been answered, so a slow Monday API can't
+push the response past monday's timeout and trigger a retry (a duplicate email). Add the `failedLabel`
 (e.g. `Send Failed`, red) to the column first — Monday rejects an unknown label, and the Worker
 only logs that rejection. Writing `Sent to Organizer` onto the same `Post-Event Feedback` column
 doesn't re-fire the automation, which triggers only on `Ready to Send`; staff re-trigger a

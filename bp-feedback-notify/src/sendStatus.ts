@@ -5,6 +5,9 @@
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 const MONDAY_API_VERSION = '2026-01';
+// Runs under ctx.waitUntil after the webhook has been answered; bound it so a hung Monday API
+// can't keep the invocation alive indefinitely.
+const MONDAY_TIMEOUT_MS = 10_000;
 
 export interface SendStatusConfig {
   /** The board the webhook's items live on (BP Request Form, or its sandbox mirror). */
@@ -44,6 +47,7 @@ export async function writeSendStatus(
   try {
     const response = await fetch(MONDAY_API_URL, {
       method: 'POST',
+      signal: AbortSignal.timeout(MONDAY_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': MONDAY_API_VERSION },
       body: JSON.stringify({
         query: `mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
