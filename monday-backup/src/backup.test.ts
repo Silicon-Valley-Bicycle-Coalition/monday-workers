@@ -28,7 +28,7 @@ interface FakeFile {
 function fakeDrive(overrides: Partial<DriveClient> = {}) {
   const files: FakeFile[] = [];
   const drive: DriveClient = {
-    ensureDatedFolder: async () => 'folder-1',
+    ensureFolder: async () => 'folder-1',
     createFile: async (folderId, filename, mimeType) => {
       const file: FakeFile = { folderId, filename, mimeType, writes: [], closed: false, aborted: false };
       files.push(file);
@@ -157,6 +157,29 @@ describe('runBackup', () => {
     expect(fetchMock).not.toHaveBeenCalled(); // no partial-run alert sent
   });
 
+  // Issue #29: a same-day rerun used to write a second set of same-named files into the same
+  // dated folder. Each run now gets its own folder, named for the date and the D1 run id.
+  it('writes each run into its own dated, run-numbered folder under the configured parent', async () => {
+    const folders: [string, string][] = [];
+    let nextRunId = 17;
+    const runStore = { ...fakeRunStore(), recordRunStart: async () => nextRunId++ };
+    const fake = fakeDrive({
+      ensureFolder: async (parent, name) => {
+        folders.push([parent, name]);
+        return `folder-${name}`;
+      },
+    });
+    await runBackup(deps({ drive: fake.drive, runStore }));
+    await runBackup(deps({ drive: fake.drive, runStore, now: () => new Date('2026-08-25T15:30:00.000Z') }));
+    expect(folders).toEqual([
+      ['parent-1', '2026-08-25 run-17'],
+      ['parent-1', '2026-08-25 run-18'],
+    ]);
+    const manifests = fake.files.filter((f) => f.filename === 'manifest.json');
+    expect(manifests.map((m) => m.folderId)).toEqual(['folder-2026-08-25 run-17', 'folder-2026-08-25 run-18']);
+    expect(JSON.parse(manifests[0]!.writes.join(''))).toMatchObject({ runId: 17, snapshotFolder: '2026-08-25 run-17' });
+  });
+
   it('writes a board one page at a time rather than buffering it whole', async () => {
     const monday = fakeMonday({
       listBoards: async () => [board('1')],
@@ -281,7 +304,7 @@ describe('runBackup', () => {
 
   it('records a total failure and rethrows when the run aborts entirely', async () => {
     const drive = fakeDrive({
-      ensureDatedFolder: async () => {
+      ensureFolder: async () => {
         throw new Error('Drive API: HTTP 401 — invalid_grant');
       },
     }).drive;
@@ -295,7 +318,7 @@ describe('runBackup', () => {
 
   it('alerts on the very first total failure, and on every one after, with the streak length', async () => {
     const drive = fakeDrive({
-      ensureDatedFolder: async () => {
+      ensureFolder: async () => {
         throw new Error('outage');
       },
     }).drive;

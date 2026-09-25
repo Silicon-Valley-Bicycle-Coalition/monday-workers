@@ -55,13 +55,15 @@ Cloudflare Worker
   │     (columns, groups, settings) — enough to reconstruct the board's shape, not just its rows
   │  3. Pull every monday Doc's content (blocks) too — the one thing the native export explicitly
   │     doesn't cover
-  │  4. Serialize each board and each doc to JSON
-  │  5. Upload to Google Drive via the Drive API, into a dated folder
-  │     (e.g. `SVBC Monday Backups/2026-08-25/`)
-  │  6. Write a manifest alongside the snapshot (board count, item counts per board, any errors)
-  │     so a stale or partial backup is obvious at a glance, not discovered at restore time
+  │  4. Stream each board and each doc, page by page, as JSON Lines (`board-<id>.jsonl`,
+  │     `doc-<id>.jsonl`) into a Drive resumable upload — memory holds one page, never a board
+  │  5. …into one folder per run inside the Shared Drive, named for the date and D1 run id
+  │     (e.g. `SVBC Monday Backups/2026-08-25 run-17/`), so a same-day rerun never collides
+  │  6. Write a manifest alongside the snapshot (format, run id, item counts per board, block
+  │     counts per doc, any errors) so a stale or partial backup is obvious at a glance, not
+  │     discovered at restore time
   ▼
-Google Drive, one dated snapshot per run, kept indefinitely (see Retention below)
+Google Drive, one snapshot folder per run, kept indefinitely (see Retention below)
 ```
 
 ## APIs & auth

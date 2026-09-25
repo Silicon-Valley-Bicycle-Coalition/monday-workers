@@ -131,8 +131,8 @@ describe('GoogleDriveClient auth and folders', () => {
   it('exchanges the service-account JWT for a token once and reuses it across calls', async () => {
     const { state, fetchMock } = fakeDrive({ existingFolders: ['folder-1'] });
     const client = newClient();
-    expect(await client.ensureDatedFolder('parent-1', '2026-08-25')).toBe('folder-1');
-    expect(await client.ensureDatedFolder('parent-1', '2026-08-25')).toBe('folder-1');
+    expect(await client.ensureFolder('parent-1', '2026-08-25')).toBe('folder-1');
+    expect(await client.ensureFolder('parent-1', '2026-08-25')).toBe('folder-1');
     expect(state.tokenExchanges).toBe(1);
     const listHeaders = new Headers((fetchMock.mock.calls[1]![1] as RequestInit).headers);
     expect(listHeaders.get('Authorization')).toBe('Bearer token-abc');
@@ -140,7 +140,7 @@ describe('GoogleDriveClient auth and folders', () => {
 
   it('creates the folder under the parent when it does not exist', async () => {
     fakeDrive();
-    expect(await newClient().ensureDatedFolder('parent-1', '2026-08-25')).toBe('new-folder');
+    expect(await newClient().ensureFolder('parent-1', '2026-08-25')).toBe('new-folder');
   });
 
   // Issue #29: service accounts have no storage quota, so the destination must be a Shared Drive,
@@ -148,7 +148,7 @@ describe('GoogleDriveClient auth and folders', () => {
   it('opts every call into Shared Drive support', async () => {
     const { state } = fakeDrive();
     const client = newClient();
-    await client.ensureDatedFolder('parent-1', '2026-08-25');
+    await client.ensureFolder('parent-1', '2026-08-25');
     await client.uploadJson('new-folder', 'manifest.json', {});
 
     // URLs we build; the upload session URI (upload_id=…) is issued by Drive itself.
@@ -170,7 +170,7 @@ describe('GoogleDriveClient auth and folders', () => {
         .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 't', expires_in: 3600 })))
         .mockResolvedValueOnce(new Response('forbidden', { status: 403 })),
     );
-    await expect(newClient().ensureDatedFolder('parent-1', '2026-08-25')).rejects.toThrow(/HTTP 403/);
+    await expect(newClient().ensureFolder('parent-1', '2026-08-25')).rejects.toThrow(/HTTP 403/);
   });
 
   it('retries a Drive rate-limit 403 and 5xx on metadata calls', async () => {
@@ -181,13 +181,13 @@ describe('GoogleDriveClient auth and folders', () => {
       .mockResolvedValueOnce(new Response('oops', { status: 503 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'f' }] })));
     vi.stubGlobal('fetch', fetchMock);
-    expect(await newClient().ensureDatedFolder('parent-1', '2026-08-25')).toBe('f');
+    expect(await newClient().ensureFolder('parent-1', '2026-08-25')).toBe('f');
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('throws when the OAuth token exchange fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('no', { status: 401 })));
-    await expect(newClient().ensureDatedFolder('parent-1', '2026-08-25')).rejects.toThrow(/token exchange failed/);
+    await expect(newClient().ensureFolder('parent-1', '2026-08-25')).rejects.toThrow(/token exchange failed/);
   });
 });
 

@@ -1,6 +1,6 @@
 import { signServiceAccountJwt, type ServiceAccountCredentials } from './jwt';
 
-// Full `drive` scope rather than `drive.file`, since ensureDatedFolder needs to *list*
+// Full `drive` scope rather than `drive.file`, since ensureFolder needs to *list*
 // existing children of a folder the service account didn't necessarily create itself
 // (the service account is a member of the destination Shared Drive — see README's "APIs & auth").
 // Narrow this to `drive.file` if SVBC's Drive setup moves to domain-wide delegation instead.
@@ -38,7 +38,7 @@ export interface DriveFileWriter {
 }
 
 export interface DriveClient {
-  ensureDatedFolder(parentFolderId: string, folderName: string): Promise<string>;
+  ensureFolder(parentFolderId: string, folderName: string): Promise<string>;
   createFile(folderId: string, filename: string, mimeType: string): Promise<DriveFileWriter>;
   uploadJson(folderId: string, filename: string, data: unknown): Promise<void>;
 }
@@ -174,7 +174,7 @@ export class GoogleDriveClient implements DriveClient {
     throw new Error(`Drive API: exhausted ${MAX_ATTEMPTS} attempts on ${path} — last error: ${lastError}`);
   }
 
-  async ensureDatedFolder(parentFolderId: string, folderName: string): Promise<string> {
+  async ensureFolder(parentFolderId: string, folderName: string): Promise<string> {
     const query =
       `'${escapeDriveQueryValue(parentFolderId)}' in parents` +
       ` and name = '${escapeDriveQueryValue(folderName)}'` +

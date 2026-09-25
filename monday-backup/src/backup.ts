@@ -66,8 +66,10 @@ async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary): P
 
 export async function runBackup(deps: BackupDeps): Promise<void> {
   const startedAtUtc = deps.now().toISOString();
-  const dateFolderName = startedAtUtc.slice(0, 10); // YYYY-MM-DD
   const runId = await deps.runStore.recordRunStart(startedAtUtc);
+  // One folder per run, e.g. "2026-08-25 run-17": sorts by date in Drive, and a same-day rerun
+  // gets its own folder instead of a second set of same-named files beside the first (#29).
+  const snapshotFolder = `${startedAtUtc.slice(0, 10)} run-${runId}`;
 
   // Belt-and-braces alongside the workspace-scoped sandbox token (design doc §4): when set and
   // non-empty, skip anything outside the listed workspace(s). Absent/empty preserves today's
@@ -77,7 +79,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     workspaceIds === undefined || workspaceIds.length === 0 || (workspaceId !== null && workspaceIds.includes(workspaceId));
 
   try {
-    const folderId = await deps.drive.ensureDatedFolder(deps.config.destinationParentFolderId, dateFolderName);
+    const folderId = await deps.drive.ensureFolder(deps.config.destinationParentFolderId, snapshotFolder);
 
     const errors: string[] = [];
     const itemCountsByBoard: Record<string, number> = {};
@@ -116,6 +118,8 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     // manifest itself rather than discovered only at restore time (per README's ask).
     await deps.drive.uploadJson(folderId, 'manifest.json', {
       format: SNAPSHOT_FORMAT,
+      runId,
+      snapshotFolder,
       runAt: startedAtUtc,
       boardCount,
       docCount,
