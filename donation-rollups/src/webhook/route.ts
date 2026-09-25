@@ -3,6 +3,7 @@ import type { PendingStore } from '../db/pending';
 import { validateWebhookBody } from './validate';
 import type { RecomputeQueueMessage } from '../types';
 import { secretsMatch } from '../secret';
+import { MONDAY_WEBHOOK_PATH } from '../rateLimit'; // one path, so the limiter exemption can't drift from the route
 
 export interface QueueLike {
   send(message: RecomputeQueueMessage): Promise<void>;
@@ -35,7 +36,7 @@ export function createApp(deps: AppDeps) {
 
   app.get('/health', (c) => c.json({ ok: true }));
 
-  app.post('/webhooks/monday/donations', async (c) => {
+  app.post(MONDAY_WEBHOOK_PATH, async (c) => {
     if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }

@@ -1,10 +1,27 @@
+import { secretsMatch } from './secret';
+
 export interface RequestRateLimiter {
   limit(key: string): Promise<{ success: boolean }>;
 }
 
+export const MONDAY_WEBHOOK_PATH = '/webhooks/monday/donations';
+
+// Issue #27: Monday delivers every webhook from a small pool of IPs, so a bulk edit of more than
+// 60 gifts blew through the per-IP limit and Monday's own deliveries got 429s. A delivery that
+// passes the webhook's own check (right method, exact path, matching ?secret=) skips the
+// limiter; anything else — a guessed secret, the right secret on another route — is limited as
+// before, so the exemption can't be reached without the secret. Costs one SHA-256 pair per
+// request, no I/O.
+export async function isVerifiedMondayWebhook(request: Request, webhookSecret: string | undefined): Promise<boolean> {
+  if (request.method !== 'POST') return false;
+  const url = new URL(request.url);
+  if (url.pathname !== MONDAY_WEBHOOK_PATH) return false;
+  return secretsMatch(url.searchParams.get('secret') ?? undefined, webhookSecret);
+}
+
 // A blanket per-IP guard checked before any routing, D1, or Monday work — see README
-// "Reliability: traffic and cost limits". Covers both the Monday donations webhook and the
-// /custodian/* routes; a flood of requests against either now costs at most
+// "Reliability: traffic and cost limits". Covers the /custodian/* routes and every webhook call
+// that fails verification (isVerifiedMondayWebhook above); a flood of such requests costs at most
 // REQUEST_RATE_LIMITER's configured rate instead of one full request per delivery.
 // Keyed on CF-Connecting-IP, the header Cloudflare's edge sets to the real client IP on every
 // Internet request; local dev and tests never see it, so they fall back to a fixed key (the

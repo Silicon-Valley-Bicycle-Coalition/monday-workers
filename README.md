@@ -121,7 +121,9 @@ work happens, in each Worker's own `src/rateLimit.ts` (`member-portal`'s is
 own webhook-secret or signature check: that check still runs and still rejects a bogus delivery,
 but a flood of requests — valid secret or not — now costs at most the configured rate instead of
 one full request (D1 lookup, JSON parse, Monday-shaped work) per delivery. Webhook receivers are
-set to 60 requests/min/IP (generous against real volume — a few hundred events a month); the two
+set to 60 requests/min/IP (generous against real volume — a few hundred events a month; one
+exception: `donation-rollups` exempts deliveries that pass its webhook-secret check, because a
+bulk edit on the Donations board makes Monday itself exceed 60/min from a handful of IPs); the two
 public-facing Workers (`svbc-calendars`, and `member-portal`'s blanket limit on top of its
 existing tighter login/change/verify limits) are set to 120/min/IP. `monday-backup` has no public
 HTTP surface (`workers_dev`/`preview_urls` both `false`, no routes) and is excluded;

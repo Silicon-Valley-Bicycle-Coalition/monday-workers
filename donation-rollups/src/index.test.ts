@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
 import worker, { isDeadLetterBatch } from './index';
 
@@ -76,5 +76,50 @@ describe('webhook secret (issue #27)', () => {
   it('rejects a wrong secret when one is configured', async () => {
     const res = await worker.fetch(donationsWebhook(910004, 'wrong'), envFor({ ENVIRONMENT: 'sandbox' }), ctx);
     expect(res.status).toBe(401);
+  });
+});
+
+// Issue #27: the 60/min per-IP limiter also throttled Monday's own deliveries, so a bulk edit of
+// more than 60 gifts got 429s. Only a delivery that passes webhook verification skips it.
+describe('rate limiter exemption for verified Monday webhooks (issue #27)', () => {
+  function exhaustedLimiter() {
+    const limit = vi.fn().mockResolvedValue({ success: false });
+    return { limit, env: envFor({ ENVIRONMENT: 'sandbox', REQUEST_RATE_LIMITER: { limit } }) };
+  }
+
+  it('lets a verified webhook delivery through even when its IP is over the limit', async () => {
+    const { limit, env: e } = exhaustedLimiter();
+    const res = await worker.fetch(donationsWebhook(910005), e, ctx);
+    expect(res.status).toBe(200);
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it('still rate-limits a webhook call with a missing or wrong secret', async () => {
+    for (const secret of [null, 'wrong']) {
+      const { limit, env: e } = exhaustedLimiter();
+      const res = await worker.fetch(donationsWebhook(910006, secret), e, ctx);
+      expect(res.status).toBe(429);
+      expect(limit).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('does not exempt the right secret on a different route or method', async () => {
+    for (const request of [
+      new Request(`http://worker.test/custodian/status?secret=${SECRET}`),
+      new Request(`http://worker.test/webhooks/monday/donations?secret=${SECRET}`),
+      new Request(`http://worker.test/webhooks/monday/donations/x?secret=${SECRET}`, { method: 'POST', body: '{}' }),
+    ]) {
+      const { limit, env: e } = exhaustedLimiter();
+      const res = await worker.fetch(request, e, ctx);
+      expect(res.status, request.url).toBe(429);
+      expect(limit).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('does not exempt anything when the secret is unset', async () => {
+    const limit = vi.fn().mockResolvedValue({ success: false });
+    const res = await worker.fetch(donationsWebhook(910007, null),
+      envFor({ ENVIRONMENT: 'sandbox', MONDAY_WEBHOOK_SECRET: undefined, REQUEST_RATE_LIMITER: { limit } }), ctx);
+    expect(res.status).toBe(429);
   });
 });
