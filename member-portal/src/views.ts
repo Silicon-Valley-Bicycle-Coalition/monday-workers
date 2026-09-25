@@ -403,7 +403,7 @@ function siteHeader(locale: Locale, authenticated: boolean): string {
 // returns the visitor to wherever they were without this needing to be threaded through every
 // page() call site. No visible submit button: a no-JS visitor can't change the value via this
 // <select> in the first place, so there's nothing for a fallback button to submit either.
-function siteFooter(locale: Locale): string {
+function siteFooter(locale: Locale, languagePicker: boolean): string {
   const options = SUPPORTED_LOCALES.map(
     (code) => `<option value="${code}"${code === locale ? ' selected' : ''}>${escapeHtml(LOCALE_NATIVE_LABELS[code])}</option>`
   ).join('');
@@ -421,10 +421,14 @@ function siteFooter(locale: Locale): string {
             <a href="${ORG_PRIVACY_POLICY_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t(locale, 'footer.privacyPolicy'))}</a>
           </p>
         </div>
-        <form class="site-footer-lang" action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
+        ${
+          languagePicker
+            ? `<form class="site-footer-lang" action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
           <input type="hidden" name="to" value="" />
           <select name="code" onchange="this.form.to.value = location.pathname; this.form.submit()">${options}</select>
-        </form>
+        </form>`
+            : ''
+        }
       </div>
     </footer>
   `;
@@ -435,7 +439,15 @@ function siteFooter(locale: Locale): string {
 // headers/footers, which is how the tax letter page used to print (see letterViews.letterView).
 // `authenticated` shows the shared header's logout button — every route inside the session-gated
 // /:locale/portal* tree passes true; the pre-identity and public /verify routes leave it false.
-export function page(title: string, body: string, locale: Locale, options: { authenticated?: boolean } = {}): string {
+// languagePicker: false drops the footer language <select> — for pages whose state lives in the
+// query string, which the picker's `to` (location.pathname only) would lose. GET /auth/callback
+// is the one: switching language there dropped the token and landed on "invalid link".
+export function page(
+  title: string,
+  body: string,
+  locale: Locale,
+  options: { authenticated?: boolean; languagePicker?: boolean } = {}
+): string {
   return `<!doctype html>
 <html lang="${locale}">
   <head>
@@ -448,7 +460,7 @@ export function page(title: string, body: string, locale: Locale, options: { aut
   <body>
     ${siteHeader(locale, options.authenticated ?? false)}
     <main>${body}</main>
-    ${siteFooter(locale)}
+    ${siteFooter(locale, options.languagePicker ?? true)}
   </body>
 </html>`;
 }

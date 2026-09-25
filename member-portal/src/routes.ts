@@ -348,7 +348,14 @@ export function createApp(deps: AppDeps) {
     // still letting the browser send a real Origin on this page's own same-origin POST, which the
     // CSRF check requires (older Safari sends no Sec-Fetch-Site to fall back on).
     c.header('Referrer-Policy', 'same-origin');
-    return c.html(page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(token, lang, locale), locale));
+    // No footer language picker here: it redirects to location.pathname only, which would drop
+    // the token (and the token must never be copied into the /lang redirect URL). The page
+    // already renders in the link's own `lang`.
+    return c.html(
+      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(token, lang, locale), locale, {
+        languagePicker: false,
+      })
+    );
   });
 
   // Covered by the app-wide CSRF check like every other form POST (it is not in CSRF_EXEMPT): the

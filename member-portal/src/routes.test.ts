@@ -505,6 +505,16 @@ describe('GET /auth/callback confirmation page', () => {
     expect(html).toContain(t('es', 'confirmLogin.submit'));
   });
 
+  // Review of #31: the footer picker submits only location.pathname, so switching language here
+  // went to /auth/callback without the token and showed "invalid link".
+  it('omits the footer language picker, which would drop the token', async () => {
+    const { app, token } = await requestToken();
+    const html = await (await app.request(`/auth/callback?token=${token}`)).text();
+    expect(html).not.toContain('action="/lang"');
+    // Every other page keeps it.
+    expect(await (await app.request('/')).text()).toContain('action="/lang"');
+  });
+
   it('drops an unsupported lang instead of reflecting it into the form', async () => {
     const { app, token } = await requestToken();
     const html = await (await app.request(`/auth/callback?token=${token}&lang="><b>x`)).text();
