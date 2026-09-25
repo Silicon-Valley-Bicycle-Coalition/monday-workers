@@ -81,4 +81,18 @@ describe('validateConfig', () => {
     };
     expect(() => validateConfig(bad)).toThrow(/organizationAliases/);
   });
+
+  it('accepts worklistKeyColumn as a column id, null, or absent, and rejects an empty string', () => {
+    const withKey = (worklistKeyColumn: unknown) => ({
+      ...validConfig,
+      benevityImport: {
+        ...validConfig.benevityImport,
+        uploadsBoard: { ...validConfig.benevityImport.uploadsBoard, worklistKeyColumn },
+      },
+    });
+    expect(() => validateConfig(withKey('key_col'))).not.toThrow();
+    expect(() => validateConfig(withKey(null))).not.toThrow();
+    expect(() => validateConfig(withKey(''))).toThrow(/worklistKeyColumn/);
+    expect(() => validateConfig(withKey(7))).toThrow(/worklistKeyColumn/);
+  });
 });

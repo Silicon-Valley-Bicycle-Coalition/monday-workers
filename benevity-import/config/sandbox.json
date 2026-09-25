@@ -44,7 +44,8 @@
         "company": "text_mm78gr6a",
         "amount": "numeric_mm78bqmd",
         "date": "date_mm78e4yc"
-      }
+      },
+      "worklistKeyColumn": null
     },
     "organizationAliases": {},
     "rawRowRetentionDays": 90,

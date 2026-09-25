@@ -215,6 +215,10 @@ several disbursements:
   / `skipped`), Monday item ids (employee gift and/or match), raw row.
 * Every Donations item this Worker creates carries `Benevity Transaction ID`; the consumer looks
   it up before creating, so a retry after a lost status update adopts the existing item.
+* Worklist items follow the same rule (#34): D1 records each one's Monday item id (`rows` and
+  `disbursements` `worklist_item_id`, migration `0003`) in the same write that marks the row or
+  block needs-review, and the item carries its key in the worklist `Key` column, looked up before
+  creating — so a retry after that write is lost adopts the item it already posted.
 * **The migrated history has no Transaction IDs** — Salesforce never stored them — so the ledger
   can't tell a pre-cutover Benevity row from one the import already carried. Config
   `benevityImport.minDonationDate` (set to the migration data-freeze date) makes the Worker skip
@@ -244,6 +248,7 @@ placeholders until cutover), validated at first request, none hardcoded:
 | Affiliations board: Person, Organization, Work Email | person resolution |
 | Organizations board: name | company resolution |
 | Benevity Uploads board: file column, worklist group | trigger + worklist |
+| Benevity Uploads board: worklist `Key` text column (`uploadsBoard.worklistKeyColumn`) | each worklist item's stable key — the row's Transaction ID, or `disbursement <id>` for a block — looked up before posting so a retried write adopts the item instead of posting a second one; `null` until provisioned (the lookup is then skipped) |
 
 Token: a dedicated staff-facing integration user with access to exactly these boards (see the
 least-privilege note in `../README.md`); the same user `funraise-sync` writes as is acceptable,

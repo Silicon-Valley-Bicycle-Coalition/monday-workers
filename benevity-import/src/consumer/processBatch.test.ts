@@ -54,6 +54,7 @@ function fakeRowRecord(parsed: ParsedRow, overrides: Partial<DonationRowRecord> 
     status: 'ingested',
     mondayEmployeeItemId: null,
     mondayMatchItemId: null,
+    worklistItemId: null,
     rawRow: JSON.stringify(parsed),
     error: null,
     ingestedAt: '2026-09-15T00:00:00Z',
@@ -78,8 +79,9 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     findOrCreate: vi.fn(),
     getDisbursement: vi.fn().mockResolvedValue({
       id: 1, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-03-16', currency: 'USD',
-      rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null,
+      rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null, worklistItemId: null,
     }),
+    setWorklistItemId: vi.fn(),
   };
   const aliasStore: AliasStore = { getAlias: vi.fn().mockResolvedValue(null), learnAlias: vi.fn() };
   const mondayClient = {
@@ -264,6 +266,56 @@ describe('processBenevityQueueBatch', () => {
 
     expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(msg.ack).not.toHaveBeenCalled();
+  });
+});
+
+describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
+  function unresolvedCompanyDeps() {
+    return fakeDeps({
+      mondayClient: {
+        findItemsByColumnValue: vi.fn().mockResolvedValue([]),
+        findItemsByName: vi.fn().mockResolvedValue([]), // no Organization match
+        getLinkedItemIds: vi.fn().mockResolvedValue([]),
+        createItem: vi.fn().mockResolvedValue({ id: '900', name: 'x' }),
+        changeColumnValues: vi.fn(),
+        fetchAsset: vi.fn(),
+      } as never,
+    });
+  }
+
+  it('records the new worklist item id in the same write that marks the row needs-review', async () => {
+    const parsed = fakeParsedRow();
+    const deps = unresolvedCompanyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'needs-review', expect.objectContaining({ worklistItemId: '900' }));
+  });
+
+  it("reuses the row's recorded worklist item instead of posting another", async () => {
+    const parsed = fakeParsedRow();
+    const deps = unresolvedCompanyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed, { worklistItemId: '77' }));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '77', { reason_c: expect.any(String) });
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'needs-review', expect.objectContaining({ worklistItemId: '77' }));
+  });
+
+  it.each(['needs-review', 'skipped', 'written'] as const)('is a no-op for a stale message whose row is already %s', async (status) => {
+    const parsed = fakeParsedRow();
+    const deps = unresolvedCompanyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed, { status }));
+
+    const msg = message('TXN001');
+    await processBenevityQueueBatch([msg], deps);
+
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalled();
   });
 });
 

@@ -92,6 +92,18 @@ describe('D1RowStore', () => {
     });
   });
 
+  it('records the worklist item id with a needs-review status, and keeps it through later updates', async () => {
+    const store = new D1RowStore(env.DB);
+    await store.upsertRow({ transactionId: 'TXN003', disbursementId, rawRow: '{}', status: 'ingested', ingestedAt: 't' });
+    expect((await store.getRow('TXN003'))?.worklistItemId).toBeNull();
+
+    await store.updateStatus('TXN003', 'needs-review', { error: 'no match', worklistItemId: '900' });
+    expect(await store.getRow('TXN003')).toMatchObject({ status: 'needs-review', error: 'no match', worklistItemId: '900' });
+
+    await store.updateStatus('TXN003', 'ingested', { error: 'HTTP 500' });
+    expect((await store.getRow('TXN003'))?.worklistItemId).toBe('900');
+  });
+
   it('purges raw_row for written rows older than the cutoff, and leaves newer ones alone', async () => {
     const store = new D1RowStore(env.DB);
     await store.upsertRow({

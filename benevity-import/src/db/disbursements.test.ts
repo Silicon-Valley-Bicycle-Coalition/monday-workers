@@ -79,4 +79,14 @@ describe('D1DisbursementStore', () => {
     const second = await store.findOrCreate(block(reUpload, { disbursementId: 'REUP01', blockIndex: 3 }));
     expect(second).toEqual({ disbursement: first.disbursement, created: false });
   });
+
+  it('records a block-level worklist item id', async () => {
+    const uploadId = (await new D1UploadStore(env.DB).createUpload('asset-6', '2026-09-15T00:00:00Z')).id;
+    const store = new D1DisbursementStore(env.DB);
+    const { disbursement } = await store.findOrCreate(block(uploadId, { disbursementId: 'WL01' }));
+    expect(disbursement.worklistItemId).toBeNull();
+
+    await store.setWorklistItemId(disbursement.id, '4242');
+    expect((await store.getDisbursement(disbursement.id))?.worklistItemId).toBe('4242');
+  });
 });

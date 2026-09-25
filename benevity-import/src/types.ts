@@ -34,6 +34,10 @@ export interface UploadsBoardConfig {
   fileColumn: string;
   worklistGroupId: string;
   worklistColumns: WorklistColumns;
+  // Text column on the Uploads board holding each worklist item's key (Transaction ID, or
+  // "disbursement <id>" for a block) — the pre-create lookup that keeps a retried write from
+  // posting a second worklist item (#34). Null/absent until the column is provisioned.
+  worklistKeyColumn?: string | null;
 }
 
 export interface BenevityImportConfig {

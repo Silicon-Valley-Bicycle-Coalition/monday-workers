@@ -6,7 +6,7 @@ import type { RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import { parseBenevityReport, type ParsedBlock } from '../parse/report';
 import { isChallenge, validateUploadEvent } from './validate';
-import { createWorklistItem } from '../matching/worklist';
+import { blockWorklistKey, ensureWorklistItem } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage } from '../consumer/processBatch';
 import { sendInBatches, type BatchSender } from '../util/sendBatch';
@@ -119,7 +119,7 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
   // block that failed mid-processing resumes exactly where it left off.
   try {
     for (const [i, block] of blocks.entries()) {
-      await ingestBlock(block, i, upload.id, deps);
+      await ingestBlock(block, i, upload.id, assetId, deps);
     }
   } catch (err) {
     // Mark it visibly failed (not stuck silently at 'parsing') and rethrow so the webhook
@@ -132,12 +132,18 @@ async function ingestAsset(assetId: string, deps: AppDeps): Promise<void> {
   await deps.uploadStore.markParsed(upload.id, blocks.length);
 }
 
-async function ingestBlock(block: ParsedBlock, blockIndex: number, uploadId: number, deps: AppDeps): Promise<void> {
+async function ingestBlock(
+  block: ParsedBlock,
+  blockIndex: number,
+  uploadId: number,
+  assetId: string,
+  deps: AppDeps
+): Promise<void> {
   const needsReview = block.headerError !== null || block.sumMismatch;
   const reviewReason =
     block.headerError ?? (block.sumMismatch ? 'row totals do not match the reported gross total' : null);
 
-  const { disbursement, created } = await deps.disbursementStore.findOrCreate({
+  const { disbursement } = await deps.disbursementStore.findOrCreate({
     uploadId,
     blockIndex,
     disbursementId: block.disbursementId,
@@ -151,18 +157,25 @@ async function ingestBlock(block: ParsedBlock, blockIndex: number, uploadId: num
   });
 
   if (needsReview) {
-    if (created) {
-      // Only post the worklist item the first time this disbursement is seen — createItem has
-      // no dedup of its own, so re-posting it on every redelivery or re-upload would spam
-      // duplicate items onto the live board.
-      await createWorklistItem(deps.mondayClient, deps.config, {
-        reason: reviewReason ?? 'block needs review',
-        name: `Disbursement ${block.disbursementId || '(unknown)'}`,
-        email: '',
-        company: block.charityName,
-        amount: block.reportedGrossTotal,
-        date: block.periodEnding || deps.now().slice(0, 10),
-      });
+    if (disbursement.worklistItemId === null) {
+      // One worklist item per block, ever: skipped once its id is recorded (a resumed attempt, or
+      // the same disbursement re-uploaded), and adopted rather than re-posted if an earlier
+      // attempt created it but died before recording it (#34).
+      const worklistItemId = await ensureWorklistItem(
+        deps.mondayClient,
+        deps.config,
+        {
+          key: blockWorklistKey(block.disbursementId, assetId, blockIndex),
+          reason: reviewReason ?? 'block needs review',
+          name: `Disbursement ${block.disbursementId || '(unknown)'}`,
+          email: '',
+          company: block.charityName,
+          amount: block.reportedGrossTotal,
+          date: block.periodEnding || deps.now().slice(0, 10),
+        },
+        null
+      );
+      await deps.disbursementStore.setWorklistItemId(disbursement.id, worklistItemId);
     }
     // Every row is (re-)recorded so nothing is silently lost, but none are enqueued — spec: "a
     // mismatch marks the whole block needs-review rather than writing partial data from a

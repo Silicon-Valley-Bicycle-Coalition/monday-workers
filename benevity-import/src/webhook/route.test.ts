@@ -61,8 +61,11 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     markError: vi.fn(),
   };
   const disbursementStore: DisbursementStore = {
-    findOrCreate: vi.fn().mockImplementation((input) => Promise.resolve({ disbursement: { id: 10, ...input }, created: true })),
+    findOrCreate: vi
+      .fn()
+      .mockImplementation((input) => Promise.resolve({ disbursement: { id: 10, worklistItemId: null, ...input }, created: true })),
     getDisbursement: vi.fn(),
+    setWorklistItemId: vi.fn().mockResolvedValue(undefined),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
@@ -313,7 +316,7 @@ describe('webhook route', () => {
         ...fakeDeps().disbursementStore,
         findOrCreate: vi.fn().mockResolvedValue({
           disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
-            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x' },
+            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x', worklistItemId: '555' },
           created: false,
         }),
       },
@@ -323,7 +326,7 @@ describe('webhook route', () => {
     // Reused the existing row — never re-posted the worklist item.
     expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
     // A header-error block has zero rows to upsert, so this only proves the code path taken
-    // (created === false -> skip worklist post) without needing row-level fixtures;
+    // (worklistItemId recorded -> skip worklist post) without needing row-level fixtures;
     // the sum-mismatch case below covers the "rows still get upserted" half.
   });
 
@@ -341,7 +344,7 @@ describe('webhook route', () => {
         ...fakeDeps().disbursementStore,
         findOrCreate: vi.fn().mockResolvedValue({
           disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
-            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x' },
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x', worklistItemId: '555' },
           created: false,
         }),
       },
@@ -354,6 +357,34 @@ describe('webhook route', () => {
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(
       expect.objectContaining({ transactionId: 'TXN001', disbursementId: 10, status: 'needs-review' })
     );
+  });
+
+  it('records the block-level worklist item id on the disbursement', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(mismatched) });
+    (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '321', name: 'x' });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(deps.disbursementStore.setWorklistItemId).toHaveBeenCalledWith(10, '321');
+  });
+
+  it('posts the worklist item for a known needs-review block that has none recorded yet (a prior attempt died before posting it)', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        findOrCreate: vi.fn().mockResolvedValue({
+          disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x', worklistItemId: null },
+          created: false,
+        }),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(deps.disbursementStore.setWorklistItemId).toHaveBeenCalledWith(10, '1');
   });
 
   it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {

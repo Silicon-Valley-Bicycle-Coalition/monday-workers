@@ -11,9 +11,11 @@ export interface DisbursementRow {
   reportedNetTotal: number;
   needsReview: boolean;
   reviewReason: string | null;
+  // The block-level Benevity Uploads worklist item, once one was posted for it (#34).
+  worklistItemId: string | null;
 }
 
-export interface NewDisbursement extends Omit<DisbursementRow, 'id' | 'blockIndex'> {
+export interface NewDisbursement extends Omit<DisbursementRow, 'id' | 'blockIndex' | 'worklistItemId'> {
   blockIndex: number;
 }
 
@@ -32,6 +34,7 @@ export interface DisbursementStore {
   // race into a re-read, never a duplicate.
   findOrCreate(input: NewDisbursement): Promise<FindOrCreateResult>;
   getDisbursement(id: number): Promise<DisbursementRow | null>;
+  setWorklistItemId(id: number, worklistItemId: string): Promise<void>;
 }
 
 interface D1DisbursementRecord {
@@ -46,10 +49,11 @@ interface D1DisbursementRecord {
   reported_net_total: number;
   needs_review: number;
   review_reason: string | null;
+  worklist_item_id: string | null;
 }
 
 const COLUMNS = `id, upload_id, block_index, disbursement_id, period_ending, currency, row_count,
-                 reported_gross_total, reported_net_total, needs_review, review_reason`;
+                 reported_gross_total, reported_net_total, needs_review, review_reason, worklist_item_id`;
 
 function toDisbursementRow(record: D1DisbursementRecord): DisbursementRow {
   return {
@@ -64,6 +68,7 @@ function toDisbursementRow(record: D1DisbursementRecord): DisbursementRow {
     reportedNetTotal: record.reported_net_total,
     needsReview: record.needs_review === 1,
     reviewReason: record.review_reason,
+    worklistItemId: record.worklist_item_id,
   };
 }
 
@@ -126,5 +131,9 @@ export class D1DisbursementStore implements DisbursementStore {
       .bind(id)
       .first<D1DisbursementRecord>();
     return record === null ? null : toDisbursementRow(record);
+  }
+
+  async setWorklistItemId(id: number, worklistItemId: string): Promise<void> {
+    await this.db.prepare(`UPDATE disbursements SET worklist_item_id = ?2 WHERE id = ?1`).bind(id, worklistItemId).run();
   }
 }

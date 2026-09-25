@@ -44,7 +44,8 @@
         "company": "REPLACE_WITH_COLUMN_ID",
         "amount": "REPLACE_WITH_COLUMN_ID",
         "date": "REPLACE_WITH_COLUMN_ID"
-      }
+      },
+      "worklistKeyColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "organizationAliases": {},
     "rawRowRetentionDays": 90,

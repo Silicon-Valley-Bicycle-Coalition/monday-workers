@@ -7,7 +7,7 @@ import type { ParsedRow } from '../parse/report';
 import { resolveOrganization } from '../matching/organizations';
 import { resolvePerson } from '../matching/people';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
-import { createWorklistItem } from '../matching/worklist';
+import { ensureWorklistItem } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 
 export interface BenevityQueueMessage {
@@ -75,7 +75,10 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
   if (row === null) {
     throw new Error(`benevity consumer: no row for transaction id "${transactionId}"`);
   }
-  if (row.status === 'written') return; // redelivered message for already-completed work
+  // Only an 'ingested' row has work left. 'written' is done; 'needs-review' is waiting on staff
+  // (a Retry on its worklist item moves it back to 'ingested' before re-enqueueing it); 'skipped'
+  // is final. A message for any of those is a redelivery or a stale duplicate.
+  if (row.status !== 'ingested') return;
 
   const parsed = JSON.parse(row.rawRow) as ParsedRow;
 
@@ -165,13 +168,22 @@ async function worklistAndMarkReview(
   parsed: ParsedRow,
   reason: string
 ): Promise<void> {
-  await createWorklistItem(deps.mondayClient, deps.config, {
-    reason,
-    name: `${parsed.donorFirstName} ${parsed.donorLastName}`.trim(),
-    email: parsed.email,
-    company: parsed.company,
-    amount: parsed.totalDonationToBeAcknowledged + parsed.matchAmount,
-    date: parsed.donationDate,
-  });
-  await deps.rowStore.updateStatus(row.transactionId, 'needs-review', { error: reason });
+  // ensureWorklistItem reuses the item this row already has, or finds one an earlier attempt
+  // posted before its D1 write was lost, so a retry never posts a second one (#34). Its id is
+  // recorded in the same write that marks the row needs-review.
+  const worklistItemId = await ensureWorklistItem(
+    deps.mondayClient,
+    deps.config,
+    {
+      key: row.transactionId,
+      reason,
+      name: `${parsed.donorFirstName} ${parsed.donorLastName}`.trim(),
+      email: parsed.email,
+      company: parsed.company,
+      amount: parsed.totalDonationToBeAcknowledged + parsed.matchAmount,
+      date: parsed.donationDate,
+    },
+    row.worklistItemId
+  );
+  await deps.rowStore.updateStatus(row.transactionId, 'needs-review', { error: reason, worklistItemId });
 }

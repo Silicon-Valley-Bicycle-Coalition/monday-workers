@@ -206,6 +206,77 @@ describe('benevity-import integration', () => {
     expect(sentMessages).toEqual([]);
   });
 
+  it('a retry after the needs-review D1 write failed adopts the worklist item it already posted (#34)', async () => {
+    const config = fakeConfig();
+    config.benevityImport.uploadsBoard.worklistKeyColumn = 'key_c';
+    // A stand-in for the Uploads board: remembers what was created, answers lookups by key.
+    const worklist: { id: string; key: unknown }[] = [];
+    (mondayClient.createItem as ReturnType<typeof vi.fn>).mockImplementation(
+      (boardId: number, _name: string, columnValues: Record<string, unknown>) => {
+        const id = String(600 + worklist.length);
+        if (boardId === 777) worklist.push({ id, key: columnValues.key_c });
+        return Promise.resolve({ id, name: 'x' });
+      }
+    );
+    (mondayClient.findItemsByColumnValue as ReturnType<typeof vi.fn>).mockImplementation(
+      (boardId: number, columnId: string, value: string) =>
+        Promise.resolve(
+          boardId === 777 && columnId === 'key_c'
+            ? worklist.filter((item) => item.key === value).map((item) => ({ id: item.id, name: 'x' }))
+            : []
+        )
+    );
+
+    const app = createApp({
+      mondayClient,
+      uploadStore: new D1UploadStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      rowStore: new D1RowStore(env.DB),
+      config,
+      queue: { sendBatch: async (ms) => { sentMessages.push(...ms); } },
+      webhookSecret: SECRET,
+      fetchCsv: async () => validReport(),
+      now: () => '2026-09-15T00:00:00Z',
+    });
+    await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+    });
+
+    // The first attempt's needs-review write fails after the worklist item was posted.
+    const realRows = new D1RowStore(env.DB);
+    let failNext = true;
+    const flakyRows = Object.assign(Object.create(realRows) as D1RowStore, {
+      updateStatus: async (...args: Parameters<D1RowStore['updateStatus']>) => {
+        if (args[1] === 'needs-review' && failNext) {
+          failNext = false;
+          throw new Error('D1 write failed');
+        }
+        return realRows.updateStatus(...args);
+      },
+    });
+    const consumerDeps = {
+      rowStore: flakyRows,
+      disbursementStore: new D1DisbursementStore(env.DB),
+      aliasStore: new D1AliasStore(env.DB),
+      mondayClient,
+      config,
+      now: () => '2026-09-15T01:00:00Z',
+    };
+    const first = { body: sentMessages[0]!, ack: vi.fn(), retry: vi.fn() };
+    await processBenevityQueueBatch([first], consumerDeps);
+    expect(first.retry).toHaveBeenCalled();
+    expect(worklist).toHaveLength(1);
+
+    const second = { body: sentMessages[0]!, ack: vi.fn(), retry: vi.fn() };
+    await processBenevityQueueBatch([second], consumerDeps);
+    expect(second.ack).toHaveBeenCalled();
+    expect(worklist).toHaveLength(1); // adopted, not posted again
+    const row = await realRows.getRow('TXN001');
+    expect(row).toMatchObject({ status: 'needs-review', worklistItemId: worklist[0]!.id });
+  });
+
   it('rejects webhook requests without the correct secret', async () => {
     const config = fakeConfig();
     const routeDeps: AppDeps = {

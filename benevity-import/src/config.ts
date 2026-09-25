@@ -76,6 +76,11 @@ export function validateConfig(raw: unknown): BenevityImportConfig {
   requireNonEmptyString(uploadsBoard.worklistGroupId, 'benevityImport.uploadsBoard.worklistGroupId');
   const worklistColumns = requireObject(uploadsBoard.worklistColumns, 'benevityImport.uploadsBoard.worklistColumns');
   requireStringFields(worklistColumns, REQUIRED_WORKLIST_COLUMNS, 'benevityImport.uploadsBoard.worklistColumns');
+  // Optional until the column exists on the board (see README "Monday targets"): null or absent
+  // turns off the worklist pre-create lookup, not worklist creation itself.
+  if (uploadsBoard.worklistKeyColumn !== undefined && uploadsBoard.worklistKeyColumn !== null) {
+    requireNonEmptyString(uploadsBoard.worklistKeyColumn, 'benevityImport.uploadsBoard.worklistKeyColumn');
+  }
 
   const organizationAliases = benevityImport.organizationAliases;
   if (typeof organizationAliases !== 'object' || organizationAliases === null) {

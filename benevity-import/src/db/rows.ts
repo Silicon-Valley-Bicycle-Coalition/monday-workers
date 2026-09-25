@@ -6,6 +6,8 @@ export interface DonationRowRecord {
   status: RowStatus;
   mondayEmployeeItemId: string | null;
   mondayMatchItemId: string | null;
+  // The Benevity Uploads worklist item this row was put on, once it needed review (#34).
+  worklistItemId: string | null;
   rawRow: string;
   error: string | null;
   ingestedAt: string;
@@ -23,6 +25,7 @@ export interface NewRow {
 export interface RowStatusPatch {
   mondayEmployeeItemId?: string;
   mondayMatchItemId?: string;
+  worklistItemId?: string;
   error?: string;
   writtenAt?: string;
 }
@@ -43,6 +46,7 @@ interface D1RowRecord {
   status: RowStatus;
   monday_employee_item_id: string | null;
   monday_match_item_id: string | null;
+  worklist_item_id: string | null;
   raw_row: string;
   error: string | null;
   ingested_at: string;
@@ -56,6 +60,7 @@ function toRow(record: D1RowRecord): DonationRowRecord {
     status: record.status,
     mondayEmployeeItemId: record.monday_employee_item_id,
     mondayMatchItemId: record.monday_match_item_id,
+    worklistItemId: record.worklist_item_id,
     rawRow: record.raw_row,
     error: record.error,
     ingestedAt: record.ingested_at,
@@ -85,7 +90,7 @@ export class D1RowStore implements RowStore {
     const record = await this.db
       .prepare(
         `SELECT transaction_id, disbursement_id, status, monday_employee_item_id, monday_match_item_id,
-                raw_row, error, ingested_at, written_at
+                worklist_item_id, raw_row, error, ingested_at, written_at
          FROM rows WHERE transaction_id = ?1`
       )
       .bind(transactionId)
@@ -101,7 +106,8 @@ export class D1RowStore implements RowStore {
            monday_employee_item_id = COALESCE(?3, monday_employee_item_id),
            monday_match_item_id = COALESCE(?4, monday_match_item_id),
            error = ?5,
-           written_at = COALESCE(?6, written_at)
+           written_at = COALESCE(?6, written_at),
+           worklist_item_id = COALESCE(?7, worklist_item_id)
          WHERE transaction_id = ?1`
       )
       .bind(
@@ -110,7 +116,8 @@ export class D1RowStore implements RowStore {
         patch.mondayEmployeeItemId ?? null,
         patch.mondayMatchItemId ?? null,
         patch.error ?? null,
-        patch.writtenAt ?? null
+        patch.writtenAt ?? null,
+        patch.worklistItemId ?? null
       )
       .run();
   }
