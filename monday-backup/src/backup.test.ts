@@ -252,7 +252,7 @@ describe('runBackup', () => {
     expect(runStore.finishes).toEqual([]);
   });
 
-  it('alerts once consecutive total failures reach the threshold', async () => {
+  it('alerts on the very first total failure, and on every one after, with the streak length', async () => {
     const monday = fakeMonday();
     const drive = fakeDrive({
       ensureDatedFolder: async () => {
@@ -263,12 +263,19 @@ describe('runBackup', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     vi.stubGlobal('fetch', fetchMock);
 
-    for (let i = 0; i < 3; i++) {
-      await expect(
-        runBackup({ monday, drive, runStore, config, slackWebhookUrl: 'https://hooks.example/webhook', now: () => new Date() }),
-      ).rejects.toThrow();
-    }
+    await expect(
+      runBackup({ monday, drive, runStore, config, slackWebhookUrl: 'https://hooks.example/webhook', now: () => new Date() }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no three-night grace period (issue #29)
+    const first = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(first.text).toContain('run failed');
+    expect(first.text).toContain('outage');
 
-    expect(fetchMock).toHaveBeenCalledTimes(1); // only fired on the 3rd consecutive failure
+    await expect(
+      runBackup({ monday, drive, runStore, config, slackWebhookUrl: 'https://hooks.example/webhook', now: () => new Date() }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const second = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
+    expect(second.text).toContain('2 nights in a row');
   });
 });

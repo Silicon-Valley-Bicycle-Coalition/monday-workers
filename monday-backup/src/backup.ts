@@ -5,8 +5,6 @@ import type { MondayClient } from './monday/client';
 import type { BackupConfig } from './types';
 import { errorMessage } from './util/errorMessage';
 
-const FAILURE_ALERT_THRESHOLD = 3;
-
 export interface BackupDeps {
   monday: MondayClient;
   drive: DriveClient;
@@ -87,7 +85,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     });
 
     // A partial snapshot is the failure mode this Worker exists to make visible — alert on
-    // every occurrence, not just after a run-count threshold like the total-failure case below.
+    // every occurrence, same as the total-failure case below.
     if (errors.length > 0) {
       const detail = errors.length > 5 ? `${errors.slice(0, 5).join('; ')} (+${errors.length - 5} more)` : errors.join('; ');
       await sendFailureAlert(deps.slackWebhookUrl, `partial snapshot — ${errors.length} board/doc(s) failed`, detail);
@@ -97,9 +95,10 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
     console.error(`monday-backup: run failed: ${message}`);
     const finishedAtUtc = deps.now().toISOString();
     const consecutiveFailures = await deps.runStore.recordRunFailure(runId, finishedAtUtc, message);
-    if (consecutiveFailures >= FAILURE_ALERT_THRESHOLD) {
-      await sendFailureAlert(deps.slackWebhookUrl, `run failed ${consecutiveFailures} times in a row`, message);
-    }
+    // Alert on the first total failure (issue #29): a backup that silently skips up to three
+    // nights before anyone hears about it is three nights of unrecoverable edits.
+    const streak = consecutiveFailures > 1 ? ` (${consecutiveFailures} nights in a row)` : '';
+    await sendFailureAlert(deps.slackWebhookUrl, `run failed — no snapshot was written${streak}`, message);
     throw err;
   }
 }
