@@ -1,3 +1,4 @@
+import { TerminalError } from '../errors';
 import type { EntityType } from '../types';
 import type { QbTokens, StoredQbTokens, TokenStore } from './tokenStore';
 
@@ -41,6 +42,28 @@ const LEASE_WAIT_ATTEMPTS = 5;
 const LEASE_WAIT_MS = 500;
 
 type AccessToken = { realmId: string; accessToken: string };
+
+interface IntuitFault {
+  Fault?: { type?: string; Error?: { Message?: string; Detail?: string; code?: string }[] };
+}
+
+// Turns a non-OK Accounting API response into an error that says what Intuit said (#33 review):
+// `Fault.type code Message: Detail` for each error. A 400 ValidationFault — Intuit rejecting the
+// data itself (6240 Duplicate Name Exists, a missing required field, 610 Object Not Found for a
+// deleted record) — is a TerminalError: retrying the same request can only fail the same way.
+async function apiError(response: Response, action: string): Promise<Error> {
+  let fault: IntuitFault['Fault'];
+  try {
+    fault = ((await response.json()) as IntuitFault).Fault;
+  } catch {
+    fault = undefined;
+  }
+  const details = (fault?.Error ?? [])
+    .map((e) => [fault?.type, e.code, e.Message].filter(Boolean).join(' ') + (e.Detail ? `: ${e.Detail}` : ''))
+    .join('; ');
+  const message = `quickbooks API: HTTP ${response.status} ${action}${details ? ` — ${details}` : ''}`;
+  return response.status === 400 && fault?.type === 'ValidationFault' ? new TerminalError(message) : new Error(message);
+}
 
 function isFresh(tokens: QbTokens): boolean {
   return new Date(tokens.accessTokenExpiresAt).getTime() > Date.now() + EXPIRY_SKEW_MS;
@@ -161,7 +184,7 @@ export class HttpQuickBooksClient implements QuickBooksClient {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
     });
     if (!response.ok) {
-      throw new Error(`quickbooks API: HTTP ${response.status} fetching ${entityType} ${qbId}`);
+      throw await apiError(response, `fetching ${entityType} ${qbId}`);
     }
     const json = (await response.json()) as Record<string, unknown>;
     const entityKey = path.charAt(0).toUpperCase() + path.slice(1);
@@ -185,7 +208,7 @@ export class HttpQuickBooksClient implements QuickBooksClient {
       body: JSON.stringify(fields),
     });
     if (!response.ok) {
-      throw new Error(`quickbooks API: HTTP ${response.status} creating customer`);
+      throw await apiError(response, 'creating customer');
     }
     const json = (await response.json()) as { Customer: { Id: string } };
     return { id: json.Customer.Id };

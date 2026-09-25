@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HttpQuickBooksClient } from './client';
+import { isTerminalError } from '../errors';
 import type { TokenStore, StoredQbTokens } from './tokenStore';
 
 function fakeTokenStore(overrides: Partial<TokenStore> = {}): TokenStore {
@@ -254,6 +255,43 @@ describe('HttpQuickBooksClient', () => {
     // response instead of creating a second Customer.
     expect(url).toBe('https://quickbooks.api.intuit.com/v3/company/realm-1/customer?requestid=monday-item-42');
     expect(JSON.parse((init as Record<string, unknown>).body as string)).toEqual({ DisplayName: 'New Co' });
+  });
+
+  // #33 review: a create failure used to read only "HTTP 400 creating customer" and retried into
+  // the DLQ. Intuit's Fault is now in the message, and a validation fault is terminal.
+  it('puts Intuit fault details in the error and marks a validation fault terminal', async () => {
+    const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
+    mockFetchSequence([
+      {
+        ok: false,
+        status: 400,
+        json: {
+          Fault: {
+            type: 'ValidationFault',
+            Error: [{ Message: 'Duplicate Name Exists Error', Detail: 'The name supplied already exists. : Id=58', code: '6240' }],
+          },
+        },
+      },
+    ]);
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', API_BASE);
+
+    const err = await client.createCustomer({ DisplayName: 'Acme' }, 'req-9').catch((e: unknown) => e);
+
+    expect(isTerminalError(err)).toBe(true);
+    expect((err as Error).message).toBe(
+      'quickbooks API: HTTP 400 creating customer — ValidationFault 6240 Duplicate Name Exists Error: The name supplied already exists. : Id=58'
+    );
+  });
+
+  it('keeps a server-side fault retryable', async () => {
+    const tokenStore = fakeTokenStore({ getTokens: vi.fn().mockResolvedValue(validTokens) });
+    mockFetchSequence([{ ok: false, status: 503, json: { Fault: { type: 'SystemFault', Error: [{ Message: 'Service down', code: '10000' }] } } }]);
+    const client = new HttpQuickBooksClient(tokenStore, 'client-id', 'client-secret', API_BASE);
+
+    const err = await client.getEntity('customer', '1').catch((e: unknown) => e);
+
+    expect(isTerminalError(err)).toBe(false);
+    expect((err as Error).message).toMatch(/HTTP 503 fetching customer 1 — SystemFault 10000 Service down/);
   });
 
   it('throws on a non-OK API response', async () => {

@@ -1,4 +1,5 @@
 import type { MapStore } from '../db/map';
+import { isTerminalError, TerminalError } from '../errors';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { QbEventStore } from '../db/qbEvents';
 import { getPath, mapMondayToQbCustomerFields, mapQbToMondayColumns } from '../mapping/fieldMap';
@@ -38,6 +39,10 @@ export interface ConsumerDeps {
   config: QuickbooksSyncConfig;
 }
 
+// Marks a row's error as terminal (acked, not retried, not dead-lettered): fix the cause, then
+// redrive (README "Dead letters and redrive").
+export const TERMINAL_PREFIX = 'not retried: ';
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -69,20 +74,26 @@ export async function processSyncQueueBatch(
       }
       message.ack();
     } catch (err) {
-      const error = errorMessage(err);
+      const terminal = isTerminalError(err);
+      const error = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
       console.error(`quickbooks-sync consumer: ${message.body.direction} "${message.body.eventId}" failed: ${error}`);
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
+      let recorded = false;
       try {
         if (message.body.direction === 'qb-to-monday') {
           await deps.qbEventStore.updateStatus(message.body.eventId, 'failed', { error });
         } else {
           await deps.mondayEventStore.updateStatus(message.body.eventId, 'failed', { error });
         }
+        recorded = true;
       } catch (recordErr) {
         console.error(`quickbooks-sync consumer: could not record failure for "${message.body.eventId}": ${errorMessage(recordErr)}`);
       }
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      // A terminal failure (#33 review) is acked once it's on the row: retrying the same request
+      // can only fail the same way. If it couldn't be recorded, retry so it isn't lost silently.
+      if (terminal && recorded) message.ack();
+      else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
@@ -208,7 +219,7 @@ async function processMondayToQb(eventId: string, deps: ConsumerDeps): Promise<v
     // QuickBooks rejects a Customer with none of these (DisplayName is derived from the others
     // when absent). Fail with a readable error instead of a bare HTTP 400.
     if (!QB_CUSTOMER_NAME_FIELDS.some((field) => qbFields[field] !== undefined)) {
-      throw new Error(
+      throw new TerminalError(
         `monday item "${event.mondayItemId}" has no name to create a QuickBooks Customer from — check config customerCreateFieldMap maps "name" (the item name) to DisplayName`
       );
     }

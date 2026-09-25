@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processSyncQueueBatch, retryDelaySeconds, type QueueMessageLike } from './processBatch';
+import { processSyncQueueBatch, retryDelaySeconds, TERMINAL_PREFIX, type QueueMessageLike } from './processBatch';
+import { TerminalError } from '../errors';
 import type { QbEventStore } from '../db/qbEvents';
 import type { MondayEventStore } from '../db/mondayEvents';
 import type { MapStore } from '../db/map';
@@ -646,6 +647,51 @@ describe('create-loop guard', () => {
     await processSyncQueueBatch([message], deps({ qbEventStore, mondayEventStore }));
 
     expect(message.ack).toHaveBeenCalled();
+  });
+});
+
+// #33 review: a failure QuickBooks will always repeat (duplicate name, validation) used to burn
+// three retries into the DLQ. It is now recorded and acked.
+describe('terminal failures', () => {
+  it('acks a terminal failure without retrying and records the readable reason', async () => {
+    const mondayEventStore = fakeMondayEventStore();
+    const message = fakeMessage({ direction: 'monday-to-qb', eventId: '42' });
+    const reason = 'quickbooks API: HTTP 400 creating customer — ValidationFault 6240 Duplicate Name Exists Error';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], {
+      qbEventStore: fakeQbEventStore(),
+      mondayEventStore,
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ createCustomer: vi.fn().mockRejectedValue(new TerminalError(reason)) }),
+      config,
+    });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(mondayEventStore.updateStatus).toHaveBeenCalledWith('42', 'failed', { error: `${TERMINAL_PREFIX}${reason}` });
+    vi.restoreAllMocks();
+  });
+
+  it('treats a qb-to-monday terminal failure (e.g. the record was deleted) the same way', async () => {
+    const qbEventStore = fakeQbEventStore();
+    const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processSyncQueueBatch([message], {
+      qbEventStore,
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      mondayClient: fakeMondayClient(),
+      quickBooksClient: fakeQuickBooksClient({ getEntity: vi.fn().mockRejectedValue(new TerminalError('Object Not Found')) }),
+      config,
+    });
+
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: `${TERMINAL_PREFIX}Object Not Found` });
+    vi.restoreAllMocks();
   });
 });
 
