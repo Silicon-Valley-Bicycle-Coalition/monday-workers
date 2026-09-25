@@ -97,9 +97,11 @@ interface GraphQLResponse<T> {
 // Monday's per-token complexity budget, per-minute and daily call limits, and concurrency cap
 // (issue #27). The consumer retries these after a delay instead of immediately; retryInSeconds
 // is Monday's own hint (extensions.retry_in_seconds, a Retry-After header, or the legacy
-// "reset in N seconds" message) when it gave one.
+// "reset in N seconds" message) when it gave one. `daily` marks DAILY_LIMIT_EXCEEDED, which
+// resets at midnight UTC (developer.monday.com/api-reference/docs/rate-limits) rather than
+// within seconds, and isn't documented to carry a hint.
 export class MondayRateLimitError extends Error {
-  constructor(message: string, readonly retryInSeconds?: number) {
+  constructor(message: string, readonly retryInSeconds?: number, readonly daily = false) {
     super(message);
     this.name = 'MondayRateLimitError';
   }
@@ -134,7 +136,8 @@ function rateLimitErrorFrom(
     ?? errors.map((e) => positiveSeconds(e.extensions?.retry_in_seconds)).find((s) => s !== undefined)
     ?? positiveSeconds(legacyHint);
   const detail = errors.length > 0 ? errors.map((e) => e.message).join('; ') : (json?.error_message ?? fallbackMessage);
-  return new MondayRateLimitError(`monday API: ${detail}`, retryInSeconds);
+  const daily = errors.some((e) => e.extensions?.code === 'DAILY_LIMIT_EXCEEDED');
+  return new MondayRateLimitError(`monday API: ${detail}`, retryInSeconds, daily);
 }
 
 interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }

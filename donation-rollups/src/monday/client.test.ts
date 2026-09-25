@@ -227,6 +227,14 @@ describe('Monday rate-limit errors', () => {
     }
   });
 
+  it('flags DAILY_LIMIT_EXCEEDED as the daily limit, which resets at midnight UTC rather than in seconds', async () => {
+    const daily = await read(clientResponding({ errors: [{ message: 'Daily limit exceeded', extensions: { code: 'DAILY_LIMIT_EXCEEDED' } }] })).catch((e) => e);
+    expect(daily).toBeInstanceOf(MondayRateLimitError);
+    expect(daily.daily).toBe(true);
+    const minute = await read(clientResponding({ errors: [{ message: 'x', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 5 } }] })).catch((e) => e);
+    expect(minute.daily).toBe(false);
+  });
+
   it('the legacy error_message form ("... reset in 23 seconds", status_code 429) parses its hint', async () => {
     const err = await read(clientResponding({ error_message: 'Complexity budget exhausted, query cost 30001 budget remaining 1000 out of 1000000 reset in 23 seconds',
       status_code: 429 })).catch((e) => e);

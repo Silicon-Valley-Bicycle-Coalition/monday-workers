@@ -66,7 +66,9 @@ export async function processRecomputeBatch(
 ): Promise<void> {
   // Once D1 has refused a query for the day, or Monday has said the token's budget is spent,
   // every later message in this batch would fail the same way after spending Monday calls of
-  // its own — defer them all to the same moment instead.
+  // its own — defer them all to the same moment instead. A deferred sibling's retry() still
+  // counts against its own max_retries, same as the D1-quota deferral; one that runs out lands
+  // in the DLQ, where processDeadLetters marks it failed and it can be re-driven.
   let batchDelaySeconds: number | null = null;
   for (const message of messages) {
     const { donationItemId, donationBoardId } = message.body;
@@ -97,8 +99,13 @@ export async function processRecomputeBatch(
         message.retry({ delaySeconds: batchDelaySeconds });
       } else if (err instanceof MondayRateLimitError) {
         // Issue #27: retrying straight back into an exhausted complexity budget just burns the
-        // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt.
-        batchDelaySeconds = rateLimitRetryDelaySeconds(err.retryInSeconds, message.attempts);
+        // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt. The
+        // daily call limit with no hint resets at midnight UTC — defer to it exactly as the D1
+        // quota does: capped at Queues' 12 h, so a reset up to 24 h away costs at most two of
+        // max_retries=3 (the capped retry fails fast on its first Monday call and defers again).
+        batchDelaySeconds = err.daily && err.retryInSeconds === undefined
+          ? secondsUntilMidnightUTC(deps.now ?? new Date())
+          : rateLimitRetryDelaySeconds(err.retryInSeconds, message.attempts);
         console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else {

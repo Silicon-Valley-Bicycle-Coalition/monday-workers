@@ -782,6 +782,36 @@ describe('Monday rate-limit handling (issue #27)', () => {
     expect(third.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
   });
 
+  // Monday's daily call limit resets at midnight UTC (developer.monday.com rate-limits doc) and
+  // DAILY_LIMIT_EXCEEDED isn't documented to carry a retry hint: backing off 60/120/240s would
+  // spend every retry within minutes of a reset that is hours away.
+  describe('daily limit (DAILY_LIMIT_EXCEEDED)', () => {
+    const daily = (retryInSeconds?: number) =>
+      new MondayRateLimitError('monday API: Daily limit exceeded', retryInSeconds, true);
+
+    it('with no hint, defers this and the rest of the batch to midnight UTC', async () => {
+      const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(daily()) });
+      const messages = [{ ...fakeMessage('dn1'), attempts: 3 }, fakeMessage('dn2')];
+      await processRecomputeBatch(messages, { ...base(mondayClient), now: new Date('2026-09-03T20:09:00Z') });
+
+      expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
+      for (const m of messages) expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 3 * 3600 + 51 * 60 });
+    });
+
+    it("caps at Queues' 12 h when midnight UTC is further away, like the D1-quota path", async () => {
+      const message = fakeMessage('dn1');
+      await processRecomputeBatch([message], { ...base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(daily()) })),
+        now: new Date('2026-09-09T01:58:00Z') });
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 43_200 });
+    });
+
+    it('with a hint, honors the hint as for any other rate limit', async () => {
+      const message = fakeMessage('dn1');
+      await processRecomputeBatch([message], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(daily(500)) })));
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 500 });
+    });
+  });
+
   it('defers the rest of the batch with the same delay without calling Monday again', async () => {
     const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(budget(90)) });
     const messages = [fakeMessage('dn1'), fakeMessage('dn2')];
