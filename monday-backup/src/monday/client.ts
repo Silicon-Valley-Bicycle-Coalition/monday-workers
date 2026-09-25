@@ -1,6 +1,10 @@
 import type { BoardSummary, ColumnDef, DocBlock, DocSummary, GroupDef, ItemRecord } from '../types';
 
-const MONDAY_API_VERSION = '2026-01';
+// Pinned explicitly: Monday serves a request for a deprecated version as the *maintenance*
+// version, so an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of
+// its breaking changes (users pagination, connection_board_ids, columns.capabilities) touch the
+// queries here. Re-check developer.monday.com/api-reference/docs/api-versioning when bumping.
+export const MONDAY_API_VERSION = '2026-07';
 const BOARDS_PAGE_SIZE = 50;
 const ITEMS_PAGE_SIZE = 100;
 const DOCS_PAGE_SIZE = 50;

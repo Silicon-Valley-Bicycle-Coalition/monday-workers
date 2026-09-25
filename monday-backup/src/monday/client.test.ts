@@ -207,4 +207,13 @@ describe('HttpMondayClient retry/backoff (issue #29)', () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe('token-123');
   });
+
+  // Issue #30: 2026-01 is outside Monday's supported window (current 2026-07, maintenance 2026-04,
+  // RC 2026-10); a deprecated version is silently served as the maintenance version. Pin current.
+  it('pins API-Version 2026-07', async () => {
+    const fetchMock = mockFetchSequence([{ data: { boards: [] } }]);
+    await new HttpMondayClient('https://api.monday.com/v2', 'token-123').listBoards();
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>)['API-Version']).toBe('2026-07');
+  });
 });
