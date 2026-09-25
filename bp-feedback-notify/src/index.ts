@@ -6,6 +6,7 @@ import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webho
 import { timingSafeEqual } from './timingSafeEqual';
 import { checkRequestRateLimit } from './rateLimit';
 import { writeSendStatus } from './sendStatus';
+import { redactEmails } from './redactEmails';
 import production from '../config/production.json';
 import sandbox from '../config/sandbox.json';
 
@@ -86,7 +87,8 @@ app.post('/webhook/bp-feedback', async (c) => {
   } catch (error) {
     // Staff only ever look at the board, so a failed send is logged (Workers observability) and,
     // when configured, written back onto the item — otherwise it is invisible to them.
-    console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId: payload.itemId, error: error instanceof Error ? error.message : String(error) }));
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(JSON.stringify({ event: 'bp-feedback-send-failed', environment, itemId: payload.itemId, error: redactEmails(message, [payload.organizerEmail]) }));
     c.executionCtx.waitUntil(writeSendStatus(config.sendStatus, c.env.MONDAY_API_TOKEN, payload.itemId, 'failed'));
     return c.json({ sent: false, itemId: payload.itemId }, 500);
   }

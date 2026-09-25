@@ -129,6 +129,19 @@ describe('POST /webhook/bp-feedback', () => {
     fetchSpy.mockRestore();
   });
 
+  it('redacts the organizer address from a send error before logging it', async () => {
+    const send = vi.fn().mockRejectedValue(new Error('destination address Organizer@example.org is not a verified address'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await app.request(post(VALID_BODY), undefined, fakeEnv({ EMAIL: { send } }), fakeCtx());
+
+    expect(res.status).toBe(500);
+    const line = errorSpy.mock.calls.map(([l]) => String(l)).find((l) => l.includes('bp-feedback-send-failed'))!;
+    expect(line.toLowerCase()).not.toContain('organizer@example.org');
+    expect(JSON.parse(line).error).toBe('destination address [redacted] is not a verified address');
+    errorSpy.mockRestore();
+  });
+
   it.each([
     ['sent', 200, vi.fn().mockResolvedValue({ messageId: 'test-id' })],
     ['failed', 500, vi.fn().mockRejectedValue(new Error('boom'))],
