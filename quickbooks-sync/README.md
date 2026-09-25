@@ -74,6 +74,31 @@ row, so a redrive of a row that half-finished resumes rather than duplicates.
 * **Webhooks** signal only that a record changed — the payload itself doesn't carry the changed
   data, so every webhook triggers a follow-up API read.
 
+## OAuth tokens
+
+The token pair lives in D1 (`qb_oauth_tokens`, one row). Only the queue consumer calls
+QuickBooks, and it refreshes the access token a minute before expiry. Intuit rotates the refresh
+token and expires the previous one, so refreshes have a single writer (#33): the refresher takes a
+D1 lease at the row's `version` and saves by compare-and-swap on it; other callers wait and
+re-read. On `invalid_grant` the consumer re-reads D1 and uses a newer pair if one landed;
+otherwise the message fails with "re-seed the token pair" and retries/dead-letters.
+
+To seed or re-seed (initial handshake, or after that error), get a fresh pair from Intuit's OAuth
+Playground and write it with an expiry in the past so the first call refreshes immediately:
+
+```sh
+npx wrangler d1 execute <db> --remote [--env sandbox] --command "
+  INSERT INTO qb_oauth_tokens (id, realm_id, access_token, refresh_token, access_token_expires_at, updated_at)
+  VALUES (1, '<realmId>', '<accessToken>', '<refreshToken>', '1970-01-01T00:00:00.000Z', datetime('now'))
+  ON CONFLICT (id) DO UPDATE SET realm_id = excluded.realm_id, access_token = excluded.access_token,
+    refresh_token = excluded.refresh_token, access_token_expires_at = excluded.access_token_expires_at,
+    updated_at = excluded.updated_at, version = version + 1,
+    refresh_lease_token = NULL, refresh_lease_until = NULL"
+```
+
+Bumping `version` makes any refresh in flight against the old pair lose its compare-and-swap
+instead of overwriting the new one.
+
 ## Secrets
 
 Set with `wrangler secret put <NAME>` (never commit them) — the full list with descriptions is in
