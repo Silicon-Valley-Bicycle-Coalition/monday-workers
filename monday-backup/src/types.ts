@@ -106,12 +106,22 @@ export interface DocSummary {
   name: string;
   workspaceId: string | null;
   url: string | null;
+  objectId?: string | null;
+  docKind?: string | null; // public | private | share
+  folderId?: string | null;
+  createdAt?: string | null;
 }
 
 export interface DocBlock {
   id: string;
   type: string;
-  content: string | null;
+  // Monday's JSON scalar, kept exactly as returned (normally a JSON-encoded string).
+  content: unknown;
+  parentBlockId?: string | null;
+  position?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  createdById?: string | null;
 }
 
 export interface BackupConfig {

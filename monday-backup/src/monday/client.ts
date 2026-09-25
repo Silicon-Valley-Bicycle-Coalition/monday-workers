@@ -21,6 +21,31 @@ const BOARDS_PAGE_SIZE = 50;
 const ITEMS_PAGE_SIZE = 100;
 const DOCS_PAGE_SIZE = 50;
 const UPDATES_PAGE_SIZE = 100; // the documented maximum for `updates`
+const BLOCKS_PAGE_SIZE = 100;
+
+interface RawBlock {
+  id: string;
+  type: string;
+  content: unknown;
+  parent_block_id?: string | null;
+  position?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  created_by?: { id: string } | null;
+}
+
+function toBlock(b: RawBlock): DocBlock {
+  return {
+    id: b.id,
+    type: b.type,
+    content: b.content,
+    parentBlockId: b.parent_block_id ?? null,
+    position: b.position ?? null,
+    createdAt: b.created_at ?? null,
+    updatedAt: b.updated_at ?? null,
+    createdById: b.created_by?.id ?? null,
+  };
+}
 
 const ASSET_FIELDS = 'id name file_extension file_size created_at url uploaded_by { id }';
 
@@ -203,7 +228,8 @@ export interface MondayClient {
   // Every update (comment) on the board and its items, with replies, a page at a time.
   boardUpdatePages(boardId: string): AsyncIterable<UpdateRecord[]>;
   listDocs(): Promise<DocSummary[]>;
-  getDocBlocks(docId: string): Promise<DocBlock[]>;
+  // A Doc's blocks a page at a time, in document order.
+  docBlockPages(docId: string): AsyncIterable<DocBlock[]>;
 }
 
 export interface HttpMondayClientOptions {
@@ -427,21 +453,45 @@ export class HttpMondayClient implements MondayClient {
     let page = 1;
     for (;;) {
       const data = await this.graphql<{
-        docs: { id: string; name: string; workspace_id: string | null; url: string | null }[] | null;
+        docs:
+          | {
+              id: string;
+              object_id?: string | null;
+              name: string;
+              workspace_id: string | null;
+              url: string | null;
+              doc_kind?: string | null;
+              doc_folder_id?: string | null;
+              created_at?: string | null;
+            }[]
+          | null;
       }>(
         `query ($limit: Int!, $page: Int!) {
           docs(limit: $limit, page: $page) {
             id
+            object_id
             name
             workspace_id
             url
+            doc_kind
+            doc_folder_id
+            created_at
           }
         }`,
         { limit: DOCS_PAGE_SIZE, page },
       );
       const docs = data.docs ?? [];
       for (const doc of docs) {
-        out.push({ id: doc.id, name: doc.name, workspaceId: doc.workspace_id, url: doc.url });
+        out.push({
+          id: doc.id,
+          objectId: doc.object_id ?? null,
+          name: doc.name,
+          workspaceId: doc.workspace_id,
+          url: doc.url,
+          docKind: doc.doc_kind ?? null,
+          folderId: doc.doc_folder_id ?? null,
+          createdAt: doc.created_at ?? null,
+        });
       }
       if (docs.length < DOCS_PAGE_SIZE) break;
       page++;
@@ -449,28 +499,39 @@ export class HttpMondayClient implements MondayClient {
     return out;
   }
 
-  async getDocBlocks(docId: string): Promise<DocBlock[]> {
-    // `Doc.blocks` hasn't been exercised against a live account (no integration token
-    // provisioned yet — see monday-backup/README.md's "APIs & auth"). Verify this query
-    // against Monday's current GraphQL schema (API Explorer) before the first real deploy.
-    const data = await this.graphql<{
-      docs: { blocks: { id: string; type: string; content: string | null }[] }[] | null;
-    }>(
-      `query ($docId: [ID!]) {
-        docs(ids: $docId) {
-          blocks {
-            id
-            type
-            content
+  // `blocks` defaults to 25 per page (issue #30: the old single query truncated every long Doc).
+  // The maximum page size isn't documented, so a short page isn't trusted to be the last: paging
+  // stops on an empty page, or if a page repeats one already seen (a `page` argument ignored).
+  // Not yet exercised against a live account — confirm in Monday's API Explorer before the first
+  // real deploy.
+  async *docBlockPages(docId: string): AsyncGenerator<DocBlock[]> {
+    const seen = new Set<string>();
+    for (let page = 1; ; page++) {
+      const data = await this.graphql<{ docs: { blocks: RawBlock[] | null }[] | null }>(
+        `query ($docId: [ID!], $limit: Int!, $page: Int!) {
+          docs(ids: $docId) {
+            blocks(limit: $limit, page: $page) {
+              id
+              type
+              content
+              parent_block_id
+              position
+              created_at
+              updated_at
+              created_by { id }
+            }
           }
-        }
-      }`,
-      { docId: [docId] },
-    );
-    const doc = data.docs?.[0];
-    if (doc === undefined) {
-      throw new Error(`monday API: doc ${docId} not found`);
+        }`,
+        { docId: [docId], limit: BLOCKS_PAGE_SIZE, page },
+      );
+      const doc = data.docs?.[0];
+      if (doc === undefined) {
+        throw new Error(`monday API: doc ${docId} not found`);
+      }
+      const blocks = doc.blocks ?? [];
+      if (blocks.length === 0 || seen.has(blocks[0]!.id)) return;
+      for (const block of blocks) seen.add(block.id);
+      yield blocks.map(toBlock);
     }
-    return doc.blocks.map((b) => ({ id: b.id, type: b.type, content: b.content }));
   }
 }

@@ -254,11 +254,76 @@ describe('HttpMondayClient', () => {
     expect(docs).toEqual([]);
   });
 
-  it('fetches doc blocks', async () => {
-    mockFetchSequence([{ data: { docs: [{ blocks: [{ id: 'b1', type: 'normal_text', content: 'hi' }] }] } }]);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
-    const blocks = await client.getDocBlocks('doc-1');
-    expect(blocks).toEqual([{ id: 'b1', type: 'normal_text', content: 'hi' }]);
+  it('lists docs with the metadata a restore needs', async () => {
+    mockFetchSequence([
+      {
+        data: {
+          docs: [
+            { id: 'd1', object_id: 'o1', name: 'Runbook', workspace_id: 'ws-1', url: 'https://x/docs/o1', doc_kind: 'private', doc_folder_id: 'f1', created_at: '2026-01-01T00:00:00Z' },
+          ],
+        },
+      },
+    ]);
+    const docs = await new HttpMondayClient('https://api.monday.com/v2', 'token-123').listDocs();
+    expect(docs).toEqual([
+      { id: 'd1', objectId: 'o1', name: 'Runbook', workspaceId: 'ws-1', url: 'https://x/docs/o1', docKind: 'private', folderId: 'f1', createdAt: '2026-01-01T00:00:00Z' },
+    ]);
+  });
+
+  // Issue #30: `blocks` defaults to 25 per page, so a single unpaginated query silently truncated
+  // every long Doc. The maximum page size isn't documented, so a short page is not trusted as the
+  // last one — paging stops only on an empty page (or a repeated one, if `page` were ignored).
+  it('pages doc blocks until an empty page, keeping hierarchy and position', async () => {
+    const block = (id: string, parent: string | null = null) => ({
+      id,
+      type: 'normal_text',
+      content: `{"deltaFormat":[{"insert":"${id}"}]}`,
+      parent_block_id: parent,
+      position: 1,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-02',
+      created_by: { id: '77' },
+    });
+    const fetchMock = mockFetchSequence([
+      { data: { docs: [{ blocks: [block('b1'), block('b2', 'b1')] }] } },
+      { data: { docs: [{ blocks: [block('b3')] }] } },
+      { data: { docs: [{ blocks: [] }] } },
+    ]);
+    const pages = [];
+    for await (const page of new HttpMondayClient('https://api.monday.com/v2', 'token-123').docBlockPages('doc-1')) pages.push(page);
+    expect(pages.flat().map((b) => b.id)).toEqual(['b1', 'b2', 'b3']);
+    expect(pages[0]![1]).toEqual({
+      id: 'b2',
+      type: 'normal_text',
+      content: '{"deltaFormat":[{"insert":"b2"}]}',
+      parentBlockId: 'b1',
+      position: 1,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-02',
+      createdById: '77',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const pageArgs = fetchMock.mock.calls.map((c) => JSON.parse((c[1] as RequestInit).body as string).variables.page);
+    expect(pageArgs).toEqual([1, 2, 3]);
+  });
+
+  it('stops paging doc blocks if the API returns the same page again', async () => {
+    const same = { data: { docs: [{ blocks: [{ id: 'b1', type: 'normal_text', content: null, parent_block_id: null, position: 1 }] }] } };
+    const fetchMock = mockFetchSequence([same, same]);
+    const pages = [];
+    for await (const page of new HttpMondayClient('https://api.monday.com/v2', 'token-123').docBlockPages('doc-1')) pages.push(page);
+    expect(pages.flat().map((b) => b.id)).toEqual(['b1']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('throws when the doc is not found', async () => {
+    mockFetchSequence([{ data: { docs: [] } }]);
+    const iterate = async () => {
+      for await (const _ of new HttpMondayClient('https://api.monday.com/v2', 'token-123').docBlockPages('doc-9')) {
+        // drain
+      }
+    };
+    await expect(iterate()).rejects.toThrow(/doc doc-9 not found/);
   });
 
   it('throws on GraphQL errors', async () => {

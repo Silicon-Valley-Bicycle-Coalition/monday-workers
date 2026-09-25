@@ -12,7 +12,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     async *boardItemPages() {},
     async *boardUpdatePages() {},
     listDocs: async () => [],
-    getDocBlocks: async () => [],
+    async *docBlockPages() {},
     ...overrides,
   };
 }
@@ -122,7 +122,9 @@ describe('runBackup', () => {
         yield [item(`${boardId}-a`)];
       },
       listDocs: async () => [doc('d1')],
-      getDocBlocks: async () => [{ id: 'b1', type: 'normal_text', content: '{}' }],
+      async *docBlockPages() {
+        yield [{ id: 'b1', type: 'normal_text', content: '{}' }];
+      },
     });
     const fake = fakeDrive();
     const runStore = fakeRunStore();

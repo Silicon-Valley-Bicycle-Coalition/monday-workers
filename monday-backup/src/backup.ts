@@ -90,13 +90,17 @@ async function backupBoard(
   return { itemCount, updateCount, subitemBoardIds: subitemBoardIds(schema) };
 }
 
-async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary): Promise<number> {
-  const blocks = await deps.monday.getDocBlocks(doc.id);
+async function backupDoc(deps: BackupDeps, folderId: string, doc: DocSummary, pastDeadline: () => boolean): Promise<number> {
+  let blockCount = 0;
   await streamFile(deps.drive, folderId, `doc-${doc.id}.jsonl`, async (writer) => {
     await writer.write(line({ type: 'doc', doc }));
-    await writer.write(blocks.map((block) => line({ type: 'block', block })).join(''));
+    for await (const page of deps.monday.docBlockPages(doc.id)) {
+      await writer.write(page.map((block) => line({ type: 'block', block })).join(''));
+      blockCount += page.length;
+      if (pastDeadline()) throw new Error(`stopped mid-doc — ${BUDGET_EXHAUSTED}`);
+    }
   });
-  return blocks.length;
+  return blockCount;
 }
 
 export async function runBackup(deps: BackupDeps): Promise<void> {
@@ -178,7 +182,7 @@ export async function runBackup(deps: BackupDeps): Promise<void> {
         continue;
       }
       try {
-        blockCountsByDoc[doc.id] = await backupDoc(deps, folderId, doc);
+        blockCountsByDoc[doc.id] = await backupDoc(deps, folderId, doc, pastDeadline);
         docCount++;
       } catch (err) {
         const message = errorMessage(err);
