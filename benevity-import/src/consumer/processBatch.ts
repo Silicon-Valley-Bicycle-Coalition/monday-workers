@@ -16,8 +16,22 @@ export interface BenevityQueueMessage {
 
 export interface QueueMessageLike<T> {
   body: T;
+  // Cloudflare's Message.attempts (1 on first delivery). Optional so tests can omit it.
+  attempts?: number;
   ack(): void;
-  retry(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+// Retry backoff (#34): an immediate retry let a Monday blip of a few seconds burn every attempt
+// and dead-letter the row. 60 s x 4^(attempt-1) gives 1, 4 and 16 minutes across wrangler.jsonc's
+// max_retries of 3, capped at Queues' 12-hour maximum delay. Same schedule as funraise-sync.
+const RETRY_BASE_SECONDS = 60;
+const RETRY_FACTOR = 4;
+const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
+
+export function retryDelaySeconds(attempts: number | undefined): number {
+  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
+  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export interface ProcessBatchDeps {
@@ -43,9 +57,15 @@ export async function processBenevityQueueBatch(
       console.error(`benevity consumer: failed to process "${transactionId}": ${errMsg}`);
       // Left at 'ingested' (its only possible pre-write status here) so the queue's own
       // retry+DLQ handles it — this is an unexpected/transient failure, not a business
-      // decision, so it must not read as 'needs-review' on the board.
-      await deps.rowStore.updateStatus(transactionId, 'ingested', { error: errMsg });
-      message.retry();
+      // decision, so it must not read as 'needs-review' on the board. Recording it is
+      // bookkeeping: a D1 error here must not take the retry decision down with it (the throw
+      // would fail the whole batch and retry every message in it immediately).
+      try {
+        await deps.rowStore.updateStatus(transactionId, 'ingested', { error: errMsg });
+      } catch (recordErr) {
+        console.error(`benevity consumer: could not record failure for "${transactionId}": ${errorMessage(recordErr)}`);
+      }
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }

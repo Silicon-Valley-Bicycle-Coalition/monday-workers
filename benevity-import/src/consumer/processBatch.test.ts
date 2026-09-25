@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processBenevityQueueBatch, type QueueMessageLike, type BenevityQueueMessage, type ProcessBatchDeps } from './processBatch';
+import { processBenevityQueueBatch, retryDelaySeconds, type QueueMessageLike, type BenevityQueueMessage, type ProcessBatchDeps } from './processBatch';
 import type { RowStore, DonationRowRecord } from '../db/rows';
 import type { DisbursementStore } from '../db/disbursements';
 import type { AliasStore } from '../db/aliases';
@@ -62,8 +62,8 @@ function fakeRowRecord(parsed: ParsedRow, overrides: Partial<DonationRowRecord> 
   };
 }
 
-function message(transactionId: string): QueueMessageLike<BenevityQueueMessage> {
-  return { body: { transactionId }, ack: vi.fn(), retry: vi.fn() };
+function message(transactionId: string, attempts?: number): QueueMessageLike<BenevityQueueMessage> {
+  return { body: { transactionId }, ...(attempts === undefined ? {} : { attempts }), ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
@@ -233,5 +233,53 @@ describe('processBenevityQueueBatch', () => {
     expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'ingested', expect.objectContaining({ error: expect.stringMatching(/HTTP 500/) }));
     expect(msg.retry).toHaveBeenCalled();
     expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it('backs a retry off by attempt instead of retrying immediately', async () => {
+    const parsed = fakeParsedRow();
+    const deps = fakeDeps({
+      mondayClient: {
+        findItemsByColumnValue: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')),
+        findItemsByName: vi.fn().mockResolvedValue([{ id: '99', name: 'Acme, Inc.' }]),
+        getLinkedItemIds: vi.fn().mockResolvedValue([]),
+        createItem: vi.fn(),
+        changeColumnValues: vi.fn(),
+        fetchAsset: vi.fn(),
+      } as never,
+    });
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
+
+    const msg = message('TXN001', 2);
+    await processBenevityQueueBatch([msg], deps);
+
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+  });
+
+  it('still retries (with backoff) when recording the failure in D1 also fails', async () => {
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 unavailable'));
+    (deps.rowStore.updateStatus as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 unavailable'));
+
+    const msg = message('TXN001', 1);
+    await expect(processBenevityQueueBatch([msg], deps)).resolves.toBeUndefined();
+
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(msg.ack).not.toHaveBeenCalled();
+  });
+});
+
+describe('retryDelaySeconds', () => {
+  it('grows 60 s x 4^(attempt-1), treating a missing or bad attempt count as the first', () => {
+    expect(retryDelaySeconds(undefined)).toBe(60);
+    expect(retryDelaySeconds(0)).toBe(60);
+    expect(retryDelaySeconds(Number.NaN)).toBe(60);
+    expect(retryDelaySeconds(1)).toBe(60);
+    expect(retryDelaySeconds(2)).toBe(240);
+    expect(retryDelaySeconds(3)).toBe(960);
+  });
+
+  it('caps at the Queues maximum delay of 43200 s (12 h)', () => {
+    expect(retryDelaySeconds(6)).toBe(43200);
+    expect(retryDelaySeconds(50)).toBe(43200);
   });
 });
