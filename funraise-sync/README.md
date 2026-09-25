@@ -88,8 +88,17 @@ across every webhook-driven Worker in this plan.
   2. Register the webhook URL in Funraise **with that secret embedded**:
      `https://<worker-host>/webhooks/funraise/transaction?secret=<value>`.
 
-  The route **fails closed**: any POST whose `secret` query param doesn't match — including
-  every POST while the secret is unset — is rejected with 401. The `x-hook-secret` handshake is
+  The route **fails closed**: any POST whose secret doesn't match — including every POST while
+  the secret is unset — is rejected with 401. The comparison is constant-time (SHA-256 both
+  sides, then an early-exit-free byte compare; #25). Callers that can set headers — the
+  redrive script, a hand replay — send the secret as the `X-Webhook-Secret` header instead,
+  which is checked first. **Funraise itself can't:** its webhook configuration is only a target
+  URL and a contact email, so its deliveries keep `?secret=`. The tradeoff: a URL secret lands
+  wherever the full request URL is recorded — Cloudflare's Workers Logs / observability
+  invocation records for this Worker, and anyone with dashboard access to them. Mitigations:
+  keep observability access limited to people who could read the secret anyway, never log
+  `c.req.url` in this Worker, and rotate the secret (new `wrangler secret put` + Edit the URL
+  in Funraise) if logs are ever shared. The `x-hook-secret` handshake is
   still honored, but only after the secret check passes, and only when the request body isn't a
   valid event payload (empty body or non-event shape); a valid event that happens to carry an
   `x-hook-secret` header is processed normally, so a per-delivery secret can never swallow real
