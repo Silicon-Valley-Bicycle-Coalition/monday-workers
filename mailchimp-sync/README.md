@@ -58,10 +58,11 @@ across the queue's 3 retries — before landing in its `-dlq` dead-letter queue.
 (429, `Retry-After`) or Monday (`retry_in_seconds`, `Retry-After`) says how long to wait, the
 retry waits at least that long; Monday's `DAILY_LIMIT_EXCEEDED` with no hint waits until
 midnight UTC. Every delay is capped at Queues' 12-hour maximum. A permanent Mailchimp rejection
-(malformed address, other 4xx) on the outbound side is acked instead, since it would fail
-identically every time — except a 401/403, which means the `MAILCHIMP_API_KEY` secret is bad or
-rotated: those always retry and dead-letter (logged as `MAILCHIMP CREDENTIALS REJECTED`), so the
-backlog can be replayed once the key is fixed.
+(malformed address, other 4xx) is acked instead, on both the outbound and inbound side, since it
+would fail identically every time — except a 401/403, which means the `MAILCHIMP_API_KEY` secret
+is bad or rotated: those always retry and dead-letter (logged as `MAILCHIMP CREDENTIALS
+REJECTED`), so the backlog can be replayed once the key is fixed — see
+[Dead letters](#dead-letters).
 
 ## Dead letters
 
@@ -124,6 +125,36 @@ To find dead rows directly:
 `select donor_item_id, error, received_at from pending_outbound_syncs where error like 'dead-lettered%'`
 (and `pending_inbound_syncs` for the inbound side — its key is the email address, so keep that
 output out of tickets and chat).
+
+**Deploying the DLQ consumers (ops, per environment — not yet done).** Queue retention is not a
+`wrangler.jsonc` setting; donation-rollups raised its DLQ to 14 days with `wrangler queues
+update` (its README, "Queue retention, corrected 2026-09-18"), and so does this Worker. In order,
+for each environment (the sandbox uses the `-sandbox` / `-sandbox-dlq` queue names and
+`--env sandbox`):
+
+1. Apply any pending D1 migrations (`npx wrangler d1 migrations apply svbc-mailchimp-sync[-sandbox] --remote [--env sandbox]`)
+   — the DLQ consumer needs none of its own.
+2. Make sure each DLQ exists — `npx wrangler queues info <dlq>`; create a missing one with
+   `npx wrangler queues create <dlq>`. A deploy that declares a consumer for a missing queue fails.
+3. Raise retention to the 14-day maximum on all four DLQs, so a paused or broken consumer never
+   silently loses dead letters, and check the main queues are at least the 4-day default
+   (donation-rollups' were created at 1 day):
+
+   ```sh
+   npx wrangler queues update mailchimp-sync-outbound-dlq --message-retention-period-secs 1209600
+   npx wrangler queues update mailchimp-sync-inbound-dlq --message-retention-period-secs 1209600
+   npx wrangler queues update mailchimp-sync-outbound-sandbox-dlq --message-retention-period-secs 1209600
+   npx wrangler queues update mailchimp-sync-inbound-sandbox-dlq --message-retention-period-secs 1209600
+   npx wrangler queues info mailchimp-sync-outbound   # and -inbound, -outbound-sandbox, -inbound-sandbox
+   ```
+
+4. Optionally set `SLACK_WEBHOOK_URL` (above) before deploying, so the first batch alerts.
+5. Deploy (`npm run deploy:sandbox` first, then `npm run deploy`). Whatever is already sitting
+   in a DLQ is delivered to the consumer within a minute of the deploy — and anything older than
+   the DLQ's retention is dropped at that moment (donation-rollups lost ~2,700 that way), so
+   check `wrangler queues info <dlq>` for a backlog first and expect one alert per batch of 10.
+   Stale letters for rows fixed since are left alone.
+6. Replay with `scripts/redrive-dead-lettered.mjs` once the cause of any backlog is fixed.
 
 ## Do Not Solicit
 
