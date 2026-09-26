@@ -126,35 +126,58 @@ To find dead rows directly:
 (and `pending_inbound_syncs` for the inbound side — its key is the email address, so keep that
 output out of tickets and chat).
 
-**Deploying the DLQ consumers (ops, per environment — not yet done).** Queue retention is not a
-`wrangler.jsonc` setting; donation-rollups raised its DLQ to 14 days with `wrangler queues
-update` (its README, "Queue retention, corrected 2026-09-18"), and so does this Worker. In order,
-for each environment (the sandbox uses the `-sandbox` / `-sandbox-dlq` queue names and
-`--env sandbox`):
+**Deploying the DLQ consumers (ops — not yet done).** Queue retention is not a `wrangler.jsonc`
+setting; donation-rollups raised its DLQ to 14 days with `wrangler queues update` (its README,
+"Queue retention, corrected 2026-09-18"), and so does this Worker. **Timing matters: the sandbox
+Worker is deployed by Workers Builds on every merge to `main`, so merging this change IS the
+sandbox deploy.** A deploy that declares a consumer for a missing queue fails, and the new
+consumer drains whatever a DLQ already holds within a minute of attaching.
 
-1. Apply any pending D1 migrations (`npx wrangler d1 migrations apply svbc-mailchimp-sync[-sandbox] --remote [--env sandbox]`)
-   — the DLQ consumer needs none of its own.
-2. Make sure each DLQ exists — `npx wrangler queues info <dlq>`; create a missing one with
-   `npx wrangler queues create <dlq>`. A deploy that declares a consumer for a missing queue fails.
-3. Raise retention to the 14-day maximum on all four DLQs, so a paused or broken consumer never
-   silently loses dead letters, and check the main queues are at least the 4-day default
-   (donation-rollups' were created at 1 day):
+*Before merging* — sandbox (`--env sandbox`, `-sandbox` / `-sandbox-dlq` queue names):
+
+1. Make sure both sandbox DLQs exist — `npx wrangler queues info mailchimp-sync-outbound-sandbox-dlq`
+   (and `-inbound-sandbox-dlq`); create a missing one with `npx wrangler queues create <dlq>`.
+2. Raise both to the 14-day maximum, so a paused or broken consumer never silently loses dead
+   letters, and check the sandbox main queues are at least the 4-day default (donation-rollups'
+   were created at 1 day):
 
    ```sh
-   npx wrangler queues update mailchimp-sync-outbound-dlq --message-retention-period-secs 1209600
-   npx wrangler queues update mailchimp-sync-inbound-dlq --message-retention-period-secs 1209600
    npx wrangler queues update mailchimp-sync-outbound-sandbox-dlq --message-retention-period-secs 1209600
    npx wrangler queues update mailchimp-sync-inbound-sandbox-dlq --message-retention-period-secs 1209600
-   npx wrangler queues info mailchimp-sync-outbound   # and -inbound, -outbound-sandbox, -inbound-sandbox
+   npx wrangler queues info mailchimp-sync-outbound-sandbox   # and mailchimp-sync-inbound-sandbox
    ```
 
-4. Optionally set `SLACK_WEBHOOK_URL` (above) before deploying, so the first batch alerts.
-5. Deploy (`npm run deploy:sandbox` first, then `npm run deploy`). Whatever is already sitting
-   in a DLQ is delivered to the consumer within a minute of the deploy — and anything older than
-   the DLQ's retention is dropped at that moment (donation-rollups lost ~2,700 that way), so
-   check `wrangler queues info <dlq>` for a backlog first and expect one alert per batch of 10.
-   Stale letters for rows fixed since are left alone.
-6. Replay with `scripts/redrive-dead-lettered.mjs` once the cause of any backlog is fixed.
+3. Check each sandbox DLQ for a backlog (`wrangler queues info`): it is delivered on merge, and
+   anything older than its retention is dropped at that moment (donation-rollups lost ~2,700
+   that way). Expect one log line / alert per batch of 10; letters for rows fixed since are
+   left alone.
+4. Optionally `wrangler secret put SLACK_WEBHOOK_URL --env sandbox`, so the first batch alerts.
+
+*Before the first production deploy* (`npm run deploy`): the same three checks for
+`mailchimp-sync-outbound-dlq` / `mailchimp-sync-inbound-dlq` and the production main queues,
+plus the optional production `SLACK_WEBHOOK_URL`:
+
+```sh
+npx wrangler queues update mailchimp-sync-outbound-dlq --message-retention-period-secs 1209600
+npx wrangler queues update mailchimp-sync-inbound-dlq --message-retention-period-secs 1209600
+npx wrangler queues info mailchimp-sync-outbound   # and mailchimp-sync-inbound
+```
+
+The DLQ consumer needs no D1 migration of its own.
+
+*One-time verification, in sandbox after the merge.* The staleness check compares the dead
+letter's `message.timestamp` with the row's `received_at` / `written_at`, assuming a DLQ delivery
+keeps the **original send time** rather than the time it was moved to the DLQ (funraise-sync and
+donation-rollups assume the same; nobody has confirmed it). Force one dead letter — e.g. set a
+bogus `MAILCHIMP_API_KEY --env sandbox`, touch a sandbox Donor, wait out the ~21-minute backoff,
+then restore the key — with a temporary `console.log` of `message.timestamp.toISOString()`
+in the DLQ consumer, and compare it with that row's `received_at` in
+`svbc-mailchimp-sync-sandbox`. Within a second or two of `received_at`: the assumption holds.
+~21 minutes later (the DLQ move): it doesn't — rows re-driven between the original send and the
+DLQ move would not be recognized as replaced, so tighten the check (and tell the two sibling
+Workers) before relying on it. Replay the forced letter afterwards with the script above.
+
+Once any backlog's cause is fixed, replay it with `scripts/redrive-dead-lettered.mjs`.
 
 ## Do Not Solicit
 
