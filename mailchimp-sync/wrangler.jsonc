@@ -39,6 +39,24 @@
         "max_retries": 3,
         "max_concurrency": 1,
         "dead_letter_queue": "mailchimp-sync-inbound-dlq"
+      },
+      // #37: dead messages stamp their pending row "dead-lettered after retries: …" and log one
+      // error per batch (src/consumer/deadLetters.ts) instead of expiring
+      // unseen. Two D1 ops per message; retried only when D1 fails, and no further dead-letter
+      // queue — after these retries the row simply keeps its last consumer-recorded error.
+      // Re-drive: scripts/redrive-dead-lettered.mjs. Retention is a CLI step, not config — see
+      // README "Dead letters".
+      {
+        "queue": "mailchimp-sync-outbound-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
+      },
+      {
+        "queue": "mailchimp-sync-inbound-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
       }
     ]
   },
@@ -95,6 +113,19 @@
             "max_retries": 3,
             "max_concurrency": 1,
             "dead_letter_queue": "mailchimp-sync-inbound-sandbox-dlq"
+          },
+          // Restated from the top level (named envs don't inherit queues) — see #37 above.
+          {
+            "queue": "mailchimp-sync-outbound-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
+          },
+          {
+            "queue": "mailchimp-sync-inbound-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
           }
         ]
       },

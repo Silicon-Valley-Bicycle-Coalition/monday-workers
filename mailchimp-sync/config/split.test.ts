@@ -19,6 +19,16 @@ const get = (obj: unknown, path: string): unknown =>
 const wrangler = parseJsonc(wranglerText) as Json;
 const sandboxEnv = get(wrangler, 'env.sandbox') as Json;
 
+interface QueueConsumer {
+  queue: string;
+  dead_letter_queue?: string;
+  max_retries?: number;
+}
+const consumersOf = (envBlock: Json): QueueConsumer[] => ((envBlock.queues as Json).consumers as QueueConsumer[]) ?? [];
+// The main-queue consumers are the ones that dead-letter somewhere; the DLQ consumers don't.
+const mainConsumers = (envBlock: Json) => consumersOf(envBlock).filter((c) => c.dead_letter_queue !== undefined);
+const dlqNames = (envBlock: Json) => mainConsumers(envBlock).map((c) => c.dead_letter_queue as string);
+
 describe('config split: the Mailchimp sink', () => {
   it('the sandbox audience id is never the production audience id', () => {
     expect(typeof sandbox.mailchimp.audienceId).toBe('string');
@@ -81,9 +91,33 @@ describe('wrangler.jsonc env.sandbox', () => {
       expect(producer.queue.endsWith('-sandbox')).toBe(true);
       expect(prodProducers).toContain(queueBaseName(producer.queue));
     }
-    for (const consumer of sbQueues.consumers as { queue: string; dead_letter_queue: string }[]) {
+    for (const consumer of mainConsumers(sandboxEnv)) {
       expect(consumer.queue.endsWith('-sandbox')).toBe(true);
       expect(consumer.dead_letter_queue).toBe(`${consumer.queue}-dlq`);
+    }
+  });
+
+  it('never shares a dead-letter queue name with production (#37)', () => {
+    const prod = dlqNames(wrangler);
+    const sb = dlqNames(sandboxEnv);
+    expect(prod).toEqual(['mailchimp-sync-outbound-dlq', 'mailchimp-sync-inbound-dlq']);
+    expect(sb).toEqual(['mailchimp-sync-outbound-sandbox-dlq', 'mailchimp-sync-inbound-sandbox-dlq']);
+    for (const name of sb) expect(prod).not.toContain(name);
+  });
+
+  it('gives every dead-letter queue a consumer in the same environment, with bounded retries and no further DLQ (#37)', () => {
+    for (const envBlock of [wrangler, sandboxEnv]) {
+      const consumers = consumersOf(envBlock);
+      for (const dlq of dlqNames(envBlock)) {
+        const consumer = consumers.find((c) => c.queue === dlq);
+        expect(consumer, `consumer for ${dlq}`).toBeDefined();
+        expect(consumer!.dead_letter_queue).toBeUndefined();
+        expect(consumer!.max_retries).toBeGreaterThan(0);
+        expect(consumer!.max_retries).toBeLessThanOrEqual(3);
+      }
+      // Nothing consumed from the other environment's queues.
+      const other = envBlock === wrangler ? sandboxEnv : wrangler;
+      for (const c of consumers) expect(consumersOf(other).map((o) => o.queue)).not.toContain(c.queue);
     }
   });
 
