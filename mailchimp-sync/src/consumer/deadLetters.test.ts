@@ -154,6 +154,44 @@ describe('processOutboundDeadLetters', () => {
   });
 });
 
+describe('dead-letter alert', () => {
+  it('sends ONE alert per batch with the same text as the log line', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = vi.fn().mockResolvedValue(undefined);
+    await processOutboundDeadLetters([outbound('111'), outbound('222')], { store: store(row()), alert });
+    expect(alert).toHaveBeenCalledTimes(1);
+    const text = String(alert.mock.calls[0]![0]);
+    expect(text).toContain('111');
+    expect(text).toContain('222');
+    expect(errorLines(spy)).toContain(text);
+  });
+
+  it('leads with MAILCHIMP CREDENTIALS REJECTED when the dead-lettered error is an auth error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = vi.fn().mockResolvedValue(undefined);
+    const s = store(row({ error: 'mailchimp getMemberInterests: HTTP 403 (credentials rejected — check the MAILCHIMP_API_KEY secret)' }));
+    await processInboundDeadLetters([inbound()], { store: s, alert });
+    expect(String(alert.mock.calls[0]![0])).toMatch(/^mailchimp-sync: MAILCHIMP CREDENTIALS REJECTED/);
+  });
+
+  it('sends nothing for an all-stale batch', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const alert = vi.fn();
+    await processOutboundDeadLetters([outbound()], { store: store(row({ status: 'skipped' })), alert });
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('a failing alert never undoes the acks or throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = outbound();
+    await expect(
+      processOutboundDeadLetters([m], { store: store(row()), alert: vi.fn().mockRejectedValue(new Error('slack down')) }),
+    ).resolves.toBeDefined();
+    expect(m.ack).toHaveBeenCalled();
+    expect(m.retry).not.toHaveBeenCalled();
+  });
+});
+
 describe('processInboundDeadLetters', () => {
   it('marks the row keyed by email, and names the Mailchimp member id — never the address — in logs', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});

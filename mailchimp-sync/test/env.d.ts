@@ -7,6 +7,7 @@ declare namespace Cloudflare {
     MONDAY_WEBHOOK_SECRET: string;
     MAILCHIMP_API_KEY: string;
     MAILCHIMP_WEBHOOK_SECRET: string;
+    SLACK_WEBHOOK_URL?: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
     ENVIRONMENT?: string;
   }

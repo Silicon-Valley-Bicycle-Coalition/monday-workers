@@ -9,7 +9,8 @@ import type { QueueMessageLike } from './outbound';
 // unseen after the queue's retention, leaving a pending row whose 'failed' status looked the
 // same as a failure still being retried. A dead message now stamps its row's error with
 // DEAD_LETTER_PREFIX (keeping the last error the consumer recorded), and each batch logs ONE
-// console.error naming every affected Monday item / Mailchimp member. Nothing is re-driven from
+// console.error naming every affected Monday item / Mailchimp member, sent as ONE alert too when
+// SLACK_WEBHOOK_URL is set. Nothing is re-driven from
 // here — scripts/redrive-dead-lettered.mjs is the tool once the cause is fixed.
 //
 // A dead message is only evidence about the row as of the moment it was sent (donation-rollups'
@@ -40,6 +41,9 @@ export interface DeadLetterStore {
 
 export interface DeadLetterDeps {
   store: DeadLetterStore;
+  // One alert per batch that dead-lettered anything (src/alert.ts; a no-op when
+  // SLACK_WEBHOOK_URL is unset). Runs after every ack, and a failure here is only logged.
+  alert?: (text: string) => Promise<void>;
 }
 
 export type Direction = 'outbound' | 'inbound';
@@ -114,7 +118,17 @@ async function processDeadLetters<T>(
       message.retry({ delaySeconds: D1_RETRY_DELAY_SECONDS });
     }
   }
-  if (summary.ids.length > 0) console.error(deadLetterReport(summary));
+  if (summary.ids.length > 0) {
+    const report = deadLetterReport(summary);
+    console.error(report);
+    if (deps.alert) {
+      try {
+        await deps.alert(report);
+      } catch (err) {
+        console.error(`mailchimp-sync ${direction} dlq: alert failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
   return summary;
 }
 

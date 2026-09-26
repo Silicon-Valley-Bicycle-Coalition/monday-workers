@@ -16,6 +16,7 @@ import { processInboundBatch } from './consumer/inbound';
 import { processInboundDeadLetters, processOutboundDeadLetters } from './consumer/deadLetters';
 import { reconcileCampaigns } from './campaigns/reconcile';
 import { checkRequestRateLimit } from './rateLimit';
+import { sendAlert } from './alert';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -62,13 +63,15 @@ export default {
     const isDeadLetterQueue = batch.queue.endsWith(DLQ_SUFFIX);
     const queueName = queueBaseName(isDeadLetterQueue ? batch.queue.slice(0, -DLQ_SUFFIX.length) : batch.queue);
 
+    const alert = (text: string) => sendAlert(env.SLACK_WEBHOOK_URL, text);
+
     if (isDeadLetterQueue && queueName === 'mailchimp-sync-outbound') {
-      await processOutboundDeadLetters(batch.messages as readonly Message<OutboundSyncMessage>[], { store: new D1PendingOutboundStore(env.DB) });
+      await processOutboundDeadLetters(batch.messages as readonly Message<OutboundSyncMessage>[], { store: new D1PendingOutboundStore(env.DB), alert });
       return;
     }
 
     if (isDeadLetterQueue && queueName === 'mailchimp-sync-inbound') {
-      await processInboundDeadLetters(batch.messages as readonly Message<InboundSyncMessage>[], { store: new D1PendingInboundStore(env.DB) });
+      await processInboundDeadLetters(batch.messages as readonly Message<InboundSyncMessage>[], { store: new D1PendingInboundStore(env.DB), alert });
       return;
     }
 

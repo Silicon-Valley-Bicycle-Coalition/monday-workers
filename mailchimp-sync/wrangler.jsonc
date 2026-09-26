@@ -14,6 +14,8 @@
   //   MAILCHIMP_WEBHOOK_SECRET — shared secret for the Mailchimp audience webhook; same
   //                              fail-closed behavior. Register as
   //                              https://<worker>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>
+  //   SLACK_WEBHOOK_URL        — OPTIONAL Slack incoming-webhook URL: one alert per dead-letter
+  //                              batch (#37, src/alert.ts). Unset = log only (Workers Logs).
   "d1_databases": [
     {
       "binding": "DB",
@@ -41,7 +43,8 @@
         "dead_letter_queue": "mailchimp-sync-inbound-dlq"
       },
       // #37: dead messages stamp their pending row "dead-lettered after retries: …" and log one
-      // error per batch (src/consumer/deadLetters.ts) instead of expiring
+      // error — and one Slack alert when SLACK_WEBHOOK_URL is set — per batch
+      // (src/consumer/deadLetters.ts) instead of expiring
       // unseen. Two D1 ops per message; retried only when D1 fails, and no further dead-letter
       // queue — after these retries the row simply keeps its last consumer-recorded error.
       // Re-drive: scripts/redrive-dead-lettered.mjs. Retention is a CLI step, not config — see
@@ -84,7 +87,8 @@
   // the two configs ever share an audience id. Everything here is non-inheritable in Wrangler and
   // deliberately restated. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for MONDAY_API_TOKEN,
-  // MAILCHIMP_API_KEY (may be the same account key), MONDAY_WEBHOOK_SECRET, MAILCHIMP_WEBHOOK_SECRET.
+  // MAILCHIMP_API_KEY (may be the same account key), MONDAY_WEBHOOK_SECRET, MAILCHIMP_WEBHOOK_SECRET,
+  // and the optional SLACK_WEBHOOK_URL (point it at a sandbox channel, never production's).
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },

@@ -153,6 +153,26 @@ describe('queue dispatch', () => {
     }
   });
 
+  it('sends the dead-letter alert to SLACK_WEBHOOK_URL when it is set', async () => {
+    const env = fakeEnv({ SLACK_WEBHOOK_URL: 'https://hooks.slack.test/dlq' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = vi.fn().mockResolvedValue(new Response('ok'));
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await testEnv.DB.prepare(
+        `INSERT INTO pending_outbound_syncs (donor_item_id, status, error, received_at) VALUES ('dlq-2', 'failed', 'boom', '2026-09-20T10:00:00.000Z')`,
+      ).run();
+      const message = { ...fakeMessage<OutboundSyncMessage>({ donorItemId: 'dlq-2' }), timestamp: new Date('2026-09-20T10:00:01.000Z') };
+      await worker.queue({ queue: 'mailchimp-sync-outbound-dlq', messages: [message] } as unknown as MessageBatch<unknown>, env);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy.mock.calls[0]![0]).toBe('https://hooks.slack.test/dlq');
+      expect(JSON.parse(fetchSpy.mock.calls[0]![1].body).text).toContain('dlq-2');
+    } finally {
+      vi.unstubAllGlobals();
+      errorSpy.mockRestore();
+    }
+  });
+
   it('routes the inbound DLQ to the dead-letter consumer, which marks the pending row and acks', async () => {
     const env = fakeEnv();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

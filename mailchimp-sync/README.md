@@ -63,6 +63,44 @@ identically every time — except a 401/403, which means the `MAILCHIMP_API_KEY`
 rotated: those always retry and dead-letter (logged as `MAILCHIMP CREDENTIALS REJECTED`), so the
 backlog can be replayed once the key is fixed.
 
+## Dead letters
+
+Each main queue dead-letters into its own `-dlq` (four in all: `mailchimp-sync-outbound-dlq`,
+`mailchimp-sync-inbound-dlq`, and the `-sandbox-dlq` twins), and this Worker consumes all four
+(#37, `src/consumer/deadLetters.ts`). A dead message calls neither Monday nor Mailchimp — it:
+
+* stamps its pending row's `error` with `dead-lettered after retries: ` in front of the last
+  error the consumer recorded (never doubled, so a replay that dead-letters again stays
+  readable), leaving `status` at `failed`;
+* leaves the row alone if it has been `written` at or after the message was sent, is `skipped`
+  (only a completed delivery sets that), or was replaced by a newer webhook delivery since
+  (which has its own queue message) — attaching a DLQ consumer to an old backlog must never
+  downgrade rows fixed in the meantime (donation-rollups' first-deploy incident);
+* always acks. Only a D1 failure retries the dead message (60 s, at most `max_retries: 2`, no
+  further DLQ).
+
+Each batch that marked anything logs **one** `console.error` naming the Monday Donor item ids
+(outbound) or Mailchimp member ids (inbound — the subscriber hash, MD5 of the lowercased
+address, the same id Mailchimp's API and UI use; no email address is logged). When the recorded
+error is a rejected API key, the line leads with `MAILCHIMP CREDENTIALS REJECTED`: fix the
+`MAILCHIMP_API_KEY` secret before replaying, or the replay dead-letters again.
+
+**Alert (optional).** Set `SLACK_WEBHOOK_URL` (a Slack incoming-webhook URL — the same secret
+name and payload `monday-backup` uses) to also post that line to Slack, once per batch:
+
+```sh
+npx wrangler secret put SLACK_WEBHOOK_URL                 # production channel
+npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox   # a sandbox channel, e.g. #crm-sandbox
+```
+
+Unset, the Worker logs only (Workers Logs). A failing Slack post is logged and never affects
+the acks.
+
+To find dead rows directly:
+`select donor_item_id, error, received_at from pending_outbound_syncs where error like 'dead-lettered%'`
+(and `pending_inbound_syncs` for the inbound side — its key is the email address, so keep that
+output out of tickets and chat).
+
 ## Do Not Solicit
 
 Two steps, so a mis-clicked checkbox can't silently lose a subscriber:
@@ -185,6 +223,8 @@ dashboard refuses two connections on one root directory, fall back to the
   `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them). Neither webhook route works
   without its secret: both fail closed, 401ing every delivery (including the Monday challenge
   handshake) until the secret is set, rather than accepting unauthenticated requests.
+  `SLACK_WEBHOOK_URL` is optional — dead-letter alerts, see [Dead letters](#dead-letters).
+  Every secret is set again with `--env sandbox` for the sandbox deployment.
 - `wrangler d1 create svbc-mailchimp-sync` — provision D1, then fill the real `database_id` into
   `wrangler.jsonc`
 
