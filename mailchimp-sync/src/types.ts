@@ -77,6 +77,15 @@ export interface InboundSyncMessage {
 // item matches the email) — distinct from 'written' so misses stay countable.
 export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed';
 
+// One pending_outbound_syncs / pending_inbound_syncs row as the dead-letter consumer reads it
+// (src/consumer/deadLetters.ts) — the key column is left out because the caller already has it.
+export interface PendingRow {
+  status: PendingStatus;
+  error: string | null;
+  receivedAt: string;
+  writtenAt: string | null;
+}
+
 // A Donor item's column values, already resolved to plain strings — '' means the
 // column was blank, never undefined/missing (see monday/client.ts's getDonorById).
 export interface DonorRecord {

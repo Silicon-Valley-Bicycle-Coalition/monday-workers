@@ -1,4 +1,4 @@
-import type { PendingStatus } from '../types';
+import type { PendingRow, PendingStatus } from '../types';
 
 export interface PendingInboundStore {
   upsertPending(email: string, receivedAt: string): Promise<void>;
@@ -18,6 +18,15 @@ export class D1PendingInboundStore implements PendingInboundStore {
       )
       .bind(email, receivedAt)
       .run();
+  }
+
+  // Read by the dead-letter consumer only (src/consumer/deadLetters.ts).
+  async get(email: string): Promise<PendingRow | null> {
+    const row = await this.db
+      .prepare(`SELECT status, error, received_at, written_at FROM pending_inbound_syncs WHERE email = ?1`)
+      .bind(email)
+      .first<{ status: PendingStatus; error: string | null; received_at: string; written_at: string | null }>();
+    return row === null ? null : { status: row.status, error: row.error, receivedAt: row.received_at, writtenAt: row.written_at };
   }
 
   async updateStatus(email: string, status: PendingStatus, error?: string, writtenAt?: string): Promise<void> {
