@@ -96,6 +96,30 @@ npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox   # a sandbox channel, e
 Unset, the Worker logs only (Workers Logs). A failing Slack post is logged and never affects
 the acks.
 
+**Replay.** Once the cause is fixed, `scripts/redrive-dead-lettered.mjs` re-enqueues the marked
+rows through the Worker's normal webhook routes — each becomes a minimal Monday
+(`/webhooks/monday/donors`, the Donor item id) or Mailchimp (`/webhooks/mailchimp/audience`, the
+address) delivery, the route resets the row to `received` and enqueues it, and the consumer
+re-reads current state and writes as it would for a real delivery. It is a **dry run unless
+`--apply`** is passed, and reads D1 with `wrangler d1 execute --remote`:
+
+```sh
+# plan: every dead-lettered row, both directions (production D1)
+node scripts/redrive-dead-lettered.mjs
+# narrow: sandbox, outbound only, a date window, or specific ids
+node scripts/redrive-dead-lettered.mjs --env sandbox --direction outbound --since 2026-09-20 --until 2026-09-25
+node scripts/redrive-dead-lettered.mjs --direction inbound --item <mailchimp-member-id>,<mailchimp-member-id>
+# send (secrets from `wrangler secret put` for the same env; only the directions being sent are needed)
+MONDAY_WEBHOOK_SECRET=... MAILCHIMP_WEBHOOK_SECRET=... \
+  node scripts/redrive-dead-lettered.mjs [--env sandbox] --apply --worker-url https://<worker-host>
+```
+
+`--item` takes Monday Donor item ids for outbound and Mailchimp member ids (the ids the DLQ log
+line prints) for inbound. Output never prints an email address or the request URL — both routes
+only accept the secret as `?secret=`, so it rides in the URL exactly as on a real delivery.
+`--pause-ms` (default 2000) spaces deliveries for the one-at-a-time consumers. Re-run the dry
+run ~30 minutes later (the retry backoff spans ~21) to confirm nothing dead-lettered again.
+
 To find dead rows directly:
 `select donor_item_id, error, received_at from pending_outbound_syncs where error like 'dead-lettered%'`
 (and `pending_inbound_syncs` for the inbound side — its key is the email address, so keep that
