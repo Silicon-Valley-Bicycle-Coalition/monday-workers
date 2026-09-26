@@ -88,8 +88,22 @@ async function processDeadLetters<T>(
   const summary: DeadLetterSummary = { direction, ids: [], credentialsRejected: false };
   const what = direction === 'outbound' ? 'Monday item' : 'Mailchimp member';
   for (const message of messages) {
-    const key = keyOf(message.body);
-    const logId = logIdOf(message.body);
+    // A body missing its key can't be marked; log and ack it on its own. Throwing here would
+    // fail the whole batch, and after the DLQ consumer's retries (no further DLQ) the good
+    // letters in it would be dropped unmarked. The body itself is never logged (it may hold
+    // an email address).
+    let key: string;
+    let logId: string;
+    try {
+      const k = keyOf(message.body);
+      if (typeof k !== 'string' || k.trim() === '') throw new Error('missing key');
+      key = k;
+      logId = logIdOf(message.body);
+    } catch {
+      console.error(`mailchimp-sync ${direction} dlq: malformed dead letter (no ${direction === 'outbound' ? 'donorItemId' : 'email'}); acking without marking anything`);
+      message.ack();
+      continue;
+    }
     try {
       const row = await deps.store.get(key);
       const sentAt = message.timestamp?.toISOString();

@@ -192,6 +192,32 @@ describe('dead-letter alert', () => {
   });
 });
 
+describe('malformed dead letters', () => {
+  it('logs and acks a letter with no key on its own, and still marks the good letters in the batch', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = store(row());
+    const bad = message({} as { email: string });
+    const good = inbound('donor@example.com');
+    await processInboundDeadLetters([bad, good], { store: s });
+    expect(bad.ack).toHaveBeenCalled();
+    expect(bad.retry).not.toHaveBeenCalled();
+    expect(good.ack).toHaveBeenCalled();
+    expect(s.get).toHaveBeenCalledTimes(1);
+    expect(s.updateStatus).toHaveBeenCalledWith('donor@example.com', 'failed', `${DEAD_LETTER_PREFIX}mailchimp updateMember: HTTP 500`);
+  });
+
+  it('does the same for an outbound letter with no donorItemId', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = store(row());
+    const bad = message(null as unknown as { donorItemId: string });
+    const good = outbound('111');
+    await processOutboundDeadLetters([bad, good], { store: s });
+    expect(bad.ack).toHaveBeenCalled();
+    expect(good.ack).toHaveBeenCalled();
+    expect(s.updateStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('processInboundDeadLetters', () => {
   it('marks the row keyed by email, and names the Mailchimp member id — never the address — in logs', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
