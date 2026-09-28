@@ -568,6 +568,23 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   [undocumented/unofficial](https://gist.github.com/Durss/c5c09ed46bee5283757b0c91050d2b8b). Treat
   as a discovery problem before any build, same as Funraise's mechanism was until this survey.
 
+## Development
+
+```sh
+npm install
+npm test            # vitest
+npm run typecheck   # wrangler types, then tsc --noEmit — the only supported typecheck
+```
+
+Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types (`DB`,
+`WRITE_QUEUE`, `REQUEST_RATE_LIMITER`, …) come from `worker-configuration.d.ts`, which
+`wrangler types` generates from `wrangler.jsonc` and which is deliberately not committed (root
+`.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
+`tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
+and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
+say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+`npm run typecheck`.
+
 ## Sources
 
 * `docs/01-funraise-pipeline-current-state.md` (private planning repo)

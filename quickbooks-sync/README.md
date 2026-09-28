@@ -141,6 +141,23 @@ account and app credentials (staff prerequisite, above) should budget for that q
 it's a one-time step, not a lightweight skip, but also not the multi-week review this question
 was worried it might be.
 
+## Development
+
+```sh
+npm install
+npm test            # vitest
+npm run typecheck   # wrangler types, then tsc --noEmit — the only supported typecheck
+```
+
+Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types (`DB`,
+`SYNC_QUEUE`, `REQUEST_RATE_LIMITER`, …) come from `worker-configuration.d.ts`, which
+`wrangler types` generates from `wrangler.jsonc` and which is deliberately not committed (root
+`.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
+`tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
+and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
+say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+`npm run typecheck`.
+
 ## Sources
 
 * [App assessment and compliance FAQ (Intuit Developer)](https://help.developer.intuit.com/s/article/New-app-assessment-process-FAQ)

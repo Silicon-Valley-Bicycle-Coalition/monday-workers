@@ -5,7 +5,7 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 
 // Guards the "inbound only, no outbound data" rule at the repo level — same intent as
-// donor-portal/config/split.test.ts, scaled to this Worker's smaller config.
+// member-portal/config/split.test.ts, scaled to this Worker's smaller config.
 
 const SINK = 'sandbox@bikesiliconvalley.org';
 
@@ -27,6 +27,16 @@ describe('config split: sinks', () => {
 
   it('production and sandbox never point at the same form', () => {
     expect(sandbox.feedbackFormUrl).not.toBe(production.feedbackFormUrl);
+  });
+
+  it('status write-back never targets the same board from both environments', () => {
+    const boardOf = (c: { sendStatus: unknown }) => (c.sendStatus as { boardId?: string } | null)?.boardId;
+    // Latent until both are configured (both ship null).
+    if (boardOf(production) !== undefined && boardOf(sandbox) !== undefined) {
+      expect(boardOf(sandbox)).not.toBe(boardOf(production));
+    }
+    expect(production).toHaveProperty('sendStatus');
+    expect(sandbox).toHaveProperty('sendStatus');
   });
 });
 

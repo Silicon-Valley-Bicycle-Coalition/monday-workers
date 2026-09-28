@@ -11,7 +11,9 @@ See `monday-workers/README.md` for why this deliberately isn't a Cloudflare Work
 
 ## Three modes
 
-- **`zip`** — exact zip-code match. No geometry involved: the geocoding backfill in
+- **`zip`** — exact zip-code match, on the 5-digit ZIP (a ZIP+4 like `95113-1234` or
+  `95113 1234`, on the board or on the command line, matches `95113`; a 3–4-digit value whose
+  leading zeros a numbers column dropped, like `2134`, matches `02134`). No geometry involved: the geocoding backfill in
   `salesforce-import` already writes Zip directly onto every Donors item.
 - **`radius`** — an N-mile radius around a single point (e.g. a transit station, a project's
   center point).
@@ -30,11 +32,18 @@ MONDAY_API_TOKEN=... npm run cli -- --board <boardId> --mode corridor \
   --geojson route.geojson --buffer-miles 1
 ```
 
-Common flags: `--out matches.csv` (default `geo-filter-matches.csv`), and
-`--lat-column`/`--lng-column`/`--zip-column`/`--name-column` if the target board's columns
-aren't titled `Lat`/`Lng`/`Zip`/`Name` (`salesforce-import`'s defaults).
+`--lat`/`--lng` must be valid coordinates (-90..90 / -180..180) and the mile distances
+non-negative numbers; anything else is rejected with an error rather than silently matching
+nothing.
 
-Writes a CSV of matched contacts (`id,name,lat,lng,zip`) and reports how many contacts were
+Common flags: `--out matches.csv` (default `geo-filter-matches.csv`), and
+`--lat-column`/`--lng-column`/`--zip-column` if the target board's columns aren't titled
+`Lat`/`Lng`/`Zip` (`salesforce-import`'s defaults). The CSV's `name` is each item's own name
+unless `--name-column <title>` points at a different column (e.g. a full-name text column); a
+blank cell there falls back to the item name.
+
+Writes a CSV of matched contacts (`id,name,lat,lng,zip`) — any text cell starting with `=`, `+`,
+`-`, `@`, tab, or CR gets a leading `'` so a spreadsheet won't run it as a formula — and reports how many contacts were
 skipped for missing coordinates (`radius`/`corridor` only — `zip` mode never needs coordinates).
 
 ## Getting a corridor's geometry
@@ -55,12 +64,12 @@ geometry is used) — whatever shape either source hands back.
 
 ```sh
 npm install
-npm test        # vitest — the geometry logic (src/geometry.ts) is fully unit-tested,
-                 # no Monday API or network needed
+npm test        # vitest — the geometry logic (src/geometry.ts) and flag parsing
+                 # (src/args.ts) are unit-tested, no Monday API or network needed
 npm run typecheck
 ```
 
-`src/monday.ts` (the Monday-fetching half) isn't unit-tested — it's a thin, direct mirror of the
-same `graphql()`/pagination pattern already proven elsewhere in this monorepo (e.g.
-`salesforce-import/scripts/create-letter-settings-board.mjs`), and needs a real board + token to
-exercise meaningfully.
+`src/monday.ts` (the Monday-fetching half) only has stubbed-`fetch` tests for its column
+resolution — it's a thin, direct mirror of the same `graphql()`/pagination pattern already proven
+elsewhere in this monorepo (e.g. `salesforce-import/scripts/create-letter-settings-board.mjs`),
+and needs a real board + token to exercise meaningfully.

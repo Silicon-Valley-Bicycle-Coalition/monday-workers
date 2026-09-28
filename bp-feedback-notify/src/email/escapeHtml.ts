@@ -1,4 +1,4 @@
-// Copied from donor-portal/src/views (that module pulls in unrelated view-rendering code we
+// Copied from member-portal/src/views.ts (that module pulls in unrelated view-rendering code we
 // don't need here) — trivial enough to duplicate rather than share across Workers.
 export function escapeHtml(value: string): string {
   return value

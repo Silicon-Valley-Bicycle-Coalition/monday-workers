@@ -9,7 +9,8 @@ describe('sendFailureAlert', () => {
       expect(url).toBe('https://hooks.slack.com/services/test');
       const body = JSON.parse(init?.body as string);
       expect(body.text).toContain('Santa Clara');
-      expect(body.text).toContain('3 days in a row');
+      expect(body.text).toContain('3 consecutive fetch attempts');
+      expect(body.text).not.toContain('days');
       expect(body.text).toContain('boom');
       return new Response('ok', { status: 200 });
     });

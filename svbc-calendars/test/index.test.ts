@@ -49,6 +49,7 @@ beforeEach(async () => {
   const cache = caches.default;
   const version = env.CACHE_VERSION || "0";
   for (const key of [
+    `http://worker.test/events?page_size=1&organizer=all&v=${version}`,
     `http://worker.test/events?page_size=20&organizer=all&v=${version}`,
     `http://worker.test/events?page_size=50&organizer=all&v=${version}`,
   ]) {
@@ -150,6 +151,24 @@ describe("routing (existing events-widgets behavior, preserved)", () => {
     });
     const res = await call(req("/events?page_size=999"));
     expect(res.status).toBe(200);
+  });
+
+  it.each(["abc", "", "NaN"])("falls back to the default page size for a non-numeric page_size=%s, sharing the default's cache entry", async (value) => {
+    mockEventbrite();
+    const res = await call(req(`/events?page_size=${value}`));
+    expect(res.status).toBe(200);
+    const data = await res.json<{ events: unknown[] }>();
+    expect(data.events).toHaveLength(3);
+    const version = env.CACHE_VERSION || "0";
+    expect(await caches.default.match(new Request(`http://worker.test/events?page_size=NaN&organizer=all&v=${version}`))).toBeUndefined();
+  });
+
+  it.each(["0", "-5"])("clamps page_size=%s up to 1", async (value) => {
+    mockEventbrite();
+    const res = await call(req(`/events?page_size=${value}`));
+    expect(res.status).toBe(200);
+    const data = await res.json<{ events: unknown[] }>();
+    expect(data.events).toHaveLength(1);
   });
 
   it("propagates an Eventbrite fetch failure as a 502 error", async () => {
@@ -310,5 +329,63 @@ describe("error handling", () => {
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://www.bikesiliconvalley.org");
     const data = await res.json<{ error: string }>();
     expect(data.error).toBe("Internal error");
+  });
+});
+
+describe("per-IP rate limit", () => {
+  function denyAll() {
+    return vi.spyOn(env.REQUEST_RATE_LIMITER, "limit").mockResolvedValue({ success: false });
+  }
+
+  it("serves a cached .ics feed even when the caller's IP is over the limit (subscription services share a few IPs)", async () => {
+    fetchSpy.mockImplementation(async () => new Response("[]", { status: 200 }));
+    const first = await call(req("/calendars/santa-clara.ics"));
+    expect(first.headers.get("X-Cache")).toBe("MISS");
+
+    const limit = denyAll();
+    fetchSpy.mockReset();
+    const second = await call(req("/calendars/santa-clara.ics"));
+
+    expect(second.status).toBe(200);
+    expect(second.headers.get("X-Cache")).toBe("HIT");
+    expect(limit).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("limits a cache MISS before any upstream fetch, and does not cache the 429", async () => {
+    const limit = denyAll();
+    const res = await call(req("/calendars/santa-clara.ics"));
+
+    expect(res.status).toBe(429);
+    expect(limit).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const version = env.CACHE_VERSION || "0";
+    expect(await caches.default.match(new Request(`http://worker.test/calendars/santa-clara.ics?v=${version}`))).toBeUndefined();
+  });
+
+  it("limits a miss on an unknown .ics path, so a crawler can't bypass it", async () => {
+    denyAll();
+    const res = await call(req("/calendars/some-random-crawled-path.ics"));
+    expect(res.status).toBe(429);
+  });
+
+  it("limits /events on a cache MISS", async () => {
+    denyAll();
+    const res = await call(req("/events"));
+    expect(res.status).toBe(429);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(["/widget", "/status.json", "/nonexistent", "/events?organizer=999999999"])("limits the uncached route %s", async (path) => {
+    denyAll();
+    const res = await call(req(path));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("limits non-GET methods", async () => {
+    denyAll();
+    const res = await call(req("/events", { method: "POST" }));
+    expect(res.status).toBe(429);
   });
 });

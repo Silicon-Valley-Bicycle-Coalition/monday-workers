@@ -1,6 +1,6 @@
 // Minimal JSONC reader for tests: strips // and /* */ comments outside string literals and
 // removes trailing commas, then hands the result to JSON.parse. Enough for wrangler.jsonc; not
-// a general parser. Copied from donor-portal/test/jsonc.ts.
+// a general parser. Copied from member-portal/test/jsonc.ts.
 export function parseJsonc(text: string): unknown {
   let out = '';
   let i = 0;

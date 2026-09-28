@@ -6,7 +6,7 @@
   "upload_source_maps": true,
   "workers_dev": true,
   // Reuses mail.bikesiliconvalley.org, already onboarded to Cloudflare Email Sending for
-  // donor-portal — no new domain onboarding needed for this Worker.
+  // member-portal — no new domain onboarding needed for this Worker.
   "send_email": [{ "name": "EMAIL" }],
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP is
   // generous against real volume (staff-triggered bike-valet feedback requests) while blunting a
@@ -25,7 +25,7 @@
   // Rule: inbound data only, no outbound data — the EMAIL binding below may only deliver to the
   // one sink address, enforced by Cloudflare (E_RECIPIENT_NOT_ALLOWED otherwise); the code layer
   // in src/email/sandboxBinding.ts rewrites recipients to the same address. Same convention as
-  // donor-portal — see its wrangler.jsonc and
+  // member-portal — see its wrangler.jsonc and
   // docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copy with `wrangler secret put WEBHOOK_SECRET --env sandbox`.
   "env": {

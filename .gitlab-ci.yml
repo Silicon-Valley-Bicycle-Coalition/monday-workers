@@ -80,6 +80,13 @@ funraise-sync:
   variables:
     WORKER_DIR: funraise-sync
 
+# Not a Worker (a local one-off CLI, like salesforce-import), but it has the same
+# npm test/typecheck scripts, so it shares the job template.
+geo-filter:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: geo-filter
+
 mailchimp-sync:
   extends: .worker_job
   variables:
@@ -105,8 +112,8 @@ svbc-calendars:
   variables:
     WORKER_DIR: svbc-calendars
 
-# svbc-calendars and salesforce-import have no `sandbox` Wrangler environment
-# (see root README/CLAUDE.md) and so have no deploy-sandbox job.
+# svbc-calendars, salesforce-import and geo-filter have no `sandbox` Wrangler
+# environment (see root README/CLAUDE.md) and so have no deploy-sandbox job.
 
 deploy-sandbox:benevity-import:
   extends: .deploy_sandbox_job
