@@ -8,8 +8,9 @@ import { ComplexityGate, buildCreateMutation, createBatch, runPool, type CreateE
 //                   'reject' a whole-request GraphQL error with no data (nothing ran);
 //                   'lostLate' 502 at once, then Monday commits every alias anyway and search
 //                   doesn't see them yet (a client timeout racing the resolvers, lagging index).
-//   per alias     — 'error' null + an error on its path; 'null' null with no error.
-type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'error' | 'null';
+//   per alias     — 'error' null + an error on its path; 'null' null with no error;
+//                   'errorIfRel' an error only while the create carries relation values.
+type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'error' | 'null' | 'errorIfRel';
 interface Item { id: string; sfId: string; name: string; rel: Record<string, number[]>; hidden?: boolean }
 
 class FakeMonday {
@@ -55,6 +56,9 @@ class FakeMonday {
       const rel: Record<string, number[]> = {};
       for (const [k, val] of Object.entries(cols)) {
         if (val && typeof val === 'object' && 'item_ids' in val) rel[k] = (val as { item_ids: number[] }).item_ids;
+      }
+      if (faults[i] === 'errorIfRel' && Object.keys(rel).length > 0) {
+        data[`i${i}`] = null; errors.push({ message: `ItemsNotFoundException ${names[i]}`, path: [`i${i}`] }); continue;
       }
       const item: Item = { id: String(this.next++), sfId: cols['sf'] as string, name: names[i]!, rel,
         ...(faults.includes('lostLate') ? { hidden: true } : {}) };
@@ -186,6 +190,25 @@ describe('createBatch', () => {
       expect(outcomes.every((o) => o.kind === 'failed')).toBe(true);
       for (const n of ['A', 'B', 'C']) expect(monday.byName(n)).toHaveLength(1);
     });
+  });
+
+  it('an entry whose inline relations are rejected is re-sent ONCE without them', async () => {
+    monday.faults.set('B', ['errorIfRel']);
+    const withRel = (n: string) => entry(n, { colValues: { sf: `sf-${n}`, rel1: { item_ids: [7] } },
+      plainColValues: { sf: `sf-${n}` }, readBack: ['rel1'] });
+    const { by } = await run(monday, [withRel('A'), withRel('B')]);
+    expect(monday.creates).toEqual([['A', 'B'], ['B']]);
+    expect(by['A']).toMatchObject({ kind: 'created', linked: { rel1: ['7'] } });
+    expect(by['B']).toEqual({ sfId: 'sf-B', kind: 'created', itemId: '2', relationsDropped: true });
+    expect(monday.byName('B')[0]!.rel).toEqual({});
+  });
+
+  it('a relation-less retry that is rejected again fails for good (no loop)', async () => {
+    monday.faults.set('B', ['error', 'error', 'error']);
+    const e = entry('B', { colValues: { sf: 'sf-B', rel1: { item_ids: [7] } }, plainColValues: { sf: 'sf-B' }, readBack: ['rel1'] });
+    const { by } = await run(monday, [entry('A'), e]);
+    expect(monday.creates).toEqual([['A', 'B'], ['B']]);
+    expect(by['B']).toMatchObject({ kind: 'failed' });
   });
 
   it('reports Salesforce Ids that the lookup finds more than once, adopting the first', async () => {

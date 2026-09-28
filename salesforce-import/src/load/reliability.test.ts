@@ -34,8 +34,9 @@ class FakeMonday {
   // (the response never reaches us); 'fail' answers 502 without committing; 'error' is a
   // definite GraphQL rejection.
   // 'lostLate': answers 502 at once, then commits every alias of the request anyway, hidden
-  // from search (items_page_by_column_values) until the next run.
-  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate')[]>();
+  // from search (items_page_by_column_values) until the next run. 'errorIfRel': rejected only
+  // while the create carries relation values.
+  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate' | 'errorIfRel')[]>();
 
   client(): MondayClient {
     const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -92,6 +93,9 @@ class FakeMonday {
       const sfColId = [...this.columnTitles].find(([, t]) => t === SF_ID_COLUMN)?.[0];
       const replies = calls.map((c, i) => {
         if (faults[i] === 'error') return { error: `rejected: ${c.name}` };
+        if (faults[i] === 'errorIfRel' && Object.keys(relationsIn(c.cols)).length > 0) {
+          return { error: `ItemsNotFoundException: ${c.name}` };
+        }
         const rel = relationsIn(c.cols);
         const item: FakeItem = { id: String(this.nextId++), boardId: c.boardId, name: c.name,
           sfId: sfColId ? c.cols[sfColId] as string : undefined, archived: false, rel,
@@ -445,6 +449,19 @@ describe('runLoad inline relations (#22)', () => {
     const gift = monday.byName('Gift');
     expect(gift).toHaveLength(1);
     expect(monday.links.filter((l) => l.itemId === gift[0]!.id)).toHaveLength(4);
+  });
+
+  it('a create rejected because of its inline relations is created without them; the link pass writes them', async () => {
+    await seedGifts();
+    monday.createFaults.set('Gift', ['errorIfRel']);
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    const gift = monday.byName('Gift');
+    expect(gift).toHaveLength(1);
+    expect(gift[0]!.rel).toEqual({});
+    expect(monday.links.filter((l) => l.itemId === gift[0]!.id)).toHaveLength(4);
+    expect(monday.archived).toEqual([gift[0]!.id]); // links landed, so the #21 gate lets it archive
+    const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
+    expect(report.links).toMatchObject({ inlineRejected: 4, written: 4 });
   });
 
   it('counts a partially-migrated inline link as partial, like the link pass does', async () => {

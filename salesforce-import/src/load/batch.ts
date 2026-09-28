@@ -8,7 +8,9 @@ import { findItemIdsBySfIds } from './lookup.js';
  *
  * - alias returned an id                        → created
  * - alias returned a definite GraphQL error     → looked up; adopted if present, else failed and
- *                                                 never re-sent (parity with the sequential path)
+ *                                                 never re-sent (parity with the sequential path) —
+ *                                                 except an entry carrying inline relations gets
+ *                                                 ONE re-send without them (link pass owns them)
  * - anything else in a MULTI-entry request      → looked up; adopted if present, else failed and
  *   (5xx, timeout, network error, no data,        NOT re-sent this run: Monday may still commit
  *   whole-request error, null alias)              aliases after the client gave up, and search can
@@ -30,10 +32,13 @@ export interface CreateEntry {
   colValues: Record<string, unknown>;
   /** Board-relation column ids to read back on the create response, to confirm inline links. */
   readBack?: string[];
+  /** colValues without the inline relations — sent once if Monday rejects the full create. */
+  plainColValues?: Record<string, unknown>;
 }
 
 export type CreateOutcome =
-  | { sfId: string; kind: 'created'; itemId: string; linked?: Record<string, string[]> }
+  // relationsDropped: created by the retry WITHOUT inline relations; the link pass writes them.
+  | { sfId: string; kind: 'created'; itemId: string; linked?: Record<string, string[]>; relationsDropped?: boolean }
   // itemIds: everything the lookup found; more than one means Monday holds duplicates.
   | { sfId: string; kind: 'adopted'; itemId: string; itemIds: string[] }
   | { sfId: string; kind: 'failed'; error: string };
@@ -105,7 +110,9 @@ export async function runPool<T>(tasks: T[], concurrency: number, fn: (t: T) => 
   if (rejected) throw rejected.reason;
 }
 
-interface Pending { entry: CreateEntry; sends: number }
+// relationsDropped: this is the one retry of a definitely-rejected entry without its inline
+// relations (CreateEntry.plainColValues).
+interface Pending { entry: CreateEntry; sends: number; relationsDropped?: boolean }
 
 /**
  * Creates `entries` on one board with batched `create_item`s, reporting each entry's outcome
@@ -173,7 +180,8 @@ export async function createBatch(opts: {
     }
 
     for (const c of confirmed) {
-      await onOutcome({ sfId: c.p.entry.sfId, kind: 'created', itemId: c.itemId, ...(c.linked ? { linked: c.linked } : {}) });
+      await onOutcome({ sfId: c.p.entry.sfId, kind: 'created', itemId: c.itemId,
+        ...(c.linked ? { linked: c.linked } : {}), ...(c.p.relationsDropped ? { relationsDropped: true } : {}) });
     }
 
     const toCheck = [...definite.keys(), ...unknown];
@@ -202,6 +210,13 @@ export async function createBatch(opts: {
       const ids = found.get(p.entry.sfId);
       if (ids?.length) {
         await onOutcome({ sfId: p.entry.sfId, kind: 'adopted', itemId: ids[0]!, itemIds: ids });
+      } else if (definite.has(p) && p.entry.plainColValues && !p.relationsDropped) {
+        // Monday rejected this entry outright (the request completed, so nothing is still in
+        // flight) and it carried inline relations — a deleted, archived or wrong-board target
+        // would otherwise fail its create on every run. Retry once without them; the link pass
+        // then owns those links and the #21 gate handles their failures.
+        const { readBack: _dropped, ...rest } = p.entry;
+        resend.push({ entry: { ...rest, colValues: p.entry.plainColValues }, sends: p.sends, relationsDropped: true });
       } else if (definite.has(p)) {
         await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error: `monday: ${definite.get(p)!}` });
       } else if (group.length > 1) {

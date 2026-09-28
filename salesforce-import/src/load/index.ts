@@ -138,7 +138,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     untaggedItems: {} as Record<string, number>,
     // inline: set inside create_item and confirmed by its response (#22); inlineUnconfirmed:
     // sent inline but not echoed back, so left to the link pass (counted again in `written`).
-    links: { written: 0, inline: 0, inlineUnconfirmed: 0, partial: 0, pending: 0, skippedByDesign: 0, failed: 0 },
+    // inlineRejected: Monday rejected the create while it carried them, so the item was created
+    // without them and the link pass wrote them.
+    links: { written: 0, inline: 0, inlineUnconfirmed: 0, inlineRejected: 0, partial: 0, pending: 0,
+      skippedByDesign: 0, failed: 0 },
     archive: { archived: 0, deferred: 0, failed: 0 },
   };
   const bump = (m: Record<string, number>, key: string) => { m[key] = (m[key] ?? 0) + 1; };
@@ -245,6 +248,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     // may be from an earlier attempt or run, so its links are left to the link pass, as is any
     // relation Monday didn't echo back.
     if (o.kind !== 'created') return;
+    if (o.relationsDropped) {
+      // Monday rejected the create while it carried these relations; it was created without
+      // them, so every one goes to the link pass (and the #21 gate if that fails too).
+      report.links.inlineRejected += inline.length;
+      console.warn(`load: ${key}/${o.sfId} rejected with inline relations, created without them — ` +
+        `the link pass will write ${inline.map((l) => `"${l.column}"`).join(', ')}`);
+      return;
+    }
     for (const l of inline) {
       const linked = new Set(o.linked?.[l.colId] ?? []);
       if (!l.targetItemIds.every((id) => linked.has(String(id)))) {
@@ -279,10 +290,11 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       // Targets are only ever ledgered by an earlier board or fiscal year, never by a create
       // running concurrently with this one, so planning up front is exact.
       const inline = opts.inlineLinks ? planInlineLinks(p, inlineCtx) : [];
+      const plainColValues = { ...colValues };
       for (const l of inline) colValues[l.colId] = { item_ids: l.targetItemIds };
       inlineBySfId.set(p.sfId, inline);
       entries.push({ sfId: p.sfId, name: p.name, colValues,
-        ...(inline.length ? { readBack: inline.map((l) => l.colId) } : {}) });
+        ...(inline.length ? { readBack: inline.map((l) => l.colId), plainColValues } : {}) });
     }
     const batches: CreateEntry[][] = [];
     for (let i = 0; i < entries.length; i += opts.batchSize) batches.push(entries.slice(i, i + opts.batchSize));
