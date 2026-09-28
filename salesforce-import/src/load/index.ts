@@ -98,7 +98,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
 
   const token = process.env['MONDAY_API_TOKEN'];
   if (!token) { console.error('load: MONDAY_API_TOKEN not set'); return 1; }
-  const client = deps.client ?? new MondayClient({ apiUrl: cfg.monday.apiUrl, token });
+  // --sequential also gets the pre-#22 client behaviour (MondayClient's gqlLegacy).
+  const client = deps.client ?? new MondayClient({ apiUrl: cfg.monday.apiUrl, token,
+    legacy: isLegacySequential(opts) });
   const ledger = new Ledger();
   await ledger.load();
 
@@ -187,8 +189,8 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     return colValues;
   };
 
-  // The pre-#22 path, unchanged: one create_item per request, one payload at a time. Kept as
-  // the cutover-weekend fallback (`load --sequential`).
+  // The pre-#22 path, unchanged: one create_item per request, one payload at a time, through
+  // the pre-#22 client (gqlLegacy). Kept as the cutover-weekend fallback (`load --sequential`).
   const createItemsSequential = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;
     const sfIdColId = board.columns[SF_ID_COLUMN]!;

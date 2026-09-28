@@ -38,10 +38,11 @@ class FakeMonday {
   // while the create carries relation values.
   // 'readBackError': commits (hidden from search), then the alias's read-back errors, so its
   // id never comes back.
-  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate' | 'errorIfRel' | 'readBackError')[]>();
+  // 'bodyCut': commits, then the response body is cut off mid-stream.
+  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate' | 'errorIfRel' | 'readBackError' | 'bodyCut')[]>();
   scanFails = false; // every items_page board read errors
 
-  client(): MondayClient {
+  client(legacy = false): MondayClient {
     const fetchFn = (async (_u: unknown, init: unknown) => {
       const body = JSON.parse((init as { body: string }).body) as { query: string; variables: Record<string, unknown> };
       // In-flight tracking for the pooled writes: creates, and archives (tracked separately).
@@ -56,7 +57,7 @@ class FakeMonday {
         if (kind === 'archive') this.archiveInFlight--;
       }
     }) as typeof fetch;
-    return new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+    return new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {}, legacy });
   }
 
   private active(boardId: string) {
@@ -111,6 +112,7 @@ class FakeMonday {
         return { id: item.id, rel: this.echoRelations ? rel : {} };
       });
       if (faults.includes('lost') || faults.includes('lostLate')) return new Response('bad gateway', { status: 502 });
+      if (faults.includes('bodyCut')) return new Response('{"data":{"create_item":{"id":"', { status: 200 });
       return createResponse(query, calls, replies);
     }
     if (/change_multiple_column_values/.test(query)) {
@@ -522,6 +524,26 @@ describe('runLoad inline relations (#22)', () => {
     expect(await runLoad(['--no-inline-links'], { client: monday.client() })).toBe(0);
     expect(monday.byName('Gift')[0]!.rel).toEqual({});
     expect(monday.links).toHaveLength(5);
+  });
+});
+
+describe('load --sequential stays the pre-#22 path', () => {
+  it('a create whose response body is cut off is ledgered failed and not re-sent (the pre-#22 client)', async () => {
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
+      { board: 'organizations', sfId: 'a1', name: 'Acme', columns: {} },
+      { board: 'organizations', sfId: 'a2', name: 'Bolt', columns: {} },
+    ]);
+    monday.createFaults.set('Acme', ['bodyCut']);
+    expect(await runLoad(['--sequential'], { client: monday.client(true) })).toBe(1);
+    expect(monday.creates).toEqual([['Acme'], ['Bolt']]); // no lookup-and-resend for Acme
+    expect(monday.lookups).toBe(0);
+    const l = new Ledger(); await l.load();
+    expect(l.failures().map((f) => f.sfId)).toEqual(['a1']);
+    expect(l.failures()[0]!.error).toMatch(/SyntaxError/);
+
+    // The next run's start-of-run scan adopts what the cut-off create committed.
+    expect(await runLoad(['--sequential'], { client: monday.client(true) })).toBe(0);
+    expect(monday.byName('Acme')).toHaveLength(1);
   });
 });
 

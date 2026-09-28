@@ -153,6 +153,46 @@ describe('MondayClient', () => {
     expect(await rd.gql('q')).toEqual({ ok: 1 });
   });
 
+  describe('legacy: true (load --sequential) keeps the pre-#22 client', () => {
+    const legacy = (fetchFn: typeof fetch, slept: number[] = []) => new MondayClient({ apiUrl: 'https://x', token: 't',
+      legacy: true, sleepFn: async (ms) => { slept.push(ms); }, fetchFn });
+
+    it('an unreadable body throws a plain error at once — not ambiguous, not retried', async () => {
+      let calls = 0;
+      const c = legacy((async () => { calls++; return new Response('{"data":{"create_item":{"id":"', { status: 200 }); }) as typeof fetch);
+      const err = await c.gql('m', {}, { idempotent: false }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SyntaxError);
+      expect(err).not.toBeInstanceOf(AmbiguousWriteError);
+      expect(calls).toBe(1);
+    });
+
+    it('does not retry the newer rate-limit codes, and ignores retry_in_seconds', async () => {
+      let calls = 0;
+      const c = legacy((async () => { calls++; return Response.json({ errors: [{ message: 'Rate limit exceeded',
+        extensions: { code: 'RATE_LIMIT_EXCEEDED', retry_in_seconds: 30 } }] }); }) as typeof fetch);
+      await expect(c.gql('q')).rejects.toThrow(/Rate limit exceeded/);
+      expect(calls).toBe(1);
+
+      const slept: number[] = [];
+      const c2 = legacy(sequence([
+        () => Response.json({ errors: [{ message: 'x', extensions: { code: 'ComplexityException', retry_in_seconds: 30 } }] }),
+        () => Response.json({ data: { ok: 1 } }),
+      ]), slept);
+      expect(await c2.gql('q')).toEqual({ ok: 1 });
+      expect(slept.every((ms) => ms < 30_000)).toBe(true); // backoff only
+    });
+
+    it('waits an uncapped Retry-After, as before', async () => {
+      const slept: number[] = [];
+      const c = legacy(sequence([
+        () => new Response('slow down', { status: 429, headers: { 'Retry-After': '300' } }),
+        () => Response.json({ data: { ok: 1 } }),
+      ]), slept);
+      await c.gql('q');
+      expect(slept).toContain(300_000);
+    });
+  });
+
   describe('gqlPartial (aliased batch mutations)', () => {
     it('returns per-alias data alongside per-alias errors instead of throwing', async () => {
       const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
