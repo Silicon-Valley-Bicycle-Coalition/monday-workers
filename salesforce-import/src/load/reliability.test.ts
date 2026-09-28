@@ -39,6 +39,7 @@ class FakeMonday {
   // 'readBackError': commits (hidden from search), then the alias's read-back errors, so its
   // id never comes back.
   createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate' | 'errorIfRel' | 'readBackError')[]>();
+  scanFails = false; // every items_page board read errors
 
   client(): MondayClient {
     const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -78,6 +79,7 @@ class FakeMonday {
     }
     if (/next_items_page/.test(query)) throw new Error('fake returns a single page');
     if (/items_page \(limit: \$limit\)/.test(query)) {
+      if (this.scanFails) return Response.json({ errors: [{ message: 'scan boom' }] });
       const boardId = (variables['ids'] as string[])[0]!;
       const items = this.active(boardId).map((i) => ({ id: i.id, column_values: [{ text: i.sfId ?? null }] }));
       return Response.json({ data: { boards: [{ items_page: { cursor: null, items } }] } });
@@ -484,6 +486,22 @@ describe('runLoad inline relations (#22)', () => {
     const report = await readJson<{ adopted: Record<string, number> }>(dataPath('load', 'report.json'));
     expect(report.adopted['donations']).toBe(1);
     expect(monday.archived).toEqual([monday.byName('Gift')[0]!.id]);
+  });
+
+  it('a failed duplicate read-back is reported and fails the run, but linking and archiving still happen', async () => {
+    await seedGifts();
+    monday.scanFails = true;
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const code = await runLoad([], { client: monday.client() });
+    const out = err.mock.calls.map((c) => String(c[0])).join('\n');
+    err.mockRestore();
+    expect(code).toBe(1);
+    expect(out).toMatch(/READ-BACK FAILED for donations FY2015/);
+    const report = await readJson<{ readBackFailed: { where: string; error: string }[] }>(dataPath('load', 'report.json'));
+    expect(report.readBackFailed.map((r) => r.where)).toEqual(
+      ['organizations', 'people-live', 'campaigns', 'recurring-gifts', 'donations FY2015']);
+    expect(report.readBackFailed[0]!.error).toMatch(/scan boom/);
+    expect(monday.archived).toEqual([monday.byName('Gift')[0]!.id]); // later phases ran
   });
 
   it('counts a partially-migrated inline link as partial, like the link pass does', async () => {

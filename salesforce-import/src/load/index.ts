@@ -136,6 +136,8 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     // is ledgered and the rest are listed here for a human to remove.
     duplicates: [] as { board: string; sfId: string; itemIds: string[] }[],
     untaggedItems: {} as Record<string, number>,
+    // Post-create duplicate read-backs that errored (batched mode) — each one fails the run.
+    readBackFailed: [] as { where: string; error: string }[],
     // inline: set inside create_item and confirmed by its response (#22); inlineUnconfirmed:
     // sent inline but not echoed back, so left to the link pass (counted again in `written`).
     // inlineRejected: Monday rejected the create while it carried them, so the item was created
@@ -303,16 +305,27 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       attempts: CREATE_ATTEMPTS, lookupDelayMs: opts.recoveryLookupDelayMs, gate,
       onOutcome: (o) => recordOutcome(key, o, inlineBySfId.get(o.sfId) ?? []),
     }));
-    if (entries.length > 0) await scanForDuplicates(key);
+    if (entries.length > 0) {
+      await scanForDuplicates(key, key === 'donations' ? `donations FY${payloadFY(items[0]!) || '(undated)'}` : key);
+    }
   };
 
   // After a board (or a donations fiscal year) is written in batched mode, read it back by
   // Salesforce ID and report any Id Monday holds more than once — the backstop for a batch
   // Monday committed after the client gave up. Runs before archiving, while items_page can
-  // still see them. Never deletes anything.
-  const scanForDuplicates = async (key: string): Promise<void> => {
+  // still see them. Never deletes anything. A read-back that fails is recorded and fails the
+  // run (the duplicate check didn't happen) but doesn't stop the link and archive phases.
+  const scanForDuplicates = async (key: string, where: string): Promise<void> => {
     const board = boards[key]!;
-    const scan = await scanBoardSfIds(client, board.boardId, board.columns[SF_ID_COLUMN]!);
+    let scan: Awaited<ReturnType<typeof scanBoardSfIds>>;
+    try {
+      scan = await scanBoardSfIds(client, board.boardId, board.columns[SF_ID_COLUMN]!);
+    } catch (err) {
+      report.readBackFailed.push({ where, error: String(err) });
+      console.error(`load: READ-BACK FAILED for ${where} — duplicates on it were NOT checked ` +
+        `(${String(err)}); re-run load or validate --live before trusting this board`);
+      return;
+    }
     for (const [sfId, itemIds] of scan.bySfId) {
       if (itemIds.length < 2 || report.duplicates.some((d) => d.board === key && d.sfId === sfId)) continue;
       report.duplicates.push({ board: key, sfId, itemIds });
@@ -502,7 +515,11 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   await writeJson(dataPath('load', 'report.json'), { ...report, finishedAt: new Date().toISOString() });
 
   const failures = ledger.failures();
-  if (failures.length > 0 || l.pending > 0 || report.duplicates.length > 0) {
+  if (report.readBackFailed.length > 0) {
+    console.error(`load: ${report.readBackFailed.length} duplicate read-back(s) failed: ` +
+      `${report.readBackFailed.map((r) => r.where).join(', ')} — see data/load/report.json`);
+  }
+  if (failures.length > 0 || l.pending > 0 || report.duplicates.length > 0 || report.readBackFailed.length > 0) {
     if (failures.length > 0) {
       console.error(`load: ${failures.length} unresolved failures — re-run "load" to retry just these`);
       for (const f of failures.slice(0, 20)) console.error(`  ${f.board}/${f.sfId}: ${f.error}`);
