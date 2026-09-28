@@ -59,6 +59,9 @@ export interface Env {
   MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
   MAILCHIMP_WEBHOOK_SECRET: string;
+  // Optional Slack incoming-webhook URL for dead-letter alerts (#37, src/alert.ts). Unset = the
+  // DLQ consumer's console.error is the only signal.
+  SLACK_WEBHOOK_URL?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
@@ -76,6 +79,15 @@ export interface InboundSyncMessage {
 // 'skipped' = processed to completion but no Monday write happened (e.g. no Donor
 // item matches the email) — distinct from 'written' so misses stay countable.
 export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed';
+
+// One pending_outbound_syncs / pending_inbound_syncs row as the dead-letter consumer reads it
+// (src/consumer/deadLetters.ts) — the key column is left out because the caller already has it.
+export interface PendingRow {
+  status: PendingStatus;
+  error: string | null;
+  receivedAt: string;
+  writtenAt: string | null;
+}
 
 // A Donor item's column values, already resolved to plain strings — '' means the
 // column was blank, never undefined/missing (see monday/client.ts's getDonorById).

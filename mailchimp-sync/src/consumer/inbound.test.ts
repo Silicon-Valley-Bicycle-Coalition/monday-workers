@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { processInboundBatch } from './inbound';
 import type { MondayClient } from '../monday/client';
 import { MondayApiError } from '../monday/client';
-import { MailchimpAuthError, MailchimpRateLimitError } from '../mailchimp/client';
+import { MailchimpAuthError, MailchimpPermanentError, MailchimpRateLimitError } from '../mailchimp/client';
 import type { MailchimpClient } from '../mailchimp/client';
 import type { CampaignItemsStore, CampaignItemRow } from '../db/campaignItems';
 import type { PendingInboundStore } from '../db/pendingInbound';
@@ -184,6 +184,21 @@ describe('processInboundBatch', () => {
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'failed', 'monday down');
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('acks (does not retry) a permanent Mailchimp error, like the outbound consumer (#37)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const message = fakeMessage('a@b.com');
+    const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+    await processInboundBatch([message], {
+      mondayClient: fakeMonday(),
+      mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockRejectedValue(new MailchimpPermanentError('mailchimp getMemberInterests: HTTP 400')) }),
+      campaignItemsStore: fakeCampaignItemsStore(), pendingStore, config: CONFIG,
+    });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'failed', 'mailchimp getMemberInterests: HTTP 400');
+    errorSpy.mockRestore();
   });
 
   describe('retry backoff (#35)', () => {

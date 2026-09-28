@@ -17,6 +17,10 @@ export class MailchimpRateLimitError extends MailchimpTransientError {
 // backoff and dead-letters, replayable once the key is fixed, instead of being silently dropped.
 export class MailchimpAuthError extends MailchimpTransientError {}
 
+// Part of every MailchimpAuthError message. The consumers store err.message on the pending row,
+// so this is how the dead-letter consumer (which only has the row) recognizes a rejected key.
+export const CREDENTIALS_REJECTED_MARKER = 'credentials rejected — check the MAILCHIMP_API_KEY secret';
+
 // 429 → rate-limited, 401/403 → auth, 5xx → transient, other 4xx → permanent (retrying a
 // malformed request fails identically). `transientOn4xx` is for reads, where any failure has
 // always been retried.
@@ -29,7 +33,7 @@ async function httpError(op: string, response: Response, transientOn4xx = false)
   }
   const message = `mailchimp ${op}: HTTP ${response.status}${detail === '' ? '' : `: ${detail}`}`;
   if (response.status === 401 || response.status === 403) {
-    return new MailchimpAuthError(`${message} (credentials rejected — check the MAILCHIMP_API_KEY secret)`);
+    return new MailchimpAuthError(`${message} (${CREDENTIALS_REJECTED_MARKER})`);
   }
   if (response.status === 429) return new MailchimpRateLimitError(message, parseRetryAfter(retryAfterHeader(response)));
   if (response.status >= 500 || transientOn4xx) return new MailchimpTransientError(message);

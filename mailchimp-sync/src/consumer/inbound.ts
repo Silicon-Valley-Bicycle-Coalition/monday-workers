@@ -6,7 +6,7 @@ import type { Config, InboundSyncMessage } from '../types';
 import { reconcileCampaigns } from '../campaigns/reconcile';
 import type { QueueMessageLike } from './outbound';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
-import { MailchimpAuthError } from '../mailchimp/client';
+import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client';
 
 export interface InboundConsumerDeps {
   pendingStore: PendingInboundStore;
@@ -35,7 +35,14 @@ export async function processInboundBatch(
       } catch (recordErr) {
         console.error(`mailchimp-sync inbound consumer: could not record failure for "${email}": ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`);
       }
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
+      // Same rule as the outbound consumer: a permanent (non-auth 4xx) Mailchimp error fails
+      // identically on every retry, so ack it — the row keeps the error. MailchimpAuthError is a
+      // MailchimpTransientError, never permanent, so a rejected key still retries and dead-letters.
+      if (err instanceof MailchimpPermanentError) {
+        message.ack();
+      } else {
+        message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
+      }
     }
   }
 }

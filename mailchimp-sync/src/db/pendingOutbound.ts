@@ -1,4 +1,4 @@
-import type { PendingStatus } from '../types';
+import type { PendingRow, PendingStatus } from '../types';
 
 export interface PendingOutboundStore {
   upsertPending(donorItemId: string, receivedAt: string): Promise<void>;
@@ -18,6 +18,15 @@ export class D1PendingOutboundStore implements PendingOutboundStore {
       )
       .bind(donorItemId, receivedAt)
       .run();
+  }
+
+  // Read by the dead-letter consumer only (src/consumer/deadLetters.ts).
+  async get(donorItemId: string): Promise<PendingRow | null> {
+    const row = await this.db
+      .prepare(`SELECT status, error, received_at, written_at FROM pending_outbound_syncs WHERE donor_item_id = ?1`)
+      .bind(donorItemId)
+      .first<{ status: PendingStatus; error: string | null; received_at: string; written_at: string | null }>();
+    return row === null ? null : { status: row.status, error: row.error, receivedAt: row.received_at, writtenAt: row.written_at };
   }
 
   async updateStatus(donorItemId: string, status: PendingStatus, error?: string, writtenAt?: string): Promise<void> {

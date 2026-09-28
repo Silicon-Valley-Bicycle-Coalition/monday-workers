@@ -123,6 +123,74 @@ describe('queue dispatch', () => {
     const env = fakeEnv();
     const batch = { queue: 'mailchimp-sync-typo', messages: [] } as unknown as MessageBatch<unknown>;
     await expect(worker.queue(batch, env)).rejects.toThrow('unknown queue: mailchimp-sync-typo');
+    const typoDlq = { queue: 'mailchimp-sync-typo-dlq', messages: [] } as unknown as MessageBatch<unknown>;
+    await expect(worker.queue(typoDlq, env)).rejects.toThrow('unknown queue: mailchimp-sync-typo-dlq');
+  });
+
+  // #37: the DLQs had no consumer; a dead message now marks its real D1 row.
+  it('routes the outbound DLQ to the dead-letter consumer, which marks the pending row and acks', async () => {
+    const env = fakeEnv();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await testEnv.DB.prepare(
+        `INSERT INTO pending_outbound_syncs (donor_item_id, status, error, received_at) VALUES ('dlq-1', 'failed', 'mailchimp updateMember: HTTP 500', '2026-09-20T10:00:00.000Z')`,
+      ).run();
+      const message = { ...fakeMessage<OutboundSyncMessage>({ donorItemId: 'dlq-1' }), timestamp: new Date('2026-09-20T10:00:01.000Z') };
+      const batch = { queue: 'mailchimp-sync-outbound-dlq', messages: [message] } as unknown as MessageBatch<unknown>;
+
+      await expect(worker.queue(batch, env)).resolves.toBeUndefined();
+
+      expect(message.ack).toHaveBeenCalled();
+      const row = await testEnv.DB.prepare(`SELECT status, error FROM pending_outbound_syncs WHERE donor_item_id = 'dlq-1'`).first();
+      expect(row).toEqual({ status: 'failed', error: 'dead-lettered after retries: mailchimp updateMember: HTTP 500' });
+      // Marking is D1-only: nothing is re-sent to Monday or Mailchimp from a DLQ.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('sends the dead-letter alert to SLACK_WEBHOOK_URL when it is set', async () => {
+    const env = fakeEnv({ SLACK_WEBHOOK_URL: 'https://hooks.slack.test/dlq' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = vi.fn().mockResolvedValue(new Response('ok'));
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await testEnv.DB.prepare(
+        `INSERT INTO pending_outbound_syncs (donor_item_id, status, error, received_at) VALUES ('dlq-2', 'failed', 'boom', '2026-09-20T10:00:00.000Z')`,
+      ).run();
+      const message = { ...fakeMessage<OutboundSyncMessage>({ donorItemId: 'dlq-2' }), timestamp: new Date('2026-09-20T10:00:01.000Z') };
+      await worker.queue({ queue: 'mailchimp-sync-outbound-dlq', messages: [message] } as unknown as MessageBatch<unknown>, env);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy.mock.calls[0]![0]).toBe('https://hooks.slack.test/dlq');
+      expect(JSON.parse(fetchSpy.mock.calls[0]![1].body).text).toContain('dlq-2');
+    } finally {
+      vi.unstubAllGlobals();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('routes the inbound DLQ to the dead-letter consumer, which marks the pending row and acks', async () => {
+    const env = fakeEnv();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await testEnv.DB.prepare(
+        `INSERT INTO pending_inbound_syncs (email, status, error, received_at) VALUES ('dlq@example.com', 'failed', 'monday down', '2026-09-20T10:00:00.000Z')`,
+      ).run();
+      const message = { ...fakeMessage<InboundSyncMessage>({ email: 'dlq@example.com' }), timestamp: new Date('2026-09-20T10:00:01.000Z') };
+      const batch = { queue: 'mailchimp-sync-inbound-dlq', messages: [message] } as unknown as MessageBatch<unknown>;
+
+      await expect(worker.queue(batch, env)).resolves.toBeUndefined();
+
+      expect(message.ack).toHaveBeenCalled();
+      const row = await testEnv.DB.prepare(`SELECT error FROM pending_inbound_syncs WHERE email = 'dlq@example.com'`).first();
+      expect(row).toEqual({ error: 'dead-lettered after retries: monday down' });
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 
@@ -162,6 +230,9 @@ describe('request-time config selection', () => {
     const emptyBatch = (queue: string) => ({ queue, messages: [], retryAll: vi.fn(), ackAll: vi.fn() }) as unknown as MessageBatch<unknown>;
     await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
     await expect(worker.queue(emptyBatch('mailchimp-sync-inbound-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
-    await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-sandbox-dlq'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).rejects.toThrow('unknown queue');
+    await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-sandbox-dlq'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
+    await expect(worker.queue(emptyBatch('mailchimp-sync-inbound-sandbox-dlq'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).resolves.toBeUndefined();
+    // "-dlq-sandbox" is not a name this Worker declares — suffix order matters.
+    await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-dlq-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).rejects.toThrow('unknown queue');
   });
 });

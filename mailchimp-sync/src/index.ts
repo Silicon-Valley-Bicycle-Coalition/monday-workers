@@ -13,14 +13,18 @@ import { createOutboundApp } from './webhook/outboundRoute';
 import { createInboundApp } from './webhook/inboundRoute';
 import { processOutboundBatch } from './consumer/outbound';
 import { processInboundBatch } from './consumer/inbound';
+import { processInboundDeadLetters, processOutboundDeadLetters } from './consumer/deadLetters';
 import { reconcileCampaigns } from './campaigns/reconcile';
 import { checkRequestRateLimit } from './rateLimit';
+import { sendAlert } from './alert';
 import type { Env, OutboundSyncMessage, InboundSyncMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts. In the sandbox, mailchimp.audienceId
 // names the sandbox audience; the split test is what keeps that id off the production file.
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
+
+const DLQ_SUFFIX = '-dlq';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -52,12 +56,29 @@ export default {
 
   async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
     const config = configFor(env);
+
+    // Dead-letter queues are "<main queue>-dlq" in both environments
+    // (mailchimp-sync-outbound-dlq, mailchimp-sync-outbound-sandbox-dlq). Their consumer only
+    // marks D1 rows (#37) — it never calls Monday or Mailchimp.
+    const isDeadLetterQueue = batch.queue.endsWith(DLQ_SUFFIX);
+    const queueName = queueBaseName(isDeadLetterQueue ? batch.queue.slice(0, -DLQ_SUFFIX.length) : batch.queue);
+
+    const alert = (text: string) => sendAlert(env.SLACK_WEBHOOK_URL, text);
+
+    if (isDeadLetterQueue && queueName === 'mailchimp-sync-outbound') {
+      await processOutboundDeadLetters(batch.messages as readonly Message<OutboundSyncMessage>[], { store: new D1PendingOutboundStore(env.DB), alert });
+      return;
+    }
+
+    if (isDeadLetterQueue && queueName === 'mailchimp-sync-inbound') {
+      await processInboundDeadLetters(batch.messages as readonly Message<InboundSyncMessage>[], { store: new D1PendingInboundStore(env.DB), alert });
+      return;
+    }
+
     const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
     const mailchimpClient = new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId);
 
-    const queueName = queueBaseName(batch.queue);
-
-    if (queueName === 'mailchimp-sync-outbound') {
+    if (!isDeadLetterQueue && queueName === 'mailchimp-sync-outbound') {
       await processOutboundBatch(batch.messages as readonly Message<OutboundSyncMessage>[], {
         pendingStore: new D1PendingOutboundStore(env.DB),
         mondayClient,
@@ -68,7 +89,7 @@ export default {
       return;
     }
 
-    if (queueName === 'mailchimp-sync-inbound') {
+    if (!isDeadLetterQueue && queueName === 'mailchimp-sync-inbound') {
       await processInboundBatch(batch.messages as readonly Message<InboundSyncMessage>[], {
         pendingStore: new D1PendingInboundStore(env.DB),
         mondayClient,

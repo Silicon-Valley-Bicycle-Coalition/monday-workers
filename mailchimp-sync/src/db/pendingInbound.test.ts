@@ -33,4 +33,13 @@ describe('D1PendingInboundStore', () => {
       .bind('e@f.com').first<{ status: string; written_at: string | null }>();
     expect(row).toEqual(expect.objectContaining({ status: 'written', written_at: '2026-08-26T02:00:00.000Z' }));
   });
+
+  it('get returns the row for the dead-letter consumer, or null when there is none', async () => {
+    const store = new D1PendingInboundStore(env.DB);
+    await store.upsertPending('g@h.com', '2026-08-26T00:00:00.000Z');
+    await store.updateStatus('g@h.com', 'written', undefined, '2026-08-26T02:00:00.000Z');
+
+    expect(await store.get('g@h.com')).toEqual({ status: 'written', error: null, receivedAt: '2026-08-26T00:00:00.000Z', writtenAt: '2026-08-26T02:00:00.000Z' });
+    expect(await store.get('nobody@example.com')).toBeNull();
+  });
 });

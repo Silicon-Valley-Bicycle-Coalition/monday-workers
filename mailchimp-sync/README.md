@@ -58,10 +58,126 @@ across the queue's 3 retries — before landing in its `-dlq` dead-letter queue.
 (429, `Retry-After`) or Monday (`retry_in_seconds`, `Retry-After`) says how long to wait, the
 retry waits at least that long; Monday's `DAILY_LIMIT_EXCEEDED` with no hint waits until
 midnight UTC. Every delay is capped at Queues' 12-hour maximum. A permanent Mailchimp rejection
-(malformed address, other 4xx) on the outbound side is acked instead, since it would fail
-identically every time — except a 401/403, which means the `MAILCHIMP_API_KEY` secret is bad or
-rotated: those always retry and dead-letter (logged as `MAILCHIMP CREDENTIALS REJECTED`), so the
-backlog can be replayed once the key is fixed.
+(malformed address, other 4xx) is acked instead, on both the outbound and inbound side, since it
+would fail identically every time — except a 401/403, which means the `MAILCHIMP_API_KEY` secret
+is bad or rotated: those always retry and dead-letter (logged as `MAILCHIMP CREDENTIALS
+REJECTED`), so the backlog can be replayed once the key is fixed — see
+[Dead letters](#dead-letters).
+
+## Dead letters
+
+Each main queue dead-letters into its own `-dlq` (four in all: `mailchimp-sync-outbound-dlq`,
+`mailchimp-sync-inbound-dlq`, and the `-sandbox-dlq` twins), and this Worker consumes all four
+(#37, `src/consumer/deadLetters.ts`). A dead message calls neither Monday nor Mailchimp — it:
+
+* stamps its pending row's `error` with `dead-lettered after retries: ` in front of the last
+  error the consumer recorded (never doubled, so a replay that dead-letters again stays
+  readable), leaving `status` at `failed`;
+* leaves the row alone if it has been `written` at or after the message was sent, is `skipped`
+  (only a completed delivery sets that), or was replaced by a newer webhook delivery since
+  (which has its own queue message) — attaching a DLQ consumer to an old backlog must never
+  downgrade rows fixed in the meantime (donation-rollups' first-deploy incident);
+* always acks. Only a D1 failure retries the dead message (60 s, at most `max_retries: 2`, no
+  further DLQ).
+
+Each batch that marked anything logs **one** `console.error` naming the Monday Donor item ids
+(outbound) or Mailchimp member ids (inbound — the subscriber hash, MD5 of the lowercased
+address, the same id Mailchimp's API and UI use; no email address is logged). When the recorded
+error is a rejected API key, the line leads with `MAILCHIMP CREDENTIALS REJECTED`: fix the
+`MAILCHIMP_API_KEY` secret before replaying, or the replay dead-letters again.
+
+**Alert (optional).** Set `SLACK_WEBHOOK_URL` (a Slack incoming-webhook URL — the same secret
+name and payload `monday-backup` uses) to also post that line to Slack, once per batch:
+
+```sh
+npx wrangler secret put SLACK_WEBHOOK_URL                 # production channel
+npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox   # a sandbox channel, e.g. #crm-sandbox
+```
+
+Unset, the Worker logs only (Workers Logs). A failing Slack post is logged and never affects
+the acks.
+
+**Replay.** Once the cause is fixed, `scripts/redrive-dead-lettered.mjs` re-enqueues the marked
+rows through the Worker's normal webhook routes — each becomes a minimal Monday
+(`/webhooks/monday/donors`, the Donor item id) or Mailchimp (`/webhooks/mailchimp/audience`, the
+address) delivery, the route resets the row to `received` and enqueues it, and the consumer
+re-reads current state and writes as it would for a real delivery. It is a **dry run unless
+`--apply`** is passed, and reads D1 with `wrangler d1 execute --remote`:
+
+```sh
+# plan: every dead-lettered row, both directions (production D1)
+node scripts/redrive-dead-lettered.mjs
+# narrow: sandbox, outbound only, a date window, or specific ids
+node scripts/redrive-dead-lettered.mjs --env sandbox --direction outbound --since 2026-09-20 --until 2026-09-25
+node scripts/redrive-dead-lettered.mjs --direction inbound --item <mailchimp-member-id>,<mailchimp-member-id>
+# send (secrets from `wrangler secret put` for the same env; only the directions being sent are needed)
+MONDAY_WEBHOOK_SECRET=... MAILCHIMP_WEBHOOK_SECRET=... \
+  node scripts/redrive-dead-lettered.mjs [--env sandbox] --apply --worker-url https://<worker-host>
+```
+
+`--item` takes Monday Donor item ids for outbound and Mailchimp member ids (the ids the DLQ log
+line prints) for inbound. Output never prints an email address or the request URL — both routes
+only accept the secret as `?secret=`, so it rides in the URL exactly as on a real delivery.
+`--pause-ms` (default 2000) spaces deliveries for the one-at-a-time consumers. Re-run the dry
+run ~30 minutes later (the retry backoff spans ~21) to confirm nothing dead-lettered again.
+
+To find dead rows directly:
+`select donor_item_id, error, received_at from pending_outbound_syncs where error like 'dead-lettered%'`
+(and `pending_inbound_syncs` for the inbound side — its key is the email address, so keep that
+output out of tickets and chat).
+
+**Deploying the DLQ consumers (ops — not yet done).** Queue retention is not a `wrangler.jsonc`
+setting; donation-rollups raised its DLQ to 14 days with `wrangler queues update` (its README,
+"Queue retention, corrected 2026-09-18"), and so does this Worker. **Timing matters: the sandbox
+Worker is deployed by Workers Builds on every merge to `main`, so merging this change IS the
+sandbox deploy.** A deploy that declares a consumer for a missing queue fails, and the new
+consumer drains whatever a DLQ already holds within a minute of attaching.
+
+*Before merging* — sandbox (`--env sandbox`, `-sandbox` / `-sandbox-dlq` queue names):
+
+1. Make sure both sandbox DLQs exist — `npx wrangler queues info mailchimp-sync-outbound-sandbox-dlq`
+   (and `-inbound-sandbox-dlq`); create a missing one with `npx wrangler queues create <dlq>`.
+2. Raise both to the 14-day maximum, so a paused or broken consumer never silently loses dead
+   letters, and check the sandbox main queues are at least the 4-day default (donation-rollups'
+   were created at 1 day):
+
+   ```sh
+   npx wrangler queues update mailchimp-sync-outbound-sandbox-dlq --message-retention-period-secs 1209600
+   npx wrangler queues update mailchimp-sync-inbound-sandbox-dlq --message-retention-period-secs 1209600
+   npx wrangler queues info mailchimp-sync-outbound-sandbox   # and mailchimp-sync-inbound-sandbox
+   ```
+
+3. Check each sandbox DLQ for a backlog (`wrangler queues info`): it is delivered on merge, and
+   anything older than its retention is dropped at that moment (donation-rollups lost ~2,700
+   that way). Expect one log line / alert per batch of 10; letters for rows fixed since are
+   left alone.
+4. Optionally `wrangler secret put SLACK_WEBHOOK_URL --env sandbox`, so the first batch alerts.
+
+*Before the first production deploy* (`npm run deploy`): the same three checks for
+`mailchimp-sync-outbound-dlq` / `mailchimp-sync-inbound-dlq` and the production main queues,
+plus the optional production `SLACK_WEBHOOK_URL`:
+
+```sh
+npx wrangler queues update mailchimp-sync-outbound-dlq --message-retention-period-secs 1209600
+npx wrangler queues update mailchimp-sync-inbound-dlq --message-retention-period-secs 1209600
+npx wrangler queues info mailchimp-sync-outbound   # and mailchimp-sync-inbound
+```
+
+The DLQ consumer needs no D1 migration of its own.
+
+*One-time verification, in sandbox after the merge.* The staleness check compares the dead
+letter's `message.timestamp` with the row's `received_at` / `written_at`, assuming a DLQ delivery
+keeps the **original send time** rather than the time it was moved to the DLQ (funraise-sync and
+donation-rollups assume the same; nobody has confirmed it). Force one dead letter — e.g. set a
+bogus `MAILCHIMP_API_KEY --env sandbox`, touch a sandbox Donor, wait out the ~21-minute backoff,
+then restore the key — with a temporary `console.log` of `message.timestamp.toISOString()`
+in the DLQ consumer, and compare it with that row's `received_at` in
+`svbc-mailchimp-sync-sandbox`. Within a second or two of `received_at`: the assumption holds.
+~21 minutes later (the DLQ move): it doesn't — rows re-driven between the original send and the
+DLQ move would not be recognized as replaced, so tighten the check (and tell the two sibling
+Workers) before relying on it. Replay the forced letter afterwards with the script above.
+
+Once any backlog's cause is fixed, replay it with `scripts/redrive-dead-lettered.mjs`.
 
 ## Do Not Solicit
 
@@ -185,6 +301,8 @@ dashboard refuses two connections on one root directory, fall back to the
   `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them). Neither webhook route works
   without its secret: both fail closed, 401ing every delivery (including the Monday challenge
   handshake) until the secret is set, rather than accepting unauthenticated requests.
+  `SLACK_WEBHOOK_URL` is optional — dead-letter alerts, see [Dead letters](#dead-letters).
+  Every secret is set again with `--env sandbox` for the sandbox deployment.
 - `wrangler d1 create svbc-mailchimp-sync` — provision D1, then fill the real `database_id` into
   `wrangler.jsonc`
 
