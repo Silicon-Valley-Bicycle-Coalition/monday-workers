@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -96,6 +96,19 @@ describe.each(MODES)('runLoad (%s)', (_mode, flags) => {
   it('dry-run writes nothing', async () => {
     expect(await runLoad(['--dry-run', ...flags], { client: fakeClient() })).toBe(0);
     expect(created).toEqual([]);
+  });
+
+  it('dry-run reports old vs new request counts for the transform output (#22)', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await runLoad(['--dry-run', '--latency-ms', '1000', ...flags], { client: fakeClient() })).toBe(0);
+    const out = log.mock.calls.map((c) => String(c[0])).join('\n');
+    log.mockRestore();
+    expect(out).toMatch(/old \(--sequential\): 3 create_item \+ 2 link \+ 0 archive = 5 requests/);
+    // Batched default inlines both links; --sequential turns inlining off.
+    expect(out).toMatch(flags.length ? /new: 3 create requests \(3 create_item, 0 links inline\) \+ 2 link/
+      : /new: 3 create requests \(3 create_item, 2 links inline\) \+ 0 link/);
+    expect(out).toMatch(/L=1000 ms\/request/);
+    expect(linked).toEqual([]);
   });
 
   it('failures are ledgered, exit 1, and only failures retry on re-run', async () => {

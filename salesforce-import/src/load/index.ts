@@ -11,6 +11,7 @@ import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
 import { ComplexityGate, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
 import { isLegacySequential, parseLoadOptions } from './options.js';
 import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
+import { estimateLoad, formatEstimate } from './estimate.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -22,6 +23,10 @@ import { planInlineLinks, type InlineContext, type InlineLink } from './inline.j
 // (which load later), so this position is the only valid one.
 const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliations', 'campaigns',
   'recurring-gifts', 'events', 'event-registrations', 'donations', 'volunteers', 'activities'];
+
+// Link mutations in flight. Sequential linking measured ~40h for the real dataset's 94k links,
+// which is why links already ran in a small pool before #22.
+const LINK_CONCURRENCY = 6;
 
 // How many times an ambiguous create_item failure (see AmbiguousWriteError) is re-attempted
 // after confirming by lookup that the earlier attempt didn't land.
@@ -75,6 +80,19 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       console.log(`load[dry-run]: ${key} → ${items.length} items, ${links} links` +
         (toArchive > 0 ? `, ${toArchive} to archive in place` : ''));
     }
+    // #22 measurement: old vs new request counts and a wall-clock estimate. The latency default
+    // is the measured pre-#22 rate (~40 h for ~94k sequential mutations ≈ 1.53 s each); the
+    // per-alias cost is a guess until a sandbox batch run measures it.
+    const num = (flag: string, fallback: number): number => {
+      const i = args.indexOf(flag);
+      const n = i >= 0 ? Number(args[i + 1]) : fallback;
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
+    };
+    const latencyMs = num('--latency-ms', 1530);
+    const estimate = estimateLoad([...byBoard.values()].flat(), keys,
+      { batchSize: opts.batchSize, inlineLinks: opts.inlineLinks });
+    console.log(formatEstimate(estimate, { latencyMs, aliasMs: num('--alias-ms', latencyMs / 2),
+      concurrency: opts.concurrency, linkConcurrency: LINK_CONCURRENCY, batchSize: opts.batchSize }));
     return 0;
   }
 
@@ -277,10 +295,8 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
 
   const createItems = isLegacySequential(opts) ? createItemsSequential : createItemsBatched;
 
-  // Link machinery. Sequential linking measured ~40h for the real dataset's 94k links, so a
-  // small worker pool runs LINK_CONCURRENCY mutations in flight; each link still ledgers
-  // individually and per-call retry/backoff lives in the client.
-  const LINK_CONCURRENCY = 6;
+  // Link machinery: a small worker pool runs LINK_CONCURRENCY mutations in flight; each link
+  // still ledgers individually and per-call retry/backoff lives in the client.
   // sfIds that must not be archived this run because a link from or into them is still waiting
   // on a target (or source) item that is expected but doesn't exist yet.
   const pendingArchiveBlock = new Set<string>();
