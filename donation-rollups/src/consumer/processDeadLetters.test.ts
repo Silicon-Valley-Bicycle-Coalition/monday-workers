@@ -8,6 +8,7 @@ import type { DonationRollupsConfig } from '../types';
 // 'queued' forever. Dead messages must leave a mark in D1 and raise one alert per batch.
 const config = {
   monday: { apiUrl: 'https://x', accountUrl: 'https://acme.monday.com' },
+  fiscalYear: { startMonth: 7, timeZone: 'America/Los_Angeles' },
   custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: 42,
     annualSummaryBoardId: null, annualSummaryColumns: null },
   donationRollups: { donationBoards: [], receivedStatusLabel: 'Received', ownerColumnsByBoard: {}, membership: null },

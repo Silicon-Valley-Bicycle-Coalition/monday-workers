@@ -29,7 +29,8 @@
         "max_batch_size": 2,
         // Retries are immediate except on a D1 daily-quota error, which the consumer defers to
         // midnight UTC (capped at Queues' 12h); with midnight up to 24h away that can use two of
-        // these three, leaving one for a transient error (src/consumer/quota.ts).
+        // these three, leaving one for a transient error — and a Monday rate-limit error, which
+        // waits 60s/120s/240s by attempt or Monday's retry hint if longer (src/consumer/quota.ts).
         "max_retries": 3,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
@@ -49,9 +50,9 @@
     ]
   },
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP
-  // covers both the Monday donations webhook and /custodian/*, generous against real volume
-  // while blunting a flood against routes that do D1 work before their shared-secret check
-  // ever rejects a bogus request.
+  // covers /custodian/* and every Monday webhook call that fails the secret check, blunting a
+  // flood before it reaches D1. Verified webhook deliveries are exempt (issue #27): a bulk edit
+  // makes Monday itself send well over 60/min from a few IPs (src/rateLimit.ts).
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2021", "simple": { "limit": 60, "period": 60 } }],
   // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
   // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates

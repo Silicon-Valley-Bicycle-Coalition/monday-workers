@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, AffiliationsConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, AffiliationsConfig, FiscalYearConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -184,10 +184,32 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
 
   return {
     monday: { apiUrl: monday.apiUrl, accountUrl: (monday.accountUrl as string).replace(/\/$/, '') },
+    fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
     donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership },
   };
+}
+
+// Required, no default: the fiscal year is org-specific (SVBC's is July, Pacific), and a wrong
+// guess would silently misfile every This/Last Year total.
+function validateFiscalYear(raw: unknown): FiscalYearConfig {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error('config: missing required key "fiscalYear" ({ startMonth, timeZone })');
+  }
+  const f = raw as Record<string, unknown>;
+  if (typeof f.startMonth !== 'number' || !Number.isInteger(f.startMonth) || f.startMonth < 1 || f.startMonth > 12) {
+    throw new Error('config: "fiscalYear.startMonth" must be an integer month, 1-12');
+  }
+  if (typeof f.timeZone !== 'string' || f.timeZone === '') {
+    throw new Error('config: "fiscalYear.timeZone" must be an IANA time zone name, e.g. "America/Los_Angeles"');
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: f.timeZone });
+  } catch {
+    throw new Error(`config: "fiscalYear.timeZone" "${f.timeZone}" is not a time zone this runtime knows`);
+  }
+  return { startMonth: f.startMonth, timeZone: f.timeZone };
 }
 
 function validateAffiliations(raw: unknown, donationBoards: DonationBoardConfig[]): AffiliationsConfig | null {

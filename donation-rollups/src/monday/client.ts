@@ -1,4 +1,5 @@
 import { fiscalYearFromDate } from '../rollups/compute';
+import { parseAmountCents } from '../money';
 import type { OwnerMembershipColumns } from '../types';
 
 function chunksOf<T>(items: T[], size: number): T[][] {
@@ -9,7 +10,7 @@ function chunksOf<T>(items: T[], size: number): T[][] {
 
 export interface DonationRecord {
   id: string;
-  amount: number;
+  amountCents: number; // integer cents — see money.ts
   dateISO: string;
   fiscalYear: number;
   status: string;
@@ -51,9 +52,12 @@ export interface DonationRollupsMondayClient {
   // 2026-08-24: items_page_by_column_values rejects it outright). Callers get the id
   // list from the D1 donation_links reverse index (db/links.ts), grouped by which
   // Donations board each id lives on, since column ids differ per board.
+  // fiscalYearStartMonth (config "fiscalYear.startMonth") derives a gift's fiscal year from its
+  // Date when the board has no Fiscal Year column or the cell is blank.
   getDonationsByIds(
     itemIds: string[],
     columns: DonationReadColumns,
+    fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]>;
   // The four membership columns on a People-type owner, as label/date text — the membership
   // step's "what does the board hold" read (spec §"Merge with the board"). A missing item
@@ -78,11 +82,62 @@ export interface DonationRollupsMondayClient {
 
 const MONDAY_API_VERSION = '2026-01';
 
+interface GraphQLError {
+  message: string;
+  extensions?: { code?: string; status_code?: number; retry_in_seconds?: number };
+}
+
 interface GraphQLResponse<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: GraphQLError[];
   error_message?: string;
   status_code?: number;
+}
+
+// Monday's per-token complexity budget, per-minute and daily call limits, and concurrency cap
+// (issue #27). The consumer retries these after a delay instead of immediately; retryInSeconds
+// is Monday's own hint (extensions.retry_in_seconds, a Retry-After header, or the legacy
+// "reset in N seconds" message) when it gave one. `daily` marks DAILY_LIMIT_EXCEEDED, which
+// resets at midnight UTC (developer.monday.com/api-reference/docs/rate-limits) rather than
+// within seconds, and isn't documented to carry a hint.
+export class MondayRateLimitError extends Error {
+  constructor(message: string, readonly retryInSeconds?: number, readonly daily = false) {
+    super(message);
+    this.name = 'MondayRateLimitError';
+  }
+}
+
+const RATE_LIMIT_CODES = new Set([
+  'COMPLEXITY_BUDGET_EXHAUSTED', 'ComplexityException', 'RATE_LIMIT_EXCEEDED',
+  'IP_RATE_LIMIT_EXCEEDED', 'DAILY_LIMIT_EXCEEDED', 'maxConcurrencyExceeded',
+]);
+const RATE_LIMIT_TEXT = /complexity budget exhausted|rate limit exceeded/i;
+
+function positiveSeconds(v: unknown): number | undefined {
+  const n = typeof v === 'string' ? Number(v.trim()) : v;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+// Classifies a Monday error response. Returns a MondayRateLimitError when any signal says rate
+// limit (an HTTP 429, a known extensions.code, a 429 status_code, or the legacy message text);
+// otherwise null, and the caller throws its ordinary Error.
+function rateLimitErrorFrom(
+  json: GraphQLResponse<unknown> | null, httpStatus: number, retryAfterHeader: string | null, fallbackMessage: string,
+): MondayRateLimitError | null {
+  const errors = json?.errors ?? [];
+  const limited = httpStatus === 429
+    || json?.status_code === 429
+    || errors.some((e) => RATE_LIMIT_CODES.has(e.extensions?.code ?? '') || e.extensions?.status_code === 429)
+    || RATE_LIMIT_TEXT.test(json?.error_message ?? '')
+    || errors.some((e) => RATE_LIMIT_TEXT.test(e.message));
+  if (!limited) return null;
+  const legacyHint = /reset in (\d+(?:\.\d+)?) seconds?/i.exec(json?.error_message ?? errors.map((e) => e.message).join(' '))?.[1];
+  const retryInSeconds = positiveSeconds(retryAfterHeader)
+    ?? errors.map((e) => positiveSeconds(e.extensions?.retry_in_seconds)).find((s) => s !== undefined)
+    ?? positiveSeconds(legacyHint);
+  const detail = errors.length > 0 ? errors.map((e) => e.message).join('; ') : (json?.error_message ?? fallbackMessage);
+  const daily = errors.some((e) => e.extensions?.code === 'DAILY_LIMIT_EXCEEDED');
+  return new MondayRateLimitError(`monday API: ${detail}`, retryInSeconds, daily);
 }
 
 interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
@@ -104,9 +159,15 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       body: JSON.stringify({ query, variables }),
     });
     if (!response.ok) {
+      if (response.status === 429) {
+        const body = await response.json().catch(() => null) as GraphQLResponse<T> | null;
+        throw rateLimitErrorFrom(body, 429, response.headers.get('Retry-After'), `HTTP ${response.status}`)!;
+      }
       throw new Error(`monday API: HTTP ${response.status}`);
     }
     const json = (await response.json()) as GraphQLResponse<T>;
+    const limited = rateLimitErrorFrom(json, response.status, response.headers.get('Retry-After'), 'rate limited');
+    if (limited) throw limited;
     if (json.errors && json.errors.length > 0) {
       throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
     }
@@ -157,6 +218,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   async getDonationsByIds(
     itemIds: string[],
     columns: DonationReadColumns,
+    fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]> {
     if (itemIds.length === 0) return [];
     const columnIds = [columns.amount, columns.date, columns.status,
@@ -190,14 +252,14 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       );
       for (const item of data.items) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
-        // A blank Amount must be treated as malformed like a blank Date — Number('') is 0,
-        // not NaN, and letting it through would refresh the ledger's real (bootstrap-loaded)
-        // amount down to $0 on the next recompute (refreshFacts would see a changed amount and write it).
-        const amountText = (byId.get(columns.amount) ?? '').trim();
-        const amount = Number(amountText);
+        // A blank Amount must be treated as malformed like a blank Date — never as $0, which
+        // would refresh the ledger's real (bootstrap-loaded) amount down to $0 on the next
+        // recompute (refreshFacts would see a changed amount and write it). Parsed straight
+        // to integer cents (issue #27): "1,234.5", "-12.34", "(12.34)" all parse; blank is null.
+        const amountCents = parseAmountCents(byId.get(columns.amount));
         const dateISO = byId.get(columns.date) ?? '';
         const status = byId.get(columns.status) ?? '';
-        if (!dateISO || amountText === '' || Number.isNaN(amount)) continue; // malformed or deleted item, skip
+        if (!dateISO || amountCents === null) continue; // malformed or deleted item, skip
         // Fall back to deriving from the Date column when this board has no Fiscal
         // Year column yet, or the cell is blank — see fiscalYearFromDate in
         // rollups/compute.ts. Blank has to be checked as text, same as Amount above:
@@ -207,13 +269,13 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         // (observed live on the CRM Sandbox 2026-09-17).
         const fyText = columns.fiscalYear ? (byId.get(columns.fiscalYear) ?? '').trim() : '';
         const rawFY = fyText === '' ? NaN : Number(fyText);
-        const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO) : rawFY;
+        const fiscalYear = Number.isNaN(rawFY) ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : rawFY;
         const giftType = columns.giftType ? (byId.get(columns.giftType) || null) : undefined;
         const actingForItemId = columns.actingForLink
           ? (item.column_values.find((cv) => cv.id === columns.actingForLink)?.linked_item_ids?.[0] ?? null)
           : undefined;
         donations.push({
-          id: item.id, amount, dateISO, fiscalYear, status, giftType,
+          id: item.id, amountCents, dateISO, fiscalYear, status, giftType,
           termStart: optionalDate(byId, columns.termStart),
           termEnd: optionalDate(byId, columns.termEnd),
           membershipType: optionalText(byId, columns.membershipType),

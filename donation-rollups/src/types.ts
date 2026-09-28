@@ -48,9 +48,18 @@ export interface AffiliationsConfig {
   };
 }
 
+// The org's fiscal year (issue #27): which month it starts in and which time zone "today" is
+// read in, so This/Last Year and the custodian's July sweep/archive roll over at local
+// midnight. SVBC: { startMonth: 7, timeZone: "America/Los_Angeles" }.
+export interface FiscalYearConfig {
+  startMonth: number; // 1-12; a fiscal year is named for the calendar year it ends in
+  timeZone: string;   // IANA zone, e.g. "America/Los_Angeles"
+}
+
 export interface DonationRollupsConfig {
   // accountUrl builds the deep links in gift-history projections (docs/20 §5.5).
   monday: { apiUrl: string; accountUrl: string };
+  fiscalYear: FiscalYearConfig;
   custodian: CustodianConfig;
   affiliations: AffiliationsConfig | null;
   donationRollups: {

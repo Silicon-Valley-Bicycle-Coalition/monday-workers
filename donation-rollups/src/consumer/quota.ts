@@ -15,6 +15,17 @@ export function isD1QuotaError(err: unknown): boolean {
   return QUOTA_TEXT.test(text);
 }
 
+// Monday rate-limit / complexity-budget errors (issue #27): an immediate retry lands in the same
+// exhausted budget, so three of them DLQ the message within seconds. Back off from a minute,
+// doubling per delivery attempt (Cloudflare's Message.attempts, 1 on first delivery), and never
+// retry sooner than Monday's own retry_in_seconds hint says the budget resets.
+export function rateLimitRetryDelaySeconds(retryInSeconds: number | undefined, attempts: number | undefined): number {
+  const attempt = Number.isFinite(attempts) && attempts! >= 1 ? Math.floor(attempts!) : 1;
+  const backoff = MIN_DELAY_SECONDS * 2 ** Math.min(attempt - 1, 16);
+  const hint = retryInSeconds !== undefined && Number.isFinite(retryInSeconds) ? Math.ceil(retryInSeconds) : 0;
+  return Math.min(MAX_QUEUE_DELAY_SECONDS, Math.max(backoff, hint));
+}
+
 export function secondsUntilMidnightUTC(now: Date): number {
   const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   const seconds = Math.ceil((nextMidnight - now.getTime()) / 1000);

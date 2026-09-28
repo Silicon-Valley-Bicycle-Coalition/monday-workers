@@ -5,6 +5,7 @@ import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
+import { MondayRateLimitError } from '../monday/client';
 import type { DonationRollupsConfig, OwnerColumns } from '../types';
 import type { MembershipBaselineStore, BaselineRow } from '../db/membershipBaseline';
 import type { OwnerRecomputesStore, OwnerRecompute } from '../db/ownerRecomputes';
@@ -19,6 +20,7 @@ const ownerColumns: OwnerColumns = {
 
 const config: DonationRollupsConfig = {
   monday: { apiUrl: 'https://api.monday.com/v2', accountUrl: 'https://acme.monday.com' },
+  fiscalYear: { startMonth: 7, timeZone: 'America/Los_Angeles' },
   custodian: { activeFiscalYears: 2, workspaceId: 1, capacityAlertPct: 80, alertItemId: null,
     annualSummaryBoardId: null, annualSummaryColumns: null },
   affiliations: null,
@@ -62,7 +64,7 @@ function fakeBaselineStore(existing: BaselineRow | null = null): MembershipBasel
 }
 
 const NOW = new Date('2026-11-06T12:00:00Z');
-const renewalGift = { id: 'dn1', amount: 50, dateISO: '2026-11-05', fiscalYear: 2027, status: 'Received',
+const renewalGift = { id: 'dn1', amountCents: 5000, dateISO: '2026-11-05', fiscalYear: 2027, status: 'Received',
   giftType: 'Donation', termStart: null, termEnd: null, membershipType: null };
 
 function fakePendingStore(overrides: Partial<PendingStore> = {}): PendingStore {
@@ -165,7 +167,7 @@ describe('gift-history projections in the recompute path', () => {
     const mondayClient = fakeMondayClient({
       changeColumnValues, setItemDescription,
       getDonationsByIds: vi.fn().mockResolvedValue([
-        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+        { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
     });
     await processRecomputeBatch([fakeMessage('dn1')],
@@ -185,7 +187,7 @@ describe('gift-history projections in the recompute path', () => {
     const mondayClient = fakeMondayClient({
       setItemDescription,
       getDonationsByIds: vi.fn().mockResolvedValue([
-        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+        { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
     });
     const message = fakeMessage('dn1');
@@ -203,7 +205,7 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
     (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(oversizedHistory);
     const mondayClient = fakeMondayClient({
       getDonationsByIds: vi.fn().mockResolvedValue([
-        { id: 'dn1', amount: 50, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
+        { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received' },
       ]),
       ...overrides,
     });
@@ -279,23 +281,27 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
 describe('rollupToColumnValues', () => {
   it('maps every rollup field to its configured column id, nulls stay null', () => {
     const values = rollupToColumnValues({
-      lifetimeGiving: 100, giftCount: 2, firstGiftISO: '2020-01-01',
-      thisYearAmount: 50, thisYearCount: 1, lastYearAmount: 50, lastYearCount: 1,
-      largestGift: 75, smallestGift: 25, averageGift: 50,
-      lastGiftDate: '2024-01-01', lastGiftAmount: 75,
+      lifetimeGivingCents: 71493, giftCount: 2, firstGiftISO: '2020-01-01',
+      thisYearCents: 5000, thisYearCount: 1, lastYearCents: 66493, lastYearCount: 1,
+      largestGiftCents: 66493, smallestGiftCents: 5000, averageGiftCents: 35747,
+      lastGiftDate: '2024-01-01', lastGiftCents: 5,
     }, ownerColumns);
-    expect(values.lg).toBe('100');
-    expect(values.fg).toEqual({ date: '2020-01-01' });
-    expect(values.avg).toBe('50');
+    expect(values).toEqual({
+      lg: '714.93', gc: '2', fg: { date: '2020-01-01' },
+      tya: '50.00', tyc: '1', lya: '664.93', lyc: '1',
+      lag: '664.93', smg: '50.00', avg: '357.47',
+      lgd: { date: '2024-01-01' }, lga: '0.05',
+    });
   });
 
   it('writes empty string / null for a donor with no received gifts, not "null" text', () => {
     const values = rollupToColumnValues({
-      lifetimeGiving: 0, giftCount: 0, firstGiftISO: null,
-      thisYearAmount: 0, thisYearCount: 0, lastYearAmount: 0, lastYearCount: 0,
-      largestGift: null, smallestGift: null, averageGift: null,
-      lastGiftDate: null, lastGiftAmount: null,
+      lifetimeGivingCents: 0, giftCount: 0, firstGiftISO: null,
+      thisYearCents: 0, thisYearCount: 0, lastYearCents: 0, lastYearCount: 0,
+      largestGiftCents: null, smallestGiftCents: null, averageGiftCents: null,
+      lastGiftDate: null, lastGiftCents: null,
     }, ownerColumns);
+    expect(values.lg).toBe('0.00');
     expect(values.lag).toBe('');
     expect(values.fg).toBeNull();
   });
@@ -322,8 +328,8 @@ describe('processRecomputeBatch', () => {
     await processRecomputeBatch([fakeMessage('dn1', '1')],
       { pendingStore: fakePendingStore(), linksStore: fakeLinksStore({ getLinksForOwner }), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
     expect(getDonationsByIds).toHaveBeenCalledTimes(2); // both boards the index has links on
-    expect(getDonationsByIds).toHaveBeenCalledWith(['dn1', 'dnOld'], expect.objectContaining({ fiscalYear: 'fy_1' }));
-    expect(getDonationsByIds).toHaveBeenCalledWith(['dnHist'], expect.objectContaining({ fiscalYear: null }));
+    expect(getDonationsByIds).toHaveBeenCalledWith(['dn1', 'dnOld'], expect.objectContaining({ fiscalYear: 'fy_1' }), 7);
+    expect(getDonationsByIds).toHaveBeenCalledWith(['dnHist'], expect.objectContaining({ fiscalYear: null }), 7);
   });
 
   it('skips a configured board entirely when the index has no links there for this owner', async () => {
@@ -335,9 +341,27 @@ describe('processRecomputeBatch', () => {
     expect(getDonationsByIds).toHaveBeenCalledTimes(1);
   });
 
+  // Issue #27: "This Year" is the configured fiscal year in the configured zone — at 5pm Pacific
+  // on June 30 (00:00 UTC July 1) FY2026 is still this year.
+  it('splits This/Last Year by the fiscal year in config.fiscalYear.timeZone, not UTC', async () => {
+    const donations: DonationRecord[] = [
+      { id: 'd1', amountCents: 10000, dateISO: '2026-06-15', fiscalYear: 2026, status: 'Received' },
+    ];
+    const mondayClient = fakeMondayClient({ getDonationsByIds: vi.fn().mockResolvedValue(donations) });
+    const run = (now: string) => processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(),
+      linksStore: fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map([['1', ['d1']]])) }),
+      affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(),
+      baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date(now) });
+
+    await run('2026-07-01T00:00:00Z'); // 5pm PDT June 30
+    expect(mondayClient.changeColumnValues).toHaveBeenLastCalledWith(2, 'donor-1', expect.objectContaining({ tya: '100.00', lya: '0.00' }));
+    await run('2026-07-01T07:00:00Z'); // midnight PDT July 1
+    expect(mondayClient.changeColumnValues).toHaveBeenLastCalledWith(2, 'donor-1', expect.objectContaining({ tya: '0.00', lya: '100.00' }));
+  });
+
   it('writes to whichever board the owner item actually lives on, keyed by real board id', async () => {
     const donations: DonationRecord[] = [
-      { id: 'd1', amount: 100, dateISO: '2025-08-01', fiscalYear: 2026, status: 'Received' },
+      { id: 'd1', amountCents: 10000, dateISO: '2025-08-01', fiscalYear: 2026, status: 'Received' },
     ];
     const mondayClient = fakeMondayClient({
       getItemBoardId: vi.fn().mockResolvedValue('3'), // matches the second configured owner board
@@ -348,7 +372,7 @@ describe('processRecomputeBatch', () => {
 
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore, linksStore, affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), mondayClient, config, now: new Date('2026-01-01') });
 
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-1', expect.objectContaining({ lg: '100' }));
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(3, 'donor-1', expect.objectContaining({ lg: '100.00' }));
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written',
       expect.objectContaining({ ownerItemId: 'donor-1', ownerBoard: '3' }));
   });
@@ -488,7 +512,7 @@ describe('membership step (spec 2026-09-15)', () => {
 
   it('a $1,000 gift makes the owner Lifetime with Until cleared and a blank Term End', async () => {
     const d = deps({ board: { statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: '2027-04-11' },
-      donations: [{ ...renewalGift, amount: 1000 }] });
+      donations: [{ ...renewalGift, amountCents: 100000 }] });
     await d.run();
     expect(d.changeColumnValues.mock.calls[0]![2]).toMatchObject({ mt: { label: 'Lifetime' }, muntil: null });
     expect(d.changeColumnValues.mock.calls[1]![2]).toEqual({ ts_1: { date: '2026-11-05' }, mty_1: 'Lifetime' });
@@ -728,6 +752,80 @@ describe('D1 quota outage handling (fix 4)', () => {
   });
 });
 
+// Issue #27: a Monday rate-limit or complexity-budget error used to retry immediately — into
+// the same exhausted budget — and three fast retries later the message was in the DLQ.
+describe('Monday rate-limit handling (issue #27)', () => {
+  function base(mondayClient: DonationRollupsMondayClient) {
+    return {
+      pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), giftsStore: fakeGiftsStore(),
+      recomputesStore: fakeRecomputesStore(), affiliationsStore: fakeAffiliationsStore(), baselineStore: fakeBaselineStore(),
+      mondayClient, config,
+    };
+  }
+  const budget = (retryInSeconds?: number) => new MondayRateLimitError('monday API: Complexity budget exhausted', retryInSeconds);
+
+  it('retries a rate-limited message after a delay, not immediately, and does not ack', async () => {
+    const message = fakeMessage('dn1');
+    await processRecomputeBatch([message], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(budget()) })));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it("honors Monday's retry_in_seconds and backs off by delivery attempt", async () => {
+    const hinted = fakeMessage('dn1');
+    await processRecomputeBatch([hinted], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(budget(300)) })));
+    expect(hinted.retry).toHaveBeenCalledWith({ delaySeconds: 300 });
+
+    const third = { ...fakeMessage('dn1'), attempts: 3 };
+    await processRecomputeBatch([third], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(budget(5)) })));
+    expect(third.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+  });
+
+  // Monday's daily call limit resets at midnight UTC (developer.monday.com rate-limits doc) and
+  // DAILY_LIMIT_EXCEEDED isn't documented to carry a retry hint: backing off 60/120/240s would
+  // spend every retry within minutes of a reset that is hours away.
+  describe('daily limit (DAILY_LIMIT_EXCEEDED)', () => {
+    const daily = (retryInSeconds?: number) =>
+      new MondayRateLimitError('monday API: Daily limit exceeded', retryInSeconds, true);
+
+    it('with no hint, defers this and the rest of the batch to midnight UTC', async () => {
+      const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(daily()) });
+      const messages = [{ ...fakeMessage('dn1'), attempts: 3 }, fakeMessage('dn2')];
+      await processRecomputeBatch(messages, { ...base(mondayClient), now: new Date('2026-09-03T20:09:00Z') });
+
+      expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
+      for (const m of messages) expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 3 * 3600 + 51 * 60 });
+    });
+
+    it("caps at Queues' 12 h when midnight UTC is further away, like the D1-quota path", async () => {
+      const message = fakeMessage('dn1');
+      await processRecomputeBatch([message], { ...base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(daily()) })),
+        now: new Date('2026-09-09T01:58:00Z') });
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 43_200 });
+    });
+
+    it('with a hint, honors the hint as for any other rate limit', async () => {
+      const message = fakeMessage('dn1');
+      await processRecomputeBatch([message], base(fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(daily(500)) })));
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 500 });
+    });
+  });
+
+  it('defers the rest of the batch with the same delay without calling Monday again', async () => {
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockRejectedValue(budget(90)) });
+    const messages = [fakeMessage('dn1'), fakeMessage('dn2')];
+
+    await processRecomputeBatch(messages, base(mondayClient));
+
+    expect(mondayClient.getDonorLinkForDonation).toHaveBeenCalledTimes(1);
+    for (const m of messages) {
+      expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 90 });
+      expect(m.ack).not.toHaveBeenCalled();
+    }
+  });
+});
+
 const affiliationsCfg = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag', attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } };
 const configWithAffiliations: DonationRollupsConfig = {
   ...config,
@@ -740,31 +838,31 @@ const configWithAffiliations: DonationRollupsConfig = {
 describe('affectedAffiliations', () => {
   it('unions the triggering donation\'s previous and current acting-for ids, ignoring nulls', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-old'], ['dn2', null]]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
       'dn1')].sort())
       .toEqual(['af-new', 'af-old']);
   });
 
   it('an unchanged non-triggering gift contributes nothing', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-unchanged']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-unchanged' }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-unchanged' }],
       'dn1')])
       .toEqual(['af-trigger']);
   });
 
   it('the triggering gift\'s affiliation is included even when unchanged', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-same']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-same' }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-same' }],
       'dn1')])
       .toEqual(['af-same']);
   });
 
   it('a changed non-triggering gift contributes both its old and new affiliation', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-old']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-new' }],
       'dn1')].sort())
       .toEqual(['af-new', 'af-old', 'af-trigger']);
   });
@@ -775,22 +873,22 @@ describe('affectedAffiliations', () => {
   // archived attributed gift, fanning out to every affiliation an org owner ever had.
   it('a non-triggering archived gift whose fetched value reads back null contributes nothing (finding 1)', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-trigger'], ['dn2', 'af-archived']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
-       { id: 'dn2', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-trigger' },
+       { id: 'dn2', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
       'dn1')])
       .toEqual(['af-trigger']);
   });
 
   it('the same previous/current-null shape on the TRIGGERING gift is still a genuine clear (finding 1)', () => {
     expect([...affectedAffiliations(new Map([['dn1', 'af-archived']]),
-      [{ id: 'dn1', amount: 1, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
+      [{ id: 'dn1', amountCents: 100, dateISO: '2024-01-01', fiscalYear: 2024, status: 'Received', actingForItemId: null }],
       'dn1')])
       .toEqual(['af-archived']);
   });
 });
 
 describe('consumer phase 2 — affiliation rollups', () => {
-  const donation = { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-1' };
+  const donation = { id: 'dn1', amountCents: 50000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'af-1' };
   function setup(over: { giftsStore?: Partial<GiftsStore>; affiliationsStore?: Partial<AffiliationsStore>; monday?: Partial<DonationRollupsMondayClient> } = {}) {
     const giftsStore = { ...fakeGiftsStore(), ...over.giftsStore } as GiftsStore;
     (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
@@ -807,12 +905,12 @@ describe('consumer phase 2 — affiliation rollups', () => {
     const { giftsStore, mondayClient, affiliationsStore } = setup();
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
-    expect(mondayClient.getDonationsByIds).toHaveBeenCalledWith(['dn1'], expect.objectContaining({ actingForLink: 'af_1' }));
+    expect(mondayClient.getDonationsByIds).toHaveBeenCalledWith(['dn1'], expect.objectContaining({ actingForLink: 'af_1' }), 7);
     expect(giftsStore.refreshFacts).toHaveBeenCalledWith([expect.objectContaining({ mondayItemId: 'dn1', actingForItemId: 'af-1' })], 'webhook', expect.any(String));
     expect(mondayClient.getAffiliationSummary).toHaveBeenCalledWith('af-1', 'br_p');
     expect(affiliationsStore.upsert).toHaveBeenCalledWith({ affiliationItemId: 'af-1', personItemId: 'p-1', personBoardId: '2', name: 'Uma @ Beta' }, expect.any(String));
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', { n_ag: '500', n_agc: '1', d_lag: { date: '2024-02-02' } });
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', { n_ag: '500.00', n_agc: '1', d_lag: { date: '2024-02-02' } });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500.00' });
   });
 
   it('recomputes the affiliation a gift moved away from, and the person it used to belong to', async () => {
@@ -827,8 +925,8 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-old', expect.anything());
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(555, 'af-1', expect.anything());
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-old', { og: '500' });
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-old', { og: '500.00' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-1', { og: '500.00' });
   });
 
   it('skips Organizational Giving with a warning when the person board has no such column, and skips a deleted affiliation', async () => {
@@ -860,8 +958,8 @@ describe('consumer phase 2 — affiliation rollups', () => {
     (giftsStore.attributedTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1, lastGiftDateISO: '2024-02-02' });
     (giftsStore.organizationalGivingTotals as ReturnType<typeof vi.fn>).mockResolvedValue({ cents: 50000, count: 1 });
     const donations = [
-      { id: 'dn1', amount: 500, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'aff-a' },
-      { id: 'dn2', amount: 100, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
+      { id: 'dn1', amountCents: 50000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: 'aff-a' },
+      { id: 'dn2', amountCents: 10000, dateISO: '2024-02-02', fiscalYear: 2024, status: 'Received', actingForItemId: null },
     ];
     const mondayClient = fakeMondayClient({
       getDonationsByIds: vi.fn().mockResolvedValue(donations),
@@ -876,7 +974,7 @@ describe('consumer phase 2 — affiliation rollups', () => {
     });
     await processRecomputeBatch([fakeMessage('dn1')], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(),
       recomputesStore: fakeRecomputesStore(), baselineStore: fakeBaselineStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
-    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500' });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500.00' });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
     warn.mockRestore();
   });
@@ -969,7 +1067,7 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
       // The former owner is rewritten with zeroed totals, not left holding the gift.
       const [board, owner, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
       expect([board, owner]).toEqual([2, 'donor-1']);
-      expect((values as Record<string, unknown>)['lg']).toBe('0');
+      expect((values as Record<string, unknown>)['lg']).toBe('0.00');
       expect((values as Record<string, unknown>)['gc']).toBe('0');
       expect(message.ack).toHaveBeenCalled();
       expect(pendingStore.updateStatus).toHaveBeenCalledWith('dnGone', 'written', expect.anything());

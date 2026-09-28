@@ -14,7 +14,7 @@ import { processRecomputeBatch } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { runDuty, dutiesForDate, type CustodianDeps } from './custodian/custodian';
 import { createCustodianApp } from './custodian/routes';
-import { checkRequestRateLimit } from './rateLimit';
+import { checkRequestRateLimit, isVerifiedMondayWebhook } from './rateLimit';
 import type { Env, RecomputeQueueMessage } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -53,9 +53,13 @@ export default {
     const config = configFor(env);
 
     // Checked before any routing, D1, or Monday work — see README "Reliability: traffic and
-    // cost limits". Covers both branches below. REQUEST_RATE_LIMITER is provisioned in
-    // wrangler.jsonc.
-    return checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }).then((limited) => {
+    // cost limits". Covers both branches below, except a Monday webhook delivery that already
+    // passed verification (issue #27 — Monday's own bulk-edit traffic must not be throttled).
+    // REQUEST_RATE_LIMITER is provisioned in wrangler.jsonc.
+    return isVerifiedMondayWebhook(request, env.MONDAY_WEBHOOK_SECRET).then((verified) => verified
+      ? null
+      : checkRequestRateLimit(request, { limit: (key) => env.REQUEST_RATE_LIMITER.limit({ key }) }),
+    ).then((limited) => {
       if (limited) return limited;
 
       if (new URL(request.url).pathname.startsWith('/custodian/')) {
@@ -109,7 +113,7 @@ export default {
   // continued daily until it reports remaining === 0.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const deps = custodianDeps(env);
-    for (const duty of dutiesForDate(new Date(), await deps.gifts.lastRuns())) {
+    for (const duty of dutiesForDate(new Date(), deps.config.fiscalYear, await deps.gifts.lastRuns())) {
       const report = await runDuty(duty, deps);
       console.log(`custodian ${duty}: ${report.ok ? 'ok' : 'ATTENTION'} — ${report.summary}`);
     }

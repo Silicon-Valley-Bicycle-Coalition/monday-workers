@@ -174,7 +174,13 @@ backfill) would silently lose recomputes the same way.
    message with `delaySeconds` to the next midnight UTC (capped at Queues' 12 h — a message
    further out comes back once mid-way, fails without touching Monday, and defers again), and
    once one message in a batch hits it the rest of that batch is deferred to the same moment
-   without any Monday calls. Other errors still retry immediately. `max_batch_size` is 2: D1
+   without any Monday calls. Monday rate-limit and complexity-budget errors get the same
+   batch-wide deferral (issue #27): `delaySeconds` of 60 s doubling per delivery attempt, never
+   less than Monday's `retry_in_seconds` / `Retry-After` hint, capped at 12 h; a
+   `DAILY_LIMIT_EXCEEDED` with no hint defers to midnight UTC (Monday's daily reset) exactly like
+   the D1 quota. A message deferred behind a failing batch sibling still spends one of its own
+   retries (either path); if that exhausts them it lands in the DLQ, is marked `failed` there,
+   and can be re-driven. Other errors still retry immediately. `max_batch_size` is 2: D1
    queries count against the 50-subrequest budget and a full recompute costs ~16–26, so two
    worst-case recomputes fit and three don't (the default 10 is what produced the three
    "Too many subrequests" rows). Raise it on Workers Paid.
@@ -455,7 +461,8 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 * **sweep** (July 1) — one recompute per owner so This/Last Year splits roll over at the
   fiscal boundary (closes the staleness gap in Not-yet-done).
 * **reconcile** (nightly) — per-owner ledger cents vs Monday's Lifetime Giving (rounded-cents
-  comparison; Monday stores float noise) plus summaries vs fresh ledger totals. First full
+  comparison — values written before issue #27 carry float noise; since then every money column
+  is written from integer cents as two-decimal text) plus summaries vs fresh ledger totals. First full
   pass 2026-08-31: 6,886 owners, zero mismatches.
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
@@ -626,6 +633,11 @@ fallback but show a blank Fiscal Year Ending on the board.
 placeholders — re-verify against production board ids before deploying for real, since the
 sandbox gets rebuilt before cutover:
 
+* `fiscalYear` — required, `{ "startMonth": 7, "timeZone": "America/Los_Angeles" }` for SVBC
+  (July–June, named for the year it ends in, matching the Fiscal Year Ending column). "Today" for
+  This/Last Year and for the custodian's sweep (day 1 of `startMonth`) and archive (day 15) is
+  read in `timeZone` — before issue #27 it was UTC, so This Year rolled over at 5pm Pacific on
+  June 30. `startMonth` also derives a gift's fiscal year from its Date when the column is blank.
 * `donationRollups.donationBoards` — now a single entry: the archive-in-place Donations board
   (docs/20 retired the 9-era-board split), with its `columns` block (Donor-link, Amount, Date,
   Status, and Fiscal Year Ending — `null` still supported for boards without one; this Worker derives it
@@ -662,7 +674,10 @@ sandbox gets rebuilt before cutover:
   Donations board, pointed at the deployment's `/webhooks/monday/donations` route
   (`https://svbc-donation-rollups-sandbox.svbc-account.workers.dev` for the sandbox environment;
   the production-named Worker once production boards exist) with the
-  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`).
+  shared secret embedded in the URL (`?secret=`, matching the Worker's `MONDAY_WEBHOOK_SECRET`;
+  Monday doesn't sign API-created webhooks, so this is the only authentication). Compared in
+  constant time and **fails closed** since issue #27: with the secret unset or empty every
+  delivery — handshake included — gets a 401, so local dev needs it in `.dev.vars` too.
   Managed by `scripts/setup-webhooks.mjs`, which also prunes retired boards' subscriptions (the
   era boards' 18 old ones). Pass `--config config/sandbox.json` to subscribe the sandbox
   boards; the default reads `config/svbc.json`. The subscription-creation handshake POSTs `{"challenge": "..."}` to

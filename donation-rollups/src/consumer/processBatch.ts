@@ -5,6 +5,7 @@ import type { MembershipBaselineStore } from '../db/membershipBaseline';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
+import { MondayRateLimitError } from '../monday/client';
 import type {
   AffiliationsConfig, DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns,
@@ -14,18 +15,22 @@ import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
 } from '../projections/giftHistory';
-import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
+import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds } from './quota';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipState,
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
+import { formatCents } from '../money';
 
 export interface QueueMessageLike<T> {
   body: T;
   // When the message was sent (Cloudflare's Message.timestamp) — the dead-letter consumer
   // compares it against a pending row's written_at to spot stale dead messages.
   timestamp?: Date;
+  // Delivery attempt, 1 on first delivery (Cloudflare's Message.attempts) — drives the
+  // rate-limit backoff. Optional so test doubles needn't set it.
+  attempts?: number;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
 }
@@ -59,13 +64,16 @@ const MAX_GIFT_TERM_WRITES_PER_RECOMPUTE = 10;
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
-  // Once D1 has refused a query for the day, every later message in this batch would fail the
-  // same way after spending two Monday calls each — defer them all to the same moment instead.
-  let quotaDelaySeconds: number | null = null;
+  // Once D1 has refused a query for the day, or Monday has said the token's budget is spent,
+  // every later message in this batch would fail the same way after spending Monday calls of
+  // its own — defer them all to the same moment instead. A deferred sibling's retry() still
+  // counts against its own max_retries, same as the D1-quota deferral; one that runs out lands
+  // in the DLQ, where processDeadLetters marks it failed and it can be re-driven.
+  let batchDelaySeconds: number | null = null;
   for (const message of messages) {
     const { donationItemId, donationBoardId } = message.body;
-    if (quotaDelaySeconds !== null) {
-      message.retry({ delaySeconds: quotaDelaySeconds });
+    if (batchDelaySeconds !== null) {
+      message.retry({ delaySeconds: batchDelaySeconds });
       continue;
     }
     try {
@@ -86,9 +94,20 @@ export async function processRecomputeBatch(
         message.ack();
       } else if (isD1QuotaError(err)) {
         // D1's daily limit resets at midnight UTC — the retry worth making is the one after it.
-        quotaDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
-        console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${quotaDelaySeconds}s (to midnight UTC)`);
-        message.retry({ delaySeconds: quotaDelaySeconds });
+        batchDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
+        console.error(`donation-rollups consumer: D1 daily quota exhausted — deferring this and the rest of the batch ${batchDelaySeconds}s (to midnight UTC)`);
+        message.retry({ delaySeconds: batchDelaySeconds });
+      } else if (err instanceof MondayRateLimitError) {
+        // Issue #27: retrying straight back into an exhausted complexity budget just burns the
+        // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt. The
+        // daily call limit with no hint resets at midnight UTC — defer to it exactly as the D1
+        // quota does: capped at Queues' 12 h, so a reset up to 24 h away costs at most two of
+        // max_retries=3 (the capped retry fails fast on its first Monday call and defers again).
+        batchDelaySeconds = err.daily && err.retryInSeconds === undefined
+          ? secondsUntilMidnightUTC(deps.now ?? new Date())
+          : rateLimitRetryDelaySeconds(err.retryInSeconds, message.attempts);
+        console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
+        message.retry({ delaySeconds: batchDelaySeconds });
       } else {
         message.retry();
       }
@@ -240,7 +259,7 @@ async function recomputeOwner(
   const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
   const perBoard = await Promise.all(donationBoards
     .filter((b) => linksByBoard.has(String(b.boardId)))
-    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns) })));
+    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns, config.fiscalYear.startMonth) })));
   const donations = perBoard.flatMap((p) => p.items);
 
   // Affiliations phase 2 (spec "Rollups"): capture the ledger's acting_for *before* this
@@ -258,7 +277,7 @@ async function recomputeOwner(
   const refreshed = await deps.giftsStore.refreshFacts(
     donations.map((d) => ({
       mondayItemId: d.id, ownerItemId, ownerBoardId,
-      amountCents: Math.round(d.amount * 100),
+      amountCents: d.amountCents,
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
       giftType: d.giftType ?? null,
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
@@ -268,7 +287,7 @@ async function recomputeOwner(
     console.log(`donation-rollups consumer: owner ${ownerItemId}: ${refreshed.changed} of ${donations.length} gift facts changed`);
   }
 
-  const thisFY = currentFiscalYear(deps.now ?? new Date());
+  const thisFY = currentFiscalYear(deps.now ?? new Date(), config.fiscalYear);
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
 
   // Membership renewal write path (spec 2026-09-15): only for owners on a board with the four
@@ -367,7 +386,7 @@ async function planMembershipWrites(
     ?? (await baselineStore.captureIfAbsent({ ownerItemId, ownerBoardId, ...boardState, capturedAt: new Date().toISOString() }));
 
   const gifts = perBoard.flatMap((p) => p.items.map((d) => ({
-    id: d.id, dateISO: d.dateISO, amountCents: Math.round(d.amount * 100), status: d.status, giftType: d.giftType ?? null,
+    id: d.id, dateISO: d.dateISO, amountCents: d.amountCents, status: d.status, giftType: d.giftType ?? null,
   })));
   const derived = deriveMembership({ since: baseline.since, until: baseline.until, tier: baseline.tier },
     gifts, membership, config.donationRollups.receivedStatusLabel);
@@ -438,8 +457,13 @@ async function drivenForOrganizations(
   return driven;
 }
 
-function numCol(n: number | null): string {
-  return n === null ? '' : String(n);
+function countCol(n: number): string {
+  return String(n);
+}
+
+// Integer cents -> "714.93"; null (no received gifts) -> a blank cell.
+function moneyCol(cents: number | null): string {
+  return cents === null ? '' : formatCents(cents);
 }
 
 function dateCol(iso: string | null): unknown {
@@ -448,18 +472,18 @@ function dateCol(iso: string | null): unknown {
 
 export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<string, unknown> {
   return {
-    [columns.lifetimeGiving]: numCol(r.lifetimeGiving),
-    [columns.giftCount]: numCol(r.giftCount),
+    [columns.lifetimeGiving]: moneyCol(r.lifetimeGivingCents),
+    [columns.giftCount]: countCol(r.giftCount),
     [columns.firstGift]: dateCol(r.firstGiftISO),
-    [columns.thisYearAmount]: numCol(r.thisYearAmount),
-    [columns.thisYearCount]: numCol(r.thisYearCount),
-    [columns.lastYearAmount]: numCol(r.lastYearAmount),
-    [columns.lastYearCount]: numCol(r.lastYearCount),
-    [columns.largestGift]: numCol(r.largestGift),
-    [columns.smallestGift]: numCol(r.smallestGift),
-    [columns.averageGift]: numCol(r.averageGift),
+    [columns.thisYearAmount]: moneyCol(r.thisYearCents),
+    [columns.thisYearCount]: countCol(r.thisYearCount),
+    [columns.lastYearAmount]: moneyCol(r.lastYearCents),
+    [columns.lastYearCount]: countCol(r.lastYearCount),
+    [columns.largestGift]: moneyCol(r.largestGiftCents),
+    [columns.smallestGift]: moneyCol(r.smallestGiftCents),
+    [columns.averageGift]: moneyCol(r.averageGiftCents),
     [columns.lastGiftDate]: dateCol(r.lastGiftDate),
-    [columns.lastGiftAmount]: numCol(r.lastGiftAmount),
+    [columns.lastGiftAmount]: moneyCol(r.lastGiftCents),
   };
 }
 
