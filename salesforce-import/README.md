@@ -51,7 +51,7 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 #   data/review/unaffiliated-org-gifts.csv (org gifts whose primary contact has no Affiliation at
 #   that org — create the Affiliation in Salesforce or accept the gift as organization-only).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
-npm run cli -- load                 # idempotent; re-run to retry failures only
+npm run cli -- load                 # idempotent; re-run to retry failures only (--sequential = pre-#22 fallback)
 npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
 npm run cli -- validate --live      # also reads every board back from Monday (see below)
 npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views
@@ -76,6 +76,42 @@ not "skipped". Pending links hold back archiving and make `load` exit 1 until a 
 them. Targets that were never migrated at all are still skipped by design. `data/load/report.json`
 records per-run counts: created, adopted, failed, written/partial/pending/skipped links, and
 archived/deferred items.
+
+**Batched load (#22).** `load` sends `load.batchSize` aliased `create_item`s per request
+(config default 10, max 25) with `load.concurrency` requests in flight (default 3; archives use the
+same pool), and puts a payload's board-relation values straight into its `create_item` when every
+target is already on Monday — which covers nearly all Donation relations (Donor, Campaign,
+Recurring Gift, Matched By, Soft Credit) and most other boards' links. A relation only counts as
+written when `create_item`'s response echoes it back; anything else (a target still to be created,
+an archived target, an unconfirmed echo, an adopted item) goes through the separate link pass with
+all of #21's pending/archive rules, and `validate` checks the same ledger entries either way. A
+shared gate reads each response's `complexity` budget and pauses new batches before it runs out;
+the client waits Monday's `retry_in_seconds` on complexity and rate-limit errors.
+
+Duplicate safety is unchanged in kind: any entry in a batch whose outcome isn't a confirmed id — a
+rejected alias, a null alias, a 5xx, a timeout — is looked up by `Salesforce ID` (one request for
+the whole batch, after `load.recoveryLookupDelayMs`) before anything is re-sent; found items are
+adopted, re-sends go one per request (max 3 attempts), a definitely-rejected alias is never re-sent,
+and if the lookup itself fails nothing is re-sent — the next run's start-of-run board scan adopts
+whatever landed. A crash mid-batch is recovered by that same scan.
+
+```sh
+npm run cli -- load --dry-run                     # per-board plan + old vs new request counts and hours
+npm run cli -- load --dry-run --latency-ms 1400 --alias-ms 300   # re-estimate with sandbox timings
+npm run cli -- load --batch-size 25 --concurrency 4   # override config for one run
+npm run cli -- load --no-inline-links             # batch creates, but write every relation separately
+npm run cli -- load --sequential                  # FALLBACK: the pre-#22 path, unchanged
+```
+
+**Cutover-weekend fallback:** if batched loading misbehaves (unexpected Monday errors, relations
+not sticking, complexity trouble), stop and re-run with `load --sequential` (same as
+`--batch-size 1 --concurrency 1 --no-inline-links`). It uses the same ledger, so it resumes where
+the batched run stopped; it's the code path every rehearsal before #22 ran.
+
+The dry-run estimate is `old = (C+A)·L + K·L/q` and `new = (B·L + (C−B)·α)/p + K′·L/q + A·L/p`
+(C creates, B create requests, K/K′ separate link writes, A archives, L seconds per request —
+default 1.53 s, the measured ~40 h / ~94k — α the extra time per aliased create, p create/archive
+concurrency, q = 6 link concurrency). α is a placeholder (L/2) until a sandbox run measures it.
 
 **`validate --live`** doesn't trust the ledger. It scans each board's active items by
 `Salesforce ID` and fails on items the ledger expects but Monday lacks, items Monday has that the
