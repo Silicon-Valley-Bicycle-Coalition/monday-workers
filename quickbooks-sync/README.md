@@ -91,8 +91,9 @@ sandbox --remote` showed it pending, so the deployed Worker's queue consumer wou
 writing that column on its first real message. Applied it and confirmed
 `qb_events.pending_monday_item_id` exists via `PRAGMA table_info`. `config/split.test.ts`, the
 full unit suite, `wrangler types && tsc --noEmit`, and `wrangler deploy --dry-run --env sandbox`
-all pass; the sandbox Worker itself auto-deployed via Workers Builds on the 2026-09-21 merge to
-main. **`MONDAY_API_TOKEN` set 2026-09-22** — reused the existing shared `Sandbox Integration`
+all pass. (This note originally said the sandbox Worker auto-deployed via Workers Builds on the
+2026-09-21 merge; as of 2026-09-28 no sandbox Worker has a Workers Builds connection — deploy with
+`npm run deploy:sandbox` after merging. See the root README, "Deploys".) **`MONDAY_API_TOKEN` set 2026-09-22** — reused the existing shared `Sandbox Integration`
 user (`dwk+sandbox-integration@bikesiliconvalley.org`, the single sandbox-wide integration user
 the [sandbox design](../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4
 calls for; verified via a `me` query before use, not minted fresh so the other sandbox Workers

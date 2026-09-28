@@ -133,7 +133,8 @@ For each Worker:
 1. Fill `config/svbc.json` (or `production.json`/`backup.json`) with the Phase 3 ids — no
    `REPLACE_WITH_*`, no null board ids left for features you mean to enable.
 2. `npm test && npm run typecheck` (split test proves no sandbox id leaked in).
-3. Merge; Workers Builds deploys it (or `npm run deploy` for first-time provisioning).
+3. Merge, then deploy: `npm run deploy` from `main` for the first deploy. (Merging alone deploys
+   nothing but `svbc-calendars` until the Workers Builds item above is done — root README, "Deploys".)
 4. Register its inbound feeds.
 5. Run its verification before starting the next Worker.
 
