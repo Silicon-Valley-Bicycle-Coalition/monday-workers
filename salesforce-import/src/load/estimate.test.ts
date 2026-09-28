@@ -55,8 +55,8 @@ describe('estimateHours', () => {
   it('formats a report that names the assumptions', () => {
     const e = estimateLoad(fixture, keys, { batchSize: 2, inlineLinks: true });
     const text = formatEstimate(e, { latencyMs: 1530, aliasMs: 765, concurrency: 3, linkConcurrency: 6, batchSize: 2 });
-    expect(text).toMatch(/old \(--sequential\): 14 create_item \+ 14 link \+ 3 archive = 31 requests/);
-    expect(text).toMatch(/new: 8 create requests \(14 create_item, 12 links inline\) \+ 2 link \+ 3 archive = 13 requests/);
+    expect(text).toMatch(/old \(default \/ --sequential\): 14 create_item \+ 14 link \+ 3 archive = 31 requests/);
+    expect(text).toMatch(/new \(--batched\): 8 create requests \(14 create_item, 12 links inline\) \+ 2 link \+ 3 archive = 13 requests/);
     expect(text).toMatch(/--latency-ms/);
   });
 });

@@ -51,7 +51,8 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 #   data/review/unaffiliated-org-gifts.csv (org gifts whose primary contact has no Affiliation at
 #   that org — create the Affiliation in Salesforce or accept the gift as organization-only).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
-npm run cli -- load                 # idempotent; re-run to retry failures only (--sequential = pre-#22 fallback)
+npm run cli -- load                 # idempotent; re-run to retry failures only (sequential by default;
+                                    #   --batched is opt-in, sandbox-only until its rehearsal passes)
 npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
 npm run cli -- validate --live      # also reads every board back from Monday (see below)
 npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views
@@ -77,9 +78,13 @@ them. Targets that were never migrated at all are still skipped by design. `data
 records per-run counts: created, adopted, failed, written/partial/pending/skipped links, and
 archived/deferred items.
 
-**Batched load (#22).** `load` sends `load.batchSize` aliased `create_item`s per request
-(config default 10, max 25) with `load.concurrency` requests in flight (default 3; archives use the
-same pool), and puts a payload's board-relation values straight into its `create_item` when every
+**Batched load (#22) — opt-in, not the default.** Plain `load` runs the pre-#22 sequential path
+(one `create_item` per request, one at a time, the pre-#22 Monday client) and prints
+`load: mode = sequential (default)`. **`--batched` must not be used against production until
+every step of the rehearsal checklist below has passed on the sandbox account.** `load --batched`
+prints `load: mode = batched (size 10, concurrency 3, inline links on)`. It sends 10 aliased
+`create_item`s per request (`--batch-size N`, max 25) with 3 requests in flight
+(`--concurrency N`, max 8; archives use the same pool), and puts a payload's board-relation values straight into its `create_item` when every
 target is already on Monday — which covers nearly all Donation relations (Donor, Campaign,
 Recurring Gift, Matched By, Soft Credit) and most other boards' links. A relation only counts as
 written when `create_item`'s response echoes it back; anything else (a target still to be created,
@@ -112,40 +117,50 @@ recorded under `readBackFailed`. The link and archive phases still run, and `loa
 board wasn't checked, so re-run `load` (or `validate --live`) before trusting it.
 
 ```sh
-npm run cli -- load --dry-run                     # per-board plan + old vs new request counts and hours
+npm run cli -- load --dry-run                     # per-board plan + old vs --batched request counts and hours
 npm run cli -- load --dry-run --latency-ms 1400 --alias-ms 300   # re-estimate with sandbox timings
-npm run cli -- load --batch-size 25 --concurrency 4   # override config for one run
-npm run cli -- load --no-inline-links             # batch creates, but write every relation separately
-npm run cli -- load --sequential                  # FALLBACK: the pre-#22 path, unchanged
+npm run cli -- load                               # DEFAULT: the pre-#22 sequential path, unchanged
+npm run cli -- load --sequential                  # the same thing, spelled out
+npm run cli -- load --batched                     # SANDBOX ONLY until rehearsed: 10 per request, 3 in flight, inline links
+npm run cli -- load --batched --batch-size 25 --concurrency 4   # tune on top of --batched
+npm run cli -- load --batched --no-inline-links   # batch creates, but write every relation separately
 ```
 
-**Cutover-weekend fallback:** if batched loading misbehaves (unexpected Monday errors, relations
-not sticking, complexity trouble), stop and re-run with `load --sequential` (same as
-`--batch-size 1 --concurrency 1 --no-inline-links`). It uses the same ledger, so it resumes where
+**Cutover-weekend fallback:** if a `--batched` run misbehaves (unexpected Monday errors, relations
+not sticking, complexity trouble), stop and re-run plain `load` (the default; `--sequential` is the
+same). It uses the same ledger, so it resumes where
 the batched run stopped. It's the code path every rehearsal before #22 ran: the same create loop
 and the same Monday client (`MondayClient` `legacy`/`gqlLegacy`, a verbatim copy). It keeps the old
 lookup-then-retry rule for an ambiguous create, up to 3 attempts, and no duplicate read-back.
 
 **Budget a follow-up `load` run.** Every ambiguous batched outcome, at any request size, leaves
 its items for the next run rather than retrying them in place. So after any batched run that exits
-1 with "not re-sent this run" failures, run `load` again. Its start-of-run scan adopts what landed,
+1 with "not re-sent this run" failures, run `load --batched` again (plain `load` works too). Its start-of-run scan adopts what landed,
 creates the rest, and should finish at 0. Plan for at least one such extra run on cutover weekend.
+
+`--batch-size`, `--concurrency` and `--no-inline-links` also work without `--batched`. Any
+combination other than exactly `--batch-size 1 --concurrency 1 --no-inline-links` (the default)
+runs batched, and the mode line says so. `config/svbc.json`'s `load` block holds the sequential
+default. `load --dry-run`'s "new" figures always describe `--batched` (or the batched settings you
+pass), even though the default run is sequential.
 
 The dry-run estimate is `old = (C+A)·L + K·L/q` and `new = (B·L + (C−B)·α)/p + K′·L/q + A·L/p`
 (C creates, B create requests, K/K′ separate link writes, A archives, L seconds per request —
 default 1.53 s, the measured ~40 h / ~94k — α the extra time per aliased create, p create/archive
 concurrency, q = 6 link concurrency). α is a placeholder (L/2) until a sandbox run measures it.
 
-**Rehearse the batched path against the sandbox Monday account before cutover:**
-1. A full batched load: `report.json` shows `links.inlineUnconfirmed` and `links.inlineRejected` at
+**Rehearse the batched path against the sandbox Monday account before cutover** (every step uses
+`--batched`; until all pass, production loads stay on the default):
+1. A full `load --batched`: `report.json` shows `links.inlineUnconfirmed` and `links.inlineRejected` at
    0, there are no `DUPLICATE` lines, and `validate --live` passes (0 missing, duplicated or
    unexpected).
 2. Spot-check donations' Donor, Campaign, Recurring Gift, Matched By and Soft Credit in the UI.
-3. Kill a batched run mid-board and re-run it: every item is adopted and none duplicated.
-4. If a run exits 1 with "not re-sent this run" failures, the next run must adopt or create them
+3. Kill a `load --batched` run mid-board and re-run it with `--batched`: every item is adopted and none duplicated.
+4. If a `--batched` run exits 1 with "not re-sent this run" failures, the next run must adopt or create them
    and finish at 0. Confirm that happens, and budget for that extra run on cutover weekend.
-5. Resume a partial batched ledger with `--sequential`.
-6. Re-run `load --dry-run --latency-ms L --alias-ms α` with the measured timings.
+5. Resume a partial `--batched` ledger with plain `load` (the sequential default).
+6. Re-run `load --dry-run --latency-ms L --alias-ms α` with the measured timings, and decide
+   whether production uses `--batched`.
 
 **`validate --live`** doesn't trust the ledger. It scans each board's active items by
 `Salesforce ID` and fails on items the ledger expects but Monday lacks, items Monday has that the

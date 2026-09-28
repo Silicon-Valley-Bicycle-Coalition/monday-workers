@@ -92,9 +92,9 @@ export function formatEstimate(e: LoadEstimate, t: TimingAssumptions & { batchSi
   const h = (n: number) => n.toFixed(1);
   return [
     'load[dry-run]: write plan for a fresh load (empty ledger, no failures):',
-    `  old (--sequential): ${e.old.createRequests} create_item + ${e.old.linkMutations} link + ` +
+    `  old (default / --sequential): ${e.old.createRequests} create_item + ${e.old.linkMutations} link + ` +
       `${e.old.archives} archive = ${e.old.requests} requests`,
-    `  new: ${e.new.createRequests} create requests (${e.items} create_item, ${e.new.inlineLinks} links inline) + ` +
+    `  new (--batched): ${e.new.createRequests} create requests (${e.items} create_item, ${e.new.inlineLinks} links inline) + ` +
       `${e.new.linkMutations} link + ${e.new.archives} archive = ${e.new.requests} requests`,
     `  est. wall-clock: old ≈ ${h(oldHours)} h, new ≈ ${h(newHours)} h ` +
       `(L=${t.latencyMs} ms/request, +${t.aliasMs} ms per extra alias, batch ${t.batchSize}, ` +

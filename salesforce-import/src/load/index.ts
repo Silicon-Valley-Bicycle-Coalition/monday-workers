@@ -9,7 +9,7 @@ import { ensureBoards, COLUMN_TYPES } from './boards.js';
 import { formatColumnValue } from './columnValues.js';
 import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
 import { ComplexityGate, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
-import { isLegacySequential, parseLoadOptions } from './options.js';
+import { BATCHED_PRESET, describeMode, isLegacySequential, parseLoadOptions } from './options.js';
 import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
 import { estimateLoad, formatEstimate } from './estimate.js';
 
@@ -59,6 +59,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   }
   const opts = parseLoadOptions(args, cfg.load);
   if (typeof opts === 'string') { console.error(opts); return 1; }
+  console.log(describeMode(opts));
 
   const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
 
@@ -90,10 +91,12 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       return Number.isFinite(n) && n >= 0 ? n : fallback;
     };
     const latencyMs = num('--latency-ms', 1530);
+    // "new" always describes a batched run: this run's settings if batched, else --batched's.
+    const batched = isLegacySequential(opts) ? { ...opts, ...BATCHED_PRESET } : opts;
     const estimate = estimateLoad([...byBoard.values()].flat(), keys,
-      { batchSize: opts.batchSize, inlineLinks: opts.inlineLinks });
+      { batchSize: batched.batchSize, inlineLinks: batched.inlineLinks });
     console.log(formatEstimate(estimate, { latencyMs, aliasMs: num('--alias-ms', latencyMs / 2),
-      concurrency: opts.concurrency, linkConcurrency: LINK_CONCURRENCY, batchSize: opts.batchSize }));
+      concurrency: batched.concurrency, linkConcurrency: LINK_CONCURRENCY, batchSize: batched.batchSize }));
     return 0;
   }
 

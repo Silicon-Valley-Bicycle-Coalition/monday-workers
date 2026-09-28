@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseLoadOptions, isLegacySequential } from './options.js';
+import { parseLoadOptions, isLegacySequential, describeMode } from './options.js';
+import { loadConfig } from '../config.js';
 
 const cfg = { batchSize: 10, concurrency: 3, inlineLinks: true, recoveryLookupDelayMs: 2000 };
 
@@ -9,9 +10,37 @@ describe('parseLoadOptions', () => {
       recoveryLookupDelayMs: 2000 });
   });
 
-  it('falls back to built-in defaults when config has no load block', () => {
-    expect(parseLoadOptions([], undefined)).toEqual({ batchSize: 10, concurrency: 3, inlineLinks: true,
-      recoveryLookupDelayMs: 3000 });
+  it('defaults to the pre-#22 sequential path when config has no load block', () => {
+    const o = parseLoadOptions([], undefined);
+    expect(o).toEqual({ batchSize: 1, concurrency: 1, inlineLinks: false, recoveryLookupDelayMs: 3000 });
+    expect(isLegacySequential(o as never)).toBe(true);
+    expect(describeMode(o as never)).toBe('load: mode = sequential (default)');
+  });
+
+  it('the shipped config keeps the default sequential', () => {
+    const shipped = loadConfig(new URL('../../config/svbc.json', import.meta.url).pathname).load;
+    const o = parseLoadOptions([], shipped);
+    expect(isLegacySequential(o as never)).toBe(true);
+  });
+
+  it('--batched opts in to the recommended settings (10 per request, 3 in flight, inline links)', () => {
+    const o = parseLoadOptions(['--batched'], undefined);
+    expect(o).toMatchObject({ batchSize: 10, concurrency: 3, inlineLinks: true });
+    expect(describeMode(o as never)).toBe('load: mode = batched (size 10, concurrency 3, inline links on)');
+  });
+
+  it('size/concurrency/inline flags work on top of --batched and on their own', () => {
+    expect(parseLoadOptions(['--batched', '--batch-size', '25', '--no-inline-links'], undefined))
+      .toMatchObject({ batchSize: 25, concurrency: 3, inlineLinks: false });
+    const alone = parseLoadOptions(['--concurrency', '2'], undefined);
+    expect(alone).toMatchObject({ batchSize: 1, concurrency: 2, inlineLinks: false });
+    expect(describeMode(alone as never)).toBe('load: mode = batched (size 1, concurrency 2, inline links off)');
+    expect(isLegacySequential(parseLoadOptions(['--no-inline-links'], undefined) as never)).toBe(true);
+  });
+
+  it('--sequential equals the default, and cannot be combined with --batched', () => {
+    expect(parseLoadOptions(['--sequential'], undefined)).toEqual(parseLoadOptions([], undefined));
+    expect(parseLoadOptions(['--batched', '--sequential'], undefined)).toMatch(/mutually exclusive/);
   });
 
   it('lets flags override config', () => {

@@ -10,7 +10,8 @@ import { SF_ID_COLUMN } from './lookup.js';
 import { createResponse, parseCreates, relationsIn } from './fakeCreates.js';
 
 // Every guarantee here must hold for the batched default AND the --sequential fallback.
-const MODES: [string, string[]][] = [['batched', []], ['sequential', ['--sequential']]];
+// 'sequential' is the default (no flags); batching is opt-in with --batched.
+const MODES: [string, string[]][] = [['batched', ['--batched']], ['sequential', []]];
 
 // A stateful stand-in for Monday: boards hold items tagged by their Salesforce ID column, so
 // lookups and scans see exactly what earlier create_item calls committed.
@@ -58,6 +59,11 @@ class FakeMonday {
       }
     }) as typeof fetch;
     return new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {}, legacy });
+  }
+
+  /** The raw handler, for stubbing global fetch when runLoad builds its own client. */
+  asFetch(): typeof fetch {
+    return (async (_u: unknown, init: unknown) => this.handle(JSON.parse((init as { body: string }).body))) as typeof fetch;
   }
 
   private active(boardId: string) {
@@ -282,14 +288,14 @@ describe('runLoad batched creates (#22)', () => {
   it('partial alias failure: ledgers the successes and the one failure; the re-run creates only that one', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(3));
     monday.createFaults.set('Org1', ['error']);
-    expect(await runLoad([], { client: monday.client() })).toBe(1);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(1);
     expect(monday.creates).toEqual([['Org0', 'Org1', 'Org2']]); // the rejected alias is not re-sent
     const l = new Ledger(); await l.load();
     expect(l.failures().map((f) => f.sfId)).toEqual(['a1']);
     expect(l.itemId('a0')).toBe(monday.byName('Org0')[0]!.id);
     expect(l.itemId('a2')).toBe(monday.byName('Org2')[0]!.id);
 
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.creates.at(-1)).toEqual(['Org1']);
     for (const n of ['Org0', 'Org1', 'Org2']) expect(monday.byName(n)).toHaveLength(1);
   });
@@ -297,7 +303,7 @@ describe('runLoad batched creates (#22)', () => {
   it('ambiguous response after commit: every entry is looked up and adopted, none re-sent', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(3));
     monday.createFaults.set('Org2', ['lost']);
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.creates).toHaveLength(1);
     expect(monday.lookups).toBe(1);
     for (const n of ['Org0', 'Org1', 'Org2']) expect(monday.byName(n)).toHaveLength(1);
@@ -328,7 +334,7 @@ describe('runLoad batched creates (#22)', () => {
   it('never creates one Salesforce Id twice — not for a repeated payload, nor one already on Monday', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
       ...orgs(3), { board: 'organizations', sfId: 'a1', name: 'Org1 again', columns: {} }]);
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.items.filter((i) => i.sfId === 'a1')).toHaveLength(1);
 
     // Org2 is on Monday but its ledger line is gone (crash); a new payload joins the run.
@@ -336,7 +342,7 @@ describe('runLoad batched creates (#22)', () => {
     writeFileSync(dataPath('load', 'ledger.ndjson'),
       (await ledgerLines()).filter((l) => !l.includes('"a2"')).join('\n') + '\n');
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(4));
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.creates.at(-1)).toEqual(['Org3']);
     for (let i = 0; i < 4; i++) expect(monday.items.filter((it) => it.sfId === `a${i}`)).toHaveLength(1);
   });
@@ -366,10 +372,10 @@ describe('runLoad batched creates (#22)', () => {
   it('Monday commits a batch AFTER a 502 and search lags: never re-sent, adopted next run — no Id created twice', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(3));
     monday.createFaults.set('Org1', ['lostLate']);
-    expect(await runLoad([], { client: monday.client() })).toBe(1); // left for the next run
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(1); // left for the next run
     expect(monday.creates).toEqual([['Org0', 'Org1', 'Org2']]);
 
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.creates).toHaveLength(1); // the next run's board scan adopted all three
     for (let i = 0; i < 3; i++) expect(monday.items.filter((it) => it.sfId === `a${i}`)).toHaveLength(1);
     const report = await readJson<{ adopted: Record<string, number> }>(dataPath('load', 'report.json'));
@@ -378,13 +384,13 @@ describe('runLoad batched creates (#22)', () => {
 
   it('reads each written board back and reports any Salesforce Id Monday holds twice, loudly', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(2));
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     // A duplicate of an already-ledgered item appears (e.g. a late commit elsewhere); the
     // start-of-run scan only looks at unledgered payloads, so only the read-back can catch it.
     monday.items.push({ ...monday.byName('Org0')[0]!, id: '999' });
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(3));
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const code = await runLoad([], { client: monday.client() });
+    const code = await runLoad(['--batched'], { client: monday.client() });
     const out = log.mock.calls.map((c) => String(c[0])).join('\n');
     log.mockRestore();
     expect(code).toBe(1);
@@ -419,7 +425,7 @@ describe('runLoad inline relations (#22)', () => {
 
   it('sets Donor, Campaign, Recurring Gift and Matched By inside create_item — no separate link mutations', async () => {
     await seedGifts();
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.links).toEqual([]); // not one change_multiple_column_values
     const gift = monday.byName('Gift')[0]!;
     expect(gift.rel).toEqual({ [colId('Donor')]: [id('Ada')], [colId('Campaign')]: [id('Gala')],
@@ -444,7 +450,7 @@ describe('runLoad inline relations (#22)', () => {
   it('a relation create_item did not echo back is written by the link pass instead', async () => {
     await seedGifts();
     monday.echoRelations = false;
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     const gift = monday.byName('Gift')[0]!;
     expect(monday.links.filter((l) => l.itemId === gift.id)).toHaveLength(4);
     const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
@@ -454,7 +460,7 @@ describe('runLoad inline relations (#22)', () => {
   it('an adopted item (response lost) gets its links from the link pass — never trusted blind', async () => {
     await seedGifts();
     monday.createFaults.set('Gift', ['lost']);
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     const gift = monday.byName('Gift');
     expect(gift).toHaveLength(1);
     expect(monday.links.filter((l) => l.itemId === gift[0]!.id)).toHaveLength(4);
@@ -463,7 +469,7 @@ describe('runLoad inline relations (#22)', () => {
   it('a create rejected because of its inline relations is created without them; the link pass writes them', async () => {
     await seedGifts();
     monday.createFaults.set('Gift', ['errorIfRel']);
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     const gift = monday.byName('Gift');
     expect(gift).toHaveLength(1);
     expect(gift[0]!.rel).toEqual({});
@@ -476,14 +482,14 @@ describe('runLoad inline relations (#22)', () => {
   it('an error on the read-back path (create committed, id lost) + lagging search: never re-sent, adopted next run', async () => {
     await seedGifts();
     monday.createFaults.set('Gift', ['readBackError']);
-    expect(await runLoad([], { client: monday.client() })).toBe(1);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(1);
     expect(monday.creates.filter((c) => c.includes('Gift'))).toEqual([['Gift']]); // no stripped re-send
     const l = new Ledger(); await l.load();
     expect(l.failures().find((f) => f.sfId === 'o1')?.error).toMatch(/committed but its response was incomplete/);
     expect(monday.archived).toEqual([]); // #21: nothing archives without its links
 
     for (const i of monday.items) i.hiddenFromSearch = false; // search catches up
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.byName('Gift')).toHaveLength(1); // one item per Salesforce Id across both runs
     const report = await readJson<{ adopted: Record<string, number> }>(dataPath('load', 'report.json'));
     expect(report.adopted['donations']).toBe(1);
@@ -494,7 +500,7 @@ describe('runLoad inline relations (#22)', () => {
     await seedGifts();
     monday.scanFails = true;
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const code = await runLoad([], { client: monday.client() });
+    const code = await runLoad(['--batched'], { client: monday.client() });
     const out = err.mock.calls.map((c) => String(c[0])).join('\n');
     err.mockRestore();
     expect(code).toBe(1);
@@ -513,7 +519,7 @@ describe('runLoad inline relations (#22)', () => {
         links: [{ column: 'Soft Credit', targetSfIds: ['c1', 'c-never-migrated'] },
           { column: 'Campaign', targetSfIds: ['camp-never-migrated'] }] },
     ]);
-    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched'], { client: monday.client() })).toBe(0);
     expect(monday.links).toEqual([]);
     const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
     expect(report.links).toMatchObject({ inline: 1, partial: 1, skippedByDesign: 1 });
@@ -521,13 +527,36 @@ describe('runLoad inline relations (#22)', () => {
 
   it('--no-inline-links writes every relation through the link pass', async () => {
     await seedGifts();
-    expect(await runLoad(['--no-inline-links'], { client: monday.client() })).toBe(0);
+    expect(await runLoad(['--batched', '--no-inline-links'], { client: monday.client() })).toBe(0);
     expect(monday.byName('Gift')[0]!.rel).toEqual({});
     expect(monday.links).toHaveLength(5);
   });
 });
 
 describe('load --sequential stays the pre-#22 path', () => {
+  it('plain `load` (no flags) runs sequential with the pre-#22 client it builds itself, and says so', async () => {
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
+      { board: 'organizations', sfId: 'a1', name: 'Acme', columns: {} },
+      { board: 'organizations', sfId: 'a2', name: 'Bolt', columns: {} },
+    ]);
+    monday.createFaults.set('Acme', ['bodyCut']);
+    vi.stubGlobal('fetch', monday.asFetch());
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(await runLoad([])).toBe(1); // no deps.client: runLoad picks the client
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const out = log.mock.calls.map((c) => String(c[0])).join('\n');
+    log.mockRestore();
+    expect(out).toMatch(/^load: mode = sequential \(default\)$/m);
+    expect(monday.creates).toEqual([['Acme'], ['Bolt']]); // one create per request, in order
+    // The legacy client: a cut-off body is a plain failure — no lookup, no re-send.
+    expect(monday.lookups).toBe(0);
+    const l = new Ledger(); await l.load();
+    expect(l.failures().map((f) => [f.sfId, /SyntaxError/.test(f.error)])).toEqual([['a1', true]]);
+  });
+
   it('a create whose response body is cut off is ledgered failed and not re-sent (the pre-#22 client)', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
       { board: 'organizations', sfId: 'a1', name: 'Acme', columns: {} },

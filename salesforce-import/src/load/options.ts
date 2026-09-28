@@ -14,7 +14,11 @@ export interface LoadOptions {
 
 export type LoadConfig = Partial<LoadOptions>;
 
-const DEFAULTS: LoadOptions = { batchSize: 10, concurrency: 3, inlineLinks: true, recoveryLookupDelayMs: 3000 };
+// The default is the pre-#22 sequential path until the batched path passes its sandbox
+// rehearsal (README) — nobody gets batching by accident.
+const DEFAULTS: LoadOptions = { batchSize: 1, concurrency: 1, inlineLinks: false, recoveryLookupDelayMs: 3000 };
+/** What `--batched` turns on: the recommended batched settings. */
+export const BATCHED_PRESET = { batchSize: 10, concurrency: 3, inlineLinks: true } as const;
 const MAX_CONCURRENCY = 8;
 
 /**
@@ -25,9 +29,18 @@ export function isLegacySequential(o: LoadOptions): boolean {
   return o.batchSize === 1 && o.concurrency === 1 && !o.inlineLinks;
 }
 
+/** One line naming the mode a run uses, printed at the start of `load`. */
+export function describeMode(o: LoadOptions): string {
+  return isLegacySequential(o) ? 'load: mode = sequential (default)'
+    : `load: mode = batched (size ${o.batchSize}, concurrency ${o.concurrency}, ` +
+      `inline links ${o.inlineLinks ? 'on' : 'off'})`;
+}
+
 /**
- * Merges `config.load` with `--batch-size N`, `--concurrency N`, `--no-inline-links` and
- * `--sequential` (= `--batch-size 1 --concurrency 1 --no-inline-links`).
+ * Merges `config.load` (default: sequential) with `--batched` (the recommended batched
+ * settings, {@link BATCHED_PRESET}), then `--batch-size N`, `--concurrency N` and
+ * `--no-inline-links` on top. `--sequential` (= the default, `--batch-size 1 --concurrency 1
+ * --no-inline-links`) wins last. Anything but that exact combination runs batched.
  * @returns the options, or an error message for the user.
  */
 export function parseLoadOptions(args: string[], cfg: LoadConfig | undefined): LoadOptions | string {
@@ -48,6 +61,10 @@ export function parseLoadOptions(args: string[], cfg: LoadConfig | undefined): L
     return `load: config load.recoveryLookupDelayMs must be a non-negative number of ms ` +
       `(got ${JSON.stringify(o.recoveryLookupDelayMs)})`;
   }
+  if (args.includes('--batched') && args.includes('--sequential')) {
+    return 'load: --batched and --sequential are mutually exclusive';
+  }
+  if (args.includes('--batched')) Object.assign(o, BATCHED_PRESET);
   const flag = (name: string, hi: number): number | string | undefined => {
     const i = args.indexOf(name);
     if (i < 0) return undefined;
