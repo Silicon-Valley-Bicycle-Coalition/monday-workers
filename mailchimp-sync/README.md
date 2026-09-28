@@ -128,12 +128,13 @@ output out of tickets and chat).
 
 **Deploying the DLQ consumers (ops — not yet done).** Queue retention is not a `wrangler.jsonc`
 setting; donation-rollups raised its DLQ to 14 days with `wrangler queues update` (its README,
-"Queue retention, corrected 2026-09-18"), and so does this Worker. **Timing matters: the sandbox
-Worker is deployed by Workers Builds on every merge to `main`, so merging this change IS the
-sandbox deploy.** A deploy that declares a consumer for a missing queue fails, and the new
+"Queue retention, corrected 2026-09-18"), and so does this Worker. **Timing matters at the deploy.**
+Merging does not deploy the sandbox Worker (no Workers Builds connection or CI token as of
+2026-09-28 — root README, "Deploys"); it ships when someone runs `npm run deploy:sandbox` from
+`main`, so do these steps before that deploy (and, if a connection is ever added, before merging). A deploy that declares a consumer for a missing queue fails, and the new
 consumer drains whatever a DLQ already holds within a minute of attaching.
 
-*Before merging* — sandbox (`--env sandbox`, `-sandbox` / `-sandbox-dlq` queue names):
+*Before the sandbox deploy* — sandbox (`--env sandbox`, `-sandbox` / `-sandbox-dlq` queue names):
 
 1. Make sure both sandbox DLQs exist — `npx wrangler queues info mailchimp-sync-outbound-sandbox-dlq`
    (and `-inbound-sandbox-dlq`); create a missing one with `npx wrangler queues create <dlq>`.
@@ -147,7 +148,7 @@ consumer drains whatever a DLQ already holds within a minute of attaching.
    npx wrangler queues info mailchimp-sync-outbound-sandbox   # and mailchimp-sync-inbound-sandbox
    ```
 
-3. Check each sandbox DLQ for a backlog (`wrangler queues info`): it is delivered on merge, and
+3. Check each sandbox DLQ for a backlog (`wrangler queues info`): it is delivered on deploy, and
    anything older than its retention is dropped at that moment (donation-rollups lost ~2,700
    that way). Expect one log line / alert per batch of 10; letters for rows fixed since are
    left alone.

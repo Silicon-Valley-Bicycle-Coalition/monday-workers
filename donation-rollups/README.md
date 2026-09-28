@@ -531,8 +531,9 @@ still read the column on.
 
 **Bootstrap.** Before merging the branch that adds this affiliation model, apply migration
 `0007_affiliations.sql` to the remote D1 database **first**:
-`wrangler d1 migrations apply svbc-donation-rollups --remote`. Workers Builds deploys on merge, and
-the consumer's `refreshFacts` names the `acting_for_item_id` column unconditionally (phase 1 or
+`wrangler d1 migrations apply svbc-donation-rollups --remote`. Apply it before the new code is
+deployed — by `npm run deploy`, or on merge once a Workers Builds connection exists (none does as of
+2026-09-28; root README, "Deploys") — because the consumer's `refreshFacts` names the `acting_for_item_id` column unconditionally (phase 1 or
 not) — an unmigrated remote D1 breaks every consumer message the moment the new build goes live,
 not just the affiliation-specific ones. Once the migration is applied,
 `scripts/bootstrap-gifts-from-artifacts.mjs` writes two SQL files — gifts
