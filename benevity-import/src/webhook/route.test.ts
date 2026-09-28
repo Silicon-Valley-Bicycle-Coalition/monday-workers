@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createApp, type AppDeps } from './route';
+import { createApp, secretsMatch, type AppDeps } from './route';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
 import type { DisbursementStore } from '../db/disbursements';
@@ -61,13 +61,19 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     markError: vi.fn(),
   };
   const disbursementStore: DisbursementStore = {
-    createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 10, ...input })),
+    findOrCreate: vi
+      .fn()
+      .mockImplementation((input) => Promise.resolve({ disbursement: { id: 10, worklistItemId: null, ...input }, created: true })),
     getDisbursement: vi.fn(),
-    listByUpload: vi.fn().mockResolvedValue([]),
+    getByWorklistItemId: vi.fn().mockResolvedValue(null),
+    claimWorklistItemId: vi.fn().mockImplementation((_id: number, itemId: string) => Promise.resolve(itemId)),
   };
   const rowStore: RowStore = {
     upsertRow: vi.fn().mockResolvedValue('inserted'),
     getRow: vi.fn(),
+    getRowByWorklistItemId: vi.fn().mockResolvedValue(null),
+    requeueRow: vi.fn().mockResolvedValue({ requeued: [], purged: 0 }),
+    requeueDisbursementRows: vi.fn().mockResolvedValue({ requeued: [], purged: 0 }),
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
@@ -78,6 +84,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
     createItem: vi.fn().mockResolvedValue({ id: '1', name: 'x' }),
     changeColumnValues: vi.fn(),
+    archiveItem: vi.fn().mockResolvedValue(undefined),
     fetchAsset: vi.fn().mockResolvedValue({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' }),
   };
   return {
@@ -86,7 +93,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     disbursementStore,
     rowStore,
     config: fakeConfig(),
-    queue: { send: vi.fn().mockResolvedValue(undefined) },
+    queue: { sendBatch: vi.fn().mockResolvedValue(undefined) },
     webhookSecret: SECRET,
     fetchCsv: vi.fn().mockResolvedValue(validReport()),
     now: () => '2026-09-15T00:00:00Z',
@@ -118,6 +125,17 @@ describe('webhook route', () => {
     expect(res.status).toBe(401);
   });
 
+  it('rejects every request, including an empty ?secret=, when the configured secret is empty', async () => {
+    const deps = fakeDeps({ webhookSecret: '' });
+    const app = createApp(deps);
+    expect((await post(app, { challenge: 'x' }, '')).status).toBe(401);
+    expect((await post(app, { challenge: 'x' }, null)).status).toBe(401);
+    const retry = await app.request('/webhooks/monday/benevity-retry?secret=', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge: 'x' }),
+    });
+    expect(retry.status).toBe(401);
+  });
+
   it('echoes the Monday subscribe handshake challenge', async () => {
     const app = createApp(fakeDeps());
     const res = await post(app, { challenge: 'abc123' });
@@ -143,8 +161,23 @@ describe('webhook route', () => {
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(
       expect.objectContaining({ transactionId: 'TXN001', status: 'ingested' })
     );
-    expect(deps.queue.send).toHaveBeenCalledWith({ transactionId: 'TXN001' });
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
+  });
+
+  it('enqueues every row of a block in one sendBatch call, not one send per row', async () => {
+    const report = validReport()
+      .replace(
+        /^("Acme, Inc\.".*TXN001.*)$/m,
+        (line) => `${line}\n${line.replace('TXN001', 'TXN002')}`
+      )
+      .replace('Total Donations (Gross),50.00', 'Total Donations (Gross),100.00');
+    const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(report) });
+    const app = createApp(deps);
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(res.status).toBe(200);
+    expect(deps.queue.sendBatch).toHaveBeenCalledTimes(1);
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }, { transactionId: 'TXN002' }]);
   });
 
   it('re-enqueues a row stuck at "ingested" from a prior attempt whose queue.send never went through', async () => {
@@ -171,7 +204,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(res.status).toBe(200);
-    expect(deps.queue.send).toHaveBeenCalledWith({ transactionId: 'TXN001' });
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
   });
 
   it('does not re-enqueue a duplicate row whose earlier attempt already completed (status "written")', async () => {
@@ -195,7 +228,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(res.status).toBe(200);
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('is a no-op for an asset already ingested', async () => {
@@ -212,7 +245,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'skipped' }));
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('creates one worklist item and marks every row needs-review for a block with a bad header, without enqueueing', async () => {
@@ -221,7 +254,7 @@ describe('webhook route', () => {
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('creates one worklist item and marks rows needs-review for a block whose totals do not match, without enqueueing', async () => {
@@ -231,7 +264,7 @@ describe('webhook route', () => {
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
     expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
     expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs-review' }));
-    expect(deps.queue.send).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
   });
 
   it('retries an asset stuck at "parsing" from a failed prior attempt, instead of no-op-ing past it', async () => {
@@ -266,18 +299,19 @@ describe('webhook route', () => {
           .fn()
           .mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 'x', status: 'parsing', blockCount: 0 }),
       },
-      disbursementStore: {
-        ...fakeDeps().disbursementStore,
-        listByUpload: vi.fn().mockResolvedValue([{ id: 10, disbursementId: 'FIRST01' } as never]), // 1 block already done
-        createDisbursement: vi.fn().mockImplementation((input) => Promise.resolve({ id: 11, ...input })),
-      },
     });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    // Only the second (never-completed) block creates a new disbursement row.
-    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledTimes(1);
-    expect(deps.disbursementStore.createDisbursement).toHaveBeenCalledWith(
-      expect.objectContaining({ disbursementId: 'SECOND02' })
+    // Each block is looked up by its own position in this upload, so the store can hand back
+    // block 0's row from the prior attempt instead of creating it again.
+    expect(deps.disbursementStore.findOrCreate).toHaveBeenCalledTimes(2);
+    expect(deps.disbursementStore.findOrCreate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ uploadId: 1, blockIndex: 0, disbursementId: 'FIRST01' })
+    );
+    expect(deps.disbursementStore.findOrCreate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ uploadId: 1, blockIndex: 1, disbursementId: 'SECOND02' })
     );
     expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 2);
   });
@@ -296,19 +330,19 @@ describe('webhook route', () => {
       },
       disbursementStore: {
         ...fakeDeps().disbursementStore,
-        listByUpload: vi.fn().mockResolvedValue([
-          { id: 10, uploadId: 1, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
-            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x' } as never,
-        ]),
+        findOrCreate: vi.fn().mockResolvedValue({
+          disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: '', periodEnding: '', currency: '', rowCount: 0,
+            reportedGrossTotal: 0, reportedNetTotal: 0, needsReview: true, reviewReason: 'x', worklistItemId: '555' },
+          created: false,
+        }),
       },
     });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    // Reused the existing row — never created a second one, never re-posted the worklist item.
-    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
+    // Reused the existing row — never re-posted the worklist item.
     expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
     // A header-error block has zero rows to upsert, so this only proves the code path taken
-    // (existingDisbursement !== null -> skip worklist post) without needing row-level fixtures;
+    // (worklistItemId recorded -> skip worklist post) without needing row-level fixtures;
     // the sum-mismatch case below covers the "rows still get upserted" half.
   });
 
@@ -324,15 +358,15 @@ describe('webhook route', () => {
       },
       disbursementStore: {
         ...fakeDeps().disbursementStore,
-        listByUpload: vi.fn().mockResolvedValue([
-          { id: 10, uploadId: 1, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
-            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x' } as never,
-        ]),
+        findOrCreate: vi.fn().mockResolvedValue({
+          disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x', worklistItemId: '555' },
+          created: false,
+        }),
       },
     });
     const app = createApp(deps);
     await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    expect(deps.disbursementStore.createDisbursement).not.toHaveBeenCalled();
     expect(deps.mondayClient.createItem).not.toHaveBeenCalled(); // no re-posted worklist item
     // The row IS still upserted against the reused disbursement id — proves a row upsert a
     // partial prior attempt never reached still gets recorded on this retry.
@@ -341,11 +375,73 @@ describe('webhook route', () => {
     );
   });
 
+  it('records the block-level worklist item id on the disbursement', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(mismatched) });
+    (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '321', name: 'x' });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(deps.disbursementStore.claimWorklistItemId).toHaveBeenCalledWith(10, '321');
+    expect(deps.mondayClient.archiveItem).not.toHaveBeenCalled();
+  });
+
+  it('posts the worklist item for a known needs-review block that has none recorded yet (a prior attempt died before posting it)', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        findOrCreate: vi.fn().mockResolvedValue({
+          disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+            rowCount: 1, reportedGrossTotal: 999, reportedNetTotal: 999, needsReview: true, reviewReason: 'x', worklistItemId: null },
+          created: false,
+        }),
+      },
+    });
+    const app = createApp(deps);
+    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+    expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(deps.disbursementStore.claimWorklistItemId).toHaveBeenCalledWith(10, '1');
+  });
+
+  it('keeps the worklist item another concurrent delivery recorded first, and archives its own duplicate', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      disbursementStore: {
+        ...fakeDeps().disbursementStore,
+        claimWorklistItemId: vi.fn().mockResolvedValue('900'), // the other delivery won
+      },
+    });
+    (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '321', name: 'x' });
+    const app = createApp(deps);
+
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+
+    expect(res.status).toBe(200);
+    expect(deps.mondayClient.archiveItem).toHaveBeenCalledWith('321');
+  });
+
+  it('still completes the upload when archiving the duplicate worklist item fails', async () => {
+    const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+    const deps = fakeDeps({
+      fetchCsv: vi.fn().mockResolvedValue(mismatched),
+      disbursementStore: { ...fakeDeps().disbursementStore, claimWorklistItemId: vi.fn().mockResolvedValue('900') },
+    });
+    (deps.mondayClient.archiveItem as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 500'));
+    const app = createApp(deps);
+
+    const res = await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
+
+    expect(res.status).toBe(200);
+    expect(deps.uploadStore.markParsed).toHaveBeenCalled();
+  });
+
   it('marks the upload errored and returns 500 when a block throws mid-processing, so Monday redelivers', async () => {
     const deps = fakeDeps({
       disbursementStore: {
         ...fakeDeps().disbursementStore,
-        createDisbursement: vi.fn().mockRejectedValue(new Error('D1 write failed')),
+        findOrCreate: vi.fn().mockRejectedValue(new Error('D1 write failed')),
       },
     });
     const app = createApp(deps);
@@ -353,5 +449,197 @@ describe('webhook route', () => {
     expect(res.status).toBe(500);
     expect(deps.uploadStore.markError).toHaveBeenCalledWith(1);
     expect(deps.uploadStore.markParsed).not.toHaveBeenCalled();
+  });
+});
+
+describe('retry webhook (#34)', () => {
+  const RETRY = { column: 'retry_col', labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' } };
+
+  function retryDeps(overrides: Partial<AppDeps> = {}): AppDeps {
+    const deps = fakeDeps(overrides);
+    deps.config.benevityImport.uploadsBoard.retry = RETRY;
+    return deps;
+  }
+
+  function postRetry(app: ReturnType<typeof createApp>, body: unknown, secret: string | null = SECRET) {
+    const url = secret === null ? '/webhooks/monday/benevity-retry' : `/webhooks/monday/benevity-retry?secret=${secret}`;
+    return app.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }
+
+  const retryEvent = (itemId: number, label = 'Retry', columnId = 'retry_col') => ({
+    event: { pulseId: itemId, columnId, value: { label: { index: 1, text: label } } },
+  });
+
+  function rowRecord(status: 'needs-review' | 'written' | 'skipped' | 'ingested') {
+    return {
+      transactionId: 'TXN001', disbursementId: 10, status, mondayEmployeeItemId: null, mondayMatchItemId: null,
+      worklistItemId: '4242', rawRow: '{}', error: 'no match', ingestedAt: 't', writtenAt: null,
+    };
+  }
+
+  it('rejects a request with the wrong secret, and echoes the subscribe challenge', async () => {
+    const app = createApp(retryDeps());
+    expect((await postRetry(app, retryEvent(1), 'wrong')).status).toBe(401);
+    const res = await postRetry(app, { challenge: 'xyz' });
+    expect(await res.json()).toEqual({ challenge: 'xyz' });
+  });
+
+  it('ignores every event while no retry column is configured', async () => {
+    const deps = fakeDeps();
+    const app = createApp(deps);
+    const res = await postRetry(app, retryEvent(4242));
+    expect(await res.json()).toEqual({ ok: true, ignored: true });
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['another label (including the Worker\'s own Queued write)', retryEvent(4242, 'Queued')],
+    ['a cleared column', { event: { pulseId: 4242, columnId: 'retry_col', value: null } }],
+    ['another column', retryEvent(4242, 'Retry', 'other_col')],
+  ])('ignores %s', async (_name, body) => {
+    const deps = retryDeps();
+    const app = createApp(deps);
+    const res = await postRetry(app, body);
+    expect(await res.json()).toEqual({ ok: true, ignored: true });
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+  });
+
+  it('moves a needs-review row back to ingested, enqueues it, and marks the item Queued', async () => {
+    const deps = retryDeps();
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue({ requeued: ['TXN001'], purged: 0 });
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, outcome: 'row', enqueued: 1 });
+    expect(deps.rowStore.getRowByWorklistItemId).toHaveBeenCalledWith('4242');
+    expect(deps.rowStore.requeueRow).toHaveBeenCalledWith('TXN001');
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', { retry_col: { label: 'Queued' } });
+  });
+
+  it('does not re-enqueue a row that is already written, and marks its item Done', async () => {
+    const deps = retryDeps();
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('written'));
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'row already written', enqueued: 0 });
+    expect(deps.rowStore.requeueRow).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', { retry_col: { label: 'Done' } });
+  });
+
+  it('releases every held-back row of a block-level item', async () => {
+    const deps = retryDeps();
+    (deps.disbursementStore.getByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 10 });
+    (deps.rowStore.requeueDisbursementRows as ReturnType<typeof vi.fn>).mockResolvedValue({ requeued: ['TXN001', 'TXN002'], purged: 0 });
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(5000));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'block', enqueued: 2 });
+    expect(deps.rowStore.requeueDisbursementRows).toHaveBeenCalledWith(10);
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }, { transactionId: 'TXN002' }]);
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '5000', { retry_col: { label: 'Queued' } });
+  });
+
+  it('does not re-run a row whose raw data was purged, and says why on the item', async () => {
+    const deps = retryDeps();
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue({ ...rowRecord('needs-review'), rawRow: '{}' });
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue({ requeued: [], purged: 1 });
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'row purged', enqueued: 0, purged: 1 });
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '4242', {
+      reason_c: expect.stringMatching(/deletes a row's Benevity details 365 days after import.*by hand/),
+      retry_col: { label: 'Needs review' },
+    });
+  });
+
+  it('on a block Retry, releases the rows it still can and notes the purged ones on the item', async () => {
+    const deps = retryDeps();
+    (deps.disbursementStore.getByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 10 });
+    (deps.rowStore.requeueDisbursementRows as ReturnType<typeof vi.fn>).mockResolvedValue({ requeued: ['TXN001'], purged: 2 });
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(5000));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'block', enqueued: 1 });
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
+    const calls = (deps.mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![2]).toMatchObject({ reason_c: expect.stringMatching(/^Can't retry 2 row\(s\) in this block/) });
+    expect(calls.at(-1)![2]).toEqual({ retry_col: { label: 'Queued' } });
+  });
+
+  it('says so on a block item with nothing left to release', async () => {
+    const deps = retryDeps();
+    (deps.disbursementStore.getByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 10 });
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(5000));
+
+    expect(await res.json()).toEqual({ ok: true, outcome: 'nothing to retry', enqueued: 0, purged: 0 });
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '5000', {
+      reason_c: expect.stringMatching(/^Nothing to retry/),
+      retry_col: { label: 'Needs review' },
+    });
+  });
+
+  it('enqueues nothing for an item with no D1 record (pre-0003 or hand-made), and says why on it', async () => {
+    const deps = retryDeps();
+    const app = createApp(deps);
+    const res = await postRetry(app, retryEvent(9999));
+    expect(await res.json()).toEqual({ ok: true, outcome: 'unknown item', enqueued: 0 });
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '9999', {
+      reason_c: expect.stringMatching(/^Can't retry this item: the Worker has no record/),
+      retry_col: { label: 'Needs review' },
+    });
+  });
+
+  it('marks the item Queued before enqueueing, so the consumer\'s Done/Needs review always lands last', async () => {
+    const order: string[] = [];
+    const deps = retryDeps({
+      queue: { sendBatch: vi.fn().mockImplementation(async () => { order.push('send'); }) },
+    });
+    (deps.mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mockImplementation(async () => { order.push('label'); });
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue({ requeued: ['TXN001'], purged: 0 });
+    const app = createApp(deps);
+
+    await postRetry(app, retryEvent(4242));
+
+    expect(order).toEqual(['label', 'send']);
+  });
+
+  it('returns 500 so Monday redelivers when the enqueue fails', async () => {
+    const deps = retryDeps({ queue: { sendBatch: vi.fn().mockRejectedValue(new Error('queue down')) } });
+    (deps.rowStore.getRowByWorklistItemId as ReturnType<typeof vi.fn>).mockResolvedValue(rowRecord('needs-review'));
+    (deps.rowStore.requeueRow as ReturnType<typeof vi.fn>).mockResolvedValue({ requeued: ['TXN001'], purged: 0 });
+    const app = createApp(deps);
+
+    const res = await postRetry(app, retryEvent(4242));
+
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('secretsMatch', () => {
+  it('matches only the exact configured secret, and never an unset or empty one', async () => {
+    expect(await secretsMatch('s3cret', 's3cret')).toBe(true);
+    expect(await secretsMatch('s3cre', 's3cret')).toBe(false);
+    expect(await secretsMatch('s3cretX', 's3cret')).toBe(false);
+    expect(await secretsMatch(undefined, 's3cret')).toBe(false);
+    expect(await secretsMatch('', '')).toBe(false);
+    expect(await secretsMatch('anything', undefined)).toBe(false);
   });
 });

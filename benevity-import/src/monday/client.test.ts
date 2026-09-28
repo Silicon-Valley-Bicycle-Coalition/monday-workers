@@ -32,6 +32,17 @@ describe('HttpMondayClient', () => {
     });
   });
 
+  it('archives an item by id', async () => {
+    const fetchMock = mockFetchOnce({ data: { archive_item: { id: '321' } } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+
+    await client.archiveItem('321');
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.query).toContain('archive_item(item_id: $itemId)');
+    expect(body.variables).toEqual({ itemId: '321' });
+  });
+
   it('returns an empty array when nothing matches', async () => {
     mockFetchOnce({ data: { items_page_by_column_values: { items: [] } } });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');

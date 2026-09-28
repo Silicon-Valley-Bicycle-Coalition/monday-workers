@@ -63,6 +63,14 @@ Cloudflare Queue → consumer Worker, per row
   ▼
 Donations board (+ Matched By → Organizations, Donor → People)
 Worklist: a group on the Benevity Uploads board, one item per row needing a human
+
+Staff fix what a worklist item reports, then set its Retry column to "Retry"   (see Worklist)
+  │  Monday webhook on the Retry status column
+  ▼
+Cloudflare Worker (/webhooks/monday/benevity-retry)
+  │  row (or every held-back row of a block) needs-review → ingested, re-enqueued; item → "Queued"
+  ▼
+Queue consumer, as above → item → "Done", or back to "Needs review" with the new reason
 ```
 
 Ingestion, resolution, and the Monday write are separate, independently testable steps, same
@@ -166,9 +174,9 @@ whether SVBC sends its own stewardship thank-you is a staff decision made from t
 2. `config/svbc.json` alias table, e.g. `"Google, LLC": "Google"`, `"Applied Materials
    Foundation": "Applied Materials Foundation"` (kept distinct from `Applied Materials` — the CRM
    has both as separate payers, as it does `VMware` / `VMware Foundation`).
-3. Otherwise: worklist. **Never auto-create an Organization.** Staff either pick the existing item
-   (the Worker then learns the alias by appending it to a D1 `aliases` table read alongside the
-   config) or create the Organization and re-run the row.
+3. Otherwise: worklist. **Never auto-create an Organization.** Staff create the Organization (or
+   rename the existing one to match, or add a config alias) and set the worklist item to Retry
+   (see Worklist). Alias *learning* from a worklist resolution is not built — see Known gaps.
 
 ### Employee → People item
 
@@ -185,11 +193,45 @@ Only attempted when the row discloses a name or email.
    over either, so this fallback fires regularly.
 3. **Never auto-create a Person from a name.** Same rule as the Eventbrite name-match proposal:
    propose, staff confirm. A worklist item carries the row's disclosed fields (name, email,
-   company, amount, date) so staff can attach it to an existing Person or create one and re-run.
+   company, amount, date) so staff can fix the Person (add the email Benevity disclosed, or create
+   them) and set the item to Retry (see Worklist).
 
 Resolving a person does **not** write the employer onto their People item or create an
 Affiliation — that's `impact-attribution`'s job (or a human's), and a single match is weak evidence
 of current employment (foundation payers, retirees' programs, spouse matches all exist).
+
+## Worklist — what staff do
+
+Every row or block the Worker can't write lands as one item in the worklist group on the
+Benevity Uploads board, its Reason column saying why and its **Retry** status column at
+**Needs review**. To work one:
+
+1. Fix the cause *in Monday*, not on the worklist item: create the missing Organization (or
+   rename it to the exact Benevity company string), or add the disclosed email to the right
+   Person / create the Person. A row the Worker should not import at all (a non-USD or negative
+   amount) — enter it by hand if it belongs in the CRM, and leave the item at Needs review or
+   delete it.
+2. Set the item's **Retry** column to **Retry**. Within a few seconds the Worker sets it to
+   **Queued** and re-runs that row.
+3. The item then moves to **Done** (the Donations items were written) or back to **Needs
+   review** with a new Reason (it still can't resolve — fix that and Retry again).
+
+A **block** item ("Disbursement …", reason about totals) held back every row of that
+disbursement because the file's row sum didn't match its reported total. Check the report; if the
+rows are right, set Retry: every held-back row of the block is released at once, and any that
+can't resolve get their own row items. The block item itself stays at Queued. A block whose
+*header* failed has no parsed rows — Retry does nothing for it; fix the file and upload it again
+as a new file.
+
+A Retry the Worker can't carry out puts the item back to **Needs review** with the reason in
+its Reason column instead of leaving it at Retry. The main case: a row's Benevity details are
+deleted `unresolvedRowRetentionDays` (365) days after import (see PII), so a row left on the
+worklist that long can no longer be re-run — enter that gift by hand from the report.
+
+Retry is safe to repeat: a row already written isn't re-run (the item just goes to Done), and a
+duplicate Retry doesn't create duplicate Donations items. **Re-uploading the same report is not
+a retry** — rows and disbursements the Worker has already seen are skipped, so only new rows in
+the file are imported.
 
 ## Idempotency and the migrated history
 
@@ -198,9 +240,14 @@ several disbursements:
 
 * **`uploads`** — one row per Monday file asset: id, Monday asset id, uploaded-at, status
   (`parsing` / `parsed` / `error`), block count.
-* **`disbursements`** — one row per preamble block found in a file: id, upload id (FK), Benevity's
-  own `Disbursement ID` (not assumed unique across files — a redelivered file repeats it), `Period
-  Ending`, disbursement-level currency, row count, and the trailer's reported gross/net totals. On
+* **`disbursements`** — one row per Benevity disbursement: id, upload id (FK, the upload that
+  first produced it) and block position within it, Benevity's own `Disbursement ID`, `Period
+  Ending`, disbursement-level currency, row count, and the trailer's reported gross/net totals.
+  `Disbursement ID` is unique (migration `0002`, a partial index that exempts the empty id of a
+  block whose header didn't parse): the same report re-uploaded as a new file, or bundled into a
+  later download, finds its existing row — and its existing worklist item — instead of adding a
+  second one. The route looks a block up by (upload, position) first, so a retried upload
+  resumes its own blocks, then by `Disbursement ID`, and inserts only on a miss. On
   parse, the sum of the block's own rows is checked against its own reported gross total; a
   mismatch marks the whole block `needs-review` rather than writing partial data from a block the
   parser may have mis-split.
@@ -210,6 +257,10 @@ several disbursements:
   / `skipped`), Monday item ids (employee gift and/or match), raw row.
 * Every Donations item this Worker creates carries `Benevity Transaction ID`; the consumer looks
   it up before creating, so a retry after a lost status update adopts the existing item.
+* Worklist items follow the same rule (#34): D1 records each one's Monday item id (`rows` and
+  `disbursements` `worklist_item_id`, migration `0003`) in the same write that marks the row or
+  block needs-review, and the item carries its key in the worklist `Key` column, looked up before
+  creating — so a retry after that write is lost adopts the item it already posted.
 * **The migrated history has no Transaction IDs** — Salesforce never stored them — so the ledger
   can't tell a pre-cutover Benevity row from one the import already carried. Config
   `benevityImport.minDonationDate` (set to the migration data-freeze date) makes the Worker skip
@@ -239,6 +290,8 @@ placeholders until cutover), validated at first request, none hardcoded:
 | Affiliations board: Person, Organization, Work Email | person resolution |
 | Organizations board: name | company resolution |
 | Benevity Uploads board: file column, worklist group | trigger + worklist |
+| Benevity Uploads board: worklist **Retry** status column (`uploadsBoard.retry`), labels `Needs review` / `Retry` / `Queued` / `Done` (all four must exist on the column; names configurable) | staff replay trigger — see Worklist; its own Monday webhook to `/webhooks/monday/benevity-retry`; `null` until provisioned (the route then ignores every event) |
+| Benevity Uploads board: worklist `Key` text column (`uploadsBoard.worklistKeyColumn`) | each worklist item's stable key — the row's Transaction ID, or `disbursement <id>` for a block — looked up before posting so a retried write adopts the item instead of posting a second one; `null` until provisioned (the lookup is then skipped) |
 
 Token: a dedicated staff-facing integration user with access to exactly these boards (see the
 least-privilege note in `../README.md`); the same user `funraise-sync` writes as is acceptable,
@@ -254,7 +307,11 @@ and secrets (`wrangler secret put … --env sandbox`). Local development against
 split exists so the two deployments can coexist. `config/split.test.ts` fails if any of the
 sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board webhook must point at
 the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") with the sandbox
-`BENEVITY_WEBHOOK_SECRET`.
+`BENEVITY_WEBHOOK_SECRET`. The worklist Retry column needs a second webhook, same shape
+(`change_specific_column_value`, `config: {"columnId": "<retry column id>"}`), pointing at
+`/webhooks/monday/benevity-retry?secret=<BENEVITY_WEBHOOK_SECRET>`. Not yet provisioned on the
+sandbox board: `uploadsBoard.retry` and `uploadsBoard.worklistKeyColumn` are `null` in
+`config/sandbox.json` until the two columns exist.
 
 Provisioned and verified 2026-09-19: D1 `svbc-benevity-import-sandbox` (id in `wrangler.jsonc`),
 both queues, both secrets, and Monday webhook `639785248` on the sandbox Uploads board. Register
@@ -303,12 +360,10 @@ Two places where the spec above describes more than what shipped:
 
 * **Alias learning has no caller.** `db/aliases.ts`'s `learnAlias` exists and is tested, and
   Company → Organizations resolution reads from the alias table it feeds — but nothing in the
-  shipped pipeline ever *writes* to it. The Resolution section's "the Worker then learns the
-  alias by appending it to a D1 `aliases` table" describes a capability this build doesn't have:
-  there's no "resolve this worklist item" trigger/webhook at all (same underlying gap as the
-  worklist "re-run the row" flow under Resolution — staff resolving a worklist item today means
-  fixing it directly on the board and manually re-triggering the upload, not a built-in re-run
-  action). Today, teaching an alias means a manual D1 `aliases` table insert.
+  shipped pipeline ever *writes* to it: the worklist Retry (see Worklist) re-runs a row after
+  staff fix the Organization, but doesn't learn "this Company string means that Organization"
+  from it. Teaching an alias means a `config/*.json` `organizationAliases` entry or a manual D1
+  `aliases` table insert.
 * **Comment/Reason/Source/Activity/Project fields are parsed but never posted anywhere.** See the
   Input format table above, corrected to say so — `ParsedRow.notes` carries the concatenated text
   through parsing and is retained for a future Updates-post feature, but nothing in this build

@@ -44,6 +44,11 @@
         "company": "REPLACE_WITH_COLUMN_ID",
         "amount": "REPLACE_WITH_COLUMN_ID",
         "date": "REPLACE_WITH_COLUMN_ID"
+      },
+      "worklistKeyColumn": "REPLACE_WITH_COLUMN_ID",
+      "retry": {
+        "column": "REPLACE_WITH_COLUMN_ID",
+        "labels": { "needsReview": "Needs review", "retry": "Retry", "queued": "Queued", "done": "Done" }
       }
     },
     "organizationAliases": {},

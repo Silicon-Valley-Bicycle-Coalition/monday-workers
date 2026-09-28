@@ -27,6 +27,7 @@ function fakeMondayClient(overrides: Partial<MondayClient> = {}): MondayClient {
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
     createItem: vi.fn(),
     changeColumnValues: vi.fn(),
+    archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
     ...overrides,
   };

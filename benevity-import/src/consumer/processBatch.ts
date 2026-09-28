@@ -7,7 +7,7 @@ import type { ParsedRow } from '../parse/report';
 import { resolveOrganization } from '../matching/organizations';
 import { resolvePerson } from '../matching/people';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
-import { createWorklistItem } from '../matching/worklist';
+import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 
 export interface BenevityQueueMessage {
@@ -16,8 +16,22 @@ export interface BenevityQueueMessage {
 
 export interface QueueMessageLike<T> {
   body: T;
+  // Cloudflare's Message.attempts (1 on first delivery). Optional so tests can omit it.
+  attempts?: number;
   ack(): void;
-  retry(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+// Retry backoff (#34): an immediate retry let a Monday blip of a few seconds burn every attempt
+// and dead-letter the row. 60 s x 4^(attempt-1) gives 1, 4 and 16 minutes across wrangler.jsonc's
+// max_retries of 3, capped at Queues' 12-hour maximum delay. Same schedule as funraise-sync.
+const RETRY_BASE_SECONDS = 60;
+const RETRY_FACTOR = 4;
+const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
+
+export function retryDelaySeconds(attempts: number | undefined): number {
+  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
+  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export interface ProcessBatchDeps {
@@ -43,9 +57,15 @@ export async function processBenevityQueueBatch(
       console.error(`benevity consumer: failed to process "${transactionId}": ${errMsg}`);
       // Left at 'ingested' (its only possible pre-write status here) so the queue's own
       // retry+DLQ handles it — this is an unexpected/transient failure, not a business
-      // decision, so it must not read as 'needs-review' on the board.
-      await deps.rowStore.updateStatus(transactionId, 'ingested', { error: errMsg });
-      message.retry();
+      // decision, so it must not read as 'needs-review' on the board. Recording it is
+      // bookkeeping: a D1 error here must not take the retry decision down with it (the throw
+      // would fail the whole batch and retry every message in it immediately).
+      try {
+        await deps.rowStore.updateStatus(transactionId, 'ingested', { error: errMsg });
+      } catch (recordErr) {
+        console.error(`benevity consumer: could not record failure for "${transactionId}": ${errorMessage(recordErr)}`);
+      }
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
@@ -55,7 +75,10 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
   if (row === null) {
     throw new Error(`benevity consumer: no row for transaction id "${transactionId}"`);
   }
-  if (row.status === 'written') return; // redelivered message for already-completed work
+  // Only an 'ingested' row has work left. 'written' is done; 'needs-review' is waiting on staff
+  // (a Retry on its worklist item moves it back to 'ingested' before re-enqueueing it); 'skipped'
+  // is final. A message for any of those is a redelivery or a stale duplicate.
+  if (row.status !== 'ingested') return;
 
   const parsed = JSON.parse(row.rawRow) as ParsedRow;
 
@@ -132,6 +155,12 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
     }
   }
 
+  // A row replayed from the worklist (#34): close the loop for staff. Before the D1 write, so a
+  // failure here retries the (idempotent) row rather than leaving the item showing Queued.
+  if (row.worklistItemId !== null) {
+    await setWorklistLabel(deps.mondayClient, deps.config, row.worklistItemId, 'done');
+  }
+
   await deps.rowStore.updateStatus(transactionId, 'written', {
     ...(employeeItemId ? { mondayEmployeeItemId: employeeItemId } : {}),
     ...(matchItemId ? { mondayMatchItemId: matchItemId } : {}),
@@ -145,13 +174,22 @@ async function worklistAndMarkReview(
   parsed: ParsedRow,
   reason: string
 ): Promise<void> {
-  await createWorklistItem(deps.mondayClient, deps.config, {
-    reason,
-    name: `${parsed.donorFirstName} ${parsed.donorLastName}`.trim(),
-    email: parsed.email,
-    company: parsed.company,
-    amount: parsed.totalDonationToBeAcknowledged + parsed.matchAmount,
-    date: parsed.donationDate,
-  });
-  await deps.rowStore.updateStatus(row.transactionId, 'needs-review', { error: reason });
+  // ensureWorklistItem reuses the item this row already has, or finds one an earlier attempt
+  // posted before its D1 write was lost, so a retry never posts a second one (#34). Its id is
+  // recorded in the same write that marks the row needs-review.
+  const worklistItemId = await ensureWorklistItem(
+    deps.mondayClient,
+    deps.config,
+    {
+      key: row.transactionId,
+      reason,
+      name: `${parsed.donorFirstName} ${parsed.donorLastName}`.trim(),
+      email: parsed.email,
+      company: parsed.company,
+      amount: parsed.totalDonationToBeAcknowledged + parsed.matchAmount,
+      date: parsed.donationDate,
+    },
+    row.worklistItemId
+  );
+  await deps.rowStore.updateStatus(row.transactionId, 'needs-review', { error: reason, worklistItemId });
 }

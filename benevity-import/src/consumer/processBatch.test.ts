@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processBenevityQueueBatch, type QueueMessageLike, type BenevityQueueMessage, type ProcessBatchDeps } from './processBatch';
+import { processBenevityQueueBatch, retryDelaySeconds, type QueueMessageLike, type BenevityQueueMessage, type ProcessBatchDeps } from './processBatch';
 import type { RowStore, DonationRowRecord } from '../db/rows';
 import type { DisbursementStore } from '../db/disbursements';
 import type { AliasStore } from '../db/aliases';
@@ -54,6 +54,7 @@ function fakeRowRecord(parsed: ParsedRow, overrides: Partial<DonationRowRecord> 
     status: 'ingested',
     mondayEmployeeItemId: null,
     mondayMatchItemId: null,
+    worklistItemId: null,
     rawRow: JSON.stringify(parsed),
     error: null,
     ingestedAt: '2026-09-15T00:00:00Z',
@@ -62,25 +63,29 @@ function fakeRowRecord(parsed: ParsedRow, overrides: Partial<DonationRowRecord> 
   };
 }
 
-function message(transactionId: string): QueueMessageLike<BenevityQueueMessage> {
-  return { body: { transactionId }, ack: vi.fn(), retry: vi.fn() };
+function message(transactionId: string, attempts?: number): QueueMessageLike<BenevityQueueMessage> {
+  return { body: { transactionId }, ...(attempts === undefined ? {} : { attempts }), ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
   const rowStore: RowStore = {
     upsertRow: vi.fn(),
     getRow: vi.fn(),
+    getRowByWorklistItemId: vi.fn(),
+    requeueRow: vi.fn(),
+    requeueDisbursementRows: vi.fn(),
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
   };
   const disbursementStore: DisbursementStore = {
-    createDisbursement: vi.fn(),
+    findOrCreate: vi.fn(),
     getDisbursement: vi.fn().mockResolvedValue({
-      id: 1, uploadId: 1, disbursementId: 'ABC123', periodEnding: '2026-03-16', currency: 'USD',
-      rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null,
+      id: 1, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-03-16', currency: 'USD',
+      rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null, worklistItemId: null,
     }),
-    listByUpload: vi.fn().mockResolvedValue([]),
+    getByWorklistItemId: vi.fn(),
+    claimWorklistItemId: vi.fn(),
   };
   const aliasStore: AliasStore = { getAlias: vi.fn().mockResolvedValue(null), learnAlias: vi.fn() };
   const mondayClient = {
@@ -89,6 +94,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     getLinkedItemIds: vi.fn().mockResolvedValue([]),
     createItem: vi.fn().mockResolvedValue({ id: '501', name: 'x' }),
     changeColumnValues: vi.fn(),
+    archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
   };
   return {
@@ -146,6 +152,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn(),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -201,6 +208,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn().mockResolvedValue({ id: '1', name: 'x' }),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -222,6 +230,7 @@ describe('processBenevityQueueBatch', () => {
         getLinkedItemIds: vi.fn().mockResolvedValue([]),
         createItem: vi.fn(),
         changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
         fetchAsset: vi.fn(),
       } as never,
     });
@@ -233,5 +242,121 @@ describe('processBenevityQueueBatch', () => {
     expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'ingested', expect.objectContaining({ error: expect.stringMatching(/HTTP 500/) }));
     expect(msg.retry).toHaveBeenCalled();
     expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it('backs a retry off by attempt instead of retrying immediately', async () => {
+    const parsed = fakeParsedRow();
+    const deps = fakeDeps({
+      mondayClient: {
+        findItemsByColumnValue: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')),
+        findItemsByName: vi.fn().mockResolvedValue([{ id: '99', name: 'Acme, Inc.' }]),
+        getLinkedItemIds: vi.fn().mockResolvedValue([]),
+        createItem: vi.fn(),
+        changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
+        fetchAsset: vi.fn(),
+      } as never,
+    });
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
+
+    const msg = message('TXN001', 2);
+    await processBenevityQueueBatch([msg], deps);
+
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+  });
+
+  it('still retries (with backoff) when recording the failure in D1 also fails', async () => {
+    const deps = fakeDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 unavailable'));
+    (deps.rowStore.updateStatus as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 unavailable'));
+
+    const msg = message('TXN001', 1);
+    await expect(processBenevityQueueBatch([msg], deps)).resolves.toBeUndefined();
+
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(msg.ack).not.toHaveBeenCalled();
+  });
+});
+
+describe('processBenevityQueueBatch worklist idempotency (#34)', () => {
+  function unresolvedCompanyDeps() {
+    return fakeDeps({
+      mondayClient: {
+        findItemsByColumnValue: vi.fn().mockResolvedValue([]),
+        findItemsByName: vi.fn().mockResolvedValue([]), // no Organization match
+        getLinkedItemIds: vi.fn().mockResolvedValue([]),
+        createItem: vi.fn().mockResolvedValue({ id: '900', name: 'x' }),
+        changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
+        fetchAsset: vi.fn(),
+      } as never,
+    });
+  }
+
+  it('records the new worklist item id in the same write that marks the row needs-review', async () => {
+    const parsed = fakeParsedRow();
+    const deps = unresolvedCompanyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'needs-review', expect.objectContaining({ worklistItemId: '900' }));
+  });
+
+  it("reuses the row's recorded worklist item instead of posting another", async () => {
+    const parsed = fakeParsedRow();
+    const deps = unresolvedCompanyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed, { worklistItemId: '77' }));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '77', { reason_c: expect.any(String) });
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'needs-review', expect.objectContaining({ worklistItemId: '77' }));
+  });
+
+  it("marks a replayed row's worklist item Done once its gifts are written", async () => {
+    const withheld = 'Not shared by donor'; // anonymous, so the row resolves and is written
+    const parsed = fakeParsedRow({ donorFirstName: withheld, donorLastName: withheld, email: withheld });
+    const deps = fakeDeps();
+    deps.config.benevityImport.uploadsBoard.retry = {
+      column: 'retry_c',
+      labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' },
+    };
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed, { worklistItemId: '77' }));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(deps.mondayClient.changeColumnValues).toHaveBeenCalledWith(777, '77', { retry_c: { label: 'Done' } });
+    expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'written', expect.any(Object));
+  });
+
+  it.each(['needs-review', 'skipped', 'written'] as const)('is a no-op for a stale message whose row is already %s', async (status) => {
+    const parsed = fakeParsedRow();
+    const deps = unresolvedCompanyDeps();
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed, { status }));
+
+    const msg = message('TXN001');
+    await processBenevityQueueBatch([msg], deps);
+
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalled();
+  });
+});
+
+describe('retryDelaySeconds', () => {
+  it('grows 60 s x 4^(attempt-1), treating a missing or bad attempt count as the first', () => {
+    expect(retryDelaySeconds(undefined)).toBe(60);
+    expect(retryDelaySeconds(0)).toBe(60);
+    expect(retryDelaySeconds(Number.NaN)).toBe(60);
+    expect(retryDelaySeconds(1)).toBe(60);
+    expect(retryDelaySeconds(2)).toBe(240);
+    expect(retryDelaySeconds(3)).toBe(960);
+  });
+
+  it('caps at the Queues maximum delay of 43200 s (12 h)', () => {
+    expect(retryDelaySeconds(6)).toBe(43200);
+    expect(retryDelaySeconds(50)).toBe(43200);
   });
 });

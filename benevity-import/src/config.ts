@@ -18,6 +18,7 @@ const REQUIRED_DONATIONS_COLUMNS = [
 const REQUIRED_PEOPLE_COLUMNS = ['personalEmail', 'householdEmail', 'employer'] as const;
 const REQUIRED_AFFILIATIONS_COLUMNS = ['person', 'organization', 'workEmail'] as const;
 const REQUIRED_WORKLIST_COLUMNS = ['reason', 'name', 'email', 'company', 'amount', 'date'] as const;
+const REQUIRED_RETRY_LABELS = ['needsReview', 'retry', 'queued', 'done'] as const;
 
 function requireObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null) {
@@ -76,6 +77,20 @@ export function validateConfig(raw: unknown): BenevityImportConfig {
   requireNonEmptyString(uploadsBoard.worklistGroupId, 'benevityImport.uploadsBoard.worklistGroupId');
   const worklistColumns = requireObject(uploadsBoard.worklistColumns, 'benevityImport.uploadsBoard.worklistColumns');
   requireStringFields(worklistColumns, REQUIRED_WORKLIST_COLUMNS, 'benevityImport.uploadsBoard.worklistColumns');
+  // Optional until the column exists on the board (see README "Monday targets"): null or absent
+  // turns off the worklist pre-create lookup, not worklist creation itself.
+  if (uploadsBoard.worklistKeyColumn !== undefined && uploadsBoard.worklistKeyColumn !== null) {
+    requireNonEmptyString(uploadsBoard.worklistKeyColumn, 'benevityImport.uploadsBoard.worklistKeyColumn');
+  }
+  if (uploadsBoard.retry !== undefined && uploadsBoard.retry !== null) {
+    const retry = requireObject(uploadsBoard.retry, 'benevityImport.uploadsBoard.retry');
+    requireNonEmptyString(retry.column, 'benevityImport.uploadsBoard.retry.column');
+    const labels = requireObject(retry.labels, 'benevityImport.uploadsBoard.retry.labels');
+    requireStringFields(labels, REQUIRED_RETRY_LABELS, 'benevityImport.uploadsBoard.retry.labels');
+    if (new Set(REQUIRED_RETRY_LABELS.map((key) => labels[key])).size !== REQUIRED_RETRY_LABELS.length) {
+      throw new Error('config: "benevityImport.uploadsBoard.retry.labels" must be four distinct labels');
+    }
+  }
 
   const organizationAliases = benevityImport.organizationAliases;
   if (typeof organizationAliases !== 'object' || organizationAliases === null) {

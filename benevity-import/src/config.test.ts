@@ -81,4 +81,34 @@ describe('validateConfig', () => {
     };
     expect(() => validateConfig(bad)).toThrow(/organizationAliases/);
   });
+
+  it('accepts worklistKeyColumn as a column id, null, or absent, and rejects an empty string', () => {
+    const withKey = (worklistKeyColumn: unknown) => ({
+      ...validConfig,
+      benevityImport: {
+        ...validConfig.benevityImport,
+        uploadsBoard: { ...validConfig.benevityImport.uploadsBoard, worklistKeyColumn },
+      },
+    });
+    expect(() => validateConfig(withKey('key_col'))).not.toThrow();
+    expect(() => validateConfig(withKey(null))).not.toThrow();
+    expect(() => validateConfig(withKey(''))).toThrow(/worklistKeyColumn/);
+    expect(() => validateConfig(withKey(7))).toThrow(/worklistKeyColumn/);
+  });
+
+  it('accepts a retry column with four distinct labels, or null, and rejects a partial one', () => {
+    const withRetry = (retry: unknown) => ({
+      ...validConfig,
+      benevityImport: {
+        ...validConfig.benevityImport,
+        uploadsBoard: { ...validConfig.benevityImport.uploadsBoard, retry },
+      },
+    });
+    const labels = { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' };
+    expect(() => validateConfig(withRetry({ column: 'retry_col', labels }))).not.toThrow();
+    expect(() => validateConfig(withRetry(null))).not.toThrow();
+    expect(() => validateConfig(withRetry({ column: '', labels }))).toThrow(/retry\.column/);
+    expect(() => validateConfig(withRetry({ column: 'c', labels: { ...labels, done: '' } }))).toThrow(/retry\.labels\.done/);
+    expect(() => validateConfig(withRetry({ column: 'c', labels: { ...labels, done: 'Retry' } }))).toThrow(/distinct/);
+  });
 });

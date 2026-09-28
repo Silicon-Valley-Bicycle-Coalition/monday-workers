@@ -30,10 +30,30 @@ export interface WorklistColumns {
   date: string;
 }
 
+// The worklist's staff-facing Retry status column (#34). Staff set `retry` on a worklist item
+// once they've fixed what it reported; the Worker re-queues the row (or every row of a block)
+// and sets `queued`, then `done` once the row is written or `needsReview` if it fails again.
+// New worklist items start at `needsReview`. Every label must exist on the column.
+export interface RetryColumnConfig {
+  column: string;
+  labels: {
+    needsReview: string;
+    retry: string;
+    queued: string;
+    done: string;
+  };
+}
+
 export interface UploadsBoardConfig {
   fileColumn: string;
   worklistGroupId: string;
   worklistColumns: WorklistColumns;
+  // Text column on the Uploads board holding each worklist item's key (Transaction ID, or
+  // "disbursement <id>" for a block) — the pre-create lookup that keeps a retried write from
+  // posting a second worklist item (#34). Null/absent until the column is provisioned.
+  worklistKeyColumn?: string | null;
+  // Null/absent until the column exists: retry webhooks are then ignored and no labels written.
+  retry?: RetryColumnConfig | null;
 }
 
 export interface BenevityImportConfig {

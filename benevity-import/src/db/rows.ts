@@ -6,6 +6,8 @@ export interface DonationRowRecord {
   status: RowStatus;
   mondayEmployeeItemId: string | null;
   mondayMatchItemId: string | null;
+  // The Benevity Uploads worklist item this row was put on, once it needed review (#34).
+  worklistItemId: string | null;
   rawRow: string;
   error: string | null;
   ingestedAt: string;
@@ -23,15 +25,33 @@ export interface NewRow {
 export interface RowStatusPatch {
   mondayEmployeeItemId?: string;
   mondayMatchItemId?: string;
+  worklistItemId?: string;
   error?: string;
   writtenAt?: string;
 }
 
 export type UpsertRowResult = 'inserted' | 'duplicate';
 
+export interface RequeueResult {
+  requeued: string[];
+  purged: number;
+}
+
+// What purgeWrittenRawRows/purgeUnresolvedRawRows leave in raw_row.
+export const PURGED_RAW_ROW = '{}';
+
 export interface RowStore {
   upsertRow(row: NewRow): Promise<UpsertRowResult>;
   getRow(transactionId: string): Promise<DonationRowRecord | null>;
+  getRowByWorklistItemId(worklistItemId: string): Promise<DonationRowRecord | null>;
+  // Replay (#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
+  // error) and returns every one of them that is now 'ingested' — including rows a previous
+  // replay already moved whose enqueue never went through — for the caller to (re-)enqueue.
+  // 'written' and 'skipped' rows are left alone and not returned. A pending row whose raw_row
+  // the retention purge already emptied can't be re-run (the consumer would parse `{}`), so it
+  // is left as-is and only counted in `purged`. Idempotent.
+  requeueRow(transactionId: string): Promise<RequeueResult>;
+  requeueDisbursementRows(disbursementId: number): Promise<RequeueResult>;
   updateStatus(transactionId: string, status: RowStatus, patch?: RowStatusPatch): Promise<void>;
   purgeWrittenRawRows(writtenBefore: string): Promise<number>;
   purgeUnresolvedRawRows(ingestedBefore: string): Promise<number>;
@@ -43,11 +63,15 @@ interface D1RowRecord {
   status: RowStatus;
   monday_employee_item_id: string | null;
   monday_match_item_id: string | null;
+  worklist_item_id: string | null;
   raw_row: string;
   error: string | null;
   ingested_at: string;
   written_at: string | null;
 }
+
+const ROW_COLUMNS = `transaction_id, disbursement_id, status, monday_employee_item_id, monday_match_item_id,
+                     worklist_item_id, raw_row, error, ingested_at, written_at`;
 
 function toRow(record: D1RowRecord): DonationRowRecord {
   return {
@@ -56,6 +80,7 @@ function toRow(record: D1RowRecord): DonationRowRecord {
     status: record.status,
     mondayEmployeeItemId: record.monday_employee_item_id,
     mondayMatchItemId: record.monday_match_item_id,
+    worklistItemId: record.worklist_item_id,
     rawRow: record.raw_row,
     error: record.error,
     ingestedAt: record.ingested_at,
@@ -83,14 +108,50 @@ export class D1RowStore implements RowStore {
 
   async getRow(transactionId: string): Promise<DonationRowRecord | null> {
     const record = await this.db
-      .prepare(
-        `SELECT transaction_id, disbursement_id, status, monday_employee_item_id, monday_match_item_id,
-                raw_row, error, ingested_at, written_at
-         FROM rows WHERE transaction_id = ?1`
-      )
+      .prepare(`SELECT ${ROW_COLUMNS} FROM rows WHERE transaction_id = ?1`)
       .bind(transactionId)
       .first<D1RowRecord>();
     return record === null ? null : toRow(record);
+  }
+
+  async getRowByWorklistItemId(worklistItemId: string): Promise<DonationRowRecord | null> {
+    const record = await this.db
+      .prepare(`SELECT ${ROW_COLUMNS} FROM rows WHERE worklist_item_id = ?1`)
+      .bind(worklistItemId)
+      .first<D1RowRecord>();
+    return record === null ? null : toRow(record);
+  }
+
+  requeueRow(transactionId: string): Promise<RequeueResult> {
+    return this.requeueWhere('transaction_id = ?1', transactionId);
+  }
+
+  requeueDisbursementRows(disbursementId: number): Promise<RequeueResult> {
+    return this.requeueWhere('disbursement_id = ?1', disbursementId);
+  }
+
+  // One UPDATE … RETURNING, so D1 applies it atomically. Rows already 'ingested' match too (a
+  // no-op set) so they're returned for re-sending.
+  private async requeueWhere(predicate: string, value: string | number): Promise<RequeueResult> {
+    const [updated, purged] = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE rows SET status = 'ingested', error = NULL
+           WHERE ${predicate} AND status IN ('needs-review', 'ingested') AND raw_row != ?2
+           RETURNING transaction_id`
+        )
+        .bind(value, PURGED_RAW_ROW),
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM rows
+           WHERE ${predicate} AND status IN ('needs-review', 'ingested') AND raw_row = ?2`
+        )
+        .bind(value, PURGED_RAW_ROW),
+    ]);
+    return {
+      requeued: (updated!.results as { transaction_id: string }[]).map((r) => r.transaction_id).sort(),
+      purged: (purged!.results as { n: number }[])[0]?.n ?? 0,
+    };
   }
 
   async updateStatus(transactionId: string, status: RowStatus, patch: RowStatusPatch = {}): Promise<void> {
@@ -101,7 +162,8 @@ export class D1RowStore implements RowStore {
            monday_employee_item_id = COALESCE(?3, monday_employee_item_id),
            monday_match_item_id = COALESCE(?4, monday_match_item_id),
            error = ?5,
-           written_at = COALESCE(?6, written_at)
+           written_at = COALESCE(?6, written_at),
+           worklist_item_id = COALESCE(?7, worklist_item_id)
          WHERE transaction_id = ?1`
       )
       .bind(
@@ -110,7 +172,8 @@ export class D1RowStore implements RowStore {
         patch.mondayEmployeeItemId ?? null,
         patch.mondayMatchItemId ?? null,
         patch.error ?? null,
-        patch.writtenAt ?? null
+        patch.writtenAt ?? null,
+        patch.worklistItemId ?? null
       )
       .run();
   }
