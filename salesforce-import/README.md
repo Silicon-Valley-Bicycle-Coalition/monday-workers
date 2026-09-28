@@ -88,12 +88,23 @@ all of #21's pending/archive rules, and `validate` checks the same ledger entrie
 shared gate reads each response's `complexity` budget and pauses new batches before it runs out;
 the client waits Monday's `retry_in_seconds` on complexity and rate-limit errors.
 
-Duplicate safety is unchanged in kind: any entry in a batch whose outcome isn't a confirmed id — a
-rejected alias, a null alias, a 5xx, a timeout — is looked up by `Salesforce ID` (one request for
-the whole batch, after `load.recoveryLookupDelayMs`) before anything is re-sent; found items are
-adopted, re-sends go one per request (max 3 attempts), a definitely-rejected alias is never re-sent,
-and if the lookup itself fails nothing is re-sent — the next run's start-of-run board scan adopts
-whatever landed. A crash mid-batch is recovered by that same scan.
+Duplicate safety: any entry in a batch whose outcome isn't a confirmed id is looked up by
+`Salesforce ID` (one request for the whole batch, after `load.recoveryLookupDelayMs`), and found
+items are adopted. **An entry in a multi-entry request that the lookup doesn't find is never re-sent
+in that run** (timeout, 5xx, network error, whole-request error, null alias): Monday can keep
+committing aliases after the client gives up, and search can lag, so a miss proves nothing. It's
+ledgered as failed, `load` exits 1, and **the next `load` run's start-of-run board scan adopts
+whatever landed and creates the rest**, so a batched run that hit a timeout needs one more run. A
+single-entry request keeps the sequential rule: look up, then re-send up to 3 attempts. A
+definitely-rejected alias is never re-sent, except that an entry rejected while carrying inline
+relations is retried once without them (`links.inlineRejected`), and the link pass writes those. If
+the lookup itself fails, nothing is re-sent. A crash mid-batch is recovered by the same start-of-run
+scan. Monday's `DAILY_LIMIT_EXCEEDED` fails requests at once and is never retried.
+
+**Duplicate read-back:** in batched mode, every board (and every donations fiscal year, before it
+archives) is read back by `Salesforce ID` right after its creates. Any Id Monday holds more than
+once is printed as `load: DUPLICATE <board>/<sfId> …`, listed under `duplicates` in
+`data/load/report.json`, and makes `load` exit 1. It's never deleted; remove the extras by hand.
 
 ```sh
 npm run cli -- load --dry-run                     # per-board plan + old vs new request counts and hours
@@ -112,6 +123,17 @@ The dry-run estimate is `old = (C+A)·L + K·L/q` and `new = (B·L + (C−B)·α
 (C creates, B create requests, K/K′ separate link writes, A archives, L seconds per request —
 default 1.53 s, the measured ~40 h / ~94k — α the extra time per aliased create, p create/archive
 concurrency, q = 6 link concurrency). α is a placeholder (L/2) until a sandbox run measures it.
+
+**Rehearse the batched path against the sandbox Monday account before cutover:**
+1. A full batched load: `report.json` shows `links.inlineUnconfirmed` and `links.inlineRejected` at
+   0, there are no `DUPLICATE` lines, and `validate --live` passes (0 missing, duplicated or
+   unexpected).
+2. Spot-check donations' Donor, Campaign, Recurring Gift, Matched By and Soft Credit in the UI.
+3. Kill a batched run mid-board and re-run it: every item is adopted and none duplicated.
+4. If a run exits 1 with "not re-sent this run" failures, the next run must adopt or create them
+   and finish at 0. Confirm that happens, and budget for that extra run on cutover weekend.
+5. Resume a partial batched ledger with `--sequential`.
+6. Re-run `load --dry-run --latency-ms L --alias-ms α` with the measured timings.
 
 **`validate --live`** doesn't trust the ledger. It scans each board's active items by
 `Salesforce ID` and fails on items the ledger expects but Monday lacks, items Monday has that the
