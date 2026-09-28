@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createQbWebhookApp } from './route';
-import { verifyQbSignature } from './validate';
+import { createQbWebhookApp, type QueueLike } from './route';
 import type { QbEventStore } from '../../db/qbEvents';
 import type { QbEventRow } from '../../types';
-import type { QuickBooksClient } from '../client';
 
 function qbEventRow(overrides: Partial<QbEventRow> = {}): QbEventRow {
   return {
@@ -25,14 +23,7 @@ function fakeEventStore(overrides: Partial<QbEventStore> = {}): QbEventStore {
     insertEvent: vi.fn().mockResolvedValue('inserted'),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
-    ...overrides,
-  };
-}
-
-function fakeQuickBooksClient(overrides: Partial<QuickBooksClient> = {}): QuickBooksClient {
-  return {
-    getEntity: vi.fn().mockResolvedValue({ Id: '60', DisplayName: 'Acme' }),
-    createCustomer: vi.fn(),
+    findByPendingMondayItemId: vi.fn(),
     ...overrides,
   };
 }
@@ -70,16 +61,32 @@ const notificationPayload = {
 };
 
 describe('createQbWebhookApp', () => {
+  function app(eventStore: QbEventStore, queue: QueueLike, connectedRealmId: string | null = '123') {
+    return createQbWebhookApp({
+      qbEventStore: eventStore,
+      queue,
+      verifierToken,
+      connectedRealmId: async () => connectedRealmId,
+    });
+  }
+
+  async function post(
+    eventStore: QbEventStore,
+    queue: QueueLike,
+    payload: unknown = notificationPayload,
+    connectedRealmId: string | null = '123'
+  ) {
+    const { body, signature } = await signedBody(payload);
+    return app(eventStore, queue, connectedRealmId).request('/webhooks/quickbooks', {
+      method: 'POST',
+      body,
+      headers: { 'intuit-signature': signature },
+    });
+  }
+
   it('rejects a request with an invalid signature', async () => {
     const eventStore = fakeEventStore();
-    const app = createQbWebhookApp({
-      qbEventStore: eventStore,
-      quickBooksClient: fakeQuickBooksClient(),
-      queue: { send: vi.fn() },
-      verifierToken,
-    });
-
-    const res = await app.request('/webhooks/quickbooks', {
+    const res = await app(eventStore, { send: vi.fn() }).request('/webhooks/quickbooks', {
       method: 'POST',
       body: JSON.stringify(notificationPayload),
       headers: { 'intuit-signature': 'wrong-signature' },
@@ -89,23 +96,14 @@ describe('createQbWebhookApp', () => {
     expect(eventStore.insertEvent).not.toHaveBeenCalled();
   });
 
-  it('dedupes, fetches, and enqueues a new notification', async () => {
-    const { body, signature } = await signedBody(notificationPayload);
+  // #33: the webhook used to fetch the entity inline and answer 200 even when that failed, so
+  // Intuit never redelivered and the change was lost. It now only records and enqueues; the
+  // consumer fetches (with queue retries and a DLQ behind it).
+  it('records and enqueues a new notification without calling QuickBooks', async () => {
     const eventStore = fakeEventStore();
-    const getEntity = vi.fn().mockResolvedValue({ Id: '60', DisplayName: 'Acme' });
     const queue = { send: vi.fn().mockResolvedValue(undefined) };
-    const app = createQbWebhookApp({
-      qbEventStore: eventStore,
-      quickBooksClient: fakeQuickBooksClient({ getEntity }),
-      queue,
-      verifierToken,
-    });
 
-    const res = await app.request('/webhooks/quickbooks', {
-      method: 'POST',
-      body,
-      headers: { 'intuit-signature': signature },
-    });
+    const res = await post(eventStore, queue);
 
     expect(res.status).toBe(200);
     expect(eventStore.insertEvent).toHaveBeenCalledWith({
@@ -114,35 +112,20 @@ describe('createQbWebhookApp', () => {
       qbId: '60',
       receivedAt: expect.any(String),
     });
-    expect(getEntity).toHaveBeenCalledWith('customer', '60');
-    expect(eventStore.updateStatus).toHaveBeenCalledWith(
-      '123:Customer:60:2026-08-22T00:00:00.000Z',
-      'fetched',
-      { fetchedPayload: JSON.stringify({ Id: '60', DisplayName: 'Acme' }) }
-    );
     expect(queue.send).toHaveBeenCalledWith({ direction: 'qb-to-monday', eventId: '123:Customer:60:2026-08-22T00:00:00.000Z' });
     expect(eventStore.updateStatus).toHaveBeenCalledWith('123:Customer:60:2026-08-22T00:00:00.000Z', 'queued');
   });
 
   it('short-circuits on a duplicate notification whose row already reached the queue', async () => {
-    const { body, signature } = await signedBody(notificationPayload);
     const eventStore = fakeEventStore({
       insertEvent: vi.fn().mockResolvedValue('duplicate'),
       getEvent: vi.fn().mockResolvedValue(qbEventRow({ status: 'queued' })),
     });
-    const getEntity = vi.fn();
     const queue = { send: vi.fn() };
-    const app = createQbWebhookApp({
-      qbEventStore: eventStore,
-      quickBooksClient: fakeQuickBooksClient({ getEntity }),
-      queue,
-      verifierToken,
-    });
 
-    const res = await app.request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': signature } });
+    const res = await post(eventStore, queue);
 
     expect(res.status).toBe(200);
-    expect(getEntity).not.toHaveBeenCalled();
     expect(queue.send).not.toHaveBeenCalled();
   });
 
@@ -150,28 +133,15 @@ describe('createQbWebhookApp', () => {
     // The row exists in a pre-queue state because a prior delivery died between the insert and
     // the enqueue. Skipping it here would lose the change permanently.
     for (const status of ['received', 'fetched', 'failed'] as const) {
-      const { body, signature } = await signedBody(notificationPayload);
       const eventStore = fakeEventStore({
         insertEvent: vi.fn().mockResolvedValue('duplicate'),
         getEvent: vi.fn().mockResolvedValue(qbEventRow({ status })),
       });
-      const getEntity = vi.fn().mockResolvedValue({ Id: '60', DisplayName: 'Acme' });
       const queue = { send: vi.fn().mockResolvedValue(undefined) };
-      const app = createQbWebhookApp({
-        qbEventStore: eventStore,
-        quickBooksClient: fakeQuickBooksClient({ getEntity }),
-        queue,
-        verifierToken,
-      });
 
-      const res = await app.request('/webhooks/quickbooks', {
-        method: 'POST',
-        body,
-        headers: { 'intuit-signature': signature },
-      });
+      const res = await post(eventStore, queue);
 
       expect(res.status).toBe(200);
-      expect(getEntity, `status ${status}`).toHaveBeenCalledWith('customer', '60');
       expect(queue.send, `status ${status}`).toHaveBeenCalledWith({
         direction: 'qb-to-monday',
         eventId: '123:Customer:60:2026-08-22T00:00:00.000Z',
@@ -183,26 +153,141 @@ describe('createQbWebhookApp', () => {
     }
   });
 
-  it('marks the event failed when the QuickBooks fetch throws, without crashing the request', async () => {
-    const { body, signature } = await signedBody(notificationPayload);
+  it('answers 500 when the enqueue fails, so Intuit redelivers, and marks the row resumable', async () => {
     const eventStore = fakeEventStore();
-    const getEntity = vi.fn().mockRejectedValue(new Error('quickbooks API: HTTP 500 fetching customer 60'));
-    const queue = { send: vi.fn() };
-    const app = createQbWebhookApp({
-      qbEventStore: eventStore,
-      quickBooksClient: fakeQuickBooksClient({ getEntity }),
-      queue,
-      verifierToken,
-    });
+    const queue = { send: vi.fn().mockRejectedValue(new Error('queue unavailable')) };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const res = await app.request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': signature } });
+    const res = await post(eventStore, queue);
+
+    expect(res.status).toBe(500);
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('123:Customer:60:2026-08-22T00:00:00.000Z', 'failed', {
+      error: 'queue unavailable',
+    });
+    expect(eventStore.updateStatus).not.toHaveBeenCalledWith('123:Customer:60:2026-08-22T00:00:00.000Z', 'queued');
+    errorSpy.mockRestore();
+  });
+
+  it('still enqueues the other notifications in the payload when one enqueue fails', async () => {
+    const payload = {
+      eventNotifications: [
+        {
+          realmId: '123',
+          dataChangeEvent: {
+            entities: [
+              { name: 'Customer', id: '60', operation: 'Update', lastUpdated: '2026-08-22T00:00:00.000Z' },
+              { name: 'Invoice', id: '7', operation: 'Create', lastUpdated: '2026-08-22T00:00:01.000Z' },
+            ],
+          },
+        },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockRejectedValueOnce(new Error('queue unavailable')).mockResolvedValue(undefined) };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(500);
+    expect(queue.send).toHaveBeenCalledTimes(2);
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('123:Invoice:7:2026-08-22T00:00:01.000Z', 'queued');
+    vi.restoreAllMocks();
+  });
+
+  // #33: the consumer fetches every entity from the connected company, so a notification for a
+  // different company (another realm connected to the same Intuit app) would sync whatever
+  // record happens to share its id in ours.
+  it('ignores notifications for a company other than the connected one', async () => {
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, notificationPayload, 'some-other-realm');
 
     expect(res.status).toBe(200);
-    expect(eventStore.updateStatus).toHaveBeenCalledWith(
-      '123:Customer:60:2026-08-22T00:00:00.000Z',
-      'failed',
-      { error: 'quickbooks API: HTTP 500 fetching customer 60' }
-    );
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
     expect(queue.send).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('realm "123"'));
+    warnSpy.mockRestore();
+  });
+
+  it('keeps the matching notifications from a payload that mixes companies', async () => {
+    const payload = {
+      eventNotifications: [
+        notificationPayload.eventNotifications[0],
+        {
+          realmId: '999',
+          dataChangeEvent: {
+            entities: [{ name: 'Customer', id: '61', operation: 'Update', lastUpdated: '2026-08-22T00:00:00.000Z' }],
+          },
+        },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(200);
+    expect(queue.send).toHaveBeenCalledTimes(1);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'qb-to-monday', eventId: '123:Customer:60:2026-08-22T00:00:00.000Z' });
+    vi.restoreAllMocks();
+  });
+
+  // #33 review: a Delete used to be enqueued like an update; its fetch can only fail (Object Not
+  // Found), so it burned retries into the DLQ. It is acknowledged and logged instead.
+  it('acknowledges a Delete without recording or enqueueing it', async () => {
+    const payload = {
+      eventNotifications: [
+        { realmId: '123', dataChangeEvent: { entities: [{ name: 'Invoice', id: '7', operation: 'Delete', lastUpdated: '2026-08-22T00:00:00.000Z' }] } },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn() };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(200);
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Delete of invoice 7'));
+    vi.restoreAllMocks();
+  });
+
+  it('syncs the survivor of a Merge like an update and logs the merged-away id', async () => {
+    const payload = {
+      eventNotifications: [
+        {
+          realmId: '123',
+          dataChangeEvent: {
+            entities: [{ name: 'Customer', id: '60', operation: 'Merge', lastUpdated: '2026-08-22T00:00:00.000Z', deletedId: '61' }],
+          },
+        },
+      ],
+    };
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, payload);
+
+    expect(res.status).toBe(200);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'qb-to-monday', eventId: '123:Customer:60:2026-08-22T00:00:00.000Z' });
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('merged into customer 60'));
+    vi.restoreAllMocks();
+  });
+
+  it('answers 503 (so Intuit redelivers) while no company is connected yet', async () => {
+    const eventStore = fakeEventStore();
+    const queue = { send: vi.fn() };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await post(eventStore, queue, notificationPayload, null);
+
+    expect(res.status).toBe(503);
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

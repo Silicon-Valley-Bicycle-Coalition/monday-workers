@@ -28,19 +28,102 @@ QuickBooks Online
   ▼
 Cloudflare Worker (webhook handler)
   │  1. webhook receiver logs the notification to D1
-  │  2. follow-up step calls the QuickBooks API to fetch the actual changed record
-  │  3. enqueues a Cloudflare Queue message with the fetched record
+  │  2. enqueues a Cloudflare Queue message naming the D1 row (a failed enqueue answers 500, so
+  │     Intuit redelivers)
   ▼
 Cloudflare Queue → consumer Worker
-  │  writes the record to the relevant Monday board; on failure, Queues retries automatically
-  │  and, once exhausted, routes to a Dead Letter Queue rather than dropping the write
+  │  calls the QuickBooks API to fetch the changed record as it stands now, then writes it to the
+  │  relevant Monday board; on failure, Queues retries with backoff and, once exhausted, routes
+  │  to a Dead Letter Queue rather than dropping the write
   ▼
 Monday.com
 ```
 
+The fetch lives in the consumer, not the webhook (#33): a fetch failure inside the webhook used
+to mark the row failed and still answer 200, so Intuit never redelivered and the change was lost;
+and a snapshot taken at webhook time could later overwrite Monday with stale data. The webhook
+now never calls QuickBooks — which also means only the consumer ever refreshes the OAuth token.
+
 See `../README.md`'s Reliability section — this Queue step is standard across every webhook-driven
 Worker in this plan, not QuickBooks-specific. Without it, a transient Monday API failure on the
 final write just silently disappears.
+
+**Create loop guard (#33).** A Customer created in QuickBooks becomes a Monday item before its
+`qb_monday_map` row exists, and Monday's `create_pulse` webhook for that item can arrive in
+between. The guard lives on the item itself: the Customers board has a **QuickBooks Id** text
+column (`config` `quickbooksSync.customerQbIdColumn`), which QuickBooks → Monday writes in the
+same `create_item` call that makes the item (and on every update), and Monday → QuickBooks writes
+after every Customer it creates. Before creating a Customer, the Monday → QuickBooks path
+(1) re-checks the mapping, (2) adopts the item if a `qb_events` row recorded it as
+`pending_monday_item_id`, then (3) re-reads the item from Monday and adopts the QuickBooks Id it
+carries — so even an item whose `create_item` response was lost is never turned into a second
+Customer. An item carrying an Id that a different *live* item already stands for (a copied item, or a
+duplicate) is refused until one of them is archived; if that other item is archived or deleted,
+the link moves to this item.
+The QuickBooks → Monday path likewise looks for an item that already stands for the Customer
+(one that created it from Monday, or one found by the QuickBooks Id column) before creating one.
+Nothing defers or blocks unrelated items. A mapping is never silently re-pointed: if a record
+turns out to have two live items (e.g. a Monday → QuickBooks create whose response was lost, with
+QuickBooks' own webhook making a second item before the retry), the row fails terminally with
+"QuickBooks customer … already has Monday item …, and item … also stands for it". Archive the
+duplicate item in Monday and redrive; a link whose item is archived or deleted is moved. **Until `customerQbIdColumn` is set, Monday →
+QuickBooks Customer creates are refused** ("not retried", no DLQ) — they can't be made loop-safe
+without it. Customer creates also send Intuit's `requestid`, so a retried create whose first
+response was lost returns the original Customer instead of a second one.
+
+## Deletes and merges
+
+Intuit notifications carry an `operation`. A **Delete** is acknowledged and logged but not synced
+— the record can no longer be fetched — and its Monday item is left in place for staff to archive;
+the Worker never deletes Monday items. A **Merge** syncs the surviving record like an update and
+logs the merged-away id (`deletedId`); that record's Monday item and `qb_monday_map` row are left
+for staff to reconcile. A record deleted before its update is processed fails the fetch with
+`610 Object Not Found`, which is terminal (recorded, not retried). Other operations (Create,
+Update, Void, Emailed) sync as updates.
+
+## Dead letters and redrive
+
+A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds` in
+`src/consumer/processBatch.ts`); after three retries the message lands in
+`quickbooks-sync-writes-dlq` (`-sandbox-dlq` in the sandbox). The Worker consumes that queue too
+(`src/consumer/processDeadLetters.ts`): the row in `qb_events` / `monday_events` keeps
+`status = 'failed'` and its last error gains the prefix `dead-lettered after retries: `, and each
+batch logs one `console.error`. Nothing is retried from there automatically.
+
+**Terminal failures are not retried at all.** When QuickBooks rejects the data itself (a 400
+`ValidationFault` — e.g. `6240 Duplicate Name Exists`, a missing required field, `610 Object Not
+Found`), or a Monday item no longer exists / has no name / carries a QuickBooks Id already linked
+elsewhere, the consumer records `not retried: <Intuit's code, message and detail>` on the row and
+acks the message — no retries, no DLQ.
+
+To find rows needing attention: `wrangler d1 execute <db> --remote --command "SELECT event_id,
+error FROM monday_events WHERE status = 'failed'"` (same for `qb_events`); the error says whether
+it was dead-lettered or not retried. Fix the cause first — for a Monday → QuickBooks create, that
+usually means editing the item in Monday (rename a duplicate, fill in the name); the consumer
+re-reads the item on every attempt, so the fix is what gets sent. Then redrive by sending the
+row's message to the write queue — Cloudflare dashboard → Queues → `quickbooks-sync-writes` →
+*Send message*, body `{"direction":"monday-to-qb","eventId":"<Monday item id>"}` (or
+`"qb-to-monday"` with the `qb_events.event_id`). Every consumer step is idempotent against its D1
+row, so a redrive of a row that half-finished resumes rather than duplicates. A Monday → QuickBooks
+create sends Intuit `requestid=monday-item-<id>[-r<n>]`: `n` (`monday_events.create_attempt`)
+advances on each terminal failure, so a redrive after one is a new request rather than a replay
+of the cached failure, while retries and redrives after transient failures reuse it (a create
+whose response was lost must return the original Customer).
+
+One exception: if an earlier send under the same requestid got no answer
+(`monday_events.create_sends` > 1 at the rejection), that send may have created this item's own
+Customer — and the rejection (e.g. 6240 Duplicate Name) may be against it. Then the requestid is
+*not* advanced, and the error says "may have succeeded". Search QuickBooks Customers for the
+name. If the Customer is there, put its Id in the item's QuickBooks Id column; if a Monday item
+already exists for that Customer (QuickBooks' own webhook may have made one while the create's
+response was lost), archive whichever item is the duplicate first. Then redrive: the item is
+adopted, the link moves to it if the other item was archived, and nothing is created. If it's genuinely not there, advance the requestid by hand,
+then redrive:
+
+```sh
+npx wrangler d1 execute <db> --remote [--env sandbox] --command "
+  UPDATE monday_events SET create_attempt = create_attempt + 1, create_sends = 0 WHERE event_id = '<Monday item id>'"
+```
 
 ## APIs & auth
 
@@ -51,6 +134,31 @@ final write just silently disappears.
 * **Auth**: standard OAuth2, same pattern as every other Worker here.
 * **Webhooks** signal only that a record changed — the payload itself doesn't carry the changed
   data, so every webhook triggers a follow-up API read.
+
+## OAuth tokens
+
+The token pair lives in D1 (`qb_oauth_tokens`, one row). Only the queue consumer calls
+QuickBooks, and it refreshes the access token a minute before expiry. Intuit rotates the refresh
+token and expires the previous one, so refreshes have a single writer (#33): the refresher takes a
+D1 lease at the row's `version` and saves by compare-and-swap on it; other callers wait and
+re-read. On `invalid_grant` the consumer re-reads D1 and uses a newer pair if one landed;
+otherwise the message fails with "re-seed the token pair" and retries/dead-letters.
+
+To seed or re-seed (initial handshake, or after that error), get a fresh pair from Intuit's OAuth
+Playground and write it with an expiry in the past so the first call refreshes immediately:
+
+```sh
+npx wrangler d1 execute <db> --remote [--env sandbox] --command "
+  INSERT INTO qb_oauth_tokens (id, realm_id, access_token, refresh_token, access_token_expires_at, updated_at)
+  VALUES (1, '<realmId>', '<accessToken>', '<refreshToken>', '1970-01-01T00:00:00.000Z', datetime('now'))
+  ON CONFLICT (id) DO UPDATE SET realm_id = excluded.realm_id, access_token = excluded.access_token,
+    refresh_token = excluded.refresh_token, access_token_expires_at = excluded.access_token_expires_at,
+    updated_at = excluded.updated_at, version = version + 1,
+    refresh_lease_token = NULL, refresh_lease_until = NULL"
+```
+
+Bumping `version` makes any refresh in flight against the old pair lose its compare-and-swap
+instead of overwriting the new one.
 
 ## Secrets
 

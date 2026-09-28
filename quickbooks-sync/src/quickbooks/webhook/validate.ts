@@ -5,6 +5,10 @@ export interface QbChangeNotification {
   entityType: EntityType;
   qbId: string;
   realmId: string;
+  // Intuit's operation: Create, Update, Delete, Merge, Void, Emailed, ... ('' if absent).
+  operation: string;
+  // For a Merge: the id of the record merged away (`qbId` is the survivor); otherwise null.
+  deletedId: string | null;
 }
 
 const QB_ENTITY_NAME_TO_TYPE: Record<string, EntityType> = {
@@ -34,7 +38,7 @@ export function parseQbNotifications(body: unknown): QbChangeNotification[] {
 
     for (const entity of entities) {
       if (typeof entity !== 'object' || entity === null) continue;
-      const { name, id, lastUpdated } = entity as Record<string, unknown>;
+      const { name, id, lastUpdated, operation, deletedId } = entity as Record<string, unknown>;
       if (typeof name !== 'string' || typeof id !== 'string' || typeof lastUpdated !== 'string') continue;
 
       const entityType = QB_ENTITY_NAME_TO_TYPE[name];
@@ -45,6 +49,8 @@ export function parseQbNotifications(body: unknown): QbChangeNotification[] {
         entityType,
         qbId: id,
         realmId,
+        operation: typeof operation === 'string' ? operation : '',
+        deletedId: typeof deletedId === 'string' ? deletedId : null,
       });
     }
   }

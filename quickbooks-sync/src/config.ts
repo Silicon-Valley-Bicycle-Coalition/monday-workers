@@ -6,6 +6,7 @@ const REQUIRED_QUICKBOOKS_SYNC_KEYS = [
   'itemNameField',
   'linkColumn',
   'customerCreateFieldMap',
+  'customerQbIdColumn',
 ] as const;
 const REQUIRED_ENTITY_KEYS = ['customer', 'invoice', 'product'] as const;
 
@@ -55,6 +56,11 @@ export function validateConfig(raw: unknown): QuickbooksSyncConfig {
     if (!(key in quickbooksSync)) {
       throw new Error(`config: missing required key "quickbooksSync.${key}"`);
     }
+  }
+
+  const qbIdColumn = quickbooksSync.customerQbIdColumn;
+  if (qbIdColumn !== null && (typeof qbIdColumn !== 'string' || qbIdColumn === '')) {
+    throw new Error('config: "quickbooksSync.customerQbIdColumn" must be a Monday column id or null');
   }
 
   const columnMap = requireObject(quickbooksSync.columnMap, 'quickbooksSync.columnMap');

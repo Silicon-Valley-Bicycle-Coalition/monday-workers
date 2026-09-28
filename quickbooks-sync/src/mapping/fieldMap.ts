@@ -35,13 +35,60 @@ export function mapQbToMondayColumns(
   return result;
 }
 
+function scalar(value: unknown): string | number | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return undefined;
+}
+
+// Monday webhooks deliver each column value in its raw per-type shape — text `{ value }`, email
+// `{ email, text }`, phone `{ phone, countryShortName }`, long text `{ text }`, date
+// `{ date, time }`, status/dropdown `{ label: { text } }`, numbers `{ value }` — not as the plain
+// string QuickBooks expects (#33). Reduce a value to its scalar, or undefined for empty or
+// unrecognized shapes so they're left out of the create rather than sent as garbage. The more
+// specific keys come first: an email's `text` is its display label, not the address.
+export function normalizeMondayColumnValue(value: unknown): string | number | undefined {
+  if (typeof value !== 'object' || value === null) return scalar(value);
+  if (Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  for (const key of ['email', 'phone', 'date', 'value']) {
+    const s = scalar(v[key]);
+    if (s !== undefined) return s;
+  }
+  const label = v.label;
+  if (typeof label === 'object' && label !== null) {
+    const s = scalar((label as Record<string, unknown>).text);
+    if (s !== undefined) return s;
+  }
+  return scalar(v.text);
+}
+
+// One cell of an item read back from Monday (getItem): the raw JSON `value` in the same per-type
+// shapes webhooks use, and the display `text`. Prefer the value; fall back to text for types whose
+// value lacks the human-readable part (a status value holds only the label index).
+export function mondayCellScalar(cell: { text: string | null; value: string | null } | undefined): string | number | undefined {
+  if (cell === undefined) return undefined;
+  if (cell.value !== null) {
+    try {
+      const parsed = normalizeMondayColumnValue(JSON.parse(cell.value));
+      if (parsed !== undefined) return parsed;
+    } catch {
+      // not JSON — fall through to the text
+    }
+  }
+  return normalizeMondayColumnValue(cell.text);
+}
+
 export function mapMondayToQbCustomerFields(
   mondayColumnValues: Record<string, unknown>,
   config: QuickbooksSyncConfig
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [mondayColumnId, qbField] of Object.entries(config.quickbooksSync.customerCreateFieldMap)) {
-    const value = mondayColumnValues[mondayColumnId];
+    const value = normalizeMondayColumnValue(mondayColumnValues[mondayColumnId]);
     if (value === undefined) continue;
     setPath(result, qbField, value);
   }

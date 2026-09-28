@@ -2,9 +2,22 @@ export interface MondayItem {
   id: string;
 }
 
+// An item as it stands now. `value` is Monday's raw JSON-encoded column value (null when empty),
+// `text` its display text. `state` matters: items(ids:) also returns archived and deleted items
+// (API 2026-01), so callers must check for 'active'.
+export interface MondayItemSnapshot {
+  id: string;
+  name: string;
+  state: 'active' | 'archived' | 'deleted' | string;
+  columnValues: Record<string, { text: string | null; value: string | null }>;
+}
+
 export interface MondayClient {
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<MondayItem>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  // null when the item doesn't exist (deleted, or never did).
+  getItem(itemId: string): Promise<MondayItemSnapshot | null>;
+  findItemIdsByColumnValue(boardId: number, columnId: string, value: string): Promise<string[]>;
 }
 
 const MONDAY_API_VERSION = '2026-01';
@@ -63,6 +76,42 @@ export class HttpMondayClient implements MondayClient {
       { boardId, itemName, columnValues: JSON.stringify(columnValues) }
     );
     return data.create_item;
+  }
+
+  async getItem(itemId: string): Promise<MondayItemSnapshot | null> {
+    const data = await this.graphql<{
+      items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[];
+    }>(
+      `query ($ids: [ID!]) {
+        items(ids: $ids) {
+          id
+          name
+          state
+          column_values { id text value }
+        }
+      }`,
+      { ids: [itemId] }
+    );
+    const item = data.items[0];
+    if (item === undefined) return null;
+    return {
+      id: item.id,
+      name: item.name,
+      state: item.state,
+      columnValues: Object.fromEntries(item.column_values.map((c) => [c.id, { text: c.text, value: c.value }])),
+    };
+  }
+
+  async findItemIdsByColumnValue(boardId: number, columnId: string, value: string): Promise<string[]> {
+    const data = await this.graphql<{ items_page_by_column_values: { items: { id: string }[] } }>(
+      `query ($boardId: ID!, $columnId: String!, $value: String!) {
+        items_page_by_column_values(limit: 5, board_id: $boardId, columns: [{ column_id: $columnId, column_values: [$value] }]) {
+          items { id }
+        }
+      }`,
+      { boardId, columnId, value }
+    );
+    return data.items_page_by_column_values.items.map((item) => item.id);
   }
 
   async changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void> {

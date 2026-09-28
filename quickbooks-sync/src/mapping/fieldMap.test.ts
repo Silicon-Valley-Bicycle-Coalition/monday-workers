@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapQbToMondayColumns, mapMondayToQbCustomerFields } from './fieldMap';
+import { mapQbToMondayColumns, mapMondayToQbCustomerFields, mondayCellScalar } from './fieldMap';
 import type { QuickbooksSyncConfig } from '../types';
 
 const config: QuickbooksSyncConfig = {
@@ -17,6 +17,7 @@ const config: QuickbooksSyncConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
+    customerQbIdColumn: null,
   },
 };
 
@@ -66,5 +67,45 @@ describe('mapMondayToQbCustomerFields', () => {
   it('drops a mapped column that has no value in the payload', () => {
     const result = mapMondayToQbCustomerFields({ text_col: 'New Co' }, config);
     expect(result).not.toHaveProperty('PrimaryEmailAddr');
+  });
+
+  // #33: Monday webhooks deliver column values in their raw per-type shapes, which were sent to
+  // QuickBooks as-is (DisplayName: { value: 'New Co' }) and 400'd. They're normalized now.
+  describe('normalizes raw Monday webhook column values', () => {
+    const raw = (value: unknown) => mapMondayToQbCustomerFields({ text_col: value }, config).DisplayName;
+
+    it('text: { value }', () => expect(raw({ value: 'New Co' })).toBe('New Co'));
+    it('email: { email, text }', () => expect(mapMondayToQbCustomerFields({ email_col: { email: 'a@b.test', text: 'A' } }, config)).toEqual({ PrimaryEmailAddr: { Address: 'a@b.test' } }));
+    it('phone: { phone, countryShortName }', () => expect(raw({ phone: '+14085551212', countryShortName: 'US' })).toBe('+14085551212'));
+    it('long text: { text }', () => expect(raw({ text: 'Notes' })).toBe('Notes'));
+    it('date: { date, time }', () => expect(raw({ date: '2026-09-25', time: null })).toBe('2026-09-25'));
+    it('status/dropdown: { label: { text } }', () => expect(raw({ label: { index: 1, text: 'Active' } })).toBe('Active'));
+    it('numbers: { value: number }', () => expect(raw({ value: 12 })).toBe(12));
+    it('plain strings pass through, trimmed', () => expect(raw('  New Co ')).toBe('New Co'));
+
+    it('drops empty, null and unrecognized values instead of sending them', () => {
+      for (const value of [null, '', '   ', { value: '' }, { value: null }, { unexpected: true }, []]) {
+        expect(mapMondayToQbCustomerFields({ text_col: value }, config), JSON.stringify(value)).toEqual({});
+      }
+    });
+  });
+
+  describe('mondayCellScalar (an item read back from the API)', () => {
+    it('prefers the parsed raw value', () => {
+      expect(mondayCellScalar({ text: 'AP', value: '{"email":"ap@x.test","text":"AP"}' })).toBe('ap@x.test');
+      expect(mondayCellScalar({ text: '60', value: '"60"' })).toBe('60');
+    });
+    it('falls back to the display text when the value has no readable part (status)', () => {
+      expect(mondayCellScalar({ text: 'Active', value: '{"index":1}' })).toBe('Active');
+    });
+    it('is undefined for an empty or missing cell', () => {
+      expect(mondayCellScalar({ text: '', value: null })).toBeUndefined();
+      expect(mondayCellScalar(undefined)).toBeUndefined();
+    });
+  });
+
+  it('maps the item name (column "name") when the config maps it to DisplayName', () => {
+    const withName = { ...config, quickbooksSync: { ...config.quickbooksSync, customerCreateFieldMap: { name: 'DisplayName' } } };
+    expect(mapMondayToQbCustomerFields({ name: 'Staff Typed Co' }, withName)).toEqual({ DisplayName: 'Staff Typed Co' });
   });
 });

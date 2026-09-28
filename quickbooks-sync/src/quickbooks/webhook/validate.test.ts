@@ -14,8 +14,35 @@ describe('parseQbNotifications', () => {
       ],
     };
     expect(parseQbNotifications(body)).toEqual([
-      { eventId: '123:Customer:60:2026-08-22T00:00:00.000Z', entityType: 'customer', qbId: '60', realmId: '123' },
+      {
+        eventId: '123:Customer:60:2026-08-22T00:00:00.000Z',
+        entityType: 'customer',
+        qbId: '60',
+        realmId: '123',
+        operation: 'Update',
+        deletedId: null,
+      },
     ]);
+  });
+
+  // #33 review: Delete and Merge were enqueued like updates; a Delete's fetch can only fail.
+  it('carries the operation, and a Merge’s deletedId', () => {
+    const body = {
+      eventNotifications: [
+        {
+          realmId: '123',
+          dataChangeEvent: {
+            entities: [
+              { name: 'Invoice', id: '7', operation: 'Delete', lastUpdated: '2026-08-22T00:00:00.000Z' },
+              { name: 'Customer', id: '60', operation: 'Merge', lastUpdated: '2026-08-22T00:00:00.000Z', deletedId: '61' },
+            ],
+          },
+        },
+      ],
+    };
+    const [deleted, merged] = parseQbNotifications(body);
+    expect(deleted).toMatchObject({ qbId: '7', operation: 'Delete', deletedId: null });
+    expect(merged).toMatchObject({ qbId: '60', operation: 'Merge', deletedId: '61' });
   });
 
   it('parses multiple entities across multiple notifications', () => {

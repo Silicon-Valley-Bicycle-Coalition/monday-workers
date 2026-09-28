@@ -98,3 +98,19 @@ describe('D1QbEventStore', () => {
     expect(finalRow?.pendingMondayItemId).toBe('item-abc');
   });
 });
+
+// #33: the create-loop guard. The Monday side must be able to tell that an item it's about to
+// turn into a QuickBooks Customer was itself created from QuickBooks.
+describe('D1QbEventStore create-loop lookup', () => {
+  const since = '2026-09-25T00:00:00.000Z';
+
+  it('finds the row that created a Monday item by its recorded item id', async () => {
+    const store = new D1QbEventStore(env.DB);
+    await store.insertEvent({ eventId: 'claim-2', entityType: 'customer', qbId: 'qb-c2', receivedAt: since });
+    await store.updateStatus('claim-2', 'failed', { pendingMondayItemId: 'item-c2', error: 'mapping write failed' });
+
+    expect((await store.findByPendingMondayItemId('customer', 'item-c2'))?.qbId).toBe('qb-c2');
+    expect(await store.findByPendingMondayItemId('customer', 'item-nope')).toBeNull();
+    expect(await store.findByPendingMondayItemId('invoice', 'item-c2')).toBeNull();
+  });
+});

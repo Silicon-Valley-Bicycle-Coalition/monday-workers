@@ -37,8 +37,9 @@
       "invoice": "connect_boards_column_id"
     },
     "customerCreateFieldMap": {
-      "text_column_id": "DisplayName",
+      "name": "DisplayName",
       "email_column_id": "PrimaryEmailAddr.Address"
-    }
+    },
+    "customerQbIdColumn": null
   }
 }

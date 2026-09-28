@@ -18,6 +18,9 @@ export interface QbEventStore {
   insertEvent(row: NewQbEvent): Promise<'inserted' | 'duplicate'>;
   updateStatus(eventId: string, status: SyncStatus, patch?: QbEventStatusPatch): Promise<void>;
   getEvent(eventId: string): Promise<QbEventRow | null>;
+  // The row whose Monday create produced `mondayItemId`, if its id was recorded (create-loop
+  // guard, #33).
+  findByPendingMondayItemId(entityType: EntityType, mondayItemId: string): Promise<QbEventRow | null>;
 }
 
 interface D1QbEventRecord {
@@ -45,6 +48,9 @@ function toQbEventRow(record: D1QbEventRecord): QbEventRow {
     writtenAt: record.written_at,
   };
 }
+
+const SELECT_COLUMNS =
+  'event_id, entity_type, qb_id, fetched_payload, pending_monday_item_id, status, error, received_at, written_at';
 
 export class D1QbEventStore implements QbEventStore {
   constructor(private db: D1Database) {}
@@ -85,11 +91,20 @@ export class D1QbEventStore implements QbEventStore {
 
   async getEvent(eventId: string): Promise<QbEventRow | null> {
     const record = await this.db
-      .prepare(
-        `SELECT event_id, entity_type, qb_id, fetched_payload, pending_monday_item_id, status, error, received_at, written_at
-         FROM qb_events WHERE event_id = ?1`
-      )
+      .prepare(`SELECT ${SELECT_COLUMNS} FROM qb_events WHERE event_id = ?1`)
       .bind(eventId)
+      .first<D1QbEventRecord>();
+    return record === null ? null : toQbEventRow(record);
+  }
+
+  async findByPendingMondayItemId(entityType: EntityType, mondayItemId: string): Promise<QbEventRow | null> {
+    const record = await this.db
+      .prepare(
+        `SELECT ${SELECT_COLUMNS} FROM qb_events
+         WHERE entity_type = ?1 AND pending_monday_item_id = ?2
+         ORDER BY received_at DESC LIMIT 1`
+      )
+      .bind(entityType, mondayItemId)
       .first<D1QbEventRecord>();
     return record === null ? null : toQbEventRow(record);
   }

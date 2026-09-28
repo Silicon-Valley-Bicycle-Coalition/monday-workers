@@ -14,6 +14,8 @@ function mondayEventRow(overrides: Partial<MondayEventRow> = {}): MondayEventRow
     error: null,
     receivedAt: '2026-08-22T00:00:00.000Z',
     writtenAt: null,
+    createAttempt: 0,
+    createSends: 0,
     ...overrides,
   };
 }
@@ -26,6 +28,7 @@ const config: QuickbooksSyncConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: {},
+    customerQbIdColumn: null,
   },
 };
 
@@ -34,6 +37,8 @@ function fakeMondayEventStore(overrides: Partial<MondayEventStore> = {}): Monday
     insertEvent: vi.fn().mockResolvedValue('inserted'),
     updateStatus: vi.fn().mockResolvedValue(undefined),
     getEvent: vi.fn().mockResolvedValue(null),
+    findByQbId: vi.fn().mockResolvedValue(null),
+    markCreateSent: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -43,6 +48,7 @@ function fakeMapStore(overrides: Partial<MapStore> = {}): MapStore {
     getByQbId: vi.fn().mockResolvedValue(null),
     getByMondayItemId: vi.fn().mockResolvedValue(null),
     createMapping: vi.fn().mockResolvedValue(undefined),
+    repointMapping: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

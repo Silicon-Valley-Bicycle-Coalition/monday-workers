@@ -19,12 +19,22 @@ const validConfig = {
     itemNameField: { customer: 'DisplayName', invoice: 'DocNumber', product: 'Name' },
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName' },
+    customerQbIdColumn: null,
   },
 };
 
 describe('validateConfig', () => {
   it('returns the config unchanged when valid', () => {
     expect(validateConfig(validConfig)).toEqual(validConfig);
+  });
+
+  it('requires customerQbIdColumn to be a column id or null', () => {
+    const withColumn = { ...validConfig, quickbooksSync: { ...validConfig.quickbooksSync, customerQbIdColumn: 'text_qb_id' } };
+    expect(() => validateConfig(withColumn)).not.toThrow();
+    for (const bad of ['', 42, undefined]) {
+      const broken = { ...validConfig, quickbooksSync: { ...validConfig.quickbooksSync, customerQbIdColumn: bad } };
+      expect(() => validateConfig(broken), String(bad)).toThrow(/customerQbIdColumn/);
+    }
   });
 
   it('throws when monday is missing', () => {
