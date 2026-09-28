@@ -10,6 +10,7 @@ import { formatColumnValue } from './columnValues.js';
 import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
 import { ComplexityGate, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
 import { isLegacySequential, parseLoadOptions } from './options.js';
+import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -117,7 +118,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     // is ledgered and the rest are listed here for a human to remove.
     duplicates: [] as { board: string; sfId: string; itemIds: string[] }[],
     untaggedItems: {} as Record<string, number>,
-    links: { written: 0, partial: 0, pending: 0, skippedByDesign: 0, failed: 0 },
+    // inline: set inside create_item and confirmed by its response (#22); inlineUnconfirmed:
+    // sent inline but not echoed back, so left to the link pass (counted again in `written`).
+    links: { written: 0, inline: 0, inlineUnconfirmed: 0, partial: 0, pending: 0, skippedByDesign: 0, failed: 0 },
     archive: { archived: 0, deferred: 0, failed: 0 },
   };
   const bump = (m: Record<string, number>, key: string) => { m[key] = (m[key] ?? 0) + 1; };
@@ -201,10 +204,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
   };
 
+  // sfIds whose links were (re)written during THIS run — an item that had a link retried
+  // after a prior run archived it must be re-archived below, ledger notwithstanding.
+  const linkedThisRun = new Set<string>();
+
   // Ledger one batched-create outcome (load/batch.ts decides it; this only records it). A ledger
   // write that throws propagates and stops the run — the next run's board scan adopts whatever
   // Monday holds that the ledger missed.
-  const recordOutcome = async (key: string, o: CreateOutcome): Promise<void> => {
+  const recordOutcome = async (key: string, o: CreateOutcome, inline: InlineLink[]): Promise<void> => {
     if (o.kind === 'failed') {
       bump(report.createFailed, key);
       await ledger.recordFailure({ sfId: o.sfId, board: key, error: o.error });
@@ -216,6 +223,23 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       report.duplicates.push({ board: key, sfId: o.sfId, itemIds: o.itemIds });
     }
     await ledger.recordSuccess({ sfId: o.sfId, board: key, itemId: o.itemId });
+    // Inline relations count as written only when THIS create returned them. An adopted item
+    // may be from an earlier attempt or run, so its links are left to the link pass, as is any
+    // relation Monday didn't echo back.
+    if (o.kind !== 'created') return;
+    for (const l of inline) {
+      const linked = new Set(o.linked?.[l.colId] ?? []);
+      if (!l.targetItemIds.every((id) => linked.has(String(id)))) {
+        report.links.inlineUnconfirmed++;
+        console.warn(`load: ${key}/${o.sfId} "${l.column}" not confirmed by create_item — ` +
+          `the link pass will write it`);
+        continue;
+      }
+      await ledger.recordLink(o.sfId, l.column, l.targetSfIds);
+      report.links.inline++;
+      linkedThisRun.add(o.sfId);
+      for (const t of l.targetSfIds) linkedThisRun.add(t);
+    }
   };
 
   // Shared by every create worker: pauses new batches when the complexity budget runs low.
@@ -225,19 +249,29 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   const createItemsBatched = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;
     const entries: CreateEntry[] = [];
-    const queued = new Set<string>();
+    const inlineBySfId = new Map<string, InlineLink[]>();
+    const inlineCtx: InlineContext = {
+      itemIdOf: (sfId) => ledger.itemId(sfId), isExpected: (sfId) => expectedSfIds.has(sfId),
+      isArchived: (sfId) => ledger.archivedDone(sfId), columnId: (title) => board.columns[title],
+    };
     for (const p of items) {
       // A Salesforce Id is created at most once per run, even if a payload repeats it.
-      if (ledger.has(p.sfId, key) || queued.has(p.sfId)) continue;
-      queued.add(p.sfId);
-      entries.push({ sfId: p.sfId, name: p.name, colValues: buildColValues(key, p) });
+      if (ledger.has(p.sfId, key) || inlineBySfId.has(p.sfId)) continue;
+      const colValues = buildColValues(key, p);
+      // Targets are only ever ledgered by an earlier board or fiscal year, never by a create
+      // running concurrently with this one, so planning up front is exact.
+      const inline = opts.inlineLinks ? planInlineLinks(p, inlineCtx) : [];
+      for (const l of inline) colValues[l.colId] = { item_ids: l.targetItemIds };
+      inlineBySfId.set(p.sfId, inline);
+      entries.push({ sfId: p.sfId, name: p.name, colValues,
+        ...(inline.length ? { readBack: inline.map((l) => l.colId) } : {}) });
     }
     const batches: CreateEntry[][] = [];
     for (let i = 0; i < entries.length; i += opts.batchSize) batches.push(entries.slice(i, i + opts.batchSize));
     await runPool(batches, opts.concurrency, (batch) => createBatch({
       client, boardId: board.boardId, sfIdColId: board.columns[SF_ID_COLUMN]!, entries: batch,
       attempts: CREATE_ATTEMPTS, lookupDelayMs: opts.recoveryLookupDelayMs, gate,
-      onOutcome: (o) => recordOutcome(key, o),
+      onOutcome: (o) => recordOutcome(key, o, inlineBySfId.get(o.sfId) ?? []),
     }));
   };
 
@@ -284,9 +318,6 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
     return tasks;
   };
-  // sfIds whose links were (re)written during THIS run — an item that had a link retried
-  // after a prior run archived it must be re-archived below, ledger notwithstanding.
-  const linkedThisRun = new Set<string>();
   const runLinkTasks = async (linkTasks: LinkTask[]): Promise<void> => {
     let nextTask = 0;
     const linkWorker = async (): Promise<void> => {

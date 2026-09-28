@@ -23,6 +23,7 @@ class FakeMonday {
   inFlight = 0;
   maxInFlight = 0;
   latencyMs = 0;
+  echoRelations = true; // false: create_item's response omits the relations it stored
   columnTitles = new Map<string, string>(); // column id → title
   links: { itemId: string; targetIds: number[] }[] = [];
   archived: string[] = [];
@@ -86,7 +87,7 @@ class FakeMonday {
         const item: FakeItem = { id: String(this.nextId++), boardId: c.boardId, name: c.name,
           sfId: sfColId ? c.cols[sfColId] as string : undefined, archived: false, rel };
         this.items.push(item);
-        return { id: item.id, rel };
+        return { id: item.id, rel: this.echoRelations ? rel : {} };
       });
       if (faults.includes('lost')) return new Response('bad gateway', { status: 502 });
       return createResponse(query, calls, replies);
@@ -315,6 +316,71 @@ describe('runLoad batched creates (#22)', () => {
     expect(await runLoad(['--batch-size', '26'], { client: monday.client() })).toBe(1);
     expect(monday.items).toEqual([]);
     expect(monday.columnTitles.size).toBe(0);
+  });
+});
+
+describe('runLoad inline relations (#22)', () => {
+  const seedGifts = () => writeNdjson(dataPath('transform', 'payloads.ndjson'), [
+    { board: 'organizations', sfId: 'acme', name: 'Acme', columns: {} },
+    { board: 'people-live', sfId: 'c1', name: 'Ada', columns: {} },
+    { board: 'campaigns', sfId: 'camp', name: 'Gala', columns: {} },
+    { board: 'recurring-gifts', sfId: 'rg', name: 'Monthly', columns: {},
+      links: [{ column: 'Donor', targetSfIds: ['c1'] }] },
+    { board: 'donations', sfId: 'o1', name: 'Gift', archive: true, columns: { 'Fiscal Year Ending': '2015' },
+      links: [{ column: 'Donor', targetSfIds: ['c1'] }, { column: 'Campaign', targetSfIds: ['camp'] },
+        { column: 'Recurring Gift', targetSfIds: ['rg'] }, { column: 'Matched By', targetSfIds: ['acme'] }] },
+  ]);
+  const id = (name: string) => Number(monday.byName(name)[0]!.id);
+  const colId = (title: string) => [...monday.columnTitles].find(([, t]) => t === title)![0];
+
+  it('sets Donor, Campaign, Recurring Gift and Matched By inside create_item — no separate link mutations', async () => {
+    await seedGifts();
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(monday.links).toEqual([]); // not one change_multiple_column_values
+    const gift = monday.byName('Gift')[0]!;
+    expect(gift.rel).toEqual({ [colId('Donor')]: [id('Ada')], [colId('Campaign')]: [id('Gala')],
+      [colId('Recurring Gift')]: [id('Monthly')], [colId('Matched By')]: [id('Acme')] });
+    expect(monday.archived).toEqual([gift.id]); // links complete, so #21's gate lets it archive
+    const l = new Ledger(); await l.load();
+    for (const c of ['Donor', 'Campaign', 'Recurring Gift', 'Matched By']) expect(l.linkDone('o1', c)).toBe(true);
+    expect(l.linkCovers('o1', 'Donor', ['c1'])).toBe(true);
+    const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
+    expect(report.links).toMatchObject({ inline: 5, written: 0, inlineUnconfirmed: 0 });
+
+    // validate reads the same ledger entries and passes link integrity.
+    const { writeJson } = await import('../artifacts.js');
+    await writeJson('config/svbc.json', { salesforceOrg: 'svbc', cutoverDateISO: '2026-10-09',
+      peopleActiveSinceISO: '2019-01-01', activitySliceSinceISO: '2024-08-01', boardMaxItems: 9000,
+      donationsActiveFiscalYears: 2, monday: { apiUrl: 'x', boardSuffix: '', boards: {} },
+      localNews: { rules: [], defaultUrl: '', defaultName: '' }, reconciliation: {} });
+    const { runValidate } = await import('../validate/index.js');
+    expect(await runValidate([])).toBe(0);
+  });
+
+  it('a relation create_item did not echo back is written by the link pass instead', async () => {
+    await seedGifts();
+    monday.echoRelations = false;
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    const gift = monday.byName('Gift')[0]!;
+    expect(monday.links.filter((l) => l.itemId === gift.id)).toHaveLength(4);
+    const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
+    expect(report.links).toMatchObject({ inline: 0, inlineUnconfirmed: 5, written: 5 });
+  });
+
+  it('an adopted item (response lost) gets its links from the link pass — never trusted blind', async () => {
+    await seedGifts();
+    monday.createFaults.set('Gift', ['lost']);
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    const gift = monday.byName('Gift');
+    expect(gift).toHaveLength(1);
+    expect(monday.links.filter((l) => l.itemId === gift[0]!.id)).toHaveLength(4);
+  });
+
+  it('--no-inline-links writes every relation through the link pass', async () => {
+    await seedGifts();
+    expect(await runLoad(['--no-inline-links'], { client: monday.client() })).toBe(0);
+    expect(monday.byName('Gift')[0]!.rel).toEqual({});
+    expect(monday.links).toHaveLength(5);
   });
 });
 
