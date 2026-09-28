@@ -8,12 +8,7 @@ import { lettersEnabled, letterCronConfigured } from '../config';
 import { localeFromMondayLabel, DEFAULT_LOCALE, type Locale } from '../i18n/locales';
 import { generateToken } from '../crypto/token';
 import { sha256Hex } from '../crypto/hash';
-
-export interface QueueMessageLike<T> {
-  body: T;
-  ack(): void;
-  retry(): void;
-}
+import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 
 export interface ProcessLetterSendBatchDeps {
   store: LetterSendStore;
@@ -39,7 +34,7 @@ export async function processLetterSendBatch(
           err instanceof Error ? err.message : String(err)
         }`
       );
-      message.retry();
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
@@ -85,6 +80,14 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
     // rather than acking it into silence.
     throw new Error(`no letter_sends row for id ${sendId}`);
   }
+  if (row.status === 'sending') {
+    // An earlier delivery claimed this row and then either sent the email but failed to record
+    // it, or died between claim and send. We can't tell which, and a duplicate tax-letter email
+    // is the failure issue #31 set out to remove — so never resend automatically. The letter
+    // itself is always in the portal; the email is only a notification.
+    console.warn(`member-portal consumer: letter send ${row.id} was already claimed by an earlier attempt — not re-sending`);
+    return;
+  }
   if (row.status !== 'queued') {
     return; // redelivery after a crash between send/skip and ack — nothing to do
   }
@@ -118,9 +121,15 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
     return;
   }
 
+  // Mint the login token first, before claiming the row: a D1 failure here must leave the row
+  // 'queued' so the retry can try again. (Minted after the claim, it stranded the row in
+  // 'sending' with no email ever sent.) If a later step fails, this token is simply never used
+  // and expires — harmless.
   const rawToken = generateToken();
   const tokenHash = await sha256Hex(rawToken);
-  const expiresAt = new Date(deps.now().getTime() + deps.config.auth.magicLinkTtlMinutes * 60_000).toISOString();
+  // letterLinkTtlHours, not magicLinkTtlMinutes: this email is read whenever the donor gets to
+  // it, not while they wait on a login form (issue #31). Still single-use — consumeToken claims it.
+  const expiresAt = new Date(deps.now().getTime() + deps.config.auth.letterLinkTtlHours * 3_600_000).toISOString();
   await deps.tokenStore.createToken({ tokenHash, donorItemIds: [row.donorItemId], expiresAt });
 
   // Same Monday-preference resolution as requestLogin: the Preferred Language label maps to a
@@ -129,14 +138,52 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   const locale: Locale = localeFromMondayLabel(contact.preferredLanguage) ?? DEFAULT_LOCALE;
   const template = templates.byLocale[locale]?.trim();
   const loginUrl = `${deps.config.auth.portalBaseUrl}/auth/callback?token=${rawToken}&lang=${locale}`;
-  await deps.emailSender.sendLetterReadyEmail({
-    to: contact.email,
-    donorName: contact.name,
-    year: row.year,
-    loginUrl,
-    locale,
-    bodyTemplate: template ? template : templates.default,
-  });
 
-  await deps.store.markSent(row.id, deps.now().toISOString());
+  // At-most-once: claim the row (queued → sending) immediately before the send, which is the only
+  // step inside the claim window. The email and the D1 status write are two systems with no
+  // shared transaction; previously a markSent failure after a successful send left the row
+  // 'queued' and the retry emailed the donor again. Now a redelivery sees 'sending' and stops.
+  // Every failure we can observe returns the row to 'queued' (send error → releaseClaim) or is
+  // harmless ('sending' after a real send). The one residual gap: the Worker dying between this
+  // claim and the send completing, or releaseClaim itself failing — the row then stays 'sending'
+  // and needs the manual requeue documented in the README, rather than risking a duplicate.
+  if (!(await deps.store.claimForSending(row.id, deps.now().toISOString()))) {
+    return; // a concurrent delivery won the claim
+  }
+
+  try {
+    await deps.emailSender.sendLetterReadyEmail({
+      to: contact.email,
+      donorName: contact.name,
+      year: row.year,
+      loginUrl,
+      locale,
+      bodyTemplate: template ? template : templates.default,
+    });
+  } catch (sendErr) {
+    // The send itself failed, so nothing went out — hand the row back for the retry. A failure
+    // to release is logged but must not mask the send error, which is what the retry is for.
+    try {
+      await deps.store.releaseClaim(row.id);
+    } catch (releaseErr) {
+      console.error(
+        `member-portal consumer: letter send ${row.id} failed and its claim could not be released (row stays 'sending' — requeue by hand): ${
+          releaseErr instanceof Error ? releaseErr.message : String(releaseErr)
+        }`
+      );
+    }
+    throw sendErr;
+  }
+
+  try {
+    await deps.store.markSent(row.id, deps.now().toISOString());
+  } catch (err) {
+    // The email is out; the row stays 'sending', which already blocks any resend. Retrying would
+    // accomplish nothing, so log and let the message ack.
+    console.error(
+      `member-portal consumer: letter send ${row.id} was emailed but not marked sent (row stays 'sending'): ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
 }

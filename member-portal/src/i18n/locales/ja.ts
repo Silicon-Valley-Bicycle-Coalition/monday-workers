@@ -15,6 +15,7 @@ export const ja: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'ログイン',
   'title.checkEmail': 'メールをご確認ください',
+  'title.confirmLogin': 'ポータルへ進む',
   'title.error': 'エラーが発生しました',
   'title.portal': '寄付者ポータル',
   'title.lettersList': '税務書類',
@@ -30,6 +31,9 @@ export const ja: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'メールをご確認ください',
   'checkEmail.body': 'メールをご確認ください。ご登録のメールアドレスであれば、まもなくログインリンクが届きます。このリンクは有効期限が短く、1回のみご利用いただけます。',
+  'confirmLogin.heading': 'ポータルへ進む',
+  'confirmLogin.body': '下のボタンを押してログインを完了してください。',
+  'confirmLogin.submit': 'ポータルへ進む',
 
   // Error page + route-level error messages
   'error.heading': 'エラーが発生しました',
@@ -49,6 +53,7 @@ export const ja: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '寄付者ポータル',
+  'portal.someRecordsUnavailable': '一部の記録を現在読み込めませんでした。数分後にもう一度お試しください。',
   'portal.membership': '会員資格: {{status}}（{{tier}}）',
   'portal.totalLabel': '寄付合計額',
   'portal.tableDate': '日付',
@@ -154,6 +159,7 @@ export const ja: Record<TranslationKey, string> = {
   'title.pledges': 'ご寄付の誓約',
   'title.matchingGifts': 'マッチングギフト',
   'error.pledgesLoadFailed': '現在、誓約情報を読み込めません。数分後にもう一度お試しください。',
+  'error.changeRequestLoadFailed': '現在、連絡先情報を読み込めませんでした。数分後にもう一度お試しください。',
   'portal.pledgesLink': 'ご寄付の誓約',
   'portal.matchingGiftsLink': '勤務先のマッチングギフト',
   'pledges.heading': 'ご寄付の誓約',

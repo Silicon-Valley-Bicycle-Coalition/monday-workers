@@ -187,13 +187,22 @@ export interface Config {
     replyTo?: string;
   };
   auth: {
+    // Interactive login link (POST /): the donor just asked for it and is waiting on the email.
     magicLinkTtlMinutes: number;
+    // The "your tax letter is ready" email's login link (processLetterSendBatch) — read whenever
+    // the donor gets to it, often days later, so it needs its own, much longer TTL. Still a
+    // single-use token in the same magic_link_tokens table. Validated to (0, 168].
+    letterLinkTtlHours: number;
     sessionTtlHours: number;
     portalBaseUrl: string;
   };
   rateLimit: {
     emailWindowSeconds: number;
     emailMaxAttempts: number;
+    // How long login_attempts rows (every submitted email, donor or not) survive the daily
+    // purge. Only rows inside emailWindowSeconds are ever read, so this just needs to exceed
+    // that window (validated); the slack is for debugging abuse after the fact.
+    attemptRetentionHours: number;
   };
   taxLetter: TaxLetterConfig;
   changeRequests: ChangeRequestsConfig;
@@ -280,7 +289,12 @@ export interface DonorVolunteerHistory {
 
 export interface PortalView {
   donors: MemberPortalData[];
-  discounts: DiscountOrganization[];
+  // How many of the session's donor items failed to load (and so are missing from `donors`).
+  // Views show a "some records couldn't be loaded" note when > 0; absent means 0.
+  unavailableDonorCount?: number;
+  // null when the Organizations read failed — views omit the discounts section rather than
+  // show a misleading empty list.
+  discounts: DiscountOrganization[] | null;
   // Keyed by donor item id; null when the volunteer-history feature is disabled (unset
   // volunteersBoardId / placeholder column ids) or its Monday read failed. Views render no
   // section for null, a missing key, and an empty shift list alike.
@@ -304,7 +318,8 @@ export interface LetterSendQueueMessage {
 }
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
-// (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
+// (`npm run typecheck` regenerates the gitignored worker-configuration.d.ts from wrangler.jsonc —
+// a bare `tsc --noEmit` reads a missing or stale copy; see README "Development");
 // only secrets and narrowed queue message types are declared here.
 export interface Env extends Cloudflare.Env {
   MONDAY_API_TOKEN: string;

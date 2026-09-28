@@ -81,7 +81,7 @@ From `member-portal/`, in order:
 # SVBC: the D1 already exists and its id is in wrangler.jsonc — skip the create. Forks: run it
 # and paste the returned id into wrangler.jsonc database_id.
 wrangler d1 create svbc-member-portal
-wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0004
+wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0005
 wrangler queues create member-portal-change-requests
 wrangler queues create member-portal-change-requests-dlq
 wrangler queues create member-portal-letter-emails
@@ -183,8 +183,9 @@ Use `dev:sandbox` to debug a code change against real sandbox data before runnin
 
 1. From `https://member.sandbox.bikesiliconvalley.org`, request a login link for a real donor
    email that exists on the sandbox People board. It must arrive **only** at `sandbox@`, with
-   subject `[sandbox → <that address>] Your SVBC member portal login link`. Follow the link;
-   the portal renders that donor's sandbox data.
+   subject `[sandbox → <that address>] Your SVBC member portal login link`. Follow the link
+   and press **Continue to your portal** (the link itself only shows that button — see README
+   "Data flow"); the portal renders that donor's sandbox data.
 2. `wrangler tail --env sandbox` shows one `{"sandboxOutbound":"email",…}` line per send.
 3. Platform layer alone: in a scratch copy of `src/index.ts` make `emailBindingFor` return
    `env.EMAIL` unconditionally (do not commit), run `wrangler dev --env sandbox --remote`,
@@ -234,8 +235,10 @@ its own README's "Sandbox environment" section.
 - **Aftercare:** watch Workers observability for error spikes the first week; check the
   `member-portal-change-requests-dlq` after any Monday outage (a non-empty DLQ is a replayable
   backlog, not a loss — see the root README's queue conventions); confirm the daily 09:00 UTC
-  cron is purging `change_requests` rows past `retentionDays` and revoked `card_tokens` rows
-  past `cardTokens.retentionDays`.
+  cron is purging `change_requests` rows past `retentionDays`, revoked `card_tokens` rows
+  past `cardTokens.retentionDays`, and `login_attempts` past `rateLimit.attemptRetentionHours`
+  plus expired `sessions`/`magic_link_tokens` (the "purged … login_attempts" log line; at most
+  10,000 rows per table per run, so a first-run backlog drains over a few days).
 - **When letter sign-off lands:** fill `taxLetter.*`, commit, `npm run deploy` — letters
   appear; verify one letter against a known donor's giving history and run a print preview
   before telling donors.

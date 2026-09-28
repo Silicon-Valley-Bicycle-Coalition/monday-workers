@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpMondayClient } from './client';
+import { HttpMondayClient, MONDAY_FETCH_TIMEOUT_MS } from './client';
 import type { MondayColumns } from '../types';
 
 const columns: MondayColumns = {
@@ -68,6 +68,36 @@ function makeCapturingClient(onBody: (body: { query: string; variables: Record<s
   });
   return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
 }
+
+// Issue #31: with no timeout, a hung Monday request held a dashboard render or a queue consumer
+// indefinitely. Every request carries an AbortSignal.timeout, and a timeout surfaces as a
+// monday-prefixed error the callers already log/retry on.
+describe('HttpMondayClient request timeout', () => {
+  it('passes an AbortSignal to every Monday fetch', async () => {
+    const fetchFn = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
+
+    await client.findDonorsByEmail('x@example.org');
+
+    const init = fetchFn.mock.calls[0]![1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(MONDAY_FETCH_TIMEOUT_MS).toBe(15_000);
+  });
+
+  it('reports a timed-out request as a monday timeout error', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
+
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow('monday: request timed out after 15000ms');
+  });
+
+  it('passes other fetch failures through unchanged', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError('Network connection lost.'));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
+
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow('Network connection lost.');
+  });
+});
 
 describe('HttpMondayClient.findDonorsByEmail', () => {
   it('returns every matching donor item', async () => {
@@ -445,6 +475,52 @@ describe('HttpMondayClient donation status filtering', () => {
 
     expect(bodies).toHaveLength(1);
     expect(bodies[0]!.query).toContain('donation_status_col');
+  });
+});
+
+describe('HttpMondayClient.getDiscountOrganizations pagination', () => {
+  // Issue #31: the query asked for `cursor` but never used it, silently dropping every active
+  // discount past the first 500.
+  it('follows the cursor past the first page', async () => {
+    const bodies: { query: string; variables: Record<string, unknown> }[] = [];
+    const pages = [
+      {
+        data: {
+          boards: [
+            {
+              items_page: {
+                cursor: 'cursor-1',
+                items: [{ id: 'org-1', name: 'Local Bikes', column_values: [{ id: 'offer_col', text: '10% off' }] }],
+              },
+            },
+          ],
+        },
+      },
+      {
+        data: {
+          next_items_page: {
+            cursor: null,
+            items: [{ id: 'org-2', name: 'Café Velo', column_values: [{ id: 'offer_col', text: 'Free coffee' }] }],
+          },
+        },
+      },
+    ];
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string));
+      return { ok: true, status: 200, json: async () => pages[bodies.length - 1] };
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    const orgs = await client.getDiscountOrganizations();
+
+    expect(orgs).toEqual([
+      { name: 'Local Bikes', discountOffered: '10% off' },
+      { name: 'Café Velo', discountOffered: 'Free coffee' },
+    ]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]!.query).toContain('next_items_page');
+    expect(bodies[1]!.query).toContain('offer_col');
+    expect(bodies[1]!.variables).toEqual({ cursor: 'cursor-1' });
   });
 });
 

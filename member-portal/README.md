@@ -1,8 +1,11 @@
 # member-portal
 
-**Status:** Live — v1 deployed (login + read-only donation history and member discounts). v2 in
-development. Donation history is date-gated (see "v7 — Clean-start donation history"): hidden
-until 2027-01-01, and from then on showing only gifts dated 2026-01-01 or later.
+**Status:** Not yet deployed to production — no version has been live. Code-complete through v7
+(the sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
+[production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
+live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
+date-gated (see "v7 — Clean-start donation history"): hidden until 2027-01-01, and from then on
+showing only gifts dated 2026-01-01 or later.
 **Priority:** Post-migration, non-blocking on the October cutover.
 **Owner:** Unassigned.
 **Stack:** Hono + TypeScript, D1 (tokens/sessions and queued change requests — Monday stays the
@@ -75,12 +78,17 @@ Donor visits the portal (a subdomain, e.g. member.bikesiliconvalley.org), enters
   ▼
 Cloudflare Worker (Hono + TypeScript, D1 for tokens/sessions)
   │  looks up the email against the Donors board via Monday's GraphQL API
-  │  generates a signed, single-use token (short expiry — e.g. 15 min) and stores it in D1
+  │  generates a random, single-use token (short expiry — 15 min) and stores its SHA-256 in D1
   │  emails a magic link containing the token
   ▼
 Donor clicks the link
-  │  Worker verifies the token against D1 (single-use — invalidate on first use), issues a
-  │  signed, httpOnly session cookie
+  │  GET only renders a "Continue to your portal" button (no script, no auto-submit) — mail
+  │  scanners (Safe Links, Mimecast, Proofpoint) prefetch links, and a consuming GET burned
+  │  the token before the donor arrived (issue #31)
+  ▼
+Donor presses the button (a same-origin POST, CSRF-checked like every other form)
+  │  Worker verifies the token against D1 (single-use — invalidate on first use), issues an
+  │  opaque random session token in an httpOnly, Secure, SameSite=Lax cookie
   ▼
 Portal renders, server-side (Hono — no SPA framework needed for a page this small), reading
 live from Monday, scoped only to the authenticated Donor's own item id (never client-supplied):
@@ -178,13 +186,18 @@ Routing destination). A live login-link request for a real sandbox People record
 
 ## Security notes
 
-* Session and magic-link tokens: signed, single-use for the magic link, short expiry, stored in D1
-  keyed to a hash of the token (not the raw token) so a D1 read doesn't itself leak a usable
-  credential. Membership-card tokens are the exception — stored in plaintext because the card's
+* Session and magic-link tokens: 256 random bits from `crypto.getRandomValues` (not signed — there
+  is no signing key; the server looks each one up), single-use for the magic link, short expiry
+  (the letter-ready link's is `auth.letterLinkTtlHours`), stored in D1 keyed to a SHA-256 of the
+  token (not the raw token) so a D1 read doesn't itself leak a usable credential. Membership-card tokens are the exception — stored in plaintext because the card's
   QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
+* Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and
+  `login_attempts` rows (every email anyone submits, donor or not) older than
+  `rateLimit.attemptRetentionHours` (24; validated to exceed the rate-limit window). Deletes are
+  batched and capped per run (`src/db/authRetention.ts`); indexes in migration `0005`.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
   boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
   v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never
@@ -249,7 +262,10 @@ Requests board only**; create the `member-portal-change-requests` queue and its
 
 Design: `../docs/superpowers/specs/2026-08-24-donor-letter-emails-design.md`. A Button column on
 the Donors board lets staff email a donor a "your letter is ready" notification — a magic link to
-the portal home, not the letter content itself. Always sends the most recently completed year with
+the portal home, not the letter content itself. That link's single-use token lives
+`auth.letterLinkTtlHours` (168 — a week; validated to at most 168), not the interactive login
+link's 15-minute `auth.magicLinkTtlMinutes`: donors open this email whenever they get to it, and a
+15-minute link was dead by then (issue #31). Always sends the most recently completed year with
 gifts; a donor+year is only ever sent once (tracked in the `letter_sends` D1 table). Inert until
 `taxLetter` is signed off, same as the portal-facing letters.
 
@@ -359,6 +375,13 @@ makes completed donors free. One deliberate limit: a donor the queue consumer ma
 **`skipped`** (no email on file, or gifts vanished before sending) is not retried by the cron —
 the dedupe treats any existing row as handled. Once the underlying data is fixed, the staff
 button is the retry path (it requeues skipped rows).
+
+Sends are **at most once** per donor+year (issue #31): the consumer claims the row
+(`queued` → `sending`) before emailing and marks it `sent` after. If the send itself fails, the
+claim is released and the queue retries; if the email went out but the `sent` write failed, the
+row stays `sending` and nothing resends it — neither the retry, the cron, nor the staff button.
+A row stuck in `sending` with no email received (the Worker died between claim and send, or a failed send's claim couldn't be released — both rare and logged)
+needs a manual `UPDATE letter_sends SET status = 'queued' WHERE id = …` and a button click.
 
 Gates, all required before a single email goes out: `letterCron` config filled in,
 `taxLetter` signed off (`lettersEnabled`), Auto-send checked, start date reached.
@@ -624,6 +647,23 @@ unaffected — they remain full-history stewardship rollups for staff.
 *exist*. Copy them from this repo's `config/svbc.json` — `null` for both keeps the previous
 always-on, no-floor behavior... except that `historyVisibleFromISO: null` hides the tab, so a
 fork that wants history visible immediately should set it to any past date.
+
+## Development
+
+```sh
+npm install
+npm test            # vitest in workerd (@cloudflare/vitest-plugin), D1 migrations applied per run
+npm run typecheck   # wrangler types, then tsc --noEmit — the only supported typecheck
+```
+
+Type-check with `npm run typecheck`, never a bare `tsc --noEmit`. Binding types (`DB`, the queues,
+`LOGIN_RATE_LIMITER`, `REQUEST_RATE_LIMITER`, …) come from `worker-configuration.d.ts`, which
+`wrangler types` generates from `wrangler.jsonc` and which is deliberately not committed (root
+`.gitignore`: it can absorb local `.dev.vars` names, and every Worker here regenerates it). A bare
+`tsc` reads whatever copy is on disk — missing on a fresh clone, stale after a binding is added —
+and fails with errors like `Property 'REQUEST_RATE_LIMITER' does not exist on type 'Env'` that
+say nothing about the code. CI (`.gitlab-ci.yml`) already runs `npm test` and
+`npm run typecheck`. The local preview's driver is `.claude/skills/run-member-portal/`.
 
 ## Future candidates
 

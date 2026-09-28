@@ -36,6 +36,45 @@ describe('loadPortalData', () => {
     expect(monday.getDiscountOrganizations).toHaveBeenCalledTimes(1);
   });
 
+  // Issue #31: a household login spans several donor items — one bad record (deleted item,
+  // Monday error on that id) must cost only that donor's section, not the whole dashboard.
+  it('drops a donor whose record fails to load, keeps the rest, and counts the gap', async () => {
+    const monday = fakeMonday();
+    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'donor-2' ? Promise.reject(new Error('monday: item not found')) : Promise.resolve(donor(id, 'Jane'))
+    );
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await loadPortalData(['donor-1', 'donor-2'], monday);
+
+    expect(result.donors).toEqual([donor('donor-1', 'Jane')]);
+    expect(result.unavailableDonorCount).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('donor-2'));
+    errorSpy.mockRestore();
+  });
+
+  it('still fails when no donor record loads at all (nothing to show)', async () => {
+    const monday = fakeMonday();
+    (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(loadPortalData(['donor-1', 'donor-2'], monday)).rejects.toThrow('monday: HTTP 500');
+    vi.restoreAllMocks();
+  });
+
+  it('degrades discounts to null (section omitted) when the Organizations read fails', async () => {
+    const monday = fakeMonday();
+    (monday.getDiscountOrganizations as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 429'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await loadPortalData(['donor-1'], monday);
+
+    expect(result.discounts).toBeNull();
+    expect(result.donors).toHaveLength(1);
+    expect(result.unavailableDonorCount).toBe(0);
+    vi.restoreAllMocks();
+  });
+
   it('marks donation history enabled and asks Monday for donations by default', async () => {
     const monday = fakeMonday();
 

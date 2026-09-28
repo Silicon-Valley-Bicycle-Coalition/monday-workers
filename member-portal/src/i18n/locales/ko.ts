@@ -15,6 +15,7 @@ export const ko: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '로그인',
   'title.checkEmail': '이메일을 확인해 주세요',
+  'title.confirmLogin': '포털로 계속하기',
   'title.error': '문제가 발생했습니다',
   'title.portal': '기부자 포털',
   'title.lettersList': '세금 서류',
@@ -30,6 +31,9 @@ export const ko: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': '이메일을 확인해 주세요',
   'checkEmail.body': '이메일을 확인해 주세요. 등록된 주소인 경우 로그인 링크가 곧 도착합니다. 이 링크는 유효기간이 짧고 한 번만 사용할 수 있습니다.',
+  'confirmLogin.heading': '포털로 계속하기',
+  'confirmLogin.body': '아래 버튼을 눌러 로그인을 완료해 주세요.',
+  'confirmLogin.submit': '포털로 계속하기',
 
   // Error page + route-level error messages
   'error.heading': '문제가 발생했습니다',
@@ -49,6 +53,7 @@ export const ko: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '기부자 포털',
+  'portal.someRecordsUnavailable': '일부 기록을 지금 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'portal.membership': '회원 자격: {{status}} ({{tier}})',
   'portal.totalLabel': '총 기부금',
   'portal.tableDate': '날짜',
@@ -154,6 +159,7 @@ export const ko: Record<TranslationKey, string> = {
   'title.pledges': '나의 서약 기부',
   'title.matchingGifts': '매칭 기프트',
   'error.pledgesLoadFailed': '지금은 서약 기부 정보를 불러올 수 없습니다. 몇 분 후 다시 시도해 주세요.',
+  'error.changeRequestLoadFailed': '지금 연락처 정보를 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'portal.pledgesLink': '나의 서약 기부',
   'portal.matchingGiftsLink': '고용주 매칭 기프트',
   'pledges.heading': '나의 서약 기부',

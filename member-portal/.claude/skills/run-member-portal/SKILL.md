@@ -59,7 +59,7 @@ For interactive debugging, drive it step by step instead of the all-in-one `demo
 | command | what it does |
 |---|---|
 | `start` | applies D1 migrations, boots `wrangler dev:local` in the background on :8787, polls until it responds |
-| `login [email]` | clears that email's rate-limit counter, POSTs the login form, pulls the magic link from the server log, follows it, saves the session cookie |
+| `login [email]` | clears that email's rate-limit counter, POSTs the login form, pulls the magic link from the server log, submits its token to `POST /auth/callback` (what the link page's Continue button does), saves the session cookie |
 | `reset` | clears the `login_attempts` table directly (rarely needed standalone — `login` already does this) |
 | `stop` | kills the :8787 listener *and* the `wrangler dev` process itself (see Gotchas) |
 | `demo [email]` | `start` → `login` → print matched donor names → `stop`, default email `family@example.com` |
@@ -118,7 +118,8 @@ npm run typecheck
 
 - **`/` never checks the session cookie — it's always the login form.** The
   authenticated page lives at `/:locale/portal` (e.g. `/en/portal`), which is where the
-  magic-link callback redirects to. Hitting `/` after logging in and expecting to see
+  magic-link callback (the `POST /auth/callback` behind the link page's Continue
+  button — the link's GET alone never logs in) redirects to. Hitting `/` after logging in and expecting to see
   donor data is the mistake to not make here — it silently looks like the session
   didn't take, when it actually did. `smoke.sh login` already fetches the right URL by
   following the callback's redirect.

@@ -15,6 +15,7 @@ export const ptBR: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Entrar',
   'title.checkEmail': 'Verifique Seu E-mail',
+  'title.confirmLogin': 'Continue para Seu Portal',
   'title.error': 'Algo Deu Errado',
   'title.portal': 'Seu Portal do Doador',
   'title.lettersList': 'Documentos Fiscais',
@@ -30,6 +31,9 @@ export const ptBR: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Verifique seu e-mail',
   'checkEmail.body': 'Verifique seu e-mail: se esse endereço estiver em nosso cadastro, um link de acesso está a caminho. Ele expira em breve e só pode ser usado uma vez.',
+  'confirmLogin.heading': 'Continue para seu portal',
+  'confirmLogin.body': 'Use o botão abaixo para concluir o login.',
+  'confirmLogin.submit': 'Continuar para seu portal',
 
   // Error page + route-level error messages
   'error.heading': 'Algo deu errado',
@@ -49,6 +53,7 @@ export const ptBR: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Seu portal do doador',
+  'portal.someRecordsUnavailable': 'Não foi possível carregar alguns dos seus registros agora. Tente novamente em alguns minutos.',
   'portal.membership': 'Associação: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total doado',
   'portal.tableDate': 'Data',
@@ -154,6 +159,7 @@ export const ptBR: Record<TranslationKey, string> = {
   'title.pledges': 'Suas Promessas de Doação',
   'title.matchingGifts': 'Doações Correspondentes',
   'error.pledgesLoadFailed': 'Não foi possível carregar suas promessas de doação agora. Tente novamente em alguns minutos.',
+  'error.changeRequestLoadFailed': 'Não foi possível carregar seus dados de contato agora. Tente novamente em alguns minutos.',
   'portal.pledgesLink': 'Suas promessas de doação',
   'portal.matchingGiftsLink': 'Doações correspondentes do empregador',
   'pledges.heading': 'Suas promessas de doação',

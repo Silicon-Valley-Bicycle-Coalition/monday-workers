@@ -38,8 +38,9 @@ can safely use any real donor's email address while testing.
 3. Check the shared test inbox, **`sandbox@bikesiliconvalley.org`**. You'll get an email with a
    subject like `[sandbox → the address you typed] Your SVBC member portal login link` — the
    bracketed part tells you which test address the email is "pretending" to be for.
-4. Click the link in that email. You'll land on that person's test portal page, seeing their
-   donation history, membership status, and discounts.
+4. Click the link in that email, then press **Continue to your portal** on the page it opens.
+   You'll land on that person's test portal page, seeing their donation history, membership
+   status, and discounts.
 5. If nothing shows up after a minute or two, see [If something seems stuck](#if-something-seems-stuck)
    below before assuming it's broken.
 

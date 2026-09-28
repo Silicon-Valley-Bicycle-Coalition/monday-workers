@@ -2,12 +2,7 @@ import type { ChangeRequestStore } from '../db/changeRequests';
 import type { MondayClient } from '../monday/client';
 import type { Config } from '../types';
 import { FIELD_LABELS, type ChangeQueueMessage } from './submitChangeRequest';
-
-export interface QueueMessageLike<T> {
-  body: T;
-  ack(): void;
-  retry(): void;
-}
+import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 
 export interface ProcessChangeBatchDeps {
   store: ChangeRequestStore;
@@ -29,7 +24,7 @@ export async function processChangeQueueBatch(
           err instanceof Error ? err.message : String(err)
         }`
       );
-      message.retry();
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }

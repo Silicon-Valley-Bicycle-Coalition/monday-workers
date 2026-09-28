@@ -1,5 +1,5 @@
 import type { MondayClient } from '../monday/client';
-import type { DonorVolunteerHistory, PortalView, VolunteerShift } from '../types';
+import type { DiscountOrganization, DonorVolunteerHistory, MemberPortalData, PortalView, VolunteerShift } from '../types';
 import { parseAmount } from '../letters/loadLetterData';
 
 export interface VolunteerHistoryOptions {
@@ -40,19 +40,51 @@ export async function loadPortalData(
       })
     : Promise.resolve(null);
 
-  const [donors, discounts, shiftsPerDonor] = await Promise.all([
-    Promise.all(donorItemIds.map((id) => monday.getMemberPortalData(id, { includeDonations: donationHistoryEnabled }))),
-    monday.getDiscountOrganizations(),
+  // Same degrade-instead-of-fail rule for the shared discount list: an Organizations-board error
+  // costs the donor the discounts section (null → omitted), not the dashboard.
+  const discountLeg: Promise<DiscountOrganization[] | null> = monday.getDiscountOrganizations().catch((err) => {
+    console.error(`member-portal discount organizations load failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  });
+
+  // Per donor, not all-or-nothing (issue #31): a household login spans several donor items, and
+  // one bad record (a deleted item, a Monday error on that id) used to fail the whole dashboard.
+  const [donorResults, discounts, shiftsPerDonor] = await Promise.all([
+    Promise.allSettled(donorItemIds.map((id) => monday.getMemberPortalData(id, { includeDonations: donationHistoryEnabled }))),
+    discountLeg,
     volunteerLeg,
   ]);
 
+  const loaded: { donor: MemberPortalData; index: number }[] = [];
+  donorResults.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      loaded.push({ donor: result.value, index });
+    } else {
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      console.error(`member-portal dashboard load failed for donor "${donorItemIds[index]}": ${reason}`);
+    }
+  });
+  // Nothing to show at all — let the route's error page handle it, as before.
+  if (loaded.length === 0 && donorResults.length > 0) {
+    throw (donorResults[0] as PromiseRejectedResult).reason;
+  }
+  const donors = loaded.map((entry) => entry.donor);
+
   const completedStatuses = volunteerOptions?.completedStatuses ?? [];
-  // Keyed by the donor ids Monday echoed back (donors is index-aligned with donorItemIds), so
-  // the views' lookup by donor.id can never miss on an id-formatting mismatch.
+  // Keyed by the donor ids Monday echoed back; shiftsPerDonor stays index-aligned with
+  // donorItemIds, so look each loaded donor's shifts up by its original index.
   const volunteerHistory =
     shiftsPerDonor === null
       ? null
-      : Object.fromEntries(donors.map((donor, index) => [donor.id, buildVolunteerHistory(shiftsPerDonor[index] ?? [], completedStatuses)]));
+      : Object.fromEntries(
+          loaded.map(({ donor, index }) => [donor.id, buildVolunteerHistory(shiftsPerDonor[index] ?? [], completedStatuses)])
+        );
 
-  return { donors, discounts, volunteerHistory, donationHistoryEnabled };
+  return {
+    donors,
+    unavailableDonorCount: donorResults.length - loaded.length,
+    discounts,
+    volunteerHistory,
+    donationHistoryEnabled,
+  };
 }

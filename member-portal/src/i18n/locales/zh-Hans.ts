@@ -15,6 +15,7 @@ export const zhHans: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': '登录',
   'title.checkEmail': '请查收邮件',
+  'title.confirmLogin': '继续进入您的门户',
   'title.error': '出现问题',
   'title.portal': '您的捐赠者门户',
   'title.lettersList': '税务文件',
@@ -30,6 +31,9 @@ export const zhHans: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': '请查收邮件',
   'checkEmail.body': '请查收您的电子邮箱：如果该地址在我们的记录中，登录链接即将发送到您的邮箱。链接很快会失效，且只能使用一次。',
+  'confirmLogin.heading': '继续进入您的门户',
+  'confirmLogin.body': '请点击下方按钮完成登录。',
+  'confirmLogin.submit': '继续进入您的门户',
 
   // Error page + route-level error messages
   'error.heading': '出现问题',
@@ -49,6 +53,7 @@ export const zhHans: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': '您的捐赠者门户',
+  'portal.someRecordsUnavailable': '暂时无法加载您的部分记录，请几分钟后重试。',
   'portal.membership': '会员状态：{{status}}（{{tier}}）',
   'portal.totalLabel': '捐款总额',
   'portal.tableDate': '日期',
@@ -154,6 +159,7 @@ export const zhHans: Record<TranslationKey, string> = {
   'title.pledges': '您的认捐',
   'title.matchingGifts': '雇主配捐',
   'error.pledgesLoadFailed': '目前无法加载您的认捐信息,请几分钟后再试。',
+  'error.changeRequestLoadFailed': '暂时无法加载您的联系信息，请几分钟后重试。',
   'portal.pledgesLink': '您的认捐',
   'portal.matchingGiftsLink': '雇主配捐',
   'pledges.heading': '您的认捐',

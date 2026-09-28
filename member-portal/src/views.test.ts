@@ -182,6 +182,17 @@ describe('portalView', () => {
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership&a=1',
   };
 
+  it('tells the donor when some of their records could not be loaded', () => {
+    const html = portalView({ ...data, unavailableDonorCount: 1 }, 'en', {}, noFunraise);
+    expect(html).toContain(t('en', 'portal.someRecordsUnavailable'));
+    expect(portalView(data, 'en', {}, noFunraise)).not.toContain(t('en', 'portal.someRecordsUnavailable'));
+  });
+
+  it('omits the discounts section when the discount list failed to load', () => {
+    const html = portalView({ ...data, discounts: null }, 'en', {}, noFunraise);
+    expect(html).not.toContain(t('en', 'portal.discountsHeading'));
+  });
+
   it('omits the Donations tab and every gift figure while donation history is gated off', () => {
     const hidden: PortalView = { ...data, donationHistoryEnabled: false };
     const html = portalView(hidden, 'en', {}, noFunraise);

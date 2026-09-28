@@ -15,6 +15,7 @@ export const hi: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'लॉग इन करें',
   'title.checkEmail': 'अपना ईमेल जाँचें',
+  'title.confirmLogin': 'अपने पोर्टल पर जारी रखें',
   'title.error': 'कुछ गड़बड़ हो गई',
   'title.portal': 'आपका डोनर पोर्टल',
   'title.lettersList': 'टैक्स दस्तावेज़',
@@ -30,6 +31,9 @@ export const hi: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'अपना ईमेल जाँचें',
   'checkEmail.body': 'कृपया अपना ईमेल जाँचें: यदि वह पता हमारे रिकॉर्ड में है, तो एक लॉगिन लिंक आपकी ओर आ रहा है। यह जल्द ही समाप्त हो जाता है और केवल एक बार इस्तेमाल किया जा सकता है।',
+  'confirmLogin.heading': 'अपने पोर्टल पर जारी रखें',
+  'confirmLogin.body': 'लॉगिन पूरा करने के लिए नीचे दिए गए बटन का उपयोग करें।',
+  'confirmLogin.submit': 'अपने पोर्टल पर जारी रखें',
 
   // Error page + route-level error messages
   'error.heading': 'कुछ गड़बड़ हो गई',
@@ -49,6 +53,7 @@ export const hi: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'आपका डोनर पोर्टल',
+  'portal.someRecordsUnavailable': 'आपके कुछ रिकॉर्ड अभी लोड नहीं हो सके। कृपया कुछ मिनट बाद फिर से प्रयास करें।',
   'portal.membership': 'सदस्यता: {{status}} ({{tier}})',
   'portal.totalLabel': 'कुल दान',
   'portal.tableDate': 'तारीख़',
@@ -154,6 +159,7 @@ export const hi: Record<TranslationKey, string> = {
   'title.pledges': 'आपकी प्रतिज्ञाएँ',
   'title.matchingGifts': 'मैचिंग गिफ़्ट',
   'error.pledgesLoadFailed': 'हम अभी आपकी प्रतिज्ञाएँ लोड नहीं कर सके। कृपया कुछ मिनटों में फिर से कोशिश करें।',
+  'error.changeRequestLoadFailed': 'हम अभी आपकी संपर्क जानकारी लोड नहीं कर सके। कृपया कुछ मिनट बाद फिर से प्रयास करें।',
   'portal.pledgesLink': 'आपकी प्रतिज्ञाएँ',
   'portal.matchingGiftsLink': 'नियोक्ता मैचिंग गिफ़्ट',
   'pledges.heading': 'आपकी प्रतिज्ञाएँ',

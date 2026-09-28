@@ -10,6 +10,7 @@ import { D1LoginAttemptStore } from './db/loginAttempts';
 import { D1ChangeRequestStore } from './db/changeRequests';
 import { D1CardTokenStore } from './db/cardTokens';
 import { HttpMondayClient } from './monday/client';
+import { discountOrganizationsCache, withCachedDiscounts } from './monday/discountCache';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { purgeExpiredChangeRequests } from './changeRequests/purgeExpired';
@@ -23,6 +24,8 @@ import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
 import { purgeExpiredCardTokens } from './card/purgeExpiredTokens';
+import { purgeExpiredAuthRows } from './auth/purgeExpiredAuth';
+import { D1AuthRetentionStore } from './db/authRetention';
 import { checkRequestRateLimit } from './requestRateLimit';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
@@ -108,20 +111,25 @@ export default {
       if (limited) return limited;
 
       const app = createApp({
-        monday: new HttpMondayClient(
-          config.monday.apiUrl,
-          env.MONDAY_API_TOKEN,
-          config.monday.columns,
-          donorsBoardId,
-          donationsBoardId,
-          organizationsBoardId,
-          config.donations,
-          // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
-          // non-null assertion below can't fire on a placeholder config.
-          pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
-          // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
-          // null board id rather than querying a sentinel.
-          config.monday.volunteersBoardId
+        // Discount list cached per isolate — see monday/discountCache.ts.
+        monday: withCachedDiscounts(
+          new HttpMondayClient(
+            config.monday.apiUrl,
+            env.MONDAY_API_TOKEN,
+            config.monday.columns,
+            donorsBoardId,
+            donationsBoardId,
+            organizationsBoardId,
+            config.donations,
+            // pledgesEnabled guarantees boardId is non-null and every column id is real, so the
+            // non-null assertion below can't fire on a placeholder config.
+            pledgesEnabled(config) ? { boardId: config.pledges.boardId!, columns: config.pledges.columns } : null,
+            // Stays null while unset — getVolunteerShiftsForDonor throws its own config error on a
+            // null board id rather than querying a sentinel.
+            config.monday.volunteersBoardId
+          ),
+          discountOrganizationsCache,
+          `${config.monday.apiUrl}#${organizationsBoardId}`
         ),
         tokenStore: new D1MagicLinkTokenStore(env.DB),
         sessionStore: new D1SessionStore(env.DB),
@@ -186,7 +194,7 @@ export default {
 
   // Retention purge: see purgeExpiredChangeRequests for why 'written' rows are deleted and
   // 'queued' rows are left alone; see purgeExpiredCardTokens for why revoked card_tokens rows
-  // are deleted and active ones are left alone.
+  // are deleted and active ones are left alone; see purgeExpiredAuthRows for the auth tables.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     // Validated lazily and memoized per environment — see configFor above.
     const config = configFor(env);
@@ -209,6 +217,21 @@ export default {
     if (purgedCardTokens > 0) {
       console.log(
         `member-portal scheduled: purged ${purgedCardTokens} revoked card_tokens rows past the ${config.cardTokens.retentionDays}-day retention window`
+      );
+    }
+
+    // Auth-table retention (issue #31): login_attempts past rateLimit.attemptRetentionHours,
+    // sessions and magic-link tokens past their own expiry. Bounded per run and per-table
+    // failure-isolated inside purgeExpiredAuthRows, so it can't block the letter cron below.
+    const purgedAuth = await purgeExpiredAuthRows({
+      store: new D1AuthRetentionStore(env.DB),
+      attemptRetentionHours: config.rateLimit.attemptRetentionHours,
+      now: () => new Date(),
+    });
+    if (Object.values(purgedAuth).some((n) => n !== null && n > 0)) {
+      console.log(
+        `member-portal scheduled: purged ${purgedAuth.loginAttempts ?? 'n/a'} login_attempts, ` +
+          `${purgedAuth.sessions ?? 'n/a'} expired sessions, ${purgedAuth.magicLinkTokens ?? 'n/a'} expired magic_link_tokens rows`
       );
     }
 

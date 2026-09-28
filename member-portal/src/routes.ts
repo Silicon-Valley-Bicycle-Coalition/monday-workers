@@ -21,7 +21,7 @@ import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
-import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
+import { checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -327,10 +327,46 @@ export function createApp(deps: AppDeps) {
     return c.html(page(t(locale, 'title.checkEmail') + ' — ' + t(locale, 'site.title'), checkEmailView(locale), locale));
   });
 
-  app.get('/auth/callback', async (c) => {
-    const locale = detectLocale(c);
+  // The emailed magic link (login and letter-ready alike) lands here — and so do the corporate
+  // mail scanners (Outlook Safe Links, Mimecast, Proofpoint) that prefetch every link in an
+  // inbound email, often executing its JS. Consuming the single-use token on this GET burned it
+  // before the donor ever clicked (issue #31), so the GET is inert: it renders a button that
+  // POSTs the token back to the route below, and only that POST consumes it.
+  app.get('/auth/callback', (c) => {
+    const langParam = c.req.query('lang');
+    const lang = langParam !== undefined && isLocale(langParam) ? langParam : null;
+    const locale = lang ?? detectLocale(c);
     const token = c.req.query('token');
     if (!token) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.invalidLink', locale), locale));
+    }
+
+    c.header('Cache-Control', NO_STORE);
+    c.header('X-Robots-Tag', 'noindex');
+    // This page's URL carries a live token. same-origin sends no Referer at all cross-origin
+    // (stricter than the app-wide strict-origin-when-cross-origin), while — unlike no-referrer —
+    // still letting the browser send a real Origin on this page's own same-origin POST, which the
+    // CSRF check requires (older Safari sends no Sec-Fetch-Site to fall back on).
+    c.header('Referrer-Policy', 'same-origin');
+    // No footer language picker here: it redirects to location.pathname only, which would drop
+    // the token (and the token must never be copied into the /lang redirect URL). The page
+    // already renders in the link's own `lang`.
+    return c.html(
+      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(token, lang, locale), locale, {
+        languagePicker: false,
+      })
+    );
+  });
+
+  // Covered by the app-wide CSRF check like every other form POST (it is not in CSRF_EXEMPT): the
+  // confirmation page above submits same-origin, and a cross-site page can't log a victim's
+  // browser into someone else's account with a token it holds (login CSRF).
+  app.post('/auth/callback', async (c) => {
+    const body = await c.req.parseBody();
+    const lang = typeof body.lang === 'string' && isLocale(body.lang) ? body.lang : null;
+    const locale = lang ?? detectLocale(c);
+    const token = typeof body.token === 'string' ? body.token : '';
+    if (token.length === 0) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.invalidLink', locale), locale));
     }
 
@@ -360,9 +396,8 @@ export function createApp(deps: AppDeps) {
       path: '/',
       maxAge: deps.config.auth.sessionTtlHours * 3600,
     });
-    const langParam = c.req.query('lang');
-    const redirectLocale = langParam !== undefined && isLocale(langParam) ? langParam : DEFAULT_LOCALE;
-    return c.redirect(`/${redirectLocale}/portal`);
+    // 303: the browser follows a POST's redirect with a GET.
+    return c.redirect(`/${lang ?? DEFAULT_LOCALE}/portal`, 303);
   });
 
   // Back-compat: anything still linking to the old unprefixed /portal (a stale bookmark, an
@@ -536,11 +571,23 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
-    const donors = await Promise.all(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
+    // Per donor (issue #31): one household record's failed read drops that donor from the form
+    // instead of failing the page; only when none load is it an error — and then this route's
+    // own copy, not the global onError's login-flavored one.
+    const results = await Promise.allSettled(donorItemIds.map((id) => deps.monday.getDonorContactInfo(id)));
+    const donors = results.flatMap((result, index) => {
+      if (result.status === 'fulfilled') return [result.value];
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      console.error(`member-portal change-request form load failed for donor "${donorItemIds[index]}": ${reason}`);
+      return [];
+    });
+    if (donors.length === 0) {
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.changeRequestLoadFailed', locale), locale, { authenticated: true }), 500);
+    }
     return c.html(
       page(
         t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'),
-        changeRequestFormView(donors, locale, configuredPrefFields(deps.config)),
+        changeRequestFormView(donors, locale, configuredPrefFields(deps.config), results.length - donors.length),
         locale,
         { authenticated: true }
       )

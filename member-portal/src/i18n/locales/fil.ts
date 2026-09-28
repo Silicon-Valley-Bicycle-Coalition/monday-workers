@@ -15,6 +15,7 @@ export const fil: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Mag-log In',
   'title.checkEmail': 'Tingnan ang Iyong Email',
+  'title.confirmLogin': 'Magpatuloy sa Iyong Portal',
   'title.error': 'May Naganap na Problema',
   'title.portal': 'Ang Iyong Member Portal',
   'title.lettersList': 'Mga Dokumento sa Buwis',
@@ -30,6 +31,9 @@ export const fil: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Tingnan ang iyong email',
   'checkEmail.body': 'Pakitingnan ang iyong email: kung nasa records namin ang address na iyon, paparating na ang isang login link. Malapit na itong mag-expire at isang beses lang magagamit.',
+  'confirmLogin.heading': 'Magpatuloy sa iyong portal',
+  'confirmLogin.body': 'Gamitin ang button sa ibaba para tapusin ang pag-log in.',
+  'confirmLogin.submit': 'Magpatuloy sa iyong portal',
 
   // Error page + route-level error messages
   'error.heading': 'May naganap na problema',
@@ -49,6 +53,7 @@ export const fil: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Ang iyong member portal',
+  'portal.someRecordsUnavailable': 'Hindi ma-load ngayon ang ilan sa iyong mga record. Pakisubukang muli pagkalipas ng ilang minuto.',
   'portal.membership': 'Katayuan ng membership: {{status}} ({{tier}})',
   'portal.totalLabel': 'Kabuuang na-donate',
   'portal.tableDate': 'Petsa',
@@ -154,6 +159,7 @@ export const fil: Record<TranslationKey, string> = {
   'title.pledges': 'Ang Iyong Mga Pangakong Donasyon',
   'title.matchingGifts': 'Matching Gifts',
   'error.pledgesLoadFailed': 'Hindi namin ma-load ang iyong mga pangakong donasyon sa ngayon. Pakisubukang muli pagkalipas ng ilang minuto.',
+  'error.changeRequestLoadFailed': 'Hindi namin ma-load ngayon ang iyong contact details. Pakisubukang muli pagkalipas ng ilang minuto.',
   'portal.pledgesLink': 'Ang iyong mga pangakong donasyon',
   'portal.matchingGiftsLink': 'Matching gifts mula sa employer',
   'pledges.heading': 'Ang iyong mga pangakong donasyon',

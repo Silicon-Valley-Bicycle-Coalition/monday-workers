@@ -1,4 +1,4 @@
-import { escapeHtml } from '../views';
+import { escapeHtml, someRecordsUnavailableNote } from '../views';
 import type { DonorContactInfo, PrefField } from '../types';
 import type { SubmitResult } from './submitChangeRequest';
 import type { PreferencesResult } from './submitPreferences';
@@ -64,9 +64,15 @@ function preferencesSection(donors: DonorContactInfo[], prefFields: PrefField[],
   `;
 }
 
-export function changeRequestFormView(donors: DonorContactInfo[], locale: Locale, prefFields: PrefField[]): string {
+export function changeRequestFormView(
+  donors: DonorContactInfo[],
+  locale: Locale,
+  prefFields: PrefField[],
+  unavailableDonorCount = 0
+): string {
   return `
     <h1>${escapeHtml(t(locale, 'changeRequest.formHeading'))}</h1>
+    ${someRecordsUnavailableNote(unavailableDonorCount, locale)}
     <p>${escapeHtml(t(locale, 'changeRequest.formIntro'))}</p>
     ${donors.map((d) => donorCurrentValues(d, locale)).join('')}
     <form action="/${locale}/portal/change-request" method="post">

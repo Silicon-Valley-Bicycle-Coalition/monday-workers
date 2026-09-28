@@ -15,6 +15,7 @@ export const vi: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Đăng nhập',
   'title.checkEmail': 'Kiểm tra email của bạn',
+  'title.confirmLogin': 'Tiếp tục đến cổng thông tin của bạn',
   'title.error': 'Đã xảy ra lỗi',
   'title.portal': 'Cổng thông tin nhà tài trợ của bạn',
   'title.lettersList': 'Tài liệu thuế',
@@ -30,6 +31,9 @@ export const vi: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Kiểm tra email của bạn',
   'checkEmail.body': 'Vui lòng kiểm tra email của bạn: nếu địa chỉ đó có trong hồ sơ của chúng tôi, một liên kết đăng nhập đang được gửi đến. Liên kết sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
+  'confirmLogin.heading': 'Tiếp tục đến cổng thông tin của bạn',
+  'confirmLogin.body': 'Nhấn nút bên dưới để hoàn tất đăng nhập.',
+  'confirmLogin.submit': 'Tiếp tục đến cổng thông tin',
 
   // Error page + route-level error messages
   'error.heading': 'Đã xảy ra lỗi',
@@ -49,6 +53,7 @@ export const vi: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',
+  'portal.someRecordsUnavailable': 'Hiện không thể tải một số hồ sơ của bạn. Vui lòng thử lại sau vài phút.',
   'portal.membership': 'Tư cách thành viên: {{status}} ({{tier}})',
   'portal.totalLabel': 'Tổng số tiền đã quyên góp',
   'portal.tableDate': 'Ngày',
@@ -154,6 +159,7 @@ export const vi: Record<TranslationKey, string> = {
   'title.pledges': 'Cam Kết Quyên Góp Của Bạn',
   'title.matchingGifts': 'Quyên Góp Đối Ứng',
   'error.pledgesLoadFailed': 'Hiện không thể tải thông tin cam kết quyên góp của bạn. Vui lòng thử lại sau vài phút.',
+  'error.changeRequestLoadFailed': 'Hiện chúng tôi không thể tải thông tin liên hệ của bạn. Vui lòng thử lại sau vài phút.',
   'portal.pledgesLink': 'Cam kết quyên góp của bạn',
   'portal.matchingGiftsLink': 'Quyên góp đối ứng từ nơi làm việc',
   'pledges.heading': 'Cam kết quyên góp của bạn',

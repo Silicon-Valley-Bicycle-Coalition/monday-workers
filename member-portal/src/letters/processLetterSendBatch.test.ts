@@ -18,8 +18,8 @@ const row: LetterSendRow = {
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
-  auth: { magicLinkTtlMinutes: 15, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5 },
+  auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
+  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -72,8 +72,8 @@ const configWithLetterCron: Config = {
   letterCron: { ...config.letterCron, boardId: 456 },
 };
 
-function makeMessage(sendId: number) {
-  return { body: { sendId }, ack: vi.fn(), retry: vi.fn() };
+function makeMessage(sendId: number, attempts = 1) {
+  return { body: { sendId }, attempts, ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
@@ -85,6 +85,8 @@ function fakeStore(getResult: LetterSendRow | null): LetterSendStore {
     markSkipped: vi.fn().mockResolvedValue(undefined),
     requeue: vi.fn().mockResolvedValue(undefined),
     listDonorItemIdsForYear: vi.fn().mockResolvedValue(new Set()),
+    claimForSending: vi.fn().mockResolvedValue(true),
+    releaseClaim: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -134,6 +136,158 @@ describe('processLetterSendBatch', () => {
     expect(store.markSent).toHaveBeenCalledWith(42, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  // Issue #31: the letter email sits in an inbox until the donor gets to it — the login link
+  // must outlive the 15-minute interactive magic-link TTL, using its own letterLinkTtlHours.
+  it('mints the letter link token with auth.letterLinkTtlHours, not the magic-link minutes', async () => {
+    const tokenStore = fakeTokenStore();
+    await processLetterSendBatch([makeMessage(42)], {
+      store: fakeStore(row),
+      monday: fakeMonday(),
+      tokenStore,
+      emailSender: fakeEmailSender(),
+      config: { ...config, auth: { ...config.auth, letterLinkTtlHours: 72 } },
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(tokenStore.createToken).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: '2026-08-27T10:00:00.000Z' }));
+  });
+
+  // Issue #31: same backoff as the change-request consumer — see queueRetry.ts.
+  it('retries a failed send with exponential backoff', async () => {
+    const emailSender = fakeEmailSender();
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('send failed'));
+    const message = makeMessage(42, 2);
+
+    await processLetterSendBatch([message], {
+      store: fakeStore(row),
+      monday: fakeMonday(),
+      tokenStore: fakeTokenStore(),
+      emailSender,
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  // Issue #31: the send and the markSent are two systems; if markSent failed after a successful
+  // send, the retry used to see 'queued' and email the donor again.
+  it('claims the row before sending the email', async () => {
+    const store = fakeStore(row);
+    const emailSender = fakeEmailSender();
+    await processLetterSendBatch([makeMessage(42)], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(store.claimForSending).toHaveBeenCalledWith(42, '2026-08-24T10:00:00.000Z');
+    const claimOrder = (store.claimForSending as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    const sendOrder = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(claimOrder).toBeLessThan(sendOrder);
+  });
+
+  it('acks without retrying when markSent fails after a successful send (no duplicate email)', async () => {
+    const store = fakeStore(row);
+    (store.markSent as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 write failed'));
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).toHaveBeenCalledTimes(1);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('never re-sends a row already claimed by an earlier attempt', async () => {
+    const store = fakeStore({ ...row, status: 'sending' });
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('skips the send when another consumer won the claim', async () => {
+    const store = fakeStore(row);
+    (store.claimForSending as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('releases the claim and retries when the send itself fails', async () => {
+    const store = fakeStore(row);
+    const emailSender = fakeEmailSender();
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('E_DELIVERY_FAILED'));
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(store.releaseClaim).toHaveBeenCalledWith(42);
+    expect(store.markSent).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  // Review of #31: a D1 failure minting the token after the claim left the row 'sending' with no
+  // email sent — and 'sending' is never resent, so it was stranded for good. The token is now
+  // minted before the claim, so its failure retries a still-'queued' row.
+  it('mints the token before claiming, so a token-store failure leaves the row unclaimed', async () => {
+    const store = fakeStore(row);
+    const tokenStore = fakeTokenStore();
+    (tokenStore.createToken as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 insert failed'));
+    const emailSender = fakeEmailSender();
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore, emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(store.claimForSending).not.toHaveBeenCalled();
+    expect(emailSender.sendLetterReadyEmail).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('still surfaces the send error (and retries) when releasing the claim also fails', async () => {
+    const store = fakeStore(row);
+    (store.releaseClaim as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1 update failed'));
+    const emailSender = fakeEmailSender();
+    (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('E_DELIVERY_FAILED'));
+    const message = makeMessage(42);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processLetterSendBatch([message], {
+      store, monday: fakeMonday(), tokenStore: fakeTokenStore(), emailSender, config, now: () => new Date('2026-08-24T10:00:00.000Z'),
+    });
+
+    expect(message.retry).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('D1 update failed'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('E_DELIVERY_FAILED'));
+    errorSpy.mockRestore();
   });
 
   it('acks an already-sent row without re-sending (redelivery idempotency)', async () => {

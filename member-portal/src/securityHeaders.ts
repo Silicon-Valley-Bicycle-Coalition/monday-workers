@@ -13,14 +13,21 @@ import { secureHeaders } from 'hono/secure-headers';
 //   form-action 'self'     — every form posts (and redirects) same-origin.
 export const DEFAULT_CSP = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
 
+// Not Hono's default no-referrer: under no-referrer, browsers send `Origin: null` on same-origin
+// form POSTs, which would defeat the Origin half of the CSRF check. This still strips path + query
+// (magic-link and verify tokens) from every cross-origin Referer. The magic-link confirmation page
+// (GET /auth/callback) tightens it to same-origin — see routes.ts.
+export const DEFAULT_REFERRER_POLICY = 'strict-origin-when-cross-origin';
+
 // Only /email/logo.png is fetched cross-origin (webmail clients render it as an <img> in the
 // branded emails); everything else is same-origin only.
 const DEFAULT_CORP = 'same-origin';
 
-// Hono's secureHeaders() writes its headers *after* the handler runs, with .set() — so a CSP or
-// CORP it managed would clobber a route's own (the matching-gifts page's third-party-widget CSP,
-// the email logo's cross-origin CORP). Those two are therefore left out of secureHeaders() and
-// applied below only when the route didn't set one.
+// Hono's secureHeaders() writes its headers *after* the handler runs, with .set() — so a CSP,
+// CORP or Referrer-Policy it managed would clobber a route's own (the matching-gifts page's
+// third-party-widget CSP, the email logo's cross-origin CORP, the magic-link confirmation page's
+// same-origin Referrer-Policy). Those three are therefore left out of secureHeaders() and applied
+// below only when the route didn't set one.
 export function securityHeaders(): MiddlewareHandler[] {
   return [
     secureHeaders({
@@ -33,10 +40,7 @@ export function securityHeaders(): MiddlewareHandler[] {
       // registrable domain with includeSubDomains — a commitment for whoever runs
       // bikesiliconvalley.org, not for this Worker.
       strictTransportSecurity: 'max-age=31536000',
-      // Not Hono's default no-referrer: under no-referrer, browsers send `Origin: null` on
-      // same-origin form POSTs, which would defeat the Origin half of the CSRF check. This still
-      // strips path + query (magic-link and verify tokens) from every cross-origin Referer.
-      referrerPolicy: 'strict-origin-when-cross-origin',
+      referrerPolicy: false,
       crossOriginResourcePolicy: false,
       permissionsPolicy: {
         camera: [],
@@ -50,6 +54,9 @@ export function securityHeaders(): MiddlewareHandler[] {
       await next();
       if (!c.res.headers.has('Content-Security-Policy')) {
         c.res.headers.set('Content-Security-Policy', DEFAULT_CSP);
+      }
+      if (!c.res.headers.has('Referrer-Policy')) {
+        c.res.headers.set('Referrer-Policy', DEFAULT_REFERRER_POLICY);
       }
       if (!c.res.headers.has('Cross-Origin-Resource-Policy')) {
         c.res.headers.set('Cross-Origin-Resource-Policy', DEFAULT_CORP);

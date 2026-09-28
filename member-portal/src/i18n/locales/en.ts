@@ -13,6 +13,7 @@ export const en = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Log In',
   'title.checkEmail': 'Check Your Email',
+  'title.confirmLogin': 'Continue to Your Portal',
   'title.error': 'Something Went Wrong',
   'title.portal': 'Your Member Portal',
   'title.lettersList': 'Tax Documents',
@@ -31,6 +32,12 @@ export const en = {
   'checkEmail.heading': 'Check your email',
   'checkEmail.body': 'Please check your email: if that address is on file, a login link is on its way. It expires soon and can only be used once.',
 
+  // Magic-link confirmation (GET /auth/callback) — a button, not an automatic login, so mail
+  // scanners that prefetch links can't burn the single-use token (issue #31).
+  'confirmLogin.heading': 'Continue to your portal',
+  'confirmLogin.body': 'Use the button below to finish logging in.',
+  'confirmLogin.submit': 'Continue to your portal',
+
   // Error page + route-level error messages
   'error.heading': 'Something went wrong',
   'error.requestNewLink': 'Request a new login link',
@@ -46,10 +53,12 @@ export const en = {
   'error.verifyLoadFailed': 'We could not verify this card right now. Please try again in a few minutes.',
   'error.eventsLoadFailed': 'We could not load your event registrations right now. Please try again in a few minutes.',
   'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
+  'error.changeRequestLoadFailed': 'We could not load your contact details right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
 
   // Portal
   'portal.heading': 'Your member portal',
+  'portal.someRecordsUnavailable': 'Some of your records could not be loaded right now. Please try again in a few minutes.',
   'portal.membership': 'Membership: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total donated',
   'portal.tableDate': 'Date',

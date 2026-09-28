@@ -15,6 +15,7 @@ export const es: Record<TranslationKey, string> = {
   // Page <title> suffixes (rendered as "{title.x} — {site.title}")
   'title.login': 'Iniciar sesión',
   'title.checkEmail': 'Revisa tu correo',
+  'title.confirmLogin': 'Continúa a tu portal',
   'title.error': 'Algo salió mal',
   'title.portal': 'Tu portal de donante',
   'title.lettersList': 'Documentos fiscales',
@@ -30,6 +31,9 @@ export const es: Record<TranslationKey, string> = {
   // Check email
   'checkEmail.heading': 'Revisa tu correo',
   'checkEmail.body': 'Revisa tu correo electrónico: si esa dirección está registrada, un enlace de acceso está en camino. Caduca pronto y solo se puede usar una vez.',
+  'confirmLogin.heading': 'Continúa a tu portal',
+  'confirmLogin.body': 'Usa el botón de abajo para terminar de iniciar sesión.',
+  'confirmLogin.submit': 'Continuar a tu portal',
 
   // Error page + route-level error messages
   'error.heading': 'Algo salió mal',
@@ -49,6 +53,7 @@ export const es: Record<TranslationKey, string> = {
 
   // Portal
   'portal.heading': 'Tu portal de donante',
+  'portal.someRecordsUnavailable': 'Algunos de tus registros no se pudieron cargar en este momento. Inténtalo de nuevo en unos minutos.',
   'portal.membership': 'Membresía: {{status}} ({{tier}})',
   'portal.totalLabel': 'Total donado',
   'portal.tableDate': 'Fecha',
@@ -154,6 +159,7 @@ export const es: Record<TranslationKey, string> = {
   'title.pledges': 'Tus promesas de donación',
   'title.matchingGifts': 'Donaciones igualadas',
   'error.pledgesLoadFailed': 'No pudimos cargar tus promesas de donación en este momento. Inténtalo de nuevo en unos minutos.',
+  'error.changeRequestLoadFailed': 'No pudimos cargar tus datos de contacto en este momento. Inténtalo de nuevo en unos minutos.',
   'portal.pledgesLink': 'Tus promesas de donación',
   'portal.matchingGiftsLink': 'Donaciones igualadas por tu empleador',
   'pledges.heading': 'Tus promesas de donación',

@@ -1,4 +1,4 @@
-import type { DonorVolunteerHistory, EventRegistrationRecord, FunraiseLinkUrls, PortalView } from './types';
+import type { DiscountOrganization, DonorVolunteerHistory, EventRegistrationRecord, FunraiseLinkUrls, PortalView } from './types';
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 import { SVBC_LOGO_SVG } from './assets/logo';
@@ -403,7 +403,7 @@ function siteHeader(locale: Locale, authenticated: boolean): string {
 // returns the visitor to wherever they were without this needing to be threaded through every
 // page() call site. No visible submit button: a no-JS visitor can't change the value via this
 // <select> in the first place, so there's nothing for a fallback button to submit either.
-function siteFooter(locale: Locale): string {
+function siteFooter(locale: Locale, languagePicker: boolean): string {
   const options = SUPPORTED_LOCALES.map(
     (code) => `<option value="${code}"${code === locale ? ' selected' : ''}>${escapeHtml(LOCALE_NATIVE_LABELS[code])}</option>`
   ).join('');
@@ -421,10 +421,14 @@ function siteFooter(locale: Locale): string {
             <a href="${ORG_PRIVACY_POLICY_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(t(locale, 'footer.privacyPolicy'))}</a>
           </p>
         </div>
-        <form class="site-footer-lang" action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
+        ${
+          languagePicker
+            ? `<form class="site-footer-lang" action="/lang" method="get" aria-label="${escapeHtml(t(locale, 'languagePicker.label'))}">
           <input type="hidden" name="to" value="" />
           <select name="code" onchange="this.form.to.value = location.pathname; this.form.submit()">${options}</select>
-        </form>
+        </form>`
+            : ''
+        }
       </div>
     </footer>
   `;
@@ -435,7 +439,15 @@ function siteFooter(locale: Locale): string {
 // headers/footers, which is how the tax letter page used to print (see letterViews.letterView).
 // `authenticated` shows the shared header's logout button — every route inside the session-gated
 // /:locale/portal* tree passes true; the pre-identity and public /verify routes leave it false.
-export function page(title: string, body: string, locale: Locale, options: { authenticated?: boolean } = {}): string {
+// languagePicker: false drops the footer language <select> — for pages whose state lives in the
+// query string, which the picker's `to` (location.pathname only) would lose. GET /auth/callback
+// is the one: switching language there dropped the token and landed on "invalid link".
+export function page(
+  title: string,
+  body: string,
+  locale: Locale,
+  options: { authenticated?: boolean; languagePicker?: boolean } = {}
+): string {
   return `<!doctype html>
 <html lang="${locale}">
   <head>
@@ -448,7 +460,7 @@ export function page(title: string, body: string, locale: Locale, options: { aut
   <body>
     ${siteHeader(locale, options.authenticated ?? false)}
     <main>${body}</main>
-    ${siteFooter(locale)}
+    ${siteFooter(locale, options.languagePicker ?? true)}
   </body>
 </html>`;
 }
@@ -474,6 +486,24 @@ export function checkEmailView(locale: Locale): string {
   return `
     <h1>${escapeHtml(t(locale, 'checkEmail.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'checkEmail.body'))}</p>
+  `;
+}
+
+// GET /auth/callback's body (issue #31): a plain button that POSTs the magic-link token back,
+// because mail scanners prefetch links and a GET that consumed the single-use token burned it
+// before the donor clicked. Deliberately no script, no autofocus, no auto-submit — scanners that
+// execute JS must not be able to complete the login. `lang` is only emitted when it's a
+// supported locale (the caller validates), so nothing attacker-shaped is reflected besides the
+// escaped token.
+export function confirmLoginView(token: string, lang: Locale | null, locale: Locale): string {
+  const langField = lang === null ? '' : `\n      <input type="hidden" name="lang" value="${escapeHtml(lang)}" />`;
+  return `
+    <h1>${escapeHtml(t(locale, 'confirmLogin.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'confirmLogin.body'))}</p>
+    <form action="/auth/callback" method="post">
+      <input type="hidden" name="token" value="${escapeHtml(token)}" />${langField}
+      <button type="submit">${escapeHtml(t(locale, 'confirmLogin.submit'))}</button>
+    </form>
   `;
 }
 
@@ -727,7 +757,13 @@ function funraiseSection(links: FunraiseLinkUrls, locale: Locale): string {
   `;
 }
 
-function discountRow(discount: PortalView['discounts'][number]): string {
+// Shown when some of a household's donor items failed to load (issue #31) — the page renders the
+// rest rather than failing, but must not silently look complete.
+export function someRecordsUnavailableNote(count: number, locale: Locale): string {
+  return count > 0 ? `<p role="status">${escapeHtml(t(locale, 'portal.someRecordsUnavailable'))}</p>` : '';
+}
+
+function discountRow(discount: DiscountOrganization): string {
   return `<li>${escapeHtml(discount.name)}: ${escapeHtml(discount.discountOffered)}</li>`;
 }
 
@@ -740,14 +776,19 @@ export function portalView(
 ): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
+    ${someRecordsUnavailableNote(data.unavailableDonorCount ?? 0, locale)}
     ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id], data.donationHistoryEnabled)).join('')}
     ${funraiseSection(funraise, locale)}
-    <section>
+    ${
+      data.discounts === null
+        ? ''
+        : `<section>
       <h2>${escapeHtml(t(locale, 'portal.discountsHeading'))}</h2>
       <ul>
         ${data.discounts.map(discountRow).join('')}
       </ul>
-    </section>
+    </section>`
+    }
     <p><a href="/${locale}/portal/events">${escapeHtml(t(locale, 'portal.eventsLink'))}</a></p>
     <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
     <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>

@@ -22,6 +22,11 @@ import { parseAmount as parseAmountOrNull } from '../amounts';
 // Worker — same pin as the other Workers in this repo (e.g. funraise-sync's client).
 const MONDAY_API_VERSION = '2026-01';
 
+// Per-request ceiling on a Monday call (headers and body). Workers impose no wall-clock limit on a
+// subrequest, so without this a hung Monday request held a dashboard render — or a queue consumer
+// batch — open indefinitely (issue #31). Generous next to Monday's normal sub-second responses.
+export const MONDAY_FETCH_TIMEOUT_MS = 15_000;
+
 interface MondayColumnValue {
   id: string;
   text: string | null;
@@ -116,25 +121,35 @@ export class HttpMondayClient implements MondayClient {
   ) {}
 
   private async request<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-    const response = await this.fetchFn(this.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.apiToken,
-        'API-Version': MONDAY_API_VERSION,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (!response.ok) {
-      throw new Error(`monday: HTTP ${response.status}`);
-    }
-    const json = (await response.json()) as {
+    let json: {
       data?: T;
       errors?: { message: string }[];
       // Monday's rate-limit/auth failures come back HTTP 200 with only these two fields.
       error_message?: string;
       status_code?: number;
     };
+    try {
+      const response = await this.fetchFn(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: this.apiToken,
+          'API-Version': MONDAY_API_VERSION,
+        },
+        body: JSON.stringify({ query, variables }),
+        // Also covers the body read below — the signal aborts response.json() too.
+        signal: AbortSignal.timeout(MONDAY_FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new Error(`monday: HTTP ${response.status}`);
+      }
+      json = (await response.json()) as typeof json;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new Error(`monday: request timed out after ${MONDAY_FETCH_TIMEOUT_MS}ms`);
+      }
+      throw err;
+    }
     if (json.errors?.length) {
       throw new Error(`monday: ${json.errors.map((e) => e.message).join('; ')}`);
     }
@@ -243,6 +258,32 @@ export class HttpMondayClient implements MondayClient {
     };
   }
 
+  // The pages after an items_page's first: follows next_items_page until the cursor runs out.
+  // `itemsSelection` is the same `items { ... }` selection the first page used. A null
+  // next_items_page (expired/invalid cursor) ends pagination with what we have rather than
+  // throwing mid-read — for the January cron sweep an exception costs a whole day's run.
+  private async remainingPages(cursor: string | null, itemsSelection: string): Promise<MondayItem[]> {
+    const nextPageQuery = `
+      query ($cursor: String!) {
+        next_items_page(cursor: $cursor, limit: 500) {
+          cursor
+          ${itemsSelection}
+        }
+      }
+    `;
+    const items: MondayItem[] = [];
+    while (cursor) {
+      const nextData = await this.request<{
+        next_items_page: { cursor: string | null; items: MondayItem[] } | null;
+      }>(nextPageQuery, { cursor });
+      const nextPage = nextData.next_items_page;
+      if (!nextPage) break;
+      items.push(...nextPage.items);
+      cursor = nextPage.cursor;
+    }
+    return items;
+  }
+
   // Shared by getDonationsForDonor, getPledgesForDonor, and getVolunteerShiftsForDonor: every item on a board whose
   // connect-board column links to donorItemId, following the cursor across pages.
   // Verified live against the sandbox Donations board on 2026-09-20. Two things the "current API
@@ -282,35 +323,11 @@ export class HttpMondayClient implements MondayClient {
         }
       }
     `;
-    const nextPageQuery = `
-      query ($cursor: String!) {
-        next_items_page(cursor: $cursor, limit: 500) {
-          cursor
-          items { ${itemFields} }
-        }
-      }
-    `;
-
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
     }>(firstPageQuery, { boardId, donorItemId: Number(donorItemId) });
     const firstPage = firstData.boards[0]?.items_page;
-    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
-    let cursor = firstPage?.cursor ?? null;
-
-    while (cursor) {
-      const nextData = await this.request<{
-        next_items_page: { cursor: string | null; items: MondayItem[] } | null;
-      }>(nextPageQuery, { cursor });
-      // A null next_items_page (expired/invalid cursor) ends pagination with what we have
-      // rather than throwing mid-page and failing the whole read.
-      const nextPage = nextData.next_items_page;
-      if (!nextPage) break;
-      allItems.push(...nextPage.items);
-      cursor = nextPage.cursor;
-    }
-
-    return allItems;
+    return [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, `items { ${itemFields} }`))];
   }
 
   private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
@@ -419,6 +436,7 @@ export class HttpMondayClient implements MondayClient {
     // compare_value. The original `{ compare_value: ["true"], operator: any_of }` shape ran
     // without error but silently matched nothing, which would have shipped as "no discount
     // organizations" regardless of how many were actually checked.
+    const itemsSelection = `items { id name column_values(ids: ["${this.columns.discountOffered}"]) { id text } }`;
     const query = `
       query ($boardId: ID!) {
         boards(ids: [$boardId]) {
@@ -429,7 +447,7 @@ export class HttpMondayClient implements MondayClient {
             }
           ) {
             cursor
-            items { id name column_values(ids: ["${this.columns.discountOffered}"]) { id text } }
+            ${itemsSelection}
           }
         }
       }
@@ -438,7 +456,10 @@ export class HttpMondayClient implements MondayClient {
       query,
       { boardId: this.organizationsBoardId }
     );
-    const items = data.boards[0]?.items_page.items ?? [];
+    const firstPage = data.boards[0]?.items_page;
+    // Follow the cursor (issue #31): the first page alone silently dropped every active discount
+    // past the 500th.
+    const items = [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, itemsSelection))];
     return items.map((item) => ({
       name: item.name,
       discountOffered: columnText(item, this.columns.discountOffered),
@@ -675,34 +696,11 @@ export class HttpMondayClient implements MondayClient {
         }
       }
     `;
-    const nextPageQuery = `
-      query ($cursor: String!) {
-        next_items_page(cursor: $cursor, limit: 500) {
-          cursor
-          ${itemFields}
-        }
-      }
-    `;
-
     const firstData = await this.request<{
       boards: { items_page: { cursor: string | null; items: MondayItem[] } }[];
     }>(firstPageQuery, { boardId: this.donationsBoardId, from: `${year}-01-01`, to: `${year}-12-31` });
     const firstPage = firstData.boards[0]?.items_page;
-    const allItems: MondayItem[] = [...(firstPage?.items ?? [])];
-    let cursor = firstPage?.cursor ?? null;
-
-    while (cursor) {
-      const nextData = await this.request<{
-        next_items_page: { cursor: string | null; items: MondayItem[] } | null;
-      }>(nextPageQuery, { cursor });
-      // Same guard as fetchItemsLinkedToDonor: a null next_items_page (expired/invalid cursor)
-      // ends the sweep with what we have rather than throwing mid-page — an exception here
-      // costs the January cron a whole day's run before its daily retry.
-      const nextPage = nextData.next_items_page;
-      if (!nextPage) break;
-      allItems.push(...nextPage.items);
-      cursor = nextPage.cursor;
-    }
+    const allItems = [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, itemFields))];
 
     const donorIds = new Set<string>();
     // Same status filter as getDonationsForDonor: a donor whose only gifts in the year are
