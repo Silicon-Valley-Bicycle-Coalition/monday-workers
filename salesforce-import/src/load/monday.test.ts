@@ -132,6 +132,17 @@ describe('MondayClient', () => {
     expect(Math.max(...slept)).toBeLessThanOrEqual(120_000 + 2 ** 1 * 1000 + 500);
   });
 
+  it('never retries a DAILY_LIMIT_EXCEEDED reply — it throws at once, even for idempotent calls', async () => {
+    let calls = 0;
+    const daily = () => { calls++; return Response.json({ errors: [{ message: 'Daily limit exceeded',
+      extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 40_000 } }] }); };
+    const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, fetchFn: daily as unknown as typeof fetch });
+    await expect(c.gql('q')).rejects.toThrow(/Daily limit/);
+    await expect(c.gql('m', {}, { idempotent: false })).rejects.toThrow(/Daily limit/);
+    await expect(c.gqlPartial('m')).rejects.toThrow(/Daily limit/);
+    expect(calls).toBe(3);
+  });
+
   describe('gqlPartial (aliased batch mutations)', () => {
     it('returns per-alias data alongside per-alias errors instead of throwing', async () => {
       const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,

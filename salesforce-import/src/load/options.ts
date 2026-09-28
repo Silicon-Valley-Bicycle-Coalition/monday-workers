@@ -40,6 +40,14 @@ export function parseLoadOptions(args: string[], cfg: LoadConfig | undefined): L
     const err = intIn(label, v, 1, hi);
     if (err) return err;
   }
+  if (typeof o.inlineLinks !== 'boolean') {
+    return `load: config load.inlineLinks must be true or false (got ${JSON.stringify(o.inlineLinks)})`;
+  }
+  if (typeof o.recoveryLookupDelayMs !== 'number' || !Number.isFinite(o.recoveryLookupDelayMs) ||
+    o.recoveryLookupDelayMs < 0) {
+    return `load: config load.recoveryLookupDelayMs must be a non-negative number of ms ` +
+      `(got ${JSON.stringify(o.recoveryLookupDelayMs)})`;
+  }
   const flag = (name: string, hi: number): number | string | undefined => {
     const i = args.indexOf(name);
     if (i < 0) return undefined;

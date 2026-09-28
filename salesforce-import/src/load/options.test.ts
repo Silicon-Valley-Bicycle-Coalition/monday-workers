@@ -35,4 +35,12 @@ describe('parseLoadOptions', () => {
     expect(parseLoadOptions(['--concurrency', '9'], cfg)).toMatch(/--concurrency/);
     expect(parseLoadOptions([], { ...cfg, batchSize: 40 })).toMatch(/batchSize/);
   });
+
+  it('rejects a mistyped inlineLinks or recoveryLookupDelayMs in config', () => {
+    expect(parseLoadOptions([], { ...cfg, inlineLinks: 'false' as unknown as boolean })).toMatch(/inlineLinks/);
+    expect(parseLoadOptions([], { ...cfg, recoveryLookupDelayMs: -1 })).toMatch(/recoveryLookupDelayMs/);
+    expect(parseLoadOptions([], { ...cfg, recoveryLookupDelayMs: '3000' as unknown as number })).toMatch(/recoveryLookupDelayMs/);
+    expect(parseLoadOptions([], { ...cfg, recoveryLookupDelayMs: Infinity })).toMatch(/recoveryLookupDelayMs/);
+    expect(parseLoadOptions([], { ...cfg, recoveryLookupDelayMs: 0 })).toMatchObject({ recoveryLookupDelayMs: 0 });
+  });
 });

@@ -22,13 +22,18 @@ export class AmbiguousWriteError extends Error {
 const REJECTED_BEFORE_RUNNING = new Set(['ComplexityException', 'COMPLEXITY_BUDGET_EXHAUSTED',
   'RATE_LIMIT_EXCEEDED', 'maxConcurrencyExceeded']);
 
-/** Whether `e` is a complexity/rate-limit rejection (the request did not run). */
+// Monday's daily call quota. Not in the set above: waiting it out takes hours, so the client
+// throws on it at once instead of retrying (see send()).
+const DAILY_LIMIT = 'DAILY_LIMIT_EXCEEDED';
+
+/** Whether `e` is a complexity/rate-limit rejection worth retrying (the request did not run). */
 export function isRejectedBeforeRunning(e: GqlError): boolean {
+  if (e.extensions?.code === DAILY_LIMIT) return false;
   return REJECTED_BEFORE_RUNNING.has(e.extensions?.code ?? '') || /complexity/i.test(e.message);
 }
 
-// A daily-limit reply can carry retry_in_seconds in the hours; waiting that long inside one
-// request would silently stall the run, so cap the wait and let the attempt budget run out.
+// Cap on any single Retry-After / retry_in_seconds wait, so one bad value can't silently stall
+// the run; if the limit persists, the attempt budget runs out and the request fails.
 const MAX_RETRY_IN_MS = 120_000;
 
 /** The longest `retry_in_seconds` Monday asked for across `errors`, in ms (capped), or 0. */
@@ -109,8 +114,13 @@ export class MondayClient {
         // NO errors array (see funraise-sync/src/monday/client.ts for the same handling).
         { data?: T | null; errors?: GqlError[]; error_message?: string; status_code?: number };
       if (body.errors?.length) {
-        const rejected = body.errors.some(isRejectedBeforeRunning);
         lastError = body.errors.map((e) => e.message).join('; ');
+        // Nothing will succeed until tomorrow: fail at once, never retry (so a create can't be
+        // re-sent on account of it), and let the caller ledger failures for a later re-run.
+        if (body.errors.some((e) => e.extensions?.code === DAILY_LIMIT)) {
+          throw new Error(`monday: daily API limit reached — ${lastError}`);
+        }
+        const rejected = body.errors.some(isRejectedBeforeRunning);
         if (partial) {
           // No data object at all means nothing ran; any data means the request executed and
           // the caller sorts out which aliases landed.

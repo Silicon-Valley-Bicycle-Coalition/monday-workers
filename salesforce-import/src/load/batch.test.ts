@@ -6,11 +6,12 @@ import { ComplexityGate, buildCreateMutation, createBatch, runPool, type CreateE
 //   whole request — 'fail' 502 before committing; 'lost' commits every alias then 502;
 //                   'lostAfter' commits aliases up to and including this one then 502;
 //                   'reject' a whole-request GraphQL error with no data (nothing ran);
+//                   'daily' Monday's DAILY_LIMIT_EXCEEDED (nothing ran, nothing will today);
 //                   'lostLate' 502 at once, then Monday commits every alias anyway and search
 //                   doesn't see them yet (a client timeout racing the resolvers, lagging index).
 //   per alias     — 'error' null + an error on its path; 'null' null with no error;
 //                   'errorIfRel' an error only while the create carries relation values.
-type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'error' | 'null' | 'errorIfRel';
+type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'daily' | 'error' | 'null' | 'errorIfRel';
 interface Item { id: string; sfId: string; name: string; rel: Record<string, number[]>; hidden?: boolean }
 
 class FakeMonday {
@@ -44,6 +45,8 @@ class FakeMonday {
     this.creates.push(names);
     const faults = names.map((name) => this.faults.get(name)?.shift());
     if (faults.includes('fail')) return new Response('bad gateway', { status: 502 });
+    if (faults.includes('daily')) return Response.json({ errors: [{ message: 'Daily limit exceeded',
+      extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 40_000 } }] });
     if (faults.includes('reject')) return Response.json({ errors: [{ message: 'Parse error on "}"' }] });
     const cutoff = faults.indexOf('lostAfter');
     const data: Record<string, unknown> = {};
@@ -142,6 +145,17 @@ describe('createBatch', () => {
     expect(monday.creates).toHaveLength(3);
     expect(by['A']).toMatchObject({ kind: 'failed' });
     expect(monday.byName('A')).toHaveLength(0);
+  });
+
+  it('a daily-limit reply fails the batch without a single re-send', async () => {
+    monday.faults.set('A', ['daily']);
+    const { outcomes } = await run(monday, [entry('A'), entry('B')]);
+    expect(monday.creates).toEqual([['A', 'B']]);
+    expect(outcomes.every((o) => o.kind === 'failed')).toBe(true);
+    monday.faults.set('A', ['daily']);
+    monday.creates = [];
+    await run(monday, [entry('A')]); // single entry: a definite rejection, not re-sent either
+    expect(monday.creates).toEqual([['A']]);
   });
 
   it('a single-entry request keeps the sequential rule: re-sent after the lookup confirms absence', async () => {
