@@ -23,6 +23,8 @@ class FakeMonday {
   inFlight = 0;
   maxInFlight = 0;
   latencyMs = 0;
+  archiveInFlight = 0;
+  maxArchiveInFlight = 0;
   echoRelations = true; // false: create_item's response omits the relations it stored
   columnTitles = new Map<string, string>(); // column id → title
   links: { itemId: string; targetIds: number[] }[] = [];
@@ -36,12 +38,17 @@ class FakeMonday {
   client(): MondayClient {
     const fetchFn = (async (_u: unknown, init: unknown) => {
       const body = JSON.parse((init as { body: string }).body) as { query: string; variables: Record<string, unknown> };
-      const isCreate = /create_item/.test(body.query);
-      if (isCreate) { this.inFlight++; this.maxInFlight = Math.max(this.maxInFlight, this.inFlight); }
+      // In-flight tracking for the pooled writes: creates, and archives (tracked separately).
+      const kind = /create_item/.test(body.query) ? 'create' : /archive_item/.test(body.query) ? 'archive' : null;
+      if (kind === 'create') { this.inFlight++; this.maxInFlight = Math.max(this.maxInFlight, this.inFlight); }
+      if (kind === 'archive') { this.archiveInFlight++; this.maxArchiveInFlight = Math.max(this.maxArchiveInFlight, this.archiveInFlight); }
       try {
-        if (isCreate && this.latencyMs > 0) await new Promise((r) => setTimeout(r, this.latencyMs));
+        if (kind && this.latencyMs > 0) await new Promise((r) => setTimeout(r, this.latencyMs));
         return this.handle(body);
-      } finally { if (isCreate) this.inFlight--; }
+      } finally {
+        if (kind === 'create') this.inFlight--;
+        if (kind === 'archive') this.archiveInFlight--;
+      }
     }) as typeof fetch;
     return new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
   }
@@ -309,6 +316,28 @@ describe('runLoad batched creates (#22)', () => {
     expect(await runLoad([], { client: monday.client() })).toBe(0);
     expect(monday.creates.at(-1)).toEqual(['Org3']);
     for (let i = 0; i < 4; i++) expect(monday.items.filter((it) => it.sfId === `a${i}`)).toHaveLength(1);
+  });
+
+  it('archives a fiscal year --concurrency at a time, once its links are in; --sequential keeps it to one', async () => {
+    const gifts = Array.from({ length: 8 }, (_, i) => ({ board: 'donations', sfId: `o${i}`, name: `G${i}`,
+      archive: true, columns: { 'Fiscal Year Ending': '2015' }, links: [{ column: 'Donor', targetSfIds: ['c1'] }] }));
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'),
+      [{ board: 'people-live', sfId: 'c1', name: 'Ada', columns: {} }, ...gifts]);
+    monday.latencyMs = 3;
+    expect(await runLoad(['--concurrency', '3'], { client: monday.client() })).toBe(0);
+    expect(monday.archived).toHaveLength(8);
+    expect(monday.maxArchiveInFlight).toBe(3);
+    const l = new Ledger(); await l.load();
+    for (let i = 0; i < 8; i++) expect(l.archivedDone(`o${i}`)).toBe(true);
+
+    process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-')));
+    monday = new FakeMonday();
+    monday.latencyMs = 3;
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'),
+      [{ board: 'people-live', sfId: 'c1', name: 'Ada', columns: {} }, ...gifts]);
+    expect(await runLoad(['--sequential'], { client: monday.client() })).toBe(0);
+    expect(monday.archived).toHaveLength(8);
+    expect(monday.maxArchiveInFlight).toBe(1);
   });
 
   it('refuses an out-of-range --batch-size before touching Monday', async () => {

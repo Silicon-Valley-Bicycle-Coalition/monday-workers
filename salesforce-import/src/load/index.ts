@@ -407,6 +407,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           .flatMap((f) => [f.sfId, ...(f.targetSfIds ?? [])]));
       const toArchive = group.filter((p) => p.archive);
       let archivedCount = 0, deferredCount = 0;
+      // Decide every item first (the #21 gate reads only state settled above), then archive the
+      // cleared ones opts.concurrency at a time — archive_item is idempotent and was the largest
+      // remaining sequential cost after #22's create/link changes. --sequential keeps it 1.
+      const cleared: { p: ItemPayload; itemId: string }[] = [];
       for (const p of toArchive) {
         // Re-archive when a link was rewritten this run (the user unarchived it for the retry).
         if (ledger.archivedDone(p.sfId) && !linkedThisRun.has(p.sfId)) { archivedCount++; continue; }
@@ -419,6 +423,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
             `fix links (re-run load), then it archives on the next run`);
           continue;
         }
+        cleared.push({ p, itemId });
+      }
+      await runPool(cleared, opts.concurrency, async ({ p, itemId }) => {
         try {
           await client.gql(`mutation ($id: ID!) { archive_item (item_id: $id) { id } }`, { id: itemId });
           await ledger.recordArchive(p.sfId);
@@ -428,7 +435,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           report.archive.failed++;
           await ledger.recordArchiveFailure(p.sfId, String(err));
         }
-      }
+      });
       console.log(`load: donations FY${fy || '(undated)'} — ${group.length} items, ` +
         `${archivedCount} archived` + (deferredCount > 0 ? `, ${deferredCount} archive-deferred` : ''));
     }
