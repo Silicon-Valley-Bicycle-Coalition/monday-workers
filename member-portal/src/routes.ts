@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
+import { csrf } from 'hono/csrf';
+import { HTTPException } from 'hono/http-exception';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
@@ -21,6 +23,7 @@ import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
 import { sha256Hex } from './crypto/hash';
+import { secretsMatch } from './crypto/secretsMatch';
 import {
   changeRequestsEnabled,
   configuredPrefFields,
@@ -58,6 +61,7 @@ import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
 import { decodeEmailLogoPng } from './assets/emailLogo';
+import { securityHeaders } from './securityHeaders';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -77,6 +81,7 @@ export interface AppDeps {
 }
 
 const SESSION_COOKIE = 'session';
+export const WEBHOOK_SECRET_HEADER = 'X-Webhook-Secret';
 
 // Conservative email plausibility check: rejects whitespace, quotes, and backslashes (the
 // characters that would let a value break out of a GraphQL string literal), and requires an
@@ -102,20 +107,62 @@ async function getSessionDonorIds(c: Context, deps: AppDeps): Promise<string[] |
   return deps.sessionStore.getSession(await sha256Hex(sessionToken), deps.now().toISOString());
 }
 
-// Shared by every authenticated route from this task on: the authenticated zone's locale comes
-// from the `:locale` path param (not cookie/header sniffing like detectLocale), falling back to
-// the default rather than 404ing on an unrecognized code.
+// Shared by every authenticated route: the authenticated zone's locale comes from the `:locale`
+// path param (not cookie/header sniffing like detectLocale). An unsupported code never reaches a
+// handler — the requireSupportedLocale middleware in createApp 404s it — so the fallback below
+// is only a type-level default.
 function resolvePathLocale(c: Context): Locale {
   const raw = c.req.param('locale');
   return raw !== undefined && isLocale(raw) ? raw : DEFAULT_LOCALE;
 }
 
+// Server-to-server endpoints exempt from the CSRF check, by exact method + path. Deliberately not
+// a prefix: every authenticated route starts with a wildcard `:locale` segment, so a "/webhooks/"
+// prefix exemption also matched /webhooks/portal/change-request (issue #32 review).
+const CSRF_EXEMPT = new Set(['POST /webhooks/monday/letters']);
+
 export function createApp(deps: AppDeps) {
   const app = new Hono();
 
+  // The one origin this deployment serves (member.bikesiliconvalley.org in production,
+  // member.sandbox.bikesiliconvalley.org in the sandbox — config/split.test.ts pins each to its
+  // wrangler.jsonc custom domain). Used by the CSRF check and the language-switch redirect.
+  const portalOrigin = new URL(deps.config.auth.portalBaseUrl).origin;
+
+  // First, so it wraps every response — including onError's and the 404 fallback.
+  app.use('*', ...securityHeaders());
+
+  // CSRF (issue #32): the session cookie is SameSite=Lax, which still rides along on a form POST
+  // from any *.bikesiliconvalley.org sibling — same-site, just not same-origin. Hono's csrf()
+  // rejects a form-encodable POST (urlencoded, multipart, text/plain, or no Content-Type) unless
+  // Sec-Fetch-Site is same-origin or Origin is exactly the portal origin. Every form here posts
+  // from the portal's own pages; nothing on the main site posts into it. The Monday webhook is
+  // server-to-server (no Origin, no Sec-Fetch-Site) and authenticates with its shared secret
+  // instead, so it alone is exempt (CSRF_EXEMPT — exact paths, never a prefix).
+  const csrfCheck = csrf({ origin: portalOrigin });
+  app.use('*', (c, next) => (CSRF_EXEMPT.has(`${c.req.method} ${c.req.path}`) ? next() : csrfCheck(c, next)));
+
+  // Every locale-prefixed route 404s an unsupported locale rather than silently rendering the
+  // default one: a wildcard first segment that accepts anything is how "webhooks" became a
+  // valid locale. The un-prefixed back-compat redirects (/portal, /portal/letters, ...) don't
+  // match these patterns, so they're unaffected.
+  const requireSupportedLocale: MiddlewareHandler = async (c, next) => {
+    const raw = c.req.param('locale');
+    if (raw === undefined || !isLocale(raw)) return c.notFound();
+    await next();
+  };
+  app.use('/:locale/portal', requireSupportedLocale);
+  app.use('/:locale/portal/*', requireSupportedLocale);
+
   app.onError((err, c) => {
-    console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
     const locale = detectLocale(c);
+    if (err instanceof HTTPException && err.status === 403) {
+      // The CSRF rejection. A real donor only lands here from a stale/odd browser state, so give
+      // them the same recoverable page as any other failure rather than a bare "Forbidden".
+      console.warn(`member-portal: rejected cross-origin ${c.req.method} ${c.req.path} (Origin: ${c.req.header('origin') ?? 'none'})`);
+      return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 403);
+    }
+    console.error(`member-portal unhandled error: ${err instanceof Error ? err.message : String(err)}`);
     return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.generic', locale), locale), 500);
   });
 
@@ -143,18 +190,37 @@ export function createApp(deps: AppDeps) {
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
     return new Response(buffer, {
-      headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' },
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        // Loaded as an <img> by webmail clients on their own origins — the one cross-origin
+        // resource here (see securityHeaders.ts's same-origin default).
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+      },
     });
   });
 
   // The language switcher lives in the shared site footer (see views.ts's siteFooter) and so
   // appears on every route, submitting the browser's current location.pathname as `to` — rather
   // than hand-maintain an exact-match allowlist of every page shape that can now show it, this
-  // accepts any same-origin relative path and only blocks the open-redirect shapes: an absolute
-  // URL, a protocol-relative "//evil.example", and the backslash-tolerant "/\evil.example" some
-  // browsers still treat as protocol-relative.
-  function isAllowedLangRedirect(path: string): boolean {
-    return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+  // accepts any same-origin target. It does so by parsing, not by prefix-matching: a blocklist
+  // of string prefixes ("//", "/\") missed "/<TAB>/evil.example" (issue #32), because browsers
+  // strip ASCII tab/newline and leading C0 controls while parsing a Location value. Resolving
+  // with the same WHATWG URL parser the browser uses, requiring the portal's own origin, and
+  // re-emitting only the parser's normalized pathname + search means what we send is exactly
+  // what the browser will follow. Returns null for anything off-origin.
+  function sameOriginRedirectPath(to: string): { pathname: string; search: string } | null {
+    let url: URL;
+    try {
+      url = new URL(to, portalOrigin);
+    } catch {
+      return null;
+    }
+    if (url.origin !== portalOrigin) return null;
+    // Dot-segment normalization can still yield a "//host" pathname (e.g. "/.//evil.example"),
+    // which is protocol-relative once it stands alone in a Location header.
+    if (url.pathname.startsWith('//')) return null;
+    return { pathname: url.pathname, search: url.search };
   }
 
   // Sets the lang cookie and returns the resolved locale (falling back to the default for an
@@ -177,9 +243,9 @@ export function createApp(deps: AppDeps) {
   }
 
   function langRedirectTarget(c: Context, locale: Locale): string {
-    const requestedTo = c.req.query('to') ?? '/';
-    const target = isAllowedLangRedirect(requestedTo) ? requestedTo : '/';
-    return applyLocaleToPath(target, locale);
+    const target = sameOriginRedirectPath(c.req.query('to') ?? '/');
+    if (target === null) return '/';
+    return applyLocaleToPath(target.pathname, locale) + target.search;
   }
 
   app.get('/lang/:code', (c) => {
@@ -613,7 +679,8 @@ export function createApp(deps: AppDeps) {
     if (donorItemIds === null) return c.redirect('/');
 
     c.header('Cache-Control', NO_STORE);
-    // The app's only CSP, on its only page that may run third-party JS. The load-bearing part
+    // Replaces the app-wide baseline CSP (securityHeaders.ts) on the only page that may run
+    // third-party JS, so it repeats the baseline's frame-ancestors/base-uri. The load-bearing part
     // is connect-src excluding 'self': the DTD script executes on the authenticated portal
     // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
     // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
@@ -624,7 +691,7 @@ export function createApp(deps: AppDeps) {
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +
         "style-src 'self' https://doublethedonation.com; img-src 'self' https://doublethedonation.com data:; " +
-        "connect-src https://doublethedonation.com; frame-ancestors 'none'"
+        "connect-src https://doublethedonation.com; frame-ancestors 'none'; base-uri 'none'"
     );
     const ein = signedOffEin(deps.config);
     const publicApiKey = matchingGiftsSearchEnabled(deps.config) ? deps.config.matchingGifts.doubleTheDonationPublicKey : null;
@@ -756,10 +823,16 @@ export function createApp(deps: AppDeps) {
   });
 
   // Monday doesn't sign webhook payloads (no HMAC header to verify) — the standard mitigation
-  // used elsewhere in this repo (donation-rollups) is a shared secret in the webhook URL itself,
-  // set when subscribing and checked here.
+  // used elsewhere in this repo (donation-rollups) is a shared secret, checked here in constant
+  // time. The caller is a Monday board automation ("When button clicked → send a webhook"),
+  // whose only setting is the target URL — it can't add a header — so its deliveries carry the
+  // secret as `?secret=`. That puts the secret in the logged request URL (Workers
+  // observability); see README v2.1 for the tradeoff. Any caller that *can* set a header (a hand
+  // replay, future tooling) should send X-Webhook-Secret instead; when present it's the only
+  // value checked.
   app.post('/webhooks/monday/letters', async (c) => {
-    if (!deps.letterWebhookSecret || c.req.query('secret') !== deps.letterWebhookSecret) {
+    const presented = c.req.header(WEBHOOK_SECRET_HEADER) ?? c.req.query('secret');
+    if (!(await secretsMatch(presented, deps.letterWebhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 

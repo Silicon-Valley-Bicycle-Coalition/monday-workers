@@ -180,7 +180,9 @@ Routing destination). A live login-link request for a real sandbox People record
 
 * Session and magic-link tokens: signed, single-use for the magic link, short expiry, stored in D1
   keyed to a hash of the token (not the raw token) so a D1 read doesn't itself leak a usable
-  credential.
+  credential. Membership-card tokens are the exception — stored in plaintext because the card's
+  QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
+  why that tradeoff was kept.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
@@ -192,6 +194,22 @@ Routing destination). A live login-link request for a real sandbox People record
 * Every data read is scoped server-side to the authenticated session's Donor item id — the portal
   never accepts a donor-id or email as a client-supplied parameter for "whose data to show."
 * HTTPS only, on its own subdomain, separate from any staff-facing tooling.
+* CSRF: every state-changing form POST (login, logout, change requests, preferences, card
+  regenerate) passes Hono's `csrf()` — `Sec-Fetch-Site: same-origin` or an `Origin` exactly equal
+  to `auth.portalBaseUrl`'s origin, else 403. `SameSite=Lax` alone isn't enough here: it still
+  sends the session cookie on POSTs from sibling `*.bikesiliconvalley.org` hosts (same-site,
+  cross-origin). `config/split.test.ts` pins each environment's `portalBaseUrl` to its
+  `wrangler.jsonc` custom domain, so the allowed origin is exactly the served one. The Monday
+  webhook is exempt (server-to-server, no `Origin`; it authenticates with its shared secret).
+* Response headers on every route (`src/securityHeaders.ts`, Hono `secureHeaders()`): no framing
+  (`X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` — nothing embeds the portal), a
+  baseline CSP of `frame-ancestors`/`base-uri`/`object-src`/`form-action` only (the pages use
+  an inline `<style>` and inline event handlers, so a `script-src`/`style-src` policy needs a
+  nonce refactor first), `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and
+  `Strict-Transport-Security: max-age=31536000` **without** `includeSubDomains` or `preload` —
+  this is one host under a domain whose apex and siblings are run elsewhere, and preload is
+  only possible for the apex. `/email/logo.png` alone is `Cross-Origin-Resource-Policy:
+  cross-origin`, since webmail clients load it from their own origins.
 * No permanent duplicate of donation records in D1 — read live from Monday (or cache with a short
   TTL, e.g. a few minutes, purely for rate-limit headroom against Monday's API), so Monday stays
   the single place donation data actually lives.
@@ -253,6 +271,19 @@ Operator setup, in addition to v1/v2 steps:
    access.
 3. Set the `LETTER_WEBHOOK_SECRET` Worker secret (`wrangler secret put LETTER_WEBHOOK_SECRET`) —
    must match the `secret` query param used in the webhook URL above.
+
+   **Why a query param, and what it costs.** Monday doesn't sign these deliveries, and the
+   automation's webhook action takes only a URL — no custom headers — so the shared secret has
+   to ride in the URL. The Worker compares it in constant time, but a URL secret also lands
+   wherever request URLs are recorded: Workers observability logs (the dashboard's invocation
+   log shows the full URL), and the automation's own config and run history in Monday. Treat
+   read access to both as access to the secret; rotate it (new `wrangler secret put`, then
+   update the automation's URL) if logs are ever exported or shared, or someone with Monday
+   board-admin access leaves. The blast radius is bounded: a leaked secret can only trigger
+   "your letter is ready" emails for donors with gifts, each donor+year at most once
+   (`letter_sends` dedupe), never read data. Callers that *can* set a header (a hand replay,
+   future tooling) should send `X-Webhook-Secret: <secret>` instead, which keeps it out of the
+   URL; when that header is present it's the only value checked.
 4. Create the `member-portal-letter-emails` queue and its `member-portal-letter-emails-dlq` dead-letter
    queue before deploying (`wrangler queues create member-portal-letter-emails` and
    `wrangler queues create member-portal-letter-emails-dlq`).
@@ -353,7 +384,8 @@ Operator setup, in addition to v1/v2/v2.1 steps:
 ## v3 — Digital membership card
 
 Design: `../docs/superpowers/specs/2026-08-24-digital-membership-card-design.md`. A donor views a
-live card (`GET /:locale/portal/card/:donorItemId`) — name, member number, tier, status, expiry — with a
+live card (a widget per donor on the dashboard, `GET /:locale/portal`; the old
+`/:locale/portal/card/:donorItemId` page now redirects there) — name, member number, tier, status, expiry — with a
 QR code and a plain-text link to a public verify page (`GET /verify/:token`) that always fetches
 current status live from Monday, never from whatever was true when the card was viewed or
 scanned. iOS 27 donors can self-serve the card into Apple Wallet via the OS's own "Create a Pass"
@@ -371,11 +403,37 @@ verify link with the same care as the card itself.
 **Gated on `monday.columns.membershipExpiry`:** the whole feature shows a "not available yet"
 state until that column is set to a real Monday column id (same treatment as v2's
 `donorAddress`/`donorPhone`). If a card's link ever leaks, the donor can invalidate it and get a
-fresh one any time from `/:locale/portal/card/:donorItemId` ("Regenerate card").
+fresh one any time from the card widget's "Regenerate card" button.
 
 Operator setup for v3, in addition to the v1/v2 steps: add a Membership Expiry (date) column to
 the Donors board and fill in `monday.columns.membershipExpiry`; apply D1 migration
 `0003_create_card_tokens.sql`. No new Monday write access, no new queue, no new secret.
+
+**Card tokens are stored in plaintext in D1 — deliberately, unlike session and magic-link
+tokens** (issue #32). The difference is that a card token is re-displayed: every dashboard load
+redraws the card's QR code from the active token, so the Worker needs the token itself back, not
+just a way to recognize it. Session and login tokens are only ever *checked*, so a hash suffices.
+Storing card tokens hashed would therefore mean deriving or decrypting them from a new Worker
+secret (HMAC-derived tokens, or AES-GCM ciphertext plus a hash column for lookup). Considered and
+not done, because:
+
+* **What a leaked table unlocks is small, and D1 already holds more.** A card token opens only
+  `/verify/:token`: name, tier, membership status and expiry — the same facts printed on the
+  card the donor shows at a shop counter. Anyone who can read `card_tokens` can read
+  `change_requests` in the same database, which holds donors' old and new addresses, emails and
+  phone numbers in plaintext.
+* **HMAC re-derivation would break every card already issued.** Existing tokens are random, so
+  no key can re-derive them; switching would force a regenerate for every donor and silently
+  invalidate each Wallet pass donors created from the old QR code. The encryption route avoids
+  that (existing rows can be encrypted lazily on first read) but adds a key whose rotation also
+  invalidates every card.
+* **Existing controls cover the realistic leak.** Tokens are revocable by the donor
+  ("Regenerate card"), revoked rows are purged, `/verify` is rate-limited, and the `cardEnabled`
+  kill switch stops every token at once.
+
+Revisit if `/verify` ever starts showing more than the card itself does, or if `change_requests`
+stops holding plaintext PII: the encrypt-plus-lookup-hash design is then the migration path, and
+it keeps issued cards working.
 
 **Revoked tokens don't linger:** the daily retention cron (same one that purges `change_requests`
 — see `src/index.ts`'s `scheduled` handler) also deletes `card_tokens` rows past
@@ -438,8 +496,9 @@ features, both read-only — no new D1 tables, queues, secrets, or Monday write 
   employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
   SVBC buys a DTD subscription, which it currently has not — the board item notes this was
   "discussed, not prioritized"). This is the only portal page that may load third-party
-  JavaScript, so it deliberately renders **zero donor PII** and ships the app's only
-  Content-Security-Policy — the load-bearing directive is `connect-src` excluding `'self'`, so
+  JavaScript, so it deliberately renders **zero donor PII** and ships its own full
+  Content-Security-Policy in place of the app-wide baseline (see Security notes) — the
+  load-bearing directive is `connect-src` excluding `'self'`, so
   a compromised widget script can't fetch sibling `/portal` pages (which carry the session
   cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
   shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
