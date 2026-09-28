@@ -8,6 +8,8 @@ import { Ledger } from './ledger.js';
 import { ensureBoards, COLUMN_TYPES } from './boards.js';
 import { formatColumnValue } from './columnValues.js';
 import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
+import { ComplexityGate, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
+import { isLegacySequential, parseLoadOptions } from './options.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -48,6 +50,8 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     console.error(`load: --limit needs a positive number (got "${args[limitIdx + 1] ?? ''}")`);
     return 1;
   }
+  const opts = parseLoadOptions(args, cfg.load);
+  if (typeof opts === 'string') { console.error(opts); return 1; }
 
   const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
 
@@ -141,20 +145,30 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
   }
 
-  const createItems = async (key: string, items: ItemPayload[]): Promise<void> => {
+  // Column values for one payload's create_item, Salesforce ID first. Throws (before anything is
+  // sent) when the board lacks a column the payload needs.
+  const buildColValues = (key: string, p: ItemPayload): Record<string, unknown> => {
+    const board = boards[key]!;
+    const colValues: Record<string, unknown> = { [board.columns[SF_ID_COLUMN]!]: p.sfId };
+    for (const [title, value] of Object.entries(p.columns)) {
+      if (value === null || value === undefined || value === '') continue;
+      const id = board.columns[title];
+      if (!id) throw new Error(`load: board ${key} has no column id for "${title}"`);
+      const formatted = formatColumnValue(COLUMN_TYPES[title] ?? 'text', value);
+      if (formatted === null) continue;
+      colValues[id] = formatted;
+    }
+    return colValues;
+  };
+
+  // The pre-#22 path, unchanged: one create_item per request, one payload at a time. Kept as
+  // the cutover-weekend fallback (`load --sequential`).
+  const createItemsSequential = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;
     const sfIdColId = board.columns[SF_ID_COLUMN]!;
     for (const p of items) {
       if (ledger.has(p.sfId, key)) continue;
-      const colValues: Record<string, unknown> = { [sfIdColId]: p.sfId };
-      for (const [title, value] of Object.entries(p.columns)) {
-        if (value === null || value === undefined || value === '') continue;
-        const id = board.columns[title];
-        if (!id) throw new Error(`load: board ${key} has no column id for "${title}"`);
-        const formatted = formatColumnValue(COLUMN_TYPES[title] ?? 'text', value);
-        if (formatted === null) continue;
-        colValues[id] = formatted;
-      }
+      const colValues = buildColValues(key, p);
       try {
         let itemId: string | undefined;
         for (let attempt = 1; itemId === undefined; attempt++) {
@@ -186,6 +200,48 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       }
     }
   };
+
+  // Ledger one batched-create outcome (load/batch.ts decides it; this only records it). A ledger
+  // write that throws propagates and stops the run — the next run's board scan adopts whatever
+  // Monday holds that the ledger missed.
+  const recordOutcome = async (key: string, o: CreateOutcome): Promise<void> => {
+    if (o.kind === 'failed') {
+      bump(report.createFailed, key);
+      await ledger.recordFailure({ sfId: o.sfId, board: key, error: o.error });
+      console.error(`load: FAILED ${key}/${o.sfId}: ${o.error}`);
+      return;
+    }
+    bump(o.kind === 'created' ? report.created : report.adopted, key);
+    if (o.kind === 'adopted' && o.itemIds.length > 1) {
+      report.duplicates.push({ board: key, sfId: o.sfId, itemIds: o.itemIds });
+    }
+    await ledger.recordSuccess({ sfId: o.sfId, board: key, itemId: o.itemId });
+  };
+
+  // Shared by every create worker: pauses new batches when the complexity budget runs low.
+  const gate = new ComplexityGate((ms) => client.sleep(ms), Date.now, opts.concurrency);
+
+  // #22: opts.batchSize aliased create_items per request, opts.concurrency requests in flight.
+  const createItemsBatched = async (key: string, items: ItemPayload[]): Promise<void> => {
+    const board = boards[key]!;
+    const entries: CreateEntry[] = [];
+    const queued = new Set<string>();
+    for (const p of items) {
+      // A Salesforce Id is created at most once per run, even if a payload repeats it.
+      if (ledger.has(p.sfId, key) || queued.has(p.sfId)) continue;
+      queued.add(p.sfId);
+      entries.push({ sfId: p.sfId, name: p.name, colValues: buildColValues(key, p) });
+    }
+    const batches: CreateEntry[][] = [];
+    for (let i = 0; i < entries.length; i += opts.batchSize) batches.push(entries.slice(i, i + opts.batchSize));
+    await runPool(batches, opts.concurrency, (batch) => createBatch({
+      client, boardId: board.boardId, sfIdColId: board.columns[SF_ID_COLUMN]!, entries: batch,
+      attempts: CREATE_ATTEMPTS, lookupDelayMs: opts.recoveryLookupDelayMs, gate,
+      onOutcome: (o) => recordOutcome(key, o),
+    }));
+  };
+
+  const createItems = isLegacySequential(opts) ? createItemsSequential : createItemsBatched;
 
   // Link machinery. Sequential linking measured ~40h for the real dataset's 94k links, so a
   // small worker pool runs LINK_CONCURRENCY mutations in flight; each link still ledgers

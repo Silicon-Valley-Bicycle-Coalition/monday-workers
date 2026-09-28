@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { LoadConfig } from './load/options.js';
 
 export interface Config {
   salesforceOrg: string;
@@ -18,6 +19,10 @@ export interface Config {
   // household Account). Gifts pointing at them migrate as Anonymous Donor = checked with no
   // Donor link, and the records themselves are not emitted as People/Organizations items.
   placeholderDonorSfIds?: string[];
+  // Load throughput (#22): batchSize create_items per request, concurrency requests in flight,
+  // inlineLinks (relations to already-loaded targets written inside create_item), and the pause
+  // before a recovery lookup. Optional — src/load/options.ts has the defaults; CLI flags override.
+  load?: LoadConfig;
   monday: { apiUrl: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
   localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;

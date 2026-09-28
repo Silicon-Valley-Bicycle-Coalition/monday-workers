@@ -52,3 +52,39 @@ export async function findItemIdsBySfId(client: MondayClient, boardId: number, c
     { board: String(boardId), col: colId, val: sfId });
   return res.items_page_by_column_values.items.map((i) => i.id);
 }
+
+/**
+ * Looks up several Salesforce Ids on one board in a single request (paging if Monday holds
+ * more matches than one page — only possible when some Ids are duplicated).
+ * @returns sfId → every ACTIVE item id carrying it; Ids with no item are absent from the map.
+ */
+export async function findItemIdsBySfIds(client: MondayClient, boardId: number, colId: string,
+  sfIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (sfIds.length === 0) return out;
+  const wanted = new Set(sfIds);
+  const take = (page: ItemsPage | undefined): string | null => {
+    for (const item of page?.items ?? []) {
+      const sfId = item.column_values[0]?.text?.trim();
+      if (!sfId || !wanted.has(sfId)) continue;
+      if (!out.has(sfId)) out.set(sfId, []);
+      out.get(sfId)!.push(item.id);
+    }
+    return page?.cursor ?? null;
+  };
+  const first = await client.gql<{ items_page_by_column_values: ItemsPage }>(
+    `query ($board: ID!, $col: String!, $cols: [String!], $vals: [String]!, $limit: Int!) {
+       items_page_by_column_values (board_id: $board, limit: $limit,
+         columns: [{ column_id: $col, column_values: $vals }]) {
+         cursor items { id column_values (ids: $cols) { text } } } }`,
+    { board: String(boardId), col: colId, cols: [colId], vals: [...wanted], limit: PAGE });
+  let cursor = take(first.items_page_by_column_values);
+  while (cursor) {
+    const next = await client.gql<{ next_items_page: ItemsPage }>(
+      `query ($cursor: String!, $col: [String!], $limit: Int!) { next_items_page (cursor: $cursor, limit: $limit) {
+         cursor items { id column_values (ids: $col) { text } } } }`,
+      { cursor, col: [colId], limit: PAGE });
+    cursor = take(next.next_items_page);
+  }
+  return out;
+}

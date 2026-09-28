@@ -12,6 +12,7 @@
     "sonic.net", "mindspring.com", "juno.com"
   ],
   "placeholderDonorSfIds": ["003i000001breKtAAI", "001i000001Esfc1AAB"],
+  "load": { "batchSize": 10, "concurrency": 3, "inlineLinks": true, "recoveryLookupDelayMs": 3000 },
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boardSuffix": " (sandbox v2)",
