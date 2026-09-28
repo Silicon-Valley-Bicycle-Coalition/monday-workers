@@ -90,15 +90,13 @@ the client waits Monday's `retry_in_seconds` on complexity and rate-limit errors
 
 Duplicate safety: any entry in a batch whose outcome isn't a confirmed id is looked up by
 `Salesforce ID` (one request for the whole batch, after `load.recoveryLookupDelayMs`), and found
-items are adopted. **An entry in a multi-entry request that the lookup doesn't find is never re-sent
-in that run** (timeout, 5xx, network error, whole-request error, null alias): Monday can keep
-committing aliases after the client gives up, and search can lag, so a miss proves nothing. It's
-ledgered as failed, `load` exits 1, and **the next `load` run's start-of-run board scan adopts
-whatever landed and creates the rest**, so a batched run that hit a timeout needs one more run. A
-single-entry request keeps the sequential rule: look up, then re-send up to 3 attempts. An error
-under an alias's read-back (its `column_values`) means the create committed and only its id was
-lost. It is looked up and adopted, and if not found yet it's never re-sent, whatever the request
-size. A response body cut off mid-stream counts as ambiguous, like a dropped connection. A
+items are adopted. **In batched mode an ambiguous create is never re-sent in that run, whatever the
+request size (one item or 25)**. That covers a timeout, 5xx, network error, cut-off response body,
+whole-request error or null alias: Monday can keep committing after the client gives up, and search
+can lag, so a miss proves nothing. The entry is ledgered as failed, `load` exits 1, and **the next
+`load` run's start-of-run board scan adopts whatever landed and creates the rest**. An error under
+an alias's read-back (its `column_values`) means the create committed and only its id was lost; it
+is looked up and adopted, and if not found yet it isn't re-sent either. A
 definitely-rejected alias is never re-sent, except that an entry Monday rejected *itself* (error
 path = the alias, in a response with data) while it carried inline relations is retried once
 without them (`links.inlineRejected`), and the link pass writes those. If the lookup itself fails,
@@ -124,7 +122,14 @@ npm run cli -- load --sequential                  # FALLBACK: the pre-#22 path, 
 **Cutover-weekend fallback:** if batched loading misbehaves (unexpected Monday errors, relations
 not sticking, complexity trouble), stop and re-run with `load --sequential` (same as
 `--batch-size 1 --concurrency 1 --no-inline-links`). It uses the same ledger, so it resumes where
-the batched run stopped; it's the code path every rehearsal before #22 ran.
+the batched run stopped. It's the code path every rehearsal before #22 ran: the same create loop
+and the same Monday client (`MondayClient` `legacy`/`gqlLegacy`, a verbatim copy). It keeps the old
+lookup-then-retry rule for an ambiguous create, up to 3 attempts, and no duplicate read-back.
+
+**Budget a follow-up `load` run.** Every ambiguous batched outcome, at any request size, leaves
+its items for the next run rather than retrying them in place. So after any batched run that exits
+1 with "not re-sent this run" failures, run `load` again. Its start-of-run scan adopts what landed,
+creates the rest, and should finish at 0. Plan for at least one such extra run on cutover weekend.
 
 The dry-run estimate is `old = (C+A)·L + K·L/q` and `new = (B·L + (C−B)·α)/p + K′·L/q + A·L/p`
 (C creates, B create requests, K/K′ separate link writes, A archives, L seconds per request —
