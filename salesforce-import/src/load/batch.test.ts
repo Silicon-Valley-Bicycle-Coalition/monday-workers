@@ -12,8 +12,9 @@ import { ComplexityGate, buildCreateMutation, createBatch, runPool, type CreateE
 //                   doesn't see them yet (a client timeout racing the resolvers, lagging index).
 //   per alias     — 'error' null + an error on its path; 'null' null with no error;
 //                   'errorIfRel' an error only while the create carries relation values;
-//                   'readBackErr' commits, then errors under the alias's column_values read-back.
-type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'daily' | 'bodyCut' | 'error' | 'null' | 'errorIfRel' | 'readBackErr';
+//                   'readBackErr' commits, then errors under the alias's column_values read-back;
+//                   'mixedErr' like readBackErr, plus an error on [alias] itself.
+type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'daily' | 'bodyCut' | 'error' | 'null' | 'errorIfRel' | 'readBackErr' | 'mixedErr';
 interface Item { id: string; sfId: string; name: string; rel: Record<string, number[]>; hidden?: boolean }
 
 class FakeMonday {
@@ -67,11 +68,12 @@ class FakeMonday {
         data[`i${i}`] = null; errors.push({ message: `ItemsNotFoundException ${names[i]}`, path: [`i${i}`] }); continue;
       }
       const item: Item = { id: String(this.next++), sfId: cols['sf'] as string, name: names[i]!, rel,
-        ...(faults.includes('lostLate') || faults[i] === 'readBackErr' || (faults.includes('bodyCut') && this.lagSearch)
+        ...(faults.includes('lostLate') || faults[i] === 'readBackErr' || faults[i] === 'mixedErr' || (faults.includes('bodyCut') && this.lagSearch)
           ? { hidden: true } : {}) };
       this.items.push(item);
-      if (faults[i] === 'readBackErr') {
+      if (faults[i] === 'readBackErr' || faults[i] === 'mixedErr') {
         data[`i${i}`] = null;
+        if (faults[i] === 'mixedErr') errors.push({ message: 'Cannot return null for create_item', path: [`i${i}`] });
         errors.push({ message: 'Internal error', path: [`i${i}`, 'column_values', 0, 'linked_item_ids'] });
         continue;
       }
@@ -90,10 +92,10 @@ class FakeMonday {
 const entry = (name: string, extra: Partial<CreateEntry> = {}): CreateEntry =>
   ({ sfId: `sf-${name}`, name, colValues: { sf: `sf-${name}` }, ...extra });
 
-async function run(monday: FakeMonday, entries: CreateEntry[], opts: { attempts?: number } = {}) {
+async function run(monday: FakeMonday, entries: CreateEntry[]) {
   const outcomes: CreateOutcome[] = [];
   await createBatch({ client: monday.client(), boardId: 1, sfIdColId: 'sf', entries,
-    attempts: opts.attempts ?? 3, lookupDelayMs: 0, onOutcome: async (o) => { outcomes.push(o); } });
+    lookupDelayMs: 0, onOutcome: async (o) => { outcomes.push(o); } });
   const by = Object.fromEntries(outcomes.map((o) => [o.sfId.slice(3), o]));
   return { outcomes, by };
 }
@@ -149,12 +151,31 @@ describe('createBatch', () => {
     expect((outcomes[0] as { error: string }).error).toMatch(/lookup failed/);
   });
 
-  it('gives up after the attempt budget, still with no duplicate', async () => {
-    monday.faults.set('A', ['fail', 'fail', 'fail', 'fail']);
-    const { by } = await run(monday, [entry('A')], { attempts: 3 });
-    expect(monday.creates).toHaveLength(3);
+  it('a single-entry 502 with nothing committed is looked up, then left for the next run — never re-sent', async () => {
+    monday.faults.set('A', ['fail']);
+    const { by } = await run(monday, [entry('A')]);
+    expect(monday.creates).toEqual([['A']]);
+    expect(monday.lookups).toBe(1);
     expect(by['A']).toMatchObject({ kind: 'failed' });
-    expect(monday.byName('A')).toHaveLength(0);
+    expect((by['A'] as { error: string }).error).toMatch(/not re-sent this run/);
+  });
+
+  it('a single entry that Monday committed after a 502 while search lags: no second create', async () => {
+    monday.faults.set('A', ['lostLate']);
+    const { by } = await run(monday, [entry('A')]);
+    expect(monday.creates).toEqual([['A']]);
+    expect(by['A']).toMatchObject({ kind: 'failed' });
+    expect(monday.byName('A')).toHaveLength(1); // the one committed item; next run's scan adopts it
+  });
+
+  it('an alias with BOTH an [alias] error and an error below it counts as committed, never re-sent', async () => {
+    monday.faults.set('A', ['mixedErr']);
+    const e = entry('A', { colValues: { sf: 'sf-A', rel1: { item_ids: [7] } }, plainColValues: { sf: 'sf-A' }, readBack: ['rel1'] });
+    const { by } = await run(monday, [e, entry('B')]);
+    expect(monday.creates).toEqual([['A', 'B']]); // no relation-less retry
+    expect(by['A']).toMatchObject({ kind: 'failed' });
+    expect((by['A'] as { error: string }).error).toMatch(/committed but its response was incomplete/);
+    expect(monday.byName('A')).toHaveLength(1);
   });
 
   it('a daily-limit reply fails the batch without a single re-send', async () => {
@@ -166,13 +187,6 @@ describe('createBatch', () => {
     monday.creates = [];
     await run(monday, [entry('A')]); // single entry: a definite rejection, not re-sent either
     expect(monday.creates).toEqual([['A']]);
-  });
-
-  it('a single-entry request keeps the sequential rule: re-sent after the lookup confirms absence', async () => {
-    monday.faults.set('A', ['fail']);
-    const { by } = await run(monday, [entry('A')]);
-    expect(monday.creates).toEqual([['A'], ['A']]);
-    expect(by['A']!.kind).toBe('created');
   });
 
   describe('multi-entry request with an unknown outcome: adopt what the lookup finds, never re-send this run', () => {
@@ -250,10 +264,10 @@ describe('createBatch', () => {
       expect(by['A']).toMatchObject({ kind: 'adopted' });
     });
 
-    it('…and when search lags it is NOT re-sent without relations (only the sequential retry, relations intact)', async () => {
+    it('…and when search lags it is not re-sent at all (with or without relations)', async () => {
       monday.faults.set('A', ['bodyCut']);
       monday.lagSearch = true;
-      const { by } = await run(monday, [withRel('A')], { attempts: 1 });
+      const { by } = await run(monday, [withRel('A')]);
       expect(monday.creates).toEqual([['A']]);
       expect(by['A']).toMatchObject({ kind: 'failed' });
       expect((by['A'] as { error: string }).error).toMatch(/ambiguous/);
@@ -310,7 +324,7 @@ describe('ComplexityGate', () => {
     const observed: unknown[] = [];
     const gate = { observe: (c: unknown) => { observed.push(c); }, ready: async () => {} } as unknown as ComplexityGate;
     await createBatch({ client: monday.client(), boardId: 1, sfIdColId: 'sf', entries: [entry('A')],
-      attempts: 3, lookupDelayMs: 0, gate, onOutcome: async () => {} });
+      lookupDelayMs: 0, gate, onOutcome: async () => {} });
     expect(observed).toEqual([{ query: 50, after: 10, reset_in_x_seconds: 12 }]);
   });
 });

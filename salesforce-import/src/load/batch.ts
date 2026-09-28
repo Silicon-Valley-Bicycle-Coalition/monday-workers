@@ -4,25 +4,27 @@ import { findItemIdsBySfIds } from './lookup.js';
 /**
  * Batched, duplicate-safe item creation (#22 on top of #19's guarantees).
  *
- * One request carries up to 25 aliased `create_item`s. Each entry ends in exactly one outcome:
+ * One request carries up to 25 aliased `create_item`s (or just one). Each entry ends in exactly
+ * one outcome, and the rules are the same for every request size:
  *
  * - alias returned an id                        → created
- * - alias returned a definite GraphQL error     → looked up; adopted if present, else failed and
- *                                                 never re-sent (parity with the sequential path) —
- *                                                 except an entry carrying inline relations gets
- *                                                 ONE re-send without them (link pass owns them)
- * - anything else in a MULTI-entry request      → looked up; adopted if present, else failed and
- *   (5xx, timeout, network error, no data,        NOT re-sent this run: Monday may still commit
- *   whole-request error, null alias)              aliases after the client gave up, and search can
- *                                                 lag, so a miss proves nothing. The next run's
- *                                                 start-of-run board scan adopts or creates them.
- * - the same in a SINGLE-entry request          → the sequential path's rule: looked up; adopted
- *                                                 if present, else re-sent (up to `attempts`); a
- *                                                 whole-request error is that entry's definite one
- * - the recovery lookup itself fails            → failed, NOT re-sent; the next run's start-of-run
- *                                                 board scan adopts anything that did land
+ * - an error BELOW the alias (path deeper than  → committed, id unknown: looked up; adopted if
+ *   [alias], e.g. its column_values read-back),   present, else failed and never re-sent
+ *   even alongside an [alias] error
+ * - an error ON the alias itself (path =        → definite rejection: looked up; adopted if
+ *   [alias]) in a response carrying data          present, else failed and never re-sent (parity
+ *                                                 with the sequential path) — except an entry
+ *                                                 carrying inline relations gets ONE re-send, alone,
+ *                                                 without them (the link pass then owns them)
+ * - anything else: 5xx, timeout, network error, → looked up; adopted if present, else failed and
+ *   cut-off body, no data, whole-request error,   NOT re-sent this run: Monday may still commit
+ *   null alias                                    after the client gave up and search can lag, so
+ *                                                 a miss proves nothing. The next run's start-of-run
+ *                                                 board scan adopts it or creates it.
+ * - the recovery lookup itself fails            → failed, NOT re-sent (same next-run recovery)
  *
- * Every re-send carries ONE entry.
+ * So the only re-send ever made is the relation-less retry of a certain rejection. `load
+ * --sequential` doesn't use this module; it keeps the pre-#22 lookup-then-retry rule.
  */
 
 export interface CreateEntry {
@@ -112,7 +114,7 @@ export async function runPool<T>(tasks: T[], concurrency: number, fn: (t: T) => 
 
 // relationsDropped: this is the one retry of a definitely-rejected entry without its inline
 // relations (CreateEntry.plainColValues).
-interface Pending { entry: CreateEntry; sends: number; relationsDropped?: boolean }
+interface Pending { entry: CreateEntry; relationsDropped?: boolean }
 
 /**
  * Creates `entries` on one board with batched `create_item`s, reporting each entry's outcome
@@ -122,21 +124,18 @@ interface Pending { entry: CreateEntry; sends: number; relationsDropped?: boolea
  */
 export async function createBatch(opts: {
   client: MondayClient; boardId: number; sfIdColId: string; entries: CreateEntry[];
-  /** Max sends per entry (the sequential path's CREATE_ATTEMPTS). */
-  attempts: number;
   /** Pause before a recovery lookup, so a just-committed item is visible to search. */
   lookupDelayMs: number;
   gate?: ComplexityGate;
   onOutcome: (o: CreateOutcome) => Promise<void>;
 }): Promise<void> {
-  const { client, boardId, sfIdColId, attempts, lookupDelayMs, gate, onOutcome } = opts;
-  const queue: Pending[][] = [opts.entries.map((entry) => ({ entry, sends: 0 }))];
+  const { client, boardId, sfIdColId, lookupDelayMs, gate, onOutcome } = opts;
+  const queue: Pending[][] = [opts.entries.map((entry) => ({ entry }))];
 
   while (queue.length > 0) {
     const group = queue.shift()!;
     if (group.length === 0) continue;
     await gate?.ready();
-    for (const p of group) p.sends++;
 
     const confirmed: { p: Pending; itemId: string; linked?: Record<string, string[]> }[] = [];
     const definite = new Map<Pending, string>(); // entry → Monday's rejection message
@@ -144,8 +143,8 @@ export async function createBatch(opts: {
     // Created but the id didn't come back (an error under the alias's read-back selection):
     // looked up and adopted, else failed — never re-sent, whatever the group size.
     const committed = new Map<Pending, string>();
-    // Definite rejections of the alias itself (error path === [alias], data present). Only these
-    // may be retried without inline relations; a single entry's whole-request error may not.
+    // Definite rejections of the alias itself (error path === [alias], data present) — the only
+    // outcome that may be retried, and only without inline relations.
     const rejectedByAlias = new Set<Pending>();
     let wholeRequestError: string | undefined; // the request failed as a whole, not per alias
     let wait = 0;
@@ -199,11 +198,6 @@ export async function createBatch(opts: {
 
     const toCheck = [...definite.keys(), ...committed.keys(), ...unknown];
     if (toCheck.length === 0) continue;
-    // A whole-request error on a single entry is that entry's own definite rejection.
-    if (wholeRequestError !== undefined && group.length === 1) {
-      definite.set(group[0]!, wholeRequestError);
-      unknown.length = 0;
-    }
 
     if (lookupDelayMs > 0) await client.sleep(lookupDelayMs);
     let found: Map<string, string[]>;
@@ -233,31 +227,23 @@ export async function createBatch(opts: {
         // would otherwise fail its create on every run. Retry once without them; the link pass
         // then owns those links and the #21 gate handles their failures.
         const { readBack: _dropped, ...rest } = p.entry;
-        resend.push({ entry: { ...rest, colValues: p.entry.plainColValues }, sends: p.sends, relationsDropped: true });
+        resend.push({ entry: { ...rest, colValues: p.entry.plainColValues }, relationsDropped: true });
       } else if (definite.has(p)) {
         await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error: `monday: ${definite.get(p)!}` });
-      } else if (group.length > 1) {
-        // A multi-entry request whose outcome is unknown for this entry (timeout, 5xx, network
-        // error, whole-request error, null alias): Monday may still be committing aliases after
-        // we gave up, and search may lag, so a miss here proves nothing. Never re-send in this
-        // run — the next run's start-of-run board scan adopts whatever landed and creates the
-        // rest. (A single-entry request keeps the sequential path's lookup-then-retry.)
-        await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error:
-          `batched create_item outcome unknown and not found by lookup — not re-sent this run; ` +
-          `the next run's board scan adopts it if it landed, else creates it` +
-          (wholeRequestError ? ` (error: ${wholeRequestError})` : '') });
-      } else if (p.sends >= attempts) {
-        await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error:
-          `create_item outcome ambiguous after ${p.sends} attempts and the item is not on Monday` +
-          (wholeRequestError ? ` (last error: ${wholeRequestError})` : '') });
       } else {
-        resend.push(p);
+        // Outcome unknown (timeout, 5xx, network error, cut-off body, whole-request error, null
+        // alias), whatever the request size: Monday may still be committing after we gave up,
+        // and search may lag, so a miss here proves nothing. Never re-send in this run — the
+        // next run's start-of-run board scan adopts whatever landed and creates the rest.
+        await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error:
+          `batched create_item outcome unknown (ambiguous) and not found by lookup — not re-sent ` +
+          `this run; the next run's board scan adopts it if it landed, else creates it` +
+          (wholeRequestError ? ` (error: ${wholeRequestError})` : '') });
       }
     }
     if (resend.length === 0) continue;
     if (wait > 0) await client.sleep(wait);
-    // Re-sends go one per request: recovery then behaves exactly like the sequential path, and
-    // an entry that keeps failing can't take its neighbours down with it.
+    // The relation-less retry goes alone, so a second rejection can't touch other entries.
     queue.push(...resend.map((p) => [p]));
   }
 }

@@ -28,8 +28,9 @@ const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliation
 // which is why links already ran in a small pool before #22.
 const LINK_CONCURRENCY = 6;
 
-// How many times an ambiguous create_item failure (see AmbiguousWriteError) is re-attempted
-// after confirming by lookup that the earlier attempt didn't land.
+// --sequential only: how many times an ambiguous create_item failure (see AmbiguousWriteError)
+// is re-attempted after confirming by lookup that the earlier attempt didn't land. The batched
+// path never re-sends an ambiguous create (load/batch.ts).
 const CREATE_ATTEMPTS = 3;
 
 function boardOrder(keys: string[]): string[] {
@@ -304,7 +305,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     for (let i = 0; i < entries.length; i += opts.batchSize) batches.push(entries.slice(i, i + opts.batchSize));
     await runPool(batches, opts.concurrency, (batch) => createBatch({
       client, boardId: board.boardId, sfIdColId: board.columns[SF_ID_COLUMN]!, entries: batch,
-      attempts: CREATE_ATTEMPTS, lookupDelayMs: opts.recoveryLookupDelayMs, gate,
+      lookupDelayMs: opts.recoveryLookupDelayMs, gate,
       onOutcome: (o) => recordOutcome(key, o, inlineBySfId.get(o.sfId) ?? []),
     }));
     if (entries.length > 0) {
