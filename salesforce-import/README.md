@@ -95,16 +95,23 @@ in that run** (timeout, 5xx, network error, whole-request error, null alias): Mo
 committing aliases after the client gives up, and search can lag, so a miss proves nothing. It's
 ledgered as failed, `load` exits 1, and **the next `load` run's start-of-run board scan adopts
 whatever landed and creates the rest**, so a batched run that hit a timeout needs one more run. A
-single-entry request keeps the sequential rule: look up, then re-send up to 3 attempts. A
-definitely-rejected alias is never re-sent, except that an entry rejected while carrying inline
-relations is retried once without them (`links.inlineRejected`), and the link pass writes those. If
-the lookup itself fails, nothing is re-sent. A crash mid-batch is recovered by the same start-of-run
-scan. Monday's `DAILY_LIMIT_EXCEEDED` fails requests at once and is never retried.
+single-entry request keeps the sequential rule: look up, then re-send up to 3 attempts. An error
+under an alias's read-back (its `column_values`) means the create committed and only its id was
+lost. It is looked up and adopted, and if not found yet it's never re-sent, whatever the request
+size. A response body cut off mid-stream counts as ambiguous, like a dropped connection. A
+definitely-rejected alias is never re-sent, except that an entry Monday rejected *itself* (error
+path = the alias, in a response with data) while it carried inline relations is retried once
+without them (`links.inlineRejected`), and the link pass writes those. If the lookup itself fails,
+nothing is re-sent. A crash mid-batch is recovered by the same start-of-run scan. Monday's
+`DAILY_LIMIT_EXCEEDED` fails requests at once and is never retried.
 
 **Duplicate read-back:** in batched mode, every board (and every donations fiscal year, before it
 archives) is read back by `Salesforce ID` right after its creates. Any Id Monday holds more than
 once is printed as `load: DUPLICATE <board>/<sfId> …`, listed under `duplicates` in
 `data/load/report.json`, and makes `load` exit 1. It's never deleted; remove the extras by hand.
+If a read-back itself errors, it's printed as `load: READ-BACK FAILED for <board or FY> …` and
+recorded under `readBackFailed`. The link and archive phases still run, and `load` exits 1: that
+board wasn't checked, so re-run `load` (or `validate --live`) before trusting it.
 
 ```sh
 npm run cli -- load --dry-run                     # per-board plan + old vs new request counts and hours
