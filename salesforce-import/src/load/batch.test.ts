@@ -5,10 +5,12 @@ import { ComplexityGate, buildCreateMutation, createBatch, runPool, type CreateE
 // Per item name, what the next create request containing it does:
 //   whole request — 'fail' 502 before committing; 'lost' commits every alias then 502;
 //                   'lostAfter' commits aliases up to and including this one then 502;
-//                   'reject' a whole-request GraphQL error with no data (nothing ran).
+//                   'reject' a whole-request GraphQL error with no data (nothing ran);
+//                   'lostLate' 502 at once, then Monday commits every alias anyway and search
+//                   doesn't see them yet (a client timeout racing the resolvers, lagging index).
 //   per alias     — 'error' null + an error on its path; 'null' null with no error.
-type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'error' | 'null';
-interface Item { id: string; sfId: string; name: string; rel: Record<string, number[]> }
+type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'error' | 'null';
+interface Item { id: string; sfId: string; name: string; rel: Record<string, number[]>; hidden?: boolean }
 
 class FakeMonday {
   items: Item[] = [];
@@ -32,7 +34,7 @@ class FakeMonday {
       this.lookups++;
       if (this.lookupFails > 0) { this.lookupFails--; return Response.json({ errors: [{ message: 'lookup boom' }] }); }
       const vals = new Set(v['vals'] as string[]);
-      const items = this.items.filter((i) => vals.has(i.sfId)).map((i) => ({ id: i.id, column_values: [{ text: i.sfId }] }));
+      const items = this.items.filter((i) => vals.has(i.sfId) && !i.hidden).map((i) => ({ id: i.id, column_values: [{ text: i.sfId }] }));
       return Response.json({ data: { items_page_by_column_values: { cursor: null, items } } });
     }
     if (!/create_item/.test(query)) throw new Error(`unexpected: ${query.slice(0, 60)}`);
@@ -54,14 +56,15 @@ class FakeMonday {
       for (const [k, val] of Object.entries(cols)) {
         if (val && typeof val === 'object' && 'item_ids' in val) rel[k] = (val as { item_ids: number[] }).item_ids;
       }
-      const item: Item = { id: String(this.next++), sfId: cols['sf'] as string, name: names[i]!, rel };
+      const item: Item = { id: String(this.next++), sfId: cols['sf'] as string, name: names[i]!, rel,
+        ...(faults.includes('lostLate') ? { hidden: true } : {}) };
       this.items.push(item);
       const read = (v[`r${i}`] as string[] | undefined) ?? [];
       data[`i${i}`] = { id: item.id, ...(read.length ? {
         column_values: read.map((c) => ({ id: c, linked_item_ids: (rel[c] ?? []).map(String) })) } : {}) };
     }
     // Committed above, but the response never arrives.
-    if (cutoff >= 0 || faults.includes('lost')) return new Response('bad gateway', { status: 502 });
+    if (cutoff >= 0 || faults.includes('lost') || faults.includes('lostLate')) return new Response('bad gateway', { status: 502 });
     if (this.complexity) data['complexity'] = this.complexity;
     return Response.json(errors.length ? { data, errors } : { data });
   }
@@ -112,39 +115,12 @@ describe('createBatch', () => {
     expect(monday.byName('B')).toHaveLength(0);
   });
 
-  it('an alias that came back null with no error is looked up, then re-sent alone', async () => {
-    monday.faults.set('B', ['null']);
-    const { by } = await run(monday, [entry('A'), entry('B'), entry('C')]);
-    expect(monday.lookups).toBe(1);
-    expect(monday.creates).toEqual([['A', 'B', 'C'], ['B']]);
-    expect(by['B']!.kind).toBe('created');
-    expect(monday.byName('B')).toHaveLength(1);
-  });
-
   it('ambiguous response after commit: looks every entry up and adopts them — no re-send, no duplicate', async () => {
     monday.faults.set('A', ['lost']);
     const { outcomes } = await run(monday, [entry('A'), entry('B'), entry('C')]);
     expect(monday.creates).toEqual([['A', 'B', 'C']]);
     expect(outcomes.map((o) => o.kind)).toEqual(['adopted', 'adopted', 'adopted']);
     for (const n of ['A', 'B', 'C']) expect(monday.byName(n)).toHaveLength(1);
-  });
-
-  it('ambiguous response after a PARTIAL commit: adopts what landed, re-sends only the rest', async () => {
-    monday.faults.set('B', ['lostAfter']); // A and B committed, C never ran
-    const { by } = await run(monday, [entry('A'), entry('B'), entry('C')]);
-    expect(monday.creates).toEqual([['A', 'B', 'C'], ['C']]);
-    expect(by['A']!.kind).toBe('adopted');
-    expect(by['B']!.kind).toBe('adopted');
-    expect(by['C']!.kind).toBe('created');
-    for (const n of ['A', 'B', 'C']) expect(monday.byName(n)).toHaveLength(1);
-  });
-
-  it('ambiguous failure with nothing committed: re-sends only after the lookup confirms absence', async () => {
-    monday.faults.set('A', ['fail']);
-    const { outcomes } = await run(monday, [entry('A'), entry('B')]);
-    expect(monday.lookups).toBe(1);
-    expect(monday.creates).toEqual([['A', 'B'], ['A'], ['B']]); // re-sends go one per request
-    expect(outcomes.map((o) => o.kind)).toEqual(['created', 'created']);
   });
 
   it('never re-sends when the recovery lookup itself fails — ledgers a failure for the next run to adopt', async () => {
@@ -164,13 +140,52 @@ describe('createBatch', () => {
     expect(monday.byName('A')).toHaveLength(0);
   });
 
-  it('splits a whole-request rejection into single creates so one bad entry cannot sink its batch', async () => {
-    monday.faults.set('B', ['reject', 'reject']);
-    const { by } = await run(monday, [entry('A'), entry('B'), entry('C')]);
-    expect(monday.creates).toEqual([['A', 'B', 'C'], ['A'], ['B'], ['C']]);
+  it('a single-entry request keeps the sequential rule: re-sent after the lookup confirms absence', async () => {
+    monday.faults.set('A', ['fail']);
+    const { by } = await run(monday, [entry('A')]);
+    expect(monday.creates).toEqual([['A'], ['A']]);
     expect(by['A']!.kind).toBe('created');
-    expect(by['C']!.kind).toBe('created');
-    expect(by['B']).toMatchObject({ kind: 'failed' });
+  });
+
+  describe('multi-entry request with an unknown outcome: adopt what the lookup finds, never re-send this run', () => {
+    it('null alias with no error', async () => {
+      monday.faults.set('B', ['null']);
+      const { by } = await run(monday, [entry('A'), entry('B'), entry('C')]);
+      expect(monday.creates).toEqual([['A', 'B', 'C']]);
+      expect(by['B']).toMatchObject({ kind: 'failed' });
+      expect((by['B'] as { error: string }).error).toMatch(/not re-sent this run/);
+    });
+
+    it('502 after a partial commit — adopts what landed, leaves the rest for the next run', async () => {
+      monday.faults.set('B', ['lostAfter']); // A and B committed, C never ran
+      const { by } = await run(monday, [entry('A'), entry('B'), entry('C')]);
+      expect(monday.creates).toEqual([['A', 'B', 'C']]);
+      expect(by['A']!.kind).toBe('adopted');
+      expect(by['B']!.kind).toBe('adopted');
+      expect(by['C']).toMatchObject({ kind: 'failed' });
+    });
+
+    it('502 with nothing committed', async () => {
+      monday.faults.set('A', ['fail']);
+      const { outcomes } = await run(monday, [entry('A'), entry('B')]);
+      expect(monday.creates).toEqual([['A', 'B']]);
+      expect(outcomes.map((o) => o.kind)).toEqual(['failed', 'failed']);
+    });
+
+    it('whole-request rejection', async () => {
+      monday.faults.set('B', ['reject']);
+      const { outcomes } = await run(monday, [entry('A'), entry('B'), entry('C')]);
+      expect(monday.creates).toEqual([['A', 'B', 'C']]);
+      expect(outcomes.every((o) => o.kind === 'failed')).toBe(true);
+    });
+
+    it('Monday commits the aliases AFTER answering 502 and search lags — still no duplicate', async () => {
+      monday.faults.set('A', ['lostLate']);
+      const { outcomes } = await run(monday, [entry('A'), entry('B'), entry('C')]);
+      expect(monday.creates).toEqual([['A', 'B', 'C']]); // the old rule re-sent all three here
+      expect(outcomes.every((o) => o.kind === 'failed')).toBe(true);
+      for (const n of ['A', 'B', 'C']) expect(monday.byName(n)).toHaveLength(1);
+    });
   });
 
   it('reports Salesforce Ids that the lookup finds more than once, adopting the first', async () => {

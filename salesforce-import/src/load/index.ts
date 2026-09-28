@@ -291,6 +291,22 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       attempts: CREATE_ATTEMPTS, lookupDelayMs: opts.recoveryLookupDelayMs, gate,
       onOutcome: (o) => recordOutcome(key, o, inlineBySfId.get(o.sfId) ?? []),
     }));
+    if (entries.length > 0) await scanForDuplicates(key);
+  };
+
+  // After a board (or a donations fiscal year) is written in batched mode, read it back by
+  // Salesforce ID and report any Id Monday holds more than once — the backstop for a batch
+  // Monday committed after the client gave up. Runs before archiving, while items_page can
+  // still see them. Never deletes anything.
+  const scanForDuplicates = async (key: string): Promise<void> => {
+    const board = boards[key]!;
+    const scan = await scanBoardSfIds(client, board.boardId, board.columns[SF_ID_COLUMN]!);
+    for (const [sfId, itemIds] of scan.bySfId) {
+      if (itemIds.length < 2 || report.duplicates.some((d) => d.board === key && d.sfId === sfId)) continue;
+      report.duplicates.push({ board: key, sfId, itemIds });
+      console.log(`load: DUPLICATE ${key}/${sfId} exists ${itemIds.length}× on Monday (items ${itemIds.join(', ')}) ` +
+        `— remove the extras by hand; see data/load/report.json`);
+    }
   };
 
   const createItems = isLegacySequential(opts) ? createItemsSequential : createItemsBatched;

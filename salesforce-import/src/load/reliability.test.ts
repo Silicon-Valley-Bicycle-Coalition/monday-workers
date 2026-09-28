@@ -14,7 +14,7 @@ const MODES: [string, string[]][] = [['batched', []], ['sequential', ['--sequent
 
 // A stateful stand-in for Monday: boards hold items tagged by their Salesforce ID column, so
 // lookups and scans see exactly what earlier create_item calls committed.
-interface FakeItem { id: string; boardId: string; name: string; sfId?: string; archived: boolean;
+interface FakeItem { id: string; boardId: string; name: string; sfId?: string; archived: boolean; hiddenFromSearch?: boolean;
   rel?: Record<string, number[]> }
 class FakeMonday {
   items: FakeItem[] = [];
@@ -33,7 +33,9 @@ class FakeMonday {
   // Per item name: what the next create_item for it does. 'lost' commits then answers 502
   // (the response never reaches us); 'fail' answers 502 without committing; 'error' is a
   // definite GraphQL rejection.
-  createFaults = new Map<string, ('lost' | 'fail' | 'error')[]>();
+  // 'lostLate': answers 502 at once, then commits every alias of the request anyway, hidden
+  // from search (items_page_by_column_values) until the next run.
+  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate')[]>();
 
   client(): MondayClient {
     const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -67,7 +69,7 @@ class FakeMonday {
     if (/items_page_by_column_values/.test(query)) {
       this.lookups++;
       const vals = new Set((variables['vals'] as string[] | undefined) ?? [variables['val'] as string]);
-      const found = this.active(variables['board'] as string).filter((i) => i.sfId && vals.has(i.sfId));
+      const found = this.active(variables['board'] as string).filter((i) => i.sfId && vals.has(i.sfId) && !i.hiddenFromSearch);
       return Response.json({ data: { items_page_by_column_values: { cursor: null,
         items: found.map((i) => ({ id: i.id, column_values: [{ text: i.sfId }] })) } } });
     }
@@ -92,11 +94,12 @@ class FakeMonday {
         if (faults[i] === 'error') return { error: `rejected: ${c.name}` };
         const rel = relationsIn(c.cols);
         const item: FakeItem = { id: String(this.nextId++), boardId: c.boardId, name: c.name,
-          sfId: sfColId ? c.cols[sfColId] as string : undefined, archived: false, rel };
+          sfId: sfColId ? c.cols[sfColId] as string : undefined, archived: false, rel,
+          ...(faults.includes('lostLate') ? { hiddenFromSearch: true } : {}) };
         this.items.push(item);
         return { id: item.id, rel: this.echoRelations ? rel : {} };
       });
-      if (faults.includes('lost')) return new Response('bad gateway', { status: 502 });
+      if (faults.includes('lost') || faults.includes('lostLate')) return new Response('bad gateway', { status: 502 });
       return createResponse(query, calls, replies);
     }
     if (/change_multiple_column_values/.test(query)) {
@@ -151,8 +154,14 @@ describe.each(MODES)('runLoad duplicate-safe creates (#19) (%s)', (mode, flags) 
 
   it('re-creates after an ambiguous failure only once the lookup shows nothing landed', async () => {
     monday.createFaults.set('Acme', ['fail']);
+    if (mode === 'batched') {
+      // A multi-entry batch is never re-sent in the run that lost it; the next run creates it.
+      expect(await runLoad([...flags], { client: monday.client() })).toBe(1);
+      expect(monday.items).toEqual([]);
+    }
     expect(await runLoad([...flags], { client: monday.client() })).toBe(0);
     expect(monday.byName('Acme')).toHaveLength(1);
+    expect(monday.byName('Bolt')).toHaveLength(1);
   });
 
   it('ledgers a failure (no duplicate) when every attempt is ambiguous and nothing landed', async () => {
@@ -160,7 +169,8 @@ describe.each(MODES)('runLoad duplicate-safe creates (#19) (%s)', (mode, flags) 
     expect(await runLoad([...flags], { client: monday.client() })).toBe(1);
     expect(monday.byName('Acme')).toHaveLength(0);
     const l = new Ledger(); await l.load();
-    expect(l.failures().map((f) => f.sfId)).toEqual(['a1']);
+    // The batch shared Acme's 502, so Bolt is left for the next run too.
+    expect(l.failures().map((f) => f.sfId)).toEqual(mode === 'batched' ? ['a1', 'a2'] : ['a1']);
   });
 
   it('adopts items created before a crash lost their ledger entries, on the next run', async () => {
@@ -340,6 +350,38 @@ describe('runLoad batched creates (#22)', () => {
     expect(monday.maxArchiveInFlight).toBe(1);
   });
 
+  it('Monday commits a batch AFTER a 502 and search lags: never re-sent, adopted next run — no Id created twice', async () => {
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(3));
+    monday.createFaults.set('Org1', ['lostLate']);
+    expect(await runLoad([], { client: monday.client() })).toBe(1); // left for the next run
+    expect(monday.creates).toEqual([['Org0', 'Org1', 'Org2']]);
+
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(monday.creates).toHaveLength(1); // the next run's board scan adopted all three
+    for (let i = 0; i < 3; i++) expect(monday.items.filter((it) => it.sfId === `a${i}`)).toHaveLength(1);
+    const report = await readJson<{ adopted: Record<string, number> }>(dataPath('load', 'report.json'));
+    expect(report.adopted['organizations']).toBe(3);
+  });
+
+  it('reads each written board back and reports any Salesforce Id Monday holds twice, loudly', async () => {
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(2));
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    // A duplicate of an already-ledgered item appears (e.g. a late commit elsewhere); the
+    // start-of-run scan only looks at unledgered payloads, so only the read-back can catch it.
+    monday.items.push({ ...monday.byName('Org0')[0]!, id: '999' });
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(3));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const code = await runLoad([], { client: monday.client() });
+    const out = log.mock.calls.map((c) => String(c[0])).join('\n');
+    log.mockRestore();
+    expect(code).toBe(1);
+    expect(out).toMatch(/DUPLICATE organizations\/a0 exists 2×/);
+    const report = await readJson<{ duplicates: { board: string; sfId: string; itemIds: string[] }[] }>(
+      dataPath('load', 'report.json'));
+    expect(report.duplicates).toEqual([{ board: 'organizations', sfId: 'a0', itemIds: [monday.byName('Org0')[0]!.id, '999'] }]);
+    expect(monday.items).toHaveLength(4); // reported, never deleted
+  });
+
   it('refuses an out-of-range --batch-size before touching Monday', async () => {
     await writeNdjson(dataPath('transform', 'payloads.ndjson'), orgs(1));
     expect(await runLoad(['--batch-size', '26'], { client: monday.client() })).toBe(1);
@@ -403,6 +445,19 @@ describe('runLoad inline relations (#22)', () => {
     const gift = monday.byName('Gift');
     expect(gift).toHaveLength(1);
     expect(monday.links.filter((l) => l.itemId === gift[0]!.id)).toHaveLength(4);
+  });
+
+  it('counts a partially-migrated inline link as partial, like the link pass does', async () => {
+    await writeNdjson(dataPath('transform', 'payloads.ndjson'), [
+      { board: 'people-live', sfId: 'c1', name: 'Ada', columns: {} },
+      { board: 'donations', sfId: 'o1', name: 'Gift', columns: { 'Fiscal Year Ending': '2027' },
+        links: [{ column: 'Soft Credit', targetSfIds: ['c1', 'c-never-migrated'] },
+          { column: 'Campaign', targetSfIds: ['camp-never-migrated'] }] },
+    ]);
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(monday.links).toEqual([]);
+    const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
+    expect(report.links).toMatchObject({ inline: 1, partial: 1, skippedByDesign: 1 });
   });
 
   it('--no-inline-links writes every relation through the link pass', async () => {

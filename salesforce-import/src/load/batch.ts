@@ -4,23 +4,23 @@ import { findItemIdsBySfIds } from './lookup.js';
 /**
  * Batched, duplicate-safe item creation (#22 on top of #19's guarantees).
  *
- * One request carries up to 25 aliased `create_item`s. Each entry ends in exactly one outcome,
- * and no entry is ever sent again unless a lookup by its Salesforce ID has just confirmed that
- * no earlier send landed:
+ * One request carries up to 25 aliased `create_item`s. Each entry ends in exactly one outcome:
  *
  * - alias returned an id                        → created
- * - alias returned a definite GraphQL error     → looked up; adopted if present, else failed
- *                                                 (never re-sent — parity with the sequential path)
- * - alias null without an error, 5xx, network
- *   error, timeout, no-data shape               → looked up; adopted if present, else re-sent
- *                                                 (until the attempt budget runs out)
- * - whole-request rejection (no data at all)    → looked up; adopted if present, else re-sent
- *                                                 (a single-entry request's rejection is definite)
- *
- * Every re-send carries ONE entry, so recovery is exactly the sequential path's, and one bad
- * entry can't sink its neighbours.
+ * - alias returned a definite GraphQL error     → looked up; adopted if present, else failed and
+ *                                                 never re-sent (parity with the sequential path)
+ * - anything else in a MULTI-entry request      → looked up; adopted if present, else failed and
+ *   (5xx, timeout, network error, no data,        NOT re-sent this run: Monday may still commit
+ *   whole-request error, null alias)              aliases after the client gave up, and search can
+ *                                                 lag, so a miss proves nothing. The next run's
+ *                                                 start-of-run board scan adopts or creates them.
+ * - the same in a SINGLE-entry request          → the sequential path's rule: looked up; adopted
+ *                                                 if present, else re-sent (up to `attempts`); a
+ *                                                 whole-request error is that entry's definite one
  * - the recovery lookup itself fails            → failed, NOT re-sent; the next run's start-of-run
  *                                                 board scan adopts anything that did land
+ *
+ * Every re-send carries ONE entry.
  */
 
 export interface CreateEntry {
@@ -204,6 +204,16 @@ export async function createBatch(opts: {
         await onOutcome({ sfId: p.entry.sfId, kind: 'adopted', itemId: ids[0]!, itemIds: ids });
       } else if (definite.has(p)) {
         await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error: `monday: ${definite.get(p)!}` });
+      } else if (group.length > 1) {
+        // A multi-entry request whose outcome is unknown for this entry (timeout, 5xx, network
+        // error, whole-request error, null alias): Monday may still be committing aliases after
+        // we gave up, and search may lag, so a miss here proves nothing. Never re-send in this
+        // run — the next run's start-of-run board scan adopts whatever landed and creates the
+        // rest. (A single-entry request keeps the sequential path's lookup-then-retry.)
+        await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error:
+          `batched create_item outcome unknown and not found by lookup — not re-sent this run; ` +
+          `the next run's board scan adopts it if it landed, else creates it` +
+          (wholeRequestError ? ` (error: ${wholeRequestError})` : '') });
       } else if (p.sends >= attempts) {
         await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error:
           `create_item outcome ambiguous after ${p.sends} attempts and the item is not on Monday` +
