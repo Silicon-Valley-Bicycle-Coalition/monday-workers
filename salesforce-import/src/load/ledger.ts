@@ -27,6 +27,14 @@ export class Ledger {
   private links = new Map<string, Set<string> | null>();
   private archives = new Set<string>();
   private path = dataPath('load', 'ledger.ndjson');
+  // Appends are chained so concurrent create/link workers never interleave partial lines.
+  private tail: Promise<void> = Promise.resolve();
+
+  private append(row: Entry): Promise<void> {
+    const write = this.tail.then(() => appendNdjson(this.path, row));
+    this.tail = write.catch(() => {});
+    return write;
+  }
 
   async load(): Promise<void> {
     this.successes.clear(); this.failuresMap.clear(); this.links.clear(); this.archives.clear();
@@ -89,31 +97,31 @@ export class Ledger {
   async recordSuccess(e: { sfId: string; board: string; itemId: string }): Promise<void> {
     this.successes.set(e.sfId, { board: e.board, itemId: e.itemId });
     this.failuresMap.delete(`${e.sfId}|${e.board}`);
-    await appendNdjson(this.path, { kind: 'success', ...e });
+    await this.append({ kind: 'success', ...e });
   }
   async recordFailure(e: { sfId: string; board: string; error: string }): Promise<void> {
     this.failuresMap.set(`${e.sfId}|${e.board}`, e);
-    await appendNdjson(this.path, { kind: 'failure', ...e });
+    await this.append({ kind: 'failure', ...e });
   }
   async recordLinkFailure(e: { sfId: string; column: string; error: string; targetSfIds?: string[] }): Promise<void> {
     this.failuresMap.set(linkFailureKey(e.sfId, e.column),
       { sfId: e.sfId, board: `link:${e.column}`, error: e.error,
         ...(e.targetSfIds ? { targetSfIds: e.targetSfIds } : {}) });
-    await appendNdjson(this.path, { kind: 'linkFailure', ...e });
+    await this.append({ kind: 'linkFailure', ...e });
   }
   async recordLink(sfId: string, column: string, targetSfIds?: string[]): Promise<void> {
     this.links.set(`${sfId}|${column}`, targetSfIds ? new Set(targetSfIds) : null);
     this.failuresMap.delete(linkFailureKey(sfId, column));
-    await appendNdjson(this.path, { kind: 'link', sfId, column, ...(targetSfIds ? { targetSfIds } : {}) });
+    await this.append({ kind: 'link', sfId, column, ...(targetSfIds ? { targetSfIds } : {}) });
   }
   archivedDone(sfId: string): boolean { return this.archives.has(sfId); }
   async recordArchive(sfId: string): Promise<void> {
     this.archives.add(sfId);
     this.failuresMap.delete(archiveFailureKey(sfId));
-    await appendNdjson(this.path, { kind: 'archive', sfId });
+    await this.append({ kind: 'archive', sfId });
   }
   async recordArchiveFailure(sfId: string, error: string): Promise<void> {
     this.failuresMap.set(archiveFailureKey(sfId), { sfId, board: 'archive', error });
-    await appendNdjson(this.path, { kind: 'archiveFailure', sfId, error });
+    await this.append({ kind: 'archiveFailure', sfId, error });
   }
 }

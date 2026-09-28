@@ -8,6 +8,10 @@ import { Ledger } from './ledger.js';
 import { ensureBoards, COLUMN_TYPES } from './boards.js';
 import { formatColumnValue } from './columnValues.js';
 import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
+import { ComplexityGate, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
+import { BATCHED_PRESET, describeMode, isLegacySequential, parseLoadOptions } from './options.js';
+import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
+import { estimateLoad, formatEstimate } from './estimate.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -20,8 +24,13 @@ import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
 const ORDER = ['organizations', 'people-live', 'people-historical', 'affiliations', 'campaigns',
   'recurring-gifts', 'events', 'event-registrations', 'donations', 'volunteers', 'activities'];
 
-// How many times an ambiguous create_item failure (see AmbiguousWriteError) is re-attempted
-// after confirming by lookup that the earlier attempt didn't land.
+// Link mutations in flight. Sequential linking measured ~40h for the real dataset's 94k links,
+// which is why links already ran in a small pool before #22.
+const LINK_CONCURRENCY = 6;
+
+// --sequential only: how many times an ambiguous create_item failure (see AmbiguousWriteError)
+// is re-attempted after confirming by lookup that the earlier attempt didn't land. The batched
+// path never re-sends an ambiguous create (load/batch.ts).
 const CREATE_ATTEMPTS = 3;
 
 function boardOrder(keys: string[]): string[] {
@@ -48,6 +57,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     console.error(`load: --limit needs a positive number (got "${args[limitIdx + 1] ?? ''}")`);
     return 1;
   }
+  const opts = parseLoadOptions(args, cfg.load);
+  if (typeof opts === 'string') { console.error(opts); return 1; }
+  console.log(describeMode(opts));
 
   const payloads = await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'));
 
@@ -70,12 +82,29 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       console.log(`load[dry-run]: ${key} → ${items.length} items, ${links} links` +
         (toArchive > 0 ? `, ${toArchive} to archive in place` : ''));
     }
+    // #22 measurement: old vs new request counts and a wall-clock estimate. The latency default
+    // is the measured pre-#22 rate (~40 h for ~94k sequential mutations ≈ 1.53 s each); the
+    // per-alias cost is a guess until a sandbox batch run measures it.
+    const num = (flag: string, fallback: number): number => {
+      const i = args.indexOf(flag);
+      const n = i >= 0 ? Number(args[i + 1]) : fallback;
+      return Number.isFinite(n) && n >= 0 ? n : fallback;
+    };
+    const latencyMs = num('--latency-ms', 1530);
+    // "new" always describes a batched run: this run's settings if batched, else --batched's.
+    const batched = isLegacySequential(opts) ? { ...opts, ...BATCHED_PRESET } : opts;
+    const estimate = estimateLoad([...byBoard.values()].flat(), keys,
+      { batchSize: batched.batchSize, inlineLinks: batched.inlineLinks });
+    console.log(formatEstimate(estimate, { latencyMs, aliasMs: num('--alias-ms', latencyMs / 2),
+      concurrency: batched.concurrency, linkConcurrency: LINK_CONCURRENCY, batchSize: batched.batchSize }));
     return 0;
   }
 
   const token = process.env['MONDAY_API_TOKEN'];
   if (!token) { console.error('load: MONDAY_API_TOKEN not set'); return 1; }
-  const client = deps.client ?? new MondayClient({ apiUrl: cfg.monday.apiUrl, token });
+  // --sequential also gets the pre-#22 client behaviour (MondayClient's gqlLegacy).
+  const client = deps.client ?? new MondayClient({ apiUrl: cfg.monday.apiUrl, token,
+    legacy: isLegacySequential(opts) });
   const ledger = new Ledger();
   await ledger.load();
 
@@ -113,7 +142,14 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     // is ledgered and the rest are listed here for a human to remove.
     duplicates: [] as { board: string; sfId: string; itemIds: string[] }[],
     untaggedItems: {} as Record<string, number>,
-    links: { written: 0, partial: 0, pending: 0, skippedByDesign: 0, failed: 0 },
+    // Post-create duplicate read-backs that errored (batched mode) — each one fails the run.
+    readBackFailed: [] as { where: string; error: string }[],
+    // inline: set inside create_item and confirmed by its response (#22); inlineUnconfirmed:
+    // sent inline but not echoed back, so left to the link pass (counted again in `written`).
+    // inlineRejected: Monday rejected the create while it carried them, so the item was created
+    // without them and the link pass wrote them.
+    links: { written: 0, inline: 0, inlineUnconfirmed: 0, inlineRejected: 0, partial: 0, pending: 0,
+      skippedByDesign: 0, failed: 0 },
     archive: { archived: 0, deferred: 0, failed: 0 },
   };
   const bump = (m: Record<string, number>, key: string) => { m[key] = (m[key] ?? 0) + 1; };
@@ -141,20 +177,30 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
   }
 
-  const createItems = async (key: string, items: ItemPayload[]): Promise<void> => {
+  // Column values for one payload's create_item, Salesforce ID first. Throws (before anything is
+  // sent) when the board lacks a column the payload needs.
+  const buildColValues = (key: string, p: ItemPayload): Record<string, unknown> => {
+    const board = boards[key]!;
+    const colValues: Record<string, unknown> = { [board.columns[SF_ID_COLUMN]!]: p.sfId };
+    for (const [title, value] of Object.entries(p.columns)) {
+      if (value === null || value === undefined || value === '') continue;
+      const id = board.columns[title];
+      if (!id) throw new Error(`load: board ${key} has no column id for "${title}"`);
+      const formatted = formatColumnValue(COLUMN_TYPES[title] ?? 'text', value);
+      if (formatted === null) continue;
+      colValues[id] = formatted;
+    }
+    return colValues;
+  };
+
+  // The pre-#22 path, unchanged: one create_item per request, one payload at a time, through
+  // the pre-#22 client (gqlLegacy). Kept as the cutover-weekend fallback (`load --sequential`).
+  const createItemsSequential = async (key: string, items: ItemPayload[]): Promise<void> => {
     const board = boards[key]!;
     const sfIdColId = board.columns[SF_ID_COLUMN]!;
     for (const p of items) {
       if (ledger.has(p.sfId, key)) continue;
-      const colValues: Record<string, unknown> = { [sfIdColId]: p.sfId };
-      for (const [title, value] of Object.entries(p.columns)) {
-        if (value === null || value === undefined || value === '') continue;
-        const id = board.columns[title];
-        if (!id) throw new Error(`load: board ${key} has no column id for "${title}"`);
-        const formatted = formatColumnValue(COLUMN_TYPES[title] ?? 'text', value);
-        if (formatted === null) continue;
-        colValues[id] = formatted;
-      }
+      const colValues = buildColValues(key, p);
       try {
         let itemId: string | undefined;
         for (let attempt = 1; itemId === undefined; attempt++) {
@@ -187,10 +233,117 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
   };
 
-  // Link machinery. Sequential linking measured ~40h for the real dataset's 94k links, so a
-  // small worker pool runs LINK_CONCURRENCY mutations in flight; each link still ledgers
-  // individually and per-call retry/backoff lives in the client.
-  const LINK_CONCURRENCY = 6;
+  // sfIds whose links were (re)written during THIS run — an item that had a link retried
+  // after a prior run archived it must be re-archived below, ledger notwithstanding.
+  const linkedThisRun = new Set<string>();
+
+  // Ledger one batched-create outcome (load/batch.ts decides it; this only records it). A ledger
+  // write that throws propagates and stops the run — the next run's board scan adopts whatever
+  // Monday holds that the ledger missed.
+  const recordOutcome = async (key: string, o: CreateOutcome, inline: InlineLink[]): Promise<void> => {
+    if (o.kind === 'failed') {
+      bump(report.createFailed, key);
+      await ledger.recordFailure({ sfId: o.sfId, board: key, error: o.error });
+      console.error(`load: FAILED ${key}/${o.sfId}: ${o.error}`);
+      return;
+    }
+    bump(o.kind === 'created' ? report.created : report.adopted, key);
+    if (o.kind === 'adopted' && o.itemIds.length > 1) {
+      report.duplicates.push({ board: key, sfId: o.sfId, itemIds: o.itemIds });
+    }
+    await ledger.recordSuccess({ sfId: o.sfId, board: key, itemId: o.itemId });
+    // Inline relations count as written only when THIS create returned them. An adopted item
+    // may be from an earlier attempt or run, so its links are left to the link pass, as is any
+    // relation Monday didn't echo back.
+    if (o.kind !== 'created') return;
+    if (o.relationsDropped) {
+      // Monday rejected the create while it carried these relations; it was created without
+      // them, so every one goes to the link pass (and the #21 gate if that fails too).
+      report.links.inlineRejected += inline.length;
+      console.warn(`load: ${key}/${o.sfId} rejected with inline relations, created without them — ` +
+        `the link pass will write ${inline.map((l) => `"${l.column}"`).join(', ')}`);
+      return;
+    }
+    for (const l of inline) {
+      const linked = new Set(o.linked?.[l.colId] ?? []);
+      if (!l.targetItemIds.every((id) => linked.has(String(id)))) {
+        report.links.inlineUnconfirmed++;
+        console.warn(`load: ${key}/${o.sfId} "${l.column}" not confirmed by create_item — ` +
+          `the link pass will write it`);
+        continue;
+      }
+      await ledger.recordLink(o.sfId, l.column, l.targetSfIds);
+      report.links.inline++;
+      linkedThisRun.add(o.sfId);
+      for (const t of l.targetSfIds) linkedThisRun.add(t);
+    }
+  };
+
+  // Shared by every create worker: pauses new batches when the complexity budget runs low.
+  const gate = new ComplexityGate((ms) => client.sleep(ms), Date.now, opts.concurrency);
+
+  // #22: opts.batchSize aliased create_items per request, opts.concurrency requests in flight.
+  const createItemsBatched = async (key: string, items: ItemPayload[]): Promise<void> => {
+    const board = boards[key]!;
+    const entries: CreateEntry[] = [];
+    const inlineBySfId = new Map<string, InlineLink[]>();
+    const inlineCtx: InlineContext = {
+      itemIdOf: (sfId) => ledger.itemId(sfId), isExpected: (sfId) => expectedSfIds.has(sfId),
+      isArchived: (sfId) => ledger.archivedDone(sfId), columnId: (title) => board.columns[title],
+    };
+    for (const p of items) {
+      // A Salesforce Id is created at most once per run, even if a payload repeats it.
+      if (ledger.has(p.sfId, key) || inlineBySfId.has(p.sfId)) continue;
+      const colValues = buildColValues(key, p);
+      // Targets are only ever ledgered by an earlier board or fiscal year, never by a create
+      // running concurrently with this one, so planning up front is exact.
+      const inline = opts.inlineLinks ? planInlineLinks(p, inlineCtx) : [];
+      const plainColValues = { ...colValues };
+      for (const l of inline) colValues[l.colId] = { item_ids: l.targetItemIds };
+      inlineBySfId.set(p.sfId, inline);
+      entries.push({ sfId: p.sfId, name: p.name, colValues,
+        ...(inline.length ? { readBack: inline.map((l) => l.colId), plainColValues } : {}) });
+    }
+    const batches: CreateEntry[][] = [];
+    for (let i = 0; i < entries.length; i += opts.batchSize) batches.push(entries.slice(i, i + opts.batchSize));
+    await runPool(batches, opts.concurrency, (batch) => createBatch({
+      client, boardId: board.boardId, sfIdColId: board.columns[SF_ID_COLUMN]!, entries: batch,
+      lookupDelayMs: opts.recoveryLookupDelayMs, gate,
+      onOutcome: (o) => recordOutcome(key, o, inlineBySfId.get(o.sfId) ?? []),
+    }));
+    if (entries.length > 0) {
+      await scanForDuplicates(key, key === 'donations' ? `donations FY${payloadFY(items[0]!) || '(undated)'}` : key);
+    }
+  };
+
+  // After a board (or a donations fiscal year) is written in batched mode, read it back by
+  // Salesforce ID and report any Id Monday holds more than once — the backstop for a batch
+  // Monday committed after the client gave up. Runs before archiving, while items_page can
+  // still see them. Never deletes anything. A read-back that fails is recorded and fails the
+  // run (the duplicate check didn't happen) but doesn't stop the link and archive phases.
+  const scanForDuplicates = async (key: string, where: string): Promise<void> => {
+    const board = boards[key]!;
+    let scan: Awaited<ReturnType<typeof scanBoardSfIds>>;
+    try {
+      scan = await scanBoardSfIds(client, board.boardId, board.columns[SF_ID_COLUMN]!);
+    } catch (err) {
+      report.readBackFailed.push({ where, error: String(err) });
+      console.error(`load: READ-BACK FAILED for ${where} — duplicates on it were NOT checked ` +
+        `(${String(err)}); re-run load or validate --live before trusting this board`);
+      return;
+    }
+    for (const [sfId, itemIds] of scan.bySfId) {
+      if (itemIds.length < 2 || report.duplicates.some((d) => d.board === key && d.sfId === sfId)) continue;
+      report.duplicates.push({ board: key, sfId, itemIds });
+      console.log(`load: DUPLICATE ${key}/${sfId} exists ${itemIds.length}× on Monday (items ${itemIds.join(', ')}) ` +
+        `— remove the extras by hand; see data/load/report.json`);
+    }
+  };
+
+  const createItems = isLegacySequential(opts) ? createItemsSequential : createItemsBatched;
+
+  // Link machinery: a small worker pool runs LINK_CONCURRENCY mutations in flight; each link
+  // still ledgers individually and per-call retry/backoff lives in the client.
   // sfIds that must not be archived this run because a link from or into them is still waiting
   // on a target (or source) item that is expected but doesn't exist yet.
   const pendingArchiveBlock = new Set<string>();
@@ -228,9 +381,6 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
     return tasks;
   };
-  // sfIds whose links were (re)written during THIS run — an item that had a link retried
-  // after a prior run archived it must be re-archived below, ledger notwithstanding.
-  const linkedThisRun = new Set<string>();
   const runLinkTasks = async (linkTasks: LinkTask[]): Promise<void> => {
     let nextTask = 0;
     const linkWorker = async (): Promise<void> => {
@@ -320,6 +470,10 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           .flatMap((f) => [f.sfId, ...(f.targetSfIds ?? [])]));
       const toArchive = group.filter((p) => p.archive);
       let archivedCount = 0, deferredCount = 0;
+      // Decide every item first (the #21 gate reads only state settled above), then archive the
+      // cleared ones opts.concurrency at a time — archive_item is idempotent and was the largest
+      // remaining sequential cost after #22's create/link changes. --sequential keeps it 1.
+      const cleared: { p: ItemPayload; itemId: string }[] = [];
       for (const p of toArchive) {
         // Re-archive when a link was rewritten this run (the user unarchived it for the retry).
         if (ledger.archivedDone(p.sfId) && !linkedThisRun.has(p.sfId)) { archivedCount++; continue; }
@@ -332,6 +486,9 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
             `fix links (re-run load), then it archives on the next run`);
           continue;
         }
+        cleared.push({ p, itemId });
+      }
+      await runPool(cleared, opts.concurrency, async ({ p, itemId }) => {
         try {
           await client.gql(`mutation ($id: ID!) { archive_item (item_id: $id) { id } }`, { id: itemId });
           await ledger.recordArchive(p.sfId);
@@ -341,7 +498,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           report.archive.failed++;
           await ledger.recordArchiveFailure(p.sfId, String(err));
         }
-      }
+      });
       console.log(`load: donations FY${fy || '(undated)'} — ${group.length} items, ` +
         `${archivedCount} archived` + (deferredCount > 0 ? `, ${deferredCount} archive-deferred` : ''));
     }
@@ -364,7 +521,11 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
   await writeJson(dataPath('load', 'report.json'), { ...report, finishedAt: new Date().toISOString() });
 
   const failures = ledger.failures();
-  if (failures.length > 0 || l.pending > 0 || report.duplicates.length > 0) {
+  if (report.readBackFailed.length > 0) {
+    console.error(`load: ${report.readBackFailed.length} duplicate read-back(s) failed: ` +
+      `${report.readBackFailed.map((r) => r.where).join(', ')} — see data/load/report.json`);
+  }
+  if (failures.length > 0 || l.pending > 0 || report.duplicates.length > 0 || report.readBackFailed.length > 0) {
     if (failures.length > 0) {
       console.error(`load: ${failures.length} unresolved failures — re-run "load" to retry just these`);
       for (const f of failures.slice(0, 20)) console.error(`  ${f.board}/${f.sfId}: ${f.error}`);
