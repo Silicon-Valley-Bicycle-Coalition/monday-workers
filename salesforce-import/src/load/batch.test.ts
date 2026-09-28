@@ -7,11 +7,13 @@ import { ComplexityGate, buildCreateMutation, createBatch, runPool, type CreateE
 //                   'lostAfter' commits aliases up to and including this one then 502;
 //                   'reject' a whole-request GraphQL error with no data (nothing ran);
 //                   'daily' Monday's DAILY_LIMIT_EXCEEDED (nothing ran, nothing will today);
+//                   'bodyCut' commits every alias, then the response body is cut off mid-stream;
 //                   'lostLate' 502 at once, then Monday commits every alias anyway and search
 //                   doesn't see them yet (a client timeout racing the resolvers, lagging index).
 //   per alias     — 'error' null + an error on its path; 'null' null with no error;
-//                   'errorIfRel' an error only while the create carries relation values.
-type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'daily' | 'error' | 'null' | 'errorIfRel';
+//                   'errorIfRel' an error only while the create carries relation values;
+//                   'readBackErr' commits, then errors under the alias's column_values read-back.
+type Fault = 'fail' | 'lost' | 'lostAfter' | 'reject' | 'lostLate' | 'daily' | 'bodyCut' | 'error' | 'null' | 'errorIfRel' | 'readBackErr';
 interface Item { id: string; sfId: string; name: string; rel: Record<string, number[]>; hidden?: boolean }
 
 class FakeMonday {
@@ -20,6 +22,7 @@ class FakeMonday {
   creates: string[][] = []; // item names per create request, in send order
   lookups = 0;
   lookupFails = 0;
+  lagSearch = false; // 'bodyCut' items stay invisible to lookups
   complexity: { query: number; after: number; reset_in_x_seconds: number } | undefined;
   private next = 1;
 
@@ -64,13 +67,20 @@ class FakeMonday {
         data[`i${i}`] = null; errors.push({ message: `ItemsNotFoundException ${names[i]}`, path: [`i${i}`] }); continue;
       }
       const item: Item = { id: String(this.next++), sfId: cols['sf'] as string, name: names[i]!, rel,
-        ...(faults.includes('lostLate') ? { hidden: true } : {}) };
+        ...(faults.includes('lostLate') || faults[i] === 'readBackErr' || (faults.includes('bodyCut') && this.lagSearch)
+          ? { hidden: true } : {}) };
       this.items.push(item);
+      if (faults[i] === 'readBackErr') {
+        data[`i${i}`] = null;
+        errors.push({ message: 'Internal error', path: [`i${i}`, 'column_values', 0, 'linked_item_ids'] });
+        continue;
+      }
       const read = (v[`r${i}`] as string[] | undefined) ?? [];
       data[`i${i}`] = { id: item.id, ...(read.length ? {
         column_values: read.map((c) => ({ id: c, linked_item_ids: (rel[c] ?? []).map(String) })) } : {}) };
     }
     // Committed above, but the response never arrives.
+    if (faults.includes('bodyCut')) return new Response('{"data":{"i0":{"id":"', { status: 200 });
     if (cutoff >= 0 || faults.includes('lost') || faults.includes('lostLate')) return new Response('bad gateway', { status: 502 });
     if (this.complexity) data['complexity'] = this.complexity;
     return Response.json(errors.length ? { data, errors } : { data });
@@ -215,6 +225,46 @@ describe('createBatch', () => {
     expect(by['A']).toMatchObject({ kind: 'created', linked: { rel1: ['7'] } });
     expect(by['B']).toEqual({ sfId: 'sf-B', kind: 'created', itemId: '2', relationsDropped: true });
     expect(monday.byName('B')[0]!.rel).toEqual({});
+  });
+
+  describe('only a rejection of the alias itself may drop relations — never an uncertain outcome', () => {
+    const withRel = (n: string) => entry(n, { colValues: { sf: `sf-${n}`, rel1: { item_ids: [7] } },
+      plainColValues: { sf: `sf-${n}` }, readBack: ['rel1'] });
+
+    for (const size of [1, 2]) {
+      it(`an error under the alias's read-back path (committed) is never re-sent — ${size}-entry request`, async () => {
+        monday.faults.set('A', ['readBackErr']);
+        const entries = size === 1 ? [withRel('A')] : [withRel('A'), withRel('B')];
+        const { by } = await run(monday, entries);
+        expect(monday.creates).toEqual([entries.map((e) => e.name)]);
+        expect(by['A']).toMatchObject({ kind: 'failed' });
+        expect((by['A'] as { error: string }).error).toMatch(/committed but its response was incomplete/);
+        expect(monday.byName('A')).toHaveLength(1);
+      });
+    }
+
+    it('a single entry whose response body is cut off mid-stream is ambiguous: looked up and adopted', async () => {
+      monday.faults.set('A', ['bodyCut']);
+      const { by } = await run(monday, [withRel('A')]);
+      expect(monday.creates).toEqual([['A']]);
+      expect(by['A']).toMatchObject({ kind: 'adopted' });
+    });
+
+    it('…and when search lags it is NOT re-sent without relations (only the sequential retry, relations intact)', async () => {
+      monday.faults.set('A', ['bodyCut']);
+      monday.lagSearch = true;
+      const { by } = await run(monday, [withRel('A')], { attempts: 1 });
+      expect(monday.creates).toEqual([['A']]);
+      expect(by['A']).toMatchObject({ kind: 'failed' });
+      expect((by['A'] as { error: string }).error).toMatch(/ambiguous/);
+    });
+
+    it('a single entry\'s whole-request error is definite but never triggers the relation-less retry', async () => {
+      monday.faults.set('A', ['reject']);
+      const { by } = await run(monday, [withRel('A')]);
+      expect(monday.creates).toEqual([['A']]);
+      expect(by['A']).toMatchObject({ kind: 'failed' });
+    });
   });
 
   it('a relation-less retry that is rejected again fails for good (no loop)', async () => {

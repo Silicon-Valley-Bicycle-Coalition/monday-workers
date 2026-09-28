@@ -141,6 +141,12 @@ export async function createBatch(opts: {
     const confirmed: { p: Pending; itemId: string; linked?: Record<string, string[]> }[] = [];
     const definite = new Map<Pending, string>(); // entry → Monday's rejection message
     const unknown: Pending[] = [];
+    // Created but the id didn't come back (an error under the alias's read-back selection):
+    // looked up and adopted, else failed — never re-sent, whatever the group size.
+    const committed = new Map<Pending, string>();
+    // Definite rejections of the alias itself (error path === [alias], data present). Only these
+    // may be retried without inline relations; a single entry's whole-request error may not.
+    const rejectedByAlias = new Set<Pending>();
     let wholeRequestError: string | undefined; // the request failed as a whole, not per alias
     let wait = 0;
     try {
@@ -169,9 +175,16 @@ export async function createBatch(opts: {
             confirmed.push({ p, itemId: String(d.id), ...(linked ? { linked } : {}) });
             return;
           }
-          const err = res.errors.find((e) => e.path?.[0] === alias);
-          if (err && !isRejectedBeforeRunning(err)) definite.set(p, err.message);
-          else unknown.push(p);
+          const aliasErrors = res.errors.filter((e) => e.path?.[0] === alias);
+          // An error below the alias (its column_values read-back) is raised only after
+          // create_item returned: the item exists, we just lost its id.
+          const deeper = aliasErrors.find((e) => (e.path?.length ?? 0) > 1);
+          if (deeper) { committed.set(p, deeper.message); return; }
+          const own = aliasErrors.find((e) => e.path?.length === 1);
+          if (own && !isRejectedBeforeRunning(own)) {
+            definite.set(p, own.message);
+            rejectedByAlias.add(p); // Monday refused this create itself — the only strippable case
+          } else unknown.push(p);
         });
       }
     } catch (err) {
@@ -184,7 +197,7 @@ export async function createBatch(opts: {
         ...(c.linked ? { linked: c.linked } : {}), ...(c.p.relationsDropped ? { relationsDropped: true } : {}) });
     }
 
-    const toCheck = [...definite.keys(), ...unknown];
+    const toCheck = [...definite.keys(), ...committed.keys(), ...unknown];
     if (toCheck.length === 0) continue;
     // A whole-request error on a single entry is that entry's own definite rejection.
     if (wholeRequestError !== undefined && group.length === 1) {
@@ -210,7 +223,11 @@ export async function createBatch(opts: {
       const ids = found.get(p.entry.sfId);
       if (ids?.length) {
         await onOutcome({ sfId: p.entry.sfId, kind: 'adopted', itemId: ids[0]!, itemIds: ids });
-      } else if (definite.has(p) && p.entry.plainColValues && !p.relationsDropped) {
+      } else if (committed.has(p)) {
+        await onOutcome({ sfId: p.entry.sfId, kind: 'failed', error:
+          `create_item committed but its response was incomplete (${committed.get(p)!}) and the ` +
+          `lookup didn't find it yet — not re-sent; the next run's board scan adopts it` });
+      } else if (rejectedByAlias.has(p) && p.entry.plainColValues && !p.relationsDropped) {
         // Monday rejected this entry outright (the request completed, so nothing is still in
         // flight) and it carried inline relations — a deleted, archived or wrong-board target
         // would otherwise fail its create on every run. Retry once without them; the link pass

@@ -36,7 +36,9 @@ class FakeMonday {
   // 'lostLate': answers 502 at once, then commits every alias of the request anyway, hidden
   // from search (items_page_by_column_values) until the next run. 'errorIfRel': rejected only
   // while the create carries relation values.
-  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate' | 'errorIfRel')[]>();
+  // 'readBackError': commits (hidden from search), then the alias's read-back errors, so its
+  // id never comes back.
+  createFaults = new Map<string, ('lost' | 'fail' | 'error' | 'lostLate' | 'errorIfRel' | 'readBackError')[]>();
 
   client(): MondayClient {
     const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -99,8 +101,11 @@ class FakeMonday {
         const rel = relationsIn(c.cols);
         const item: FakeItem = { id: String(this.nextId++), boardId: c.boardId, name: c.name,
           sfId: sfColId ? c.cols[sfColId] as string : undefined, archived: false, rel,
-          ...(faults.includes('lostLate') ? { hiddenFromSearch: true } : {}) };
+          ...(faults.includes('lostLate') || faults[i] === 'readBackError' ? { hiddenFromSearch: true } : {}) };
         this.items.push(item);
+        if (faults[i] === 'readBackError') {
+          return { error: 'Internal error resolving linked_item_ids', subPath: ['column_values', 0, 'linked_item_ids'] };
+        }
         return { id: item.id, rel: this.echoRelations ? rel : {} };
       });
       if (faults.includes('lost') || faults.includes('lostLate')) return new Response('bad gateway', { status: 502 });
@@ -462,6 +467,23 @@ describe('runLoad inline relations (#22)', () => {
     expect(monday.archived).toEqual([gift[0]!.id]); // links landed, so the #21 gate lets it archive
     const report = await readJson<{ links: Record<string, number> }>(dataPath('load', 'report.json'));
     expect(report.links).toMatchObject({ inlineRejected: 4, written: 4 });
+  });
+
+  it('an error on the read-back path (create committed, id lost) + lagging search: never re-sent, adopted next run', async () => {
+    await seedGifts();
+    monday.createFaults.set('Gift', ['readBackError']);
+    expect(await runLoad([], { client: monday.client() })).toBe(1);
+    expect(monday.creates.filter((c) => c.includes('Gift'))).toEqual([['Gift']]); // no stripped re-send
+    const l = new Ledger(); await l.load();
+    expect(l.failures().find((f) => f.sfId === 'o1')?.error).toMatch(/committed but its response was incomplete/);
+    expect(monday.archived).toEqual([]); // #21: nothing archives without its links
+
+    for (const i of monday.items) i.hiddenFromSearch = false; // search catches up
+    expect(await runLoad([], { client: monday.client() })).toBe(0);
+    expect(monday.byName('Gift')).toHaveLength(1); // one item per Salesforce Id across both runs
+    const report = await readJson<{ adopted: Record<string, number> }>(dataPath('load', 'report.json'));
+    expect(report.adopted['donations']).toBe(1);
+    expect(monday.archived).toEqual([monday.byName('Gift')[0]!.id]);
   });
 
   it('counts a partially-migrated inline link as partial, like the link pass does', async () => {

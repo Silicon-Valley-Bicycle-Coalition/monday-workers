@@ -10,7 +10,9 @@ export interface CreateCall {
 }
 
 /** One alias's answer: an item (with the relations it holds), a GraphQL error, or bare null. */
-export type CreateReply = { id: string; rel?: Record<string, number[]> } | { error: string } | null;
+// `subPath`: the error sits below the alias (e.g. its column_values read-back) — the create ran.
+export type CreateReply = { id: string; rel?: Record<string, number[]> }
+  | { error: string; subPath?: (string | number)[] } | null;
 
 const isBatch = (query: string): boolean => /i0: create_item/.test(query);
 
@@ -55,7 +57,7 @@ export function createResponse(query: string, calls: CreateCall[], replies: Crea
         ({ id: c, linked_item_ids: (r.rel?.[c] ?? []).map(String) })) } : {}) };
     } else {
       data[`i${i}`] = null;
-      if (r) errors.push({ message: r.error, path: [`i${i}`] });
+      if (r) errors.push({ message: r.error, path: [`i${i}`, ...(r.subPath ?? [])] });
     }
   });
   return Response.json(errors.length ? { data, errors } : { data });

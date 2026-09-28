@@ -109,10 +109,18 @@ export class MondayClient {
       }
       if (res.status >= 500) { lastError = ambiguous(`HTTP ${res.status}`); continue; }
       if (!res.ok) throw new Error(`monday: HTTP ${res.status}: ${await res.text()}`);
-      const body = await res.json() as
-        // error_message/status_code: Monday's rate-limit/auth shape — HTTP 200, NO data,
-        // NO errors array (see funraise-sync/src/monday/client.ts for the same handling).
-        { data?: T | null; errors?: GqlError[]; error_message?: string; status_code?: number };
+      // error_message/status_code: Monday's rate-limit/auth shape — HTTP 200, NO data,
+      // NO errors array (see funraise-sync/src/monday/client.ts for the same handling).
+      type Body = { data?: T | null; errors?: GqlError[]; error_message?: string; status_code?: number };
+      let body: Body;
+      try {
+        body = await res.json() as Body;
+      } catch (err) {
+        // A reset or timeout mid-body (or a truncated body): the server already ran the
+        // request, so for a write this is exactly as ambiguous as a dropped connection.
+        lastError = ambiguous(`unreadable response body: ${String(err)}`);
+        continue;
+      }
       if (body.errors?.length) {
         lastError = body.errors.map((e) => e.message).join('; ');
         // Nothing will succeed until tomorrow: fail at once, never retry (so a create can't be

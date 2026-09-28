@@ -143,6 +143,16 @@ describe('MondayClient', () => {
     expect(calls).toBe(3);
   });
 
+  it('treats a response body cut off mid-stream as ambiguous for writes, and retries it for reads', async () => {
+    const cut = () => new Response('{"data":{"create_item":{"id":"', { status: 200 });
+    const w = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, fetchFn: sequence([cut]) });
+    await expect(w.gql('m', {}, { idempotent: false })).rejects.toBeInstanceOf(AmbiguousWriteError);
+    await expect(w.gqlPartial('m')).rejects.toBeInstanceOf(AmbiguousWriteError);
+    const rd = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
+      fetchFn: sequence([cut, () => Response.json({ data: { ok: 1 } })]) });
+    expect(await rd.gql('q')).toEqual({ ok: 1 });
+  });
+
   describe('gqlPartial (aliased batch mutations)', () => {
     it('returns per-alias data alongside per-alias errors instead of throwing', async () => {
       const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
