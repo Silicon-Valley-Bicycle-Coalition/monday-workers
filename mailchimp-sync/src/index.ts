@@ -58,7 +58,7 @@ export default {
     const queueName = queueBaseName(batch.queue);
 
     if (queueName === 'mailchimp-sync-outbound') {
-      await processOutboundBatch(batch.messages as unknown as { body: OutboundSyncMessage; ack(): void; retry(): void }[], {
+      await processOutboundBatch(batch.messages as readonly Message<OutboundSyncMessage>[], {
         pendingStore: new D1PendingOutboundStore(env.DB),
         mondayClient,
         mailchimpClient,
@@ -69,7 +69,7 @@ export default {
     }
 
     if (queueName === 'mailchimp-sync-inbound') {
-      await processInboundBatch(batch.messages as unknown as { body: InboundSyncMessage; ack(): void; retry(): void }[], {
+      await processInboundBatch(batch.messages as readonly Message<InboundSyncMessage>[], {
         pendingStore: new D1PendingInboundStore(env.DB),
         mondayClient,
         mailchimpClient,

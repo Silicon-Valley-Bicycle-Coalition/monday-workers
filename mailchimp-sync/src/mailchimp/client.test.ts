@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpMailchimpClient, MailchimpTransientError, MailchimpPermanentError } from './client';
+import { HttpMailchimpClient, MailchimpTransientError, MailchimpPermanentError, MailchimpRateLimitError, MailchimpAuthError } from './client';
 
 function fakeFetch(response: Partial<Response> & { json?: () => Promise<unknown>; text?: () => Promise<string> }) {
   return vi.fn().mockResolvedValue({
@@ -222,7 +222,83 @@ describe('HttpMailchimpClient.unsubscribeMember', () => {
     const transient = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 500 }));
     await expect(transient.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
 
-    const permanent = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 401 }));
+    const permanent = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 400 }));
     await expect(permanent.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpPermanentError);
+  });
+});
+
+describe('HttpMailchimpClient auth failures', () => {
+  function rejected(status: number) {
+    return fakeFetch({ ok: false, status, text: async () => '{"title":"API Key Invalid"}' });
+  }
+
+  for (const status of [401, 403]) {
+    it(`throws MailchimpAuthError (transient, never permanent) on a ${status} from every write`, async () => {
+      const client = new HttpMailchimpClient('https://x', 'secret-key-us1', 'aud', rejected(status));
+      for (const call of [
+        () => client.updateMember('a@b.com', {}, [], []),
+        () => client.unsubscribeMember('a@b.com'),
+      ]) {
+        const err = await call().catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(MailchimpAuthError);
+        expect(err).toBeInstanceOf(MailchimpTransientError);
+        expect(err).not.toBeInstanceOf(MailchimpPermanentError);
+        expect((err as Error).message).toContain('MAILCHIMP_API_KEY');
+        expect((err as Error).message).not.toContain('secret-key-us1');
+      }
+    });
+
+    it(`throws MailchimpAuthError on a ${status} from the tags sync and from reads`, async () => {
+      const tags = new HttpMailchimpClient('https://x', 'k', 'aud', sequenceFetch({ status: 200 }, { status }));
+      await expect(tags.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS)).rejects.toBeInstanceOf(MailchimpAuthError);
+
+      const reads = new HttpMailchimpClient('https://x', 'k', 'aud', rejected(status));
+      await expect(reads.getMemberInterests('a@b.com')).rejects.toBeInstanceOf(MailchimpAuthError);
+      await expect(reads.listInterests()).rejects.toBeInstanceOf(MailchimpAuthError);
+    });
+  }
+
+  it('keeps a 404 from the tags sync permanent', async () => {
+    const client = new HttpMailchimpClient('https://x', 'k', 'aud', sequenceFetch({ status: 200 }, { status: 404 }));
+    await expect(client.updateMember('a@b.com', {}, ['active-member'], MANAGED_TAGS)).rejects.toBeInstanceOf(MailchimpPermanentError);
+  });
+});
+
+describe('HttpMailchimpClient rate limiting', () => {
+  function rateLimited(headers: Record<string, string> = {}) {
+    return vi.fn().mockResolvedValue({
+      ok: false, status: 429, headers: new Headers(headers),
+      text: async () => 'too many requests', json: async () => ({}),
+    } as unknown as Response);
+  }
+
+  it('throws MailchimpRateLimitError (still transient) carrying Retry-After seconds', async () => {
+    const client = new HttpMailchimpClient('https://x', 'k', 'aud', rateLimited({ 'Retry-After': '30' }));
+    const err = await client.updateMember('a@b.com', {}, [], []).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MailchimpRateLimitError);
+    expect(err).toBeInstanceOf(MailchimpTransientError);
+    expect((err as MailchimpRateLimitError).retryAfterSeconds).toBe(30);
+    expect((err as Error).message).toBe('mailchimp updateMember: HTTP 429: too many requests');
+  });
+
+  it('leaves retryAfterSeconds undefined when Mailchimp sends no Retry-After', async () => {
+    const client = new HttpMailchimpClient('https://x', 'k', 'aud', rateLimited());
+    const err = await client.getMemberInterests('a@b.com').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MailchimpRateLimitError);
+    expect((err as MailchimpRateLimitError).retryAfterSeconds).toBeUndefined();
+  });
+
+  it('classifies a 429 from listInterests and the unsubscribe lookup as rate-limited', async () => {
+    const client = new HttpMailchimpClient('https://x', 'k', 'aud', rateLimited({ 'Retry-After': '5' }));
+    await expect(client.listInterests()).rejects.toBeInstanceOf(MailchimpRateLimitError);
+    await expect(client.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpRateLimitError);
+  });
+
+  it('keeps read failures on other 4xx transient, not permanent', async () => {
+    const fetchFn = fakeFetch({ ok: false, status: 403, text: async () => 'forbidden' });
+    const client = new HttpMailchimpClient('https://x', 'k', 'aud', fetchFn);
+    const err = await client.getMemberInterests('a@b.com').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MailchimpTransientError);
+    expect(err).not.toBeInstanceOf(MailchimpRateLimitError);
   });
 });

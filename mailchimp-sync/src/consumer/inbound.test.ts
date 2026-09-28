@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processInboundBatch } from './inbound';
 import type { MondayClient } from '../monday/client';
+import { MondayApiError } from '../monday/client';
+import { MailchimpAuthError, MailchimpRateLimitError } from '../mailchimp/client';
 import type { MailchimpClient } from '../mailchimp/client';
 import type { CampaignItemsStore, CampaignItemRow } from '../db/campaignItems';
 import type { PendingInboundStore } from '../db/pendingInbound';
@@ -16,8 +18,8 @@ const CONFIG: Config = {
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
-function fakeMessage(email: string): { body: InboundSyncMessage; ack: () => void; retry: () => void } {
-  return { body: { email }, ack: vi.fn(), retry: vi.fn() };
+function fakeMessage(email: string, attempts = 1): { body: InboundSyncMessage; attempts: number; ack: () => void; retry: () => void } {
+  return { body: { email }, attempts, ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
@@ -160,7 +162,7 @@ describe('processInboundBatch', () => {
     });
 
     expect(mondayClient.setConnectColumn).not.toHaveBeenCalled();
-    expect(message.retry).toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(message.ack).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith(
       'a@b.com',
@@ -180,7 +182,68 @@ describe('processInboundBatch', () => {
     });
 
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'failed', 'monday down');
-    expect(message.retry).toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  describe('retry backoff (#35)', () => {
+    async function retryFor(err: Error, attempts: number, pendingStore?: PendingInboundStore) {
+      const message = fakeMessage('a@b.com', attempts);
+      await processInboundBatch([message], {
+        mondayClient: fakeMonday({ findItemIdByEmail: vi.fn().mockRejectedValue(err) }),
+        mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: {} }) }),
+        campaignItemsStore: fakeCampaignItemsStore(),
+        pendingStore: pendingStore ?? { upsertPending: vi.fn(), updateStatus: vi.fn() },
+        config: CONFIG,
+      });
+      expect(message.ack).not.toHaveBeenCalled();
+      return message.retry;
+    }
+
+    it('backs off exponentially by delivery attempt', async () => {
+      expect(await retryFor(new Error('x'), 2)).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(await retryFor(new Error('x'), 3)).toHaveBeenCalledWith({ delaySeconds: 960 });
+    });
+
+    it("waits at least Monday's retry_in_seconds", async () => {
+      const err = new MondayApiError('monday: HTTP 429', 429, 'COMPLEXITY_BUDGET_EXHAUSTED', 300);
+      expect(await retryFor(err, 1)).toHaveBeenCalledWith({ delaySeconds: 300 });
+    });
+
+    it('waits at least a Mailchimp Retry-After on a 429', async () => {
+      const message = fakeMessage('a@b.com', 1);
+      await processInboundBatch([message], {
+        mondayClient: fakeMonday(),
+        mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockRejectedValue(new MailchimpRateLimitError('429', 120)) }),
+        campaignItemsStore: fakeCampaignItemsStore(),
+        pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() },
+        config: CONFIG,
+      });
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+    });
+
+    it('retries (never acks) when Mailchimp rejects the API key on the read, and says so in the log', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const message = fakeMessage('a@b.com', 1);
+      await processInboundBatch([message], {
+        mondayClient: fakeMonday(),
+        mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockRejectedValue(new MailchimpAuthError('mailchimp getMemberInterests: HTTP 401')) }),
+        campaignItemsStore: fakeCampaignItemsStore(),
+        pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() },
+        config: CONFIG,
+      });
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('MAILCHIMP CREDENTIALS REJECTED'));
+      errorSpy.mockRestore();
+    });
+
+    it('still retries with backoff when recording the failure in D1 throws', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
+      expect(await retryFor(new Error('monday down'), 2, pendingStore)).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
+      errorSpy.mockRestore();
+    });
   });
 });

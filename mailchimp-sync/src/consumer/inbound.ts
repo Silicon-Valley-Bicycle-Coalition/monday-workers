@@ -5,6 +5,8 @@ import type { CampaignItemsStore } from '../db/campaignItems';
 import type { Config, InboundSyncMessage } from '../types';
 import { reconcileCampaigns } from '../campaigns/reconcile';
 import type { QueueMessageLike } from './outbound';
+import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
+import { MailchimpAuthError } from '../mailchimp/client';
 
 export interface InboundConsumerDeps {
   pendingStore: PendingInboundStore;
@@ -15,7 +17,7 @@ export interface InboundConsumerDeps {
 }
 
 export async function processInboundBatch(
-  messages: QueueMessageLike<InboundSyncMessage>[],
+  messages: readonly QueueMessageLike<InboundSyncMessage>[],
   deps: InboundConsumerDeps,
 ): Promise<void> {
   for (const message of messages) {
@@ -26,8 +28,14 @@ export async function processInboundBatch(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`mailchimp-sync inbound consumer: failed to process "${email}": ${errMsg}`);
-      await deps.pendingStore.updateStatus(email, 'failed', errMsg);
-      message.retry();
+      if (err instanceof MailchimpAuthError) console.error(credentialsRejectedLog('inbound'));
+      // Recording the failure is bookkeeping; a D1 error here must not skip the delayed retry.
+      try {
+        await deps.pendingStore.updateStatus(email, 'failed', errMsg);
+      } catch (recordErr) {
+        console.error(`mailchimp-sync inbound consumer: could not record failure for "${email}": ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`);
+      }
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
     }
   }
 }
