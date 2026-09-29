@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { configureBoard } from './index.js';
+import { configureBoard, dashboardToken } from './index.js';
 import { MondayClient } from '../load/monday.js';
 import type { BoardSpec } from './spec.js';
 import { COLS } from './testFixtures.js';
@@ -15,10 +15,10 @@ const SPEC: BoardSpec = {
   deleteStrayViews: ['Build Vibe view'],
 };
 
-function scriptedClient(calls: { query: string; variables: Record<string, unknown> }[]): MondayClient {
+function scriptedClient(calls: { query: string; variables: Record<string, unknown>; version?: string }[]): MondayClient {
   const fetchFn = (async (_u: unknown, init: unknown) => {
     const { query, variables } = JSON.parse((init as { body: string }).body);
-    calls.push({ query, variables });
+    calls.push({ query, variables, version: (init as { headers: Record<string, string> }).headers['API-Version'] });
     if (/query\s*\(\$ids/.test(query)) {
       // Second fetch (post-creation refresh) reports the column as now present.
       const alreadyCreated = calls.some((c) => /mutation.*create_column/s.test(c.query));
@@ -46,7 +46,7 @@ function scriptedClient(calls: { query: string; variables: Record<string, unknow
 
 describe('configureBoard', () => {
   it('applies description, group rename, new column, stray-view delete, column description, and a view referencing the new column', async () => {
-    const calls: { query: string; variables: Record<string, unknown> }[] = [];
+    const calls: { query: string; variables: Record<string, unknown>; version?: string }[] = [];
     const client = scriptedClient(calls);
 
     const result = await configureBoard(client, 900, SPEC, false);
@@ -62,12 +62,16 @@ describe('configureBoard', () => {
     const viewCall = calls.find((c) => /create_view_table/.test(c.query));
     expect(viewCall?.variables['filter']).toEqual({ operator: 'and', rules: [{ column_id: 'col_stake', operator: 'any_of', compare_value: [2] }] });
 
+    // conditional_formatting_settings exists only in API 2026-10; everything else stays on the pin.
+    expect(viewCall?.version).toBe('2026-10');
+    for (const c of calls.filter((x) => !/create_view_table|update_view_table/.test(x.query))) expect(c.version).toBe('2026-01');
+
     const descCall = calls.find((c) => /change_column_metadata/.test(c.query));
     expect(descCall?.variables).toMatchObject({ col: 'col_stake', value: 'advocacy classification' });
   });
 
   it('dry-run makes no mutating calls', async () => {
-    const calls: { query: string; variables: Record<string, unknown> }[] = [];
+    const calls: { query: string; variables: Record<string, unknown>; version?: string }[] = [];
     const client = scriptedClient(calls);
 
     const result = await configureBoard(client, 900, SPEC, true);
@@ -103,10 +107,10 @@ const SPEC_WITH_DONORS_VIEW: BoardSpec = {
 async function runWithFakeBoard(
   boardOverrides: { views: { id: string; name: string }[] }, spec: BoardSpec, { dryRun }: { dryRun?: boolean } = {},
 ) {
-  const calls: { query: string; variables: Record<string, unknown> }[] = [];
+  const calls: { query: string; variables: Record<string, unknown>; version?: string }[] = [];
   const fetchFn = (async (_u: unknown, init: unknown) => {
     const { query, variables } = JSON.parse((init as { body: string }).body);
-    calls.push({ query, variables });
+    calls.push({ query, variables, version: (init as { headers: Record<string, string> }).headers['API-Version'] });
     if (/^\s*query/.test(query)) {
       return Response.json({ data: { boards: [{ description: 'x', groups: [{ id: 'g', title: spec.groupTitle }], columns: COLS, ...boardOverrides }] } });
     }
@@ -142,5 +146,14 @@ describe('configureBoard — spec views', () => {
   it('dry-run reports creates and updates without calling mutations', async () => {
     const calls = await runWithFakeBoard({ views: [{ id: '77', name: 'Donors' }] }, SPEC_WITH_DONORS_VIEW, { dryRun: true });
     expect(calls.every((c) => !c.query.trimStart().startsWith('mutation'))).toBe(true);
+  });
+});
+
+describe('dashboardToken', () => {
+  it('prefers MONDAY_DASHBOARD_TOKEN, falls back to MONDAY_API_TOKEN', () => {
+    expect(dashboardToken({ MONDAY_DASHBOARD_TOKEN: 'd', MONDAY_API_TOKEN: 'a' })).toBe('d');
+    expect(dashboardToken({ MONDAY_API_TOKEN: 'a' })).toBe('a');
+    expect(dashboardToken({ MONDAY_DASHBOARD_TOKEN: '', MONDAY_API_TOKEN: 'a' })).toBe('a');
+    expect(dashboardToken({})).toBeUndefined();
   });
 });

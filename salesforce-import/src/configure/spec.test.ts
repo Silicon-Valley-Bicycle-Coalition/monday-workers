@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BOARD_SPECS, PLUMBING } from './spec.js';
+import { BOARD_SPECS, PLUMBING, DASHBOARD_SPECS } from './spec.js';
 
 describe('BOARD_SPECS views', () => {
   const all = Object.entries(BOARD_SPECS).flatMap(([board, s]) => (s.views ?? []).map((v) => ({ board, v })));
@@ -30,5 +30,25 @@ describe('BOARD_SPECS views', () => {
       ['Donors', 'Major donors', 'Donors to target', 'Gave last year, not this year', 'Appeal list', 'Members', 'By city']));
     expect(names('donations')).toEqual(expect.arrayContaining(
       ['Recent gifts', 'Revenue by funding stream', 'By gift size', 'By fiscal quarter', 'Major gifts to thank']));
+  });
+});
+
+describe('DASHBOARD_SPECS revenue filters', () => {
+  const widgets = DASHBOARD_SPECS.flatMap((d) => d.widgets.map((w) => ({ d: d.name, w })));
+  const onDonations = widgets.filter(({ w }) => w.chart?.board === 'donations' || w.number?.boards.includes('donations'));
+
+  it('finds the donations widgets', () => { expect(onDonations.length).toBeGreaterThanOrEqual(6); });
+
+  it('every donations widget counts only Received / Received (Historical) gifts', () => {
+    for (const { d, w } of onDonations) {
+      expect(w.filter?.board, `${d} / ${w.name}`).toBe('donations');
+      expect(w.filter?.rules, `${d} / ${w.name}`).toContainEqual(
+        { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received', 'Received (Historical)'] });
+    }
+  });
+
+  it('keeps existing filters (Major gifts not yet thanked)', () => {
+    const w = widgets.find(({ w }) => w.name === 'Major gifts not yet thanked')!.w;
+    expect(w.filter?.rules.map((r) => r.columnTitle)).toEqual(expect.arrayContaining(['Acknowledgment Tier', 'Thank You Sent', 'Status']));
   });
 });

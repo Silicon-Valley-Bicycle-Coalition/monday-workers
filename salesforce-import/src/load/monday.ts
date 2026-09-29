@@ -56,13 +56,15 @@ export class MondayClient {
     return (this.opts.sleepFn ?? ((n: number) => new Promise<void>((r) => setTimeout(r, n))))(ms);
   }
 
+  // `apiVersion` overrides the pinned API-Version header for this one call (e.g. configure's view
+  // mutations need 2026-10); every other call stays on the pin.
   // `idempotent: false` still retries responses that prove the request was rejected before it
   // ran (HTTP 429, complexity-budget errors, the no-data shape carrying status_code 429), but
   // throws AmbiguousWriteError on anything that might have committed.
   async gql<T>(query: string, variables: Record<string, unknown> = {},
-    { idempotent = true }: { idempotent?: boolean } = {}): Promise<T> {
+    { idempotent = true, apiVersion }: { idempotent?: boolean; apiVersion?: string } = {}): Promise<T> {
     if (this.opts.legacy) return this.gqlLegacy<T>(query, variables, { idempotent });
-    const r = await this.send<T>(query, variables, idempotent, false);
+    const r = await this.send<T>(query, variables, idempotent, false, apiVersion);
     return r.data as T;
   }
 
@@ -146,7 +148,7 @@ export class MondayClient {
   }
 
   private async send<T>(query: string, variables: Record<string, unknown>, idempotent: boolean,
-    partial: boolean): Promise<PartialResult<T>> {
+    partial: boolean, apiVersion = '2026-01'): Promise<PartialResult<T>> {
     const fetchFn = this.opts.fetchFn ?? fetch;
     const ambiguous = (detail: string): string => {
       if (!idempotent) throw new AmbiguousWriteError(`monday: ${detail} (write may have committed)`);
@@ -161,7 +163,7 @@ export class MondayClient {
         res = await fetchFn(this.opts.apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: this.opts.token,
-            'API-Version': '2026-01' },
+            'API-Version': apiVersion },
           body: JSON.stringify({ query, variables }),
           signal: AbortSignal.timeout(this.opts.requestTimeoutMs ?? 60_000),
         });

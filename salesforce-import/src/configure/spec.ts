@@ -461,7 +461,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
   },
 };
 
-export const DASHBOARD_SPECS: DashboardSpec[] = [
+const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
   { name: 'Development — weekly pulse', boards: ['donations', 'people-live', 'people-historical', 'organizations'], widgets: [
     { name: 'Raised this FY', kind: 'NUMBER', number: { boards: ['people-live', 'people-historical', 'organizations'], column: 'This Year Amount', counter: 'sum', format: 'currency' } },
     { name: 'Raised last FY', kind: 'NUMBER', number: { boards: ['people-live', 'people-historical', 'organizations'], column: 'Last Year Amount', counter: 'sum', format: 'currency' } },
@@ -488,3 +488,16 @@ export const DASHBOARD_SPECS: DashboardSpec[] = [
     { name: 'Sponsorships by status', kind: 'CHART', chart: { board: 'sponsorships', graphType: 'column', x: 'Status', xGroupBy: 'color', y: 'Sponsorship Amount' } },
   ] },
 ];
+
+// Every widget that sums or counts Donations must skip Failed/Pending gifts; "Received (Historical)"
+// (pre-Monday gifts) counts as revenue. AND-ed with any filter the widget already has.
+const RECEIVED_RULE: FilterRule = { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received', 'Received (Historical)'] };
+
+export const DASHBOARD_SPECS: DashboardSpec[] = RAW_DASHBOARD_SPECS.map((d) => ({
+  ...d,
+  widgets: d.widgets.map((w) => {
+    const onDonations = w.chart?.board === 'donations' || w.number?.boards.includes('donations');
+    if (!onDonations) return w;
+    return { ...w, filter: { board: 'donations', rules: [...(w.filter?.rules ?? []), RECEIVED_RULE] } };
+  }),
+}));

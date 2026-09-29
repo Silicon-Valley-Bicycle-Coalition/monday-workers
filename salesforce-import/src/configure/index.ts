@@ -40,6 +40,9 @@ const VIEW_ARGS = `$board: ID!, $name: String, $filter: ItemsQueryGroup, $sort: 
 const VIEW_PASS = `board_id: $board, name: $name, filter: $filter, sort: $sort, tags: $tags,
   settings: $settings, conditional_formatting_settings: $conditional_formatting_settings`;
 
+// conditional_formatting_settings on create/update_view_table exists only in API 2026-10.
+const VIEW_API_VERSION = '2026-10';
+
 const viewIds = (board: { views: { id: string; name: string }[] }) => new Map(board.views.map((v) => [v.name, v.id]));
 
 function viewVars(boardId: number, v: ResolvedView) {
@@ -119,11 +122,11 @@ export async function configureBoard(
 
   const viewPlan = planViews(refreshed, viewIds(current), spec, boardId);
   for (const v of viewPlan.views.create) {
-    await client.gql(`mutation (${VIEW_ARGS}) { create_view_table (${VIEW_PASS}) { id } }`, viewVars(boardId, v));
+    await client.gql(`mutation (${VIEW_ARGS}) { create_view_table (${VIEW_PASS}) { id } }`, viewVars(boardId, v), { apiVersion: VIEW_API_VERSION });
   }
   for (const v of viewPlan.views.update) {
     await client.gql(`mutation ($view: ID!, ${VIEW_ARGS}) { update_view_table (view_id: $view, ${VIEW_PASS}) { id } }`,
-      { view: v.viewId, ...viewVars(boardId, v) });
+      { view: v.viewId, ...viewVars(boardId, v) }, { apiVersion: VIEW_API_VERSION });
   }
   if (viewPlan.views.create.length) actions.push(`created ${viewPlan.views.create.length} view(s)`);
   if (viewPlan.views.update.length) actions.push(`re-applied ${viewPlan.views.update.length} view(s)`);
@@ -132,7 +135,12 @@ export async function configureBoard(
   return { ok: true, summary: actions.length ? actions.join('; ') : 'already up to date', notes };
 }
 
-export async function runConfigure(args: string[], deps: { client?: MondayClient } = {}): Promise<number> {
+/** Dashboard mutations need a user allowed to create dashboards; the integration user gets 403. */
+export function dashboardToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env['MONDAY_DASHBOARD_TOKEN'] || env['MONDAY_API_TOKEN'] || undefined;
+}
+
+export async function runConfigure(args: string[], deps: { client?: MondayClient; dashboardClient?: MondayClient } = {}): Promise<number> {
   const cfg = loadConfig();
   const dryRun = args.includes('--dry-run');
   const onlyIdx = args.indexOf('--only');
@@ -170,7 +178,10 @@ export async function runConfigure(args: string[], deps: { client?: MondayClient
     const boardIds: Record<string, number> = { ...Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.boardId])), ...extra };
     try {
       if (cfg.monday.workspaceId == null) throw new Error('monday.workspaceId is not set in config — cannot create dashboards');
-      const result = await configureDashboards(client, cfg.monday.workspaceId, boardIds, dryRun);
+      const dashToken = dashboardToken();
+      const dashClient = deps.dashboardClient
+        ?? (dashToken && dashToken !== token ? new MondayClient({ apiUrl: cfg.monday.apiUrl, token: dashToken }) : client);
+      const result = await configureDashboards(dashClient, cfg.monday.workspaceId, boardIds, dryRun);
       console.log(`configure: dashboards — ${result.summary}`);
       for (const note of result.notes) console.log(`  note: ${note}`);
     } catch (err) {
