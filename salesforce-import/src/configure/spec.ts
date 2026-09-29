@@ -24,15 +24,34 @@ export interface ColumnSpec {
 
 export interface FilterRule {
   columnTitle: string;
-  operator: string; // any_of | not_any_of | is_empty | is_not_empty | contains_text | greater_than | ...
+  // any_of | not_any_of | is_empty | is_not_empty | contains_text | greater_than | ... |
+  // within_the_next (relative date; compareValue ['DAYS', 60])
+  operator: string;
   labelValues?: string[]; // resolved to label ids at apply time (status/dropdown columns)
   compareValue?: unknown; // literal compare value for non-label columns; default [] when omitted
+}
+
+export type ViewTag = 'Worklist' | 'Report' | 'Reference';
+
+// One colour language across boards: red needs action, amber coming due, green good standing,
+// grey historical.
+export interface ColoringRule {
+  columnTitle: string;
+  operator?: 'any_of' | 'is_empty' | 'is_not_empty' | 'greater_than' | 'lower_than' | 'between' | 'within_the_next';
+  labelValues?: string[]; // status/dropdown; resolved to label ids like filter rules
+  compareValue?: unknown; // non-label columns; within_the_next takes ['DAYS', 60]
+  color: 'red' | 'amber' | 'green' | 'grey';
+  entireRow?: boolean; // default true
 }
 
 export interface ViewSpec {
   name: string;
   filter?: { operator?: 'and' | 'or'; rules: FilterRule[] };
   sort?: { columnTitle: string; direction?: 'asc' | 'desc' }[];
+  columns?: string[]; // visible, in order, after Name; every other column is hidden
+  groupBy?: { columnTitle: string; direction?: 'asc' | 'desc' };
+  coloring?: ColoringRule[];
+  tag?: ViewTag;
 }
 
 export interface BoardSpec {
