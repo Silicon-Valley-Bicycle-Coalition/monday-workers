@@ -83,10 +83,23 @@ const DNS_REASON_STATUS_DESC = "Missing means Do Not Solicit is checked with no 
 
 const DNS_COLUMN: ColumnSpec = { title: 'DNS Reason Status', type: 'status', labels: ['OK', 'Missing'] };
 
-const DNS_VIEWS: ViewSpec[] = [
-  { name: 'Do Not Solicit', filter: { rules: [{ columnTitle: 'Do Not Solicit', operator: 'is_not_empty' }] } },
-  { name: 'DNS reason missing', filter: { rules: [{ columnTitle: 'DNS Reason Status', operator: 'any_of', labelValues: ['Missing'] }] } },
+// Hidden from every working view (spec 2026-09-29 §3.2); still on the board and in Main Table.
+export const PLUMBING = [
+  'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
+  'Funraise Event ID', 'Eventbrite ID', 'Eventbrite Attendee ID', 'Benevity Transaction ID',
+] as const;
+
+const dnsViews = (contactColumn: string): ViewSpec[] => [
+  { name: 'Do Not Solicit', tag: 'Reference', columns: [contactColumn, 'Do Not Solicit Reason', 'DNS Reason Status'],
+    filter: { rules: [{ columnTitle: 'Do Not Solicit', operator: 'is_not_empty' }] } },
+  { name: 'DNS reason missing', tag: 'Worklist', columns: ['Do Not Solicit Reason', 'DNS Reason Status', contactColumn],
+    filter: { rules: [{ columnTitle: 'DNS Reason Status', operator: 'any_of', labelValues: ['Missing'] }] },
+    coloring: [{ columnTitle: 'DNS Reason Status', labelValues: ['Missing'], color: 'red' }] },
 ];
+const DNS_VIEWS = dnsViews('Personal Email');
+// Organizations has no Personal Email.
+const ORG_DNS_VIEWS = dnsViews('Website');
+const NOT_DNS = { columnTitle: 'Do Not Solicit', operator: 'is_empty' } as const;
 
 export const BOARD_SPECS: Record<string, BoardSpec> = {
   'people-live': {
@@ -128,9 +141,45 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Lifetime Giving': ROLLUP_DESCRIPTION, 'First Gift': ROLLUP_DESCRIPTION, 'Gift Count': ROLLUP_DESCRIPTION,
     },
     views: [
-      { name: 'Active members', filter: { rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] }, sort: [{ columnTitle: 'Name' }] },
-      { name: 'Stakeholders', filter: { rules: [{ columnTitle: 'Stakeholder Type', operator: 'any_of', labelValues: ['City or Agency Staff', 'Elected Official'] }] } },
-      { name: 'By campaign', filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
+      { name: 'Donors', tag: 'Report',
+        columns: ['Personal Email', 'City', 'Lifetime Giving', 'Last Gift Date', 'Last Gift Amount', 'This Year Amount', 'Membership Status'],
+        groupBy: { columnTitle: 'Donor Level' }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }],
+        filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 }] } },
+      { name: 'Major donors', tag: 'Report',
+        columns: ['Donor Level', 'Personal Email', 'Phone', 'Address', 'City', 'Lifetime Giving', 'Largest Gift', 'Last Gift Date', 'Member Until'],
+        filter: { rules: [{ columnTitle: 'Donor Level', operator: 'any_of', labelValues: ['Leadership', 'Major'] }, NOT_DNS] },
+        sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }] },
+      { name: 'Donors to target', tag: 'Worklist',
+        columns: ['Personal Email', 'Phone', 'City', 'Last Gift Amount', 'Last Gift Date', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Last Gift Amount', operator: 'greater_than', compareValue: 249.99 }, NOT_DNS] },
+        sort: [{ columnTitle: 'Last Gift Date', direction: 'desc' }] },
+      { name: 'Gave last year, not this year', tag: 'Worklist',
+        columns: ['Personal Email', 'Phone', 'Last Year Amount', 'Last Gift Date', 'Lifetime Giving', 'Donor Level'],
+        filter: { rules: [{ columnTitle: 'Last Year Amount', operator: 'greater_than', compareValue: 0 },
+          { columnTitle: 'This Year Amount', operator: 'is_empty' }, NOT_DNS] },
+        sort: [{ columnTitle: 'Last Year Amount', direction: 'desc' }] },
+      { name: 'Appeal list', tag: 'Report',
+        columns: ['Personal Email', 'Address', 'City', 'Zip', 'Last Gift Date', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
+          { columnTitle: 'Personal Email', operator: 'is_not_empty' }, NOT_DNS] },
+        groupBy: { columnTitle: 'Donor Level' } },
+      { name: 'Members', tag: 'Report',
+        columns: ['Personal Email', 'Membership Status', 'Membership Tier', 'Member Since', 'Member Until', 'City'],
+        filter: { rules: [{ columnTitle: 'Membership Status', operator: 'is_not_empty' }] },
+        sort: [{ columnTitle: 'Member Until' }],
+        coloring: [
+          { columnTitle: 'Member Until', operator: 'within_the_next', compareValue: ['DAYS', 60], color: 'amber' },
+          { columnTitle: 'Membership Status', labelValues: ['Lapsed'], color: 'red' },
+        ] },
+      { name: 'Active members', tag: 'Reference',
+        columns: ['Personal Email', 'Household Email', 'Membership Tier', 'Member Since', 'Member Until'],
+        filter: { rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] }, sort: [{ columnTitle: 'Name' }] },
+      { name: 'By city', tag: 'Report', columns: ['City', 'Zip', 'Personal Email', 'Membership Status', 'Donor Level'],
+        groupBy: { columnTitle: 'City' } },
+      { name: 'Stakeholders', tag: 'Reference', columns: ['Stakeholder Type', 'Organization', 'City', 'Zip', 'Personal Email'],
+        filter: { rules: [{ columnTitle: 'Stakeholder Type', operator: 'any_of', labelValues: ['City or Agency Staff', 'Elected Official'] }] } },
+      { name: 'By campaign', tag: 'Reference', columns: ['Campaign', 'Personal Email', 'City'],
+        filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
       ...DNS_VIEWS,
     ],
     deleteStrayViews: ['Build Vibe view'],
@@ -150,7 +199,14 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'consent is tracked separately in Household Email Consent.',
       'DNS Reason Status': DNS_REASON_STATUS_DESC,
     },
-    views: [...DNS_VIEWS],
+    views: [
+      { name: 'People', tag: 'Reference', columns: ['Personal Email', 'City', 'Lifetime Giving', 'Last Gift Date'], sort: [{ columnTitle: 'Name' }] },
+      { name: 'Active again', tag: 'Worklist', columns: ['Personal Email', 'Last Gift Date', 'Membership Status', 'Lifetime Giving'],
+        filter: { operator: 'or', rules: [
+          { columnTitle: 'Last Gift Date', operator: 'greater_than', compareValue: ['EXACT', '2019-01-01'] },
+          { columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] } },
+      ...DNS_VIEWS,
+    ],
     deleteStrayViews: ['Build Vibe view'],
   },
 
@@ -169,10 +225,15 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'matches only; near-matches await human review).',
     },
     views: [
-      { name: 'Untyped', filter: { rules: [{ columnTitle: 'Partner Type', operator: 'is_empty' }] }, sort: [{ columnTitle: 'Name' }] },
-      { name: 'Municipal', filter: { rules: [{ columnTitle: 'Partner Type', operator: 'contains_text', compareValue: 'Municipal' }] } },
-      { name: 'Funders and matching companies', filter: { rules: [{ columnTitle: 'Lifetime Giving', operator: 'greater_than', compareValue: 0 }] }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }] },
-      ...DNS_VIEWS,
+      { name: 'Organizations', tag: 'Report', columns: ['Partner Type', 'City', 'Website', 'Lifetime Giving', 'Last Gift Date'],
+        groupBy: { columnTitle: 'Donor Level' }, sort: [{ columnTitle: 'Name' }] },
+      { name: 'Untyped', tag: 'Worklist', columns: ['Website', 'City', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Partner Type', operator: 'is_empty' }] }, sort: [{ columnTitle: 'Name' }] },
+      { name: 'Municipal', tag: 'Reference', columns: ['Partner Type', 'City', 'Website', 'Phone'],
+        filter: { rules: [{ columnTitle: 'Partner Type', operator: 'contains_text', compareValue: 'Municipal' }] } },
+      { name: 'Funders and matching companies', tag: 'Report', columns: ['Partner Type', 'Lifetime Giving', 'Last Gift Date', 'This Year Amount'],
+        filter: { rules: [{ columnTitle: 'Lifetime Giving', operator: 'greater_than', compareValue: 0 }] }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }] },
+      ...ORG_DNS_VIEWS,
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -212,21 +273,37 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Thank You Sent': 'Checked automatically for Funraise gifts (Funraise sends the receipt). ' +
         "For hand-entered gifts, check it yourself once you've acknowledged the donor.",
       'Acknowledgment Tier': 'Major at $200 and up, set automatically. Major gifts need a ' +
-        "personal acknowledgment — work the 'Major gifts to acknowledge' view.",
+        "personal acknowledgment — work the 'Major gifts to thank' view.",
       'Funraise ID': 'The transaction in Funraise. Blank for non-Funraise gifts.',
     },
     views: [
-      { name: 'Major gifts to acknowledge', filter: { rules: [
-        { columnTitle: 'Acknowledgment Tier', operator: 'any_of', labelValues: ['Major'] },
-        { columnTitle: 'Thank You Sent', operator: 'is_empty' },
-      ] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
-      { name: 'Matching gifts', filter: { rules: [{ columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Matching Donation' }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
-      { name: 'Needs a donor', filter: { rules: [
-        { columnTitle: 'Donor', operator: 'is_empty' },
-        { columnTitle: 'Anonymous Donor', operator: 'is_empty' },
-      ] } },
-      { name: 'Failed and pending', filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Failed', 'Pending'] }] } },
+      { name: 'Recent gifts', tag: 'Report',
+        columns: ['Donor', 'Amount', 'Date', 'Funding Stream', 'Gift Type', 'Thank You Sent', 'Acknowledgment Tier'],
+        groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }],
+        coloring: [{ columnTitle: 'Acknowledgment Tier', labelValues: ['Major'], color: 'red' }] },
+      { name: 'Revenue by funding stream', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Fiscal Year', 'Gift Type'],
+        groupBy: { columnTitle: 'Funding Stream' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'By gift size', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],
+        groupBy: { columnTitle: 'Gift Size' }, sort: [{ columnTitle: 'Amount', direction: 'desc' }] },
+      { name: 'By fiscal quarter', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],
+        groupBy: { columnTitle: 'Fiscal Quarter', direction: 'desc' } },
+      { name: 'Major gifts to thank', tag: 'Worklist', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Thank You Sent'],
+        filter: { rules: [{ columnTitle: 'Acknowledgment Tier', operator: 'any_of', labelValues: ['Major'] }, { columnTitle: 'Thank You Sent', operator: 'is_empty' }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Unacknowledged', tag: 'Worklist', columns: ['Donor', 'Amount', 'Date', 'Gift Type'],
+        filter: { rules: [{ columnTitle: 'Thank You Sent', operator: 'is_empty' }, { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Membership payments', tag: 'Reference', columns: ['Donor', 'Amount', 'Term Start', 'Term End', 'Membership Type'],
+        filter: { rules: [{ columnTitle: 'Term Start', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Term End', direction: 'desc' }] },
+      { name: 'Matching gifts', tag: 'Reference', columns: ['Donor', 'Amount', 'Date', 'Matched By'],
+        filter: { rules: [{ columnTitle: 'Gift Type', operator: 'contains_text', compareValue: 'Matching Donation' }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Needs a donor', tag: 'Worklist', columns: ['Amount', 'Date', 'Gift Type', 'Anonymous Donor'],
+        filter: { rules: [{ columnTitle: 'Donor', operator: 'is_empty' }, { columnTitle: 'Anonymous Donor', operator: 'is_empty' }] } },
+      { name: 'Failed and pending', tag: 'Worklist', columns: ['Donor', 'Amount', 'Date', 'Status'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Failed', 'Pending'] }] },
+        coloring: [{ columnTitle: 'Status', labelValues: ['Failed'], color: 'red' }] },
     ],
+    deleteStrayViews: ['Major gifts to acknowledge'],
   },
 
   'recurring-gifts': {
@@ -244,9 +321,13 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Match Employer': 'The donor said an employer match applies; the match itself arrives via Benevity as a separate gift.',
     },
     views: [
-      { name: 'Active', filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Active'] }] }, sort: [{ columnTitle: 'Next Payment' }] },
-      { name: 'Failed', filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Failed'] }] } },
-      { name: 'Pledges', filter: { rules: [{ columnTitle: 'Pledge Amount', operator: 'is_not_empty' }] } },
+      { name: 'Active', tag: 'Report', columns: ['Donor', 'Installment Amount', 'Frequency', 'Annualized Value', 'Next Payment', 'Designation'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Active'] }] }, sort: [{ columnTitle: 'Next Payment' }] },
+      { name: 'Failed', tag: 'Worklist', columns: ['Donor', 'Installment Amount', 'Frequency', 'Next Payment', 'Status'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Failed'] }] },
+        coloring: [{ columnTitle: 'Status', labelValues: ['Failed'], color: 'red' }] },
+      { name: 'Pledges', tag: 'Reference', columns: ['Donor', 'Pledge Amount', 'Received Amount', 'Status'],
+        filter: { rules: [{ columnTitle: 'Pledge Amount', operator: 'is_not_empty' }] } },
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -261,7 +342,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Active': "Salesforce's IsActive flag at migration.",
     },
     views: [
-      { name: 'Active', filter: { rules: [{ columnTitle: 'Active', operator: 'is_not_empty' }] } },
+      { name: 'All Campaigns', tag: 'Reference', columns: ['Type', 'Start', 'End', 'Active'], sort: [{ columnTitle: 'End', direction: 'desc' }] },
+      { name: 'Active', tag: 'Reference', columns: ['Type', 'Start', 'End'], filter: { rules: [{ columnTitle: 'Active', operator: 'is_not_empty' }] } },
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -280,8 +362,11 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Tickets Sold': "Eventbrite's count at migration; not maintained until the Eventbrite integration runs.",
     },
     views: [
-      { name: 'Upcoming', filter: { rules: [{ columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] }] }, sort: [{ columnTitle: 'Date' }] },
-      { name: 'All events', sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Upcoming', tag: 'Report', columns: ['Date', 'Program', 'Venue', 'City', 'Tickets Sold', 'Eventbrite URL'],
+        filter: { rules: [{ columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] }] }, sort: [{ columnTitle: 'Date' }] },
+      { name: 'All events', tag: 'Reference', columns: ['Date', 'Program', 'Event Status', 'Source', 'City'],
+        groupBy: { columnTitle: 'Event Status' }, sort: [{ columnTitle: 'Date', direction: 'desc' }],
+        coloring: [{ columnTitle: 'Event Status', labelValues: ['Completed', 'Canceled'], color: 'grey' }] },
     ],
     deleteStrayViews: ['Build Vibe view'],
   },
@@ -302,12 +387,16 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Deductible Amount': "Funraise's tax-deductible portion of the ticket price.",
     },
     views: [
-      { name: 'Volunteers', filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
-      { name: 'Attended', filter: { rules: [{ columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] }] } },
-      { name: 'Unlinked attendees', filter: { rules: [
-        { columnTitle: 'Attendee', operator: 'is_empty' },
-        { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite'] },
-      ] } },
+      { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'Role', 'Attendance', 'Ticket Amount'],
+        groupBy: { columnTitle: 'Event' } },
+      { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
+        filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
+      { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'Role'],
+        filter: { rules: [{ columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] }] } },
+      { name: 'Unlinked attendees', tag: 'Worklist', columns: ['Attendee Name', 'Attendee Email', 'Event'],
+        filter: { rules: [{ columnTitle: 'Attendee', operator: 'is_empty' }, { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite'] }] } },
+      { name: 'Needs review', tag: 'Worklist', columns: ['Attendee', 'Event', 'Attribution'],
+        filter: { rules: [{ columnTitle: 'Attribution', operator: 'any_of', labelValues: ['Needs review'] }] } },
     ],
   },
 
@@ -322,7 +411,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Job': 'The volunteer job title from the Salesforce Volunteers package.',
     },
     views: [
-      { name: 'Completed hours', filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Completed'] }] } },
+      { name: 'Completed hours', tag: 'Reference', columns: ['Volunteer', 'Job', 'Hours', 'Date'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Completed'] }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
     ],
   },
 
@@ -342,7 +432,14 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Topic': 'Free tags for what the conversation was about — which ask, which campaign.',
     },
     views: [
-      { name: 'All', sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'My activities', tag: 'Worklist', columns: ['Person', 'Activity Type', 'Date', 'Status', 'Topic'],
+        filter: { rules: [{ columnTitle: 'Assigned To', operator: 'any_of', compareValue: ['assigned_to_me'] }] }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Recent touches', tag: 'Report', columns: ['Person', 'Date', 'Topic', 'Assigned To', 'Owner'],
+        groupBy: { columnTitle: 'Activity Type' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Open', tag: 'Worklist', columns: ['Person', 'Activity Type', 'Date', 'Assigned To', 'Owner'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'not_any_of', labelValues: ['Completed'] }] }, sort: [{ columnTitle: 'Date' }] },
+      { name: 'All', tag: 'Reference', columns: ['Person', 'Activity Type', 'Date', 'Status', 'Owner'], sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'By person', tag: 'Reference', columns: ['Person', 'Activity Type', 'Date', 'Status'], sort: [{ columnTitle: 'Person' }] },
     ],
   },
 
@@ -353,9 +450,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'proposed by the impact-attribution integration and need staff confirmation.',
     groupTitle: 'Affiliations',
     views: [
-      { name: 'Current', filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Current'] }] } },
-      { name: 'Drafts to confirm', filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Draft'] }] } },
-      { name: 'By organization', sort: [{ columnTitle: 'Organization' }] },
+      { name: 'Drafts to confirm', tag: 'Worklist', columns: ['Person', 'Organization', 'Affiliation Role', 'Start', 'Work Email'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Draft'] }] } },
+      { name: 'Current', tag: 'Reference', columns: ['Person', 'Organization', 'Affiliation Role', 'Start', 'Work Email', 'Primary'],
+        filter: { rules: [{ columnTitle: 'Status', operator: 'any_of', labelValues: ['Current'] }] } },
+      { name: 'By organization', tag: 'Reference', columns: ['Organization', 'Person', 'Affiliation Role', 'Status'],
+        groupBy: { columnTitle: 'Organization' } },
     ],
   },
 };
