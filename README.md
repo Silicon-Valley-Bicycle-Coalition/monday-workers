@@ -31,6 +31,16 @@ the gated event-registrations and volunteer-history features are configured), ke
 from the token(s) the staff-facing Workers use. Never ship a staff member's personal token into
 a Worker secret.
 
+Sandbox tokens are the one deliberate exception to per-exposure-class users: every Worker's
+`--env sandbox` `MONDAY_API_TOKEN` comes from a single shared **Sandbox Integration** user
+(`sandbox-integration@bikesiliconvalley.org`) whose only board access is the CRM Sandbox
+workspace, so a production board id in a sandbox config fails at Monday with
+`USER_UNAUTHORIZED` rather than writing to production. Use that user's token when provisioning
+any new sandbox environment — don't mint another. See
+[the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4. (As of
+2026-09-29 the token in use can still see four other sandbox workspaces; trimming it to the CRM
+Sandbox workspace alone is tracked in #18.)
+
 ## Status at a glance
 
 | Worker | Status | Priority |
