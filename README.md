@@ -112,12 +112,12 @@ than restarted from zero. See that Worker's README.
 
 ## Reliability: traffic and cost limits
 
-**The account is still on Workers Free** (donation-rollups' README documents the D1 100k-writes/day
-cap that already bit it once), and Workers Paid is the known next step once that D1 quota needs
-raising. Free plan usage costs nothing no matter the volume, but it also means every Worker here
-was built without ever having to bound a request's cost — nothing stops a traffic spike (a bot
-crawl, a flood against a discovered webhook URL, a viral link) from becoming an expensive one the
-day the account moves to Paid. Two guardrails, applied now so they predate that move rather than
+**The account is on Workers Paid**, through Cloudflare's Project Galileo (confirmed 2026-09-29). That lifts
+the D1 100k-writes/day Free cap that stalled `donation-rollups` twice in September (its README has
+the details). Every Worker here was built on Workers Free, though, where usage cost nothing no
+matter the volume and nothing ever had to bound a request's cost — and on Paid, nothing stops a
+traffic spike (a bot crawl, a flood against a discovered webhook URL, a viral link) from becoming
+an expensive one. Two guardrails, applied before the move so they predated it rather than
 following a surprise bill:
 
 **Per-IP request rate limiting**, via Cloudflare's [Workers Rate Limiting
@@ -147,9 +147,8 @@ in each Worker's `wrangler.jsonc` `ratelimits` block as real traffic patterns em
 in every Worker's `wrangler.jsonc` — a cost guardrail against a runaway invocation, not only a
 traffic one. Cloudflare's own pricing
 docs name this the specific mitigation for "accidental runaway bills or denial-of-wallet attacks."
-It matters here because Workers Free already hard-caps CPU time at 10ms/invocation — so this has
-no effect today — but Workers Paid's *default* is 30 seconds/request (up to 5 minutes, or 15
-minutes for a cron on a >=1hr interval), a 3000x jump. Every Worker here is set to a 100ms cap: 5–50x
+It matters because Workers Paid's *default* is 30 seconds/request (up to 5 minutes, or 15
+minutes for a cron on a >=1hr interval), a 3000x jump from Workers Free's 10ms hard cap. Every Worker here is set to a 100ms cap: 5–50x
 this repo's typical CPU usage (Cloudflare's docs cite 2–20ms as normal for most workloads,
 including ones parsing large payloads), so it shouldn't interfere with real work, but it means the
 account can never accidentally bill 30 seconds of CPU for one request. Raise it per-Worker if real
@@ -161,8 +160,8 @@ kill is uncatchable, so the cap silently killed every run (issue #29; see its `w
 **Account-level spend alerting is not code-configurable** — Cloudflare has no API/wrangler-managed
 hard spend cap, only a dashboard Notification on a usage threshold. One already exists on this
 account: a Cloudflare-auto-created "Billing Budget Alert" at **$10/month**, emailing SVBC staff.
-Worth raising once the account is actually on Workers Paid — at $10 it will fire almost
-immediately off the $5/month base subscription alone, before telling you anything about a real
+Check it now that the account is on Workers Paid — if the $5/month base subscription is billed,
+at $10 it will fire almost immediately off that alone, before telling you anything about a real
 spike. Manage it at **Manage account → Notifications** in the Cloudflare dashboard.
 
 ## Branded email template

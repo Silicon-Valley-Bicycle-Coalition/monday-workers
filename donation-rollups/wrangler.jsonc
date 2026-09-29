@@ -21,7 +21,8 @@
         // recompute costs ~16–26 (more for owners with hundreds of gifts or pending gift-term
         // stamps), so the default batch of 10 is what produced the 2026-09-03 "Too many
         // subrequests" failures. Two worst-case recomputes fit; three don't. Throughput is
-        // unchanged (max_concurrency is already 1). Raise this on Workers Paid (cap 1,000).
+        // unchanged (max_concurrency is already 1). Can be raised now that the account is on Workers
+        // Paid (cap 1,000) — not yet done.
         //
         // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
         // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
@@ -54,11 +55,10 @@
   // flood before it reaches D1. Verified webhook deliveries are exempt (issue #27): a bulk edit
   // makes Monday itself send well over 60/min from a few IPs (src/rateLimit.ts).
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2021", "simple": { "limit": 60, "period": 60 } }],
-  // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
-  // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
-  // that move rather than following a surprise bill. CPU time excludes the D1/Monday I/O wait
-  // this Worker's recompute batches are mostly made of, so this doesn't touch the
-  // max_batch_size=2 subrequest tuning above.
+  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
+  // guardrail against a runaway invocation or a surprise bill. See the root README. CPU time
+  // excludes the D1/Monday I/O wait this Worker's recompute batches are mostly made of, so this
+  // doesn't touch the max_batch_size=2 subrequest tuning above.
   "limits": { "cpu_ms": 100 },
   // Daily custodian trigger at 09:00 UTC (≈ 2am Pacific) — src/custodian/custodian.ts's
   // dutiesForDate decides which duties today owes.

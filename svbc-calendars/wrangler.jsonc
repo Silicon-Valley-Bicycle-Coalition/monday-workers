@@ -48,9 +48,8 @@
   // generous for a real visitor loading the widget/listing repeatedly, while blunting a bot
   // crawl or scraped-link flood against a Worker with no secret or auth of its own to gate abuse.
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2061", "simple": { "limit": 120, "period": 60 } }],
-  // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
-  // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
-  // that move rather than following a surprise bill.
+  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
+  // guardrail against a runaway invocation or a surprise bill. See the root README.
   "limits": { "cpu_ms": 100 },
   "observability": {
     "enabled": true

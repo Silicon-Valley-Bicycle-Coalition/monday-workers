@@ -42,7 +42,8 @@ These are landmines in the repo itself that break the cutover MR if left alone.
 
 ## Phase 1 — Account and staff prerequisites (no board ids needed)
 
-- [ ] **Move the Cloudflare account to Workers Paid.** Needed twice over: D1's 100k-writes/day
+- [x] **Move the Cloudflare account to Workers Paid.** Done — on Workers Paid through Project
+      Galileo (confirmed 2026-09-29). Was needed twice over: D1's 100k-writes/day
       Free cap already stalled `donation-rollups` in the sandbox (its README, "operational
       findings, 2026-09-17"), and donor-facing email to non-verified destinations requires Paid
       (sandbox design, Open items).

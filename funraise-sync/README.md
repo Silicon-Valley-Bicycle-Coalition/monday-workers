@@ -477,12 +477,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   means the tie query needs rewriting. Two more Funraise quirks live in
   `src/funraise/client.ts`: the list answers HTTP 500 to any `updtime` filter below about 2001,
   so a fresh cursor is floored there, and the page size is fixed at 10.
-* **One page per run on Workers Free.** A Free-plan invocation may make 50 external
+* **One page per run — sized for Workers Free.** A Free-plan invocation may make 50 external
   subrequests (and a cron gets 10 ms CPU); a page of ten rows costs up to ~45 Monday and
   Funraise calls (donor lookup, adopt lookup, write). `subscriptionsPoll.maxPagesPerRun` ships as
   `1`, so a busy hour with more than ten changed subscriptions catches up over the following
-  hours from the cursor — and the ~60-page bootstrap walk cannot run deployed at all. Raise the
-  value when the account moves to Workers Paid (10,000 subrequests, 15 min CPU per hourly cron).
+  hours from the cursor — and the ~60-page bootstrap walk cannot run deployed at all. The account
+  is on Workers Paid now (confirmed 2026-09-29; 10,000 subrequests, 15 min CPU per hourly cron), so the value
+  can be raised — not yet done.
 * **Adopt before create.** A subscription the ledger doesn't know is looked up on the board by
   bare id in the Funraise ID link column; found → updated and recorded, not found → created.
   **Claim first (#25):** the poll and the queue consumer's never-seen-subscription path can miss
