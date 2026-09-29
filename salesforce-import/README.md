@@ -55,6 +55,7 @@ npm run cli -- load                 # idempotent; re-run to retry failures only 
                                     #   --batched is opt-in, sandbox-only until its rehearsal passes)
 npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
 npm run cli -- validate --live      # also reads every board back from Monday (see below)
+npm run cli -- reconcile            # go/no-go gate: extract vs Monday, per fiscal year and per board
 npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views
 npm run cli -- configure            # idempotent; --only key1,key2 scopes to specific boards
 ```
@@ -391,6 +392,50 @@ admin can run it live during cutover weekend. Rollback threshold: 5% of the samp
 relational-integrity failure (broken donation→contact→household links, duplicate-merge corruption,
 failed-to-migrate records) — approved by SVBC's Deputy Director 2026-09-25, with a second or third
 cutover weekend available if the first attempt fails.
+
+### `reconcile` — the post-load go/no-go gate
+
+`validate` checks the load against its own ledger. `reconcile` checks it against the source:
+it recomputes what must be on Monday from the frozen extract (`data/extract/`) and compares
+that with what Monday itself reports. It only reads from Monday. Exit 0 means **GO**, 1 means
+**NO-GO**. The full report goes to `data/reconcile/report.md` (Markdown tables you can paste
+into the cutover log) and `data/reconcile/result.json`.
+
+| Check | Salesforce side (frozen extract) | Monday side (read back) |
+| --- | --- | --- |
+| `extract-matches-transform` | every Opportunity plus the Click & Pledge transactions that aren't already an Opportunity | the donation payloads in `data/transform/` (catches a transform that's stale against the extract) |
+| `donations-by-fiscal-year` | gift count and Amount sum per July–June fiscal year, by `CloseDate` / transaction date | the same, bucketed from each Donations item's `Date` and `Amount` |
+| `donations-by-salesforce-id` | each gift's Amount and fiscal year | gifts that landed once but with a different Amount or fiscal year |
+| `board-<key>` | payload count per board | items per board, active plus archived. Salesforce Ids missing, duplicated, or not from this extract |
+| `top-N-donors` | Lifetime Giving and Gift Count the importer derived from the extract (Posted Opportunities plus unique Click & Pledge, credited as the Donor link is) | the same columns on the owner item, which `donation-rollups` maintains |
+
+```sh
+npm run cli -- reconcile                    # top 25 donors, boards from data/load/boards.json
+npm run cli -- reconcile --top 50 --boards path/to/boards.json
+```
+
+How it works:
+
+* **Figures come from the extract.** Nothing is hard-coded, unlike the `reconciliation` block in
+  `config/*.json` that `validate` uses. Re-running `extract` and `transform` moves the expected
+  figures with them.
+* **Items are matched by Salesforce Id.** The Id comes from the `Salesforce ID` column, or from
+  the `SF ID: …` prefix of `Salesforce Debug` on boards loaded before that column existed. A
+  board with neither (e.g. activities) gets a count-only comparison.
+* **Items with no Salesforce Id are reported, not compared.** These are items added on Monday
+  after the load, for example by a live sync. Run the gate before the sync Workers go live and
+  this count should be 0.
+* **Archived items are read by id.** Monday's API can only list active items, so the ledger's
+  item ids are the index to archived gifts, which is most of the donation history. Only the ids
+  come from the ledger. Board, state, Salesforce Id, Amount and Date are all read from Monday,
+  and ids Monday reports as deleted or on another board count as missing. A duplicate that was
+  created and then archived without a ledger entry is the one case it can't see. `load` only
+  archives ledgered items, so that case shouldn't arise.
+* **Duplicates count twice.** A duplicated gift adds its Amount twice to its fiscal-year total,
+  so it fails the fiscal-year check as well as its board check.
+
+A sandbox run against the ~60k-item rehearsal load takes about 15 minutes, mostly spent reading
+~45k archived donations 100 at a time.
 
 ## Sources
 
