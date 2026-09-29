@@ -991,6 +991,42 @@ describe('HttpMondayClient.createChangeRequestItem', () => {
   });
 });
 
+describe('HttpMondayClient.findChangeRequestItem', () => {
+  function clientReturning(items: { id: string; name: string }[], onBody?: (body: { query: string; variables: Record<string, unknown> }) => void) {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      onBody?.(JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> });
+      return { ok: true, status: 200, json: async () => ({ data: { items_page_by_column_values: { items } } }) };
+    });
+    return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+  }
+
+  it('queries the board by exact item name, passed as a variable', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const client = clientReturning([{ id: '55', name: 'Address change — Jane "Q" Example (#42)' }], (body) => {
+      captured = body;
+    });
+
+    const id = await client.findChangeRequestItem({ boardId: 123, itemName: 'Address change — Jane "Q" Example (#42)' });
+
+    expect(id).toBe('55');
+    expect(captured!.query).toContain('items_page_by_column_values');
+    expect(captured!.query).not.toContain('Jane');
+    expect(captured!.variables).toEqual({
+      boardId: 123,
+      columns: [{ column_id: 'name', column_values: ['Address change — Jane "Q" Example (#42)'] }],
+    });
+  });
+
+  it('returns null when nothing matches', async () => {
+    expect(await clientReturning([]).findChangeRequestItem({ boardId: 1, itemName: 'x (#1)' })).toBeNull();
+  });
+
+  it('ignores a returned item whose name is not an exact match', async () => {
+    const client = clientReturning([{ id: '9', name: 'Address change — Jane Example (#421)' }]);
+    expect(await client.findChangeRequestItem({ boardId: 1, itemName: 'Address change — Jane Example (#42)' })).toBeNull();
+  });
+});
+
 const eventParams = {
   boardId: 555,
   columns: { attendeeLink: 'connect_att', eventLink: 'connect_ev', attended: 'check_att' },
