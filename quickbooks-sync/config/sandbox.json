@@ -2,9 +2,9 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "customers": null,
-      "invoices": null,
-      "products": null
+      "customers": 18433278706,
+      "invoices": 18433278710,
+      "products": 18433278721
     }
   },
   "quickbooks": {
@@ -13,19 +13,19 @@
   "quickbooksSync": {
     "columnMap": {
       "customer": {
-        "DisplayName": "text_column_id",
-        "PrimaryEmailAddr.Address": "email_column_id",
-        "PrimaryPhone.FreeFormNumber": "phone_column_id"
+        "DisplayName": "text_mm7nwjfb",
+        "PrimaryEmailAddr.Address": "email_mm7nazg7",
+        "PrimaryPhone.FreeFormNumber": "phone_mm7nyspq"
       },
       "invoice": {
-        "DocNumber": "text_column_id",
-        "TotalAmt": "numeric_column_id",
-        "Balance": "numeric_column_id",
-        "DueDate": "date_column_id"
+        "DocNumber": "text_mm7nfed6",
+        "TotalAmt": "numeric_mm7n14d0",
+        "Balance": "numeric_mm7n7yt1",
+        "DueDate": "date_mm7nhyw6"
       },
       "product": {
-        "Name": "text_column_id",
-        "UnitPrice": "numeric_column_id"
+        "Name": "text_mm7ntgtz",
+        "UnitPrice": "numeric_mm7nrvc1"
       }
     },
     "itemNameField": {
@@ -34,12 +34,12 @@
       "product": "Name"
     },
     "linkColumn": {
-      "invoice": "connect_boards_column_id"
+      "invoice": "board_relation_mm7n2sa5"
     },
     "customerCreateFieldMap": {
       "name": "DisplayName",
-      "email_column_id": "PrimaryEmailAddr.Address"
+      "email_mm7nazg7": "PrimaryEmailAddr.Address"
     },
-    "customerQbIdColumn": null
+    "customerQbIdColumn": "text_mm7ngg03"
   }
 }

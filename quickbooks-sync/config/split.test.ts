@@ -4,6 +4,7 @@ import sandbox from './sandbox.json';
 import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 import { validateConfig } from '../src/config';
+import type { QuickbooksSyncConfig } from '../src/types';
 import { queueBaseName } from '../src/environment';
 import { isDeadLetterBatch } from '../src/index';
 
@@ -47,7 +48,7 @@ describe('config split: the QuickBooks sink', () => {
   });
 
   it('no real sandbox column id appears in production (the generic stand-ins may be shared until boards exist)', () => {
-    const columnIds = (sync: typeof sandbox.quickbooksSync): string[] => [
+    const columnIds = (sync: QuickbooksSyncConfig['quickbooksSync']): string[] => [
       ...Object.values(sync.columnMap).flatMap((fields) => Object.values(fields)),
       ...Object.values(sync.linkColumn),
       ...Object.keys(sync.customerCreateFieldMap),
