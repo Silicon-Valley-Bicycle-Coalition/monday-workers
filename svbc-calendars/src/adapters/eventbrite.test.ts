@@ -60,7 +60,7 @@ describe('fetchEventbriteEvents', () => {
         return new Response(JSON.stringify(PAGE_2), { status: 200 });
       }
       expect(String(url)).toBe(
-        'https://www.eventbriteapi.com/v3/organizers/org-123/events/?expand=venue&status=live&order_by=start_asc&time_filter=current_future'
+        'https://www.eventbriteapi.com/v3/organizers/org-123/events/?expand=venue&status=live&order_by=start_asc'
       );
       return new Response(JSON.stringify(PAGE_1), { status: 200 });
     });
@@ -121,10 +121,10 @@ describe('fetchEventbriteEvents', () => {
   });
 
   it("includes Eventbrite's error code and description in the message on a non-OK response", async () => {
-    const body = { status_code: 400, error: 'ARGUMENTS_ERROR', error_description: 'There are errors with your arguments: time_filter - INVALID' };
+    const body = { status_code: 400, error: 'ARGUMENTS_ERROR', error_description: 'There are errors with your arguments: time_filter - Unknown parameter' };
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 400, statusText: 'Bad Request' })));
     await expect(fetchEventbriteEvents(SOURCE, 'test-token')).rejects.toThrow(
-      'eventbrite: organizer org-123 fetch failed: 400 Bad Request — ARGUMENTS_ERROR: There are errors with your arguments: time_filter - INVALID'
+      'eventbrite: organizer org-123 fetch failed: 400 Bad Request — ARGUMENTS_ERROR: There are errors with your arguments: time_filter - Unknown parameter'
     );
   });
 
