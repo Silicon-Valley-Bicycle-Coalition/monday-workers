@@ -204,6 +204,10 @@ export class FakeMondayClient implements MondayClient {
     return [];
   }
 
+  async findChangeRequestItem(_params: { boardId: number; itemName: string }): Promise<string | null> {
+    return null;
+  }
+
   async createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;

@@ -46,10 +46,26 @@ async function processOne(requestId: number, deps: ProcessChangeBatchDeps): Prom
   }
 
   const fieldLabel = FIELD_LABELS[row.field];
+  // The D1 id in the name makes it unique per request (AUTOINCREMENT never reuses an id), so the
+  // lookup below can tell "my earlier create landed" from "another request for the same donor".
+  const itemName = `${fieldLabel} change — ${row.donorName} (#${row.id})`;
+
+  // A create that failed ambiguously (5xx, timeout — AmbiguousWriteError) may have committed on
+  // Monday's side while this row stayed unwritten; the retry must adopt that item, not create a
+  // second one for staff to deduplicate by hand.
+  const existingItemId = await deps.monday.findChangeRequestItem({ boardId, itemName });
+  if (existingItemId !== null) {
+    console.log(
+      `member-portal consumer: change request ${row.id} already on Monday as item ${existingItemId}; adopting it`
+    );
+    await deps.store.markWritten(row.id, new Date().toISOString());
+    return;
+  }
+
   await deps.monday.createChangeRequestItem({
     boardId,
     columns: deps.config.changeRequests.columns,
-    itemName: `${fieldLabel} change — ${row.donorName}`,
+    itemName,
     donorItemId: row.donorItemId,
     fieldLabel,
     oldValue: row.oldValue,
