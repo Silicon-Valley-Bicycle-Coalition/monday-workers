@@ -21,10 +21,11 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
       annualSummaryBoardId: null, annualSummaryColumns: null, ...over },
     affiliations: null,
     donationRollups: {
-      donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy', actingForLink: null } }],
+      donationBoards: [{ boardId: 100, columns: { donorLink: 'd', amount: 'a', date: 'dt', status: 's', fiscalYear: 'fy', actingForLink: null, classification: null } }],
       receivedStatusLabel: 'Received',
       ownerColumnsByBoard: { 'b1': OWNER_COLS },
       membership: null,
+      donorLevel: null,
     },
   };
 }

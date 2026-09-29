@@ -189,3 +189,49 @@ describe('validateConfig — affiliations block', () => {
     expect(() => validateConfig(raw)).toThrow(/actingForLink.*required when affiliations is set/);
   });
 });
+
+describe('classification and donor level config', () => {
+  const classification = { fundingStream: 'fs', giftSize: 'gs', fiscalQuarter: 'fq', giftFiscalYear: 'gfy' };
+  const donorLevelCfg = {
+    leadershipLifetimeCents: 500000, majorLifetimeCents: 50000, majorLargestCents: 20000,
+    labels: { leadership: 'Leadership', major: 'Major', donor: 'Donor' },
+  };
+  const withBoard = (columns: Record<string, unknown>) =>
+    ({ ...base, donationRollups: { ...base.donationRollups, donationBoards: [{ ...donationBoard, columns: { ...donationBoard.columns, ...columns } }] } });
+
+  it('defaults classification to null and donorLevel to null when omitted', () => {
+    const cfg = validateConfig(base);
+    expect(cfg.donationRollups.donationBoards[0]!.columns.classification).toBeNull();
+    expect(cfg.donationRollups.donorLevel).toBeNull();
+  });
+
+  it('accepts a full classification block', () => {
+    const cfg = validateConfig(withBoard({ classification }));
+    expect(cfg.donationRollups.donationBoards[0]!.columns.classification).toEqual(classification);
+  });
+
+  it('rejects a classification block missing a column', () => {
+    const { giftSize: _omit, ...partial } = classification;
+    expect(() => validateConfig(withBoard({ classification: partial })))
+      .toThrow(/classification\.giftSize must be a Monday column id string/);
+  });
+
+  it('accepts donorLevel thresholds and an owner donorLevel column', () => {
+    const raw = { ...base, donationRollups: { ...base.donationRollups, donorLevel: donorLevelCfg,
+      ownerColumnsByBoard: { ...base.donationRollups.ownerColumnsByBoard,
+        '2': { ...base.donationRollups.ownerColumnsByBoard['2'], donorLevel: 'dlv' } } } };
+    const cfg = validateConfig(raw);
+    expect(cfg.donationRollups.donorLevel).toEqual(donorLevelCfg);
+    expect(cfg.donationRollups.ownerColumnsByBoard['2']!.donorLevel).toBe('dlv');
+  });
+
+  it('rejects non-integer or negative thresholds', () => {
+    const raw = { ...base, donationRollups: { ...base.donationRollups, donorLevel: { ...donorLevelCfg, majorLargestCents: 199.5 } } };
+    expect(() => validateConfig(raw)).toThrow(/donorLevel\.majorLargestCents must be a non-negative integer/);
+  });
+
+  it('rejects leadership below major', () => {
+    const raw = { ...base, donationRollups: { ...base.donationRollups, donorLevel: { ...donorLevelCfg, leadershipLifetimeCents: 100 } } };
+    expect(() => validateConfig(raw)).toThrow(/leadershipLifetimeCents must be >= majorLifetimeCents/);
+  });
+});

@@ -26,12 +26,13 @@ const config: DonationRollupsConfig = {
   affiliations: null,
   donationRollups: {
     donationBoards: [
-      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1', actingForLink: null } },
-      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null, actingForLink: null } },
+      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1', actingForLink: null, classification: null } },
+      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null, actingForLink: null, classification: null } },
     ],
     receivedStatusLabel: 'Received',
     ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns },
     membership: null,
+    donorLevel: null,
   },
 };
 
@@ -43,7 +44,7 @@ const membershipConfig: MembershipConfig = {
 };
 const memberOwnerColumns: OwnerColumns = { ...ownerColumns, membership: { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' } };
 const membershipBoard = { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1',
-  fiscalYear: 'fy_1', giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1', actingForLink: null } };
+  fiscalYear: 'fy_1', giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1', actingForLink: null, classification: null } };
 const membershipEnabled: DonationRollupsConfig = {
   ...config,
   donationRollups: {

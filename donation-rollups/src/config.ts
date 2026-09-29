@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, AffiliationsConfig, FiscalYearConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -6,6 +6,7 @@ const REQUIRED_OWNER_COLUMNS = [
   'thisYearAmount', 'thisYearCount', 'lastYearAmount', 'lastYearCount',
   'largestGift', 'smallestGift', 'averageGift', 'lastGiftDate', 'lastGiftAmount',
 ] as const;
+const CLASSIFICATION_COLUMNS = ['fundingStream', 'giftSize', 'fiscalQuarter', 'giftFiscalYear'] as const;
 const OPTIONAL_TERM_COLUMNS = ['giftType', 'termStart', 'termEnd', 'membershipType'] as const;
 const MEMBERSHIP_COLUMNS = ['status', 'tier', 'since', 'until'] as const;
 
@@ -39,6 +40,20 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     && (typeof columns.actingForLink !== 'string' || columns.actingForLink === '')) {
     throw new Error(`config: donationRollups.donationBoards[${index}].columns.actingForLink must be a column id string, null, or omitted`);
   }
+  let classification: ClassificationColumns | null = null;
+  if (columns.classification !== undefined && columns.classification !== null) {
+    if (typeof columns.classification !== 'object') {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification must be an object, null, or omitted`);
+    }
+    const cl = columns.classification as Record<string, unknown>;
+    for (const key of CLASSIFICATION_COLUMNS) {
+      if (typeof cl[key] !== 'string' || cl[key] === '') {
+        throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.${key} must be a Monday column id string`);
+      }
+    }
+    classification = { fundingStream: cl.fundingStream as string, giftSize: cl.giftSize as string,
+      fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string };
+  }
   return {
     boardId: b.boardId,
     columns: {
@@ -50,6 +65,7 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       termEnd: (columns.termEnd ?? null) as string | null,
       membershipType: (columns.membershipType ?? null) as string | null,
       actingForLink: (columns.actingForLink ?? null) as string | null,
+      classification,
     },
   };
 }
@@ -80,8 +96,38 @@ function validateOwnerColumns(raw: unknown, boardId: string): OwnerColumns {
   if (columns.organizationalGiving !== undefined && (typeof columns.organizationalGiving !== 'string' || columns.organizationalGiving === '')) {
     throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].organizationalGiving must be a Monday column id string or omitted`);
   }
+  if (columns.donorLevel !== undefined && (typeof columns.donorLevel !== 'string' || columns.donorLevel === '')) {
+    throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].donorLevel must be a Monday column id string or omitted`);
+  }
   const { membership: _raw, ...rest } = columns;
   return { ...(rest as unknown as OwnerColumns), ...(membership ? { membership } : {}) };
+}
+
+function validateDonorLevel(raw: unknown): DonorLevelConfig | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object') throw new Error('config: "donationRollups.donorLevel" must be an object or null');
+  const d = raw as Record<string, unknown>;
+  for (const key of ['leadershipLifetimeCents', 'majorLifetimeCents', 'majorLargestCents'] as const) {
+    const v = d[key];
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+      throw new Error(`config: "donationRollups.donorLevel.${key} must be a non-negative integer"`);
+    }
+  }
+  if ((d.leadershipLifetimeCents as number) < (d.majorLifetimeCents as number)) {
+    throw new Error('config: "donationRollups.donorLevel.leadershipLifetimeCents must be >= majorLifetimeCents"');
+  }
+  const labels = d.labels as Record<string, unknown> | undefined;
+  for (const key of ['leadership', 'major', 'donor'] as const) {
+    if (typeof labels?.[key] !== 'string' || labels[key] === '') {
+      throw new Error(`config: "donationRollups.donorLevel.labels.${key}" must be a non-empty label`);
+    }
+  }
+  return {
+    leadershipLifetimeCents: d.leadershipLifetimeCents as number,
+    majorLifetimeCents: d.majorLifetimeCents as number,
+    majorLargestCents: d.majorLargestCents as number,
+    labels: { leadership: labels!.leadership as string, major: labels!.major as string, donor: labels!.donor as string },
+  };
 }
 
 function validateMembership(raw: unknown): MembershipConfig | null {
@@ -168,6 +214,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   }
 
   const membership = validateMembership(dr.membership);
+  const donorLevel = validateDonorLevel(dr.donorLevel);
   if (membership !== null) {
     donationBoards.forEach((b, i) => {
       for (const key of OPTIONAL_TERM_COLUMNS) {
@@ -187,7 +234,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
-    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership },
+    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel },
   };
 }
 

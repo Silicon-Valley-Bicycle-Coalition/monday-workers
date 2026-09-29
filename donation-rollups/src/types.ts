@@ -19,8 +19,13 @@ export interface DonationBoardConfig {
     termEnd?: string | null;
     membershipType?: string | null;
     actingForLink: string | null;
+    // The four chartable labels the custodian's classify duty writes (spec 2026-09-29 §10.1).
+    // null = classification off for this board. The webhook ignores changes to these columns.
+    classification: ClassificationColumns | null;
   };
 }
+
+export interface ClassificationColumns { fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string }
 
 export interface CustodianConfig {
   // How many fiscal years of donations stay active (unarchived) on the Donations board —
@@ -73,6 +78,7 @@ export interface DonationRollupsConfig {
     // owner to needs an entry here.
     ownerColumnsByBoard: Record<string, OwnerColumns>;
     membership: MembershipConfig | null;
+    donorLevel: DonorLevelConfig | null;
   };
 }
 
@@ -93,6 +99,7 @@ export interface OwnerColumns {
   lastGiftAmount: string;
   membership?: OwnerMembershipColumns;
   organizationalGiving?: string;   // People boards only — Organizations have no driven-giving concept.
+  donorLevel?: string;             // status column; written only when donationRollups.donorLevel is set.
 }
 
 // The four membership columns on a People-type owner board. Absent on Organizations: an
