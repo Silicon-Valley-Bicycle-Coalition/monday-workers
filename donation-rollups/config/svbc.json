@@ -46,6 +46,12 @@
         }
       }
     },
+    "donorLevel": {
+      "leadershipLifetimeCents": 500000,
+      "majorLifetimeCents": 50000,
+      "majorLargestCents": 20000,
+      "labels": { "leadership": "Leadership", "major": "Major", "donor": "Donor" }
+    },
     "membership": {
       "fromISO": "2026-10-01",
       "eligibleGiftTypes": ["Donation"],
