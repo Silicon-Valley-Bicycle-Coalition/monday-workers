@@ -89,7 +89,7 @@ every message in a batch).
 failing D1 queries on Workers Free accounts that exceed 100,000 rows written per day on
 2026-09-01 (changelog "D1 enforces free tier daily query limits"; error text "Your account has
 exceeded D1's free tier daily row write limit… wait until tomorrow (midnight UTC)"). This
-account is on Workers Free. D1 analytics for this database:
+account was on Workers Free at the time (it's on Workers Paid now, confirmed 2026-09-29). D1 analytics for this database:
 
 | Day | Rows written | Write queries | Consumer invocations |
 | --- | --- | --- | --- |
@@ -145,8 +145,8 @@ backfill) would silently lose recomputes the same way.
 
 **Proposed fix (not yet applied):**
 
-1. **Workers Paid ($5/mo) is the decisive fix** and is already on the infrastructure wishlist for
-   `funraise-sync`/`quickbooks-sync`: D1 goes to 50M rows written/day, CPU to 30 s, subrequests
+1. ~~**Workers Paid is the decisive fix.**~~ **Done — the account is on Workers Paid (Project
+   Galileo, confirmed 2026-09-29):** D1 goes to 50M rows written/day, CPU to 30 s, subrequests
    to 1,000/invocation. Everything below is hardening that is worth doing regardless.
 2. ~~**Stop rewriting unchanged gifts.**~~ **Done (branch `fix/rollups-diff-only-refresh-facts`):**
    `refreshFacts` now reads the stored facts for the gifts it was handed (one `IN (…)` query per
@@ -489,12 +489,12 @@ the board is its staff-facing projection, wired via `custodian.annualSummaryBoar
 `annualSummaryColumns` in config.
 
 Duties that touch many items **slice themselves** and report `remaining` + a cursor (re-run to
-continue): the Workers Free plan caps subrequests at 50/invocation, Monday caps `items(ids:)`
+continue): the slices were sized for the Workers Free plan's 50 subrequests/invocation, Monday caps `items(ids:)`
 at 100 ids — and note `items(ids:)` **silently returns 25 items unless you pass `limit: 100`**
 (bit for real 2026-08-31: 75% of owners read back "missing"; the same default would silently
 under-roll any donor with >25 gifts on one board — every batched read in `monday/client.ts`
-now passes an explicit limit). When Workers Paid lands, the per-run slice constants in
-`custodian.ts` can grow.
+now passes an explicit limit). The account is on Workers Paid now (confirmed 2026-09-29), so the per-run slice
+constants in `custodian.ts` can grow — not yet done.
 
 ## Affiliation model (Plan 2)
 
@@ -571,8 +571,9 @@ owner slice — they only spend Monday subrequests in an invocation whose owner 
 empty, to stay under the Workers Free plan's 50-subrequest cap. Each run's `detail` report
 carries `affiliationRemaining` and `personRemaining` to show progress; how many nights a full
 cycle takes depends on the board sizes and is visible in `custodian_runs`, not a fixed number here.
-When Workers Paid lands, the per-run slice constants (`RECONCILE_AFFILIATIONS_PER_RUN` and
-`RECONCILE_PERSONS_PER_RUN` in `src/custodian/custodian.ts`) can grow to complete cycles faster.
+Now that the account is on Workers Paid (confirmed 2026-09-29), the per-run slice constants
+(`RECONCILE_AFFILIATIONS_PER_RUN` and `RECONCILE_PERSONS_PER_RUN` in `src/custodian/custodian.ts`)
+can grow to complete cycles faster — not yet done.
 
 **Subrequest budget in the consumer.** `getAffiliationSummary` costs two Monday subrequests per
 affiliation touched. A single gift touches at most two affiliations (its own, plus one it moved
@@ -743,7 +744,8 @@ dashboard refuses two connections on one root directory, fall back to the
   the SAME token/app — another client seeing an empty list doesn't mean none exist.
 * **2,865 `pending_recomputes` rows stuck in `queued` (09-03 and 09-09 floods)** — root cause and
   the five-part fix are in "Status and verification — operational findings, 2026-09-17" above.
-  Repair (re-enqueue in slices) only after the write-amplification fixes or Workers Paid.
+  Repair (re-enqueue in slices) only after the write-amplification fixes or Workers Paid — the
+  account is on Workers Paid now (confirmed 2026-09-29), so the repair is unblocked.
 * **DLQ has no consumer** — dead messages expire unseen after 4 days; see the same section.
 * **Dedicated least-privilege API token — scheduled for production cutover, not before** (see
   "APIs & auth" above). Scope, once minted: read-only on the Donations board, read/write on

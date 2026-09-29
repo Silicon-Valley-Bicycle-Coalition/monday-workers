@@ -13,9 +13,8 @@
   // flood against a route that does email-sending work before the shared-secret check ever
   // rejects a bogus request.
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2011", "simple": { "limit": 60, "period": 60 } }],
-  // Free plan already hard-caps CPU at 10ms/request; this only starts to matter once the account
-  // moves to Workers Paid (default 30s/request otherwise) — set now so the guardrail predates
-  // that move rather than following a surprise bill.
+  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
+  // guardrail against a runaway invocation or a surprise bill. See the root README.
   "limits": { "cpu_ms": 100 },
   "observability": {
     "enabled": true
