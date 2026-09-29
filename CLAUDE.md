@@ -183,7 +183,10 @@ through constructor options in their own `client.ts`, never by editing the copy.
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
 donation-rollups, funraise-sync, geo-filter, mailchimp-sync, member-portal and quickbooks-sync;
-salesforce-import still carries its own client. donation-rollups and
+salesforce-import still carries its own client. A Worker's `.mjs` scripts import that Worker's
+copy directly (`import { MondayGraphQL } from '../src/monday/graphql.ts'`) through Node's
+built-in type stripping (Node 22.18+ / 23.6+), so the file must stay strip-only-compatible — no
+constructor parameter properties, enums or namespaces. donation-rollups and
 member-portal run it with `maxAttempts: 1` (no in-process retry): every retried fetch counts
 against Workers Free's 50-subrequest cap, and member-portal's calls mostly render a donor's
 page, where a multi-second backoff is worse than a fast error. Revisit on Workers Paid. Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,

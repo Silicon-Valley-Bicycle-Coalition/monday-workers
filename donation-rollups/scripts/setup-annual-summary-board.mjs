@@ -8,6 +8,8 @@
 //   MONDAY_API_TOKEN=... node scripts/setup-annual-summary-board.mjs \
 //     --workspace 17141226 --name "Annual Giving Summary (sandbox v2)" [--board <existingId>]
 
+import { MondayGraphQL } from '../src/monday/graphql.ts';
+
 const token = process.env.MONDAY_API_TOKEN;
 if (!token) {
   console.error('setup-annual-summary-board: MONDAY_API_TOKEN is required');
@@ -35,16 +37,15 @@ const FIELDS = {
   restatedAt: { title: 'Restated', type: 'date' },
 };
 
+// The Worker's own copy of the canonical Monday transport (#35): retries rate limits and Monday
+// blips, times out hung requests, and never blindly re-runs a create. Imported as TypeScript —
+// needs a Node with built-in type stripping (22.18+ / 23.6+).
+const monday = new MondayGraphQL('https://api.monday.com/v2', token, { apiVersion: '2026-01' });
+
+// Mutations here create boards, columns and webhooks, so a failure that may have committed throws
+// AmbiguousWriteError instead of being retried into a duplicate; queries get the full retry.
 async function graphql(query, variables) {
-  const res = await fetch('https://api.monday.com/v2', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': '2026-01' },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) throw new Error(`monday API: HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
-  return json.data;
+  return monday.request(query, variables, { idempotent: !/^\s*mutation\b/.test(query) });
 }
 
 if (!boardId) {
