@@ -129,7 +129,7 @@ describe('processDeadLetters', () => {
 
     await processDeadLetters([msg], deps);
 
-    expect(msg.retry).toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(msg.ack).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
