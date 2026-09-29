@@ -74,7 +74,8 @@ export interface DonationRollupsMondayClient {
   // by the one-time bootstrap that populates donation_links, never by normal webhook
   // processing.
   listDonationOwnerLinks(boardId: number, donorLinkColumnId: string): Promise<{ itemId: string; ownerItemId: string | null }[]>;
-  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>,
+    opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
   // Posts an update on an item — the consumer's alert path for oversized gift-ledger
   // projections (same Monday alert item the custodian duties use).
   createUpdate(itemId: number, body: string): Promise<void>;
@@ -341,14 +342,37 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return out;
   }
 
-  async changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void> {
+  async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
+    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }> {
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text } } }
+          }
+        }`,
+        { boardId: [boardId], columnIds, cursor },
+      );
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) return { items: [], cursor: null };
+    return {
+      cursor: page.cursor,
+      items: page.items.map((item) => {
+        const text = new Map<string, string | null>(columnIds.map((id) => [id, null]));
+        for (const cv of item.column_values) text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
+        return { id: item.id, text };
+      }),
+    };
+  }
+
+  async changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>,
+    opts: { createLabelsIfMissing?: boolean } = {}): Promise<void> {
     await this.graphql<{ change_multiple_column_values: { id: string } }>(
-      `mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
-        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues) {
-          id
-        }
+      `mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!, $create: Boolean) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues,
+          create_labels_if_missing: $create) { id }
       }`,
-      { boardId, itemId, columnValues: JSON.stringify(columnValues) },
+      { boardId, itemId, columnValues: JSON.stringify(columnValues), create: opts.createLabelsIfMissing ?? false },
     );
   }
 
