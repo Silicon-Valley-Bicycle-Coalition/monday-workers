@@ -36,7 +36,7 @@ describe('retryDelaySeconds', () => {
     expect(retryDelaySeconds(2, new Error('boom'), NOW)).toBe(240);
     expect(retryDelaySeconds(1, new MailchimpTransientError('503'), NOW)).toBe(60);
     expect(retryDelaySeconds(1, new MailchimpRateLimitError('429', undefined), NOW)).toBe(60);
-    expect(retryDelaySeconds(3, new MondayApiError('x', 500, undefined, undefined), NOW)).toBe(960);
+    expect(retryDelaySeconds(3, new MondayApiError('x', { httpStatus: 500 }), NOW)).toBe(960);
   });
 
   it('waits at least a Mailchimp Retry-After hint', () => {
@@ -46,21 +46,21 @@ describe('retryDelaySeconds', () => {
   });
 
   it('waits at least Monday\'s retry_in_seconds, rounding fractional hints up', () => {
-    expect(retryDelaySeconds(1, new MondayApiError('x', 429, 'COMPLEXITY_BUDGET_EXHAUSTED', 90.2), NOW)).toBe(91);
-    expect(retryDelaySeconds(3, new MondayApiError('x', 429, 'RATE_LIMIT_EXCEEDED', 30), NOW)).toBe(960);
+    expect(retryDelaySeconds(1, new MondayApiError('x', { httpStatus: 429, code: 'COMPLEXITY_BUDGET_EXHAUSTED', retryAfterSeconds: 90.2 }), NOW)).toBe(91);
+    expect(retryDelaySeconds(3, new MondayApiError('x', { httpStatus: 429, code: 'RATE_LIMIT_EXCEEDED', retryAfterSeconds: 30 }), NOW)).toBe(960);
   });
 
   it('delays a hintless DAILY_LIMIT_EXCEEDED until midnight UTC', () => {
-    expect(retryDelaySeconds(1, new MondayApiError('x', 429, 'DAILY_LIMIT_EXCEEDED', undefined), NOW)).toBe(6 * 3600);
+    expect(retryDelaySeconds(1, new MondayApiError('x', { httpStatus: 429, code: 'DAILY_LIMIT_EXCEEDED' }), NOW)).toBe(6 * 3600);
   });
 
   it('prefers an explicit hint over the midnight default for DAILY_LIMIT_EXCEEDED', () => {
-    expect(retryDelaySeconds(1, new MondayApiError('x', 429, 'DAILY_LIMIT_EXCEEDED', 600), NOW)).toBe(600);
+    expect(retryDelaySeconds(1, new MondayApiError('x', { httpStatus: 429, code: 'DAILY_LIMIT_EXCEEDED', retryAfterSeconds: 600 }), NOW)).toBe(600);
   });
 
   it('caps any hint at 12 hours', () => {
     expect(retryDelaySeconds(1, new MailchimpRateLimitError('429', 999_999), NOW)).toBe(MAX_RETRY_DELAY_SECONDS);
     const justAfterMidnight = new Date('2026-09-25T00:00:01Z');
-    expect(retryDelaySeconds(1, new MondayApiError('x', 429, 'DAILY_LIMIT_EXCEEDED', undefined), justAfterMidnight)).toBe(MAX_RETRY_DELAY_SECONDS);
+    expect(retryDelaySeconds(1, new MondayApiError('x', { httpStatus: 429, code: 'DAILY_LIMIT_EXCEEDED' }), justAfterMidnight)).toBe(MAX_RETRY_DELAY_SECONDS);
   });
 });

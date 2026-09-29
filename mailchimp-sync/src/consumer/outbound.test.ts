@@ -278,7 +278,7 @@ describe('processOutboundBatch', () => {
       const message = fakeMessage('6', 1);
       const d = depsFailingWith(new Error('unused'));
       (d.mondayClient.getDonorById as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new MondayApiError('monday: HTTP 429', 429, 'RATE_LIMIT_EXCEEDED', 75),
+        new MondayApiError('monday: HTTP 429', { httpStatus: 429, code: 'RATE_LIMIT_EXCEEDED', retryAfterSeconds: 75 }),
       );
       await processOutboundBatch([message], d);
       expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 75 });
