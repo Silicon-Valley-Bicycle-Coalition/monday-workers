@@ -247,8 +247,11 @@ export class MondayGraphQL {
         // Monday's 429s (and some 4xx/5xx) still carry a GraphQL error body with the code and
         // retry_in_seconds, so read it for the caller.
         const body = await readErrorBody(response);
-        // `||`, not `??`: an empty errors array joins to '', which should still fall back.
-        const messages = body.json?.errors?.map((e) => e.message).join('; ') || body.json?.error_message || body.text;
+        // `||`, not `??`: an empty errors array joins to '', which should still fall back. The raw
+        // text only when the body wasn't JSON — a parsed body with no message (`{}`) adds nothing.
+        const messages = body.json
+          ? body.json.errors?.map((e) => e.message).join('; ') || body.json.error_message
+          : body.text;
         const detail = `HTTP ${response.status}${messages ? `: ${messages}` : ''}`;
         const details = errorDetails(response.status, body.json, header(response, 'Retry-After'));
         if (response.status === 429 && !DAILY_LIMIT_CODE.test(details.code ?? '')) {
@@ -296,6 +299,8 @@ export class MondayGraphQL {
       }
       return json.data;
     }
-    throw new MondayApiError(`monday API: exhausted ${this.maxAttempts} attempts — last error: ${lastError}`, lastDetails);
+    // With a single attempt (a caller that leaves retries to its queue) there was nothing to exhaust.
+    const prefix = this.maxAttempts === 1 ? 'monday API: ' : `monday API: exhausted ${this.maxAttempts} attempts — last error: `;
+    throw new MondayApiError(`${prefix}${lastError}`, lastDetails);
   }
 }
