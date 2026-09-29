@@ -180,6 +180,10 @@ export interface RequestOptions {
 }
 
 export class MondayGraphQL {
+  // Plain fields, not constructor parameter properties: this file must stay loadable by Node's
+  // strip-only TypeScript support, which a Worker's .mjs scripts rely on to import it directly.
+  private readonly apiUrl: string;
+  private readonly apiToken: string;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxAttempts: number;
   private readonly requestTimeoutMs: number;
@@ -187,11 +191,9 @@ export class MondayGraphQL {
   private readonly apiVersion: string;
   private readonly fetchFn: typeof fetch;
 
-  constructor(
-    private apiUrl: string,
-    private apiToken: string,
-    options: MondayGraphQLOptions = {},
-  ) {
+  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+    this.apiUrl = apiUrl;
+    this.apiToken = apiToken;
     this.sleep = options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.maxAttempts = options.maxAttempts ?? 5;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
