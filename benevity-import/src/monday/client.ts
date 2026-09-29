@@ -1,3 +1,5 @@
+import { MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+
 export interface MondayItem {
   id: string;
   name: string;
@@ -25,51 +27,24 @@ export interface MondayClient {
   fetchAsset(assetId: string): Promise<MondayAsset>;
 }
 
+// The queries below were written and verified against 2026-01; the canonical transport's
+// default is newer, so pin this Worker's version explicitly until they're re-checked.
 const MONDAY_API_VERSION = '2026-01';
 
-interface GraphQLResponse<T> {
-  data?: T;
-  errors?: { message: string }[];
-  // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
-  error_message?: string;
-  status_code?: number;
-}
+// Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
+// per-minute complexity budget; anything longer fails the message, and the consumer's own
+// backoff (1, 4, 16 minutes — consumer/processBatch.ts) takes over rather than holding a batch.
+const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000, apiVersion: MONDAY_API_VERSION };
 
 export class HttpMondayClient implements MondayClient {
-  constructor(
-    private apiUrl: string,
-    private apiToken: string
-  ) {}
+  private readonly transport: MondayGraphQL;
 
-  private async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-    const response = await fetch(this.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.apiToken,
-        'API-Version': MONDAY_API_VERSION,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (!response.ok) {
-      throw new Error(`monday API: HTTP ${response.status}`);
-    }
-    const json = (await response.json()) as GraphQLResponse<T>;
-    if (json.errors && json.errors.length > 0) {
-      throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
-    }
-    if (!json.data) {
-      const detail =
-        typeof json.error_message === 'string'
-          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
-          : JSON.stringify(json);
-      throw new Error(`monday API: response contained no data — ${detail}`);
-    }
-    return json.data;
+  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+    this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options });
   }
 
   async findItemsByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem[]> {
-    const data = await this.graphql<{ items_page_by_column_values: { items: MondayItem[] } }>(
+    const data = await this.transport.request<{ items_page_by_column_values: { items: MondayItem[] } }>(
       `query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
         items_page_by_column_values(board_id: $boardId, columns: $columns) {
           items { id name }
@@ -87,7 +62,7 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getLinkedItemIds(itemId: string, columnId: string): Promise<string[]> {
-    const data = await this.graphql<{
+    const data = await this.transport.request<{
       items: { column_values: { linked_item_ids?: string[] }[] }[];
     }>(
       `query ($itemId: ID!, $columnId: [String!]) {
@@ -110,19 +85,23 @@ export class HttpMondayClient implements MondayClient {
     columnValues: Record<string, unknown>,
     groupId?: string
   ): Promise<MondayItem> {
-    const data = await this.graphql<{ create_item: MondayItem }>(
+    // Not idempotent: a create that may have committed (5xx, timeout) throws AmbiguousWriteError
+    // instead of retrying in-process; the consumer's retry re-runs the lookup-then-create path
+    // (gifts by Benevity Transaction ID, worklist items by key), which adopts it if it landed.
+    const data = await this.transport.request<{ create_item: MondayItem }>(
       `mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!, $groupId: String) {
         create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues, group_id: $groupId) {
           id name
         }
       }`,
-      { boardId, itemName, columnValues: JSON.stringify(columnValues), groupId: groupId ?? null }
+      { boardId, itemName, columnValues: JSON.stringify(columnValues), groupId: groupId ?? null },
+      { idempotent: false }
     );
     return data.create_item;
   }
 
   async changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void> {
-    await this.graphql<{ change_multiple_column_values: MondayItem }>(
+    await this.transport.request<{ change_multiple_column_values: MondayItem }>(
       `mutation ($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
         change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues) {
           id
@@ -133,7 +112,7 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async archiveItem(itemId: string): Promise<void> {
-    await this.graphql<{ archive_item: { id: string } }>(
+    await this.transport.request<{ archive_item: { id: string } }>(
       `mutation ($itemId: ID!) {
         archive_item(item_id: $itemId) { id }
       }`,
@@ -142,7 +121,7 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async fetchAsset(assetId: string): Promise<MondayAsset> {
-    const data = await this.graphql<{ assets: { id: string; name: string; public_url: string }[] }>(
+    const data = await this.transport.request<{ assets: { id: string; name: string; public_url: string }[] }>(
       `query ($assetIds: [ID!]!) {
         assets(ids: $assetIds) { id name public_url }
       }`,
