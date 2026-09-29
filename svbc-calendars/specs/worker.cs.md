@@ -10,7 +10,7 @@ Written in TypeScript using `@cloudflare/workers-types`. Wrangler handles transp
 
 Returns upcoming events as JSON.
 
-- Fetches from `GET /v3/organizations/{EVENTBRITE_ORG_ID}/events/?expand=venue&status=live&time_filter=current_future&order_by=start_asc` using the private `EVENTBRITE_TOKEN`.
+- Fetches from `GET /v3/organizations/{EVENTBRITE_ORG_ID}/events/?expand=venue&status=live&order_by=start_asc` using the private `EVENTBRITE_TOKEN`.
 - Filters out events whose start time is in the past.
 - When an `organizer` query param is provided, filters events to that organizer ID. The ID must be in the `ALLOWED_ORGANIZERS` allowlist or the request is rejected with 400.
 - Query params: `page_size` (default 20, max 50), `organizer` (optional).

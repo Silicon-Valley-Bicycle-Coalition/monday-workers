@@ -24,8 +24,11 @@ interface EventbriteEventsResponse {
 
 const MAX_PAGES = 20;
 
+// No `time_filter`: since 2026-09-23 Eventbrite rejects it on this endpoint
+// ("time_filter - Unknown parameter", 400). `status=live` already excludes
+// events that have started or ended, which have statuses of their own.
 function organizerEventsUrl(organizerId: string, continuation?: string): string {
-  const base = `https://www.eventbriteapi.com/v3/organizers/${organizerId}/events/?expand=venue&status=live&order_by=start_asc&time_filter=current_future`;
+  const base = `https://www.eventbriteapi.com/v3/organizers/${organizerId}/events/?expand=venue&status=live&order_by=start_asc`;
   return continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
 }
 
