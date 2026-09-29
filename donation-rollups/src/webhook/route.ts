@@ -19,6 +19,9 @@ export interface AppDeps {
   // every delivery, and a 4xx would make Monday retry or eventually disable the
   // subscription. We want stale subscriptions visibly ignored, not churning.
   donationBoardIds: ReadonlySet<string>;
+  // "<boardId>:<columnId>" for the classify duty's own output columns (spec 2026-09-29 §10.2):
+  // writing them must not enqueue owner recomputes, or the first classify pass floods the queue.
+  ignoredColumnIds: ReadonlySet<string>;
   // Monday doesn't sign webhooks created through the API's create_webhook mutation (no HMAC
   // or JWT to verify) — the standard mitigation is a shared secret embedded in the webhook URL
   // itself, set when subscribing (e.g. .../webhooks/monday/donations?secret=...) and checked
@@ -66,6 +69,10 @@ export function createApp(deps: AppDeps) {
     if (!deps.donationBoardIds.has(donationEvent.boardId)) {
       console.warn(`donation-rollups webhook: ignoring event for donation "${donationEvent.donationItemId}" on board "${donationEvent.boardId}" — not in config.donationBoards (stale subscription?)`);
       return c.json({ ok: true, ignored: `board "${donationEvent.boardId}" not in config.donationBoards` }, 200);
+    }
+
+    if (donationEvent.columnId !== null && deps.ignoredColumnIds.has(`${donationEvent.boardId}:${donationEvent.columnId}`)) {
+      return c.json({ ok: true, ignored: `classification column "${donationEvent.columnId}"` }, 200);
     }
 
     await deps.pendingStore.upsertPending({

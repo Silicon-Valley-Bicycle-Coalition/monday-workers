@@ -2,6 +2,8 @@ export interface DonationEvent {
   donationItemId: string;
   boardId: string;
   eventId: string;
+  // Set on column-change events (update_column_value); null for item-level events like create_pulse.
+  columnId: string | null;
 }
 
 // Monday's webhook payload for a subscribed event looks like:
@@ -32,5 +34,6 @@ export function validateWebhookBody(body: unknown): DonationEvent {
     donationItemId: String(pulseId),
     boardId: String(boardId),
     eventId: `${pulseId}:${type}:${Date.now()}`,
+    columnId: typeof e.columnId === 'string' && e.columnId !== '' ? e.columnId : null,
   };
 }
