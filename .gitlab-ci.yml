@@ -55,6 +55,24 @@ default:
     - npm ci
     - npx wrangler deploy --env sandbox
 
+# The Monday GraphQL transport is copied into each Worker rather than shared as a package, so
+# every Worker stays self-contained (#35). This keeps the copies byte-identical to the canonical
+# one: change monday-backup/src/monday/graphql.ts, then copy it over every path below. A Worker
+# joins by copying the file in and adding its path here.
+monday-graphql-copies:
+  stage: test
+  rules:
+    - changes:
+        - "*/src/monday/graphql.ts"
+        - .gitlab-ci.yml
+  script:
+    - |
+      status=0
+      for copy in funraise-sync/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts; do
+        cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
+      done
+      exit $status
+
 benevity-import:
   extends: .worker_job
   variables:
