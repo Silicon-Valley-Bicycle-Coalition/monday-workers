@@ -115,6 +115,15 @@ export interface MembershipConfig {
   typeLabels: { new: string; renewal: string; reacquire: string; lifetime: string };
 }
 
+// donationRollups.donorLevel — the Salesforce "Major (Lifetime >= 500 or Largest > 200)" and
+// "Major Donors (+5K)" report definitions as one status (spec 2026-09-29 §4). null = feature off.
+export interface DonorLevelConfig {
+  leadershipLifetimeCents: number;
+  majorLifetimeCents: number;
+  majorLargestCents: number;
+  labels: { leadership: string; major: string; donor: string };
+}
+
 export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
 
 export interface PendingRow {
