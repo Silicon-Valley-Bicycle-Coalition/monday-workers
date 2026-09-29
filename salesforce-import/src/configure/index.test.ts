@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { configureBoard } from './index.js';
 import { MondayClient } from '../load/monday.js';
 import type { BoardSpec } from './spec.js';
+import { COLS } from './testFixtures.js';
 
 const SPEC: BoardSpec = {
   description: 'The real description.',
@@ -36,7 +37,8 @@ function scriptedClient(calls: { query: string; variables: Record<string, unknow
     if (/update_group/.test(query)) return Response.json({ data: { update_group: { id: 'g1' } } });
     if (/delete_view/.test(query)) return Response.json({ data: { delete_view: { id: variables['view'] } } });
     if (/change_column_metadata/.test(query)) return Response.json({ data: { change_column_metadata: { id: variables['col'] } } });
-    if (/create_view/.test(query)) return Response.json({ data: { create_view: { id: 'view_new' } } });
+    if (/create_view_table/.test(query)) return Response.json({ data: { create_view_table: { id: 'view_new' } } });
+    if (/update_view_table/.test(query)) return Response.json({ data: { update_view_table: { id: variables['view'] } } });
     throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
   }) as typeof fetch;
   return new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
@@ -57,7 +59,7 @@ describe('configureBoard', () => {
     expect(result.summary).toMatch(/set 1 column description/);
     expect(result.summary).toMatch(/created 1 view/);
 
-    const viewCall = calls.find((c) => /create_view/.test(c.query));
+    const viewCall = calls.find((c) => /create_view_table/.test(c.query));
     expect(viewCall?.variables['filter']).toEqual({ operator: 'and', rules: [{ column_id: 'col_stake', operator: 'any_of', compare_value: [2] }] });
 
     const descCall = calls.find((c) => /change_column_metadata/.test(c.query));
@@ -87,6 +89,58 @@ describe('configureBoard', () => {
     const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
 
     const result = await configureBoard(client, 900, SPEC, false);
-    expect(result.summary).toBe('already up to date');
+    expect(result.summary).toBe('re-applied 1 view(s)');
+  });
+});
+
+const SPEC_WITH_DONORS_VIEW: BoardSpec = {
+  description: 'x', groupTitle: 'People', columns: [], columnDescriptions: {},
+  views: [{ name: 'Donors', columns: ['Personal Email'], groupBy: { columnTitle: 'Donor Level' },
+    coloring: [{ columnTitle: 'Donor Level', labelValues: ['Major'], color: 'red' }], tag: 'Report' }],
+  deleteStrayViews: [],
+};
+
+async function runWithFakeBoard(
+  boardOverrides: { views: { id: string; name: string }[] }, spec: BoardSpec, { dryRun }: { dryRun?: boolean } = {},
+) {
+  const calls: { query: string; variables: Record<string, unknown> }[] = [];
+  const fetchFn = (async (_u: unknown, init: unknown) => {
+    const { query, variables } = JSON.parse((init as { body: string }).body);
+    calls.push({ query, variables });
+    if (/^\s*query/.test(query)) {
+      return Response.json({ data: { boards: [{ description: 'x', groups: [{ id: 'g', title: spec.groupTitle }], columns: COLS, ...boardOverrides }] } });
+    }
+    if (/create_view_table/.test(query)) return Response.json({ data: { create_view_table: { id: '1' } } });
+    if (/update_view_table/.test(query)) return Response.json({ data: { update_view_table: { id: '1' } } });
+    throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+  }) as typeof fetch;
+  const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+  await configureBoard(client, 1, spec, dryRun ?? false);
+  return calls;
+}
+
+describe('configureBoard — spec views', () => {
+  it('creates missing spec views with settings, tags, and colouring via create_view_table', async () => {
+    const calls = await runWithFakeBoard({ views: [] }, SPEC_WITH_DONORS_VIEW);
+    const create = calls.find((c) => c.query.includes('create_view_table'))!;
+    expect(create.variables).toMatchObject({ name: 'Donors', tags: ['Report'],
+      settings: { group_by: { conditions: [{ columnId: 'dl' }] } } });
+    expect(create.variables['conditional_formatting_settings']).toHaveLength(1);
+  });
+
+  it('updates an existing spec view by id instead of creating a duplicate', async () => {
+    const calls = await runWithFakeBoard({ views: [{ id: '77', name: 'Donors' }] }, SPEC_WITH_DONORS_VIEW);
+    expect(calls.some((c) => c.query.includes('create_view_table'))).toBe(false);
+    expect(calls.find((c) => c.query.includes('update_view_table'))!.variables).toMatchObject({ view: '77' });
+  });
+
+  it('never touches a view whose name is not in the spec', async () => {
+    const calls = await runWithFakeBoard({ views: [{ id: '88', name: "Deanna's list" }] }, SPEC_WITH_DONORS_VIEW);
+    expect(calls.some((c) => JSON.stringify(c.variables).includes('"88"'))).toBe(false);
+  });
+
+  it('dry-run reports creates and updates without calling mutations', async () => {
+    const calls = await runWithFakeBoard({ views: [{ id: '77', name: 'Donors' }] }, SPEC_WITH_DONORS_VIEW, { dryRun: true });
+    expect(calls.every((c) => !c.query.trimStart().startsWith('mutation'))).toBe(true);
   });
 });

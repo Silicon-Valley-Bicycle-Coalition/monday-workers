@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { planBoardBase, planColumnDescriptions, planViews, COLOR_NAMES, type CurrentBoard, type CurrentColumn } from './plan.js';
 import type { BoardSpec } from './spec.js';
+import { COLS } from './testFixtures.js';
 
 const SPEC: BoardSpec = {
   description: 'The real description.',
@@ -130,13 +131,6 @@ describe('planViews', () => {
 
 const wire = JSON.parse(readFileSync(new URL('./fixtures/view-wire.json', import.meta.url), 'utf8'));
 
-const COLS: CurrentColumn[] = [
-  { id: 'name', title: 'Name', type: 'name', description: null, settings_str: '{}' },
-  { id: 'em', title: 'Personal Email', type: 'email', description: null, settings_str: '{}' },
-  { id: 'lg', title: 'Lifetime Giving', type: 'numbers', description: null, settings_str: '{}' },
-  { id: 'dl', title: 'Donor Level', type: 'status', description: null, settings_str: '{"labels":{"0":"Leadership","1":"Major","2":"Donor"}}' },
-  { id: 'dbg', title: 'Salesforce Debug', type: 'long_text', description: null, settings_str: '{}' },
-];
 const specWith = (views: BoardSpec['views']): BoardSpec => ({ ...SPEC, views });
 
 describe('planViews — settings', () => {

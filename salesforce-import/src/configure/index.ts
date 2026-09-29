@@ -5,7 +5,7 @@ import { dataPath, readJson } from '../artifacts.js';
 import { MondayClient } from '../load/monday.js';
 import type { BoardMap } from '../load/boards.js';
 import { BOARD_SPECS, type ColumnSpec } from './spec.js';
-import { planBoardBase, planColumnDescriptions, planViews, type CurrentBoard, type CurrentColumn } from './plan.js';
+import { planBoardBase, planColumnDescriptions, planViews, type ResolvedView, type CurrentBoard, type CurrentColumn } from './plan.js';
 
 interface BoardQueryResult {
   boards: { description: string | null; groups: { id: string; title: string }[];
@@ -34,6 +34,24 @@ function columnDefaults(col: ColumnSpec): string | undefined {
   return undefined;
 }
 
+const VIEW_ARGS = `$board: ID!, $name: String, $filter: ItemsQueryGroup, $sort: [ItemsQueryOrderBy!],
+  $tags: [String!], $settings: TableViewSettingsInput, $conditional_formatting_settings: [ConditionalFormattingConditionInput!]`;
+const VIEW_PASS = `board_id: $board, name: $name, filter: $filter, sort: $sort, tags: $tags,
+  settings: $settings, conditional_formatting_settings: $conditional_formatting_settings`;
+
+const viewIds = (board: { views: { id: string; name: string }[] }) => new Map(board.views.map((v) => [v.name, v.id]));
+
+function viewVars(boardId: number, v: ResolvedView) {
+  return {
+    board: String(boardId), name: v.name,
+    filter: v.rules.length ? { operator: v.filterOperator, rules: v.rules } : undefined,
+    sort: v.sort.length ? v.sort : undefined,
+    tags: v.tags.length ? v.tags : undefined,
+    settings: v.settings,
+    conditional_formatting_settings: v.conditionalFormatting.length ? v.conditionalFormatting : undefined,
+  };
+}
+
 export interface ConfigureResult { ok: boolean; summary: string; notes: string[] }
 
 export async function configureBoard(
@@ -50,10 +68,10 @@ export async function configureBoard(
     if (base.columnsToCreate.length) actions.push(`create ${base.columnsToCreate.length} column(s): ${base.columnsToCreate.map((c) => c.title).join(', ')}`);
     if (base.viewsToDelete.length) actions.push(`delete ${base.viewsToDelete.length} stray view(s)`);
     const descPlan = planColumnDescriptions(current.columns, spec);
-    const existingViewNames = new Set(current.views.map((v) => v.name));
-    const viewPlan = planViews(current.columns, existingViewNames, spec);
+    const viewPlan = planViews(current.columns, viewIds(current), spec, boardId);
     if (descPlan.updates.length) actions.push(`set ${descPlan.updates.length} column description(s)`);
-    if (viewPlan.views.length) actions.push(`create ${viewPlan.views.length} view(s): ${viewPlan.views.map((v) => v.name).join(', ')}`);
+    if (viewPlan.views.create.length) actions.push(`create ${viewPlan.views.create.length} view(s): ${viewPlan.views.create.map((v) => v.name).join(', ')}`);
+    if (viewPlan.views.update.length) actions.push(`re-apply ${viewPlan.views.update.length} view(s)`);
     notes.push(...descPlan.notes, ...viewPlan.notes,
       'dry-run preview only — descriptions/views referencing columns created in this same run may resolve differently once applied for real');
     return { ok: true, summary: actions.length ? `would ${actions.join('; ')}` : 'already up to date', notes };
@@ -98,16 +116,16 @@ export async function configureBoard(
   if (descPlan.updates.length) actions.push(`set ${descPlan.updates.length} column description(s)`);
   notes.push(...descPlan.notes);
 
-  const existingViewNames = new Set(current.views.map((v) => v.name));
-  const viewPlan = planViews(refreshed, existingViewNames, spec);
-  for (const v of viewPlan.views) {
-    await client.gql(`mutation ($board: ID!, $type: ViewKind!, $name: String, $filter: ItemsQueryGroup, $sort: [ItemsQueryOrderBy!]) {
-      create_view (board_id: $board, type: $type, name: $name, filter: $filter, sort: $sort) { id } }`,
-      { board: String(boardId), type: 'TABLE', name: v.name,
-        filter: v.rules.length ? { operator: v.filterOperator, rules: v.rules } : undefined,
-        sort: v.sort.length ? v.sort : undefined });
+  const viewPlan = planViews(refreshed, viewIds(current), spec, boardId);
+  for (const v of viewPlan.views.create) {
+    await client.gql(`mutation (${VIEW_ARGS}) { create_view_table (${VIEW_PASS}) { id } }`, viewVars(boardId, v));
   }
-  if (viewPlan.views.length) actions.push(`created ${viewPlan.views.length} view(s)`);
+  for (const v of viewPlan.views.update) {
+    await client.gql(`mutation ($view: ID!, ${VIEW_ARGS}) { update_view_table (view_id: $view, ${VIEW_PASS}) { id } }`,
+      { view: v.viewId, ...viewVars(boardId, v) });
+  }
+  if (viewPlan.views.create.length) actions.push(`created ${viewPlan.views.create.length} view(s)`);
+  if (viewPlan.views.update.length) actions.push(`re-applied ${viewPlan.views.update.length} view(s)`);
   notes.push(...viewPlan.notes);
 
   return { ok: true, summary: actions.length ? actions.join('; ') : 'already up to date', notes };
