@@ -1,23 +1,14 @@
-// Minimal Monday GraphQL client for pulling contact coordinates off a board — just enough for
-// this one-off tool, not a general SDK. Mirrors the graphql() helper other one-off scripts in
-// this monorepo use (e.g. salesforce-import's scripts/create-letter-settings-board.mjs).
+// Pulls contact coordinates off a board — just enough for this one-off tool, not a general SDK.
+// Requests go through the canonical Monday transport (monday/graphql.ts, a byte-identical copy — see
+// the repo CLAUDE.md, #35), so a long page-through survives rate limits and Monday blips.
 
 import type { Contact } from './geometry.js';
+import { MondayGraphQL, type MondayGraphQLOptions } from './monday/graphql.js';
 
 const API_URL = 'https://api.monday.com/v2';
 
-async function graphql(token: string, query: string, variables: Record<string, unknown>): Promise<any> {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': '2026-01' },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) throw new Error(`monday API: HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(`monday API: ${json.errors.map((e: { message: string }) => e.message).join('; ')}`);
-  if (!json.data) throw new Error(`monday API: no data — ${JSON.stringify(json)}`);
-  return json.data;
-}
+// The queries below were written and verified against 2026-01; the transport's default is newer.
+const MONDAY_API_VERSION = '2026-01';
 
 export interface ColumnTitles {
   /**
@@ -35,8 +26,16 @@ const ITEM_NAME_COLUMN_ID = 'name';
 
 // Resolves each configured column title to its id (titles are what a human picks on the CLI;
 // ids are what the API actually needs), then pages through every item on the board.
-export async function fetchContacts(token: string, boardId: string, columns: ColumnTitles): Promise<Contact[]> {
-  const boardData = await graphql(token, `query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`, { boardId: [boardId] });
+// A local CLI with no queue behind it, so the transport's default in-process retries apply.
+// `options` exists for tests (fetchFn, sleepFn).
+export async function fetchContacts(
+  token: string,
+  boardId: string,
+  columns: ColumnTitles,
+  options: MondayGraphQLOptions = {}
+): Promise<Contact[]> {
+  const transport = new MondayGraphQL(API_URL, token, { apiVersion: MONDAY_API_VERSION, ...options });
+  const boardData: any = await transport.request<any>(`query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`, { boardId: [boardId] });
   const byTitle = new Map<string, string>((boardData.boards[0]?.columns ?? []).map((c: { id: string; title: string }) => [c.title, c.id]));
   const latId = byTitle.get(columns.lat);
   const lngId = byTitle.get(columns.lng);
@@ -58,8 +57,7 @@ export async function fetchContacts(token: string, boardId: string, columns: Col
   let cursor: string | null = null;
   do {
     const page: any = cursor
-      ? await graphql(
-          token,
+      ? await transport.request<any>(
           `query ($cursor: String!, $colIds: [String!]) {
             next_items_page(cursor: $cursor, limit: 500) {
               cursor
@@ -68,8 +66,7 @@ export async function fetchContacts(token: string, boardId: string, columns: Col
           }`,
           { cursor, colIds }
         )
-      : await graphql(
-          token,
+      : await transport.request<any>(
           `query ($boardId: ID!, $colIds: [String!]) {
             boards(ids: [$boardId]) {
               items_page(limit: 500) {
