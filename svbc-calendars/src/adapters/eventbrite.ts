@@ -29,6 +29,28 @@ function organizerEventsUrl(organizerId: string, continuation?: string): string 
   return continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
 }
 
+const MAX_ERROR_DETAIL = 300;
+
+/**
+ * Eventbrite names the bad argument or auth problem in its error body
+ * (`{"error": "ARGUMENTS_ERROR", "error_description": "..."}`), which the
+ * status line alone doesn't. The message ends up in status.json and the
+ * /events error response, so a non-JSON body (an HTML error page) is capped.
+ */
+async function errorDetail(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '');
+  try {
+    const body = JSON.parse(text) as { error?: unknown; error_description?: unknown };
+    if (typeof body.error === 'string' || typeof body.error_description === 'string') {
+      return [body.error, body.error_description].filter((part) => typeof part === 'string' && part).join(': ');
+    }
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  const trimmed = text.trim();
+  return trimmed.length > MAX_ERROR_DETAIL ? `${trimmed.slice(0, MAX_ERROR_DETAIL)}…` : trimmed;
+}
+
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, '');
 }
@@ -91,7 +113,8 @@ export async function fetchEventbriteEvents(source: EventbriteSourceConfig, toke
 
     const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) {
-      throw new Error(`eventbrite: organizer ${source.organizerId} fetch failed: ${response.status} ${response.statusText}`);
+      const detail = await errorDetail(response);
+      throw new Error(`eventbrite: organizer ${source.organizerId} fetch failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`);
     }
     const body = (await response.json()) as EventbriteEventsResponse;
 

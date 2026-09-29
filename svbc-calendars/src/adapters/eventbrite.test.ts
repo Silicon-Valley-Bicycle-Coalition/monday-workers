@@ -120,6 +120,20 @@ describe('fetchEventbriteEvents', () => {
     await expect(fetchEventbriteEvents(SOURCE, 'test-token')).rejects.toThrow('eventbrite: organizer org-123 fetch failed: 403 Forbidden');
   });
 
+  it("includes Eventbrite's error code and description in the message on a non-OK response", async () => {
+    const body = { status_code: 400, error: 'ARGUMENTS_ERROR', error_description: 'There are errors with your arguments: time_filter - INVALID' };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 400, statusText: 'Bad Request' })));
+    await expect(fetchEventbriteEvents(SOURCE, 'test-token')).rejects.toThrow(
+      'eventbrite: organizer org-123 fetch failed: 400 Bad Request — ARGUMENTS_ERROR: There are errors with your arguments: time_filter - INVALID'
+    );
+  });
+
+  it('caps a non-JSON error body so a huge HTML error page cannot flood the status or log line', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x'.repeat(5000), { status: 502, statusText: 'Bad Gateway' })));
+    const err = await fetchEventbriteEvents(SOURCE, 'test-token').catch((e: Error) => e);
+    expect((err as Error).message).toMatch(/^eventbrite: organizer org-123 fetch failed: 502 Bad Gateway — x{300}…$/);
+  });
+
   it('stops paginating once maxEvents is reached, without fetching further pages', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(PAGE_1), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
