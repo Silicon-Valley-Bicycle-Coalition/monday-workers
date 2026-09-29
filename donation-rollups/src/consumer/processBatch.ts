@@ -15,7 +15,7 @@ import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
 } from '../projections/giftHistory';
-import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds } from './quota';
+import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds, transientRetryDelaySeconds } from './quota';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
   membershipColumnValues, termColumnValues, type MembershipState,
@@ -109,7 +109,7 @@ export async function processRecomputeBatch(
         console.error(`donation-rollups consumer: Monday rate limit (retry hint ${err.retryInSeconds ?? 'none'}s, attempt ${message.attempts ?? '?'}) — deferring this and the rest of the batch ${batchDelaySeconds}s`);
         message.retry({ delaySeconds: batchDelaySeconds });
       } else {
-        message.retry();
+        message.retry({ delaySeconds: transientRetryDelaySeconds(message.attempts) });
       }
     }
   }

@@ -26,6 +26,13 @@ export function rateLimitRetryDelaySeconds(retryInSeconds: number | undefined, a
   return Math.min(MAX_QUEUE_DELAY_SECONDS, Math.max(backoff, hint));
 }
 
+// Any other transient failure (a Monday 5xx, a D1 blip): the same 60 s, 120 s, 240 s backoff
+// without a server hint (#35). A bare retry() redelivers almost at once, so a short outage
+// would burn every attempt and dead-letter the message in seconds.
+export function transientRetryDelaySeconds(attempts: number | undefined): number {
+  return rateLimitRetryDelaySeconds(undefined, attempts);
+}
+
 export function secondsUntilMidnightUTC(now: Date): number {
   const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   const seconds = Math.ceil((nextMidnight - now.getTime()) / 1000);
