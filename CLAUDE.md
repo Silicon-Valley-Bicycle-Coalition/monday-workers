@@ -182,8 +182,10 @@ writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.
 through constructor options in their own `client.ts`, never by editing the copy. The
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
-funraise-sync, mailchimp-sync and quickbooks-sync. The other Workers still carry their own
-clients. Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
+donation-rollups, funraise-sync, mailchimp-sync and quickbooks-sync. The other Workers still
+carry their own clients. donation-rollups runs it with `maxAttempts: 1` (no in-process retry)
+because every retried fetch counts against Workers Free's 50-subrequest cap; raise it once the
+account is on Workers Paid. Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
 `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
 
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
