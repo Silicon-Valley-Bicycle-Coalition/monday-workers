@@ -32,7 +32,7 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - `quickbooks-sync/config/split.test.ts` — expected `sandbox.quickbooksSync` to deep-equal
     production (true only while both use stand-in column ids).
 - [x] **`member-portal/DEPLOY.md` was stale** (fixed 2026-09-25). Phase 4 now applies
-      migrations 0001–0004, creates the `member-portal-letter-emails` queue + DLQ, sets
+      migrations 0001–0005, creates the `member-portal-letter-emails` queue + DLQ, sets
       `LETTER_WEBHOOK_SECRET`, and covers the "Send Giving Letter" automation.
 - [ ] **`salesforce-import/config/svbc.json` still targets the sandbox workspace**
       (`boardSuffix: " (sandbox v2)"`, `workspaceId: 17141226`). Prepare the production values in
@@ -77,13 +77,13 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 
 | Worker | D1 (production) | Queues (+ `-dlq` each) | Still to do |
 |---|---|---|---|
-| `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` | create queues; apply 0001–0004 |
-| `funraise-sync` | exists, 0001–0003 applied | `funraise-sync-writes` | apply 0004 (subscriptions ledger) |
+| `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` | create queues; apply 0001–0005 |
+| `funraise-sync` | exists, 0001–0003 applied | `funraise-sync-writes` | apply 0004–0005 (subscriptions ledger, subscription claims) |
 | `donation-rollups` | exists (kept through the §9 move) | `donation-rollups-recompute` | confirm 0001–0008 applied |
-| `mailchimp-sync` | **create** — id is `REPLACE_WITH_D1_DATABASE_ID` | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` | create D1 + queues; wire id; apply 0001–0004 |
-| `quickbooks-sync` | **create** — placeholder id | `quickbooks-sync-writes` | create D1 + queue; wire id; apply 0001–0002 |
-| `monday-backup` | **create** — placeholder id | — | create D1; wire id; apply 0001 |
-| `benevity-import` | exists | `benevity-import-writes` | create queues; apply 0001 |
+| `mailchimp-sync` | **create** — id is `REPLACE_WITH_D1_DATABASE_ID` | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` | create D1 + queues; wire id; apply 0001–0005 |
+| `quickbooks-sync` | **create** — placeholder id | `quickbooks-sync-writes` | create D1 + queue; wire id; apply 0001–0006 |
+| `monday-backup` | **create** — placeholder id | — | create D1; wire id; apply 0001–0002 |
+| `benevity-import` | exists | `benevity-import-writes` | create queues; apply 0001–0003 |
 | `bp-feedback-notify` | — | — | nothing |
 
 For each row:
