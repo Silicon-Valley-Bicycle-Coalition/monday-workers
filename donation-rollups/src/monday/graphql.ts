@@ -224,6 +224,7 @@ export class MondayGraphQL {
       this.deadline.check(`monday API${lastError === '' ? '' : ` (last error: ${lastError})`}`);
 
       let response: Response;
+      const timeoutMs = this.deadline.timeoutMs(this.requestTimeoutMs);
       try {
         response = await this.fetchFn(this.apiUrl, {
           method: 'POST',
@@ -234,12 +235,13 @@ export class MondayGraphQL {
             'API-Version': this.apiVersion,
           },
           body: JSON.stringify({ query, variables }),
-          signal: AbortSignal.timeout(this.deadline.timeoutMs(this.requestTimeoutMs)),
+          signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
         // A timeout cut short by the deadline is the budget running out, not a network fault.
         this.deadline.check(`monday API (request cut off: ${String(err)})`);
-        ambiguous(`network error: ${String(err)}`, {});
+        const timedOut = err instanceof Error && err.name === 'TimeoutError';
+        ambiguous(timedOut ? `request timed out after ${timeoutMs}ms` : `network error: ${String(err)}`, {});
         continue;
       }
 
