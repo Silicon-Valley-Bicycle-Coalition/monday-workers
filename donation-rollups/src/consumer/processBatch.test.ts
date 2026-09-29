@@ -280,6 +280,34 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
 });
 
 describe('rollupToColumnValues', () => {
+  const LEVEL = { leadershipLifetimeCents: 500000, majorLifetimeCents: 50000, majorLargestCents: 20000,
+    labels: { leadership: 'Leadership', major: 'Major', donor: 'Donor' } };
+  const rollup = {
+    lifetimeGivingCents: 71493, giftCount: 2, firstGiftISO: '2020-01-01',
+    thisYearCents: 5000, thisYearCount: 1, lastYearCents: 66493, lastYearCount: 1,
+    largestGiftCents: 66493, smallestGiftCents: 5000, averageGiftCents: 35747,
+    lastGiftDate: '2024-01-01', lastGiftCents: 5,
+  };
+
+  it('writes the Donor Level label when the column and thresholds are configured', () => {
+    const values = rollupToColumnValues(rollup, { ...ownerColumns, donorLevel: 'dlv' }, LEVEL);
+    expect(values['dlv']).toEqual({ label: 'Major' });
+  });
+
+  it('clears Donor Level for an owner with no received gifts', () => {
+    const values = rollupToColumnValues({ ...rollup, giftCount: 0, lifetimeGivingCents: 0, largestGiftCents: null },
+      { ...ownerColumns, donorLevel: 'dlv' }, LEVEL);
+    expect(values['dlv']).toBe('');
+  });
+
+  it('writes nothing for Donor Level when the board has no such column', () => {
+    expect(Object.keys(rollupToColumnValues(rollup, ownerColumns, LEVEL))).not.toContain('undefined');
+  });
+
+  it('writes nothing for Donor Level when the feature is off', () => {
+    expect(rollupToColumnValues(rollup, { ...ownerColumns, donorLevel: 'dlv' }, null)).not.toHaveProperty('dlv');
+  });
+
   it('maps every rollup field to its configured column id, nulls stay null', () => {
     const values = rollupToColumnValues({
       lifetimeGivingCents: 71493, giftCount: 2, firstGiftISO: '2020-01-01',

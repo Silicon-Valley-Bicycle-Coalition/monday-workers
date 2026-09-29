@@ -8,8 +8,9 @@ import type { DonationRollupsMondayClient, DonationRecord } from '../monday/clie
 import { MondayRateLimitError } from '../monday/client';
 import type {
   AffiliationsConfig, DonationRollupsConfig, OwnerColumns, RecomputeQueueMessage,
-  DonationBoardConfig, MembershipConfig, OwnerMembershipColumns,
+  DonationBoardConfig, MembershipConfig, OwnerMembershipColumns, DonorLevelConfig,
 } from '../types';
+import { donorLevel } from '../rollups/donorLevel';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
@@ -318,7 +319,7 @@ async function recomputeOwner(
     await alertOversizedLedger(deps, ownerItemId, ledgerProjection);
   }
   const columnValues = {
-    ...rollupToColumnValues(rollup, ownerColumns),
+    ...rollupToColumnValues(rollup, ownerColumns, config.donationRollups.donorLevel),
     [ownerColumns.giftLedgerJson]: ledgerProjection.json,
     ...membershipValues,
   };
@@ -470,8 +471,8 @@ function dateCol(iso: string | null): unknown {
   return iso === null ? null : { date: iso.slice(0, 10) };
 }
 
-export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<string, unknown> {
-  return {
+export function rollupToColumnValues(r: Rollup, columns: OwnerColumns, level: DonorLevelConfig | null = null): Record<string, unknown> {
+  const values: Record<string, unknown> = {
     [columns.lifetimeGiving]: moneyCol(r.lifetimeGivingCents),
     [columns.giftCount]: countCol(r.giftCount),
     [columns.firstGift]: dateCol(r.firstGiftISO),
@@ -485,6 +486,11 @@ export function rollupToColumnValues(r: Rollup, columns: OwnerColumns): Record<s
     [columns.lastGiftDate]: dateCol(r.lastGiftDate),
     [columns.lastGiftAmount]: moneyCol(r.lastGiftCents),
   };
+  if (columns.donorLevel && level) {
+    const label = donorLevel(r, level);
+    values[columns.donorLevel] = label === null ? '' : { label };
+  }
+  return values;
 }
 
 // Bounded fan-out (review finding 1): only the triggering gift and gifts whose acting_for
