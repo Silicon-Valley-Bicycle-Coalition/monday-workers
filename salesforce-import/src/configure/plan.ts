@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { BoardSpec, ColoringRule, ColumnSpec, ViewSpec } from './spec.js';
 import { resolveLabelId } from './labels.js';
 
@@ -89,11 +90,18 @@ export interface ResolvedView {
 const INTERNAL_TYPE: Record<string, string> = { status: 'color', numbers: 'numeric' };
 
 // Shape captured from an API-accepted call (fixtures/view-wire.json).
+// Deterministic rule id (UUID-shaped, version 5 nibble) so re-applying a view doesn't churn ids.
+export function stableRuleId(boardId: number, viewName: string, ruleIndex: number): string {
+  const h = createHash('sha1').update(`${boardId}\u0000${viewName}\u0000${ruleIndex}`).digest('hex');
+  const variant = ((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(18, 20)}-${h.slice(20, 32)}`;
+}
+
 function toWireCondition(
-  boardId: number, col: CurrentColumn, operator: string, compare: unknown, color: string, entireRow: boolean,
+  boardId: number, col: CurrentColumn, operator: string, compare: unknown, color: string, entireRow: boolean, id: string,
 ): unknown {
   return {
-    id: crypto.randomUUID(),
+    id,
     formatting: { highlight_color: [color] },
     target: { column_ids: entireRow ? [] : [col.id], entire_row: entireRow },
     rules: [{
@@ -192,7 +200,7 @@ function resolveView(
   }
 
   const conditionalFormatting: unknown[] = [];
-  for (const rule of viewSpec.coloring ?? []) {
+  for (const [ruleIndex, rule] of (viewSpec.coloring ?? []).entries()) {
     const col = byTitle.get(rule.columnTitle);
     if (!col) return { error: `coloring references unknown column "${rule.columnTitle}"` };
     let compare: unknown = rule.compareValue ?? [];
@@ -201,7 +209,8 @@ function resolveView(
       if (typeof ids === 'string') return { error: `coloring on "${rule.columnTitle}" — unknown label "${ids}"` };
       compare = ids;
     }
-    conditionalFormatting.push(toWireCondition(boardId, col, rule.operator ?? 'any_of', compare, COLOR_NAMES[rule.color], rule.entireRow ?? true));
+    conditionalFormatting.push(toWireCondition(boardId, col, rule.operator ?? 'any_of', compare, COLOR_NAMES[rule.color], rule.entireRow ?? true,
+      stableRuleId(boardId, viewSpec.name, ruleIndex)));
   }
 
   return { view: { name: viewSpec.name, filterOperator: viewSpec.filter?.operator ?? 'and', rules, sort,

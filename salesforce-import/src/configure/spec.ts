@@ -79,6 +79,9 @@ const SHARED_DESCRIPTIONS = {
   'Do Not Solicit Reason': 'Why this record is not to be solicited. Required whenever Do Not Solicit is checked.',
 } as const;
 const ROLLUP_DESCRIPTION = 'Computed automatically from Donations by the donation-rollups integration. Edits are overwritten.';
+const DONOR_LEVEL_DESCRIPTION = 'Leadership ($5,000+ lifetime), Major ($500+ lifetime or a single gift of $200+), or Donor. ' +
+  ROLLUP_DESCRIPTION;
+const NIGHTLY_CLASSIFY = 'Set nightly by the donation-rollups integration from Gift Type, Amount, and Date. Edits are overwritten.';
 const DNS_REASON_STATUS_DESC = "Missing means Do Not Solicit is checked with no reason recorded. " +
   "Maintained by automation; review the 'DNS reason missing' view.";
 
@@ -140,6 +143,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'DNS Reason Status': DNS_REASON_STATUS_DESC,
       'Funraise Profile': "The donor's supporter record in Funraise.",
       'Lifetime Giving': ROLLUP_DESCRIPTION, 'First Gift': ROLLUP_DESCRIPTION, 'Gift Count': ROLLUP_DESCRIPTION,
+      'Donor Level': DONOR_LEVEL_DESCRIPTION,
     },
     views: [
       { name: 'Donors', tag: 'Report',
@@ -157,7 +161,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Gave last year, not this year', tag: 'Worklist',
         columns: ['Personal Email', 'Phone', 'Last Year Amount', 'Last Gift Date', 'Lifetime Giving', 'Donor Level'],
         filter: { rules: [{ columnTitle: 'Last Year Amount', operator: 'greater_than', compareValue: 0 },
-          { columnTitle: 'This Year Amount', operator: 'is_empty' }, NOT_DNS] },
+          { columnTitle: 'This Year Count', operator: 'lower_than', compareValue: 1 }, NOT_DNS] },
         sort: [{ columnTitle: 'Last Year Amount', direction: 'desc' }] },
       { name: 'Appeal list', tag: 'Report',
         columns: ['Personal Email', 'Address', 'City', 'Zip', 'Last Gift Date', 'Lifetime Giving'],
@@ -219,6 +223,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columns: [DNS_COLUMN],
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS,
+      'Donor Level': DONOR_LEVEL_DESCRIPTION,
       'Partner Type': "Free text today, straight from Salesforce. Use an existing value for " +
         "consistency. Cities, counties, and public agencies must be 'Municipal' — that's what " +
         'Stakeholder Type on People links against.',
@@ -276,12 +281,15 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Acknowledgment Tier': 'Major at $200 and up, set automatically. Major gifts need a ' +
         "personal acknowledgment — work the 'Major gifts to thank' view.",
       'Funraise ID': 'The transaction in Funraise. Blank for non-Funraise gifts.',
+      'Funding Stream': 'Which line of revenue the gift belongs to (individual giving, membership, sponsorship, grant…). ' + NIGHTLY_CLASSIFY,
+      'Gift Size': 'The size band of the gift amount, for reporting. ' + NIGHTLY_CLASSIFY,
+      'Fiscal Quarter': 'The July–June fiscal quarter the gift date falls in, e.g. FY26 Q2. ' + NIGHTLY_CLASSIFY,
+      'Gift Fiscal Year': 'The fiscal year the gift date falls in, e.g. FY2026. ' + NIGHTLY_CLASSIFY,
     },
     views: [
       { name: 'Recent gifts', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Funding Stream', 'Gift Type', 'Thank You Sent', 'Acknowledgment Tier'],
-        groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }],
-        coloring: [{ columnTitle: 'Acknowledgment Tier', labelValues: ['Major'], color: 'red' }] },
+        groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'Revenue by funding stream', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Fiscal Year', 'Gift Type'],
         groupBy: { columnTitle: 'Funding Stream' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'By gift size', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],
@@ -489,9 +497,10 @@ const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
   ] },
 ];
 
-// Every widget that sums or counts Donations must skip Failed/Pending gifts; "Received (Historical)"
-// (pre-Monday gifts) counts as revenue. AND-ed with any filter the widget already has.
-const RECEIVED_RULE: FilterRule = { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received', 'Received (Historical)'] };
+// Every widget that sums or counts Donations counts Received only — matching computeRollup and
+// docs/05's audited revenue definition (Received (Historical) is Salesforce's retired Closed Won
+// stage and is deliberately excluded). AND-ed with any filter the widget already has.
+const RECEIVED_RULE: FilterRule = { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] };
 
 export const DASHBOARD_SPECS: DashboardSpec[] = RAW_DASHBOARD_SPECS.map((d) => ({
   ...d,

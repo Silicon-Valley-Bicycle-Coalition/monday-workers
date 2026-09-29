@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { runClassify, CLASSIFY_WRITES_PER_RUN, type ClassifyClient } from './classify';
 import type { DonationRollupsConfig } from '../types';
+import { MondayRateLimitError } from '../monday/client';
 
 const CL = { fundingStream: 'fs', giftSize: 'gs', fiscalQuarter: 'fq', giftFiscalYear: 'gfy' };
 const config = {
@@ -75,5 +76,36 @@ describe('runClassify', () => {
     const { client, writes } = fakeClient([{ id: '1', am: '5,000', dt: '2025-08-01', gt: 'Donation' }]);
     await runClassify(client, config);
     expect(writes[0]!.values['gs']).toEqual({ label: '$5k+' });
+  });
+
+  it('isolates a failing item: later items are still written and the report is not ok', async () => {
+    const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
+    const { client, writes } = fakeClient(rows, 500);
+    const inner = client.changeColumnValues;
+    client.changeColumnValues = async (b, id, v, o) => { if (id === '2') throw new Error('item gone'); return inner(b, id, v, o); };
+    const report = await runClassify(client, config);
+    expect(writes.map((w) => w.itemId)).toEqual(['1', '3']);
+    expect(report.ok).toBe(false);
+    expect(report.summary).toMatch(/1 item write\(s\) failed/);
+    expect(report.detail).toMatchObject({ written: 2, failed: 1, failedItemIds: ['2'], remaining: 0 });
+  });
+
+  it('caps the failed-id list in the report', async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({ id: String(i), am: '10', dt: '2025-08-01', gt: 'Donation' }));
+    const { client } = fakeClient(rows, 500);
+    client.changeColumnValues = async () => { throw new Error('nope'); };
+    const report = await runClassify(client, config);
+    const d = report.detail as { failed: number; failedItemIds: string[] };
+    expect(d.failed).toBe(30);
+    expect(d.failedItemIds).toHaveLength(20);
+  });
+
+  it('rethrows a rate limit so the run stops', async () => {
+    const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
+    const { client, writes } = fakeClient(rows, 500);
+    const inner = client.changeColumnValues;
+    client.changeColumnValues = async (b, id, v, o) => { if (id === '2') throw new MondayRateLimitError('slow down', 30); return inner(b, id, v, o); };
+    await expect(runClassify(client, config)).rejects.toBeInstanceOf(MondayRateLimitError);
+    expect(writes.map((w) => w.itemId)).toEqual(['1']);
   });
 });

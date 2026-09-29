@@ -168,13 +168,25 @@ describe('planViews — settings', () => {
     const rule = mk();
     expect(keyShape(rule)).toEqual(keyShape(wire.conditionalFormatting));
     expect(rule.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(mk().id).not.toBe(rule.id);
+    expect(rule.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(rule.formatting.highlight_color).toEqual([COLOR_NAMES.red]);
     expect(rule.target).toEqual({ column_ids: [], entire_row: true });
     expect(rule.rules[0]).toEqual({ type: 'RULE', operator: 'ANY_OF', rule: {
       type: 'BOARD_COLUMN',
       context: { column_id: 'dl', column_type: 'color', compare_attribute: '', board_id: '1' },
       compare_value: [1] } });
+  });
+
+  it('derives rule ids deterministically from (board, view, rule index)', () => {
+    const ids = (viewName: string, n = 1, board = 1) => planViews(COLS, new Map(), specWith([{ name: viewName,
+      coloring: Array.from({ length: n }, () => ({ columnTitle: 'Donor Level', labelValues: ['Major'], color: 'red' as const })) }]), board)
+      .views.create[0]!.conditionalFormatting.map((r) => (r as { id: string }).id);
+    expect(ids('Donors')).toEqual(ids('Donors'));
+    expect(ids('Donors')[0]).not.toBe(ids('Members')[0]);
+    expect(ids('Donors')[0]).not.toBe(ids('Donors', 1, 2)[0]);
+    const two = ids('Donors', 2);
+    expect(two[0]).toBe(ids('Donors')[0]);
+    expect(two[1]).not.toBe(two[0]);
   });
 
   it('targets just the column and maps numbers to numeric when entireRow is false', () => {

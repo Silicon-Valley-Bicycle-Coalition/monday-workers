@@ -149,6 +149,36 @@ describe('configureBoard — spec views', () => {
   });
 });
 
+describe('configureBoard create_view_table', () => {
+  it('is sent non-idempotent (a 5xx must not be retried into a duplicate view) and update_view_table stays retryable', async () => {
+    const seen: { query: string; opts?: { idempotent?: boolean } }[] = [];
+    const client = { async gql(query: string, _v: unknown, opts?: { idempotent?: boolean }) {
+      seen.push({ query, opts });
+      if (/^\s*query/.test(query)) return { boards: [{ description: SPEC.description, groups: [{ id: 'g1', title: 'People' }],
+        columns: [{ id: 'col_stake', title: 'Stakeholder Type', type: 'status', description: 'advocacy classification',
+          settings_str: JSON.stringify({ labels: { '1': 'Individual Donor', '2': 'Elected Official' } }) }], views: [] }] };
+      return { create_view_table: { id: 'v' } };
+    } } as unknown as MondayClient;
+    await configureBoard(client, 900, SPEC, false);
+    expect(seen.find((c) => /create_view_table/.test(c.query))?.opts).toMatchObject({ idempotent: false, apiVersion: '2026-10' });
+  });
+
+  it('a 500 on create_view_table is surfaced as ambiguous after a single attempt', async () => {
+    let creates = 0;
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query } = JSON.parse((init as { body: string }).body);
+      if (/^\s*query/.test(query)) return Response.json({ data: { boards: [{ description: SPEC.description, groups: [{ id: 'g1', title: 'People' }],
+        columns: [{ id: 'col_stake', title: 'Stakeholder Type', type: 'status', description: 'advocacy classification',
+          settings_str: JSON.stringify({ labels: { '1': 'Individual Donor', '2': 'Elected Official' } }) }], views: [] }] } });
+      creates++;
+      return new Response('x', { status: 500 });
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+    await expect(configureBoard(client, 900, SPEC, false)).rejects.toThrow(/may have committed/);
+    expect(creates).toBe(1);
+  });
+});
+
 describe('dashboardToken', () => {
   it('prefers MONDAY_DASHBOARD_TOKEN, falls back to MONDAY_API_TOKEN', () => {
     expect(dashboardToken({ MONDAY_DASHBOARD_TOKEN: 'd', MONDAY_API_TOKEN: 'a' })).toBe('d');

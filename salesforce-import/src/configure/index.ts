@@ -122,7 +122,7 @@ export async function configureBoard(
 
   const viewPlan = planViews(refreshed, viewIds(current), spec, boardId);
   for (const v of viewPlan.views.create) {
-    await client.gql(`mutation (${VIEW_ARGS}) { create_view_table (${VIEW_PASS}) { id } }`, viewVars(boardId, v), { apiVersion: VIEW_API_VERSION });
+    await client.gql(`mutation (${VIEW_ARGS}) { create_view_table (${VIEW_PASS}) { id } }`, viewVars(boardId, v), { apiVersion: VIEW_API_VERSION, idempotent: false });
   }
   for (const v of viewPlan.views.update) {
     await client.gql(`mutation ($view: ID!, ${VIEW_ARGS}) { update_view_table (view_id: $view, ${VIEW_PASS}) { id } }`,

@@ -99,7 +99,7 @@ export function planDashboard(spec: DashboardSpec, state: DashboardState[string]
 // remembered in data/load/dashboards.json (gitignored, like boards.json). State is saved after
 // every successful create, so a run that dies midway never creates the same thing twice.
 export async function configureDashboards(
-  client: MondayClient, workspaceId: number, boardIds: Record<string, number>, dryRun: boolean,
+  client: MondayClient, workspaceId: number, boardIds: Record<string, number>, dryRun: boolean, specs: DashboardSpec[] = DASHBOARD_SPECS,
 ): Promise<ConfigureResult> {
   const state: DashboardState = existsSync(STATE_FILE()) ? await readJson<DashboardState>(STATE_FILE()) : {};
   const columns: Columns = new Map();
@@ -110,20 +110,27 @@ export async function configureDashboards(
   }
   const actions: string[] = [];
   const notes: string[] = [];
-  for (const spec of DASHBOARD_SPECS) {
+  for (const spec of specs) {
     const plan = planDashboard(spec, state[spec.name], columns);
     notes.push(...plan.notes.map((n) => `${spec.name}: ${n}`));
+    // A dashboard created without all its boards would silently lose data sources, and state
+    // would then mark it done — so refuse until every board has an id.
+    const missing = spec.boards.filter((b) => boardIds[b] === undefined);
+    if (plan.createDashboard && missing.length) {
+      notes.push(`${spec.name}: not created — no board id for ${missing.join(', ')} (run without --only, after \`load\`)`);
+      continue;
+    }
     if (dryRun) {
       if (plan.createDashboard) actions.push(`create dashboard "${spec.name}"`);
       if (plan.widgets.length) actions.push(`create ${plan.widgets.length} widget(s) on "${spec.name}"`);
       continue;
     }
     if (plan.createDashboard) {
-      const ids = spec.boards.map((b) => boardIds[b]).filter((id): id is number => id !== undefined).map(String);
+      const ids = spec.boards.map((b) => String(boardIds[b]));
       const res = await client.gql<{ create_dashboard: { id: string } }>(
         `mutation ($name: String!, $ws: ID!, $boards: [ID!]!) {
            create_dashboard (name: $name, workspace_id: $ws, board_ids: $boards, kind: PUBLIC) { id } }`,
-        { name: spec.name, ws: String(workspaceId), boards: ids });
+        { name: spec.name, ws: String(workspaceId), boards: ids }, { idempotent: false });
       state[spec.name] = { id: res.create_dashboard.id, widgets: {} };
       await writeJson(STATE_FILE(), state);
       actions.push(`created dashboard "${spec.name}"`);
@@ -133,7 +140,7 @@ export async function configureDashboards(
         `mutation ($parent: WidgetParentInput!, $kind: ExternalWidget!, $name: String!, $settings: JSON!, $filter: ItemsQueryGroup) {
            create_widget (parent: $parent, kind: $kind, name: $name, settings: $settings, filter: $filter) { id } }`,
         { parent: { kind: 'DASHBOARD', id: state[spec.name]!.id }, kind: w.kind, name: w.name,
-          settings: w.settings, filter: w.filter });
+          settings: w.settings, filter: w.filter }, { idempotent: false });
       state[spec.name]!.widgets[w.name] = res.create_widget.id;
       await writeJson(STATE_FILE(), state);
     }

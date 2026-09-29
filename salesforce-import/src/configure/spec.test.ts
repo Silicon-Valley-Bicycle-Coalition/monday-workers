@@ -39,16 +39,36 @@ describe('DASHBOARD_SPECS revenue filters', () => {
 
   it('finds the donations widgets', () => { expect(onDonations.length).toBeGreaterThanOrEqual(6); });
 
-  it('every donations widget counts only Received / Received (Historical) gifts', () => {
+  it('every donations widget counts only Received gifts', () => {
     for (const { d, w } of onDonations) {
       expect(w.filter?.board, `${d} / ${w.name}`).toBe('donations');
       expect(w.filter?.rules, `${d} / ${w.name}`).toContainEqual(
-        { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received', 'Received (Historical)'] });
+        { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] });
     }
   });
 
   it('keeps existing filters (Major gifts not yet thanked)', () => {
     const w = widgets.find(({ w }) => w.name === 'Major gifts not yet thanked')!.w;
     expect(w.filter?.rules.map((r) => r.columnTitle)).toEqual(expect.arrayContaining(['Acknowledgment Tier', 'Thank You Sent', 'Status']));
+  });
+});
+
+describe('final-review spec rulings', () => {
+  const view = (b: string, n: string) => BOARD_SPECS[b]!.views!.find((v) => v.name === n)!;
+
+  it('"Gave last year, not this year" keys on This Year Count < 1 (rollups write 0.00, never blank)', () => {
+    const rules = view('people-live', 'Gave last year, not this year').filter!.rules;
+    expect(rules).toContainEqual({ columnTitle: 'This Year Count', operator: 'lower_than', compareValue: 1 });
+    expect(rules.map((r) => r.columnTitle)).not.toContain('This Year Amount');
+  });
+
+  it('"Recent gifts" has no colouring (red means needs action)', () => {
+    expect(view('donations', 'Recent gifts').coloring).toBeUndefined();
+  });
+
+  it('describes the computed columns as rollup-owned', () => {
+    for (const b of ['people-live', 'organizations']) expect(BOARD_SPECS[b]!.columnDescriptions!['Donor Level']).toMatch(/Leadership.*Overwritten|Edits are overwritten/s);
+    for (const c of ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year'])
+      expect(BOARD_SPECS['donations']!.columnDescriptions![c]).toMatch(/donation-rollups integration from Gift Type, Amount, and Date\. Edits are overwritten\.$/);
   });
 });

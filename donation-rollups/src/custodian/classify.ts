@@ -1,5 +1,6 @@
 import { classifyGift, type GiftClassification } from '../rollups/classify';
 import { parseAmountCents } from '../money';
+import { MondayRateLimitError } from '../monday/client';
 import type { DonationRollupsConfig, ClassificationColumns } from '../types';
 import type { DutyReport } from './custodian';
 
@@ -17,6 +18,7 @@ export interface ClassifyClient {
 }
 
 export const CLASSIFY_WRITES_PER_RUN = 300;
+const FAILED_IDS_IN_REPORT = 20;
 
 const KEYS = ['fundingStream', 'giftSize', 'fiscalQuarter', 'giftFiscalYear'] as const;
 
@@ -31,6 +33,7 @@ function diff(want: GiftClassification, cols: ClassificationColumns, have: Map<s
 
 export async function runClassify(client: ClassifyClient, config: DonationRollupsConfig): Promise<DutyReport> {
   let scanned = 0, changed = 0, written = 0;
+  const failed: string[] = [];
   for (const board of config.donationRollups.donationBoards) {
     const cl = board.columns.classification;
     if (!cl) continue;
@@ -50,19 +53,27 @@ export async function runClassify(client: ClassifyClient, config: DonationRollup
         const values = diff(want, cl, item.text);
         if (Object.keys(values).length === 0) continue;
         changed++;
-        if (written < CLASSIFY_WRITES_PER_RUN) {
-          await client.changeColumnValues(board.boardId, item.id, values, { createLabelsIfMissing: true });
-          written++;
+        if (written + failed.length < CLASSIFY_WRITES_PER_RUN) {
+          // One bad item (deleted mid-run, a locked column…) must not stop the rest; a rate
+          // limit will fail every remaining write too, so that one still ends the run.
+          try {
+            await client.changeColumnValues(board.boardId, item.id, values, { createLabelsIfMissing: true });
+            written++;
+          } catch (err) {
+            if (err instanceof MondayRateLimitError) throw err;
+            failed.push(item.id);
+          }
         }
       }
       cursor = page.cursor;
     } while (cursor !== null);
   }
-  const remaining = changed - written;
+  const remaining = changed - written - failed.length;
   return {
-    ok: true,
+    ok: failed.length === 0,
     summary: `classified ${written} of ${changed} changed gifts (${scanned} scanned)` +
+      (failed.length > 0 ? `; ${failed.length} item write(s) failed` : '') +
       (remaining > 0 ? ' — more remain, run classify again to continue' : ''),
-    detail: { scanned, changed, written, remaining },
+    detail: { scanned, changed, written, remaining, failed: failed.length, failedItemIds: failed.slice(0, FAILED_IDS_IN_REPORT) },
   };
 }
