@@ -1,16 +1,40 @@
-// Monday GraphQL transport with retry/backoff, shared by the backup's read client
-// (src/monday/client.ts) and the restore tool's writes (src/restore/).
+// Monday GraphQL transport with retry/backoff: HTTP 429 and Retry-After, the per-minute
+// complexity budget and rate/concurrency limits, 5xx and network errors, per-attempt timeouts,
+// and write-safety (a create that may have committed is never blindly retried).
 //
-// Modelled on salesforce-import/src/load/monday.ts — a local copy, not a shared package
-// (cross-Worker sharing is issue #35). Keep the two in step when either learns a new failure mode.
+// CANONICAL COPY (#35). This file is byte-identical in every Worker that uses it, so each Worker
+// stays self-contained and forkable on its own — no shared package. The CI job
+// `monday-graphql-copies` in .gitlab-ci.yml fails if any copy differs from
+// monday-backup/src/monday/graphql.ts. To change it, edit that file and copy it over every
+// path the job lists. Keep Worker-specific behaviour in each Worker's own client, via the options.
+//
+// Modelled on salesforce-import/src/load/monday.ts; keep the two in step when either learns a
+// new failure mode.
 
-import { Deadline } from '../deadline';
-
-// Pinned explicitly: Monday serves a request for a deprecated version as the *maintenance*
-// version, so an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of
-// its breaking changes (users pagination, connection_board_ids, columns.capabilities) touch the
-// queries here. Re-check developer.monday.com/api-reference/docs/api-versioning when bumping.
+// Default pin. Monday serves a request for a deprecated version as the *maintenance* version, so
+// an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of its breaking
+// changes (users pagination, connection_board_ids, columns.capabilities) touch monday-backup's
+// queries. A Worker whose queries were written against another version passes `apiVersion`.
+// Re-check developer.monday.com/api-reference/docs/api-versioning when bumping.
 export const MONDAY_API_VERSION = '2026-07';
+
+// A wall-clock budget the transport respects: attempt timeouts and retry waits are capped to it,
+// and a retry that would cross it throws. monday-backup's Deadline (src/deadline.ts) is one;
+// without one, retries are bounded only by maxAttempts.
+export interface RetryBudget {
+  // Throws if the budget is spent; `what` names the call for the error message.
+  check(what: string): void;
+  // A per-attempt timeout that never runs past the budget.
+  timeoutMs(maxMs: number): number;
+  // Sleeps `ms` before a retry, or throws if that retry would start past the budget.
+  sleepBeforeRetry(sleep: (ms: number) => Promise<void>, ms: number, what: string): Promise<void>;
+}
+
+const UNBOUNDED: RetryBudget = {
+  check: () => {},
+  timeoutMs: (maxMs) => maxMs,
+  sleepBeforeRetry: (sleep, ms) => sleep(ms),
+};
 
 // Server-advised waits are honoured but capped, so one odd header can't eat the cron's
 // 15-minute wall-time budget.
@@ -47,9 +71,10 @@ export interface MondayGraphQLOptions {
   sleepFn?: (ms: number) => Promise<void>;
   maxAttempts?: number;
   requestTimeoutMs?: number;
-  // The run's wall-clock deadline. Attempt timeouts and retry waits are capped to it, and a
-  // retry that would cross it throws BudgetExhaustedError. Unbounded when absent.
-  deadline?: Deadline;
+  // The run's wall-clock budget (see RetryBudget). Unbounded when absent.
+  deadline?: RetryBudget;
+  // The `API-Version` header; MONDAY_API_VERSION when absent.
+  apiVersion?: string;
 }
 
 export interface RequestOptions {
@@ -62,7 +87,8 @@ export class MondayGraphQL {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxAttempts: number;
   private readonly requestTimeoutMs: number;
-  private readonly deadline: Deadline;
+  private readonly deadline: RetryBudget;
+  private readonly apiVersion: string;
 
   constructor(
     private apiUrl: string,
@@ -72,7 +98,8 @@ export class MondayGraphQL {
     this.sleep = options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.maxAttempts = options.maxAttempts ?? 5;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
-    this.deadline = options.deadline ?? new Deadline();
+    this.deadline = options.deadline ?? UNBOUNDED;
+    this.apiVersion = options.apiVersion ?? MONDAY_API_VERSION;
   }
 
   async request<T>(query: string, variables: Record<string, unknown>, { idempotent = true }: RequestOptions = {}): Promise<T> {
@@ -99,7 +126,7 @@ export class MondayGraphQL {
             'Content-Type': 'application/json',
             // Monday expects the bare token, no "Bearer " prefix.
             Authorization: this.apiToken,
-            'API-Version': MONDAY_API_VERSION,
+            'API-Version': this.apiVersion,
           },
           body: JSON.stringify({ query, variables }),
           signal: AbortSignal.timeout(this.deadline.timeoutMs(this.requestTimeoutMs)),

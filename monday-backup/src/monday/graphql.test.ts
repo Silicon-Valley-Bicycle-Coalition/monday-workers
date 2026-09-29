@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BudgetExhaustedError, Deadline } from '../deadline';
-import { AmbiguousWriteError, MondayGraphQL } from './graphql';
+import { AmbiguousWriteError, MONDAY_API_VERSION, MondayGraphQL } from './graphql';
 
 // Read-path retry behaviour is covered through HttpMondayClient in client.test.ts; this file
 // covers what only the restore tool's writes use: `idempotent: false`.
@@ -96,5 +96,16 @@ describe('MondayGraphQL (unbounded)', () => {
   it('still retries normally without a deadline', async () => {
     const { gql } = transport([new Response('oops', { status: 502 }), Response.json({ data: { ok: true } })]);
     await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: true });
+  });
+});
+
+describe('MondayGraphQL apiVersion option', () => {
+  it('sends MONDAY_API_VERSION by default and the apiVersion option when given', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ data: { ok: true } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await new MondayGraphQL('https://api.monday.com/v2', 't').request('query { ok }', {});
+    await new MondayGraphQL('https://api.monday.com/v2', 't', { apiVersion: '2026-01' }).request('query { ok }', {});
+    const versions = fetchMock.mock.calls.map((call) => new Headers((call as unknown as [string, RequestInit])[1].headers).get('API-Version'));
+    expect(versions).toEqual([MONDAY_API_VERSION, '2026-01']);
   });
 });
