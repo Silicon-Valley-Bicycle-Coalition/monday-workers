@@ -17,6 +17,10 @@ export async function sendFailureAlert(
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
+      // Bounded like monday-backup's and mailchimp-sync's alerts: this is awaited on the .ics
+      // cache-MISS path (calendarSource.ts), so a hung Slack webhook would otherwise hold a
+      // subscriber's calendar fetch open indefinitely.
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
       console.error(`svbc-calendars: Slack alert POST failed: ${response.status} ${response.statusText}`);
