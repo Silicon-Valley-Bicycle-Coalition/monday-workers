@@ -15,8 +15,8 @@ boards throughout.
 `salesforce-import` CLI. `svbc-calendars` isn't part of the migration and can ship on its own
 schedule — its checklist is [its README's Deploy section](../svbc-calendars/README.md#deploy).
 
-**Status as of 2026-09-25:** nothing below is done unless marked. `salesforce-import`'s
-`cutoverDateISO` is `2026-10-01`.
+**Status as of 2026-09-29:** nothing below is done unless marked. `salesforce-import`'s
+`cutoverDateISO` is `2026-10-09`.
 
 ---
 
