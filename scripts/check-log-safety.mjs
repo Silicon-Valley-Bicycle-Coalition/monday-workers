@@ -17,8 +17,10 @@
 //
 // Suppress a deliberate case with `// log-safety: allow — <reason>` on the line before the call.
 //
-//   node scripts/check-log-safety.mjs [dir ...]   # defaults to every Worker directory
+//   node scripts/check-log-safety.mjs [dir ...]   # defaults to every Worker's src/
+//   node scripts/check-log-safety.mjs --staged    # staged changes only (.githooks/pre-commit)
 
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -151,15 +153,30 @@ export function findViolations(source) {
   return violations;
 }
 
+// Worker source this check covers: not tests, not declaration files, not node_modules.
+export function isCheckedSource(path) {
+  return /\.(?:ts|mts|js|mjs)$/.test(path) && !/\.test\.[mc]?[jt]s$/.test(path) && !path.endsWith('.d.ts') && !/(?:^|\/)node_modules\//.test(path);
+}
+
 function sourceFiles(dir) {
   const files = [];
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules') continue;
     const path = join(dir, entry);
     if (statSync(path).isDirectory()) files.push(...sourceFiles(path));
-    else if (/\.(?:ts|mts|js|mjs)$/.test(entry) && !/\.test\.[mc]?[jt]s$/.test(entry) && !entry.endsWith('.d.ts')) files.push(path);
+    else if (isCheckedSource(path)) files.push(path);
   }
   return files;
+}
+
+// Staged Worker source as [{ path, source }], read from the index so a commit is checked as it
+// will be recorded, not as the working tree happens to look.
+function stagedFiles(root) {
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  return git('diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z')
+    .split('\0')
+    .filter((path) => /^[^/]+\/src\//.test(path) && isCheckedSource(path))
+    .map((path) => ({ path, source: git('show', `:${path}`) }));
 }
 
 function workerSrcDirs(root) {
@@ -170,11 +187,14 @@ function workerSrcDirs(root) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const dirs = process.argv.length > 2 ? process.argv.slice(2) : workerSrcDirs(root);
+  const args = process.argv.slice(2);
+  const files = args[0] === '--staged'
+    ? stagedFiles(root)
+    : (args.length > 0 ? args : workerSrcDirs(root)).flatMap(sourceFiles).map((file) => ({ path: relative(root, file), source: readFileSync(file, 'utf8') }));
   let count = 0;
-  for (const file of dirs.flatMap(sourceFiles)) {
-    for (const { line, name } of findViolations(readFileSync(file, 'utf8'))) {
-      console.error(`${relative(root, file)}:${line}: console call logs \`${name}\`, which may hold an email address — log an id instead, or wrap it in ${ALLOWED_WRAPPERS.join('/')}()`);
+  for (const { path, source } of files) {
+    for (const { line, name } of findViolations(source)) {
+      console.error(`${path}:${line}: console call logs \`${name}\`, which may hold an email address — log an id instead, or wrap it in ${ALLOWED_WRAPPERS.join('/')}()`);
       count++;
     }
   }
@@ -182,5 +202,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error(`\n${count} possible email address(es) in logs. Suppress a deliberate one with \`// log-safety: allow — <reason>\` on the line above.`);
     process.exit(1);
   }
-  console.log('log-safety: no email addresses in console calls');
+  if (args[0] !== '--staged') console.log('log-safety: no email addresses in console calls');
 }
