@@ -41,7 +41,9 @@ export async function processDeadLetters(messages: QueueMessageLike<QueueMessage
       message.ack();
     } catch (err) {
       console.error(`quickbooks-sync dlq: could not mark ${direction} "${eventId}" failed: ${err instanceof Error ? err.message : String(err)}`);
-      message.retry();
+      // Delayed like funraise-sync's DLQ consumer (#35): a bare retry() comes straight back into
+      // the same D1 failure and burns the DLQ's own retries in seconds.
+      message.retry({ delaySeconds: 60 });
     }
   }
   if (dead.length > 0) {

@@ -176,6 +176,14 @@ environment to another Worker, copy `member-portal`'s `environment.ts`, split te
 `env.sandbox` shape rather than re-deriving them. Design:
 `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
+**One Monday GraphQL transport, copied, not shared (#35):** `monday-backup/src/monday/graphql.ts`
+is the canonical transport (429/Retry-After, complexity budget, 5xx, timeouts, non-idempotent
+writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.ts` and tune it
+through constructor options in their own `client.ts`, never by editing the copy. The
+`monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
+that job lists, and add a Worker's path there when moving it over. So far: funraise-sync and
+quickbooks-sync. The other Workers still carry their own clients.
+
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
 per exposure class (the public-facing `member-portal` gets its own user with access to only the
 boards it reads), never a staff member's personal token — see the root README for why.

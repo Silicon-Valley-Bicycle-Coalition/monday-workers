@@ -712,11 +712,11 @@ describe('D1 quota outage handling (fix 4)', () => {
     expect(message.ack).not.toHaveBeenCalled();
   });
 
-  it('a plain Monday error still retries immediately, with no delay', async () => {
+  it('a plain Monday error retries after a backoff, not immediately (#35)', async () => {
     const message = fakeMessage('dn1');
     await processRecomputeBatch([message], base({ mondayClient: fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) }) }));
 
-    expect(message.retry).toHaveBeenCalledWith();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
   });
 
   it('a throwing failed-status write is logged and the batch continues with the next message', async () => {

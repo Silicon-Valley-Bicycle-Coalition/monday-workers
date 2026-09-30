@@ -28,10 +28,10 @@
         // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
         // the Free plan's 50-subrequest cap.
         "max_batch_size": 2,
-        // Retries are immediate except on a D1 daily-quota error, which the consumer defers to
-        // midnight UTC (capped at Queues' 12h); with midnight up to 24h away that can use two of
-        // these three, leaving one for a transient error — and a Monday rate-limit error, which
-        // waits 60s/120s/240s by attempt or Monday's retry hint if longer (src/consumer/quota.ts).
+        // Every retry is delayed (src/consumer/quota.ts): a D1 daily-quota error defers to
+        // midnight UTC (capped at Queues' 12h), which with midnight up to 24h away can use two of
+        // these three; a Monday rate-limit error waits 60s/120s/240s by attempt, or Monday's
+        // retry hint if longer; any other transient error takes the same 60s/120s/240s (#35).
         "max_retries": 3,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).

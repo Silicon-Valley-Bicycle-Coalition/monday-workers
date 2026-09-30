@@ -74,7 +74,7 @@ describe('processDeadLetters', () => {
     expect(m2.ack).toHaveBeenCalled();
   });
 
-  it('when D1 itself is over quota, defers the message to midnight UTC instead of acking; other D1 errors retry immediately', async () => {
+  it('when D1 itself is over quota, defers the message to midnight UTC instead of acking; other D1 errors retry after a backoff', async () => {
     const quota = deps({ pendingStore: fakePendingStore({ updateStatus: vi.fn().mockRejectedValue(QUOTA) }) });
     const m1 = message('dn1');
     await processDeadLetters([m1], quota);
@@ -84,7 +84,7 @@ describe('processDeadLetters', () => {
     const other = deps({ pendingStore: fakePendingStore({ updateStatus: vi.fn().mockRejectedValue(new Error('D1_ERROR: Network connection lost.')) }) });
     const m2 = message('dn2');
     await processDeadLetters([m2], other);
-    expect(m2.retry).toHaveBeenCalledWith();
+    expect(m2.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     expect(m2.ack).not.toHaveBeenCalled();
   });
 });
