@@ -184,8 +184,8 @@ config for exactly this. A sandbox company is reachable only with the app's *dev
 so `QB_CLIENT_ID`/`QB_CLIENT_SECRET` and the seeded token pair are different secrets per
 environment (`wrangler secret put … --env sandbox`), and a production key presented to the sandbox
 host fails authentication. `config/split.test.ts` fails if the two configs ever share the host.
-Own D1 and queue (`quickbooks-sync-writes-sandbox` and its `-dlq`). Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Monday board ids are `null`
-in both configs until the Customers/Invoices/Products boards exist. Staff prerequisites (the step 3
+Own D1 and queue (`quickbooks-sync-writes-sandbox` and its `-dlq`). Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Production Monday board ids are `null`
+until the production Customers/Invoices/Products boards exist; the sandbox ones are wired (below). Staff prerequisites (the step 3
 plan's Task 15): an Intuit sandbox company, development keys, a token pair seeded via the OAuth
 Playground, and a webhook subscription. `npm run deploy:sandbox` fails until
 `env.sandbox.d1_databases[0].database_id` is replaced with the id `wrangler d1 create` prints.
@@ -206,13 +206,17 @@ user (`dwk+sandbox-integration@bikesiliconvalley.org`, the single sandbox-wide i
 the [sandbox design](../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4
 calls for; verified via a `me` query before use, not minted fresh so the other sandbox Workers
 already using it keep working). **`MONDAY_WEBHOOK_SECRET` generated and set 2026-09-22** — a
-fresh random value (this one doesn't come from an external account, so no reuse concern); a copy
-is saved in this Worker's gitignored `.dev.vars` for when the Monday webhook subscription is
-registered as `.../webhooks/monday?secret=<value>`. **Not yet done:** `QB_CLIENT_ID`,
-`QB_CLIENT_SECRET`, and `QB_WEBHOOK_VERIFIER_TOKEN` remain unset, and Monday board ids are still
-`null` — these wait on the staff prerequisites above (an Intuit sandbox company and development
-keys, a token pair seeded via the OAuth Playground) plus the Intuit app-review question below,
-now resolved.
+fresh random value (this one doesn't come from an external account, so no reuse concern). Its
+only local copy lived in a since-removed worktree's `.dev.vars` and is gone; no Monday webhook
+was ever registered with it, so generate a new value and `wrangler secret put
+MONDAY_WEBHOOK_SECRET --env sandbox` again when registering the subscription as
+`.../webhooks/monday?secret=<value>`. **Sandbox boards created 2026-09-29** in the CRM Sandbox
+workspace and wired into `config/sandbox.json`: `QuickBooks Customers (sandbox)` (with the
+QuickBooks Id column, so Monday → QuickBooks creates are enabled), `QuickBooks Invoices
+(sandbox)` (Customer link column to it), and `QuickBooks Products (sandbox)`. **Not yet done:**
+`QB_CLIENT_ID`, `QB_CLIENT_SECRET`, and `QB_WEBHOOK_VERIFIER_TOKEN` remain unset — these wait on
+the staff prerequisites above (an Intuit sandbox company and development keys, a token pair
+seeded via the OAuth Playground) plus the Intuit app-review question below, now resolved.
 
 **Workers Builds:** connect a second Worker, `svbc-quickbooks-sync-sandbox`, to this repo with
 root directory `/quickbooks-sync`, production branch `main`, and deploy command
