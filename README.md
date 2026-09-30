@@ -179,9 +179,15 @@ not in this repo. The payload includes the logs around the failure, so **never l
 address**: name the donor's Monday item ID instead. `mailchimp-sync` and `member-portal` each
 carry a `src/logSafe.ts` whose `errorText()`/`redactEmails()` scrub addresses from error text
 before it's logged, because Mailchimp and email-send errors quote the recipient. `mailchimp-sync`
-logs a Mailchimp member by its `memberId()`, the subscriber hash Mailchimp's API and UI use. The
-one exception is `member-portal`'s local-only `ConsoleEmailSender` (`npm run dev`), which never
-deploys.
+logs a Mailchimp member by its `memberId()`, the subscriber hash Mailchimp's API and UI use.
+
+CI enforces this with the `log-safety` job: [`scripts/check-log-safety.mjs`](scripts/check-log-safety.mjs)
+fails on any `console.*()` call whose arguments name an `email`/`recipient` identifier or a
+`.to`/`.cc`/`.bcc` field, unless it's wrapped in one of those helpers. Run it locally with
+`node scripts/check-log-safety.mjs`. It can't see through indirection (a variable holding an
+object with an address in it), so it's a backstop, not a proof. A deliberate exception takes
+`// log-safety: allow — <reason>` on the line above, as in `member-portal`'s local-only
+`ConsoleEmailSender`, which never deploys.
 
 ## Branded email template
 
