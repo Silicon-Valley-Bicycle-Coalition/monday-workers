@@ -99,7 +99,7 @@ describe('sandboxEmailBinding', () => {
     expect(sent.html).not.toContain('<b>x</b>');
   });
 
-  it('logs one structured sandboxOutbound line per send', async () => {
+  it('logs one structured sandboxOutbound line per send, with a recipient count and no address', async () => {
     const inner = fakeInner();
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     try {
@@ -107,7 +107,7 @@ describe('sandboxEmailBinding', () => {
       expect(log).toHaveBeenCalledTimes(1);
       expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({
         sandboxOutbound: 'email',
-        originalTo: ['donor@example.org'],
+        recipients: 1,
         subject: 'Your login link',
       });
     } finally {

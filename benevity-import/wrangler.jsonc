@@ -40,7 +40,8 @@
     "crons": ["15 9 * * *"]
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "issues": { "enabled": true }
   },
 
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
@@ -80,7 +81,8 @@
         "crons": ["15 9 * * *"]
       },
       "observability": {
-        "enabled": true
+        "enabled": true,
+        "issues": { "enabled": true }
       }
     }
   }

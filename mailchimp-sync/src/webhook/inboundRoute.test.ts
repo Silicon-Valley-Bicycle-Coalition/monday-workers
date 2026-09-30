@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createInboundApp } from './inboundRoute';
 import type { PendingInboundStore } from '../db/pendingInbound';
+import md5 from 'md5';
 
 const SECRET = 'test-webhook-secret';
 
@@ -92,5 +93,18 @@ describe('POST /webhooks/mailchimp/audience', () => {
 
     expect(res.status).toBe(500);
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'failed', 'queue down');
+  });
+
+  it('logs an enqueue failure by member id, never the address', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const send = vi.fn().mockRejectedValue(new Error('queue down'));
+    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET });
+
+    await postForm(app, { type: 'unsubscribe', 'data[email]': 'a@b.com' });
+
+    const text = errorSpy.mock.calls.flat().join('\n');
+    expect(text).toContain(`member ${md5('a@b.com')}`);
+    expect(text).not.toContain('a@b.com');
+    errorSpy.mockRestore();
   });
 });

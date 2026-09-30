@@ -38,6 +38,21 @@ describe('sandboxEmailBinding', () => {
     expect(sent.headers?.[SANDBOX_ORIGINAL_RECIPIENT_HEADER]).toBe('organizer@example.org');
   });
 
+  it('logs one structured sandboxOutbound line per send, with a recipient count and no address', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      await sandboxEmailBinding(fakeInner(), SINK).send(feedbackMessage());
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({
+        sandboxOutbound: 'email',
+        recipients: 1,
+        subject: "How did SVBC's Bike Valet do at Fall Festival?",
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('rejects a raw (non-builder) message rather than silently sending it unrewritten', async () => {
     const inner = fakeInner();
     const raw = { getRaw: () => new Uint8Array() } as unknown as EmailMessage;

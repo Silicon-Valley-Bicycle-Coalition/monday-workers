@@ -164,6 +164,31 @@ Check it now that the account is on Workers Paid — if the $5/month base subscr
 at $10 it will fire almost immediately off that alone, before telling you anything about a real
 spike. Manage it at **Manage account → Notifications** in the Cloudflare dashboard.
 
+## Error monitoring: Workers Issues
+
+Every Worker, production and sandbox, sets `observability.issues.enabled` in its `wrangler.jsonc`
+([Workers Issues](https://developers.cloudflare.com/workers/observability/issues/), open beta, free
+during the beta). The runtime groups uncaught exceptions, 5xx responses, `console.error()` output,
+and logs that carry a stack trace into one issue per bug, with no SDK involved. Keep the key in
+every env block: a Wrangler deploy whose config omits it turns Issues **off** for that Worker. It
+also needs Wrangler ≥ 4.145, since older versions don't recognize the key.
+
+**Automations** (sending an issue to a coding agent, webhook, or chat when it crosses an occurrence
+threshold or comes back after a quiet period) live in the Cloudflare dashboard, or the `cf` CLI,
+not in this repo. The payload includes the logs around the failure, so **never log an email
+address**: name the donor's Monday item ID instead. `mailchimp-sync` and `member-portal` each
+carry a `src/logSafe.ts` whose `errorText()`/`redactEmails()` scrub addresses from error text
+before it's logged, because Mailchimp and email-send errors quote the recipient. `mailchimp-sync`
+logs a Mailchimp member by its `memberId()`, the subscriber hash Mailchimp's API and UI use.
+
+CI enforces this with the `log-safety` job: [`scripts/check-log-safety.mjs`](scripts/check-log-safety.mjs)
+fails on any `console.*()` call whose arguments name an `email`/`recipient` identifier or a
+`.to`/`.cc`/`.bcc` field, unless it's wrapped in one of those helpers. Run it locally with
+`node scripts/check-log-safety.mjs`. It can't see through indirection (a variable holding an
+object with an address in it), so it's a backstop, not a proof. A deliberate exception takes
+`// log-safety: allow — <reason>` on the line above, as in `member-portal`'s local-only
+`ConsoleEmailSender`, which never deploys.
+
 ## Branded email template
 
 Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares

@@ -55,7 +55,8 @@
     "crons": ["0 * * * *", "0 9 * * *"]
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "issues": { "enabled": true }
   },
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-funraise-sync-sandbox
@@ -100,7 +101,8 @@
         "crons": ["0 * * * *", "0 9 * * *"]
       },
       "observability": {
-        "enabled": true
+        "enabled": true,
+        "issues": { "enabled": true }
       }
     }
   }

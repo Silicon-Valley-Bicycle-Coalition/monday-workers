@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { PendingInboundStore } from '../db/pendingInbound';
 import { validateMailchimpWebhookBody } from './validateMailchimp';
 import type { InboundSyncMessage } from '../types';
+import { memberId, redactEmails } from '../logSafe';
 
 export interface InboundQueueLike {
   send(message: InboundSyncMessage): Promise<void>;
@@ -54,7 +55,7 @@ export function createInboundApp(deps: InboundAppDeps) {
       await deps.pendingStore.updateStatus(contactEvent.email, 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`mailchimp-sync inbound webhook: enqueue failed for "${contactEvent.email}": ${errMsg}`);
+      console.error(`mailchimp-sync inbound webhook: enqueue failed for member ${memberId(contactEvent.email)}: ${redactEmails(errMsg)}`);
       await deps.pendingStore.updateStatus(contactEvent.email, 'failed', errMsg);
       return c.json({ ok: false }, 500);
     }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import md5 from 'md5';
 import { processInboundBatch } from './inbound';
 import type { MondayClient } from '../monday/client';
 import { MondayApiError } from '../monday/client';
@@ -199,6 +200,39 @@ describe('processInboundBatch', () => {
     expect(message.retry).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('a@b.com', 'failed', 'mailchimp getMemberInterests: HTTP 400');
     errorSpy.mockRestore();
+  });
+
+  describe('logs never carry an email address', () => {
+    function logged(...spies: ReturnType<typeof vi.spyOn>[]): string {
+      return spies.flatMap((spy) => spy.mock.calls.flat()).join('\n');
+    }
+
+    it('names the member id, and scrubs an address Mailchimp quoted in its error', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 write failed for donor@example.org')) };
+      await processInboundBatch([fakeMessage('donor@example.org')], {
+        mondayClient: fakeMonday(),
+        mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockRejectedValue(new MailchimpPermanentError('mailchimp getMemberInterests: HTTP 400: donor@example.org is invalid')) }),
+        campaignItemsStore: fakeCampaignItemsStore(), pendingStore, config: CONFIG,
+      });
+      const text = logged(errorSpy);
+      expect(text).toContain(`member ${md5('donor@example.org')}`);
+      expect(text).not.toContain('@');
+      errorSpy.mockRestore();
+    });
+
+    it('names the member id when no Donor item matches', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await processInboundBatch([fakeMessage('donor@example.org')], {
+        mondayClient: fakeMonday({ findItemIdByEmail: vi.fn().mockResolvedValue(null) }),
+        mailchimpClient: fakeMailchimp({ getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: {} }) }),
+        campaignItemsStore: fakeCampaignItemsStore(), pendingStore: { upsertPending: vi.fn(), updateStatus: vi.fn() }, config: CONFIG,
+      });
+      const text = logged(warnSpy);
+      expect(text).toContain(`member ${md5('donor@example.org')}`);
+      expect(text).not.toContain('@');
+      warnSpy.mockRestore();
+    });
   });
 
   describe('retry backoff (#35)', () => {

@@ -1,7 +1,7 @@
-import md5 from 'md5';
 import { CREDENTIALS_REJECTED_MARKER } from '../mailchimp/client';
 import type { InboundSyncMessage, OutboundSyncMessage, PendingRow, PendingStatus } from '../types';
 import type { QueueMessageLike } from './outbound';
+import { errorText, memberId } from '../logSafe';
 
 // Consumer for the four mailchimp-sync DLQs (#37): mailchimp-sync-{outbound,inbound}-dlq and
 // their -sandbox- twins. Mirrors funraise-sync's and donation-rollups' processDeadLetters.ts.
@@ -19,9 +19,8 @@ import type { QueueMessageLike } from './outbound';
 // (only a completed delivery sets that), or a row replaced by a newer webhook delivery since
 // (which carries its own queue message) is left alone.
 //
-// Inbound rows are keyed by email address. Logs name the Mailchimp member id instead — the MD5
-// of the lowercased address, the same subscriber hash the Mailchimp API and UI use — so no
-// address ever reaches Workers Logs from here.
+// Inbound rows are keyed by email address. Logs name the Mailchimp member id instead (see
+// src/logSafe.ts), so no address ever reaches Workers Logs from here.
 
 export const DEAD_LETTER_PREFIX = 'dead-lettered after retries: ';
 
@@ -53,10 +52,6 @@ export interface DeadLetterSummary {
   direction: Direction;
   ids: string[];
   credentialsRejected: boolean;
-}
-
-export function memberId(email: string): string {
-  return md5(email.trim().toLowerCase());
 }
 
 export function isCredentialsError(error: string | null): boolean {
@@ -128,7 +123,7 @@ async function processDeadLetters<T>(
       if (isCredentialsError(row.error)) summary.credentialsRejected = true;
       message.ack();
     } catch (err) {
-      console.error(`mailchimp-sync ${direction} dlq: could not mark ${what} ${logId} dead-lettered: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`mailchimp-sync ${direction} dlq: could not mark ${what} ${logId} dead-lettered: ${errorText(err)}`);
       message.retry({ delaySeconds: D1_RETRY_DELAY_SECONDS });
     }
   }
