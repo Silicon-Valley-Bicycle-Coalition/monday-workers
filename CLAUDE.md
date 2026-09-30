@@ -183,7 +183,11 @@ through constructor options in their own `client.ts`, never by editing the copy.
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
 donation-rollups, funraise-sync, geo-filter, mailchimp-sync, member-portal and quickbooks-sync;
-salesforce-import still carries its own client. A Worker's `.mjs` scripts import that Worker's
+salesforce-import deliberately keeps its own client (`src/load/monday.ts`) through the
+2026-10-09 cutover: it's the one every load rehearsal validated, its `gqlPartial()` (per-alias
+results from multi-create requests) has no transport equivalent, and `gqlLegacy()` must stay
+verbatim for `load --sequential`. Reconsider after cutover, if it runs again at all; until then
+port any new failure mode between the two by hand. A Worker's `.mjs` scripts import that Worker's
 copy directly (`import { MondayGraphQL } from '../src/monday/graphql.ts'`) through Node's
 built-in type stripping (Node 22.18+ / 23.6+), so the file must stay strip-only-compatible — no
 constructor parameter properties, enums or namespaces. Queue Workers run it with 3 in-process
