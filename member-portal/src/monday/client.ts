@@ -31,10 +31,8 @@ const MONDAY_API_VERSION = '2026-01';
 export const MONDAY_FETCH_TIMEOUT_MS = 15_000;
 
 // One attempt per call, no in-process retry (#35). Most calls render a donor's page, where a
-// retry's backoff (seconds) is worse than a fast error the donor can reload past, and every
-// retried fetch is another subrequest against Workers Free's 50-per-invocation cap on a render
-// that already paginates. The queue consumers (change requests, letters) retry with their own
-// backoff (queueRetry.ts).
+// retry's backoff (seconds) is worse than a fast error the donor can reload past. The queue
+// consumers (change requests, letters) retry with their own backoff (queueRetry.ts).
 const MAX_ATTEMPTS = 1;
 
 interface MondayColumnValue {
