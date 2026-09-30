@@ -20,6 +20,25 @@ describe('sendFailureAlert', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('bounds the POST with a timeout, since it is awaited on the .ics cache-MISS path', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) => new Response('ok', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await sendFailureAlert('https://hooks.slack.com/services/test', 'santa-clara', 'Santa Clara', 3, 'boom');
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('logs rather than throws when the POST times out', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(sendFailureAlert('https://hooks.slack.com/services/test', 'santa-clara', 'Santa Clara', 3, 'boom')).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Slack alert POST threw'));
+    errorSpy.mockRestore();
+  });
+
   it('skips the POST and logs when no webhook URL is configured', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
