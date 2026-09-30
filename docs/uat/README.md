@@ -126,10 +126,12 @@ These apply everywhere and are already on the list:
 
 ## For staff without repo access
 
-These scripts are distributed to staff as a copy in the shared Google Drive "2026 CRM
-Transition" folder, alongside the migration guide. If you are reading a Drive copy and it
-disagrees with a board you are looking at, the repo copy is newer; ask whoever shared it to
-refresh the Drive copy.
+These scripts are distributed to staff as Google Docs, one per script, in the Drive folder
+[Monday CRM UAT scripts (boards and integrations)](https://drive.google.com/drive/folders/1aIiQxJCUOjJhBhka3dxiMdX4qAEPUbeN),
+inside "SVBC Process Documentation (migrated from Box)" next to the migration guide's copy. Each
+Drive copy says which commit it was synced from. If a Drive copy disagrees with a board you are
+looking at, the repo copy is newer; ask whoever shared it to re-sync rather than editing the
+Drive copy.
 
 ---
 

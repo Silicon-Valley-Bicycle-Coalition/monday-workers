@@ -74,6 +74,12 @@ members** (the Board Elections export) · **By city** · **Stakeholders** · **B
    Confirmed; they drop off the worklist. (This also drives the Mailchimp unsubscribe; see the
    [Mailchimp sync](mailchimp-sync.md) script.)
 
+**Not testable yet: bulk-loading a batch of new contacts.** If you've used the "Protocol for
+Dataloading Contacts + Campaigns into Salesforce" process (BTWD outreach, a bike parking
+recruitment push, any spreadsheet of people loaded at once), its Monday replacement is designed
+around the **Campaign** tag column but hasn't been rehearsed here. If that process matters to
+you, say so on IT Requests so it's prioritised before cutover.
+
 **Don't report these:** Personal Email Consent reads "Not in Mailchimp" for everyone (load ran
 without the consent file). Nobody moves between this board and People (Historical) yet. You can
 no longer merge duplicates yourself: file the pair on IT Requests. A tab called **Drafts to
