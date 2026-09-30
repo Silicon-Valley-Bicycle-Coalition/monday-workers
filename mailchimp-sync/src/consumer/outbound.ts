@@ -6,6 +6,7 @@ import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client
 import type { Config, OutboundSyncMessage } from '../types';
 import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
+import { errorText, redactEmails } from '../logSafe';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -34,7 +35,7 @@ export async function processOutboundBatch(
       message.ack();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`mailchimp-sync outbound consumer: failed to process donor "${donorItemId}": ${errMsg}`);
+      console.error(`mailchimp-sync outbound consumer: failed to process donor "${donorItemId}": ${redactEmails(errMsg)}`);
       if (err instanceof MailchimpAuthError) console.error(credentialsRejectedLog('outbound'));
       // Recording the failure is bookkeeping; a D1 error here must not take the ack/retry
       // decision down with it (the throw would fail the whole batch and retry every message
@@ -42,7 +43,7 @@ export async function processOutboundBatch(
       try {
         await deps.pendingStore.updateStatus(donorItemId, 'failed', errMsg);
       } catch (recordErr) {
-        console.error(`mailchimp-sync outbound consumer: could not record failure for donor "${donorItemId}": ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`);
+        console.error(`mailchimp-sync outbound consumer: could not record failure for donor "${donorItemId}": ${errorText(recordErr)}`);
       }
       // A rejected API key (MailchimpAuthError) is deliberately *not* permanent: acking it would
       // drop the whole backlog behind a bad or rotated key with nothing left to replay.

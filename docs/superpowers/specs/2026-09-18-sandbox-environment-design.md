@@ -178,7 +178,8 @@ templates stay untouched. For each `send()`:
   would have received it;
 * one line is prepended to both `text` and `html`: "Sandbox copy. Production would have sent
   this to <original recipient>.";
-* a structured log line is emitted: `{"sandboxOutbound":"email","originalTo":…,"subject":…}`.
+* a structured log line is emitted: `{"sandboxOutbound":"email","recipients":<count>,"subject":…}`
+  (a count, not the addresses, since logs can be forwarded by Workers Issues automations).
 
 `config/sandbox.json` sets `email.fromName` to `SVBC Donor Portal (sandbox)`, keeps
 `email.fromAddress` on the already-onboarded `login@mail.bikesiliconvalley.org` (no second

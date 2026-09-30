@@ -175,10 +175,13 @@ also needs Wrangler ≥ 4.145, since older versions don't recognize the key.
 
 **Automations** (sending an issue to a coding agent, webhook, or chat when it crosses an occurrence
 threshold or comes back after a quiet period) live in the Cloudflare dashboard, or the `cf` CLI,
-not in this repo. Before pointing one at an agent outside Cloudflare, remember that the payload
-includes the logs around the failure. Most Workers log only opaque Monday item IDs, but
-`mailchimp-sync`'s inbound error paths and `member-portal`'s sandbox email shim log raw email
-addresses. Filter those Workers out of the automation, or stop logging the addresses first.
+not in this repo. The payload includes the logs around the failure, so **never log an email
+address**: name the donor's Monday item ID instead. `mailchimp-sync` and `member-portal` each
+carry a `src/logSafe.ts` whose `errorText()`/`redactEmails()` scrub addresses from error text
+before it's logged, because Mailchimp and email-send errors quote the recipient. `mailchimp-sync`
+logs a Mailchimp member by its `memberId()`, the subscriber hash Mailchimp's API and UI use. The
+one exception is `member-portal`'s local-only `ConsoleEmailSender` (`npm run dev`), which never
+deploys.
 
 ## Branded email template
 

@@ -39,7 +39,8 @@ export function sandboxEmailBinding(inner: SendEmail, sink: string): SendEmail {
       const originalTo = originalRecipients.join(', ');
       const notice = `Sandbox copy. Production would have sent this to ${originalTo}.`;
 
-      console.log(JSON.stringify({ sandboxOutbound: 'email', originalTo: originalRecipients, subject: message.subject }));
+      // Count only: the addresses stay in the sink copy's subject and header, out of Workers Logs.
+      console.log(JSON.stringify({ sandboxOutbound: 'email', recipients: originalRecipients.length, subject: message.subject }));
 
       // cc/bcc/replyTo are dropped, not rewritten: one copy to the sink is the whole point, and a
       // replyTo pointing at the donor would let a human reply from the sandbox inbox reach them.
