@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HttpMondayClient, MondayRateLimitError } from './client';
+import { AmbiguousWriteError } from './graphql';
 
 const COLUMNS = { amount: 'amount_1', date: 'date_1', fiscalYear: null, status: 'status_1' };
+
+// The transport's retries don't really wait in tests.
+const NO_SLEEP = { sleepFn: async () => {} };
 
 // Shapes one GraphQL items response the way getDonationsByIds reads it back.
 function itemsResponse(items: { id: string; cells: Record<string, string | null> }[]) {
@@ -20,7 +24,7 @@ function clientReturning(body: unknown): HttpMondayClient {
   // (getDonationsByIds, getAffiliationSummary) invoke fetch more than once against one client.
   vi.stubGlobal('fetch', vi.fn().mockImplementation(
     () => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))));
-  return new HttpMondayClient('https://api.monday.test/v2', 'token');
+  return new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
 }
 
 // Like clientReturning, but scripts successive fetch calls to resolve each body in turn —
@@ -31,7 +35,7 @@ function clientReturningSequence(bodies: unknown[]): HttpMondayClient {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200 }));
   }
   vi.stubGlobal('fetch', fetchMock);
-  return new HttpMondayClient('https://api.monday.test/v2', 'token');
+  return new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -207,7 +211,7 @@ describe('Monday rate-limit errors', () => {
   function clientResponding(body: unknown, init: ResponseInit = { status: 200 }): HttpMondayClient {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(
       () => Promise.resolve(new Response(JSON.stringify(body), init))));
-    return new HttpMondayClient('https://api.monday.test/v2', 'token');
+    return new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
   }
   const read = (c: HttpMondayClient) => c.getItemBoardId('1');
 
@@ -262,6 +266,54 @@ describe('Monday rate-limit errors', () => {
     expect(gql.message).toContain('Column not found');
     const http = await read(clientResponding({}, { status: 500 })).catch((e) => e);
     expect(http).not.toBeInstanceOf(MondayRateLimitError);
-    expect(http.message).toBe('monday API: HTTP 500');
+    expect(http.message).toBe('monday API: exhausted 3 attempts — last error: HTTP 500');
+  });
+});
+
+// #35: the client runs on the canonical transport (src/monday/graphql.ts).
+describe('HttpMondayClient transport', () => {
+  function recordingFetch(response: () => Response) {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response()));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+  const apiVersionOf = (fetchMock: ReturnType<typeof vi.fn>, call: number) =>
+    new Headers((fetchMock.mock.calls[call] as [string, RequestInit])[1].headers).get('API-Version');
+
+  it('retries a Monday blip in-process 3 times, then leaves longer waits to the queue', async () => {
+    const fetchMock = recordingFetch(() => new Response('down', { status: 503 }));
+    await expect(new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP).getItemBoardId('1')).rejects.toThrow(
+      'monday API: exhausted 3 attempts — last error: HTTP 503: down');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('a rate limit that outlasts the in-process retries still surfaces as MondayRateLimitError with its hint', async () => {
+    const fetchMock = recordingFetch(() => new Response('slow down', { status: 429, headers: { 'Retry-After': '45' } }));
+    const err = await new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP).getItemBoardId('1').catch((e) => e);
+    expect(err).toBeInstanceOf(MondayRateLimitError);
+    expect(err.retryInSeconds).toBe(45);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('pins 2026-01, and 2026-04 for setItemDescription alone', async () => {
+    const fetchMock = recordingFetch(() => Response.json({ data: { items: [], set_item_description_content: { success: true } } }));
+    const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
+    await client.getItemBoardId('1');
+    await client.setItemDescription('1', '# Gifts');
+    expect([apiVersionOf(fetchMock, 0), apiVersionOf(fetchMock, 1)]).toEqual(['2026-01', '2026-04']);
+  });
+
+  it('a create that may have committed stays an AmbiguousWriteError, never reclassified as a rate limit', async () => {
+    recordingFetch(() => new Response('bad gateway', { status: 502 }));
+    const err = await new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP).createItem(1, 'x', {}).catch((e) => e);
+    expect(err).toBeInstanceOf(AmbiguousWriteError);
+    expect(err).not.toBeInstanceOf(MondayRateLimitError);
+  });
+
+  it('a rate-limit error keeps the transport details alongside retryInSeconds', async () => {
+    recordingFetch(() => Response.json({ errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 12 } }] }));
+    const err = await new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP).getItemBoardId('1').catch((e) => e);
+    expect(err).toBeInstanceOf(MondayRateLimitError);
+    expect(err).toMatchObject({ retryInSeconds: 12, retryAfterSeconds: 12, code: 'COMPLEXITY_BUDGET_EXHAUSTED', daily: false });
   });
 });

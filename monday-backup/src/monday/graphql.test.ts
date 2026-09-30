@@ -149,6 +149,24 @@ describe('MondayGraphQL typed errors', () => {
   });
 });
 
+describe('MondayGraphQL with a single attempt', () => {
+  it('reports the failure itself, with its details, rather than an "exhausted" wrapper', async () => {
+    const fetchFn = vi.fn(async () =>
+      Response.json({ errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 9 } }] }),
+    );
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn, maxAttempts: 1 });
+    const err = await gql.request('query { ok }', {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ message: 'monday API: Complexity budget exhausted', code: 'COMPLEXITY_BUDGET_EXHAUSTED', retryAfterSeconds: 9 });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not echo a JSON error body that carries no message', async () => {
+    const fetchFn = vi.fn(async () => Response.json({}, { status: 500 }));
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn, maxAttempts: 1 });
+    await expect(gql.request('query { ok }', {})).rejects.toThrow(/^monday API: HTTP 500$/);
+  });
+});
+
 describe('MondayGraphQL fetchFn option', () => {
   it('uses an injected fetch instead of the global one', async () => {
     const fetchFn = vi.fn(async () => Response.json({ data: { ok: true } }));

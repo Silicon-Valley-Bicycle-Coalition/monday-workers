@@ -1,6 +1,10 @@
 import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
 import type { OwnerMembershipColumns } from '../types';
+import {
+  AmbiguousWriteError, MondayApiError, MondayGraphQL,
+  type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions,
+} from './graphql';
 
 function chunksOf<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -81,19 +85,18 @@ export interface DonationRollupsMondayClient {
   createUpdate(itemId: number, body: string): Promise<void>;
 }
 
+// The queries below were written and verified against 2026-01; the canonical transport's
+// default is newer, so pin this Worker's version explicitly until they're re-checked.
+// setItemDescription alone needs 2026-04 (see there).
 const MONDAY_API_VERSION = '2026-01';
 
-interface GraphQLError {
-  message: string;
-  extensions?: { code?: string; status_code?: number; retry_in_seconds?: number };
-}
-
-interface GraphQLResponse<T> {
-  data?: T;
-  errors?: GraphQLError[];
-  error_message?: string;
-  status_code?: number;
-}
+// Queue-consumer tuning (#35), same as the other queue Workers: a few quick in-process retries
+// ride out a Monday blip or the per-minute complexity budget. Anything longer surfaces as a
+// MondayRateLimitError carrying Monday's hint, and the consumer defers the batch by it
+// (consumer/quota.ts) — including the daily limit, which the transport never retries in-process.
+// On Workers Paid (confirmed 2026-09-29) the retried fetches' extra subrequests are well inside
+// the 10,000-per-invocation limit, and waiting doesn't count against the 100 ms CPU cap.
+const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
 
 // Monday's per-token complexity budget, per-minute and daily call limits, and concurrency cap
 // (issue #27). The consumer retries these after a delay instead of immediately; retryInSeconds
@@ -101,9 +104,9 @@ interface GraphQLResponse<T> {
 // "reset in N seconds" message) when it gave one. `daily` marks DAILY_LIMIT_EXCEEDED, which
 // resets at midnight UTC (developer.monday.com/api-reference/docs/rate-limits) rather than
 // within seconds, and isn't documented to carry a hint.
-export class MondayRateLimitError extends Error {
-  constructor(message: string, readonly retryInSeconds?: number, readonly daily = false) {
-    super(message);
+export class MondayRateLimitError extends MondayApiError {
+  constructor(message: string, readonly retryInSeconds?: number, readonly daily = false, details: MondayErrorDetails = {}) {
+    super(message, details);
     this.name = 'MondayRateLimitError';
   }
 }
@@ -114,72 +117,46 @@ const RATE_LIMIT_CODES = new Set([
 ]);
 const RATE_LIMIT_TEXT = /complexity budget exhausted|rate limit exceeded/i;
 
-function positiveSeconds(v: unknown): number | undefined {
-  const n = typeof v === 'string' ? Number(v.trim()) : v;
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
-// Classifies a Monday error response. Returns a MondayRateLimitError when any signal says rate
-// limit (an HTTP 429, a known extensions.code, a 429 status_code, or the legacy message text);
-// otherwise null, and the caller throws its ordinary Error.
-function rateLimitErrorFrom(
-  json: GraphQLResponse<unknown> | null, httpStatus: number, retryAfterHeader: string | null, fallbackMessage: string,
-): MondayRateLimitError | null {
-  const errors = json?.errors ?? [];
-  const limited = httpStatus === 429
-    || json?.status_code === 429
-    || errors.some((e) => RATE_LIMIT_CODES.has(e.extensions?.code ?? '') || e.extensions?.status_code === 429)
-    || RATE_LIMIT_TEXT.test(json?.error_message ?? '')
-    || errors.some((e) => RATE_LIMIT_TEXT.test(e.message));
+// Reclassifies a transport error as a MondayRateLimitError when any signal says rate limit (an
+// HTTP or legacy-shape 429, a known code, or the message text); otherwise null, and the
+// transport's own MondayApiError stands. A write that may have committed is never reclassified.
+function rateLimitErrorFrom(err: unknown): MondayRateLimitError | null {
+  if (!(err instanceof MondayApiError) || err instanceof AmbiguousWriteError) return null;
+  const limited = err.httpStatus === 429 || RATE_LIMIT_CODES.has(err.code ?? '') || RATE_LIMIT_TEXT.test(err.message);
   if (!limited) return null;
-  const legacyHint = /reset in (\d+(?:\.\d+)?) seconds?/i.exec(json?.error_message ?? errors.map((e) => e.message).join(' '))?.[1];
-  const retryInSeconds = positiveSeconds(retryAfterHeader)
-    ?? errors.map((e) => positiveSeconds(e.extensions?.retry_in_seconds)).find((s) => s !== undefined)
-    ?? positiveSeconds(legacyHint);
-  const detail = errors.length > 0 ? errors.map((e) => e.message).join('; ') : (json?.error_message ?? fallbackMessage);
-  const daily = errors.some((e) => e.extensions?.code === 'DAILY_LIMIT_EXCEEDED');
-  return new MondayRateLimitError(`monday API: ${detail}`, retryInSeconds, daily);
+  // A zero hint is no hint: the consumer's backoff floor applies.
+  const retryInSeconds = err.retryAfterSeconds ? err.retryAfterSeconds : undefined;
+  return new MondayRateLimitError(err.message, retryInSeconds, err.code === 'DAILY_LIMIT_EXCEEDED', err);
 }
 
 interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
 
 export class HttpMondayClient implements DonationRollupsMondayClient {
+  private readonly transports = new Map<string, MondayGraphQL>();
+
   constructor(
     private apiUrl: string,
     private apiToken: string,
+    private options: MondayGraphQLOptions = {},
   ) {}
 
-  private async graphql<T>(query: string, variables: Record<string, unknown>, apiVersion = MONDAY_API_VERSION): Promise<T> {
-    const response = await fetch(this.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.apiToken,
-        'API-Version': apiVersion,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (!response.ok) {
-      if (response.status === 429) {
-        const body = await response.json().catch(() => null) as GraphQLResponse<T> | null;
-        throw rateLimitErrorFrom(body, 429, response.headers.get('Retry-After'), `HTTP ${response.status}`)!;
-      }
-      throw new Error(`monday API: HTTP ${response.status}`);
+  private transport(apiVersion: string): MondayGraphQL {
+    let transport = this.transports.get(apiVersion);
+    if (transport === undefined) {
+      transport = new MondayGraphQL(this.apiUrl, this.apiToken, { ...DEFAULT_OPTIONS, ...this.options, apiVersion });
+      this.transports.set(apiVersion, transport);
     }
-    const json = (await response.json()) as GraphQLResponse<T>;
-    const limited = rateLimitErrorFrom(json, response.status, response.headers.get('Retry-After'), 'rate limited');
-    if (limited) throw limited;
-    if (json.errors && json.errors.length > 0) {
-      throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
+    return transport;
+  }
+
+  private async graphql<T>(
+    query: string, variables: Record<string, unknown>, apiVersion = MONDAY_API_VERSION, requestOptions?: RequestOptions,
+  ): Promise<T> {
+    try {
+      return await this.transport(apiVersion).request<T>(query, variables, requestOptions);
+    } catch (err) {
+      throw rateLimitErrorFrom(err) ?? err;
     }
-    if (!json.data) {
-      const detail =
-        typeof json.error_message === 'string'
-          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
-          : JSON.stringify(json);
-      throw new Error(`monday API: response contained no data — ${detail}`);
-    }
-    return json.data;
   }
 
   async getItemBoardId(itemId: string): Promise<string | null> {
@@ -396,6 +373,9 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues) { id }
       }`,
       { boardId: String(boardId), itemName, columnValues: JSON.stringify(columnValues) },
+      MONDAY_API_VERSION,
+      // Not idempotent: a create that may have committed throws AmbiguousWriteError.
+      { idempotent: false },
     );
     return data.create_item.id;
   }
@@ -447,6 +427,9 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     await this.graphql<{ create_update: { id: string } }>(
       `mutation ($itemId: ID!, $body: String!) { create_update(item_id: $itemId, body: $body) { id } }`,
       { itemId: String(itemId), body },
+      MONDAY_API_VERSION,
+      // Not idempotent: a repeat would post the alert twice.
+      { idempotent: false },
     );
   }
 }
