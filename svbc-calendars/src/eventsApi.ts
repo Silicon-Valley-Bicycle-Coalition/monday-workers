@@ -93,18 +93,37 @@ async function fetchOrganizerEvents(organizerId: string, token: string): Promise
   return fetchEventbriteEvents(organizerSource(organizerId), token, 50);
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function fetchEventsResponse(env: Env, organizerId: string | null, pageSize: number, cacheTTL: number): Promise<Response> {
   let events: NormalizedEvent[];
-  try {
-    if (organizerId) {
+  // True when the merged feed is missing an organizer that failed: still served, never cached.
+  let partial = false;
+  if (organizerId) {
+    try {
       events = await fetchOrganizerEvents(organizerId, env.EVENTBRITE_TOKEN);
-    } else {
-      const perOrganizer = await Promise.all(ALLOWED_ORGANIZERS.map((id) => fetchOrganizerEvents(id, env.EVENTBRITE_TOKEN)));
-      events = perOrganizer.flat().sort((a, b) => a.startUtc.localeCompare(b.startUtc));
+    } catch (err) {
+      return jsonResponse({ error: 'Eventbrite API error', detail: errorMessage(err) }, 502);
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return jsonResponse({ error: 'Eventbrite API error', detail: message }, 502);
+  } else {
+    // One organizer failing — e.g. deleted on Eventbrite, as "bike parking" (121346572357) was by
+    // 2026-09-30 — must not blank the whole widget: serve the organizers that answered and log the
+    // rest. Only when every organizer fails is the feed an error.
+    const settled = await Promise.allSettled(ALLOWED_ORGANIZERS.map((id) => fetchOrganizerEvents(id, env.EVENTBRITE_TOKEN)));
+    const failures = settled.flatMap((result, i) =>
+      result.status === 'rejected' ? [`organizer ${ALLOWED_ORGANIZERS[i]}: ${errorMessage(result.reason)}`] : []);
+    if (failures.length === settled.length) {
+      return jsonResponse({ error: 'Eventbrite API error', detail: failures.join('; ') }, 502);
+    }
+    for (const failure of failures) {
+      console.error(`svbc-calendars: /events served without ${failure}`);
+    }
+    partial = failures.length > 0;
+    events = settled
+      .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
+      .sort((a, b) => a.startUtc.localeCompare(b.startUtc));
   }
 
   const now = new Date();
@@ -113,5 +132,8 @@ export async function fetchEventsResponse(env: Env, organizerId: string | null, 
     .slice(0, pageSize)
     .map(toEventItem);
 
-  return jsonResponse({ events: items, total: items.length }, 200, { 'Cache-Control': `public, max-age=${cacheTTL}` });
+  // A partial feed is marked no-store so withCache (index.ts) doesn't pin it for the full TTL: a
+  // transient failure of the main organizer would otherwise hide its events for 15 minutes.
+  const cacheControl = partial ? 'no-store' : `public, max-age=${cacheTTL}`;
+  return jsonResponse({ events: items, total: items.length }, 200, { 'Cache-Control': cacheControl });
 }
