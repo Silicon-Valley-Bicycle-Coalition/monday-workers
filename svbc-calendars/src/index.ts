@@ -73,7 +73,10 @@ async function withCache(cacheKey: Request, ttlSeconds: number, ctx: ExecutionCo
   const fresh = await generate();
   const response = new Response(fresh.body, fresh);
   response.headers.set('X-Cache', 'MISS');
-  if (fresh.ok) {
+  // A generator marks a successful-but-incomplete response no-store (eventsApi.ts's partial
+  // multi-organizer feed): serve it, but don't pin it for the TTL.
+  const noStore = /\bno-store\b/i.test(fresh.headers.get('Cache-Control') ?? '');
+  if (fresh.ok && !noStore) {
     // Set on the response returned to THIS caller too, not just the cached copy — otherwise a
     // MISS response has no Cache-Control while the HIT response served from `cached` on the next
     // request does (it was stored with one), which is an inconsistent, confusing mismatch for
