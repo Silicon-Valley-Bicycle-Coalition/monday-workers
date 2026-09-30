@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HttpMondayClient } from './client';
-import { AmbiguousWriteError } from './graphql';
+import { AmbiguousWriteError, MONDAY_API_VERSION } from './graphql';
 
 // No real waits between the transport's retries.
 function newClient() {
@@ -102,10 +102,10 @@ describe('HttpMondayClient dataless responses', () => {
 });
 
 describe('HttpMondayClient transport (#35)', () => {
-  it('pins API-Version 2026-01, the version these queries were written against', async () => {
+  it('sends the transport\'s single pinned API-Version (#39)', async () => {
     const fetchMock = mockFetchOnce({ data: { items_page_by_column_values: { items: [] } } });
     await newClient().findItemByColumnValue(1, 'x', 'y');
-    expect(fetchMock.mock.calls[0]![1].headers['API-Version']).toBe('2026-01');
+    expect(fetchMock.mock.calls[0]![1].headers['API-Version']).toBe(MONDAY_API_VERSION);
   });
 
   it('retries a 429 in-process and succeeds', async () => {

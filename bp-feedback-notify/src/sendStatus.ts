@@ -4,7 +4,10 @@
 // the write entirely, and the outcome is only logged.
 
 const MONDAY_API_URL = 'https://api.monday.com/v2';
-const MONDAY_API_VERSION = '2026-01';
+// Explicit pin (#39): Monday serves a deprecated version as the maintenance one, so a stale pin
+// drifts silently. This Worker makes one call and carries no transport copy, so keep this in step
+// with MONDAY_API_VERSION in the other Workers' src/monday/graphql.ts by hand.
+const MONDAY_API_VERSION = '2026-07';
 // Runs under ctx.waitUntil after the webhook has been answered; bound it so a hung Monday API
 // can't keep the invocation alive indefinitely.
 const MONDAY_TIMEOUT_MS = 10_000;

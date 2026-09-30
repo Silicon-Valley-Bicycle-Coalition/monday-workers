@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AmbiguousWriteError, HttpMondayClient, MondayApiError } from './client';
+import { MONDAY_API_VERSION } from './graphql';
 import type { MondayColumnsConfig } from '../types';
 
 const COLUMNS: MondayColumnsConfig = {
@@ -16,14 +17,14 @@ function fakeFetch(data: unknown) {
 }
 
 describe('HttpMondayClient GraphQL transport', () => {
-  it('pins the Monday API version on every request', async () => {
+  it('sends the transport\'s single pinned API-Version on every request (#39)', async () => {
     const fetchFn = fakeFetch({ items: [] });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await client.getDonorById('42', COLUMNS);
     expect(fetchFn).toHaveBeenCalledWith(
       'https://api.monday.com/v2',
       expect.objectContaining({
-        headers: expect.objectContaining({ 'API-Version': '2026-01' }),
+        headers: expect.objectContaining({ 'API-Version': MONDAY_API_VERSION }),
       }),
     );
   });

@@ -7,9 +7,6 @@ import { MondayGraphQL, type MondayGraphQLOptions } from './monday/graphql.js';
 
 const API_URL = 'https://api.monday.com/v2';
 
-// The queries below were written and verified against 2026-01; the transport's default is newer.
-const MONDAY_API_VERSION = '2026-01';
-
 export interface ColumnTitles {
   /**
    * Title of the column to report as each contact's name. Undefined means the item's own name
@@ -34,7 +31,7 @@ export async function fetchContacts(
   columns: ColumnTitles,
   options: MondayGraphQLOptions = {}
 ): Promise<Contact[]> {
-  const transport = new MondayGraphQL(API_URL, token, { apiVersion: MONDAY_API_VERSION, ...options });
+  const transport = new MondayGraphQL(API_URL, token, options);
   const boardData: any = await transport.request<any>(`query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`, { boardId: [boardId] });
   const byTitle = new Map<string, string>((boardData.boards[0]?.columns ?? []).map((c: { id: string; title: string }) => [c.title, c.id]));
   const latId = byTitle.get(columns.lat);

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchContacts } from './monday.js';
+import { MONDAY_API_VERSION } from './monday/graphql.js';
 
 const COLUMNS = [
   { id: 'name', title: 'Donor' },
@@ -89,10 +90,10 @@ describe('fetchContacts transport', () => {
     expect(itemsCalls).toBe(2);
   });
 
-  it('pins API-Version 2026-01', async () => {
+  it('sends the transport\'s single pinned API-Version (#39)', async () => {
     stubMonday();
     await fetchContacts('t', '1', base);
     const init = (vi.mocked(fetch).mock.calls[0] as [string, RequestInit])[1];
-    expect(new Headers(init.headers).get('API-Version')).toBe('2026-01');
+    expect(new Headers(init.headers).get('API-Version')).toBe(MONDAY_API_VERSION);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HttpMondayClient } from './client';
-import { AmbiguousWriteError } from './graphql';
+import { AmbiguousWriteError, MONDAY_API_VERSION } from './graphql';
 
 // No real waits between the transport's retries.
 function newClient() {
@@ -91,7 +91,7 @@ describe('HttpMondayClient', () => {
     expect(body.variables).toEqual({ boardId: 999, columnId: 'qb_id_col', value: '60' });
   });
 
-  // #33 review: items(ids:) returns archived and deleted items too (API 2026-01); state says which.
+  // #33 review: items(ids:) returns archived and deleted items too; state says which.
   it("reports an archived or deleted item's state rather than hiding it", async () => {
     const fetchMock = mockFetchOnce({ data: { items: [{ id: '456', name: 'Old Co', state: 'archived', column_values: [] }] } });
     const client = newClient();
@@ -135,10 +135,10 @@ describe('HttpMondayClient', () => {
 });
 
 describe('HttpMondayClient transport (#35)', () => {
-  it('pins API-Version 2026-01, the version these queries were written against', async () => {
+  it('sends the transport\'s single pinned API-Version (#39)', async () => {
     const fetchMock = mockFetchOnce({ data: { items: [] } });
     await newClient().getItem('1');
-    expect(fetchMock.mock.calls[0]![1].headers['API-Version']).toBe('2026-01');
+    expect(fetchMock.mock.calls[0]![1].headers['API-Version']).toBe(MONDAY_API_VERSION);
   });
 
   it('retries a 429 in-process and succeeds', async () => {

@@ -6,6 +6,8 @@
 //
 // Usage: MONDAY_API_TOKEN=... node scripts/setup-classification-columns.mjs <donationsBoardId>
 
+import { MONDAY_API_VERSION } from '../src/monday/graphql.ts';
+
 const token = process.env.MONDAY_API_TOKEN;
 const boardId = process.argv[2];
 if (!token || !/^\d+$/.test(boardId ?? '')) {
@@ -23,7 +25,7 @@ const FIELDS = {
 async function graphql(query, variables) {
   const res = await fetch('https://api.monday.com/v2', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': '2026-01' },
+    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': MONDAY_API_VERSION },
     body: JSON.stringify({ query, variables }),
   });
   const body = await res.json();

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HttpMondayClient, MondayRateLimitError } from './client';
-import { AmbiguousWriteError } from './graphql';
+import { AmbiguousWriteError, MONDAY_API_VERSION } from './graphql';
 
 const COLUMNS = { amount: 'amount_1', date: 'date_1', fiscalYear: null, status: 'status_1' };
 
@@ -295,12 +295,12 @@ describe('HttpMondayClient transport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('pins 2026-01, and 2026-04 for setItemDescription alone', async () => {
+  it('sends the transport\'s single pinned API-Version on every call, setItemDescription included (#39)', async () => {
     const fetchMock = recordingFetch(() => Response.json({ data: { items: [], set_item_description_content: { success: true } } }));
     const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
     await client.getItemBoardId('1');
     await client.setItemDescription('1', '# Gifts');
-    expect([apiVersionOf(fetchMock, 0), apiVersionOf(fetchMock, 1)]).toEqual(['2026-01', '2026-04']);
+    expect([apiVersionOf(fetchMock, 0), apiVersionOf(fetchMock, 1)]).toEqual([MONDAY_API_VERSION, MONDAY_API_VERSION]);
   });
 
   it('a create that may have committed stays an AmbiguousWriteError, never reclassified as a rate limit', async () => {

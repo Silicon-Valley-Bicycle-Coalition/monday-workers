@@ -2,7 +2,7 @@ import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
 import type { OwnerMembershipColumns } from '../types';
 import {
-  AmbiguousWriteError, MondayApiError, MondayGraphQL,
+  AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
   type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions,
 } from './graphql';
 
@@ -85,11 +85,7 @@ export interface DonationRollupsMondayClient {
   createUpdate(itemId: number, body: string): Promise<void>;
 }
 
-// The queries below were written and verified against 2026-01; the canonical transport's
-// default is newer, so pin this Worker's version explicitly until they're re-checked.
-// setItemDescription alone needs 2026-04 (see there).
-const MONDAY_API_VERSION = '2026-01';
-
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
 // Queue-consumer tuning (#35), same as the other queue Workers: a few quick in-process retries
 // ride out a Monday blip or the per-minute complexity budget. Anything longer surfaces as a
 // MondayRateLimitError carrying Monday's hint, and the consumer defers the batch by it
@@ -354,14 +350,12 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   }
 
   async setItemDescription(itemId: string, markdown: string): Promise<void> {
-    // set_item_description_content requires API 2026-04+ (the rest of this client pins
-    // 2026-01) — override the version for just this call.
+    // set_item_description_content exists from API 2026-04 on; the transport's pin covers it.
     await this.graphql<{ set_item_description_content: { success: boolean } }>(
       `mutation ($itemId: ID!, $markdown: String!) {
         set_item_description_content(item_id: $itemId, markdown: $markdown) { success }
       }`,
       { itemId, markdown },
-      '2026-04',
     );
   }
 
