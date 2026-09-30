@@ -19,7 +19,13 @@
           "termStart": "date_mm79pwsn",
           "termEnd": "date_mm79g18g",
           "membershipType": "text_mm79h753",
-          "actingForLink": "board_relation_mm79313"
+          "actingForLink": "board_relation_mm79313",
+          "classification": {
+            "fundingStream": "color_mm7nwk15",
+            "giftSize": "color_mm7n36b1",
+            "fiscalQuarter": "color_mm7nwr75",
+            "giftFiscalYear": "color_mm7narkn"
+          }
         }
       }
     ],
@@ -38,6 +44,7 @@
         "averageGift": "numeric_mm7da5p0",
         "lastGiftDate": "date_mm7dkxka",
         "lastGiftAmount": "numeric_mm7dajjw",
+        "donorLevel": "color_mm7n1mar",
         "membership": {
           "status": "color_mm79yw6p",
           "tier": "color_mm79baj4",
@@ -80,8 +87,15 @@
         "smallestGift": "numeric_mm7d1kby",
         "averageGift": "numeric_mm7dre01",
         "lastGiftDate": "date_mm7dejcm",
-        "lastGiftAmount": "numeric_mm7dzftz"
+        "lastGiftAmount": "numeric_mm7dzftz",
+        "donorLevel": "color_mm7nn4pr"
       }
+    },
+    "donorLevel": {
+      "leadershipLifetimeCents": 500000,
+      "majorLifetimeCents": 50000,
+      "majorLargestCents": 20000,
+      "labels": { "leadership": "Leadership", "major": "Major", "donor": "Donor" }
     },
     "membership": {
       "fromISO": "2026-10-01",

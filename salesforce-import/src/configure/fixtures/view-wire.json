@@ -1,0 +1,27 @@
+{
+  "conditionalFormatting": {
+    "id": "7f3c2a10-0000-4000-8000-000000000001",
+    "formatting": { "highlight_color": ["stuck-red"] },
+    "target": { "column_ids": [], "entire_row": true },
+    "rules": [
+      {
+        "type": "RULE",
+        "operator": "ANY_OF",
+        "rule": {
+          "type": "BOARD_COLUMN",
+          "context": {
+            "column_id": "color_mm7dd1fp",
+            "column_type": "color",
+            "compare_attribute": "",
+            "board_id": "18431577310"
+          },
+          "compare_value": [14]
+        }
+      }
+    ]
+  },
+  "relativeDateFilter": { "operator": "within_the_next", "compare_value": ["DAYS", 60] },
+  "boardChartView": true,
+  "createLabelsIfMissing": true,
+  "widgetSettingsArg": "object"
+}

@@ -3,6 +3,7 @@ import type { PendingStore } from '../db/pending';
 import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage } from '../types';
 import { currentFiscalYear, localDateParts } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
+import { runClassify } from './classify';
 import { formatCents, parseAmountCents } from '../money';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
@@ -22,7 +23,10 @@ export interface CustodianMondayClient {
   getItemsColumnsText(itemIds: string[], columnIds: string[]): Promise<Map<string, Map<string, string | null>>>;
   createUpdate(itemId: number, body: string): Promise<void>;
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
-  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
+  changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>,
+    opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
+  pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
+    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }>;
 }
 
 export interface CustodianDeps {
@@ -36,7 +40,7 @@ export interface CustodianDeps {
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
 
-export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue'] as const;
+export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 // Cron schedule, decided by date so one daily trigger covers everything:
@@ -56,11 +60,11 @@ export function dutiesForDate(
   now: Date, fiscalYear: FiscalYearConfig, lastRuns: { duty: string; report: unknown }[] = [],
 ): Duty[] {
   const { year, month, day } = localDateParts(now, fiscalYear.timeZone);
-  const duties: Duty[] = ['reconcile', 'requeue']; // requeue: fix 5, nightly with reconcile
+  const duties: Duty[] = ['reconcile', 'requeue', 'classify']; // requeue: fix 5; classify: chartable labels — all nightly
   if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1) duties.push('capacity');
   if (month === fiscalYear.startMonth && day === 1) duties.push('sweep');
   if (month === fiscalYear.startMonth && day === 15) duties.push('archive');
-  for (const duty of ['sweep', 'archive'] as const) {
+  for (const duty of ['sweep', 'archive', 'classify'] as const) {
     if (duties.includes(duty)) continue;
     const last = lastRuns.find((r) => r.duty === duty)?.report as
       { detail?: { remaining?: number } } | undefined;
@@ -78,6 +82,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps): Promise<DutyRepo
       : duty === 'capacity' ? await runCapacity(deps)
       : duty === 'sweep' ? await runSweep(deps)
       : duty === 'requeue' ? await runRequeue(deps, now)
+      : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
       : await runReconcile(deps);
   } catch (err) {
     report = { ok: false, summary: `${duty} crashed: ${err instanceof Error ? err.message : String(err)}` };

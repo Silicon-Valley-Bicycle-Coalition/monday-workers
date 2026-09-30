@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { planBoardBase, planColumnDescriptions, planViews, type CurrentBoard, type CurrentColumn } from './plan.js';
+import { readFileSync } from 'node:fs';
+import { planBoardBase, planColumnDescriptions, planViews, COLOR_NAMES, type CurrentBoard, type CurrentColumn } from './plan.js';
 import type { BoardSpec } from './spec.js';
+import { COLS } from './testFixtures.js';
 
 const SPEC: BoardSpec = {
   description: 'The real description.',
@@ -82,24 +84,25 @@ describe('planViews', () => {
       { id: 'col_status', title: 'Membership Status', type: 'status', description: null,
         settings_str: JSON.stringify({ labels: { '5': 'Active', '9': 'Lapsed' } }) },
     ];
-    const { views, notes } = planViews(columns, new Set(), SPEC);
+    const { views, notes } = planViews(columns, new Map(), SPEC, 1);
     expect(notes).toEqual([]);
-    expect(views).toEqual([{ name: 'Active members', filterOperator: 'and',
-      rules: [{ column_id: 'col_status', operator: 'any_of', compare_value: [5] }], sort: [] }]);
+    expect(views.create).toEqual([{ name: 'Active members', filterOperator: 'and',
+      rules: [{ column_id: 'col_status', operator: 'any_of', compare_value: [5] }], sort: [], tags: [], settings: undefined, conditionalFormatting: [] }]);
   });
 
-  it('skips a view that already exists', () => {
+  it('updates a view that already exists, carrying its id', () => {
     const columns: CurrentColumn[] = [
       { id: 'col_status', title: 'Membership Status', type: 'status', description: null,
         settings_str: JSON.stringify({ labels: { '5': 'Active' } }) },
     ];
-    const { views } = planViews(columns, new Set(['Active members']), SPEC);
-    expect(views).toEqual([]);
+    const { views } = planViews(columns, new Map([['Active members', 'v1']]), SPEC, 1);
+    expect(views.create).toEqual([]);
+    expect(views.update[0]!.viewId).toBe('v1');
   });
 
   it('skips a view whole when a referenced column is missing, with a note', () => {
-    const { views, notes } = planViews([], new Set(), SPEC);
-    expect(views).toEqual([]);
+    const { views, notes } = planViews([], new Map(), SPEC, 1);
+    expect(views.create).toEqual([]);
     expect(notes.join(' ')).toMatch(/Active members.*unknown column "Membership Status"/);
   });
 
@@ -110,9 +113,9 @@ describe('planViews', () => {
     const columns: CurrentColumn[] = [
       { id: 'col_date', title: 'Date', type: 'date', description: null, settings_str: '{}' },
     ];
-    const { views } = planViews(columns, new Set(), sortSpec);
-    expect(views).toEqual([{ name: 'By date', filterOperator: 'and', rules: [],
-      sort: [{ column_id: 'col_date', direction: 'desc' }] }]);
+    const { views } = planViews(columns, new Map(), sortSpec, 1);
+    expect(views.create).toEqual([{ name: 'By date', filterOperator: 'and', rules: [],
+      sort: [{ column_id: 'col_date', direction: 'desc' }], tags: [], settings: undefined, conditionalFormatting: [] }]);
   });
 
   it('skips a view whole when a label is unresolvable, with a note', () => {
@@ -120,8 +123,100 @@ describe('planViews', () => {
       { id: 'col_status', title: 'Membership Status', type: 'status', description: null,
         settings_str: JSON.stringify({ labels: { '5': 'Something Else' } }) },
     ];
-    const { views, notes } = planViews(columns, new Set(), SPEC);
-    expect(views).toEqual([]);
+    const { views, notes } = planViews(columns, new Map(), SPEC, 1);
+    expect(views.create).toEqual([]);
     expect(notes.join(' ')).toMatch(/unknown label "Active"/);
+  });
+});
+
+const wire = JSON.parse(readFileSync(new URL('./fixtures/view-wire.json', import.meta.url), 'utf8'));
+
+const specWith = (views: BoardSpec['views']): BoardSpec => ({ ...SPEC, views });
+
+describe('planViews — settings', () => {
+  it('shows exactly the listed columns in order (name first, pinned) and hides the rest', () => {
+    const { views } = planViews(COLS, new Map(), specWith([{ name: 'Donors', columns: ['Personal Email', 'Lifetime Giving'] }]), 1);
+    expect(views.create[0]!.settings!.columns).toEqual({
+      column_order: ['name', 'em', 'lg', 'dl', 'dbg'],
+      column_properties: [
+        { column_id: 'name', visible: true }, { column_id: 'em', visible: true }, { column_id: 'lg', visible: true },
+        { column_id: 'dl', visible: false }, { column_id: 'dbg', visible: false },
+      ],
+      floating_columns_count: 1,
+    });
+  });
+
+  it('resolves group-by to a column id with Monday-case direction', () => {
+    const { views } = planViews(COLS, new Map(), specWith([{ name: 'Donors', groupBy: { columnTitle: 'Donor Level', direction: 'desc' } }]), 1);
+    expect(views.create[0]!.settings!.group_by).toEqual({
+      conditions: [{ columnId: 'dl', config: { sortSettings: { direction: 'DESC' } } }], hideEmptyGroups: true });
+  });
+
+  it('carries the tag', () => {
+    const { views } = planViews(COLS, new Map(), specWith([{ name: 'Donors', tag: 'Report' }]), 1);
+    expect(views.create[0]!.tags).toEqual(['Report']);
+  });
+
+  const keyShape = (v: unknown): unknown =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, k === 'context' || k === 'formatting' || k === 'target' || k === 'rule' || k === 'rules' ? keyShape((v as Record<string, unknown>)[k]) : null]))
+      : Array.isArray(v) ? v.map(keyShape) : null;
+
+  it('builds a conditional-formatting rule in the captured wire shape', () => {
+    const mk = () => planViews(COLS, new Map(), specWith([{ name: 'Donors',
+      coloring: [{ columnTitle: 'Donor Level', labelValues: ['Major'], color: 'red' }] }]), 1).views.create[0]!.conditionalFormatting[0] as Record<string, any>;
+    const rule = mk();
+    expect(keyShape(rule)).toEqual(keyShape(wire.conditionalFormatting));
+    expect(rule.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(rule.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(rule.formatting.highlight_color).toEqual([COLOR_NAMES.red]);
+    expect(rule.target).toEqual({ column_ids: [], entire_row: true });
+    expect(rule.rules[0]).toEqual({ type: 'RULE', operator: 'ANY_OF', rule: {
+      type: 'BOARD_COLUMN',
+      context: { column_id: 'dl', column_type: 'color', compare_attribute: '', board_id: '1' },
+      compare_value: [1] } });
+  });
+
+  it('derives rule ids deterministically from (board, view, rule index)', () => {
+    const ids = (viewName: string, n = 1, board = 1) => planViews(COLS, new Map(), specWith([{ name: viewName,
+      coloring: Array.from({ length: n }, () => ({ columnTitle: 'Donor Level', labelValues: ['Major'], color: 'red' as const })) }]), board)
+      .views.create[0]!.conditionalFormatting.map((r) => (r as { id: string }).id);
+    expect(ids('Donors')).toEqual(ids('Donors'));
+    expect(ids('Donors')[0]).not.toBe(ids('Members')[0]);
+    expect(ids('Donors')[0]).not.toBe(ids('Donors', 1, 2)[0]);
+    const two = ids('Donors', 2);
+    expect(two[0]).toBe(ids('Donors')[0]);
+    expect(two[1]).not.toBe(two[0]);
+  });
+
+  it('targets just the column and maps numbers to numeric when entireRow is false', () => {
+    const { views } = planViews(COLS, new Map(), specWith([{ name: 'Donors',
+      coloring: [{ columnTitle: 'Lifetime Giving', operator: 'greater_than', compareValue: 100, color: 'green', entireRow: false }] }]), 7);
+    const rule = views.create[0]!.conditionalFormatting[0] as Record<string, any>;
+    expect(rule.target).toEqual({ column_ids: ['lg'], entire_row: false });
+    expect(rule.rules[0].operator).toBe('GREATER_THAN');
+    expect(rule.rules[0].rule.context).toMatchObject({ column_type: 'numeric', board_id: '7' });
+    expect(rule.rules[0].rule.compare_value).toBe(100);
+  });
+
+  it('accepts a relative-date coloring operator', () => {
+    const cols: CurrentColumn[] = [...COLS, { id: 'dt', title: 'Due', type: 'date', description: null, settings_str: '{}' }];
+    const { views } = planViews(cols, new Map(), specWith([{ name: 'Soon',
+      coloring: [{ columnTitle: 'Due', operator: 'within_the_next', compareValue: ['DAYS', 60], color: 'amber' }] }]), 1);
+    const rule = views.create[0]!.conditionalFormatting[0] as Record<string, any>;
+    expect(rule.rules[0].operator).toBe('WITHIN_THE_NEXT');
+    expect(rule.rules[0].rule.context.column_type).toBe('date');
+    expect(rule.rules[0].rule.compare_value).toEqual(['DAYS', 60]);
+  });
+
+  it('skips the whole view when a listed column does not exist yet', () => {
+    const { views, notes } = planViews(COLS, new Map(), specWith([{ name: 'Donors', columns: ['Personal Email', 'Gift Size'] }]), 1);
+    expect(views.create).toHaveLength(0);
+    expect(notes[0]).toMatch(/Donors.*unknown column "Gift Size"/);
+  });
+
+  it('skips the whole view when a colouring label does not exist', () => {
+    const { views } = planViews(COLS, new Map(), specWith([{ name: 'Donors', coloring: [{ columnTitle: 'Donor Level', labelValues: ['Platinum'], color: 'red' }] }]), 1);
+    expect(views.create).toHaveLength(0);
   });
 });

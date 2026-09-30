@@ -26,12 +26,13 @@ const config: DonationRollupsConfig = {
   affiliations: null,
   donationRollups: {
     donationBoards: [
-      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1', actingForLink: null } },
-      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null, actingForLink: null } },
+      { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: 'fy_1', actingForLink: null, classification: null } },
+      { boardId: 9, columns: { donorLink: 'donor_link_9', amount: 'amount_9', date: 'date_9', status: 'status_9', fiscalYear: null, actingForLink: null, classification: null } },
     ],
     receivedStatusLabel: 'Received',
     ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns },
     membership: null,
+    donorLevel: null,
   },
 };
 
@@ -43,7 +44,7 @@ const membershipConfig: MembershipConfig = {
 };
 const memberOwnerColumns: OwnerColumns = { ...ownerColumns, membership: { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' } };
 const membershipBoard = { boardId: 1, columns: { donorLink: 'donor_link_1', amount: 'amount_1', date: 'date_1', status: 'status_1',
-  fiscalYear: 'fy_1', giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1', actingForLink: null } };
+  fiscalYear: 'fy_1', giftType: 'gt_1', termStart: 'ts_1', termEnd: 'te_1', membershipType: 'mty_1', actingForLink: null, classification: null } };
 const membershipEnabled: DonationRollupsConfig = {
   ...config,
   donationRollups: {
@@ -279,6 +280,34 @@ describe('oversized gift-ledger projections (docs/20 §5.5 overflow)', () => {
 });
 
 describe('rollupToColumnValues', () => {
+  const LEVEL = { leadershipLifetimeCents: 500000, majorLifetimeCents: 50000, majorLargestCents: 20000,
+    labels: { leadership: 'Leadership', major: 'Major', donor: 'Donor' } };
+  const rollup = {
+    lifetimeGivingCents: 71493, giftCount: 2, firstGiftISO: '2020-01-01',
+    thisYearCents: 5000, thisYearCount: 1, lastYearCents: 66493, lastYearCount: 1,
+    largestGiftCents: 66493, smallestGiftCents: 5000, averageGiftCents: 35747,
+    lastGiftDate: '2024-01-01', lastGiftCents: 5,
+  };
+
+  it('writes the Donor Level label when the column and thresholds are configured', () => {
+    const values = rollupToColumnValues(rollup, { ...ownerColumns, donorLevel: 'dlv' }, LEVEL);
+    expect(values['dlv']).toEqual({ label: 'Major' });
+  });
+
+  it('clears Donor Level for an owner with no received gifts', () => {
+    const values = rollupToColumnValues({ ...rollup, giftCount: 0, lifetimeGivingCents: 0, largestGiftCents: null },
+      { ...ownerColumns, donorLevel: 'dlv' }, LEVEL);
+    expect(values['dlv']).toBe('');
+  });
+
+  it('writes nothing for Donor Level when the board has no such column', () => {
+    expect(Object.keys(rollupToColumnValues(rollup, ownerColumns, LEVEL))).not.toContain('undefined');
+  });
+
+  it('writes nothing for Donor Level when the feature is off', () => {
+    expect(rollupToColumnValues(rollup, { ...ownerColumns, donorLevel: 'dlv' }, null)).not.toHaveProperty('dlv');
+  });
+
   it('maps every rollup field to its configured column id, nulls stay null', () => {
     const values = rollupToColumnValues({
       lifetimeGivingCents: 71493, giftCount: 2, firstGiftISO: '2020-01-01',

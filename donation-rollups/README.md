@@ -449,8 +449,8 @@ edits flow back via webhooks, and every recompute re-asserts the facts of every 
 so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs` (37,286 gifts
 loaded 2026-08-31; 32,739 Received, 33,541 archived).
 
-The **custodian** runs five duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
-and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue}?secret=…`
+The **custodian** runs six duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify}?secret=…`
 and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
@@ -467,6 +467,8 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
   verification" above).
+* **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board
+  (see "Chartable gift labels" below). Capped per run; re-run until `detail.remaining` is `0`.
 
 **Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
@@ -495,6 +497,31 @@ at 100 ids — and note `items(ids:)` **silently returns 25 items unless you pas
 under-roll any donor with >25 gifts on one board — every batched read in `monday/client.ts`
 now passes an explicit limit). The account is on Workers Paid now (confirmed 2026-09-29), so the per-run slice
 constants in `custodian.ts` can grow — not yet done.
+
+## Chartable gift labels and Donor Level (spec 2026-09-29)
+
+**Chartable gift labels.** Monday charts group by status/dropdown columns, not formulas or text,
+so the custodian's `classify` duty writes four status columns on each Donations board that has
+`donationBoards[].columns.classification` configured: **Funding Stream** (Individual Giving,
+Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program Revenue),
+**Gift Size** (`< $100`, `$100–249`, `$250–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
+**Gift Fiscal Year** (labels created on first write). Values come from `classifyGift` over the
+gift's amount, date and type. It runs nightly and on demand
+(`POST /custodian/run/classify?secret=…`), skips gifts already correct, and writes at most
+`CLASSIFY_WRITES_PER_RUN` (300) gifts per run — repeat until `detail.remaining` is `0` (~13 runs
+for the first ~3,800 gifts). Provision with `scripts/setup-classification-columns.mjs <donationsBoardId>`.
+
+**Webhook ignore rule.** The donation webhook drops any change to a classification column
+(`ignored: classification column "<id>"`). Those columns are Worker-written, and Monday delivers
+a webhook for every API write; without the rule each classify write would enqueue a recompute
+for the gift's owner — the same self-inflicted flood as 09-03.
+
+**Donor Level.** Every recompute also writes a **Donor Level** status column on People and
+Organizations (`ownerColumnsByBoard[id].donorLevel`; created by `setup-owner-columns.mjs`):
+**Leadership** when lifetime giving >= $5,000 (`leadershipLifetimeCents`); **Major** when lifetime
+>= $500 (`majorLifetimeCents`) or largest gift >= $200 (`majorLargestCents`); otherwise **Donor**; no gifts, no level.
+Thresholds and labels live in `donationRollups.donorLevel` (both configs); absent column id means
+nothing is written. It is a status column, not a formula, so board views can group by it.
 
 ## Affiliation model (Plan 2)
 

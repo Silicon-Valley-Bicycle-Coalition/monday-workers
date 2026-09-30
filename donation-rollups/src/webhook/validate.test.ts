@@ -30,4 +30,9 @@ describe('validateWebhookBody', () => {
     expect(() => validateWebhookBody(null)).toThrow();
     expect(() => validateWebhookBody('a string')).toThrow();
   });
+
+  it('carries columnId for a column-change event, null otherwise', () => {
+    expect(validateWebhookBody({ event: { type: 'update_column_value', pulseId: 5, boardId: 1, columnId: 'fs' } }).columnId).toBe('fs');
+    expect(validateWebhookBody({ event: { type: 'create_pulse', pulseId: 5, boardId: 1 } }).columnId).toBeNull();
+  });
 });

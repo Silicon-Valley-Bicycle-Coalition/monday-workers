@@ -183,6 +183,18 @@ deletion and hide-plumbing view settings (both UI-only in the plan), the Donatio
 column removal (a guarded one-off, not repeatable structure), and the Acknowledgment Tier
 backfill (a data operation, not board configuration).
 
+The `dashboards` step (`--only dashboards`) also creates the Development, Membership, and Board
+Report dashboards with their chart/number widgets in `monday.workspaceId`. What it created is
+remembered in gitignored `data/load/dashboards.json`, so reruns skip existing dashboards and
+widgets (delete a widget's entry there to recreate it). Two boards outside the board map are read
+from gitignored `data/load/extra-boards.json`, e.g.
+`{ "annual-giving-summary": 18431966690, "sponsorships": 18432083323 }`.
+
+The dashboards step's `create_dashboard` / `create_widget` mutations are refused (403) for the
+integration user, so they use `MONDAY_DASHBOARD_TOKEN` (a token for a user allowed to create
+dashboards) when set, else `MONDAY_API_TOKEN`. Saved-view create/update calls use API-Version
+2026-10 (needed for conditional formatting); everything else stays on the pinned 2026-01.
+
 **Sandbox week:** set `monday.boardSuffix` to `" (sandbox)"` in config, and delete `data/load/`
 between full rehearsals. A run against a partial `payloads.ndjson` (e.g. a partial extract, not
 `load --limit N`, which only caps items per board and never drops a board from the run) can create

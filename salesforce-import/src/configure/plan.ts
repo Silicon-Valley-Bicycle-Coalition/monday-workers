@@ -1,4 +1,5 @@
-import type { BoardSpec, ColumnSpec, ViewSpec } from './spec.js';
+import { createHash } from 'node:crypto';
+import type { BoardSpec, ColoringRule, ColumnSpec, ViewSpec } from './spec.js';
 import { resolveLabelId } from './labels.js';
 
 export interface CurrentColumn { id: string; title: string; type: string; description: string | null; settings_str: string }
@@ -67,30 +68,89 @@ export function planColumnDescriptions(
 }
 
 export interface ResolvedRule { column_id: string; operator: string; compare_value: unknown }
-export interface ResolvedView { name: string; filterOperator: 'and' | 'or'; rules: ResolvedRule[]; sort: { column_id: string; direction: string }[] }
+
+export const COLOR_NAMES: Record<ColoringRule['color'], string> = {
+  red: 'stuck-red', amber: 'orange', green: 'done-green', grey: 'blackish',
+};
+
+export interface ResolvedView {
+  name: string;
+  filterOperator: 'and' | 'or';
+  rules: ResolvedRule[];
+  sort: { column_id: string; direction: string }[];
+  tags: string[];
+  settings?: {
+    columns?: { column_order: string[]; column_properties: { column_id: string; visible: boolean }[]; floating_columns_count: number };
+    group_by?: { conditions: { columnId: string; config: { sortSettings: { direction: 'ASC' | 'DESC' } } }[]; hideEmptyGroups: boolean };
+  };
+  conditionalFormatting: unknown[];
+}
+
+// The API's column type -> the type conditional formatting uses internally.
+const INTERNAL_TYPE: Record<string, string> = { status: 'color', numbers: 'numeric' };
+
+// Shape captured from an API-accepted call (fixtures/view-wire.json).
+// Deterministic rule id (UUID-shaped, version 5 nibble) so re-applying a view doesn't churn ids.
+export function stableRuleId(boardId: number, viewName: string, ruleIndex: number): string {
+  const h = createHash('sha1').update(`${boardId}\u0000${viewName}\u0000${ruleIndex}`).digest('hex');
+  const variant = ((parseInt(h.slice(16, 18), 16) & 0x3f) | 0x80).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(18, 20)}-${h.slice(20, 32)}`;
+}
+
+function toWireCondition(
+  boardId: number, col: CurrentColumn, operator: string, compare: unknown, color: string, entireRow: boolean, id: string,
+): unknown {
+  return {
+    id,
+    formatting: { highlight_color: [color] },
+    target: { column_ids: entireRow ? [] : [col.id], entire_row: entireRow },
+    rules: [{
+      type: 'RULE',
+      operator: operator.toUpperCase(),
+      rule: {
+        type: 'BOARD_COLUMN',
+        context: { column_id: col.id, column_type: INTERNAL_TYPE[col.type] ?? col.type, compare_attribute: '', board_id: String(boardId) },
+        compare_value: compare,
+      },
+    }],
+  };
+}
 
 // Views reference columns by title, resolved against the board's *current* column set — call
-// this after columnsToCreate has actually been applied, so newly-added columns are eligible
-// targets too. A view with any unresolvable column reference is skipped whole (not partially
-// built) so a saved view never silently loses part of its intended filter.
+// this after columnsToCreate has been applied. A view with any unresolvable reference is
+// skipped whole so a saved view never silently loses part of its filter, columns, or colour.
+// Spec views are created when absent and re-applied (updated) when present; views whose names
+// aren't in the spec — ones staff made — are never touched.
 export function planViews(
-  columns: CurrentColumn[], existingViewNames: Set<string>, spec: BoardSpec,
-): { views: ResolvedView[]; notes: string[] } {
+  columns: CurrentColumn[], existingViews: Map<string, string>, spec: BoardSpec, boardId: number,
+): { views: { create: ResolvedView[]; update: (ResolvedView & { viewId: string })[] }; notes: string[] } {
   const notes: string[] = [];
-  const views: ResolvedView[] = [];
+  const create: ResolvedView[] = [];
+  const update: (ResolvedView & { viewId: string })[] = [];
   const byTitle = new Map(columns.map((c) => [c.title, c]));
 
   for (const viewSpec of spec.views ?? []) {
-    if (existingViewNames.has(viewSpec.name)) continue;
-    const resolved = resolveView(viewSpec, byTitle);
+    const resolved = resolveView(viewSpec, byTitle, columns, boardId);
     if ('error' in resolved) { notes.push(`view "${viewSpec.name}" skipped — ${resolved.error}`); continue; }
-    views.push(resolved.view);
+    const viewId = existingViews.get(viewSpec.name);
+    if (viewId) update.push({ ...resolved.view, viewId });
+    else create.push(resolved.view);
   }
-  return { views, notes };
+  return { views: { create, update }, notes };
+}
+
+function resolveLabels(col: CurrentColumn, labels: string[]): number[] | string {
+  const ids: number[] = [];
+  for (const label of labels) {
+    const id = resolveLabelId(col.type, col.settings_str, label);
+    if (id === undefined) return label;
+    ids.push(id);
+  }
+  return ids;
 }
 
 function resolveView(
-  viewSpec: ViewSpec, byTitle: Map<string, CurrentColumn>,
+  viewSpec: ViewSpec, byTitle: Map<string, CurrentColumn>, allColumns: CurrentColumn[], boardId: number,
 ): { view: ResolvedView } | { error: string } {
   const rules: ResolvedRule[] = [];
   for (const rule of viewSpec.filter?.rules ?? []) {
@@ -98,12 +158,8 @@ function resolveView(
     if (!col) return { error: `filter references unknown column "${rule.columnTitle}"` };
     let compare_value: unknown = rule.compareValue ?? [];
     if (rule.labelValues) {
-      const ids: number[] = [];
-      for (const label of rule.labelValues) {
-        const id = resolveLabelId(col.type, col.settings_str, label);
-        if (id === undefined) return { error: `filter on "${rule.columnTitle}" — unknown label "${label}"` };
-        ids.push(id);
-      }
+      const ids = resolveLabels(col, rule.labelValues);
+      if (typeof ids === 'string') return { error: `filter on "${rule.columnTitle}" — unknown label "${ids}"` };
       compare_value = ids;
     }
     rules.push({ column_id: col.id, operator: rule.operator, compare_value });
@@ -116,5 +172,47 @@ function resolveView(
     sort.push({ column_id: col.id, direction: s.direction ?? 'asc' });
   }
 
-  return { view: { name: viewSpec.name, filterOperator: viewSpec.filter?.operator ?? 'and', rules, sort } };
+  let settings: ResolvedView['settings'];
+  if (viewSpec.columns) {
+    const visible = ['name'];
+    for (const title of viewSpec.columns) {
+      const col = byTitle.get(title);
+      if (!col) return { error: `unknown column "${title}"` };
+      if (!visible.includes(col.id)) visible.push(col.id);
+    }
+    const hidden = allColumns.map((c) => c.id).filter((id) => !visible.includes(id));
+    settings = { columns: {
+      column_order: [...visible, ...hidden],
+      column_properties: [
+        ...visible.map((id) => ({ column_id: id, visible: true })),
+        ...hidden.map((id) => ({ column_id: id, visible: false })),
+      ],
+      floating_columns_count: 1,
+    } };
+  }
+  if (viewSpec.groupBy) {
+    const col = byTitle.get(viewSpec.groupBy.columnTitle);
+    if (!col) return { error: `groupBy references unknown column "${viewSpec.groupBy.columnTitle}"` };
+    settings = { ...settings, group_by: {
+      conditions: [{ columnId: col.id, config: { sortSettings: { direction: viewSpec.groupBy.direction === 'desc' ? 'DESC' : 'ASC' } } }],
+      hideEmptyGroups: true,
+    } };
+  }
+
+  const conditionalFormatting: unknown[] = [];
+  for (const [ruleIndex, rule] of (viewSpec.coloring ?? []).entries()) {
+    const col = byTitle.get(rule.columnTitle);
+    if (!col) return { error: `coloring references unknown column "${rule.columnTitle}"` };
+    let compare: unknown = rule.compareValue ?? [];
+    if (rule.labelValues) {
+      const ids = resolveLabels(col, rule.labelValues);
+      if (typeof ids === 'string') return { error: `coloring on "${rule.columnTitle}" — unknown label "${ids}"` };
+      compare = ids;
+    }
+    conditionalFormatting.push(toWireCondition(boardId, col, rule.operator ?? 'any_of', compare, COLOR_NAMES[rule.color], rule.entireRow ?? true,
+      stableRuleId(boardId, viewSpec.name, ruleIndex)));
+  }
+
+  return { view: { name: viewSpec.name, filterOperator: viewSpec.filter?.operator ?? 'and', rules, sort,
+    tags: viewSpec.tag ? [viewSpec.tag] : [], settings, conditionalFormatting } };
 }

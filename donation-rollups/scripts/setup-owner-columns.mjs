@@ -39,6 +39,9 @@ const FIELDS = {
   averageGift: { title: 'Average Gift', type: 'numbers', defaults: CURRENCY },
   lastGiftDate: { title: 'Last Gift Date', type: 'date' },
   lastGiftAmount: { title: 'Last Gift Amount', type: 'numbers', defaults: CURRENCY },
+  // Status, not a formula — board views must group by it (spec 2026-09-29 §4).
+  donorLevel: { title: 'Donor Level', type: 'status',
+    defaults: JSON.stringify({ labels: { 0: 'Leadership', 1: 'Major', 2: 'Donor' } }) },
 };
 
 async function graphql(query, variables) {
