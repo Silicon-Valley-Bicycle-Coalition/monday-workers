@@ -31,10 +31,8 @@ const MONDAY_API_VERSION = '2026-01';
 export const MONDAY_FETCH_TIMEOUT_MS = 15_000;
 
 // One attempt per call, no in-process retry (#35). Most calls render a donor's page, where a
-// retry's backoff (seconds) is worse than a fast error the donor can reload past, and every
-// retried fetch is another subrequest against Workers Free's 50-per-invocation cap on a render
-// that already paginates. The queue consumers (change requests, letters) retry with their own
-// backoff (queueRetry.ts).
+// retry's backoff (seconds) is worse than a fast error the donor can reload past. The queue
+// consumers (change requests, letters) retry with their own backoff (queueRetry.ts).
 const MAX_ATTEMPTS = 1;
 
 interface MondayColumnValue {
@@ -74,6 +72,10 @@ export interface MondayClient {
   // per-donor sections without getMemberPortalData's full donation-history fetch per donor.
   getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]>;
   getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]>;
+  // The id of the Change Requests item named exactly itemName, or null — lets the queue consumer
+  // adopt an item an earlier, ambiguously failed create already committed (the name carries the
+  // D1 request id, so it's unique per request).
+  findChangeRequestItem(params: { boardId: number; itemName: string }): Promise<string | null>;
   createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -535,6 +537,24 @@ export class HttpMondayClient implements MondayClient {
     });
   }
 
+  async findChangeRequestItem(params: { boardId: number; itemName: string }): Promise<string | null> {
+    // items_page_by_column_values on "name" is an exact match (verified against the sandbox
+    // boards on 2026-09-29: "Kalindi" does not match "Kalindi Fonda"); the equality filter below
+    // keeps a looser match from ever adopting the wrong item regardless.
+    const query = `
+      query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
+        items_page_by_column_values(board_id: $boardId, columns: $columns) {
+          items { id name }
+        }
+      }
+    `;
+    const data = await this.request<{ items_page_by_column_values: { items: MondayItem[] } }>(query, {
+      boardId: params.boardId,
+      columns: [{ column_id: 'name', column_values: [params.itemName] }],
+    });
+    return data.items_page_by_column_values.items.find((item) => item.name === params.itemName)?.id ?? null;
+  }
+
   async createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -567,9 +587,9 @@ export class HttpMondayClient implements MondayClient {
       },
     };
     // Not idempotent: a create that may have committed throws AmbiguousWriteError rather than
-    // being retried in-process. The consumer's D1 check (changeRequests/processBatch.ts) only
-    // skips a row already marked written, so its queue retry after an ambiguous failure can still
-    // leave staff a duplicate change-request item — a known gap, no wider than before #35.
+    // being retried in-process. The consumer (changeRequests/processBatch.ts) looks the item up by
+    // name before every create, so its queue retry adopts an item that did land instead of
+    // leaving staff a duplicate.
     await this.request<{ create_item: { id: string } }>(
       mutation,
       { boardId: params.boardId, itemName: params.itemName, columnValues: JSON.stringify(columnValues) },

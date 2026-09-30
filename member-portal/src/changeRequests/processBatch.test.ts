@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processChangeQueueBatch } from './processBatch';
 import type { ChangeRequestStore, ChangeRequestRow } from '../db/changeRequests';
-import type { MondayClient } from '../monday/client';
+import { AmbiguousWriteError, type MondayClient } from '../monday/client';
 import type { Config } from '../types';
 
 const row: ChangeRequestRow = {
@@ -85,7 +85,10 @@ function fakeStore(getResult: ChangeRequestRow | null): ChangeRequestStore {
 }
 
 function fakeMonday(): MondayClient {
-  return { createChangeRequestItem: vi.fn().mockResolvedValue(undefined) } as unknown as MondayClient;
+  return {
+    findChangeRequestItem: vi.fn().mockResolvedValue(null),
+    createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
+  } as unknown as MondayClient;
 }
 
 describe('processChangeQueueBatch', () => {
@@ -99,7 +102,7 @@ describe('processChangeQueueBatch', () => {
     expect(monday.createChangeRequestItem).toHaveBeenCalledWith(
       expect.objectContaining({
         boardId: config.changeRequests.boardId,
-        itemName: 'Address change — Jane Example',
+        itemName: 'Address change — Jane Example (#42)',
         donorItemId: 'donor-1',
         fieldLabel: 'Address',
         oldValue: '1 Old St',
@@ -124,6 +127,75 @@ describe('processChangeQueueBatch', () => {
 
     expect(monday.createChangeRequestItem).not.toHaveBeenCalled();
     expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('looks the item up by its request-id-stamped name before creating it', async () => {
+    const monday = fakeMonday();
+
+    await processChangeQueueBatch([makeMessage(42)], { store: fakeStore(row), monday, config });
+
+    expect(monday.findChangeRequestItem).toHaveBeenCalledWith({
+      boardId: config.changeRequests.boardId,
+      itemName: 'Address change — Jane Example (#42)',
+    });
+    expect(monday.createChangeRequestItem).toHaveBeenCalledTimes(1);
+  });
+
+  // #35 follow-up: a create that failed ambiguously (5xx/timeout after Monday committed it) left
+  // the row unwritten, and the queue retry created a second item. The retry must adopt the first.
+  it('adopts an item an earlier ambiguous create already committed, without creating a duplicate', async () => {
+    const store = fakeStore(row);
+    const monday = fakeMonday();
+    (monday.findChangeRequestItem as ReturnType<typeof vi.fn>).mockResolvedValue('item-777');
+    const message = makeMessage(42, 2);
+
+    await processChangeQueueBatch([message], { store, monday, config });
+
+    expect(monday.createChangeRequestItem).not.toHaveBeenCalled();
+    expect(store.markWritten).toHaveBeenCalledWith(42, expect.any(String));
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  it('end to end: an AmbiguousWriteError then a retry leaves exactly one item', async () => {
+    const store = fakeStore(row);
+    const monday = fakeMonday();
+    const board: string[] = [];
+    (monday.findChangeRequestItem as ReturnType<typeof vi.fn>).mockImplementation(
+      async ({ itemName }: { itemName: string }) => (board.includes(itemName) ? 'item-1' : null)
+    );
+    (monday.createChangeRequestItem as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async ({ itemName }: { itemName: string }) => {
+        board.push(itemName); // Monday committed the create...
+        throw new AmbiguousWriteError('monday API: HTTP 502: bad gateway'); // ...but the response was lost
+      }
+    );
+
+    const first = makeMessage(42, 1);
+    await processChangeQueueBatch([first], { store, monday, config });
+    expect(first.retry).toHaveBeenCalled();
+    expect(store.markWritten).not.toHaveBeenCalled();
+
+    const retry = makeMessage(42, 2);
+    await processChangeQueueBatch([retry], { store, monday, config });
+
+    expect(monday.createChangeRequestItem).toHaveBeenCalledTimes(1);
+    expect(board).toHaveLength(1);
+    expect(store.markWritten).toHaveBeenCalledWith(42, expect.any(String));
+    expect(retry.ack).toHaveBeenCalled();
+  });
+
+  it('retries without creating when the lookup itself fails', async () => {
+    const store = fakeStore(row);
+    const monday = fakeMonday();
+    (monday.findChangeRequestItem as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday: HTTP 500'));
+    const message = makeMessage(42);
+
+    await processChangeQueueBatch([message], { store, monday, config });
+
+    expect(monday.createChangeRequestItem).not.toHaveBeenCalled();
+    expect(store.markWritten).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalled();
   });
 
   it('retries on a Monday failure without marking written', async () => {
