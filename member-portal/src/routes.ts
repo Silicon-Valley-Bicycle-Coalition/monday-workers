@@ -62,6 +62,7 @@ import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
 import { decodeEmailLogoPng } from './assets/emailLogo';
 import { securityHeaders } from './securityHeaders';
+import { errorText } from './logSafe';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -305,7 +306,7 @@ export function createApp(deps: AppDeps) {
           }).catch((err) => {
             // Same enumeration-guard rule as below: a failure here must never surface as a
             // different response than the generic one — log and swallow.
-            console.error(`member-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
+            console.error(`member-portal login request failed: ${errorText(err)}`);
           });
 
           try {
@@ -320,7 +321,7 @@ export function createApp(deps: AppDeps) {
         // A failure here (e.g. checkLoginRateLimit's D1 read) must never surface as a different
         // response than the enumeration-safe path below — otherwise "did this email exist" leaks
         // through error-vs-success response variance. Log and fall through.
-        console.error(`member-portal login request failed: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`member-portal login request failed: ${errorText(err)}`);
       }
     }
 
@@ -381,7 +382,7 @@ export function createApp(deps: AppDeps) {
     } catch (err) {
       // e.g. the magic-link token was validly consumed but the follow-up session write failed
       // (D1 error) — show the same "request a new one" recovery path rather than a raw 500.
-      console.error(`member-portal login verification failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`member-portal login verification failed: ${errorText(err)}`);
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.expiredLink', locale), locale));
     }
 

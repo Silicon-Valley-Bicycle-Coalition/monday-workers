@@ -1,4 +1,4 @@
-import md5 from 'md5';
+import { memberId } from '../logSafe';
 import type { MailchimpInterest } from '../types';
 import { parseRetryAfter, retryAfterHeader } from '../retryAfter';
 
@@ -69,10 +69,6 @@ export interface MailchimpClient {
   listInterests(): Promise<MailchimpInterest[]>;
 }
 
-function subscriberHash(email: string): string {
-  return md5(email.trim().toLowerCase());
-}
-
 let sinkLogged = false;
 
 export class HttpMailchimpClient implements MailchimpClient {
@@ -99,7 +95,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       // Design doc §6: one line per isolate naming the sink this deployment writes to.
       console.log(JSON.stringify({ sandboxOutbound: 'mailchimp', audienceId: this.audienceId, apiBaseUrl: this.apiBaseUrl }));
     }
-    const hash = subscriberHash(email);
+    const hash = memberId(email);
     // PATCH, not PUT: a PUT creates the member when missing (with `status_if_new`), which
     // subscribed every Donor with an email on their first column change — including ones
     // who never opted in (issue #28). PATCH 404s instead, and the status of an existing
@@ -139,7 +135,7 @@ export class HttpMailchimpClient implements MailchimpClient {
   }
 
   async unsubscribeMember(email: string): Promise<UnsubscribeResult> {
-    const memberUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members/${subscriberHash(email)}`;
+    const memberUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}`;
     // Look first: Mailchimp refuses a status change on a cleaned address, and an unsubscribed
     // one needs no write.
     const lookup = await this.fetchFn(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
@@ -159,7 +155,7 @@ export class HttpMailchimpClient implements MailchimpClient {
 
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {
     const response = await this.fetchFn(
-      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${subscriberHash(email)}?fields=status,interests`,
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}?fields=status,interests`,
       { headers: { Authorization: this.authHeader() } },
     );
     if (response.status === 404) return null;

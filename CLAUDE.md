@@ -15,7 +15,11 @@ shape, open questions) and is meant to be buildable standalone. References there
 `migration-plan.md` or `docs/*` point at the private planning repo (`monday-migration`, checked
 out alongside this one) — not published, not required to build the Worker.
 
-**There is no root-level code** — each Worker is self-contained in its own subdirectory. Workers
+**There is no root-level Worker code** — each Worker is self-contained in its own subdirectory.
+The one root-level exception is `scripts/check-log-safety.mjs`, a dependency-free CI check (the
+`log-safety` job) that fails on `console.*()` calls that could log an email address. The
+pre-commit hook below also runs it (`--staged`, in every worktree); run it by hand with
+`node scripts/check-log-safety.mjs`. Workers
 are built one per feature branch (see the sibling worktree directories in the parent folder) and
 merged to `main` once ready; most are now merged with full implementations, while a Worker whose
 subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
@@ -87,6 +91,7 @@ To make this concrete instead of just documented, this repo now ships `.githooks
 which refuses `git commit` for any branch other than `main` when run from the primary checkout
 (linked worktrees are unaffected — hooks are shared across worktrees via the common `.git` dir, but
 the hook checks `git rev-parse --git-dir` against `--git-common-dir` to tell which one it's in).
+The same hook first runs the log-safety check on staged Worker source, in every checkout.
 Enable it once per clone:
 
 ```sh

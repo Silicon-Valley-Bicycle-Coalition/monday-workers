@@ -9,6 +9,7 @@ import { localeFromMondayLabel, DEFAULT_LOCALE, type Locale } from '../i18n/loca
 import { generateToken } from '../crypto/token';
 import { sha256Hex } from '../crypto/hash';
 import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
+import { errorText } from '../logSafe';
 
 export interface ProcessLetterSendBatchDeps {
   store: LetterSendStore;
@@ -30,9 +31,7 @@ export async function processLetterSendBatch(
       message.ack();
     } catch (err) {
       console.error(
-        `member-portal consumer: failed to process letter send ${message.body.sendId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `member-portal consumer: failed to process letter send ${message.body.sendId}: ${errorText(err)}`
       );
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }

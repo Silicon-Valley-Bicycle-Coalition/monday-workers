@@ -1,15 +1,31 @@
 #!/bin/sh
-# Guards against the collision documented in this repo's CLAUDE.md ("Concurrency — default to a
-# worktree"): two agent sessions committing to different feature branches in the same primary
-# checkout at once, tangling each other's work. Hooks are shared across all worktrees of a repo
-# (they live in the common .git dir), so this only fires when the commit is actually happening in
-# the PRIMARY checkout, not in a linked worktree.
+# Two checks, in order:
+#
+# 1. log-safety (every checkout): scripts/check-log-safety.mjs --staged fails the commit if a
+#    staged console.* call could log an email address — the same check as the `log-safety` CI job
+#    (see root README, "Error monitoring: Workers Issues"). Skipped with a warning if node isn't
+#    on PATH; CI still enforces it.
+#
+# 2. Primary-checkout branch guard: guards against the collision documented in this repo's
+#    CLAUDE.md ("Concurrency — default to a worktree"): two agent sessions committing to different
+#    feature branches in the same primary checkout at once, tangling each other's work. Hooks are
+#    shared across all worktrees of a repo (they live in the common .git dir), so this only fires
+#    when the commit is actually happening in the PRIMARY checkout, not in a linked worktree.
 #
 # Not installed by default — git only runs hooks from .git/hooks (or core.hooksPath) on your own
 # clone. Enable it once per clone with:
 #   git config core.hooksPath .githooks
 #
-# Bypass for a genuine one-line fix (CLAUDE.md's own stated exception): git commit --no-verify.
+# Bypass either check for a genuine one-line fix (CLAUDE.md's own stated exception):
+#   git commit --no-verify
+
+top=$(git rev-parse --show-toplevel)
+
+if command -v node >/dev/null 2>&1; then
+  node "$top/scripts/check-log-safety.mjs" --staged || exit 1
+else
+  echo "warning: node not found; skipping the log-safety check (CI still runs it)" >&2
+fi
 
 git_dir=$(git rev-parse --git-dir)
 common_dir=$(git rev-parse --git-common-dir)

@@ -7,6 +7,7 @@ import { reconcileCampaigns } from '../campaigns/reconcile';
 import type { QueueMessageLike } from './outbound';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
 import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client';
+import { errorText, memberId, redactEmails } from '../logSafe';
 
 export interface InboundConsumerDeps {
   pendingStore: PendingInboundStore;
@@ -27,13 +28,13 @@ export async function processInboundBatch(
       message.ack();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`mailchimp-sync inbound consumer: failed to process "${email}": ${errMsg}`);
+      console.error(`mailchimp-sync inbound consumer: failed to process member ${memberId(email)}: ${redactEmails(errMsg)}`);
       if (err instanceof MailchimpAuthError) console.error(credentialsRejectedLog('inbound'));
       // Recording the failure is bookkeeping; a D1 error here must not skip the delayed retry.
       try {
         await deps.pendingStore.updateStatus(email, 'failed', errMsg);
       } catch (recordErr) {
-        console.error(`mailchimp-sync inbound consumer: could not record failure for "${email}": ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`);
+        console.error(`mailchimp-sync inbound consumer: could not record failure for member ${memberId(email)}: ${errorText(recordErr)}`);
       }
       // Same rule as the outbound consumer: a permanent (non-auth 4xx) Mailchimp error fails
       // identically on every retry, so ack it — the row keeps the error. MailchimpAuthError is a
@@ -98,7 +99,7 @@ async function processOne(email: string, deps: InboundConsumerDeps): Promise<voi
     // A genuine miss (even after the client's case-insensitive fallback) must stay
     // distinguishable from a successful write — 'skipped', never 'written', so misses
     // are visible and countable in the pending table.
-    console.warn(`mailchimp-sync inbound consumer: no Donor item matches "${email}" — recording as skipped`);
+    console.warn(`mailchimp-sync inbound consumer: no Donor item matches member ${memberId(email)} — recording as skipped`);
     await pendingStore.updateStatus(email, 'skipped', `no Donor item matches email "${email}"`);
     return;
   }

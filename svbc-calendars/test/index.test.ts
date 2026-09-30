@@ -236,6 +236,53 @@ describe("multi-organizer merge (the fixed correctness gap)", () => {
     expect(res.status).toBe(200);
     expect(calls).toBe(3); // one organizer-scoped fetch per allowlisted organizer — cache was cleared in beforeEach, so this is a guaranteed MISS
   });
+
+  // Live 2026-09-30: Eventbrite 404'd the "bike parking" organizer, and Promise.all turned that one
+  // failure into a 502 for the whole widget feed.
+  function mockOneOrganizerGone(goneId: string) {
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes(`/organizers/${goneId}/`)) {
+        return new Response(JSON.stringify({ error: "NOT_FOUND", error_description: "The organizer you requested does not exist." }), { status: 404, statusText: "Not Found" });
+      }
+      return new Response(JSON.stringify(fakeEventbriteResponse()), { status: 200 });
+    });
+  }
+
+  it("serves the other organizers' events when one organizer fails, and logs the failure", async () => {
+    mockOneOrganizerGone("121346572357");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await call(req("/events"));
+    expect(res.status).toBe(200);
+    const data = await res.json<{ events: unknown[] }>();
+    expect(data.events).toHaveLength(2);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("organizer 121346572357"));
+  });
+
+  it("never caches a partial feed, so the next request retries every organizer live", async () => {
+    mockOneOrganizerGone("121346572357");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = await call(req("/events"));
+    expect(first.headers.get("Cache-Control")).toBe("no-store");
+    expect(first.headers.get("X-Cache")).toBe("MISS");
+    const second = await call(req("/events"));
+    expect(second.headers.get("X-Cache")).toBe("MISS");
+  });
+
+  it("still returns 502 when every organizer fails, naming each one", async () => {
+    fetchSpy.mockImplementation(async () => new Response("Unauthorized", { status: 401, statusText: "Unauthorized" }));
+    const res = await call(req("/events"));
+    expect(res.status).toBe(502);
+    const data = await res.json<{ error: string; detail: string }>();
+    expect(data.error).toBe("Eventbrite API error");
+    for (const id of ["21763925459", "17135810858", "121346572357"]) expect(data.detail).toContain(`organizer ${id}`);
+  });
+
+  it("a single-organizer request still reports that organizer's failure as a 502", async () => {
+    mockOneOrganizerGone("121346572357");
+    const res = await call(req("/events?organizer=121346572357"));
+    expect(res.status).toBe(502);
+  });
 });
 
 describe("calendars", () => {

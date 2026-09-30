@@ -76,6 +76,20 @@ monday-graphql-copies:
       node --input-type=module -e "await import('./monday-backup/src/monday/graphql.ts')" || status=1
       exit $status
 
+# Blocks logging email addresses: Workers Issues forwards the logs around a failure to its
+# automation targets (see root README "Error monitoring: Workers Issues"). A dependency-free scan
+# rather than ESLint — typescript-eslint doesn't support the TypeScript 7 the Workers build with.
+log-safety:
+  stage: test
+  rules:
+    - changes:
+        - "*/src/**/*"
+        - scripts/**/*
+        - .gitlab-ci.yml
+  script:
+    - node --test "scripts/*.test.mjs"
+    - node scripts/check-log-safety.mjs
+
 benevity-import:
   extends: .worker_job
   variables:

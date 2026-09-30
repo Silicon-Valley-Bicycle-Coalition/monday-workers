@@ -52,6 +52,7 @@
   // guardrail against a runaway invocation or a surprise bill. See the root README.
   "limits": { "cpu_ms": 100 },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "issues": { "enabled": true }
   }
 }
