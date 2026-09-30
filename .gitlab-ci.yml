@@ -84,7 +84,7 @@ log-safety:
         - scripts/**/*
         - .gitlab-ci.yml
   script:
-    - node --test scripts/
+    - node --test "scripts/*.test.mjs"
     - node scripts/check-log-safety.mjs
 
 benevity-import:
