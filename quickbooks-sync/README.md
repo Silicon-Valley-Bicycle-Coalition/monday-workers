@@ -1,5 +1,7 @@
 # quickbooks-sync
 
+**Staff UAT script:** [`docs/uat/quickbooks-sync.md`](../docs/uat/quickbooks-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
 Marketplace app (both carry an ongoing cost this avoids). 133 tests passing across 19 files;
 webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. The

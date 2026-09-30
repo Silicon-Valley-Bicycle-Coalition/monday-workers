@@ -1,5 +1,7 @@
 # SVBC Calendars
 
+**Staff UAT script:** [`docs/uat/svbc-calendars.md`](../docs/uat/svbc-calendars.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 A single Cloudflare Worker that serves two things for the Silicon Valley Bicycle Coalition:
 an embeddable Eventbrite events widget for the Squarespace site (`events.bikesiliconvalley.org`),
 and nine subscribable ICS calendar feeds — SVBC's own Eventbrite Public Events and Volunteer

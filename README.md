@@ -5,6 +5,13 @@ Salesforce → Monday.com CRM migration, one subdirectory per Worker. Each has i
 with the requirements needed to build it — the ask, data flow, APIs and auth, Monday.com targets,
 build shape, and open questions.
 
+**Staff UAT scripts live in [`docs/uat/`](docs/uat/README.md)**: one plain-language script per
+Worker and one for the Monday boards themselves, saying what a non-technical tester can try in
+the sandbox and what they should see. The migration's own data-validation UAT (the sample
+review) stays in the private planning repo; everything that keeps running after cutover is
+tested from here. When a Worker's sandbox behaviour changes, update its script in the same merge
+request.
+
 **Open-sourced so other nonprofits can fork and redeploy** any of these against their own
 Monday.com/CRM setup. When building, avoid hardcoding SVBC-specific values (board IDs, field
 names, city lists) where a config value or environment variable would do — another org's fork

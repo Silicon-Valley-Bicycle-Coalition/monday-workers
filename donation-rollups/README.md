@@ -1,5 +1,7 @@
 # donation-rollups
 
+**Staff UAT script:** [`docs/uat/donation-rollups.md`](../docs/uat/donation-rollups.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status: running as `svbc-donation-rollups-sandbox` since the 2026-09-20 move onto the sandbox
 environment** (`npm run deploy:sandbox`; own D1 `svbc-donation-rollups-sandbox`, queues
 `donation-rollups-recompute-sandbox` and `-sandbox-dlq`, secrets under `--env sandbox`; the

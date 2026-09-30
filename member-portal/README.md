@@ -1,5 +1,7 @@
 # member-portal
 
+**Staff UAT script:** [`docs/uat/member-portal.md`](../docs/uat/member-portal.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status:** Not yet deployed to production — no version has been live. Code-complete through v7
 (the sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is

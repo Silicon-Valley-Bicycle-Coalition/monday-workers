@@ -1,5 +1,7 @@
 # monday-backup
 
+**Staff UAT script:** [`docs/uat/monday-backup.md`](../docs/uat/monday-backup.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
 `wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
 (`MONDAY_API_TOKEN`), a Google service account added as a member (Content manager) of the

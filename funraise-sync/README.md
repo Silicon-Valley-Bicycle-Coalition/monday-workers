@@ -1,5 +1,7 @@
 # funraise-sync
 
+**Staff UAT script:** [`docs/uat/funraise-sync.md`](../docs/uat/funraise-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
 `svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
 2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
