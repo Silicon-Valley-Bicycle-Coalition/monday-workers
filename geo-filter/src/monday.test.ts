@@ -70,3 +70,29 @@ describe('fetchContacts name column', () => {
     await expect(fetchContacts('t', '1', { ...base, name: 'Nickname' })).rejects.toThrow('name column "Nickname"');
   });
 });
+
+// #35: requests go through the canonical transport (monday/graphql.ts).
+describe('fetchContacts transport', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('rides out a rate limit mid page-through instead of aborting the run', async () => {
+    let itemsCalls = 0;
+    const fetchFn = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init!.body as string);
+      if (!body.query.includes('items_page')) return Response.json({ data: { boards: [{ columns: COLUMNS }] } });
+      itemsCalls++;
+      if (itemsCalls === 1) return new Response('rate limited', { status: 429, headers: { 'Retry-After': '1' } });
+      return Response.json({ data: { boards: [{ items_page: { cursor: null, items: [ITEM] } }] } });
+    });
+    const contacts = await fetchContacts('t', '1', base, { fetchFn: fetchFn as typeof fetch, sleepFn: async () => {} });
+    expect(contacts).toHaveLength(1);
+    expect(itemsCalls).toBe(2);
+  });
+
+  it('pins API-Version 2026-01', async () => {
+    stubMonday();
+    await fetchContacts('t', '1', base);
+    const init = (vi.mocked(fetch).mock.calls[0] as [string, RequestInit])[1];
+    expect(new Headers(init.headers).get('API-Version')).toBe('2026-01');
+  });
+});
