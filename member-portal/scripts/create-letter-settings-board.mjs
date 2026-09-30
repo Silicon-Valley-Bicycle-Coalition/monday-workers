@@ -23,6 +23,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MondayGraphQL } from '../src/monday/graphql.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -66,17 +67,15 @@ const localeColumnTitle = (label) => `Email body template (${label})`;
 const localeColumnDescription = (label) =>
   `Optional ${label} version of the letter-ready email. Same {{donorName}}/{{year}}/{{loginUrl}} placeholders as the main template. Blank = donors with this language preference get the main template (or the built-in copy in their language if that is blank too).`;
 
+// The Worker's own copy of the canonical Monday transport (#35): retries rate limits and Monday
+// blips, times out hung requests, and never blindly re-runs a create. Imported as TypeScript —
+// needs a Node with built-in type stripping (22.18+ / 23.6+).
+const monday = new MondayGraphQL(apiUrl, token, { apiVersion: '2026-01' });
+
+// Mutations here create boards, columns and webhooks, so a failure that may have committed throws
+// AmbiguousWriteError instead of being retried into a duplicate; queries get the full retry.
 async function graphql(query, variables) {
-  const res = await fetch(apiUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': '2026-01' },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) throw new Error(`monday API: HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(`monday API: ${json.errors.map((e) => e.message).join('; ')}`);
-  if (!json.data) throw new Error(`monday API: no data — ${JSON.stringify(json)}`);
-  return json.data;
+  return monday.request(query, variables, { idempotent: !/^\s*mutation\b/.test(query) });
 }
 
 // Keep in sync with src/letters/letterEmailBody.ts (placeholders) and the built-in copy in

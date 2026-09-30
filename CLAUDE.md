@@ -183,12 +183,15 @@ through constructor options in their own `client.ts`, never by editing the copy.
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
 donation-rollups, funraise-sync, geo-filter, mailchimp-sync, member-portal and quickbooks-sync;
-salesforce-import still carries its own client. Queue Workers run it with 3 in-process attempts
-and leave longer waits to their queue backoff; geo-filter, a local CLI, uses the transport's
-defaults. member-portal runs it with `maxAttempts: 1` (no in-process retry): its calls mostly
-render a donor's page, where a multi-second backoff is worse than a fast error the donor can
-reload past. Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
-`retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
+salesforce-import still carries its own client. A Worker's `.mjs` scripts import that Worker's
+copy directly (`import { MondayGraphQL } from '../src/monday/graphql.ts'`) through Node's
+built-in type stripping (Node 22.18+ / 23.6+), so the file must stay strip-only-compatible — no
+constructor parameter properties, enums or namespaces. Queue Workers run it with 3 in-process
+attempts and leave longer waits to their queue backoff; geo-filter, a local CLI, uses the
+transport's defaults. member-portal runs it with `maxAttempts: 1` (no in-process retry): its
+calls mostly render a donor's page, where a multi-second backoff is worse than a fast error the
+donor can reload past. Everything the transport throws is a `MondayApiError` (`httpStatus`,
+`code`, `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
 
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
 per exposure class (the public-facing `member-portal` gets its own user with access to only the
