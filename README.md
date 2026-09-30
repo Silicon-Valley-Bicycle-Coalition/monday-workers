@@ -164,6 +164,22 @@ Check it now that the account is on Workers Paid — if the $5/month base subscr
 at $10 it will fire almost immediately off that alone, before telling you anything about a real
 spike. Manage it at **Manage account → Notifications** in the Cloudflare dashboard.
 
+## Error monitoring: Workers Issues
+
+Every Worker, production and sandbox, sets `observability.issues.enabled` in its `wrangler.jsonc`
+([Workers Issues](https://developers.cloudflare.com/workers/observability/issues/), open beta, free
+during the beta). The runtime groups uncaught exceptions, 5xx responses, `console.error()` output,
+and logs that carry a stack trace into one issue per bug, with no SDK involved. Keep the key in
+every env block: a Wrangler deploy whose config omits it turns Issues **off** for that Worker. It
+also needs Wrangler ≥ 4.145, since older versions don't recognize the key.
+
+**Automations** (sending an issue to a coding agent, webhook, or chat when it crosses an occurrence
+threshold or comes back after a quiet period) live in the Cloudflare dashboard, or the `cf` CLI,
+not in this repo. Before pointing one at an agent outside Cloudflare, remember that the payload
+includes the logs around the failure. Most Workers log only opaque Monday item IDs, but
+`mailchimp-sync`'s inbound error paths and `member-portal`'s sandbox email shim log raw email
+addresses. Filter those Workers out of the automation, or stop logging the addresses first.
+
 ## Branded email template
 
 Outbound HTML email (donor login links, letter-ready notices, bike valet feedback requests) shares

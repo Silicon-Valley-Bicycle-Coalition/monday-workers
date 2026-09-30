@@ -67,7 +67,8 @@
     "crons": ["0 9 * * *"]
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "issues": { "enabled": true }
   },
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-member-portal-sandbox
@@ -134,7 +135,8 @@
         "crons": ["0 9 * * *"]
       },
       "observability": {
-        "enabled": true
+        "enabled": true,
+        "issues": { "enabled": true }
       }
     }
   }
