@@ -160,6 +160,14 @@ describe('MondayGraphQL with a single attempt', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it('names a request timeout rather than reporting a generic network error', async () => {
+    const fetchFn = vi.fn(async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    });
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn, maxAttempts: 1, requestTimeoutMs: 15_000 });
+    await expect(gql.request('query { ok }', {})).rejects.toThrow('monday API: request timed out after 15000ms');
+  });
+
   it('does not echo a JSON error body that carries no message', async () => {
     const fetchFn = vi.fn(async () => Response.json({}, { status: 500 }));
     const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn, maxAttempts: 1 });

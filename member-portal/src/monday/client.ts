@@ -17,6 +17,9 @@ import type {
 } from '../types';
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
+import { MondayGraphQL } from './graphql';
+
+export { AmbiguousWriteError, MondayApiError } from './graphql';
 
 // Pinned so Monday's quarterly rolling default can't change query semantics under a deployed
 // Worker — same pin as the other Workers in this repo (e.g. funraise-sync's client).
@@ -26,6 +29,11 @@ const MONDAY_API_VERSION = '2026-01';
 // subrequest, so without this a hung Monday request held a dashboard render — or a queue consumer
 // batch — open indefinitely (issue #31). Generous next to Monday's normal sub-second responses.
 export const MONDAY_FETCH_TIMEOUT_MS = 15_000;
+
+// One attempt per call, no in-process retry (#35). Most calls render a donor's page, where a
+// retry's backoff (seconds) is worse than a fast error the donor can reload past. The queue
+// consumers (change requests, letters) retry with their own backoff (queueRetry.ts).
+const MAX_ATTEMPTS = 1;
 
 interface MondayColumnValue {
   id: string;
@@ -64,6 +72,10 @@ export interface MondayClient {
   // per-donor sections without getMemberPortalData's full donation-history fetch per donor.
   getDonorNames(donorItemIds: string[]): Promise<{ id: string; name: string }[]>;
   getPledgesForDonor(donorItemId: string): Promise<PledgeRecord[]>;
+  // The id of the Change Requests item named exactly itemName, or null — lets the queue consumer
+  // adopt an item an earlier, ambiguously failed create already committed (the name carries the
+  // D1 request id, so it's unique per request).
+  findChangeRequestItem(params: { boardId: number; itemName: string }): Promise<string | null>;
   createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -92,8 +104,8 @@ export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'h
 
 export class HttpMondayClient implements MondayClient {
   constructor(
-    private apiUrl: string,
-    private apiToken: string,
+    apiUrl: string,
+    apiToken: string,
     private columns: MondayColumns,
     private donorsBoardId: number,
     private donationsBoardId: number,
@@ -111,58 +123,22 @@ export class HttpMondayClient implements MondayClient {
     // null until an operator configures monday.volunteersBoardId — getVolunteerShiftsForDonor
     // throws its own config error on null rather than querying a sentinel board id.
     private volunteersBoardId: number | null = null,
-    // Bound to globalThis, not the bare function reference: called below as `this.fetchFn(...)`,
-    // which — for the real global fetch — is a method call with `this` rebound to the
-    // HttpMondayClient instance. Cloudflare's fetch implementation requires `this === globalThis`
-    // and throws "Illegal invocation" otherwise. Only caught by a real deployed Worker making a
-    // real Monday API call — every unit test injects its own fetchMock (no `this` requirement),
-    // and local dev never reaches this class at all (it uses FakeMondayClient).
-    private fetchFn: typeof fetch = fetch.bind(globalThis)
-  ) {}
+    // Tests inject a fetch mock. Absent, the transport looks up the global fetch per call, which
+    // also avoids Cloudflare's "Illegal invocation" when native fetch is called as a method.
+    fetchFn?: typeof fetch
+  ) {
+    this.transport = new MondayGraphQL(apiUrl, apiToken, {
+      maxAttempts: MAX_ATTEMPTS,
+      requestTimeoutMs: MONDAY_FETCH_TIMEOUT_MS,
+      apiVersion: MONDAY_API_VERSION,
+      fetchFn,
+    });
+  }
 
-  private async request<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-    let json: {
-      data?: T;
-      errors?: { message: string }[];
-      // Monday's rate-limit/auth failures come back HTTP 200 with only these two fields.
-      error_message?: string;
-      status_code?: number;
-    };
-    try {
-      const response = await this.fetchFn(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: this.apiToken,
-          'API-Version': MONDAY_API_VERSION,
-        },
-        body: JSON.stringify({ query, variables }),
-        // Also covers the body read below — the signal aborts response.json() too.
-        signal: AbortSignal.timeout(MONDAY_FETCH_TIMEOUT_MS),
-      });
-      if (!response.ok) {
-        throw new Error(`monday: HTTP ${response.status}`);
-      }
-      json = (await response.json()) as typeof json;
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw new Error(`monday: request timed out after ${MONDAY_FETCH_TIMEOUT_MS}ms`);
-      }
-      throw err;
-    }
-    if (json.errors?.length) {
-      throw new Error(`monday: ${json.errors.map((e) => e.message).join('; ')}`);
-    }
-    if (json.data === undefined) {
-      // Without this, a rate-limited request surfaces downstream as "Cannot read properties of
-      // undefined" instead of the server's actual message (same guard as funraise-sync's client).
-      const detail =
-        typeof json.error_message === 'string'
-          ? `${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
-          : JSON.stringify(json);
-      throw new Error(`monday: response contained no data — ${detail}`);
-    }
-    return json.data;
+  private readonly transport: MondayGraphQL;
+
+  private async request<T>(query: string, variables: Record<string, unknown>, options?: { idempotent?: boolean }): Promise<T> {
+    return this.transport.request<T>(query, variables, options);
   }
 
   async findDonorsByEmail(email: string): Promise<DonorMatch[]> {
@@ -561,6 +537,24 @@ export class HttpMondayClient implements MondayClient {
     });
   }
 
+  async findChangeRequestItem(params: { boardId: number; itemName: string }): Promise<string | null> {
+    // items_page_by_column_values on "name" is an exact match (verified against the sandbox
+    // boards on 2026-09-29: "Kalindi" does not match "Kalindi Fonda"); the equality filter below
+    // keeps a looser match from ever adopting the wrong item regardless.
+    const query = `
+      query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
+        items_page_by_column_values(board_id: $boardId, columns: $columns) {
+          items { id name }
+        }
+      }
+    `;
+    const data = await this.request<{ items_page_by_column_values: { items: MondayItem[] } }>(query, {
+      boardId: params.boardId,
+      columns: [{ column_id: 'name', column_values: [params.itemName] }],
+    });
+    return data.items_page_by_column_values.items.find((item) => item.name === params.itemName)?.id ?? null;
+  }
+
   async createChangeRequestItem(params: {
     boardId: number;
     columns: ChangeRequestColumns;
@@ -592,11 +586,15 @@ export class HttpMondayClient implements MondayClient {
         time: params.submittedAtISO.slice(11, 19),
       },
     };
-    await this.request<{ create_item: { id: string } }>(mutation, {
-      boardId: params.boardId,
-      itemName: params.itemName,
-      columnValues: JSON.stringify(columnValues),
-    });
+    // Not idempotent: a create that may have committed throws AmbiguousWriteError rather than
+    // being retried in-process. The consumer (changeRequests/processBatch.ts) looks the item up by
+    // name before every create, so its queue retry adopts an item that did land instead of
+    // leaving staff a duplicate.
+    await this.request<{ create_item: { id: string } }>(
+      mutation,
+      { boardId: params.boardId, itemName: params.itemName, columnValues: JSON.stringify(columnValues) },
+      { idempotent: false },
+    );
   }
 
   async getLetterSettings(params: {

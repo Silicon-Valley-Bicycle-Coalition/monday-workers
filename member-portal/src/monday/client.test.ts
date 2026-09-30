@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpMondayClient, MONDAY_FETCH_TIMEOUT_MS } from './client';
+import { AmbiguousWriteError, HttpMondayClient, MONDAY_FETCH_TIMEOUT_MS } from './client';
 import type { MondayColumns } from '../types';
 
 const columns: MondayColumns = {
@@ -88,14 +88,42 @@ describe('HttpMondayClient request timeout', () => {
     const fetchFn = vi.fn().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
 
-    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow('monday: request timed out after 15000ms');
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow('monday API: request timed out after 15000ms');
   });
 
-  it('passes other fetch failures through unchanged', async () => {
+  it("keeps other fetch failures' own message", async () => {
     const fetchFn = vi.fn().mockRejectedValue(new TypeError('Network connection lost.'));
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
 
     await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow('Network connection lost.');
+  });
+});
+
+// #35: the client runs on the canonical transport (src/monday/graphql.ts).
+describe('HttpMondayClient transport', () => {
+  it('makes exactly one request per call — no in-process retry on a page render', async () => {
+    const fetchFn = vi.fn(async () => new Response('down', { status: 503 }));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
+    await expect(client.findDonorsByEmail('x@example.org')).rejects.toThrow('monday API: HTTP 503: down');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('pins API-Version 2026-01', async () => {
+    const fetchFn = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
+    await client.findDonorsByEmail('x@example.org');
+    expect(new Headers((fetchFn.mock.calls[0]![1] as RequestInit).headers).get('API-Version')).toBe('2026-01');
+  });
+
+  it('reports a change-request create that may have committed as an AmbiguousWriteError', async () => {
+    const fetchFn = vi.fn(async () => new Response('bad gateway', { status: 502 }));
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
+    const columnsCfg = { donorLink: 'd', field: 'f', oldValue: 'o', newValue: 'n', submittedAt: 's' };
+    await expect(client.createChangeRequestItem({
+      boardId: 1, columns: columnsCfg as never, itemName: 'x', donorItemId: '1',
+      fieldLabel: 'Email', oldValue: 'a', newValue: 'b', submittedAtISO: '2026-09-29T12:00:00Z',
+    })).rejects.toBeInstanceOf(AmbiguousWriteError);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -960,6 +988,42 @@ describe('HttpMondayClient.createChangeRequestItem', () => {
     expect(columnValues.text_2).toBe('1 Old St');
     expect(columnValues.text_3).toBe('2 New "Ave"');
     expect(columnValues.date_1).toEqual({ date: '2026-08-24', time: '10:15:30' });
+  });
+});
+
+describe('HttpMondayClient.findChangeRequestItem', () => {
+  function clientReturning(items: { id: string; name: string }[], onBody?: (body: { query: string; variables: Record<string, unknown> }) => void) {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      onBody?.(JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> });
+      return { ok: true, status: 200, json: async () => ({ data: { items_page_by_column_values: { items } } }) };
+    });
+    return new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+  }
+
+  it('queries the board by exact item name, passed as a variable', async () => {
+    let captured: { query: string; variables: Record<string, unknown> } | null = null;
+    const client = clientReturning([{ id: '55', name: 'Address change — Jane "Q" Example (#42)' }], (body) => {
+      captured = body;
+    });
+
+    const id = await client.findChangeRequestItem({ boardId: 123, itemName: 'Address change — Jane "Q" Example (#42)' });
+
+    expect(id).toBe('55');
+    expect(captured!.query).toContain('items_page_by_column_values');
+    expect(captured!.query).not.toContain('Jane');
+    expect(captured!.variables).toEqual({
+      boardId: 123,
+      columns: [{ column_id: 'name', column_values: ['Address change — Jane "Q" Example (#42)'] }],
+    });
+  });
+
+  it('returns null when nothing matches', async () => {
+    expect(await clientReturning([]).findChangeRequestItem({ boardId: 1, itemName: 'x (#1)' })).toBeNull();
+  });
+
+  it('ignores a returned item whose name is not an exact match', async () => {
+    const client = clientReturning([{ id: '9', name: 'Address change — Jane Example (#421)' }]);
+    expect(await client.findChangeRequestItem({ boardId: 1, itemName: 'Address change — Jane Example (#42)' })).toBeNull();
   });
 });
 

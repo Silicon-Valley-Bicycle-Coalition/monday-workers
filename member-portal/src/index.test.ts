@@ -111,6 +111,7 @@ function fakeMonday(): MondayClient {
     getMemberPortalData: vi.fn(),
     getDiscountOrganizations: vi.fn(),
     getDonorContactInfo: vi.fn(),
+    findChangeRequestItem: vi.fn().mockResolvedValue(null),
     createChangeRequestItem: vi.fn(),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
