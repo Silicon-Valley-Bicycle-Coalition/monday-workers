@@ -269,7 +269,16 @@ export class MondayGraphQL {
         throw new MondayApiError(`monday API: ${detail}`, details);
       }
 
-      const json = (await response.json()) as GraphQLResponse<T>;
+      let json: GraphQLResponse<T>;
+      try {
+        json = (await response.json()) as GraphQLResponse<T>;
+      } catch (err) {
+        // A reset, timeout or truncation mid-body: Monday already ran the request, so for a write
+        // this is exactly as ambiguous as a dropped connection (salesforce-import's client learned
+        // this first — see its load/monday.ts send()).
+        ambiguous(`unreadable response body: ${String(err)}`, { httpStatus: response.status });
+        continue;
+      }
       if (json.errors && json.errors.length > 0) {
         const detail = json.errors.map((e) => e.message).join('; ');
         // A single query over the per-query complexity cap fails identically every time; only

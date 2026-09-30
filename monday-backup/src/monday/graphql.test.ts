@@ -175,6 +175,26 @@ describe('MondayGraphQL with a single attempt', () => {
   });
 });
 
+describe('MondayGraphQL unreadable response bodies', () => {
+  const truncated = () => new Response('{"data": {"create_item": {"id"', { status: 200 });
+
+  it('treats a truncated 200 body on a write as possibly committed', async () => {
+    const fetchFn = vi.fn(async () => truncated());
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn, sleepFn: async () => {} });
+    const err = await gql.request(MUTATION, {}, { idempotent: false }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AmbiguousWriteError);
+    expect((err as Error).message).toMatch(/unreadable response body/);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a truncated body on a read', async () => {
+    const fetchFn = vi.fn().mockResolvedValueOnce(truncated()).mockResolvedValueOnce(Response.json({ data: { ok: true } }));
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn, sleepFn: async () => {} });
+    await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: true });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('MondayGraphQL fetchFn option', () => {
   it('uses an injected fetch instead of the global one', async () => {
     const fetchFn = vi.fn(async () => Response.json({ data: { ok: true } }));
