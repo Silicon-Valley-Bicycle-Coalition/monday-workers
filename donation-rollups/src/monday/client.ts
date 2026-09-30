@@ -89,11 +89,13 @@ export interface DonationRollupsMondayClient {
 // setItemDescription alone needs 2026-04 (see there).
 const MONDAY_API_VERSION = '2026-01';
 
-// One attempt per call, no in-process retry (#35): the account is on Workers Free, whose
-// 50-subrequest cap per invocation this Worker is already sized against (max_batch_size 2 in
-// wrangler.jsonc), and every retried fetch is another subrequest. Retries belong to the queue,
-// which delays them by Monday's hint (consumer/quota.ts). Revisit maxAttempts on Workers Paid.
-const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 1, requestTimeoutMs: 30_000 };
+// Queue-consumer tuning (#35), same as the other queue Workers: a few quick in-process retries
+// ride out a Monday blip or the per-minute complexity budget. Anything longer surfaces as a
+// MondayRateLimitError carrying Monday's hint, and the consumer defers the batch by it
+// (consumer/quota.ts) — including the daily limit, which the transport never retries in-process.
+// On Workers Paid (confirmed 2026-09-29) the retried fetches' extra subrequests are well inside
+// the 10,000-per-invocation limit, and waiting doesn't count against the 100 ms CPU cap.
+const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
 
 // Monday's per-token complexity budget, per-minute and daily call limits, and concurrency cap
 // (issue #27). The consumer retries these after a delay instead of immediately; retryInSeconds

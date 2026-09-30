@@ -132,6 +132,7 @@ function fakeMonday(matchesByEmail: Record<string, { id: string; name: string }[
         preferredLanguage: '',
       })
     ),
+    findChangeRequestItem: vi.fn().mockResolvedValue(null),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -175,6 +176,7 @@ function fakeMondayWithDonations(): MondayClient {
         preferredLanguage: '',
       })
     ),
+    findChangeRequestItem: vi.fn().mockResolvedValue(null),
     createChangeRequestItem: vi.fn().mockResolvedValue(undefined),
     getDonorNames: vi.fn().mockResolvedValue([]),
     getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
@@ -804,6 +806,7 @@ describe('POST / error handling', () => {
       getDiscountOrganizations: vi.fn(),
       getVolunteerShiftsForDonor: vi.fn(),
       getDonorContactInfo: vi.fn(),
+      findChangeRequestItem: vi.fn().mockResolvedValue(null),
       createChangeRequestItem: vi.fn(),
       getDonorNames: vi.fn().mockResolvedValue([]),
       getEventRegistrationsForDonor: vi.fn().mockResolvedValue([]),
