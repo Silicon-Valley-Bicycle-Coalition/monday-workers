@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpMondayClient, MondayApiError } from './client';
+import { AmbiguousWriteError, HttpMondayClient, MondayApiError } from './client';
 import type { MondayColumnsConfig } from '../types';
 
 const COLUMNS: MondayColumnsConfig = {
@@ -8,6 +8,9 @@ const COLUMNS: MondayColumnsConfig = {
   mailchimpCampaigns: 'campaigns', doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
 };
 
+// The transport's retries don't really wait in tests.
+const noSleep = async () => {};
+
 function fakeFetch(data: unknown) {
   return vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data }) } as Response);
 }
@@ -15,7 +18,7 @@ function fakeFetch(data: unknown) {
 describe('HttpMondayClient GraphQL transport', () => {
   it('pins the Monday API version on every request', async () => {
     const fetchFn = fakeFetch({ items: [] });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await client.getDonorById('42', COLUMNS);
     expect(fetchFn).toHaveBeenCalledWith(
       'https://api.monday.com/v2',
@@ -30,7 +33,7 @@ describe('HttpMondayClient GraphQL transport', () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true, json: async () => ({ error_message: 'Rate limit exceeded', status_code: 429 }),
     } as Response);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await expect(client.getDonorById('42', COLUMNS)).rejects.toThrow('Rate limit exceeded');
   });
 });
@@ -48,7 +51,7 @@ describe('HttpMondayClient.getDonorById', () => {
         ],
       }],
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
 
     const donor = await client.getDonorById('42', COLUMNS);
 
@@ -63,7 +66,7 @@ describe('HttpMondayClient.getDonorById', () => {
     const fetchFn = fakeFetch({
       items: [{ id: '42', column_values: [{ id: 'email', text: 'a@b.com' }, { id: 'dns', text: 'v' }, { id: 'dnsStatus', text: 'Confirmed' }] }],
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
 
     const donor = await client.getDonorById('42', COLUMNS);
 
@@ -75,7 +78,7 @@ describe('HttpMondayClient.getDonorById', () => {
 
   it('returns null when the item no longer exists', async () => {
     const fetchFn = fakeFetch({ items: [] });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     expect(await client.getDonorById('999', COLUMNS)).toBeNull();
   });
 
@@ -83,15 +86,15 @@ describe('HttpMondayClient.getDonorById', () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true, json: async () => ({ errors: [{ message: 'board not found' }] }),
     } as Response);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
-    await expect(client.getDonorById('42', COLUMNS)).rejects.toThrow('monday: board not found');
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    await expect(client.getDonorById('42', COLUMNS)).rejects.toThrow('monday API: board not found');
   });
 });
 
 describe('HttpMondayClient.createCampaignItem', () => {
   it('returns the new item id', async () => {
     const fetchFn = fakeFetch({ create_item: { id: 'new-item' } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     expect(await client.createCampaignItem(123, 'Newsletter')).toBe('new-item');
   });
 });
@@ -99,7 +102,7 @@ describe('HttpMondayClient.createCampaignItem', () => {
 describe('HttpMondayClient.renameItem', () => {
   it('sends the new name via the "name" pseudo-column', async () => {
     const fetchFn = fakeFetch({ change_simple_column_value: { id: 'item1' } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await client.renameItem(123, 'item1', 'New Name');
     expect(fetchFn).toHaveBeenCalledWith(
       'https://api.monday.com/v2',
@@ -111,7 +114,7 @@ describe('HttpMondayClient.renameItem', () => {
 describe('HttpMondayClient.archiveItem', () => {
   it('archives the given item id', async () => {
     const fetchFn = fakeFetch({ archive_item: { id: 'item1' } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await client.archiveItem('item1');
     expect(fetchFn).toHaveBeenCalled();
   });
@@ -120,7 +123,7 @@ describe('HttpMondayClient.archiveItem', () => {
 describe('HttpMondayClient.findItemIdByEmail', () => {
   it('returns the matching item id', async () => {
     const fetchFn = fakeFetch({ items_page_by_column_values: { items: [{ id: '42' }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     expect(await client.findItemIdByEmail(123, 'email', 'a@b.com')).toBe('42');
   });
 
@@ -136,7 +139,7 @@ describe('HttpMondayClient.findItemIdByEmail', () => {
           { id: '8', column_values: [{ text: 'other@example.com' }] },
         ] } }] } }),
       } as Response);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     expect(await client.findItemIdByEmail(123, 'email', 'staff@example.com')).toBe('7');
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
@@ -150,13 +153,13 @@ describe('HttpMondayClient.findItemIdByEmail', () => {
           { id: '8', column_values: [{ text: 'other@example.com' }] },
         ] } }] } }),
       } as Response);
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     expect(await client.findItemIdByEmail(123, 'email', 'nobody@b.com')).toBeNull();
   });
 
   it('does not issue the fallback query when the exact match hits', async () => {
     const fetchFn = fakeFetch({ items_page_by_column_values: { items: [{ id: '42' }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     expect(await client.findItemIdByEmail(123, 'email', 'a@b.com')).toBe('42');
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
@@ -165,7 +168,7 @@ describe('HttpMondayClient.findItemIdByEmail', () => {
 describe('HttpMondayClient.setConnectColumn', () => {
   it('writes the full linked-item-ids set as JSON', async () => {
     const fetchFn = fakeFetch({ change_column_value: { id: '42' } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     await client.setConnectColumn(123, '42', 'campaigns', ['1', '2']);
     expect(fetchFn).toHaveBeenCalledWith(
       'https://api.monday.com/v2',
@@ -175,18 +178,16 @@ describe('HttpMondayClient.setConnectColumn', () => {
 });
 
 describe('HttpMondayClient rate-limit errors', () => {
-  function respond(init: { ok: boolean; status: number; body?: unknown; headers?: Record<string, string> }) {
-    return vi.fn().mockResolvedValue({
-      ok: init.ok, status: init.status, headers: new Headers(init.headers ?? {}),
-      json: async () => {
-        if (init.body === undefined) throw new SyntaxError('no body');
-        return init.body;
-      },
-    } as unknown as Response);
+  // A fresh Response per call: the transport retries rate limits in-process, and a body can be
+  // read only once.
+  function respond(init: { status: number; body?: unknown; headers?: Record<string, string> }) {
+    return vi.fn(async () =>
+      new Response(init.body === undefined ? null : JSON.stringify(init.body), { status: init.status, headers: init.headers }),
+    );
   }
 
   async function errorFrom(fetchFn: ReturnType<typeof respond>): Promise<MondayApiError> {
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', fetchFn);
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
     const err = await client.getDonorById('42', COLUMNS).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(MondayApiError);
     return err as MondayApiError;
@@ -194,18 +195,18 @@ describe('HttpMondayClient rate-limit errors', () => {
 
   it('reads code and retry_in_seconds from a 429 GraphQL error body', async () => {
     const err = await errorFrom(respond({
-      ok: false, status: 429,
+      status: 429,
       body: { errors: [{ message: 'Complexity budget exhausted', extensions: { code: 'COMPLEXITY_BUDGET_EXHAUSTED', retry_in_seconds: 22 } }] },
     }));
     expect(err.httpStatus).toBe(429);
     expect(err.code).toBe('COMPLEXITY_BUDGET_EXHAUSTED');
     expect(err.retryAfterSeconds).toBe(22);
-    expect(err.message).toBe('monday: HTTP 429: Complexity budget exhausted');
+    expect(err.message).toBe('monday API: exhausted 3 attempts — last error: HTTP 429: Complexity budget exhausted');
   });
 
   it('reads the same hint from an HTTP 200 GraphQL errors array', async () => {
     const err = await errorFrom(respond({
-      ok: true, status: 200,
+      status: 200,
       body: { errors: [{ message: 'Rate limit exceeded', extensions: { code: 'RATE_LIMIT_EXCEEDED', retry_in_seconds: 40 } }] },
     }));
     expect(err.code).toBe('RATE_LIMIT_EXCEEDED');
@@ -213,22 +214,22 @@ describe('HttpMondayClient rate-limit errors', () => {
   });
 
   it('falls back to the Retry-After header when the body has no hint', async () => {
-    const err = await errorFrom(respond({ ok: false, status: 429, headers: { 'Retry-After': '15' } }));
+    const err = await errorFrom(respond({ status: 429, headers: { 'Retry-After': '15' } }));
     expect(err.retryAfterSeconds).toBe(15);
-    expect(err.message).toBe('monday: HTTP 429');
+    expect(err.message).toBe('monday API: exhausted 3 attempts — last error: HTTP 429');
   });
 
   it('falls back to error_message when a non-2xx body has an empty errors array', async () => {
     const err = await errorFrom(respond({
-      ok: false, status: 429,
+      status: 429,
       body: { errors: [], error_message: 'Rate limit exceeded' },
     }));
-    expect(err.message).toBe('monday: HTTP 429: Rate limit exceeded');
+    expect(err.message).toBe('monday API: exhausted 3 attempts — last error: HTTP 429: Rate limit exceeded');
   });
 
   it('parses the legacy "reset in N seconds" complexity message', async () => {
     const err = await errorFrom(respond({
-      ok: true, status: 200,
+      status: 200,
       body: {
         error_code: 'ComplexityException', status_code: 429,
         error_message: 'Complexity budget exhausted, query cost 30001 budget remaining 7897 out of 1000000 reset in 13 seconds',
@@ -241,10 +242,29 @@ describe('HttpMondayClient rate-limit errors', () => {
 
   it('reports DAILY_LIMIT_EXCEEDED with no hint when Monday gives none', async () => {
     const err = await errorFrom(respond({
-      ok: false, status: 429,
+      status: 429,
       body: { errors: [{ message: 'Daily limit exceeded', extensions: { code: 'DAILY_LIMIT_EXCEEDED' } }] },
     }));
     expect(err.code).toBe('DAILY_LIMIT_EXCEEDED');
     expect(err.retryAfterSeconds).toBeUndefined();
+  });
+
+  it('fails fast on the daily limit instead of retrying in-process', async () => {
+    const fetchFn = respond({ status: 429, body: { errors: [{ message: 'Daily limit exceeded', extensions: { code: 'DAILY_LIMIT_EXCEEDED' } }] } });
+    await errorFrom(fetchFn);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a rate limit in-process 3 times before surfacing it', async () => {
+    const fetchFn = respond({ status: 429, headers: { 'Retry-After': '15' } });
+    await errorFrom(fetchFn);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it('never retries a campaign-item create that may have committed', async () => {
+    const fetchFn = respond({ status: 502 });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    await expect(client.createCampaignItem(1, 'Newsletter')).rejects.toBeInstanceOf(AmbiguousWriteError);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,9 +5,11 @@ import type { Config } from '../types';
 import { withRetry } from '../retry';
 
 // This daily cron has no Queue safety net underneath it (unlike the outbound/inbound
-// consumers), so a transient Mailchimp/Monday hiccup here would otherwise abort the whole
-// day's reconciliation with nothing to retry it until tomorrow. Small, fixed values —
-// this isn't latency-sensitive, it's a once-a-day batch job.
+// consumers), so a transient Mailchimp hiccup here would otherwise abort the whole day's
+// reconciliation with nothing to retry it until tomorrow. Small, fixed values — this isn't
+// latency-sensitive, it's a once-a-day batch job. Monday calls are not wrapped: the Monday
+// transport retries them itself (#35), and wrapping its create would retry a create that may
+// already have committed (AmbiguousWriteError) into a duplicate campaign item.
 const RECONCILE_RETRY_OPTIONS = { attempts: 3, delayMs: 500 };
 
 // How long a create claim holds before another run may assume its claimant died between
@@ -48,11 +50,11 @@ export async function reconcileCampaigns(deps: ReconcileDeps): Promise<Reconcile
       const now = new Date();
       const staleBefore = new Date(now.getTime() - CLAIM_STALE_MS).toISOString();
       if (!(await campaignItemsStore.claim(interest.interestId, interest.name, now.toISOString(), staleBefore))) continue;
-      const itemId = await withRetry(() => mondayClient.createCampaignItem(boardId, interest.name), RECONCILE_RETRY_OPTIONS);
+      const itemId = await mondayClient.createCampaignItem(boardId, interest.name);
       await campaignItemsStore.upsert({ interestId: interest.interestId, mondayItemId: itemId, name: interest.name, archivedAt: null });
       created++;
     } else if (existing.name !== interest.name) {
-      await withRetry(() => mondayClient.renameItem(boardId, existing.mondayItemId, interest.name), RECONCILE_RETRY_OPTIONS);
+      await mondayClient.renameItem(boardId, existing.mondayItemId, interest.name);
       await campaignItemsStore.upsert({ interestId: interest.interestId, mondayItemId: existing.mondayItemId, name: interest.name, archivedAt: null });
       renamed++;
     }
@@ -61,7 +63,7 @@ export async function reconcileCampaigns(deps: ReconcileDeps): Promise<Reconcile
 
   let archived = 0;
   for (const stale of trackedById.values()) {
-    await withRetry(() => mondayClient.archiveItem(stale.mondayItemId), RECONCILE_RETRY_OPTIONS);
+    await mondayClient.archiveItem(stale.mondayItemId);
     await campaignItemsStore.markArchived(stale.interestId, new Date().toISOString());
     archived++;
   }

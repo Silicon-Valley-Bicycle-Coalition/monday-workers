@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BudgetExhaustedError, Deadline } from '../deadline';
-import { AmbiguousWriteError, MONDAY_API_VERSION, MondayGraphQL } from './graphql';
+import { AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL } from './graphql';
 
 // Read-path retry behaviour is covered through HttpMondayClient in client.test.ts; this file
 // covers what only the restore tool's writes use: `idempotent: false`.
@@ -96,6 +96,65 @@ describe('MondayGraphQL (unbounded)', () => {
   it('still retries normally without a deadline', async () => {
     const { gql } = transport([new Response('oops', { status: 502 }), Response.json({ data: { ok: true } })]);
     await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: true });
+  });
+});
+
+describe('MondayGraphQL typed errors', () => {
+  it('fails fast on the daily limit, carrying its code, without retrying', async () => {
+    const { gql, fetchMock } = transport([
+      Response.json({ errors: [{ message: 'Daily limit exceeded', extensions: { code: 'DAILY_LIMIT_EXCEEDED' } }] }),
+    ]);
+    const err = await gql.request('query { ok }', {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MondayApiError);
+    expect(err).toMatchObject({ code: 'DAILY_LIMIT_EXCEEDED', httpStatus: 200 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the last retry hint and status once attempts are exhausted', async () => {
+    const limited = () =>
+      Response.json({ errors: [{ message: 'Rate limit', extensions: { code: 'RATE_LIMIT_EXCEEDED', retry_in_seconds: 42 } }] }, { status: 429 });
+    const { gql } = transport([limited(), limited(), limited(), limited()]);
+    const err = await gql.request('query { ok }', {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MondayApiError);
+    expect(err).toMatchObject({ code: 'RATE_LIMIT_EXCEEDED', retryAfterSeconds: 42, httpStatus: 429 });
+    expect((err as Error).message).toMatch(/exhausted 4 attempts — last error: HTTP 429: Rate limit/);
+  });
+
+  it('reads the legacy shape: error_code and "reset in N seconds"', async () => {
+    const legacy = () => Response.json({ error_message: 'Complexity budget exhausted, reset in 13 seconds', error_code: 'ComplexityException', status_code: 429 });
+    const { gql } = transport([legacy(), legacy(), legacy(), legacy()]);
+    const err = await gql.request('query { ok }', {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'ComplexityException', retryAfterSeconds: 13, httpStatus: 429 });
+  });
+
+  it('takes the hint from a Retry-After header when the body has none', async () => {
+    const { gql } = transport(Array.from({ length: 4 }, () => new Response('slow down', { status: 429, headers: { 'Retry-After': '7' } })));
+    const err = await gql.request('query { ok }', {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ retryAfterSeconds: 7, httpStatus: 429 });
+  });
+
+  it('throws a non-retryable 4xx at once with its status and body', async () => {
+    const { gql, fetchMock } = transport([new Response('Not Authenticated', { status: 401 })]);
+    const err = await gql.request('query { ok }', {}).catch((e: unknown) => e);
+    expect(err).toMatchObject({ httpStatus: 401, message: 'monday API: HTTP 401: Not Authenticated' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes AmbiguousWriteError a MondayApiError too', async () => {
+    const { gql } = transport([new Response('oops', { status: 502 })]);
+    const err = await gql.request(MUTATION, {}, { idempotent: false }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AmbiguousWriteError);
+    expect(err).toBeInstanceOf(MondayApiError);
+    expect(err).toMatchObject({ httpStatus: 502 });
+  });
+});
+
+describe('MondayGraphQL fetchFn option', () => {
+  it('uses an injected fetch instead of the global one', async () => {
+    const fetchFn = vi.fn(async () => Response.json({ data: { ok: true } }));
+    const gql = new MondayGraphQL('https://api.monday.com/v2', 't', { fetchFn });
+    await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: true });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
 

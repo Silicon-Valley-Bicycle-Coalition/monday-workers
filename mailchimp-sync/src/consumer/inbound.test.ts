@@ -221,7 +221,7 @@ describe('processInboundBatch', () => {
     });
 
     it("waits at least Monday's retry_in_seconds", async () => {
-      const err = new MondayApiError('monday: HTTP 429', 429, 'COMPLEXITY_BUDGET_EXHAUSTED', 300);
+      const err = new MondayApiError('monday: HTTP 429', { httpStatus: 429, code: 'COMPLEXITY_BUDGET_EXHAUSTED', retryAfterSeconds: 300 });
       expect(await retryFor(err, 1)).toHaveBeenCalledWith({ delaySeconds: 300 });
     });
 

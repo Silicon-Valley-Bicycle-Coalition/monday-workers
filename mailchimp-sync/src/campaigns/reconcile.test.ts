@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { reconcileCampaigns } from './reconcile';
 import type { MailchimpClient } from '../mailchimp/client';
-import type { MondayClient } from '../monday/client';
+import { AmbiguousWriteError, type MondayClient } from '../monday/client';
 import type { CampaignItemsStore } from '../db/campaignItems';
 import type { Config } from '../types';
 
@@ -116,35 +116,21 @@ describe('reconcileCampaigns', () => {
     expect(result).toEqual({ created: 0, renamed: 0, archived: 0 });
   });
 
-  it('retries a transient Monday failure and still creates the item on the next attempt', async () => {
-    // withRetry uses a real setTimeout backoff (see retry.ts) — stub it to fire
-    // immediately so this test doesn't actually wait, same approach as retry.test.ts.
-    const originalSetTimeout = globalThis.setTimeout;
-    vi.stubGlobal('setTimeout', ((cb: () => void) => {
-      cb();
-      return 0 as unknown as ReturnType<typeof originalSetTimeout>;
-    }) as typeof setTimeout);
-
+  it('never re-runs a Monday create that may have committed — the transport owns Monday retries (#35)', async () => {
     const mailchimpClient: MailchimpClient = {
       listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
       updateMember: vi.fn(), getMemberInterests: vi.fn(), unsubscribeMember: vi.fn(),
     };
     const mondayClient: MondayClient = {
-      createCampaignItem: vi.fn().mockRejectedValueOnce(new Error('transient')).mockResolvedValue('item1'),
+      createCampaignItem: vi.fn().mockRejectedValueOnce(new AmbiguousWriteError('monday API: HTTP 502 (the write may have committed)')).mockResolvedValue('dup'),
       renameItem: vi.fn(), archiveItem: vi.fn(), getDonorById: vi.fn(),
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
     const campaignItemsStore = fakeCampaignItemsStore();
 
-    try {
-      const result = await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config: CONFIG });
-
-      expect(mondayClient.createCampaignItem).toHaveBeenCalledTimes(2);
-      expect(campaignItemsStore.upsert).toHaveBeenCalledWith({ interestId: 'int1', mondayItemId: 'item1', name: 'Newsletter', archivedAt: null });
-      expect(result).toEqual({ created: 1, renamed: 0, archived: 0 });
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    await expect(reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config: CONFIG })).rejects.toBeInstanceOf(AmbiguousWriteError);
+    expect(mondayClient.createCampaignItem).toHaveBeenCalledTimes(1);
+    expect(campaignItemsStore.upsert).not.toHaveBeenCalled();
   });
 
   it('throws if campaignsBoardId is not configured', async () => {

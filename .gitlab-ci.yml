@@ -68,7 +68,7 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in funraise-sync/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       exit $status

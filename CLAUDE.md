@@ -181,8 +181,10 @@ is the canonical transport (429/Retry-After, complexity budget, 5xx, timeouts, n
 writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.ts` and tune it
 through constructor options in their own `client.ts`, never by editing the copy. The
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
-that job lists, and add a Worker's path there when moving it over. So far: funraise-sync and
-quickbooks-sync. The other Workers still carry their own clients.
+that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
+funraise-sync, mailchimp-sync and quickbooks-sync. The other Workers still carry their own
+clients. Everything the transport throws is a `MondayApiError` (`httpStatus`, `code`,
+`retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
 
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
 per exposure class (the public-facing `member-portal` gets its own user with access to only the

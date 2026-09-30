@@ -44,26 +44,118 @@ const MAX_ADVISED_WAIT_MS = 60_000;
 // limits. Monday reports these in `errors[].extensions.code`, sometimes with `retry_in_seconds`.
 const RETRYABLE_CODE = /complexity|rate_limit|concurrency/i;
 
+// Monday's daily call limit resets at midnight UTC, so no in-process wait clears it: it fails fast
+// with its code, and the caller schedules the retry (e.g. a queue delay to midnight).
+const DAILY_LIMIT_CODE = /daily_limit/i;
+
 interface GraphQLError {
   message: string;
-  extensions?: { code?: string; retry_in_seconds?: number };
+  // Monday's machine-readable code (COMPLEXITY_BUDGET_EXHAUSTED, RATE_LIMIT_EXCEEDED,
+  // DAILY_LIMIT_EXCEEDED, …) and, for rate limits, how long to wait.
+  extensions?: { code?: unknown; error_code?: unknown; retry_in_seconds?: unknown };
 }
 
 interface GraphQLResponse<T> {
   data?: T;
   errors?: GraphQLError[];
-  // Monday's rate-limit / auth-failure shape: HTTP 200 with no data and no errors array.
+  // Monday's legacy rate-limit / auth-failure shape: no data and no errors array.
   error_message?: string;
+  error_code?: string;
   status_code?: number;
+}
+
+export interface MondayErrorDetails {
+  // The HTTP status, or the legacy no-data shape's status_code. Absent for a network error.
+  httpStatus?: number;
+  // Monday's error code, when it sent one.
+  code?: string;
+  // How long Monday asked the caller to wait, in seconds, when it said.
+  retryAfterSeconds?: number;
+}
+
+// Every failure the transport reports. Carries what a queue consumer needs to pick a retry delay:
+// a daily-limit code means "after midnight UTC", a retry hint means "not before this".
+export class MondayApiError extends Error {
+  readonly httpStatus: number | undefined;
+  readonly code: string | undefined;
+  readonly retryAfterSeconds: number | undefined;
+
+  constructor(message: string, details: MondayErrorDetails = {}) {
+    super(message);
+    this.name = 'MondayApiError';
+    this.httpStatus = details.httpStatus;
+    this.code = details.code;
+    this.retryAfterSeconds = details.retryAfterSeconds;
+  }
 }
 
 // Thrown instead of retrying when a non-idempotent mutation failed in a way that may have happened
 // after Monday committed it (5xx, network error/timeout, or the no-data shape without a
 // rate-limit status). Blindly retrying would create duplicates; the caller must check first.
-export class AmbiguousWriteError extends Error {
-  constructor(message: string) {
-    super(message);
+export class AmbiguousWriteError extends MondayApiError {
+  constructor(message: string, details: MondayErrorDetails = {}) {
+    super(message, details);
     this.name = 'AmbiguousWriteError';
+  }
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+// Retry-After is either delta-seconds or an HTTP-date.
+function retryAfterSeconds(header: string | null): number | undefined {
+  if (header === null) return undefined;
+  const seconds = nonNegativeNumber(header);
+  if (seconds !== undefined) return seconds;
+  const at = Date.parse(header);
+  return Number.isFinite(at) ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : undefined;
+}
+
+function codeOf(error: GraphQLError): string | undefined {
+  const code = error.extensions?.code ?? error.extensions?.error_code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+// Code and retry hint from whatever Monday sent: GraphQL error extensions, the legacy shape's
+// error_code and "… reset in N seconds" prose, then the Retry-After header.
+function errorDetails(
+  httpStatus: number | undefined,
+  json: GraphQLResponse<unknown> | undefined,
+  retryAfterHeader: string | null,
+  errors: GraphQLError[] = json?.errors ?? [],
+): MondayErrorDetails {
+  let code: string | undefined;
+  let retryAfter: number | undefined;
+  for (const e of errors) {
+    code ??= codeOf(e);
+    retryAfter ??= nonNegativeNumber(e.extensions?.retry_in_seconds);
+  }
+  if (code === undefined && typeof json?.error_code === 'string') code = json.error_code;
+  const legacyReset = typeof json?.error_message === 'string' ? /reset in (\d+) seconds?/i.exec(json.error_message) : null;
+  if (legacyReset) retryAfter ??= Number(legacyReset[1]);
+  retryAfter ??= retryAfterSeconds(retryAfterHeader);
+  return { httpStatus, code, retryAfterSeconds: retryAfter };
+}
+
+// Error responses are read defensively: the body may be empty or not JSON, and a Worker's unit
+// tests may stand in a minimal object with no headers or text() for a Response.
+function header(response: Response, name: string): string | null {
+  return typeof response.headers?.get === 'function' ? response.headers.get(name) : null;
+}
+
+async function readErrorBody(response: Response): Promise<{ text: string; json?: GraphQLResponse<unknown> }> {
+  let text = '';
+  try {
+    text = await response.text();
+  } catch {
+    return { text };
+  }
+  try {
+    return { text, json: JSON.parse(text) as GraphQLResponse<unknown> };
+  } catch {
+    return { text };
   }
 }
 
@@ -75,6 +167,10 @@ export interface MondayGraphQLOptions {
   deadline?: RetryBudget;
   // The `API-Version` header; MONDAY_API_VERSION when absent.
   apiVersion?: string;
+  // Defaults to the global fetch, looked up per call: never pass a bare `fetch` reference to be
+  // called as a method — the Workers runtime throws "Illegal invocation" when native fetch is
+  // invoked with `this` set to anything but the global scope.
+  fetchFn?: typeof fetch;
 }
 
 export interface RequestOptions {
@@ -89,6 +185,7 @@ export class MondayGraphQL {
   private readonly requestTimeoutMs: number;
   private readonly deadline: RetryBudget;
   private readonly apiVersion: string;
+  private readonly fetchFn: typeof fetch;
 
   constructor(
     private apiUrl: string,
@@ -100,27 +197,35 @@ export class MondayGraphQL {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
     this.deadline = options.deadline ?? UNBOUNDED;
     this.apiVersion = options.apiVersion ?? MONDAY_API_VERSION;
+    this.fetchFn = options.fetchFn ?? ((input, init) => fetch(input, init));
   }
 
   async request<T>(query: string, variables: Record<string, unknown>, { idempotent = true }: RequestOptions = {}): Promise<T> {
-    const ambiguous = (detail: string): string => {
-      if (!idempotent) throw new AmbiguousWriteError(`monday API: ${detail} (the write may have committed)`);
-      return detail;
-    };
     let lastError = '';
-    let advisedWaitMs = 0;
+    let lastDetails: MondayErrorDetails = {};
+    const retryable = (detail: string, details: MondayErrorDetails): void => {
+      lastError = detail;
+      lastDetails = details;
+    };
+    // A failure that may have happened after Monday committed the request: fatal for a
+    // non-idempotent write, otherwise retried like any other.
+    const ambiguous = (detail: string, details: MondayErrorDetails): void => {
+      if (!idempotent) throw new AmbiguousWriteError(`monday API: ${detail} (the write may have committed)`, details);
+      retryable(detail, details);
+    };
+
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       if (attempt > 0) {
         const backoffMs = 2 ** attempt * 1000 + Math.random() * 500;
+        const advisedWaitMs = (lastDetails.retryAfterSeconds ?? 0) * 1000;
         const waitMs = Math.max(backoffMs, Math.min(advisedWaitMs, MAX_ADVISED_WAIT_MS));
         await this.deadline.sleepBeforeRetry(this.sleep, waitMs, `monday API (last error: ${lastError})`);
-        advisedWaitMs = 0;
       }
       this.deadline.check(`monday API${lastError === '' ? '' : ` (last error: ${lastError})`}`);
 
       let response: Response;
       try {
-        response = await fetch(this.apiUrl, {
+        response = await this.fetchFn(this.apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -134,49 +239,63 @@ export class MondayGraphQL {
       } catch (err) {
         // A timeout cut short by the deadline is the budget running out, not a network fault.
         this.deadline.check(`monday API (request cut off: ${String(err)})`);
-        lastError = ambiguous(`network error: ${String(err)}`);
+        ambiguous(`network error: ${String(err)}`, {});
         continue;
       }
 
-      if (response.status === 429) {
-        advisedWaitMs = Number(response.headers.get('Retry-After') ?? '0') * 1000;
-        lastError = 'HTTP 429';
-        continue;
-      }
-      if (response.status >= 500) {
-        lastError = ambiguous(`HTTP ${response.status}`);
-        continue;
-      }
       if (!response.ok) {
-        throw new Error(`monday API: HTTP ${response.status}: ${await response.text()}`);
+        // Monday's 429s (and some 4xx/5xx) still carry a GraphQL error body with the code and
+        // retry_in_seconds, so read it for the caller.
+        const body = await readErrorBody(response);
+        // `||`, not `??`: an empty errors array joins to '', which should still fall back.
+        const messages = body.json?.errors?.map((e) => e.message).join('; ') || body.json?.error_message || body.text;
+        const detail = `HTTP ${response.status}${messages ? `: ${messages}` : ''}`;
+        const details = errorDetails(response.status, body.json, header(response, 'Retry-After'));
+        if (response.status === 429 && !DAILY_LIMIT_CODE.test(details.code ?? '')) {
+          retryable(detail, details);
+          continue;
+        }
+        if (response.status >= 500) {
+          ambiguous(detail, details);
+          continue;
+        }
+        throw new MondayApiError(`monday API: ${detail}`, details);
       }
 
       const json = (await response.json()) as GraphQLResponse<T>;
       if (json.errors && json.errors.length > 0) {
-        lastError = json.errors.map((e) => e.message).join('; ');
+        const detail = json.errors.map((e) => e.message).join('; ');
         // A single query over the per-query complexity cap fails identically every time; only
         // the per-minute budget (and rate/concurrency limits) recover with a wait. These are
         // rejected before execution, so they are safe to retry even for writes.
-        const retryable = json.errors.find(
-          (e) =>
+        const recoverable = json.errors.find((e) => {
+          const code = codeOf(e) ?? '';
+          return (
             !/exceeds max complexity/i.test(e.message) &&
-            (RETRYABLE_CODE.test(e.extensions?.code ?? '') || /complexity/i.test(e.message)),
-        );
-        if (retryable === undefined) throw new Error(`monday API: ${lastError}`);
-        advisedWaitMs = (retryable.extensions?.retry_in_seconds ?? 0) * 1000;
+            !DAILY_LIMIT_CODE.test(code) &&
+            (RETRYABLE_CODE.test(code) || /complexity/i.test(e.message))
+          );
+        });
+        if (recoverable === undefined) {
+          throw new MondayApiError(`monday API: ${detail}`, errorDetails(response.status, json, null));
+        }
+        retryable(detail, errorDetails(response.status, json, null, [recoverable]));
         continue;
       }
       if (!json.data) {
-        // Usually a rate limit, so retry; the exhausted-attempts error carries the detail.
-        lastError =
+        const detail =
           typeof json.error_message === 'string'
             ? `response contained no data — ${json.error_message}${json.status_code === undefined ? '' : ` (status_code ${json.status_code})`}`
             : `response contained no data — ${JSON.stringify(json)}`;
-        if (json.status_code !== 429) lastError = ambiguous(lastError);
+        const details = errorDetails(json.status_code ?? response.status, json, null);
+        if (DAILY_LIMIT_CODE.test(details.code ?? '')) throw new MondayApiError(`monday API: ${detail}`, details);
+        // Usually a rate limit, so retry; the exhausted-attempts error carries the detail.
+        if (json.status_code === 429) retryable(detail, details);
+        else ambiguous(detail, details);
         continue;
       }
       return json.data;
     }
-    throw new Error(`monday API: exhausted ${this.maxAttempts} attempts — last error: ${lastError}`);
+    throw new MondayApiError(`monday API: exhausted ${this.maxAttempts} attempts — last error: ${lastError}`, lastDetails);
   }
 }

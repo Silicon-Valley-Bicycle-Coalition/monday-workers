@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { HttpMondayClient } from './client';
+import { AmbiguousWriteError } from './graphql';
+
+// No real waits between the transport's retries.
+function newClient() {
+  return new HttpMondayClient('https://api.monday.com/v2', 'token-123', { sleepFn: async () => {} });
+}
 
 function mockFetchOnce(responseBody: unknown, ok = true) {
   const fetchMock = vi.fn().mockResolvedValue({
@@ -20,7 +26,7 @@ describe('HttpMondayClient', () => {
     const fetchMock = mockFetchOnce({
       data: { items_page_by_column_values: { items: [{ id: '123', name: 'Jordan Rivera' }] } },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
 
     const items = await client.findItemsByColumnValue(999, 'email', 'a@example.com');
 
@@ -34,7 +40,7 @@ describe('HttpMondayClient', () => {
 
   it('archives an item by id', async () => {
     const fetchMock = mockFetchOnce({ data: { archive_item: { id: '321' } } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
 
     await client.archiveItem('321');
 
@@ -45,7 +51,7 @@ describe('HttpMondayClient', () => {
 
   it('returns an empty array when nothing matches', async () => {
     mockFetchOnce({ data: { items_page_by_column_values: { items: [] } } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     expect(await client.findItemsByColumnValue(999, 'email', 'nobody@example.com')).toEqual([]);
   });
 
@@ -53,7 +59,7 @@ describe('HttpMondayClient', () => {
     const fetchMock = mockFetchOnce({
       data: { items_page_by_column_values: { items: [{ id: '456', name: 'Acme, Inc.' }] } },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
 
     const items = await client.findItemsByName(999, 'Acme, Inc.');
 
@@ -66,19 +72,19 @@ describe('HttpMondayClient', () => {
     mockFetchOnce({
       data: { items: [{ column_values: [{ linked_item_ids: ['111', '222'] }] }] },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     expect(await client.getLinkedItemIds('789', 'organization_link')).toEqual(['111', '222']);
   });
 
   it('returns an empty array when a board-relation column has no linked items', async () => {
     mockFetchOnce({ data: { items: [{ column_values: [{}] }] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     expect(await client.getLinkedItemIds('789', 'organization_link')).toEqual([]);
   });
 
   it('creates an item, optionally in a group', async () => {
     const fetchMock = mockFetchOnce({ data: { create_item: { id: '456', name: 'Jane - Donation' } } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
 
     const item = await client.createItem(999, 'Jane - Donation', { amount: 50 }, 'review');
 
@@ -91,7 +97,7 @@ describe('HttpMondayClient', () => {
 
   it('changes column values on an existing item', async () => {
     const fetchMock = mockFetchOnce({ data: { change_multiple_column_values: { id: '456' } } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     await client.changeColumnValues(999, '456', { amount: 75 });
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
     expect(JSON.parse(body.variables.columnValues)).toEqual({ amount: 75 });
@@ -101,20 +107,52 @@ describe('HttpMondayClient', () => {
     mockFetchOnce({
       data: { assets: [{ id: 'a1', name: 'report.csv', public_url: 'https://files.monday.com/a1' }] },
     });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     const asset = await client.fetchAsset('a1');
     expect(asset).toEqual({ id: 'a1', name: 'report.csv', publicUrl: 'https://files.monday.com/a1' });
   });
 
   it('throws when the requested asset is not found', async () => {
     mockFetchOnce({ data: { assets: [] } });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     await expect(client.fetchAsset('missing')).rejects.toThrow(/not found/);
   });
 
   it('throws with the server message when the API returns GraphQL errors', async () => {
     mockFetchOnce({ errors: [{ message: 'Invalid board id' }] });
-    const client = new HttpMondayClient('https://api.monday.com/v2', 'token-123');
+    const client = newClient();
     await expect(client.findItemsByColumnValue(999, 'email', 'x')).rejects.toThrow(/Invalid board id/);
+  });
+});
+
+describe('HttpMondayClient transport (#35)', () => {
+  it('pins API-Version 2026-01, the version these queries were written against', async () => {
+    const fetchMock = mockFetchOnce({ data: { items_page_by_column_values: { items: [] } } });
+    await newClient().findItemsByColumnValue(1, 'x', 'y');
+    expect(fetchMock.mock.calls[0]![1].headers['API-Version']).toBe('2026-01');
+  });
+
+  it('retries a 429 in-process and succeeds', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('rate limited', { status: 429, headers: { 'Retry-After': '1' } }))
+      .mockResolvedValueOnce(Response.json({ data: { items_page_by_column_values: { items: [{ id: '7', name: 'A' }] } } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(newClient().findItemsByColumnValue(1, 'x', 'y')).resolves.toEqual([{ id: '7', name: 'A' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after 3 attempts, leaving longer waits to the queue backoff', async () => {
+    const fetchMock = vi.fn(async () => new Response('down', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(newClient().findItemsByColumnValue(1, 'x', 'y')).rejects.toThrow(/exhausted 3 attempts — last error: HTTP 503/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('never retries a create that may have committed', async () => {
+    const fetchMock = vi.fn(async () => new Response('oops', { status: 502 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(newClient().createItem(1, 'x', {})).rejects.toBeInstanceOf(AmbiguousWriteError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
