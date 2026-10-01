@@ -474,8 +474,17 @@ have to move:
    2027, Gift Type Donation and Thank You Sent, 38 of them installments linked to their
    Recurring Gift. Statuses as Funraise reported them: 42 Received, 10 Failed, 1 Pending.
    `donation-rollups` has its webhooks on this board and picks the creates up on its own.
-6. Funraise's own Test-button delivery: **still to do** as of this writing (it needs a Funraise
-   login).
+6. Proof on the deployed Worker, both paths. **Webhook:** the next real Funraise gift
+   (transaction `14316775`, a one-time $10) arrived at 01:58:39 UTC and was a Donations
+   (sandbox v3) item 9 s later: Amount 10, Status Received, Date 2026-09-30 (the Pacific day),
+   Fiscal Year Ending 2027, Gift Type Donation, Thank You Sent, Funraise ID, Donor linked to the
+   existing People item, Recurring Gift empty as it should be for a one-time gift. It is a real
+   gift and stays. **Poll:** the 02:00 UTC cron was the first deployed run against the rebuilt
+   ledger; it read nothing new and left the cursor where the walk put it. Funraise's own
+   Test-button delivery (verification 3 above) has **not** been repeated on v3: it needs a
+   Funraise login. It exercises the same route and consumer the real gift just did.
+7. Redeployed once more after rebasing onto `main` (the shared transport's API-Version pin,
+   #39), so the running sandbox Worker is `main` plus this remap.
 
 **Still true on v3:** `Refunded` is not a label on the Donations Status column (see "The Funraise
 delivery, as actually sent"), so a refund write still dead-letters until staff add it.
