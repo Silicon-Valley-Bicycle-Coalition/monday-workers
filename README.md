@@ -32,14 +32,28 @@ from the token(s) the staff-facing Workers use. Never ship a staff member's pers
 a Worker secret.
 
 Sandbox tokens are the one deliberate exception to per-exposure-class users: every Worker's
-`--env sandbox` `MONDAY_API_TOKEN` comes from a single shared **Sandbox Integration** user
-(`sandbox-integration@bikesiliconvalley.org`) whose only board access is the CRM Sandbox
-workspace, so a production board id in a sandbox config fails at Monday with
-`USER_UNAUTHORIZED` rather than writing to production. Use that user's token when provisioning
-any new sandbox environment — don't mint another. See
-[the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4. (As of
-2026-09-29 the token in use can still see four other sandbox workspaces; trimming it to the CRM
-Sandbox workspace alone is tracked in #18.)
+`--env sandbox` `MONDAY_API_TOKEN` comes from a single shared **Sandbox Integration** user. Use
+that user's token when provisioning any new sandbox environment — don't mint another. See
+[the sandbox design](docs/superpowers/specs/2026-09-18-sandbox-environment-design.md) §4.
+
+**A Monday user's "access" is wider than it looks — measure a token before calling it scoped
+(#18).** Monday shows every *Main* board in every open workspace to every team member, and by
+default lets them edit it, whether or not they were ever added to the board or the workspace;
+closed workspaces are Enterprise-only. So on SVBC's Pro plan a member user cannot be limited to
+one workspace of Main boards. Measured 2026-09-30: the Sandbox Integration user belongs to no
+workspace at all and still reaches 212 active boards outside the CRM Sandbox, 199 of them
+editable — the design's "a production board id in a sandbox config fails with
+`USER_UNAUTHORIZED`" does **not** hold. The same applies to every production integration user:
+"access to only the boards it reads" is true only of boards created **private** (or shareable,
+for a guest user). Until boards are restricted that way, what keeps a sandbox Worker off
+production is each Worker's `config/split.test.ts` (the two configs share no id) and
+`monday-backup`'s `workspaceIds`, not the token. To see what a token really reaches:
+
+```sh
+MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141226
+```
+
+It exits non-zero and lists the workspaces if the token reaches any board outside the ones named.
 
 ## Status at a glance
 

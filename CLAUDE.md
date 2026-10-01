@@ -16,10 +16,11 @@ shape, open questions) and is meant to be buildable standalone. References there
 out alongside this one) — not published, not required to build the Worker.
 
 **There is no root-level Worker code** — each Worker is self-contained in its own subdirectory.
-The one root-level exception is `scripts/check-log-safety.mjs`, a dependency-free CI check (the
-`log-safety` job) that fails on `console.*()` calls that could log an email address. The
+The root-level exception is `scripts/`: `check-log-safety.mjs`, a dependency-free CI check (the
+`log-safety` job) that fails on `console.*()` calls that could log an email address — the
 pre-commit hook below also runs it (`--staged`, in every worktree); run it by hand with
-`node scripts/check-log-safety.mjs`. Workers
+`node scripts/check-log-safety.mjs` — and `check-monday-token-scope.mjs`, an operator tool (not
+a CI check) that reports which workspaces a Monday token can really reach (#18). Workers
 are built one per feature branch (see the sibling worktree directories in the parent folder) and
 merged to `main` once ready; most are now merged with full implementations, while a Worker whose
 subdirectory holds only a `README.md` is still requirements-only. See the root `README.md`'s
@@ -204,7 +205,11 @@ donor can reload past. Everything the transport throws is a `MondayApiError` (`h
 
 **Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
 per exposure class (the public-facing `member-portal` gets its own user with access to only the
-boards it reads), never a staff member's personal token — see the root README for why.
+boards it reads), never a staff member's personal token — see the root README for why. A
+dedicated user is not by itself a scoped one (#18): any Monday team member can read and edit
+every Main board in every open workspace, so "only the boards it reads" holds only for private
+boards. Never describe a token as scoped without running
+`node scripts/check-monday-token-scope.mjs --workspace <id>` against it.
 
 **`data/` directories** (e.g. in `salesforce-import`) hold real extracted donor PII pulled from
 Salesforce and are gitignored per-Worker. Never remove that ignore rule or commit real data.
