@@ -1,10 +1,10 @@
 # UAT script: Funraise sync
 
-**Status 2026-09-30: blocked.** The sandbox copy of this integration still writes to the
-`(sandbox v2)` Donations and Recurring Gifts boards, which were deleted on 2026-09-20 when the
-`(sandbox v3)` boards replaced them. Until it is remapped, nothing it does is visible on the
-boards you are testing. The fix is tracked separately; this script describes what to try once it
-lands, so read it now and come back.
+**Status 2026-09-30: testable now.** The sandbox copy was moved onto the `(sandbox v3)` boards
+on 2026-09-30. The 53 Funraise gifts made since 2026-09-19, which had been held while it still
+pointed at the deleted v2 boards, were added to Donations (sandbox v3) the same evening, and
+Recurring Gifts (sandbox v3) now mirrors all 1,176 Funraise plans. The first new gift after the
+move arrived on its own nine seconds after it was made.
 
 ## What it does
 
@@ -21,7 +21,7 @@ So **a real donation made on Funraise today is supposed to land on Donations (sa
 in some test area. This is safe: the board is a disposable copy, and the integration only writes
 to Monday. It sends no email and touches nothing in Funraise.
 
-## Try it (once the remap lands)
+## Try it
 
 1. **Watch a real gift arrive.** Open
    [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310), **Recent
@@ -55,6 +55,9 @@ to Monday. It sends no email and touches nothing in Funraise.
 ## What to look at while you're there
 
 - Is Annualized Value the number you want for stewardship tiers, rather than Installment Amount?
+- A card payment that fails in Funraise also arrives, as an item with Status **Failed** (ten of
+  the 53 caught-up gifts are like this). Is it useful to see those on Donations, or is it noise?
+  Note they also carry Thank You Sent checked, which is probably not what you want.
 - The board mirrors every Funraise plan, including 568 old ones whose payment details Funraise
   has redacted under its data-retention rules. They show Status **Redacted**. Is that the right
   way to see them, or would you rather they were hidden by default?
@@ -73,8 +76,8 @@ to Monday. It sends no email and touches nothing in Funraise.
 
 ## Not testable yet
 
-Everything above, until the v2 board remap lands. After cutover, the real Funraise webhook moves
-to production and the sandbox copy is exercised only with the Test button.
+Nothing here is blocked. After cutover, the real Funraise webhook moves to production and the
+sandbox copy is exercised only with the Test button.
 
 ---
 
