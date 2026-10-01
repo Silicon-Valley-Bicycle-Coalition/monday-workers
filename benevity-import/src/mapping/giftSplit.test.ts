@@ -145,6 +145,6 @@ describe('splitRowIntoGifts', () => {
       },
       config
     ) as [GiftSpec, ...GiftSpec[]];
-    expect(gift.columnValues[config.benevityImport.donationsColumns.fiscalYearEnding]).toBe('2027-06-30');
+    expect(gift.columnValues[config.benevityImport.donationsColumns.fiscalYearEnding]).toBe('2027');
   });
 });
