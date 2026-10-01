@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AmbiguousWriteError, HttpMondayClient, MONDAY_FETCH_TIMEOUT_MS } from './client';
+import { MONDAY_API_VERSION } from './graphql';
 import type { MondayColumns } from '../types';
 
 const columns: MondayColumns = {
@@ -108,11 +109,11 @@ describe('HttpMondayClient transport', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it('pins API-Version 2026-01', async () => {
+  it('sends the transport\'s single pinned API-Version (#39)', async () => {
     const fetchFn = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchFn);
     await client.findDonorsByEmail('x@example.org');
-    expect(new Headers((fetchFn.mock.calls[0]![1] as RequestInit).headers).get('API-Version')).toBe('2026-01');
+    expect(new Headers((fetchFn.mock.calls[0]![1] as RequestInit).headers).get('API-Version')).toBe(MONDAY_API_VERSION);
   });
 
   it('reports a change-request create that may have committed as an AmbiguousWriteError', async () => {
@@ -757,7 +758,7 @@ describe('HttpMondayClient error handling', () => {
     await client.findDonorsByEmail('x@example.org');
 
     expect(capturedHeaders).not.toBeNull();
-    expect(capturedHeaders!['API-Version']).toBe('2026-01');
+    expect(capturedHeaders!['API-Version']).toBe(MONDAY_API_VERSION);
   });
 });
 

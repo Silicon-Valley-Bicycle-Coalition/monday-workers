@@ -21,9 +21,7 @@ import { MondayGraphQL } from './graphql';
 
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
-// Pinned so Monday's quarterly rolling default can't change query semantics under a deployed
-// Worker — same pin as the other Workers in this repo (e.g. funraise-sync's client).
-const MONDAY_API_VERSION = '2026-01';
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
 
 // Per-request ceiling on a Monday call (headers and body). Workers impose no wall-clock limit on a
 // subrequest, so without this a hung Monday request held a dashboard render — or a queue consumer
@@ -130,7 +128,6 @@ export class HttpMondayClient implements MondayClient {
     this.transport = new MondayGraphQL(apiUrl, apiToken, {
       maxAttempts: MAX_ATTEMPTS,
       requestTimeoutMs: MONDAY_FETCH_TIMEOUT_MS,
-      apiVersion: MONDAY_API_VERSION,
       fetchFn,
     });
   }

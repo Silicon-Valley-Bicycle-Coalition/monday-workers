@@ -10,14 +10,11 @@ export interface MondayClient {
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
 }
 
-// The queries below were written and verified against 2026-01; the canonical transport's
-// default is newer, so pin this Worker's version explicitly until they're re-checked.
-const MONDAY_API_VERSION = '2026-01';
-
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
 // Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget; anything longer fails the message, and the consumer's own
 // backoff (1, 4, 16 minutes — consumer/processBatch.ts) takes over rather than holding a batch.
-const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000, apiVersion: MONDAY_API_VERSION };
+const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;

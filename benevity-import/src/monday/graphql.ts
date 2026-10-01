@@ -11,11 +11,16 @@
 // Modelled on salesforce-import/src/load/monday.ts; keep the two in step when either learns a
 // new failure mode.
 
-// Default pin. Monday serves a request for a deprecated version as the *maintenance* version, so
-// an unpinned or stale pin drifts silently. 2026-07 is current as of 2026-09; none of its breaking
-// changes (users pagination, connection_board_ids, columns.capabilities) touch monday-backup's
-// queries. A Worker whose queries were written against another version passes `apiVersion`.
-// Re-check developer.monday.com/api-reference/docs/api-versioning when bumping.
+// The one API-Version pin for every Worker that carries this transport (#39). Workers take it from
+// here and never override it for their ordinary calls; a one-off call that needs a newer field
+// passes `apiVersion` (e.g. salesforce-import's configure step). Monday serves a request for a
+// deprecated version as the *maintenance* version, so an unpinned or stale pin drifts silently.
+// 2026-07 is Current until 2026-10-01 and Maintenance after that; versions stay in maintenance
+// for a year or more (2025-04 still is as of 2026-09-30) and deprecation dates are announced
+// ahead. None of its breaking changes (users pagination, connection_board_ids,
+// columns.capabilities) touch any query in this repo. Bump at least every two quarters: check
+// `{ version { value kind } }` and developer.monday.com/api-reference/docs/api-versioning, then
+// re-run every Worker's tests.
 export const MONDAY_API_VERSION = '2026-07';
 
 // A wall-clock budget the transport respects: attempt timeouts and retry waits are capped to it,

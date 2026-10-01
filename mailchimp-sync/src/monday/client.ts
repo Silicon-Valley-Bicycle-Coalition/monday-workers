@@ -13,15 +13,12 @@ export interface MondayClient {
   setConnectColumn(boardId: number, itemId: string, columnId: string, linkedItemIds: string[]): Promise<void>;
 }
 
-// The queries below were written and verified against 2026-01; the canonical transport's
-// default is newer, so pin this Worker's version explicitly until they're re-checked.
-const MONDAY_API_VERSION = '2026-01';
-
+// API-Version comes from the transport's single pin (MONDAY_API_VERSION in graphql.ts, #39).
 // Queue-consumer tuning (#35): a few quick in-process retries ride out a Monday blip or the
 // per-minute complexity budget. Anything longer surfaces as a MondayApiError carrying Monday's
 // code and retry hint, and the consumer picks the queue delay from it (consumer/backoff.ts) —
 // including a daily-limit error, which the transport never retries in-process.
-const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000, apiVersion: MONDAY_API_VERSION };
+const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;

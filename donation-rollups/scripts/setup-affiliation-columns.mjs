@@ -38,7 +38,7 @@ const ORGANIZATIONAL_GIVING = { title: 'Organizational Giving', type: 'numbers',
 // The Worker's own copy of the canonical Monday transport (#35): retries rate limits and Monday
 // blips, times out hung requests, and never blindly re-runs a create. Imported as TypeScript —
 // needs a Node with built-in type stripping (22.18+ / 23.6+).
-const monday = new MondayGraphQL('https://api.monday.com/v2', token, { apiVersion: '2026-01' });
+const monday = new MondayGraphQL('https://api.monday.com/v2', token);
 
 // Mutations here create boards, columns and webhooks, so a failure that may have committed throws
 // AmbiguousWriteError instead of being retried into a duplicate; queries get the full retry.

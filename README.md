@@ -55,6 +55,16 @@ MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141
 
 It exits non-zero and lists the workspaces if the token reaches any board outside the ones named.
 
+**One Monday `API-Version` pin, also shared:** every Worker sends the `MONDAY_API_VERSION`
+constant from its copy of the shared GraphQL transport (`src/monday/graphql.ts`, currently
+`2026-07`) and never overrides it for ordinary calls; the two clients without a transport copy
+(`salesforce-import`, `bp-feedback-notify`) carry an explicit literal of their own. Monday serves
+a request for a *deprecated* version as the maintenance version rather than erroring, so an old
+pin drifts silently onto an API version nothing was tested against. Bump the constant at least
+every two quarters (Monday rolls versions on Jan 15, Apr 1, Jul 1 and Oct 1), re-run every
+Worker's tests, and confirm with `{ version { value kind } }` that the pinned version is still
+served as itself — see #39.
+
 ## Status at a glance
 
 | Worker | Status | Priority |
