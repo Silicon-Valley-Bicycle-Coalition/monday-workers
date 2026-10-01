@@ -235,6 +235,16 @@ requires, none of which can see the sandbox workspace. So a production board id 
 config — or the reverse — fails at Monday with `USER_UNAUTHORIZED` rather than writing to the
 wrong workspace.
 
+> **Erratum, 2026-09-30 (#18): this guard does not exist as designed.** Monday shows every Main
+> board in every open workspace to every team member, added to it or not, and closed workspaces
+> are Enterprise-only. Measured with `scripts/check-monday-token-scope.mjs`, the shared sandbox
+> user (a member of no workspace) reaches 212 active boards outside the CRM Sandbox, 199 of them
+> editable; a new dedicated member user would reach the same. A production board id in a sandbox
+> config therefore succeeds at Monday today. The guards that do hold are §5's config split test
+> and, for `monday-backup`, its `workspaceIds` check. Making this section true needs the
+> production boards to be private, a guest user on shareable boards, or a check inside the
+> Workers — a decision tracked in #18.
+
 One shared sandbox user, not one per Worker, is deliberate: member seats are a Pro-plan
 constraint (15), and least privilege *between* Workers matters far less inside a disposable
 workspace than the boundary *around* it. That user still needs a Work Management member seat
