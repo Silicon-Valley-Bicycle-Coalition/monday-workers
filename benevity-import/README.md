@@ -1,5 +1,7 @@
 # benevity-import
 
+**Staff UAT script:** [`docs/uat/benevity-import.md`](../docs/uat/benevity-import.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status:** Built (`feat/benevity-import`) — production not deployed; sandbox provisioned and
 verified end to end 2026-09-19 (see "Sandbox environment" below); production D1 provisioned and
 sandbox board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover,

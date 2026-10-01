@@ -1,5 +1,7 @@
 # mailchimp-sync
 
+**Staff UAT script:** [`docs/uat/mailchimp-sync.md`](../docs/uat/mailchimp-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 **Status:** Built — repurposed from the never-deployed `membership-reminders` (2026-08-26). Not
 deployed to production; blocked on the same Donors-board prerequisite as everything else
 downstream of `salesforce-import`, plus a Mailchimp audience with the merge fields/Interest

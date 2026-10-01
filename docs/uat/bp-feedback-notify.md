@@ -1,0 +1,48 @@
+# UAT script: Bike Parking organizer feedback email
+
+**Status 2026-09-30: testable now.** Confirmed working end to end on 2026-09-21.
+
+## What it does
+
+After a bike valet event, staff mark the event's request item **Ready to Send**, and the
+organizer gets an email with a link to the post-event feedback form. It replaces the manual
+"remember to email the organizer the survey" step. Nothing else changes; it doesn't read the
+form's answers.
+
+## Safety
+
+In the sandbox every email goes to the shared inbox **`sandbox@bikesiliconvalley.org`**, whatever
+organizer address is on the item. You can use a real request with a real organizer email; they
+will not receive anything.
+
+## Try it
+
+1. Open [BP Request Form (sandbox)](https://bikesiliconvalley.monday.com/boards/18431960612) in
+   the Bike Parking Forms (sandbox) workspace. Pick any item with an organizer email filled in,
+   or create one.
+2. Set its **Post-Event Feedback** column to **Ready to Send**.
+3. Within a few seconds, check `sandbox@bikesiliconvalley.org`. Expect an email from **SVBC Bike
+   Valet (sandbox)** addressed to the organizer's name, with a link to the feedback form. Open
+   the link and confirm the form loads. Is the wording what you'd want an organizer to read?
+4. Set the column to **Sent to Organizer** yourself. See the first note below.
+5. Set it back to Ready to Send. A second email arrives. That is expected today (no duplicate
+   check), so decide whether you want one.
+
+## Don't report these
+
+- The column does **not** flip to Sent to Organizer on its own; staff set it after the email goes
+  out. The automatic write-back exists but is switched off in the sandbox.
+- Two Ready to Send changes send two emails.
+- The email's branding is the shared SVBC template; wording changes are Feature Requests, not
+  bugs.
+
+## Not testable yet
+
+- The automatic Sent / Failed write-back to the item.
+- The production version: it needs the feedback column and automation added to the live
+  **BP Request Form** board by someone with write access, which happens after cutover.
+
+---
+
+*Engineers: [`bp-feedback-notify/README.md`](../../bp-feedback-notify/README.md) has the
+Monday automation setup and the sandbox verification record.*

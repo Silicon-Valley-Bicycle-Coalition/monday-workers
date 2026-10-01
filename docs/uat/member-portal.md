@@ -1,4 +1,7 @@
-# Testing the member portal — a guide for staff testers
+# UAT script: the donor portal
+
+**Status 2026-09-30: testable now** at the test address below. The sandbox has been live since
+2026-09-22.
 
 Thanks for helping test the new member portal! This is where donors and members will eventually
 log in to see their giving history, membership status, and bike-shop discounts. Before it goes
@@ -52,7 +55,15 @@ can safely use any real donor's email address while testing.
 - **Look at the membership status and any bike-shop discounts** — do they display clearly?
 - **Open the digital membership card** — does it show and look right?
 - **Submit a change** — try updating an address, email, or phone number through the portal and
-  confirm you get a confirmation message.
+  confirm you get a confirmation message. Then open the
+  [Donor Portal Change Requests](https://bikesiliconvalley.monday.com/boards/18431948024) board
+  in the CRM Sandbox: the request should be there as a new item with the donor, the field, and
+  the old and new values. Staff apply changes from that board; the portal never edits a donor's
+  record directly.
+- **Check a partner discount end to end** — on
+  [Organizations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577213), set
+  **Discount Offered** and tick **Discount Active** on a bike shop, then log in as a current
+  member and confirm the discount shows.
 - **Open a giving/tax letter** — it's expected to say **"SANDBOX TEST"** prominently on it. That's
   correct, not a bug — it's proof the safety check is working. If a letter does *not* say that,
   stop and report it right away (see below).
@@ -89,6 +100,38 @@ wording for that letter yet.
 - **Landed on an unexpected language?** That's driven by test-data settings, not anything you
   chose — not a bug worth reporting on its own.
 
+## Sign-off needed: tax-letter wording
+
+The portal's year-end giving letters double as IRS donation acknowledgments, so they stay
+switched off until SVBC approves the exact wording. That is gated in code, not just a process
+step. **Raised 2026-08-24; owner: Executive Director plus SVBC's accountant.** Sign off directly
+in this document: check each box and add your initials and the date beside it. All four are
+needed before letters go live. Two are already drafted and just need review as written; two are
+genuinely blank and need real input.
+
+**Already drafted, review and approve as written or send back changes:**
+
+- [ ] **Identity block**: legal name "Silicon Valley Bicycle Coalition", EIN 77-0338658, office
+      address "95 S Market St, Suite 648, San José, CA 95113", mailing address "PO Box 1927, San
+      José, CA 95109", signed by "Clarrissa Cabansagan", "Executive Director".
+- [ ] **Standard statement** (non-member donors): *"No goods or services were provided in
+      exchange for these contributions."*
+
+**Still blank, need real answers:**
+
+- [ ] **Member-benefits variant.** Members receive real benefits (bike-shop discounts), so their
+      letter must either state those benefits were insubstantial or disclose their estimated
+      fair-market value. Which applies is an accountant's question, not a technical one. Write
+      the exact sentence to use once decided.
+- [ ] **Covered tiers.** Which membership tiers get the member-benefits statement instead of the
+      plain one. Monday has two tier values today, **Member** and **Lifetime**; decide whether
+      both get it (both have the same bike-shop discount access today) or just one.
+
+Donors won't see any letters until all four boxes are checked, the approved wording is entered
+into the portal's configuration (`member-portal/config/svbc.json`, the `taxLetter` block), and
+the portal is redeployed. Once that lands, "resend my tax receipt" requests become "log into the
+portal."
+
 ## Reporting what you find
 
 For anything that looks wrong (other than the known gaps above), note down:
@@ -104,4 +147,6 @@ on Monday.com, or send it to whoever asked you to test this round.
 ---
 
 *For engineers: deployment steps, technical architecture, and local-development instructions live
-in [`DEPLOY.md`](DEPLOY.md) and the `run-member-portal` skill, not in this guide.*
+in [`member-portal/DEPLOY.md`](../../member-portal/DEPLOY.md),
+[`member-portal/README.md`](../../member-portal/README.md), and the `run-member-portal` skill,
+not in this guide.*

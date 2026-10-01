@@ -1,5 +1,7 @@
 # bp-feedback-notify
 
+**Staff UAT script:** [`docs/uat/bp-feedback-notify.md`](../docs/uat/bp-feedback-notify.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
+
 Emails a Bike Parking event's organizer the Organizer Feedback Form link once SVBC staff marks
 the event ready for it. Closes the gap documented in `monday-migration`'s `migration-plan.md`
 ("Organizer Feedback Form" section): the form itself asks the right questions, but nothing ever
