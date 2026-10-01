@@ -51,8 +51,11 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       subscription, or it fires immediately and means nothing.
 - [ ] Confirm every Worker's `limits.cpu_ms: 100` is still present — it's the guard that matters
       once Paid's 30 s default applies.
-- [ ] Resolve the open question whether rate-limit `namespace_id`s must be unique per account
-      (sandbox design, Open items) before two Workers deploy with colliding ids.
+- [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's
+      docs: the id "uniquely defines this rate limiting namespace within your Cloudflare
+      account", and two bindings with the same id share counters, even across Workers. Every
+      id in this repo is already distinct (`1001`–`1004`, `2001`–`2061`); keep it that way when
+      adding a Worker.
 - [ ] **Integration users and tokens, one per exposure class** (root README, "Least-privilege
       Monday tokens"). Create after the production workspace exists, scope before minting:
   - [ ] `member-portal` — its own user, read access to only the boards it reads.

@@ -92,8 +92,10 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 ## Deploy
 
-This Worker has never been deployed — secrets aren't set yet, and both custom domains below still
-point at the two Workers this one replaces. Cutover checklist, in order:
+This Worker is deployed and live on both custom domains, and the two Workers it replaced
+(`svbc-events-widgets`, `svbc-committee-calendars`) are gone from the account (checked
+2026-10-01). The steps below record how it was set up, for a fork or a rebuild. Still open:
+step 2 — `CF_WEB_ANALYTICS_TOKEN` is empty in `wrangler.jsonc`.
 
 ### 1. ~~Provision the KV namespace~~ Done 2026-09-23
 
@@ -143,6 +145,17 @@ Cloudflare custom domains are exclusive to one Worker, so step 5's deploy reassi
 Workers (`svbc-events-widgets`, `svbc-committee-calendars`) to this one. Verify both domains serve
 correctly — widget, JSON API, calendar feeds, listing page — **before** considering the old
 Workers' scripts (and `committee-calendars`'s D1 database) safe to manually delete.
+
+Verify the feeds from a non-browser client too, since calendar apps aren't browsers:
+
+```sh
+curl -sI https://committees.bikesiliconvalley.org/calendars/san-jose.ics
+```
+
+A `403` with `cf-mitigated: challenge` means the zone's bot protection is challenging calendar
+apps before they reach this Worker — a browser check won't show it. Bot Fight Mode (Free plan)
+can't be skipped per host; Super Bot Fight Mode (Pro and above) can, with a WAF custom rule
+using the Skip action for these two hostnames.
 
 ## Widget embed snippet
 

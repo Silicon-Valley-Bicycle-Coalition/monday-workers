@@ -118,9 +118,11 @@ silent misattribution. Never fall into the accidental default (first match wins)
 one family member another's giving history unlabeled.
 
 **Cloudflare Access (Zero Trust) was considered and ruled out for this specific use.** It's the
-right fit for gating small internal tools to a handful of staff — its free tier caps at 50 users —
-but this needs to serve every donor with an email on file, not a small team. Custom magic-link auth
-is the correct scope match here, not a shortcut around a better-fit product.
+right fit for gating small internal tools to a handful of staff — it's licensed per seat, for
+members of an organization — but this needs to serve every donor with an email on file, not a
+small team. Custom magic-link auth is the correct scope match here, not a shortcut around a
+better-fit product. (Project Galileo makes Access available to SVBC for staff-facing tools, such
+as gating the sandbox hostnames; that doesn't change the donor-auth decision.)
 
 **Rate-limit login requests** (per email and per IP) to blunt abuse of the email-sending step —
 this is the one place this Worker can be used to spam an inbox if left unguarded.
@@ -679,7 +681,7 @@ heavy build, low value at SVBC's scale), and full self-serve profile editing (th
 model won for rollback safety and audit trail — revisit direct writes only if the queue proves
 pure overhead). Two standing architecture decisions to preserve: letters render live from
 Monday (no stored PDFs to go stale after a data correction), and Cloudflare Access stays ruled
-out for donor auth (free tier caps at 50 users; magic-link auth is the scope match).
+out for donor auth (it's a per-seat staff tool; magic-link auth is the scope match).
 
 ## Sources
 

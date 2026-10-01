@@ -402,9 +402,10 @@ These are not code and gate the corresponding rollout step:
 
 * **Workers Builds, two connections on one root directory** — verify in the dashboard before
   step 1's deploy (§8 has the fallback).
-* **Rate-limit namespace scope.** Whether `ratelimits[].namespace_id` must be unique per
-  account or per Worker is not stated clearly in the docs read for this design; the sandbox
-  uses `1002` either way, which is safe under both readings.
+* ~~**Rate-limit namespace scope.**~~ Resolved 2026-10-01: `ratelimits[].namespace_id` is
+  scoped to the account, and two bindings with the same id share counters even across Workers
+  ([docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)). Every
+  id in the repo is distinct, so nothing collides.
 * **Confirmed 2026-09-18:** a `wrangler deploy --env sandbox --dry-run` on Wrangler 4.125
   accepted `ratelimits` and `routes` inside `env.sandbox` with no warning, and the production
   dry-run was unaffected. This confirms the config shape, not the namespace-scope question above,
