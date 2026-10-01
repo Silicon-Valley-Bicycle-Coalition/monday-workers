@@ -112,7 +112,7 @@ describe('D1RowStore', () => {
     expect(await store.getRowByWorklistItemId('nope')).toBeNull();
   });
 
-  it('requeues a needs-review row once, returns it again while still ingested, and never touches written or skipped rows', async () => {
+  it('requeues a needs-review row once, returns it again while still ingested, never touches written rows, and releases skipped rows only for a whole disbursement (#40)', async () => {
     const store = new D1RowStore(env.DB);
     const add = (transactionId: string, status: 'needs-review' | 'written' | 'skipped' | 'ingested') =>
       store.upsertRow({ transactionId, disbursementId, rawRow: '{"x":1}', status, ingestedAt: 't' });
@@ -131,7 +131,12 @@ describe('D1RowStore', () => {
     expect((await store.getRow('RQ-WRITTEN'))?.status).toBe('written');
 
     await add('RQ-REVIEW-2', 'needs-review');
-    expect(await store.requeueDisbursementRows(disbursementId)).toEqual({ requeued: ['RQ-REVIEW', 'RQ-REVIEW-2'], purged: 0 });
+    // A row-level requeue left the skipped row alone (above). A block-level one is the staff
+    // override of the disbursement cutoff (#40), so it releases skipped rows too.
+    expect((await store.getRow('RQ-SKIPPED'))?.status).toBe('skipped');
+    expect(await store.requeueDisbursementRows(disbursementId)).toEqual({ requeued: ['RQ-REVIEW', 'RQ-REVIEW-2', 'RQ-SKIPPED'], purged: 0 });
+    expect((await store.getRow('RQ-SKIPPED'))?.status).toBe('ingested');
+    expect((await store.getRow('RQ-WRITTEN'))?.status).toBe('written');
     expect(await store.requeueDisbursementRows(disbursementId + 1000)).toEqual(none);
   });
 

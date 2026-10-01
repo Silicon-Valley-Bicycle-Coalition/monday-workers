@@ -62,9 +62,12 @@ export interface BenevityImportConfig {
     boards: MondayBoards;
   };
   benevityImport: {
-    // ISO date (YYYY-MM-DD). Rows with Donation Date before this are skipped, never backfilled —
-    // the migrated Salesforce history has no Transaction IDs to dedupe against.
-    minDonationDate: string;
+    // ISO date (YYYY-MM-DD). A disbursement whose Period Ending is before this is skipped whole:
+    // it is assumed to be in the migrated Salesforce history, which has no Transaction IDs to
+    // dedupe against. Set it to the day after the Period Ending of the last disbursement staff
+    // keyed into Salesforce. It gates on the disbursement, never on a row's Donation Date (#40):
+    // Benevity pays out weeks after the gift, so a new disbursement is full of older-dated rows.
+    minDisbursementDate: string;
     donationsColumns: DonationsColumns;
     // Monday's item-name pseudo-column id, used for name-based lookups. Almost always "name".
     organizationsNameColumn: string;

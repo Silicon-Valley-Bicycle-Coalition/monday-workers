@@ -13,7 +13,7 @@ const validConfig = {
     },
   },
   benevityImport: {
-    minDonationDate: '2026-07-01',
+    minDisbursementDate: '2026-07-01',
     donationsColumns: {
       donor: 'donor_col',
       matchedBy: 'matched_by_col',
@@ -64,6 +64,25 @@ describe('validateConfig', () => {
     const { organizations, ...rest } = validConfig.monday.boards;
     const bad = { ...validConfig, monday: { ...validConfig.monday, boards: rest } };
     expect(() => validateConfig(bad)).toThrow(/monday\.boards\.organizations/);
+  });
+
+  it('requires minDisbursementDate as a plain YYYY-MM-DD date (it is compared as a string)', () => {
+    const withDate = (minDisbursementDate: unknown) => ({
+      ...validConfig,
+      benevityImport: { ...validConfig.benevityImport, minDisbursementDate },
+    });
+    expect(() => validateConfig(withDate('2026-10-09'))).not.toThrow();
+    for (const bad of ['10/09/2026', '2026-10-09T00:00:00Z', '2026-13-45', '', undefined]) {
+      expect(() => validateConfig(withDate(bad)), String(bad)).toThrow(/minDisbursementDate/);
+    }
+  });
+
+  it('rejects the pre-#40 minDonationDate key instead of silently ignoring it', () => {
+    const stale = {
+      ...validConfig,
+      benevityImport: { ...validConfig.benevityImport, minDonationDate: '2026-10-09' },
+    };
+    expect(() => validateConfig(stale)).toThrow(/minDonationDate.*minDisbursementDate/);
   });
 
   it('rejects a non-positive retention window', () => {

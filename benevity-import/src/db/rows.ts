@@ -37,6 +37,10 @@ export interface RequeueResult {
   purged: number;
 }
 
+// SQL status lists for requeueWhere (constants, never user input).
+const PENDING_STATUSES = `'needs-review', 'ingested'`;
+const PENDING_OR_SKIPPED_STATUSES = `'needs-review', 'ingested', 'skipped'`;
+
 // What purgeWrittenRawRows/purgeUnresolvedRawRows leave in raw_row.
 export const PURGED_RAW_ROW = '{}';
 
@@ -47,9 +51,12 @@ export interface RowStore {
   // Replay (#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
   // error) and returns every one of them that is now 'ingested' — including rows a previous
   // replay already moved whose enqueue never went through — for the caller to (re-)enqueue.
-  // 'written' and 'skipped' rows are left alone and not returned. A pending row whose raw_row
-  // the retention purge already emptied can't be re-run (the consumer would parse `{}`), so it
-  // is left as-is and only counted in `purged`. Idempotent.
+  // 'written' rows are left alone and not returned. A pending row whose raw_row the retention
+  // purge already emptied can't be re-run (the consumer would parse `{}`), so it is left as-is
+  // and only counted in `purged`. Idempotent.
+  // The two differ on 'skipped' rows. A row is only ever skipped as part of a whole disbursement
+  // the cutoff excluded, so the block-level requeue releases them too — that is the staff
+  // override of the cutoff (#40) — while the row-level one leaves them alone.
   requeueRow(transactionId: string): Promise<RequeueResult>;
   requeueDisbursementRows(disbursementId: number): Promise<RequeueResult>;
   updateStatus(transactionId: string, status: RowStatus, patch?: RowStatusPatch): Promise<void>;
@@ -123,28 +130,28 @@ export class D1RowStore implements RowStore {
   }
 
   requeueRow(transactionId: string): Promise<RequeueResult> {
-    return this.requeueWhere('transaction_id = ?1', transactionId);
+    return this.requeueWhere('transaction_id = ?1', transactionId, PENDING_STATUSES);
   }
 
   requeueDisbursementRows(disbursementId: number): Promise<RequeueResult> {
-    return this.requeueWhere('disbursement_id = ?1', disbursementId);
+    return this.requeueWhere('disbursement_id = ?1', disbursementId, PENDING_OR_SKIPPED_STATUSES);
   }
 
   // One UPDATE … RETURNING, so D1 applies it atomically. Rows already 'ingested' match too (a
   // no-op set) so they're returned for re-sending.
-  private async requeueWhere(predicate: string, value: string | number): Promise<RequeueResult> {
+  private async requeueWhere(predicate: string, value: string | number, statuses: string): Promise<RequeueResult> {
     const [updated, purged] = await this.db.batch([
       this.db
         .prepare(
           `UPDATE rows SET status = 'ingested', error = NULL
-           WHERE ${predicate} AND status IN ('needs-review', 'ingested') AND raw_row != ?2
+           WHERE ${predicate} AND status IN (${statuses}) AND raw_row != ?2
            RETURNING transaction_id`
         )
         .bind(value, PURGED_RAW_ROW),
       this.db
         .prepare(
           `SELECT COUNT(*) AS n FROM rows
-           WHERE ${predicate} AND status IN ('needs-review', 'ingested') AND raw_row = ?2`
+           WHERE ${predicate} AND status IN (${statuses}) AND raw_row = ?2`
         )
         .bind(value, PURGED_RAW_ROW),
     ]);

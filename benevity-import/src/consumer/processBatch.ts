@@ -77,7 +77,8 @@ async function processOne(transactionId: string, deps: ProcessBatchDeps): Promis
   }
   // Only an 'ingested' row has work left. 'written' is done; 'needs-review' is waiting on staff
   // (a Retry on its worklist item moves it back to 'ingested' before re-enqueueing it); 'skipped'
-  // is final. A message for any of those is a redelivery or a stale duplicate.
+  // belongs to a disbursement the cutoff excluded, and stays that way unless staff Retry that
+  // disbursement's notice (#40). A message for any of those is a redelivery or a stale duplicate.
   if (row.status !== 'ingested') return;
 
   const parsed = JSON.parse(row.rawRow) as ParsedRow;

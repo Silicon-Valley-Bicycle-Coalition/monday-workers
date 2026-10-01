@@ -223,6 +223,14 @@ can't resolve get their own row items. The block item itself stays at Queued. A 
 *header* failed has no parsed rows — Retry does nothing for it; fix the file and upload it again
 as a new file.
 
+A block item whose reason starts **"Skipped, not imported"** is a disbursement the cutoff
+(`minDisbursementDate`, see Idempotency) left out because its Period Ending is before it. The
+reason gives its row count, donation-date range and gross total. Nothing is wrong if staff
+already keyed that disbursement into Salesforce — leave the item, or delete it. If it was
+**never** keyed into Salesforce, it is missing from the CRM: set Retry, and every row of it is
+imported like any other. Only do that when you're sure — the migrated history has no Transaction
+IDs, so importing a disbursement that *was* keyed double-counts it.
+
 A Retry the Worker can't carry out puts the item back to **Needs review** with the reason in
 its Reason column instead of leaving it at Retry. The main case: a row's Benevity details are
 deleted `unresolvedRowRetentionDays` (365) days after import (see PII), so a row left on the
@@ -262,10 +270,21 @@ several disbursements:
   block needs-review, and the item carries its key in the worklist `Key` column, looked up before
   creating — so a retry after that write is lost adopts the item it already posted.
 * **The migrated history has no Transaction IDs** — Salesforce never stored them — so the ledger
-  can't tell a pre-cutover Benevity row from one the import already carried. Config
-  `benevityImport.minDonationDate` (set to the migration data-freeze date) makes the Worker skip
-  older rows as `skipped`, with a count in the upload summary. The first real upload must be the
-  first disbursement after the freeze; do not backfill through this Worker.
+  can't tell a Benevity row the import already carried from a new one. Config
+  `benevityImport.minDisbursementDate` is the cutoff: a disbursement whose **Period Ending** is
+  before it is skipped whole (its rows recorded `skipped`, nothing written), on the assumption
+  that staff keyed it into Salesforce and it was migrated. **Set it to the day after the Period
+  Ending of the last disbursement keyed into Salesforce** — confirm that at the data freeze; the
+  freeze date itself is only right if nothing was left unkeyed.
+  The gate is deliberately *not* a row's Donation Date (#40): Benevity pays out weeks after the
+  gift, so the first disbursement after the freeze is mostly rows dated before it, and none of
+  those were ever keyed (staff key from the disbursement report, which didn't exist yet). Within
+  an imported disbursement every row is written whatever its date; the per-row Transaction ID
+  lookup above is the duplicate guard.
+  A skipped disbursement is never silent: it gets one worklist item saying it was skipped, its
+  Period Ending and the cutoff, its row count, donation-date range and gross total — and setting
+  that item to Retry imports it anyway (see Worklist). Do not backfill history through this
+  Worker beyond that deliberate, per-disbursement override.
 * Rows with `Currency ≠ USD`, negative amounts (refund/clawback lines, if Benevity ever emits
   them), or a header that fails validation → `needs-review`, never silently dropped.
 

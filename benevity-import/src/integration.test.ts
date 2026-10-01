@@ -16,7 +16,7 @@ function fakeConfig(): BenevityImportConfig {
   return {
     monday: { apiUrl: '', boards: { donations: 111, organizations: 222, people: 333, affiliations: 444, benevityUploads: 777 } },
     benevityImport: {
-      minDonationDate: '2026-01-01',
+      minDisbursementDate: '2026-01-01',
       donationsColumns: {
         donor: 'donor_c', matchedBy: 'matched_by_c', amount: 'amount_c', date: 'date_c',
         disbursementDate: 'disb_date_c', fiscalYearEnding: 'fy_c', status: 'status_c',
@@ -353,6 +353,75 @@ describe('benevity-import integration', () => {
     // A third Retry after the row is written re-enqueues nothing.
     expect(await (await retry()).json()).toMatchObject({ outcome: 'row already written', enqueued: 0 });
     expect(sentMessages).toEqual([]);
+  });
+
+  it('a disbursement skipped by the cutoff is visible on the worklist, and a staff Retry imports it (#40)', async () => {
+    const config = fakeConfig();
+    config.benevityImport.minDisbursementDate = '2026-04-01'; // after the fixture's Period Ending, 2026-03-16
+    config.benevityImport.uploadsBoard.retry = {
+      column: 'retry_c',
+      labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' },
+    };
+    (mondayClient.findItemsByColumnValue as ReturnType<typeof vi.fn>).mockImplementation(
+      (boardId: number, columnId: string) =>
+        Promise.resolve(boardId === 333 && columnId === 'personal_email_c' ? [{ id: '5', name: 'Jordan Rivera' }] : [])
+    );
+    (mondayClient.createItem as ReturnType<typeof vi.fn>).mockImplementation((boardId: number) =>
+      Promise.resolve({ id: boardId === 777 ? '4242' : '501', name: 'x' })
+    );
+    const app = createApp({
+      mondayClient,
+      uploadStore: new D1UploadStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      rowStore: new D1RowStore(env.DB),
+      config,
+      queue: { sendBatch: async (ms) => { sentMessages.push(...ms); } },
+      webhookSecret: SECRET,
+      fetchCsv: async () => validReport(),
+      now: () => '2026-09-15T00:00:00Z',
+    });
+    const rows = new D1RowStore(env.DB);
+
+    await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+    });
+    // Nothing imported, nothing queued — and one worklist notice saying so.
+    expect(sentMessages).toEqual([]);
+    expect((await rows.getRow('TXN001'))?.status).toBe('skipped');
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(mondayClient.createItem).toHaveBeenCalledWith(
+      777,
+      'Disbursement ABC123',
+      expect.objectContaining({ reason_c: expect.stringMatching(/^Skipped, not imported.*Period Ending 2026-03-16.*set Retry to import it/) }),
+      'review'
+    );
+
+    // Staff know this disbursement was never keyed into Salesforce, and set the notice to Retry.
+    const res = await app.request(`/webhooks/monday/benevity-retry?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { pulseId: 4242, columnId: 'retry_c', value: { label: { text: 'Retry' } } } }),
+    });
+    expect(await res.json()).toMatchObject({ outcome: 'block', enqueued: 1 });
+    expect(sentMessages).toEqual([{ transactionId: 'TXN001' }]);
+
+    await processBenevityQueueBatch(
+      sentMessages.splice(0).map((body) => ({ body, ack: vi.fn(), retry: vi.fn() })),
+      {
+        rowStore: rows,
+        disbursementStore: new D1DisbursementStore(env.DB),
+        aliasStore: new D1AliasStore(env.DB),
+        mondayClient,
+        config,
+        now: () => '2026-09-15T01:00:00Z',
+      }
+    );
+    expect(await rows.getRow('TXN001')).toMatchObject({ status: 'written', mondayEmployeeItemId: '501' });
+    // The gift and its match on Donations, plus the one notice.
+    const creates = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+    expect(creates.sort()).toEqual([111, 111, 777]);
   });
 
   it('rejects webhook requests without the correct secret', async () => {

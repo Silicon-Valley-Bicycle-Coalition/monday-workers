@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
-import type { DisbursementStore } from '../db/disbursements';
+import type { DisbursementRow, DisbursementStore } from '../db/disbursements';
 import type { RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import { parseBenevityReport, type ParsedBlock } from '../parse/report';
@@ -186,9 +186,18 @@ async function ingestBlock(
   assetId: string,
   deps: AppDeps
 ): Promise<void> {
-  const needsReview = block.headerError !== null || block.sumMismatch;
-  const reviewReason =
-    block.headerError ?? (block.sumMismatch ? 'row totals do not match the reported gross total' : null);
+  // The cutoff gates whole disbursements, on their Period Ending (#40) — never on a row's Donation
+  // Date. Benevity pays out weeks after the gift, so the first disbursement after the data freeze
+  // is mostly rows dated before it, and none of them were ever keyed into Salesforce (staff key
+  // from the disbursement report). The per-row Transaction ID lookup stays the duplicate guard.
+  // A block whose header didn't parse has no trustworthy Period Ending (or rows): it is held for
+  // review below, whatever the cutoff.
+  const cutoff = deps.config.benevityImport.minDisbursementDate;
+  const beforeCutoff = block.headerError === null && block.periodEnding !== '' && block.periodEnding < cutoff;
+  const needsReview = !beforeCutoff && (block.headerError !== null || block.sumMismatch);
+  const reviewReason = needsReview
+    ? (block.headerError ?? 'row totals do not match the reported gross total')
+    : null;
 
   const { disbursement } = await deps.disbursementStore.findOrCreate({
     uploadId,
@@ -203,40 +212,30 @@ async function ingestBlock(
     reviewReason,
   });
 
-  if (needsReview) {
-    if (disbursement.worklistItemId === null) {
-      // One worklist item per block, ever: skipped once its id is recorded (a resumed attempt, or
-      // the same disbursement re-uploaded), and adopted rather than re-posted if an earlier
-      // attempt created it but died before recording it (#34).
-      const worklistItemId = await ensureWorklistItem(
-        deps.mondayClient,
-        deps.config,
-        {
-          key: blockWorklistKey(block.disbursementId, assetId, blockIndex),
-          reason: reviewReason ?? 'block needs review',
-          name: `Disbursement ${block.disbursementId || '(unknown)'}`,
-          email: '',
-          company: block.charityName,
-          amount: block.reportedGrossTotal,
-          date: block.periodEnding || deps.now().slice(0, 10),
-        },
-        null
-      );
-      const recorded = await deps.disbursementStore.claimWorklistItemId(disbursement.id, worklistItemId);
-      if (recorded !== worklistItemId) {
-        // Another delivery (e.g. the same report uploaded twice at once) recorded its item first.
-        // Keep that one; archive ours so the block has a single worklist item. Best-effort: a
-        // leftover duplicate is untidy, not wrong, and must not fail the upload.
-        console.warn(
-          `benevity webhook: block "${block.disbursementId}" already has worklist item "${recorded}"; archiving duplicate "${worklistItemId}"`
-        );
-        try {
-          await deps.mondayClient.archiveItem(worklistItemId);
-        } catch (err) {
-          console.error(`benevity webhook: could not archive duplicate worklist item "${worklistItemId}": ${errorMessage(err)}`);
-        }
-      }
+  if (beforeCutoff) {
+    // Never silent: one notice on the worklist says what was left out and why, and a staff Retry
+    // on it imports the disbursement anyway (requeueDisbursementRows releases 'skipped' rows).
+    const retryConfigured = Boolean(deps.config.benevityImport.uploadsBoard.retry);
+    await ensureBlockWorklistItem(block, blockIndex, assetId, disbursement, skippedReason(block, cutoff, retryConfigured), deps);
+    // Recorded, so the rows are known (a re-upload can't import them by accident) and a Retry has
+    // something to release. `ON CONFLICT DO NOTHING`: a row already further along keeps its status.
+    for (const row of block.rows) {
+      await deps.rowStore.upsertRow({
+        transactionId: row.transactionId,
+        disbursementId: disbursement.id,
+        rawRow: JSON.stringify(row),
+        status: 'skipped',
+        ingestedAt: deps.now(),
+      });
     }
+    console.log(
+      `benevity webhook: skipped disbursement "${block.disbursementId}" (Period Ending ${block.periodEnding}, before cutoff ${cutoff}): ${block.rows.length} row(s)`
+    );
+    return;
+  }
+
+  if (needsReview) {
+    await ensureBlockWorklistItem(block, blockIndex, assetId, disbursement, reviewReason ?? 'block needs review', deps);
     // Every row is (re-)recorded so nothing is silently lost, but none are enqueued — spec: "a
     // mismatch marks the whole block needs-review rather than writing partial data from a
     // block the parser may have mis-split." Idempotent even on a retry of this exact block.
@@ -257,17 +256,6 @@ async function ingestBlock(
   // below re-sends every row still at 'ingested' — the same recovery a failed single send had.
   const toSend: BenevityQueueMessage[] = [];
   for (const row of block.rows) {
-    if (row.donationDate < deps.config.benevityImport.minDonationDate) {
-      await deps.rowStore.upsertRow({
-        transactionId: row.transactionId,
-        disbursementId: disbursement.id,
-        rawRow: JSON.stringify(row),
-        status: 'skipped',
-        ingestedAt: deps.now(),
-      });
-      continue;
-    }
-
     const result = await deps.rowStore.upsertRow({
       transactionId: row.transactionId,
       disbursementId: disbursement.id,
@@ -290,6 +278,67 @@ async function ingestBlock(
     }
   }
   await sendInBatches(deps.queue, toSend);
+}
+
+// One worklist item per block, ever: nothing is posted once its id is recorded (a resumed attempt,
+// or the same disbursement re-uploaded), and an item an earlier attempt created but died before
+// recording is adopted rather than re-posted (#34).
+async function ensureBlockWorklistItem(
+  block: ParsedBlock,
+  blockIndex: number,
+  assetId: string,
+  disbursement: DisbursementRow,
+  reason: string,
+  deps: AppDeps
+): Promise<void> {
+  if (disbursement.worklistItemId !== null) return;
+  const worklistItemId = await ensureWorklistItem(
+    deps.mondayClient,
+    deps.config,
+    {
+      key: blockWorklistKey(block.disbursementId, assetId, blockIndex),
+      reason,
+      name: `Disbursement ${block.disbursementId || '(unknown)'}`,
+      email: '',
+      company: block.charityName,
+      amount: block.reportedGrossTotal,
+      date: block.periodEnding || deps.now().slice(0, 10),
+    },
+    null
+  );
+  const recorded = await deps.disbursementStore.claimWorklistItemId(disbursement.id, worklistItemId);
+  if (recorded !== worklistItemId) {
+    // Another delivery (e.g. the same report uploaded twice at once) recorded its item first.
+    // Keep that one; archive ours so the block has a single worklist item. Best-effort: a
+    // leftover duplicate is untidy, not wrong, and must not fail the upload.
+    console.warn(
+      `benevity webhook: block "${block.disbursementId}" already has worklist item "${recorded}"; archiving duplicate "${worklistItemId}"`
+    );
+    try {
+      await deps.mondayClient.archiveItem(worklistItemId);
+    } catch (err) {
+      console.error(`benevity webhook: could not archive duplicate worklist item "${worklistItemId}": ${errorMessage(err)}`);
+    }
+  }
+}
+
+// What a skipped disbursement's worklist notice says (#40): what was left out, by how much and
+// over which donation dates, why, and what to do if the assumption behind the cutoff is wrong.
+function skippedReason(block: ParsedBlock, cutoff: string, retryConfigured: boolean): string {
+  const dates = block.rows.map((row) => row.donationDate).sort();
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const rows = block.rows.length === 1 ? '1 row' : `${block.rows.length} rows`;
+  const range = first === undefined ? '' : first === last ? `, donation date ${first}` : `, donation dates ${first} to ${last}`;
+  return (
+    `Skipped, not imported: Period Ending ${block.periodEnding} is before the import cutoff ${cutoff}, so this ` +
+    `disbursement is assumed to be in the migrated Salesforce history already. ` +
+    `${rows}${range}, $${block.reportedGrossTotal.toFixed(2)} gross.` +
+    (block.sumMismatch ? " Its row totals also don't match the reported gross total, so check the file first." : '') +
+    (retryConfigured
+      ? ' If it was never keyed into Salesforce, set Retry to import it; otherwise leave it as it is.'
+      : ' If it was never keyed into Salesforce, it is missing from the CRM: enter it by hand from the report, or ask engineering to re-queue it.')
+  );
 }
 
 // Shared front half of every Monday webhook route: shared-secret check (fails closed when
@@ -359,7 +408,8 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
       await annotateWorklistItem(deps.mondayClient, deps.config, itemId, UNKNOWN_ITEM_REASON);
       return { outcome: 'unknown item', enqueued: 0 };
     }
-    // Staff have checked the block (e.g. its totals mismatch was a Benevity rounding quirk):
+    // Staff have checked the block (e.g. its totals mismatch was a Benevity rounding quirk), or
+    // confirmed that a disbursement the cutoff skipped was never keyed into Salesforce (#40):
     // release every row the block held back. A header-error block parsed no rows, so this is
     // empty for it — the fix there is a corrected upload, not a Retry.
     const { requeued, purged } = await deps.rowStore.requeueDisbursementRows(disbursement.id);
@@ -371,7 +421,7 @@ async function replayWorklistItem(itemId: string, deps: AppDeps): Promise<Replay
         purged > 0
           ? purgedReason(purged, retentionDays, true)
           : "Nothing to retry: this block has no held-back rows (its header didn't parse, or every row has " +
-              'since been written or skipped). If the file was wrong, fix it and upload it as a new file.'
+              'since been written). If the file was wrong, fix it and upload it as a new file.'
       );
       return { outcome: purged > 0 ? 'row purged' : 'nothing to retry', enqueued: 0, purged };
     }
