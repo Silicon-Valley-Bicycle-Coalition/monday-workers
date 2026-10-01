@@ -59,7 +59,7 @@ describe('config split: board and column ids', () => {
   });
 
   it('both shipped configs enable adopt-before-create (entityIdColumn) — null duplicated migrated gifts (#24)', () => {
-    expect(sandbox.funraiseSync.entityIdColumn).toBe('link_mm6jhcj8');
+    expect(sandbox.funraiseSync.entityIdColumn).toBe('link_mm79jtzp');
     expect(production.funraiseSync.entityIdColumn).not.toBeNull();
   });
 
@@ -68,8 +68,9 @@ describe('config split: board and column ids', () => {
     expect(() => validateConfig(production)).not.toThrow();
   });
 
-  it('sandbox.json targets the CRM Sandbox Donations and People boards', () => {
-    expect(sandbox.monday.boards['donations:live']).toBe(18428131791);
+  it('sandbox.json targets the CRM Sandbox (sandbox v3) Donations, Recurring Gifts and People boards', () => {
+    expect(sandbox.monday.boards['donations:live']).toBe(18431577310);
+    expect(sandbox.monday.boards['recurring-gifts']).toBe(18431577263);
     expect(sandbox.monday.boards['people-live']).toBe(18431577220);
   });
 
