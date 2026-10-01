@@ -5,7 +5,9 @@
 **Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
 `svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
 2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
-`svbc-funraise-sync` is retired until cutover) — see "Deployed and verified".
+`svbc-funraise-sync` is retired until cutover) — see "Deployed and verified". **Remapped to the
+`(sandbox v3)` boards, D1 re-bootstrapped and the gifts held since 2026-09-21 re-driven on
+2026-09-30** — see "Rebuilt boards".
 **Priority:** Blocking-adjacent — feeds ongoing donation data once Salesforce retires; the
 historical side is handled by `salesforce-import`, this Worker takes over going forward.
 **Owner:** Unassigned.
@@ -153,7 +155,8 @@ boards `salesforce-import` loads and `donation-rollups` reads — instead of pla
 against production ids before cutover; the sandbox gets rebuilt. Every id below was read from the
 board schemas via the Monday API, by column title, on 2026-09-30. (The v2 boards these replaced
 were deleted when v3 went up on 2026-09-20; People moved on 2026-09-22, the rest on 2026-09-30.
-A rebuild changes every column id, not just the board ids.)
+A rebuild changes every column id, not just the board ids, and strands this Worker's D1 pointers
+too — see "Rebuilt boards: remap, re-bootstrap, re-verify".)
 
 | Config key | Board / column | Id | Notes |
 |---|---|---|---|
@@ -406,6 +409,85 @@ Re-verify the same three steps after the sandbox rebuild and again against produ
 cutover. Since the sandbox environment split (below), every sandbox id lives in
 `config/sandbox.json`; `config/svbc.json` is production and holds placeholders until cutover.
 
+## Rebuilt boards: remap, re-bootstrap, re-verify (sandbox v3, 2026-09-30)
+
+The `(sandbox v2)` boards were deleted when the `(sandbox v3)` boards went up on 2026-09-20.
+This Worker kept pointing at them until 2026-09-30 (People alone was moved on 2026-09-22), and in
+that window every Funraise delivery failed its Monday write with `User unauthorized to perform
+action` (Monday's answer for a deleted board), retried, and dead-lettered: 41 real gifts. The
+hourly subscriptions poll stopped advancing on 2026-09-21. Nothing was lost: the route had
+stored every payload in D1.
+
+**A rebuild strands more than the config.** Four things point at the old boards, and all four
+have to move:
+
+1. `config/sandbox.json`: the board ids *and every column id* (a rebuilt board gets new ones).
+   Read them from the live schemas by column title; see "Monday targets".
+2. D1 `subscriptions`: each ledger row holds the Recurring Gifts item it wrote. A ledger hit
+   updates that item in place and hands its id to the Donations write as the Recurring Gift
+   link, so with stale rows the poll fails on its first changed subscription and every recurring
+   installment fails with it.
+3. D1 `poll_cursors`: with the ledger gone the walk has to restart from zero.
+4. D1 `events`: `matched_donor_item_id` (a People item) and `monday_item_id` (a Donations item).
+   A stored donor match is reused without a lookup, and a row with a Monday item is updated in
+   place rather than adopted or created.
+
+**What was run, in this order** (each step is safe to repeat):
+
+1. Config remapped, tests and typecheck green, `npm run deploy:sandbox`.
+2. Restore point noted: `npx wrangler d1 time-travel info svbc-funraise-sync-sandbox --env
+   sandbox` (bookmark `0000012e-00000000-000050f7-ade33e83d0c27e31bab45393296a5cff`, good for
+   30 days).
+3. Stale pointers cleared with `wrangler d1 execute … --remote`:
+
+   ```sql
+   DELETE FROM subscriptions;
+   DELETE FROM subscription_claims;
+   DELETE FROM poll_cursors;
+   UPDATE events SET matched_donor_item_id = NULL WHERE status = 'failed';
+   -- Gifts written to the old board: hand them to the redrive as well.
+   UPDATE events
+      SET status = 'failed', monday_item_id = NULL, matched_donor_item_id = NULL, written_at = NULL,
+          error = 'sandbox v3 remap 2026-09-30: was written to the deleted Donations (sandbox v2) board; re-drive'
+    WHERE status = 'written';
+   ```
+
+   That removed 1,175 ledger rows and 4 cursors, and left 53 events to re-drive: the 41 failures
+   plus 12 gifts written to the v2 board between 2026-09-19 and its deletion.
+4. The bootstrap walk, run locally exactly as in "Recurring gifts and registrations" below
+   (`wrangler dev --remote --test-scheduled --env sandbox`, one `__scheduled` request per page,
+   secrets in a temporary `.dev.vars`): 167 invocations in 47 minutes, every one HTTP 200. The
+   deployed hourly cron came due at 01:00 UTC partway through, and nothing was duplicated.
+   Result: all 604 importer items adopted and 572 created, ledger 1,176 =
+   board 1,176 with no item in the ledger twice (543 Active, 61 Cancelled, 4 Failed, 568
+   Redacted: one new Active subscription since 2026-09-19), every row with a Donor; cursor
+   `1790752061709`, no tie walk pending. People (sandbox v3) grew from 8,044 to 8,046 items over the walk,
+   consistent with two supporters the importer never carried. The poll's log line did not
+   appear in this run's `wrangler dev --remote` output, so progress was read from D1 between runs
+   (`select count(*) from subscriptions` and the two cursors); the walk is done when two runs in
+   a row leave both cursors unchanged with `subscriptions:id` at `-1`.
+5. The redrive, only after the walk so each installment found its Recurring Gift in the ledger:
+   `node scripts/redrive-failed.mjs --env sandbox --worker-url https://svbc-funraise-sync-sandbox.svbc-account.workers.dev`.
+   All 53 were re-enqueued and written within two and a half minutes. None was found on the v3 board
+   by its Funraise ID, so all 53 were created: Donations (sandbox v3) went from
+   3,828 to 3,881 items, each with Amount, Date, Donor link, Funraise ID, Fiscal Year Ending
+   2027, Gift Type Donation and Thank You Sent, 38 of them installments linked to their
+   Recurring Gift. Statuses as Funraise reported them: 42 Received, 10 Failed, 1 Pending.
+   `donation-rollups` has its webhooks on this board and picks the creates up on its own.
+6. Funraise's own Test-button delivery: **still to do** as of this writing (it needs a Funraise
+   login).
+
+**Still true on v3:** `Refunded` is not a label on the Donations Status column (see "The Funraise
+delivery, as actually sent"), so a refund write still dead-letters until staff add it.
+
+**Cutover: the production-named D1 carries sandbox pointers.** `svbc-funraise-sync`, kept for the
+production deploy, still holds what was copied out of it on 2026-09-19: 1,175 ledger rows, three
+poll cursors and six events, every one pointing at a deleted sandbox v2 item. Run step 3 against
+it (or recreate it from the migrations) **before** the production Worker's first deploy, then do
+the walk against the production Recurring Gifts board. Same lesson `donation-rollups` wrote up in
+`docs/22` §5 of the private planning repo: bootstrap the D1 for the new board ids before
+anything writes.
+
 ## Sandbox environment — inbound only, no outbound data
 
 This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `env.sandbox`):
@@ -541,6 +623,9 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   and fixed on the way: Funraise 500s on an `updtime` filter below ~2001 (cursor floored), a
   bulk import gave hundreds of rows one `updtime` (page index persisted across runs), and
   `Redacted` was not in `statusLabelMap` (mapped).
+* **Redone 2026-09-30 on Recurring Gifts (sandbox v3)** after the board rebuild left the ledger
+  pointing at deleted items: ledger and cursors cleared, 167 local invocations, 604 adopted and
+  572 created, ledger 1,176 = board 1,176. See "Rebuilt boards: remap, re-bootstrap, re-verify".
 
 ## Open
 
