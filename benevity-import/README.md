@@ -3,7 +3,8 @@
 **Staff UAT script:** [`docs/uat/benevity-import.md`](../docs/uat/benevity-import.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
 **Status:** Built (`feat/benevity-import`) — production not deployed; sandbox provisioned and
-verified end to end 2026-09-19 (see "Sandbox environment" below); production D1 provisioned and
+verified end to end 2026-09-19, remapped to the `(sandbox v3)` boards and re-verified 2026-09-30
+(see "Sandbox environment" below); production D1 provisioned and
 sandbox board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover,
 the two `salesforce-import` Donations-board columns it depends on (see Related changes
 elsewhere), and Monday webhook + integration-user token setup.
@@ -344,6 +345,36 @@ By linked to the company, Gift Type and Fiscal Year Ending as text — and was t
 with its D1 rows, so the sandbox tables start empty. That first upload also surfaced a real bug:
 the gift splitter sent `{label}`/`{date}` objects to the two text columns and Monday rejected
 every create (fixed in the same branch, `giftSplit.ts`).
+
+**Remapped and re-verified 2026-09-30 on the `(sandbox v3)` boards.** The v2 Donations,
+Organizations and Affiliations boards were deleted when v3 went up on 2026-09-20, so from then
+until this remap an upload could not resolve a company or write a gift. `config/sandbox.json` now
+targets Donations `18431577310`, Organizations `18431577213`, Affiliations `18431577240` and
+People `18431577220`, with every column id read by title from the live schemas. The Uploads
+board (`18431270204`, still titled "(sandbox v2)") and its webhook `639785248` were not rebuilt
+and needed nothing. Two things the rebuild did not carry over:
+
+* **Donations (sandbox v3) had no `Benevity Disbursement Date` column.** Nothing in
+  `salesforce-import` creates it, so it was added to the board by hand (`date_mm7qjw79`). Every
+  rebuild, and production at cutover, needs it before the first upload: this Worker writes it on
+  every gift, and Monday rejects a create that names a column the board doesn't have.
+* **The deployed Worker.** Merging does not deploy the sandbox; `npm run deploy:sandbox` was run
+  by hand after the remap.
+
+Then the same check as 2026-09-19: a synthetic one-row CSV (company `Google, LLC`, donor
+withheld, a $25 gift plus a $25 match, donation date 2026-09-20, period ending 2026-09-30)
+attached to a new item on the Uploads board. The webhook fired, the file parsed into one
+disbursement and one row, and 11 s later the consumer had written two items on Donations
+(sandbox v3): `Anonymous - Donation 2026-09-20 (Benevity)` and `Google, LLC - Employer Matching
+Anonymous 2026-09-20`, each with Amount 25, Date 2026-09-20, Benevity Disbursement Date
+2026-09-30, Status Received, Anonymous Donor checked, no Donor link, Gift Type `Donation` /
+`Matching Donation`, Benevity Transaction ID `…A` / `…A-match`, and Matched By → Google, LLC on
+the match only. The two Donations items, the upload item and the three D1 rows were deleted
+afterwards, so the sandbox tables are empty again. One thing the check showed that is not part of
+the remap: Fiscal Year Ending is written as `2027-06-30`, where `salesforce-import` and
+`funraise-sync` write the bare year `2027`. `donation-rollups` falls back to deriving the year
+from Date, so totals are unaffected, but the column is inconsistent for board filters.
+
 Design: `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 **Workers Builds:** connect a second Worker, `svbc-benevity-import-sandbox`, to this repo with
@@ -357,7 +388,9 @@ dashboard refuses two connections on one root directory, fall back to the
 
 * **Donations board:** provision a new `Benevity Disbursement Date` column before this Worker's
   first write. Unlike `Matched By`/`Benevity Transaction ID` below, this one needs no historical
-  backfill — only this Worker ever writes it.
+  backfill — only this Worker ever writes it. `salesforce-import` does not create it, so a
+  rebuilt board comes up without it: the sandbox v3 rebuild did (re-added by hand 2026-09-30),
+  and the production boards will at cutover.
 * **`salesforce-import`, before cutover — built 2026-09-08 on `feat/si-benevity-columns`:** add
   `Matched By` and `Benevity Transaction ID` to the Donations board definition; fill `Matched By`
   from `AccountId` whenever `RecordType.Name = 'Matching Donation'` (today the Donor link takes the
