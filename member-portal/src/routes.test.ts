@@ -230,6 +230,7 @@ const config: Config = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
+  impact: { statementsByYear: {} },
   letterCron: {
     boardId: null,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },
@@ -1335,6 +1336,31 @@ describe('GET /:locale/portal — dashboard membership card widget', () => {
     const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
     expect(shownHtml).toContain('$40.00');
     expect(shownHtml).toContain('<td>gift</td>');
+  });
+
+  it("shows the impact statements for a year the donor gave in, and none while donation history is hidden", async () => {
+    const monday = fakeMondayWithDonations(); // one gift, dated 2025-03-14
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const impactConfig = structuredClone(config);
+    impactConfig.impact.statementsByYear = {
+      '2025': { en: ['Taught bike safety to 4,200 students'] },
+      '2026': { en: ['Opened 3 bike parking hubs'] },
+    };
+    impactConfig.donations.historyVisibleFromISO = '2027-01-01'; // the deps clock is 2026-08-22
+
+    const before = createApp(makeDeps({ monday, emailSender, config: impactConfig }));
+    const cookie = await loginAndGetCookie(before, emailSender, 'donor@example.org');
+    const hiddenHtml = await (await before.request('/en/portal', { headers: { Cookie: cookie } })).text();
+    expect(hiddenHtml).toContain('Donor donor-1');
+    expect(hiddenHtml).not.toContain('Taught bike safety to 4,200 students');
+
+    const laterSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const after = createApp(makeDeps({ monday, emailSender: laterSender, config: impactConfig, now: () => new Date('2027-01-01T00:00:00.000Z') }));
+    const laterCookie = await loginAndGetCookie(after, laterSender, 'donor@example.org');
+    const shownHtml = await (await after.request('/en/portal', { headers: { Cookie: laterCookie } })).text();
+    expect(shownHtml).toContain('<li>Taught bike safety to 4,200 students</li>');
+    // 2026 has statements too, but this donor has no 2026 gift.
+    expect(shownHtml).not.toContain('Opened 3 bike parking hubs');
   });
 
   it('omits the card widget, but still renders the rest of the dashboard, while the membership expiry column is unset', async () => {

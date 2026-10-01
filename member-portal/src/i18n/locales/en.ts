@@ -64,6 +64,8 @@ export const en = {
   'portal.tableDate': 'Date',
   'portal.tableAmount': 'Amount',
   'portal.tableDescription': 'Description',
+  'portal.impactHeading': 'Your {{year}} impact',
+  'portal.impactIntro': 'Your giving in {{year}} helped make this possible:',
   'portal.donationsTabLabel': 'Donations',
   'portal.donationsEmptyMessage': "You have not made a donation yet.",
   'portal.donateButton': 'Donate',
