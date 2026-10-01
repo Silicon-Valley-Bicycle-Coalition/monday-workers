@@ -231,7 +231,9 @@ its own README's "Sandbox environment" section.
   invisible until then.
 - **Rollback:** `wrangler versions` + `wrangler rollback`, or remove the custom domain route —
   the Worker is read-only against Monday except the Change Requests board, and its only state
-  (D1 sessions/tokens/change-request audit rows) is safe to leave in place.
+  (D1 sessions/tokens/change-request audit rows) is safe to leave in place. The exception is a
+  board rebuild (a cutover retry): the People item ids in D1 are then dead — see the README's
+  "Resetting for new board ids".
 - **Aftercare:** watch Workers observability for error spikes the first week; check the
   `member-portal-change-requests-dlq` after any Monday outage (a non-empty DLQ is a replayable
   backlog, not a loss — see the root README's queue conventions); confirm the daily 09:00 UTC

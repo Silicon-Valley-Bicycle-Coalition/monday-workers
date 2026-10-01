@@ -206,6 +206,50 @@ Deliberate limits:
   aren't watched by this Worker.
 * **Nothing flows back.** An unsubscribe that starts in Mailchimp doesn't check Do Not Solicit.
 
+## Resetting for new board ids
+
+When the People board is deleted and rebuilt (a cutover retry — private runbook, Rollback step 8
+— or a sandbox rebuild), D1 still describes the old board's items. Reset it before deploying
+against the new boards.
+
+**First:** disable the Monday Donors webhook and the Mailchimp audience webhook, and delete or
+archive the old boards (while the old Mailchimp Campaigns board exists, the daily reconcile on
+the old config creates fresh items on it and records them in `campaign_items` again).
+
+```sh
+# 1. Export, to somewhere outside the repo — it holds email addresses. The database is
+#    unavailable while the export runs (seconds).
+npx wrangler d1 export svbc-mailchimp-sync --remote --output <dir>/svbc-mailchimp-sync.sql
+
+# 2. Reset. -y answers any wrangler confirmation prompt; unanswered without a TTY, one cancels
+#    silently with exit 0.
+npx wrangler d1 execute svbc-mailchimp-sync --remote -y --command \
+  "DELETE FROM pending_outbound_syncs; DELETE FROM pending_inbound_syncs;"
+
+# 2b. Only if the Mailchimp Campaigns board was rebuilt too (config's campaignsBoardId changes):
+npx wrangler d1 execute svbc-mailchimp-sync --remote -y --command "DELETE FROM campaign_items;"
+
+# 3. Check: 0 for each cleared table; dns_unsubscribes unchanged.
+npx wrangler d1 execute svbc-mailchimp-sync --remote --command \
+  "SELECT 'pending_outbound_syncs' AS t, COUNT(*) AS n FROM pending_outbound_syncs UNION ALL SELECT 'pending_inbound_syncs', COUNT(*) FROM pending_inbound_syncs UNION ALL SELECT 'campaign_items', COUNT(*) FROM campaign_items UNION ALL SELECT 'dns_unsubscribes', COUNT(*) FROM dns_unsubscribes"
+```
+
+Sandbox: `svbc-mailchimp-sync-sandbox`, with `--env sandbox` on every command.
+
+| Table | Reset | Why |
+|---|---|---|
+| `pending_outbound_syncs` | cleared | Keyed on People item ids from the old board. Dead rows skew the `failed`/`skipped` counts, and `redrive-dead-lettered.mjs` would replay them against items that are gone. |
+| `pending_inbound_syncs` | cleared | Keyed on email, no item ids, but every `written` row records a connect-column write to the old board. The export keeps the list of addresses. |
+| `campaign_items` | cleared **only if the Mailchimp Campaigns board was rebuilt** | Interest → Campaigns item. On a new board the old ids would be written into Donors' connect columns and the reconcile would never recreate the items; cleared, the next reconcile (the daily cron, or the first inbound event) creates one item per interest. If the board survived, keep the rows: clearing them makes the reconcile create a second item for every interest. |
+| `dns_unsubscribes` | **kept** | The audit trail of unsubscribes that really happened in Mailchimp, which a board rebuild doesn't undo. Its guard is keyed on the email address, so it still stops a second Mailchimp call for the same person on the new board. `donor_item_id` in existing rows names the item on the old board; leave it (rows are never updated) and keep the export with the reset date, so pre-reset ids can be told apart. |
+
+As on a first deploy, the Mailchimp Campaigns connect column on the new People board fills only
+as audience webhooks arrive; nothing backfills it.
+
+Tested 2026-09-30 on a copy of the sandbox database (the export from step 1 loaded into a
+local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 1
+`dns_unsubscribes` row kept. Not run on the deployed sandbox D1, whose boards hadn't changed.
+
 ## Prerequisites before this can run against real data
 
 **Mailchimp side (staff task):**
