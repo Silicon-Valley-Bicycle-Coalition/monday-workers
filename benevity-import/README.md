@@ -370,7 +370,9 @@ Anonymous 2026-09-20`, each with Amount 25, Date 2026-09-20, Benevity Disburseme
 2026-09-30, Status Received, Anonymous Donor checked, no Donor link, Gift Type `Donation` /
 `Matching Donation`, Benevity Transaction ID `…A` / `…A-match`, and Matched By → Google, LLC on
 the match only. The two Donations items, the upload item and the three D1 rows were deleted
-afterwards, so the sandbox tables are empty again. One thing the check showed that is not part of
+afterwards, so the sandbox tables are empty again. The whole check was then repeated, with the
+same result, on a second deploy that also carries #40 (the gate on a disbursement's Period
+Ending), which merged to `main` the same evening. One thing the check showed that is not part of
 the remap: Fiscal Year Ending is written as `2027-06-30`, where `salesforce-import` and
 `funraise-sync` write the bare year `2027`. `donation-rollups` falls back to deriving the year
 from Date, so totals are unaffected, but the column is inconsistent for board filters.
