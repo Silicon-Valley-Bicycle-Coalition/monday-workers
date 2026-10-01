@@ -364,6 +364,57 @@ payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are l
 manual recovery from Funraise. To find dead gifts directly:
 `select entity_id, error, received_at from events where error like 'dead-lettered%'`.
 
+## Resetting for new board ids
+
+When the boards this Worker writes are deleted and rebuilt (a cutover retry — private runbook,
+Rollback step 8 — or a sandbox rebuild), every Monday item id in D1 is dead, and the Worker
+goes on using them: a Funraise edit to a known gift updates an item that no longer exists and
+dead-letters, an installment is written with a link to a Recurring Gifts item that no longer
+exists, and the poll skips each subscription as already written. Reset D1 before deploying
+against the new boards.
+
+**First:** point Funraise's webhook elsewhere and delete or archive the old boards. The hourly
+poll keeps running on the old config: while the old boards exist it starts re-adopting their
+items into the emptied ledger; once they're gone its Monday calls fail and it writes nothing.
+
+```sh
+# 1. Export, to somewhere outside the repo (it holds donor payloads). Besides being the backup,
+#    it is the record of the gifts received against the old boards, which the retry's Funraise
+#    handoff has to cover. The database is unavailable while the export runs (seconds).
+npx wrangler d1 export svbc-funraise-sync --remote --output <dir>/svbc-funraise-sync.sql
+
+# 2. Reset. -y answers any wrangler confirmation prompt; unanswered without a TTY, one cancels
+#    silently with exit 0.
+npx wrangler d1 execute svbc-funraise-sync --remote -y --command \
+  "DELETE FROM events; DELETE FROM subscriptions; DELETE FROM subscription_claims; DELETE FROM poll_cursors;"
+
+# 3. Check: every count is 0. Run it again just before deploying the new config, and repeat
+#    step 2 if the poll has written anything back.
+npx wrangler d1 execute svbc-funraise-sync --remote --command \
+  "SELECT 'events' AS t, COUNT(*) AS n FROM events UNION ALL SELECT 'subscriptions', COUNT(*) FROM subscriptions UNION ALL SELECT 'subscription_claims', COUNT(*) FROM subscription_claims UNION ALL SELECT 'poll_cursors', COUNT(*) FROM poll_cursors"
+```
+
+Sandbox: `svbc-funraise-sync-sandbox`, with `--env sandbox` on every command.
+
+| Table | Reset | Why |
+|---|---|---|
+| `events` | cleared | `monday_item_id` and `matched_donor_item_id` are Donations and People items on the old boards. With no row, the next delivery for a gift is matched to a donor again and adopted on the new board by its Funraise ID (or created). |
+| `subscriptions` | cleared | Recurring Gifts and People item ids on the old boards. |
+| `subscription_claims` | cleared | No item ids, only in-flight create claims; they shouldn't outlive the ledger they guard. |
+| `poll_cursors` | cleared | Not ids, but a kept cursor would leave every subscription behind it out of the new ledger until it next changed. Cleared, the walk starts from the beginning. |
+
+`d1_migrations` is untouched, so nothing is re-applied. A message still in the write queue finds
+no `events` row, retries, and is acked by the dead-letter consumer without writing anything.
+
+**Then** it is a first deploy again: deploy with the new ids, run the bootstrap walk locally
+before the hourly cron can fire ("Bootstrap walk, run locally" below; expect `adopted ≈ board
+count`, and `select count(*) from subscriptions` equal to the board), and only then repoint
+Funraise's webhook.
+
+Tested 2026-09-30 on a copy of the sandbox database (the export from step 1 loaded into a
+local D1): 54 events, 1,176 subscriptions and 2 cursors cleared. Not run on the deployed
+sandbox D1, whose boards hadn't changed.
+
 ## Deployed and verified (CRM Sandbox, 2026-09-18)
 
 **The running deployment is `svbc-funraise-sync-sandbox`** (`npm run deploy:sandbox`; D1

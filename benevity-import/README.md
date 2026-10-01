@@ -291,6 +291,49 @@ several disbursements:
 * Rows with `Currency ≠ USD`, negative amounts (refund/clawback lines, if Benevity ever emits
   them), or a header that fails validation → `needs-review`, never silently dropped.
 
+## Resetting for new board ids
+
+When the Donations, People and Organizations boards are deleted and rebuilt (a cutover retry —
+private runbook, Rollback step 8 — or a sandbox rebuild), D1 still says which rows are
+`written`, so a report uploaded again is skipped even though its gifts went with the old
+boards. Reset D1 before deploying against the new boards, with the Uploads-board webhooks off.
+
+```sh
+# 1. Export, to somewhere outside the repo — raw rows hold donor names and addresses. The
+#    database is unavailable while the export runs (seconds).
+npx wrangler d1 export svbc-benevity-import --remote --output <dir>/svbc-benevity-import.sql
+
+# 2. Reset, in this order: rows → disbursements → uploads are foreign keys, and D1 enforces
+#    them. -y answers any wrangler confirmation prompt; unanswered without a TTY, one cancels
+#    silently with exit 0.
+npx wrangler d1 execute svbc-benevity-import --remote -y --command \
+  "DELETE FROM rows; DELETE FROM disbursements; DELETE FROM uploads; DELETE FROM aliases;"
+
+# 3. Check: every count is 0.
+npx wrangler d1 execute svbc-benevity-import --remote --command \
+  "SELECT 'rows' AS t, COUNT(*) AS n FROM rows UNION ALL SELECT 'disbursements', COUNT(*) FROM disbursements UNION ALL SELECT 'uploads', COUNT(*) FROM uploads UNION ALL SELECT 'aliases', COUNT(*) FROM aliases"
+```
+
+Sandbox: `svbc-benevity-import-sandbox`, with `--env sandbox` on every command.
+
+| Table | Reset | Why |
+|---|---|---|
+| `rows` | cleared | Donations and worklist item ids on the old boards, and the `written` status that would make a re-upload skip the row. |
+| `disbursements`, `uploads` | cleared | So the same report can be uploaded again and is parsed as new; their worklist item ids are dead too if the Uploads board was rebuilt. |
+| `aliases` | cleared | Organizations item ids on the old board. (Nothing writes this table yet, so it's normally empty.) |
+
+Nothing is kept, so afterwards the Worker no longer knows what it imported. Before go-live the
+only rows are the verification upload's. If a real disbursement was imported against the old
+boards, it must reach the new ones exactly once: either staff key it into Salesforce before the
+retry's extract (then set `minDisbursementDate` past its Period Ending), or it is uploaded again
+after the retry — never both, since migrated gifts carry no Transaction ID to dedupe on. Set
+`minDisbursementDate` for the retry's freeze either way. If the Uploads board survived, delete
+its leftover worklist items; their Retry no longer finds a row.
+
+Tested 2026-09-30: on a local D1 built from the sandbox database's export, with seeded rows
+(`DELETE FROM uploads` first fails on the foreign key; the order above clears all four), and
+on the deployed sandbox D1, whose tables were already empty.
+
 ## PII
 
 Benevity rows include the donor's postal address when shared. Do **not** write it to Monday from
