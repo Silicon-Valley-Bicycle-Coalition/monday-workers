@@ -28,9 +28,11 @@ describe('config split: board and column ids', () => {
     expect(prod === null || prod !== sb).toBe(true);
   });
 
-  it('sandbox.json targets the CRM Sandbox Donations, People, and Uploads boards', () => {
-    expect(sandbox.monday.boards.donations).toBe(18428131791);
+  it('sandbox.json targets the CRM Sandbox (sandbox v3) boards and the Uploads board', () => {
+    expect(sandbox.monday.boards.donations).toBe(18431577310);
+    expect(sandbox.monday.boards.organizations).toBe(18431577213);
     expect(sandbox.monday.boards.people).toBe(18431577220);
+    expect(sandbox.monday.boards.affiliations).toBe(18431577240);
     expect(sandbox.monday.boards.benevityUploads).toBe(18431270204);
   });
 
