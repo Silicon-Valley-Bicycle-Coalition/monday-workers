@@ -59,6 +59,8 @@ export const zhHans: Record<TranslationKey, string> = {
   'portal.tableDate': '日期',
   'portal.tableAmount': '金额',
   'portal.tableDescription': '说明',
+  'portal.impactHeading': '您在 {{year}} 年的贡献',
+  'portal.impactIntro': '您在 {{year}} 年的捐款帮助实现了以下成果：',
   'portal.donationsTabLabel': '捐款',
   'portal.donationsEmptyMessage': '您还没有任何捐款记录。',
   'portal.donateButton': '捐款',

@@ -160,7 +160,7 @@ own Donations item:
 | Matched By (connect → Organizations) | blank | the Organization |
 | Anonymous Donor | checked if no Person | checked if no Person |
 | Benevity Transaction ID | `<Transaction ID>` | `<Transaction ID>-match` |
-| Fiscal Year Ending | computed from Date, SVBC's July–June year, same rule as `salesforce-import` | same |
+| Fiscal Year Ending | computed from Date, SVBC's July–June year, written as the bare ending year (`2027` for a 2026-09-20 gift) — same rule and shape as `salesforce-import` and `funraise-sync` | same |
 
 `Gift Type` and `Status` labels must be exactly these strings: `donation-rollups` counts only
 `Received`, and the Matching funding stream in the revenue dashboard is `Gift Type = Matching

@@ -59,6 +59,8 @@ export const es: Record<TranslationKey, string> = {
   'portal.tableDate': 'Fecha',
   'portal.tableAmount': 'Monto',
   'portal.tableDescription': 'Descripción',
+  'portal.impactHeading': 'Tu impacto en {{year}}',
+  'portal.impactIntro': 'Tus donaciones en {{year}} ayudaron a hacer esto posible:',
   'portal.donationsTabLabel': 'Donaciones',
   'portal.donationsEmptyMessage': 'Aún no has hecho ninguna donación.',
   'portal.donateButton': 'Donar',

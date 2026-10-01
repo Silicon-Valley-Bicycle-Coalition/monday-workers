@@ -15,6 +15,7 @@ const REQUIRED_TOP_LEVEL = [
   'funraise',
   'pledges',
   'matchingGifts',
+  'impact',
   'letterCron',
 ] as const;
 
@@ -284,6 +285,31 @@ export function validateConfig(raw: unknown): Config {
 
   const matchingGifts = requireObject(cfg, 'matchingGifts');
   requireKeys(matchingGifts, 'matchingGifts', REQUIRED_MATCHING_GIFTS_KEYS);
+
+  // An empty statementsByYear is the gate (nothing renders), not an error. What is set must be
+  // well-formed: selectImpact matches year keys against the first four characters of a gift
+  // date and falls back to `en`, so a "26" key or a year with no English would silently never
+  // show.
+  const impact = requireObject(cfg, 'impact');
+  const statementsByYear = requireObject(impact, 'statementsByYear', 'impact.statementsByYear');
+  for (const year of Object.keys(statementsByYear)) {
+    const yearPath = `impact.statementsByYear.${year}`;
+    if (!/^\d{4}$/.test(year)) {
+      throw new Error(`config: "${yearPath}" must be keyed by a four-digit year`);
+    }
+    const locales = requireObject(statementsByYear, year, yearPath);
+    requireKeys(locales, yearPath, ['en']);
+    for (const [locale, statements] of Object.entries(locales)) {
+      if (!isLocale(locale)) {
+        throw new Error(`config: "${yearPath}.${locale}" is not a supported locale`);
+      }
+      const valid =
+        Array.isArray(statements) && statements.length > 0 && statements.every((s) => typeof s === 'string' && s.trim().length > 0);
+      if (!valid) {
+        throw new Error(`config: "${yearPath}.${locale}" must be a non-empty list of non-blank strings`);
+      }
+    }
+  }
 
   return cfg as unknown as Config;
 }

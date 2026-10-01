@@ -9,7 +9,7 @@ import type { SessionStore } from './db/sessions';
 import type { LoginAttemptStore } from './db/loginAttempts';
 import type { EmailSender } from './email/types';
 import type { IpRateLimiter } from './ratelimit';
-import type { Config } from './types';
+import type { Config, DonorImpact } from './types';
 import type { ChangeRequestStore } from './db/changeRequests';
 import type { ChangeQueueMessage } from './changeRequests/submitChangeRequest';
 import type { LetterSendStore } from './db/letterSends';
@@ -40,6 +40,7 @@ import {
 import { loadPledgeData } from './pledges/loadPledgeData';
 import { pledgesView, pledgesUnavailableView } from './pledges/pledgeViews';
 import { matchingGiftsView } from './matchingGifts/matchingGiftViews';
+import { selectImpact } from './impact/impact';
 import { generateToken } from './crypto/token';
 import { listLetterYears, loadLetterData } from './letters/loadLetterData';
 import { letterView, lettersListView, lettersUnavailableView } from './letters/letterViews';
@@ -454,10 +455,21 @@ export function createApp(deps: AppDeps) {
       }
     }
 
+    // "Your giving supported …" (v8): per donor, from the gifts already loaded for the Donations
+    // tab — so it follows the same date gate and costs no extra Monday read. Gated here rather
+    // than on an empty donations list, so a hidden history never leaks a "you gave in <year>".
+    const impact: Record<string, DonorImpact> = {};
+    if (data.donationHistoryEnabled) {
+      for (const donor of data.donors) {
+        const selected = selectImpact(donor.donations, deps.config.impact, locale);
+        if (selected !== null) impact[donor.id] = selected;
+      }
+    }
+
     return c.html(
       page(
         t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'),
-        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor),
+        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor, impact),
         locale,
         { authenticated: true }
       )

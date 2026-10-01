@@ -59,6 +59,8 @@ export const zhHant: Record<TranslationKey, string> = {
   'portal.tableDate': '日期',
   'portal.tableAmount': '金額',
   'portal.tableDescription': '說明',
+  'portal.impactHeading': '您在 {{year}} 年的貢獻',
+  'portal.impactIntro': '您在 {{year}} 年的捐款協助達成了以下成果：',
   'portal.donationsTabLabel': '捐款',
   'portal.donationsEmptyMessage': '您目前還沒有任何捐款記錄。',
   'portal.donateButton': '捐款',
