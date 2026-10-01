@@ -433,6 +433,54 @@ describe('portalView', () => {
   });
 });
 
+describe('portalView impact summary', () => {
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+  const donor = (id: string, name: string) => ({
+    id,
+    name,
+    membershipStatus: 'Active',
+    membershipTier: 'Member',
+    totalDonated: '100',
+    donations: [{ date: '2026-01-01', amount: '100', description: 'Annual gift' }],
+    membershipExpiry: '',
+  });
+  const base: PortalView = {
+    donors: [donor('donor-1', 'Jane Donor'), donor('donor-2', 'Jane Also')],
+    discounts: [],
+    donationHistoryEnabled: true,
+    volunteerHistory: null,
+  };
+
+  it('renders no impact heading when no donor has an impact summary', () => {
+    const html = portalView(base, 'en', {}, noFunraise);
+    expect(html).not.toContain(t('en', 'portal.impactHeading', { year: '2026' }));
+  });
+
+  it('renders the year heading and one list item per statement', () => {
+    const impact = { 'donor-1': { year: '2026', statements: ['First statement', 'Second statement'] } };
+    const html = portalView(base, 'en', {}, noFunraise, null, impact);
+    expect(html).toContain(t('en', 'portal.impactHeading', { year: '2026' }));
+    expect(html).toContain('<li>First statement</li>');
+    expect(html).toContain('<li>Second statement</li>');
+  });
+
+  it("renders a donor's impact inside that donor's section only", () => {
+    const impact = { 'donor-2': { year: '2026', statements: ['Only for the second donor'] } };
+    const html = portalView(base, 'en', {}, noFunraise, null, impact);
+    const firstSection = html.slice(html.indexOf('Jane Donor'), html.indexOf('Jane Also'));
+    const secondSection = html.slice(html.indexOf('Jane Also'));
+    expect(firstSection).not.toContain('Only for the second donor');
+    expect(secondSection).toContain('<li>Only for the second donor</li>');
+  });
+
+  it('escapes HTML in a statement', () => {
+    const impact = { 'donor-1': { year: '2026', statements: ['<script>alert(1)</script>'] } };
+    const html = portalView(base, 'en', {}, noFunraise, null, impact);
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+});
+
 describe('portalView events tab', () => {
   const base: PortalView = {
     donors: [

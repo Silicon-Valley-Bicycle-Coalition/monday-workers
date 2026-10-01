@@ -1,4 +1,11 @@
-import type { DiscountOrganization, DonorVolunteerHistory, EventRegistrationRecord, FunraiseLinkUrls, PortalView } from './types';
+import type {
+  DiscountOrganization,
+  DonorImpact,
+  DonorVolunteerHistory,
+  EventRegistrationRecord,
+  FunraiseLinkUrls,
+  PortalView,
+} from './types';
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
 import { t, type TranslationKey } from './i18n/t';
 import { SVBC_LOGO_SVG } from './assets/logo';
@@ -699,13 +706,27 @@ function eventsPanel(listing: Pick<EventRegistrationListing, 'upcoming' | 'past'
   return `${upcoming}${past}`;
 }
 
+// "Your giving supported …" for the one year routes.ts picked for this donor (selectImpact in
+// impact/impact.ts). Statements are operator-set config, not donor input; escaped anyway, like
+// every other string the portal renders.
+function impactSummary(impact: DonorImpact, locale: Locale): string {
+  return `
+      <h3>${escapeHtml(t(locale, 'portal.impactHeading', { year: impact.year }))}</h3>
+      <p>${escapeHtml(t(locale, 'portal.impactIntro', { year: impact.year }))}</p>
+      <ul>
+        ${impact.statements.map((statement) => `<li>${escapeHtml(statement)}</li>`).join('')}
+      </ul>
+  `;
+}
+
 function donorSection(
   donor: PortalView['donors'][number],
   locale: Locale,
   card: PortalCard | undefined,
   volunteerHistory: DonorVolunteerHistory | undefined,
   events: EventRegistrationListing | undefined,
-  donationHistoryEnabled: boolean
+  donationHistoryEnabled: boolean,
+  impact: DonorImpact | undefined
 ): string {
   // Each tab appears only when its feature is enabled at all — donations once the history
   // date gate has passed (see donationHistoryEnabled in config.ts), volunteer/events when
@@ -728,6 +749,7 @@ function donorSection(
       <h2>${escapeHtml(donor.name)}</h2>
       <p>${escapeHtml(t(locale, 'portal.membership', { status: donor.membershipStatus, tier: donor.membershipTier }))}</p>
       ${card ? memberCardWidget(card, locale) : ''}
+      ${impact ? impactSummary(impact, locale) : ''}
       ${renderTabs(tabs, `tabs-${donor.id}`)}
     </section>
   `;
@@ -772,12 +794,14 @@ export function portalView(
   locale: Locale,
   cards: Record<string, PortalCard>,
   funraise: FunraiseLinkUrls,
-  events: Record<string, EventRegistrationListing> | null = null
+  events: Record<string, EventRegistrationListing> | null = null,
+  // Keyed by donor id, like cards — a donor without an entry has no impact summary to show.
+  impact: Record<string, DonorImpact> = {}
 ): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
     ${someRecordsUnavailableNote(data.unavailableDonorCount ?? 0, locale)}
-    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id], data.donationHistoryEnabled)).join('')}
+    ${data.donors.map((donor) => donorSection(donor, locale, cards[donor.id], data.volunteerHistory?.[donor.id], events?.[donor.id], data.donationHistoryEnabled, impact[donor.id])).join('')}
     ${funraiseSection(funraise, locale)}
     ${
       data.discounts === null

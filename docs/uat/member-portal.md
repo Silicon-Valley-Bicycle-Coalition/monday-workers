@@ -52,6 +52,11 @@ can safely use any real donor's email address while testing.
 - **Log in** and confirm you land on a page with donation history, membership status, and
   discounts — not an error or a blank page.
 - **Look at the donation history** — does it look reasonable and readable?
+- **Look for "Your 2025 impact" or "Your 2026 impact"** above the donation history. It lists
+  what that person's giving helped do that year. It shows only for someone who gave in 2025 or
+  2026, and it shows the most recent of those years. The statements say **"[Sample for
+  testing]"** because the real ones haven't been written yet. Someone whose last gift was
+  before 2025 should see no impact section at all.
 - **Look at the membership status and any bike-shop discounts** — do they display clearly?
 - **Open the digital membership card** — does it show and look right?
 - **Submit a change** — try updating an address, email, or phone number through the portal and

@@ -118,5 +118,8 @@
   },
   "matchingGifts": {
     "doubleTheDonationPublicKey": null
+  },
+  "impact": {
+    "statementsByYear": {}
   }
 }

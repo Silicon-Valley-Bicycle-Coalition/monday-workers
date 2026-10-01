@@ -48,6 +48,7 @@ const config: Config = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: null },
+  impact: { statementsByYear: {} },
   letterCron: {
     boardId: 456,
     columns: { autoSend: 'checkbox_1', startDate: 'date_2', bodyTemplate: 'long_text_1', bodyTemplatesByLocale: {} },

@@ -104,6 +104,11 @@ const validConfig = {
     },
   },
   matchingGifts: { doubleTheDonationPublicKey: 'dtd-public-key' },
+  impact: {
+    statementsByYear: {
+      '2026': { en: ['Taught bike safety to 4,200 students'], es: ['Enseñamos seguridad ciclista a 4,200 estudiantes'] },
+    },
+  },
   letterCron: {
     boardId: 456,
     columns: {
@@ -629,6 +634,54 @@ describe('funraiseLinks', () => {
     const rawEmpty = structuredClone(validConfig);
     rawEmpty.funraise.renewMembershipUrl = '';
     expect(funraiseLinks(validateConfig(rawEmpty)).renewMembershipUrl).toBeNull();
+  });
+});
+
+describe('impact config section', () => {
+  type YearStatements = Record<string, unknown>;
+  const withYear = (year: string, statements: YearStatements) => {
+    const cfg = structuredClone(validConfig);
+    (cfg.impact.statementsByYear as Record<string, YearStatements>) = { [year]: statements };
+    return cfg;
+  };
+
+  it('rejects a config missing the impact section', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg as Record<string, unknown>).impact;
+    expect(() => validateConfig(cfg)).toThrow('"impact"');
+  });
+
+  it('rejects an impact section without statementsByYear', () => {
+    const cfg = structuredClone(validConfig);
+    delete (cfg.impact as Record<string, unknown>).statementsByYear;
+    expect(() => validateConfig(cfg)).toThrow('impact.statementsByYear');
+  });
+
+  it('accepts no statements at all (the feature off)', () => {
+    const cfg = structuredClone(validConfig);
+    (cfg.impact.statementsByYear as Record<string, YearStatements>) = {};
+    expect(() => validateConfig(cfg)).not.toThrow();
+  });
+
+  it('rejects a year key that is not four digits', () => {
+    expect(() => validateConfig(withYear('26', { en: ['A statement'] }))).toThrow('impact.statementsByYear.26');
+  });
+
+  it('rejects a year without English statements', () => {
+    expect(() => validateConfig(withYear('2026', { es: ['Una frase'] }))).toThrow('impact.statementsByYear.2026.en');
+  });
+
+  it('rejects a locale code the portal does not support', () => {
+    expect(() => validateConfig(withYear('2026', { en: ['A statement'], xx: ['?'] }))).toThrow('impact.statementsByYear.2026.xx');
+  });
+
+  it('rejects an empty statement list', () => {
+    expect(() => validateConfig(withYear('2026', { en: [] }))).toThrow('impact.statementsByYear.2026.en');
+  });
+
+  it('rejects a blank or non-string statement', () => {
+    expect(() => validateConfig(withYear('2026', { en: ['A statement'], es: ['  '] }))).toThrow('impact.statementsByYear.2026.es');
+    expect(() => validateConfig(withYear('2026', { en: ['A statement'], es: [42] }))).toThrow('impact.statementsByYear.2026.es');
   });
 });
 
