@@ -56,9 +56,19 @@ export function validateConfig(raw: unknown): BenevityImportConfig {
   }
 
   const benevityImport = requireObject(cfg.benevityImport, 'benevityImport');
-  requireNonEmptyString(benevityImport.minDonationDate, 'benevityImport.minDonationDate');
-  if (Number.isNaN(Date.parse(benevityImport.minDonationDate as string))) {
-    throw new Error('config: "benevityImport.minDonationDate" must be a valid ISO date');
+  // A leftover pre-#40 key must not be silently ignored: the gate it named no longer exists, and
+  // its value was chosen for a different comparison (a row's Donation Date).
+  if ('minDonationDate' in benevityImport) {
+    throw new Error(
+      'config: "benevityImport.minDonationDate" was replaced by "benevityImport.minDisbursementDate" (#40), ' +
+        "which gates on a disbursement's Period Ending — rename it and re-check the value"
+    );
+  }
+  requireNonEmptyString(benevityImport.minDisbursementDate, 'benevityImport.minDisbursementDate');
+  const minDisbursementDate = benevityImport.minDisbursementDate as string;
+  // Compared as a string against the parsed Period Ending, so it must be exactly YYYY-MM-DD.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(minDisbursementDate) || Number.isNaN(Date.parse(minDisbursementDate))) {
+    throw new Error('config: "benevityImport.minDisbursementDate" must be a YYYY-MM-DD date');
   }
 
   const donationsColumns = requireObject(benevityImport.donationsColumns, 'benevityImport.donationsColumns');

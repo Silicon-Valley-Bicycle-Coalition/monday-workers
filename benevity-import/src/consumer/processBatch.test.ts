@@ -10,7 +10,7 @@ function fakeConfig(): BenevityImportConfig {
   return {
     monday: { apiUrl: '', boards: { donations: 111, organizations: 222, people: 333, affiliations: 444, benevityUploads: 777 } },
     benevityImport: {
-      minDonationDate: '2026-01-01',
+      minDisbursementDate: '2026-01-01',
       donationsColumns: {
         donor: 'donor_c', matchedBy: 'matched_by_c', amount: 'amount_c', date: 'date_c',
         disbursementDate: 'disb_date_c', fiscalYearEnding: 'fy_c', status: 'status_c',

@@ -12,7 +12,7 @@ function fakeConfig(): BenevityImportConfig {
   return {
     monday: { apiUrl: '', boards: { donations: 1, organizations: 1, people: 1, affiliations: 1, benevityUploads: 777 } },
     benevityImport: {
-      minDonationDate: '2026-01-01',
+      minDisbursementDate: '2026-01-01',
       donationsColumns: {} as never,
       organizationsNameColumn: 'name',
       peopleColumns: {} as never,
@@ -52,6 +52,20 @@ function validReport(opts: { disbursementId?: string; transactionId?: string } =
     '',
   ].join('\n');
 }
+
+// validReport() plus a second, earlier-dated row; totals 50 + 30.
+function twoRowReport(): string {
+  return validReport()
+    .replace(
+      'Totals,',
+      '"Acme, Inc.",Project,2026-11-20T00:00:00Z,Sam,Lee,sam@acme.example,x,x,x,94043,,,TXN002,One Time,USD,,BlueSnap,User Donation,30.00,0.00,0.00,0.00,\nTotals,'
+    )
+    .replaceAll('50.00,0.00,0.00,0.00\nTotal', '80.00,0.00,0.00,0.00\nTotal')
+    .replace('Total Donations (Gross),50.00', 'Total Donations (Gross),80.00')
+    .replace('Net Total Payment,50.00', 'Net Total Payment,80.00');
+}
+
+const UPLOAD_EVENT = { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } };
 
 function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   const uploadStore: UploadStore = {
@@ -239,13 +253,114 @@ describe('webhook route', () => {
     expect(deps.mondayClient.fetchAsset).not.toHaveBeenCalled();
   });
 
-  it('skips a row dated before minDonationDate without enqueueing it', async () => {
-    const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(validReport()) });
-    deps.config.benevityImport.minDonationDate = '2027-01-01'; // after the fixture's 2026-12-06 row
-    const app = createApp(deps);
-    await post(app, { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } });
-    expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'skipped' }));
-    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+  // #40: the cutoff gates on the disbursement's Period Ending, never on a row's Donation Date.
+  // Benevity pays out weeks after the gift, so the first report after the data freeze is full of
+  // earlier-dated rows that were never keyed into Salesforce and are in no migrated history.
+  describe('disbursement cutoff (#40)', () => {
+    it('imports a row donated before the cutoff when its disbursement ended on or after it', async () => {
+      const deps = fakeDeps();
+      deps.config.benevityImport.minDisbursementDate = '2026-12-10'; // row 2026-12-06 < cutoff <= Period Ending 2026-12-16
+      await post(createApp(deps), UPLOAD_EVENT);
+      expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ transactionId: 'TXN001', status: 'ingested' }));
+      expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
+      expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    });
+
+    it('imports a disbursement whose Period Ending is the cutoff date itself', async () => {
+      const deps = fakeDeps();
+      deps.config.benevityImport.minDisbursementDate = '2026-12-16';
+      await post(createApp(deps), UPLOAD_EVENT);
+      expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
+    });
+
+    it('skips every row of a disbursement that ended before the cutoff, enqueues nothing, and says what it skipped on the worklist', async () => {
+      const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(twoRowReport()) });
+      deps.config.benevityImport.minDisbursementDate = '2026-12-17';
+      const res = await post(createApp(deps), UPLOAD_EVENT);
+
+      expect(res.status).toBe(200);
+      const upserts = (deps.rowStore.upsertRow as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
+      expect(upserts.map((row) => [row.transactionId, row.status, row.disbursementId])).toEqual([
+        ['TXN001', 'skipped', 10],
+        ['TXN002', 'skipped', 10],
+      ]);
+      expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+      // Not held for review: a skipped block is a decision, not a parse problem.
+      expect(deps.disbursementStore.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({ needsReview: false, reviewReason: null }));
+
+      expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
+      const [boardId, name, columnValues, groupId] = (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      expect([boardId, name, groupId]).toEqual([777, 'Disbursement ABC123', 'review']);
+      expect(columnValues.amount_c).toBe(80);
+      expect(columnValues.date_c).toEqual({ date: '2026-12-16' });
+      const reason = columnValues.reason_c as string;
+      expect(reason).toMatch(/^Skipped, not imported/);
+      expect(reason).toContain('Period Ending 2026-12-16');
+      expect(reason).toContain('cutoff 2026-12-17');
+      expect(reason).toContain('2 rows');
+      expect(reason).toContain('donation dates 2026-11-20 to 2026-12-06');
+      expect(reason).toContain('$80.00 gross');
+      expect(deps.disbursementStore.claimWorklistItemId).toHaveBeenCalledWith(10, '1');
+      expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1);
+    });
+
+    it('tells staff to set Retry to import a skipped disbursement only when a Retry column is configured', async () => {
+      const reasonFor = async (retry: boolean) => {
+        const deps = fakeDeps();
+        deps.config.benevityImport.minDisbursementDate = '2026-12-17';
+        if (retry) {
+          deps.config.benevityImport.uploadsBoard.retry = {
+            column: 'retry_col',
+            labels: { needsReview: 'Needs review', retry: 'Retry', queued: 'Queued', done: 'Done' },
+          };
+        }
+        await post(createApp(deps), UPLOAD_EVENT);
+        return (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].reason_c as string;
+      };
+      expect(await reasonFor(true)).toContain('set Retry to import it');
+      expect(await reasonFor(false)).not.toContain('set Retry');
+      // One row, one date: no range.
+      expect(await reasonFor(false)).toContain('1 row, donation date 2026-12-06');
+    });
+
+    it('does not re-post the notice for a skipped disbursement that already has one, but still records its rows', async () => {
+      const deps = fakeDeps({
+        disbursementStore: {
+          ...fakeDeps().disbursementStore,
+          findOrCreate: vi.fn().mockResolvedValue({
+            disbursement: { id: 10, uploadId: 1, blockIndex: 0, disbursementId: 'ABC123', periodEnding: '2026-12-16', currency: 'USD',
+              rowCount: 1, reportedGrossTotal: 50, reportedNetTotal: 50, needsReview: false, reviewReason: null, worklistItemId: '555' },
+            created: false,
+          }),
+        },
+      });
+      deps.config.benevityImport.minDisbursementDate = '2026-12-17';
+      await post(createApp(deps), UPLOAD_EVENT);
+      expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+      expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ transactionId: 'TXN001', status: 'skipped' }));
+    });
+
+    it('skips a pre-cutoff block whose totals do not match instead of holding it for review, and mentions the mismatch', async () => {
+      const mismatched = validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),999.00');
+      const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(mismatched) });
+      deps.config.benevityImport.minDisbursementDate = '2026-12-17';
+      await post(createApp(deps), UPLOAD_EVENT);
+      expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'skipped' }));
+      expect(deps.rowStore.upsertRow).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'needs-review' }));
+      const reason = (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].reason_c as string;
+      expect(reason).toMatch(/^Skipped, not imported/);
+      expect(reason).toContain('row totals');
+    });
+
+    it('still holds a block whose header did not parse for review, whatever the cutoff (it has no Period Ending to gate on)', async () => {
+      const badCsv = validReport().replace('Transaction ID,', 'Txn Id Renamed,');
+      const deps = fakeDeps({ fetchCsv: vi.fn().mockResolvedValue(badCsv) });
+      deps.config.benevityImport.minDisbursementDate = '2099-01-01';
+      await post(createApp(deps), UPLOAD_EVENT);
+      expect(deps.disbursementStore.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({ needsReview: true }));
+      const reason = (deps.mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].reason_c as string;
+      expect(reason).not.toMatch(/^Skipped/);
+    });
   });
 
   it('creates one worklist item and marks every row needs-review for a block with a bad header, without enqueueing', async () => {

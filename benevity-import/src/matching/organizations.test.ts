@@ -8,7 +8,7 @@ function fakeConfig(aliases: Record<string, string> = {}): BenevityImportConfig 
   return {
     monday: { apiUrl: '', boards: { donations: 1, organizations: 222, people: 1, affiliations: 1, benevityUploads: 1 } },
     benevityImport: {
-      minDonationDate: '2026-07-01',
+      minDisbursementDate: '2026-07-01',
       donationsColumns: {} as never,
       organizationsNameColumn: 'name',
       peopleColumns: {} as never,

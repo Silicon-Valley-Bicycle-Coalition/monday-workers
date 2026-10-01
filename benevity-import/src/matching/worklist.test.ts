@@ -9,7 +9,7 @@ function fakeConfig(worklistKeyColumn: string | null = 'key_c', retry: typeof RE
   return {
     monday: { apiUrl: '', boards: { donations: 1, organizations: 1, people: 1, affiliations: 1, benevityUploads: 777 } },
     benevityImport: {
-      minDonationDate: '2026-07-01',
+      minDisbursementDate: '2026-07-01',
       donationsColumns: {} as never,
       organizationsNameColumn: 'name',
       peopleColumns: {} as never,

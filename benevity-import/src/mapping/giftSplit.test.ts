@@ -7,7 +7,7 @@ function fakeConfig(): BenevityImportConfig {
   return {
     monday: { apiUrl: '', boards: { donations: 1, organizations: 1, people: 1, affiliations: 1, benevityUploads: 1 } },
     benevityImport: {
-      minDonationDate: '2026-07-01',
+      minDisbursementDate: '2026-07-01',
       donationsColumns: {
         donor: 'donor_col',
         matchedBy: 'matched_by_col',
