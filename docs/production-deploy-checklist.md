@@ -187,6 +187,10 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
   - [ ] Config: Donations, Recurring Gifts, People boards + all `subscriptionsPoll.columns`,
         and a real `entityIdColumn` (adopt-before-create; the split test requires it, and
         without it the Worker duplicates migrated gifts).
+  - [ ] **Reset the production-named D1 before the first deploy.** `svbc-funraise-sync` still
+        holds what was copied out of it on 2026-09-19 — 1,175 ledger rows, cursors and six
+        events, all pointing at deleted sandbox items. README, "Resetting for new board ids",
+        step 2 and 3b.
   - [ ] Bootstrap the subscriptions poller locally *before* the deployed cron can fire
         (`funraise-sync/README.md`, `wrangler dev --remote --test-scheduled`).
   - [ ] **Repoint Funraise's single webhook** from the `-sandbox` Worker to
