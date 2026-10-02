@@ -92,8 +92,12 @@ Paste a Slack incoming-webhook URL. Used to alert when a calendar source's failu
 
 ## Deploy
 
-This Worker has never been deployed — secrets aren't set yet, and both custom domains below still
-point at the two Workers this one replaces. Cutover checklist, in order:
+**Deployed and live** on both custom domains (checked 2026-09-30: both secrets set, both domains
+attached to `svbc-calendars`, and the two predecessor Workers deleted). It has a Workers Builds
+connection, so every merge to `main` redeploys it — see the root `README.md`'s Deploys section.
+The one step still open is 2 (`CF_WEB_ANALYTICS_TOKEN` is still empty). The feeds also depend on
+a WAF rule that lives outside this repo — see step 7. The checklist below is the cutover as it
+was done, kept for forks and for a rebuild from scratch:
 
 ### 1. ~~Provision the KV namespace~~ Done 2026-09-23
 
@@ -101,7 +105,7 @@ point at the two Workers this one replaces. Cutover checklist, in order:
 exists in the account but isn't wired into this config — this Worker has no `env.sandbox` split
 (unlike `mailchimp-sync`/`donation-rollups`/etc.); add one later if that's wanted.
 
-### 2. Enable Cloudflare Web Analytics
+### 2. Enable Cloudflare Web Analytics (still open)
 
 In the Cloudflare dashboard: **Analytics & Logs → Web Analytics → Add a site**, for
 `bikesiliconvalley.org` (or its relevant subdomains). Paste the resulting site token into
@@ -109,7 +113,7 @@ In the Cloudflare dashboard: **Analytics & Logs → Web Analytics → Add a site
 widget and listing page simply omit the beacon script rather than shipping a broken one — see the
 comment above that var in `wrangler.jsonc`.
 
-### 3. Set the secrets
+### 3. ~~Set the secrets~~ Done
 
 ```sh
 npx wrangler secret put EVENTBRITE_TOKEN
@@ -118,15 +122,15 @@ npx wrangler secret put SLACK_WEBHOOK_URL
 
 See "Setup" above for where each value comes from.
 
-### 4. Point Workers Builds at this subdirectory
+### 4. ~~Point Workers Builds at this subdirectory~~ Done
 
-In the Cloudflare dashboard, update this Worker's connected [Workers
-Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) root directory — currently
-pointing at whichever of the two predecessor directories it was last connected to (see the root
-`README.md`'s Deploys section, e.g. `/committee-calendars`, `/events-widgets`) — to `/svbc-calendars`,
-so future pushes to `main` auto-deploy the right directory instead of a now-deleted one.
+In the Cloudflare dashboard, this Worker's connected [Workers
+Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) root directory is
+`/svbc-calendars` (it previously pointed at one of the two predecessor directories,
+`/committee-calendars` or `/events-widgets`), so pushes to `main` auto-deploy the right directory
+instead of a now-deleted one.
 
-### 5. Deploy
+### 5. ~~Deploy~~ Done
 
 ```sh
 npx wrangler deploy
@@ -136,13 +140,47 @@ Deploys to both custom domains configured in `wrangler.jsonc`: `events.bikesilic
 (widget + JSON events API) and `committees.bikesiliconvalley.org` (calendar feeds + staff
 listing page).
 
-### 6. Verify, then retire the old Workers
+### 6. ~~Verify, then retire the old Workers~~ Done
 
-Cloudflare custom domains are exclusive to one Worker, so step 5's deploy reassigns both
-`events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` away from their current
-Workers (`svbc-events-widgets`, `svbc-committee-calendars`) to this one. Verify both domains serve
-correctly — widget, JSON API, calendar feeds, listing page — **before** considering the old
-Workers' scripts (and `committee-calendars`'s D1 database) safe to manually delete.
+Cloudflare custom domains are exclusive to one Worker, so step 5's deploy reassigned both
+`events.bikesiliconvalley.org` and `committees.bikesiliconvalley.org` away from their previous
+Workers (`svbc-events-widgets`, `svbc-committee-calendars`) to this one. Both old Worker scripts
+have since been deleted. On a rebuild, verify both domains serve correctly — widget, JSON API,
+calendar feeds, listing page — **before** deleting whatever they replace.
+
+### 7. ~~Exempt the feeds from Super Bot Fight Mode~~ Done 2026-10-02
+
+The `bikesiliconvalley.org` zone runs Super Bot Fight Mode with both "definitely automated" and
+"likely automated" traffic set to Managed Challenge. Calendar apps fetch feeds with non-browser
+clients that can't solve a challenge, so without an exception a feed request gets a `403` "Just a
+moment..." page (`cf-mitigated: challenge`) instead of a calendar, and the subscription silently
+fails. That is what every route here returned to plain `curl` from 2026-09-25, when the mode was
+turned on, until this rule went in.
+
+A WAF custom rule on the zone (**Security → Security rules**, "Skip SBFM for svbc-calendars ICS
+feeds") skips Super Bot Fight Mode for the feeds only:
+
+```text
+(http.host in {"committees.bikesiliconvalley.org" "events.bikesiliconvalley.org"}
+ and http.request.method eq "GET"
+ and starts_with(http.request.uri.path, "/calendars/")
+ and ends_with(http.request.uri.path, ".ics"))
+```
+
+Action: **Skip → All Super Bot Fight Mode rules** (API: `action_parameters.phases:
+["http_request_sbfm"]`). The feeds stay behind the 24h edge cache and the per-IP rate limit.
+Everything else — widget, JSON API, listing page, `/status.json` — is deliberately still
+challenged: a browser passes it, but a script (`curl`, an uptime monitor) gets the challenge page,
+so don't read a `403` there as the Worker being down.
+
+The rule lives only in the Cloudflare zone, not in `wrangler.jsonc` — a deploy neither creates nor
+checks it, and a fork on a zone with bot protection needs its own. To check it's still in place:
+
+```sh
+curl -sI https://committees.bikesiliconvalley.org/calendars/san-jose.ics
+```
+
+Expect `200` with `content-type: text/calendar` and no `cf-mitigated` header.
 
 ## Widget embed snippet
 
