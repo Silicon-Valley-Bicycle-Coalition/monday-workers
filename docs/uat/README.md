@@ -72,6 +72,7 @@ report again.
 | [Bike Parking feedback email](bp-feedback-notify.md) | Emails an event organizer the feedback form when staff mark the event ready | **Testable now** |
 | [Funraise sync](funraise-sync.md) | Funraise donations and recurring plans flow onto the boards automatically | **Testable now** (real Funraise gifts land here until cutover) |
 | [Benevity import](benevity-import.md) | Drop a Benevity report on a board and the gifts and matches create themselves | **Testable now** |
+| [Eventbrite ticket orders](eventbrite-sync.md) | Paid Eventbrite ticket orders land on the Donations board as gifts | Nothing to test yet (built 2026-10-06, not deployed) |
 | [QuickBooks sync](quickbooks-sync.md) | Two-way sync of customers, invoices, and products | Nothing to test yet |
 | [Monday backup](monday-backup.md) | Nightly copy of every board to Google Drive | Nothing to test yet |
 | [Public calendars](svbc-calendars.md) | The events widget and committee calendar feeds on bikesiliconvalley.org | Live in production; a five-minute smoke check |
