@@ -11,7 +11,7 @@ elsewhere), and Monday webhook + integration-user token setup.
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-09-30, [svbc-monday-migration#49](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/49)).
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queues (the shared stack, see `../README.md`).
 
 ## The ask
