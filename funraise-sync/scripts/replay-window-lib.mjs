@@ -51,3 +51,22 @@ export function classifyReplayResponse(status, bodyText) {
   }
   return 'failed';
 }
+
+// A readable message for a failed `wrangler d1 execute --json` call. execFileSync's own error says
+// only "Command failed: <the whole command>"; wrangler's reason (no API token in a non-interactive
+// shell, an unknown database, a bad --env) is in its JSON stdout (`{ error: { text } }`) or its
+// stderr, so surface that instead of a stack trace.
+export function describeWranglerFailure(err) {
+  const text = (v) => (typeof v === 'string' ? v : v instanceof Uint8Array ? Buffer.from(v).toString('utf8') : '');
+  const stdout = text(err?.stdout).trim();
+  try {
+    const reason = JSON.parse(stdout)?.error?.text;
+    if (typeof reason === 'string' && reason !== '') return reason;
+  } catch {
+    // not JSON: fall through to stderr
+  }
+  const stderr = text(err?.stderr).trim();
+  if (stderr !== '') return stderr.split('\n').slice(-8).join('\n');
+  if (stdout !== '') return stdout.slice(0, 500);
+  return err instanceof Error ? err.message.split('\n')[0] : String(err);
+}

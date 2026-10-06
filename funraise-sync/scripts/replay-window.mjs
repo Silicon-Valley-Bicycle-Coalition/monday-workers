@@ -28,7 +28,7 @@
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { planRedrive, selectWindowSql, classifyReplayResponse } from './replay-window-lib.mjs';
+import { planRedrive, selectWindowSql, classifyReplayResponse, describeWranglerFailure } from './replay-window-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const argIdx = (name) => process.argv.indexOf(name);
@@ -61,8 +61,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function d1Rows(sql) {
   const args = ['wrangler', 'd1', 'execute', database, '--remote', '--json', '--command', sql];
   if (sourceEnv === 'sandbox') args.push('--env', 'sandbox');
-  const out = execFileSync('npx', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], cwd: join(HERE, '..') });
-  return JSON.parse(out)[0].results;
+  try {
+    const out = execFileSync('npx', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], cwd: join(HERE, '..') });
+    return JSON.parse(out)[0].results;
+  } catch (err) {
+    console.error(`replay-window: could not read ${database}: ${describeWranglerFailure(err)}`);
+    process.exit(1);
+  }
 }
 
 let sql;
