@@ -4,8 +4,8 @@
 step 5) requires the replay to be rehearsed before Gate A: "replaying one Worker's stored
 deliveries into another has never been run." This is how to do that with what exists, what it
 proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with
-reject-and-flag (!185). S0, S1, S2 and the wrong-secret case of S6 have run and pass; S3, S4, S5
-and S7 have not.
+reject-and-flag (!185). S0, S1, S2, S4 and the wrong-secret case of S6 have run and pass (S4's
+`Refunded` half confirms a known gap); S3 was blocked by a permission check; S5 and S7 have not run.
 
 ## What there is to replay
 
@@ -108,7 +108,10 @@ noted.
 | **S2** idempotency | **Pass on the third run:** 71 `already present`, 0 failed, exit 0, and no consumer activity. The first two runs had failures; see below. |
 | **S6** wrong secret | **Pass.** `STOPPED at <first id>` on HTTP 401 and nothing further sent; the local `events` table stayed empty. |
 | **S6** target down, then up | Not run as such. The 429 runs below showed the same recovery: a re-run after the cause cleared completed. |
-| **S3**, **S4**, **S5**, **S7** | **Not run.** S3 and S4 change or delete sandbox items and were held for explicit approval; S5 needs !185's code; S7 needs the sandbox ledger copied into the local D1. |
+| **S3** create path | **Not run: blocked.** Claude Code's auto-mode permission check refused the `delete_item` calls on three sandbox Donations items (an installment, a one-time `Complete` and a `Failed`, chosen and recorded first), even after the user approved the sandbox writes. Nothing was deleted, and the create path (`createItem` for a gift with no existing item) is still unrehearsed. Re-run it with the deletion done by hand or under an explicit permission rule. |
+| **S4** stale guard | **Pass.** An envelope for a replayed transaction with `sentAt` 1,000 ms older than the stored one answered `{"ok":true,"duplicate":true}`; the item's amount and status were unchanged. |
+| **S4** `Refunded` | **Confirms the gap, and shows how it fails.** A newer envelope with `transaction.status: Refunded` was accepted (`{"ok":true}`) and the consumer's write was rejected by Monday: *"This status label doesn't exist, possible statuses are: Received, Received (Historical), Failed, Pending"*. The `events` row went to `failed` with that error, and the item stayed `Received`. The sandbox Donations Status column has **no `Refunded` label**, so runbook step 4.2 is a real prerequisite: on the deployed Worker every buffered refund would retry 1, 4 and 16 minutes and then dead-letter. Nothing needed reverting. No label was added. |
+| **S5**, **S7** | **Not run.** S5 needs !185's code; S7 needs the sandbox ledger copied into the local D1. |
 
 The marker edit was reverted (Gift Type back to `Donation`) and the local Worker stopped. Nothing
 else on the sandbox boards differs from before.
@@ -132,7 +135,7 @@ re-run after the window cleared completed cleanly. So:
 
 ## Exit criteria
 
-S0–S7 pass (S0, S1, S2 and the wrong-secret case of S6 already have), and the output is kept. Then update the
+S0–S7 pass (S0, S1, S2, S4 and the wrong-secret case of S6 already have; S3 needs a way past the deletion block), and the output is kept. Then update the
 runbook's `BUILD: TBD (#48)` for the replay rehearsal, and record any divergence, in particular
 anything the local queue did differently.
 
