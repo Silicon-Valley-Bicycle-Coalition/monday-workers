@@ -1,0 +1,97 @@
+{
+  "name": "svbc-eventbrite-sync",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-eventbrite-sync",
+      // Not yet created. `wrangler d1 create svbc-eventbrite-sync` on the SVBC account and paste
+      // the id here (README "Deploy"); forks: create your own.
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [{ "queue": "eventbrite-sync-writes", "binding": "WRITE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "eventbrite-sync-writes",
+        // The consumer backs each retry off by attempt — 1, 4, then 16 minutes
+        // (retryDelaySeconds in src/consumer/processBatch.ts) — before dead-lettering.
+        "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain (the backfill script is one).
+        "max_concurrency": 1,
+        "dead_letter_queue": "eventbrite-sync-writes-dlq"
+      },
+      {
+        // Dead messages stamp their orders row "dead-lettered after retries: …" and log one
+        // error per batch (src/consumer/processDeadLetters.ts) instead of expiring unseen. No
+        // further dead-letter queue. Re-drive: scripts/backfill-orders.mjs for the affected event.
+        "queue": "eventbrite-sync-writes-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
+      }
+    ]
+  },
+  // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". 60/min/IP
+  // is generous against real Eventbrite volume (tens of orders a day at a Summit peak) while
+  // blunting a flood against the webhook route. The shared-secret check runs first in the route
+  // (before any D1 or queue work), so the limiter bounds invocation count and cost.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2071", "simple": { "limit": 60, "period": 60 } }],
+  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
+  // guardrail against a runaway invocation or a surprise bill. See the root README.
+  "limits": { "cpu_ms": 100 },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-eventbrite-sync-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
+  // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (MONDAY_API_TOKEN, EVENTBRITE_PRIVATE_TOKEN, EVENTBRITE_WEBHOOK_SECRET).
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-eventbrite-sync-sandbox",
+          // Not yet created. `wrangler d1 create svbc-eventbrite-sync-sandbox` and paste the id.
+          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [{ "queue": "eventbrite-sync-writes-sandbox", "binding": "WRITE_QUEUE" }],
+        "consumers": [
+          {
+            "queue": "eventbrite-sync-writes-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "eventbrite-sync-writes-sandbox-dlq"
+          },
+          {
+            "queue": "eventbrite-sync-writes-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
+          }
+        ]
+      },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2072", "simple": { "limit": 60, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
+  }
+}

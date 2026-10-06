@@ -1,0 +1,33 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "boards": {
+      "donations:live": null,
+      "people-live": null
+    }
+  },
+  "eventbrite": {
+    "apiUrl": "https://www.eventbriteapi.com/v3",
+    "organizationId": null,
+    "actions": ["order.placed", "order.updated", "order.refunded"]
+  },
+  "eventbriteSync": {
+    "orderIdColumn": "REPLACE_WITH_COLUMN_ID",
+    "amountColumn": "REPLACE_WITH_COLUMN_ID",
+    "statusColumn": "REPLACE_WITH_COLUMN_ID",
+    "dateColumn": "REPLACE_WITH_COLUMN_ID",
+    "amountSource": "gross",
+    "skipFreeOrders": true,
+    "statusLabelMap": {
+      "placed": "Received",
+      "refunded": "Refunded"
+    },
+    "itemNameTemplate": "{buyer} - {event}",
+    "thankYouSentColumn": "REPLACE_WITH_COLUMN_ID",
+    "giftTypeColumn": "REPLACE_WITH_COLUMN_ID",
+    "giftTypeValue": "Event Ticket",
+    "fiscalYearColumn": "REPLACE_WITH_COLUMN_ID",
+    "donorEmailColumn": "REPLACE_WITH_COLUMN_ID",
+    "donorLinkColumn": "REPLACE_WITH_COLUMN_ID"
+  }
+}
