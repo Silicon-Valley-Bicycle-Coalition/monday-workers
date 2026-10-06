@@ -100,7 +100,7 @@ describe('createApp', () => {
       const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
       const res = await app.request(`/webhooks/eventbrite/order?secret=${SECRET}`, { method: 'POST', body: 'not json' });
       expect(res.status).toBe(200);
-      expect((await res.json()).ok).toBe(false);
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(false);
     } finally {
       errorSpy.mockRestore();
     }
