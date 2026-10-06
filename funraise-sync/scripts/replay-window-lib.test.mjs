@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectWindowSql, classifyReplayResponse, planRedrive, TEST_TRANSACTION_ID } from './replay-window-lib.mjs';
+import { selectWindowSql, classifyReplayResponse, planRedrive, describeWranglerFailure, TEST_TRANSACTION_ID } from './replay-window-lib.mjs';
 
 describe('selectWindowSql', () => {
   it('selects by time whatever the status, so rows the sandbox already wrote are included', () => {
@@ -77,5 +77,29 @@ describe('planRedrive as used by the replay', () => {
     ]);
     expect(deliveries).toEqual([]);
     expect(unreplayable).toEqual([{ entityId: '9', reason: 'raw_payload purged or unparseable' }]);
+  });
+});
+
+describe('describeWranglerFailure', () => {
+  it("uses wrangler's own JSON error from stdout", () => {
+    const err = Object.assign(new Error('Command failed: npx wrangler d1 execute ...'), {
+      stdout: JSON.stringify({ error: { text: 'set a CLOUDFLARE_API_TOKEN environment variable' } }),
+      stderr: '',
+    });
+    expect(describeWranglerFailure(err)).toBe('set a CLOUDFLARE_API_TOKEN environment variable');
+  });
+
+  it('falls back to the tail of stderr when stdout is not JSON', () => {
+    const lines = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`).join('\n');
+    const err = Object.assign(new Error('Command failed'), { stdout: '', stderr: lines });
+    expect(describeWranglerFailure(err)).toBe(lines.split('\n').slice(-8).join('\n'));
+  });
+
+  it('falls back to the first line of the error message, never the whole command', () => {
+    expect(describeWranglerFailure(new Error('Command failed: npx wrangler ...\nsecond line'))).toBe('Command failed: npx wrangler ...');
+  });
+
+  it('copes with a non-error value', () => {
+    expect(describeWranglerFailure(undefined)).toBe('undefined');
   });
 });
