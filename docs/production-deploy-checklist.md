@@ -66,11 +66,11 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] `monday-backup` — view access to every workspace.
   - [ ] Never a staff member's personal token.
 - [ ] **Mail domain:** `mail.bikesiliconvalley.org` onboarded for Email Sending, DMARC record in
-      place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it. **Check the
-      existing record first:** as of 2026-10-06 `mail.bikesiliconvalley.org` is a proxied CNAME to
-      `ghs.googlehosted.com` (a Google Workspace shortcut that already fails with a 525, since
-      Google presents no certificate for it). A CNAME can't share its name with other records, so
-      decide whether that shortcut goes before onboarding the subdomain.
+      place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it. The name is
+      free: until 2026-10-06 `mail.bikesiliconvalley.org` was a proxied CNAME to
+      `ghs.googlehosted.com` (a Google Workspace shortcut that had been failing with a 525, since
+      Google presented no certificate for it); that record and the four sibling shortcuts
+      (`calendar.`, `docs.`, `groups.`, `sites.`) were deleted that day.
 - [ ] **Third-party accounts ready:**
   - [ ] Funraise production API key.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys
