@@ -19,7 +19,8 @@ It only writes to Monday.
 ## Try it
 
 1. Open
-   [Benevity Uploads (sandbox v2)](https://bikesiliconvalley.monday.com/boards/18431270204).
+   [Benevity Uploads (sandbox v2)](https://bikesiliconvalley.monday.com/boards/18431270204)
+   (still titled v2 on purpose; that is the right board).
    Create a new item named for the report (for example "Benevity Sep 2026") and attach the
    report CSV to its **Report** file column. Use a real report if you have one. A report is
    taken only if its **Period Ending** is **2026-09-16 or later**; an older report is skipped

@@ -1,6 +1,6 @@
 # UAT script: Monday backup
 
-**Status 2026-09-30: nothing to test yet.**
+**Status 2026-10-06: nothing to test yet.**
 
 ## What it will do
 

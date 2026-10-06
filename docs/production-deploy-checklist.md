@@ -11,11 +11,12 @@ private plan's "Cutover Safeguards" section. Forks: substitute your own account,
 boards throughout.
 
 **Scope:** `member-portal`, `funraise-sync`, `donation-rollups`, `mailchimp-sync`,
-`quickbooks-sync`, `monday-backup`, `benevity-import`, `bp-feedback-notify`, and the
-`salesforce-import` CLI. `svbc-calendars` isn't part of the migration and can ship on its own
+`quickbooks-sync`, `monday-backup`, `benevity-import`, `bp-feedback-notify`, `eventbrite-sync`
+(post-cutover, time-boxed by the Oct 22 Summit backfill), and the `salesforce-import` CLI. `svbc-calendars` isn't part of the migration and can ship on its own
 schedule — its checklist is [its README's Deploy section](../svbc-calendars/README.md#deploy).
 
-**Status as of 2026-09-29:** nothing below is done unless marked. `salesforce-import`'s
+**Status as of 2026-10-06:** nothing below is done unless marked (Phase 1 items resolved
+2026-09-29, 2026-10-01 and 2026-10-06 are ticked). `salesforce-import`'s
 `cutoverDateISO` is `2026-10-09`. Phase 3/4 order brought in line with the private cutover
 runbook (`docs/23-cutover-runbook.md`, step 4.0) on 2026-09-30: `donation-rollups` now deploys
 in Phase 3, before `configure` and the go/no-go.
@@ -53,7 +54,9 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       plan, not Workers Paid, so the $5 base is billed and $10 means $5 of real usage overage —
       an early warning, not noise.
 - [ ] Confirm every Worker's `limits.cpu_ms: 100` is still present — it's the guard that matters
-      once Paid's 30 s default applies.
+      once Paid's 30 s default applies. Audited 2026-10-06: present at top level and in
+      `env.sandbox` for every Worker except `monday-backup`, which deliberately runs
+      `cpu_ms: 300000` and `subrequests: 50000` (a full-workspace snapshot) — keep that exception.
 - [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's
       docs: the id "uniquely defines this rate limiting namespace within your Cloudflare
       account", and two bindings with the same id share counters, even across Workers. Every
@@ -94,6 +97,7 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 | `quickbooks-sync` | **create** — placeholder id | `quickbooks-sync-writes` | create D1 + queue; wire id; apply 0001–0006 |
 | `monday-backup` | **create** — placeholder id | — | create D1; wire id; apply 0001–0002 |
 | `benevity-import` | exists | `benevity-import-writes` | create queues; apply 0001–0003 |
+| `eventbrite-sync` | **create** — id is `REPLACE_WITH_D1_ID` (sandbox is also a placeholder) | `eventbrite-sync-writes` | create D1 + queues; wire id; apply 0001 — post-cutover, see Phase 4 step 9 |
 | `bp-feedback-notify` | — | — | nothing |
 
 For each row:
@@ -110,11 +114,12 @@ For each row:
 | `member-portal` | `MONDAY_API_TOKEN`, `LETTER_WEBHOOK_SECRET` |
 | `funraise-sync` | `MONDAY_API_TOKEN`, `FUNRAISE_WEBHOOK_SECRET`, `FUNRAISE_API_KEY` |
 | `donation-rollups` | `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET` |
-| `mailchimp-sync` | `MONDAY_API_TOKEN`, `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET` |
+| `mailchimp-sync` | `MONDAY_API_TOKEN`, `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET`; optional `SLACK_WEBHOOK_URL` (gates its alerts) |
 | `quickbooks-sync` | `MONDAY_API_TOKEN`, `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`, `MONDAY_WEBHOOK_SECRET` |
 | `monday-backup` | `MONDAY_API_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
 | `benevity-import` | `MONDAY_API_TOKEN`, `BENEVITY_WEBHOOK_SECRET` |
-| `bp-feedback-notify` | `WEBHOOK_SECRET` |
+| `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
+| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET` |
 
 Webhook secrets must be **fresh production values**, never the sandbox ones.
 
@@ -208,7 +213,13 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
         `/webhooks/funraise/transaction?secret=` on production. The sandbox loses its Funraise
         feed from here on — expected.
   - [ ] Reconcile Funraise transactions dated between the Salesforce export and this step
-        against the Donations board; nothing else catches gifts in that gap.
+        against the Donations board; nothing else catches gifts in that gap. Replay them with
+        `scripts/replay-window.mjs --since <repoint time>` (README, "Replaying one Worker's
+        deliveries into another").
+  - [ ] Confirm `funraiseSync.oldestActiveFiscalYear` in `config/svbc.json` equals the importer's
+        `cutoffFY` (2026 for this cutover), then query `events` rows with
+        `status = 'needs_review'`: an edited or refunded gift from an archived fiscal year is
+        flagged there and written to no board.
   - [ ] Verify: Funraise Test-button delivery → Donations item with every column right →
         `donation-rollups` rolls it up (the README's three steps); delete the test items.
 - [ ] **3. `member-portal`** — follow [`DEPLOY.md`](../member-portal/DEPLOY.md) Phases 1–5.
@@ -234,11 +245,20 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 - [ ] **8. `quickbooks-sync`** — when Intuit production keys exist: Customers/Invoices/Products
       boards, seed `qb_oauth_tokens` via the OAuth Playground, Intuit webhook
       `/webhooks/quickbooks`, Monday webhook `/webhooks/monday?secret=`. Not a cutover blocker.
+- [ ] **9. `eventbrite-sync`** (post-cutover; the Summit backfill is due after Oct 22 sales) —
+      add the `Eventbrite Order ID` text column and the `Refunded` Status label to the
+      production Donations board (the label is also missing on sandbox v3, and `funraise-sync`
+      shares it); fill `config/svbc.json` (all placeholders today); create D1 + queues; set
+      fresh secrets; deploy; register the Eventbrite webhook; *then* run
+      `scripts/backfill-orders.mjs` (`--dry-run` first). Sequence per
+      [`eventbrite-sync/README.md`](../eventbrite-sync/README.md): deploy → register webhook →
+      backfill, so no order falls in a gap. Provision the sandbox first.
 
 ## Phase 5 — First week
 
-- [ ] Daily: every production DLQ empty (only `donation-rollups`' DLQ has a consumer — the rest
-      need a human to look).
+- [ ] Daily: every production DLQ empty. `donation-rollups`, `funraise-sync`, `mailchimp-sync`
+      (both), `quickbooks-sync` and `eventbrite-sync` have a DLQ consumer; `member-portal` and
+      `benevity-import` do not, so those need a human to look.
 - [ ] Daily: D1 write usage per database, now that the Free cap is gone and nothing stops a loop.
 - [ ] Each cron fired once and did what it should (Workers → Logs, or `wrangler tail`).
 - [ ] Per-Worker CPU time well under the 100 ms cap.

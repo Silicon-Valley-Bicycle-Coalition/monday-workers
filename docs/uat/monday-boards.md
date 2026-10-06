@@ -1,6 +1,6 @@
 # UAT script: the Monday.com boards
 
-**Last checked 2026-09-30** against the `(sandbox v3)` boards in
+**Last checked 2026-10-06** against the `(sandbox v3)` boards in
 [CRM Sandbox (migration rehearsal)](https://bikesiliconvalley.monday.com/workspaces/17141226).
 Item counts are from that day.
 
@@ -60,8 +60,8 @@ members** (the Board Elections export) · **By city** · **Stakeholders** · **B
    exported for Election Runner from here. Is anyone missing who should be able to vote?
 5. Open a member's card. Membership Status, Tier (Member or Lifetime), Member Since, and Member
    Until are on the person. **Stakeholder Type** (Individual Donor, City or Agency Staff,
-   Elected Official, Partner Org Contact) is there too, though mostly empty until the review
-   pass that fills it runs.
+   Elected Official, Partner Org Contact) is there too. Elected Official is pre-filled from
+   Salesforce's Elected flag after the next load; the other types are filled by the review pass.
 6. **Add a person.** Search by name and email first (and check People (Historical) if they're not
    found). Then add a new item with Personal Email, Phone, Address. Nothing else is required;
    totals and history populate as records link to them. Name it "UAT test" so it's easy to find
