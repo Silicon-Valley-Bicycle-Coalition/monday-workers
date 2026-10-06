@@ -2,7 +2,7 @@
 
 **Status:** Decided — one-time custom import, not Monday's live Salesforce sync connector.
 **Priority:** Blocking. This is the central pre-migration engineering deliverable.
-**Owner:** Unassigned — needs an owner and an explicit time budget (see Risks in the plan).
+**Owner:** David (decided 2026-09-30, [svbc-monday-migration#49](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/49)). The time budget for its cutover runs is in the migration runbook (`docs/23`, Pre-weekend readiness and Timeline).
 **Language:** TypeScript, per the plan's standing language policy. **Runtime: decided 2026-08-22 —
 a plain Node.js 20+ CLI, not a Cloudflare Worker.** A one-time, long-running batch job has no use
 for Worker execution limits, and the local filesystem is the right home for extracts, caches, and

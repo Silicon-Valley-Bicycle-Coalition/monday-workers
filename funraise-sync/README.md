@@ -10,7 +10,7 @@
 2026-09-30** — see "Rebuilt boards".
 **Priority:** Blocking-adjacent — feeds ongoing donation data once Salesforce retires; the
 historical side is handled by `salesforce-import`, this Worker takes over going forward.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-09-30, [svbc-monday-migration#49](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/49)).
 **Stack:** Hono + TypeScript + D1 (`npm create cloudflare@latest`).
 
 ## The ask
