@@ -212,6 +212,17 @@ writes to the sandbox boards or suppress them entirely, since the ledger would r
 as already loaded — re-run `extract` fresh, then keep `data/` as the migration audit artifact
 alongside the backup archive.
 
+**Backup-only extracts** (`backupOnly: true` in `src/extract/queries.ts`) are written to
+`data/backup/*.ndjson` by `extract` and never read by `transform` — they exist so the archive is
+complete, not so anything lands on a board. Today: `ContactHistory`, `CampaignMember`, `Lead`,
+every `Task` and `EmailMessage` (the Activities board gets only the recent slice), NPSP payments
+(#23) and `npe4__Relationship__c`, plus — decided 2026-09-30 in the private planning repo's
+issue #53 — the sponsor benefit-fulfillment cluster (`Sponsorship_Level__c`,
+`Sponsorship_Package__c`, `Sponsor_Benefit__c`, `Benefit__c`; ~2,046 rows) and the Bike to Work
+Day logistics objects (`BTWD_Order__c`, `Energizer_Station__c`). Each of those six selects every
+custom field the schema reference lists plus Id, Name, record type and system dates; none is
+near the CLI's 50k ceiling, so none is paginated.
+
 ## Why not the live connector
 
 Monday's native Salesforce sync connector was the original plan. Rejected because: its dedup
