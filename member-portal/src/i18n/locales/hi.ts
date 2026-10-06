@@ -59,6 +59,8 @@ export const hi: Record<TranslationKey, string> = {
   'portal.tableDate': 'तारीख़',
   'portal.tableAmount': 'राशि',
   'portal.tableDescription': 'विवरण',
+  'portal.impactHeading': '{{year}} में आपका योगदान',
+  'portal.impactIntro': '{{year}} में आपके दान से यह संभव हुआ:',
   'portal.donationsTabLabel': 'दान',
   'portal.donationsEmptyMessage': 'आपने अभी तक कोई दान नहीं दिया है।',
   'portal.donateButton': 'दान करें',

@@ -16,7 +16,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Household Primary': 'checkbox', 'Primary': 'checkbox', 'Affiliation Role': 'text', 'Attribution': 'status',
   'Organizational Giving': 'numbers', 'Attributed Giving': 'numbers',
   'Attributed Gift Count': 'numbers', 'Last Attributed Gift': 'date',
-  'Membership Status': 'status', 'Membership Tier': 'status',
+  'Membership Status': 'status', 'Membership Tier': 'status', 'Stakeholder Type': 'status',
   'Member Since': 'date', 'Member Until': 'date',
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
   'Amount': 'numbers', 'Date': 'date', 'Fiscal Year Ending': 'text', 'Status': 'status', 'Gift Type': 'text',
@@ -44,6 +44,10 @@ export const CONNECT_COLUMNS = new Set(['Donor', 'Organization', 'Matched By', '
 // "Working on it / Done / Stuck" set, which nothing ever clears — it just sits in the
 // dropdown forever alongside the real values written later.
 const CONSENT_LABELS = ['Subscribed', 'Unsubscribed', 'Cleaned', 'Not in Mailchimp'];
+// docs/22 §3.1's advocacy classification on People. Declared here (not only in configure's spec)
+// because transform seeds Elected Official from Contact.Elected__c, so load creates the column
+// first; configure/spec.ts imports this list so the two can't drift.
+export const STAKEHOLDER_TYPE_LABELS: string[] = ['Individual Donor', 'City or Agency Staff', 'Elected Official', 'Partner Org Contact'];
 export const STATUS_LABELS: Record<string, string[]> = {
   'Personal Email Consent': CONSENT_LABELS,
   'Household Email Consent': CONSENT_LABELS,
@@ -51,6 +55,7 @@ export const STATUS_LABELS: Record<string, string[]> = {
   'Attribution': ['Auto', 'Staff', 'Needs review', 'None'],
   'Membership Status': ['Active', 'Lapsed'],
   'Membership Tier': ['Lifetime', 'Member'],
+  'Stakeholder Type': STAKEHOLDER_TYPE_LABELS,
   'Activity Type': ['Task'],
   // Events / Event Registrations — shared by the Funraise and Eventbrite transforms (boards.ts).
   // Attendance mirrors the production Event Participation board's Attended/Registered/No Show,

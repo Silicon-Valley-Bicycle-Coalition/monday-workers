@@ -59,6 +59,8 @@ export const ja: Record<TranslationKey, string> = {
   'portal.tableDate': '日付',
   'portal.tableAmount': '金額',
   'portal.tableDescription': '内容',
+  'portal.impactHeading': '{{year}}年のあなたのご支援の成果',
+  'portal.impactIntro': '{{year}}年のご寄付により、次のことが実現しました:',
   'portal.donationsTabLabel': '寄付',
   'portal.donationsEmptyMessage': 'まだ寄付をされていません。',
   'portal.donateButton': '寄付する',

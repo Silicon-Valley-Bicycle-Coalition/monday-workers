@@ -19,6 +19,11 @@ export interface Config {
   // household Account). Gifts pointing at them migrate as Anonymous Donor = checked with no
   // Donor link, and the records themselves are not emitted as People/Organizations items.
   placeholderDonorSfIds?: string[];
+  // Salesforce user the Eventbrite package (eb4sf) writes paid ticket orders as (SVBC: "SVBC
+  // Integration"). A Closed Won Opportunity created by this user is an event ticket order and
+  // migrates as Status Received / Gift Type "Event Ticket" (#43); Closed Won gifts anyone else
+  // created stay Received (Historical). Omit to treat every Closed Won gift as historical.
+  eventbriteIntegrationUserName?: string;
   // Load throughput (#22): batchSize create_items per request, concurrency requests in flight,
   // inlineLinks (relations to already-loaded targets written inside create_item), and the pause
   // before a recovery lookup. Optional — src/load/options.ts has the defaults; CLI flags override.
@@ -44,6 +49,10 @@ export function loadConfig(path = defaultConfigPath()): Config {
   const cfg = JSON.parse(raw) as Config;
   for (const key of REQUIRED) {
     if (!(key in cfg)) throw new Error(`config: missing required key "${key}" in ${path}`);
+  }
+  const ebUser = cfg.eventbriteIntegrationUserName;
+  if (ebUser !== undefined && (typeof ebUser !== 'string' || ebUser.trim() === '')) {
+    throw new Error(`config: "eventbriteIntegrationUserName" must be a non-empty string in ${path}`);
   }
   return cfg;
 }

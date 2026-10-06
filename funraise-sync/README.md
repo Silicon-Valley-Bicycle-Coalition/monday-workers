@@ -5,10 +5,12 @@
 **Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
 `svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
 2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
-`svbc-funraise-sync` is retired until cutover) — see "Deployed and verified".
+`svbc-funraise-sync` is retired until cutover) — see "Deployed and verified". **Remapped to the
+`(sandbox v3)` boards, D1 re-bootstrapped and the gifts held since 2026-09-21 re-driven on
+2026-09-30** — see "Rebuilt boards".
 **Priority:** Blocking-adjacent — feeds ongoing donation data once Salesforce retires; the
 historical side is handled by `salesforce-import`, this Worker takes over going forward.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-09-30, [svbc-monday-migration#49](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/49)).
 **Stack:** Hono + TypeScript + D1 (`npm create cloudflare@latest`).
 
 ## The ask
@@ -133,12 +135,12 @@ contact ID** text column mirroring the existing Salesforce ID column pattern. Re
 `funraise__fr_ID__c` external-ID convention from the Salesforce side rather than inventing a new
 identifier scheme.
 
-In practice the sandbox v2 People board carries that id as a **link** column, `Funraise Profile`
-(`link_mm6j7djp`, `https://platform.funraise.io/supporter/<id>` with the bare id as the link
-text), because `salesforce-import` writes it that way — not as a text column. Verified live
-2026-09-17: `items_page_by_column_values` on that column matches the bare id (`3682773` found its
-person; the display text and the url did not), and on `Personal Email` (`email_mm6j5e9q`) it
-matches the address. So the two lookups in `matchDonor` pass the bare id and the bare address.
+In practice the sandbox People board carries that id as a **link** column, `Funraise Profile`
+(`link_mm79dag0` on sandbox v3, `https://platform.funraise.io/supporter/<id>` with the bare id as
+the link text), because `salesforce-import` writes it that way — not as a text column. Verified
+live 2026-09-17 (on the v2 board; same column shapes on v3): `items_page_by_column_values` on
+that column matches the bare id (`3682773` found its person; the display text and the url did
+not), and on `Personal Email` (`email_mm79m5qa`) it matches the address. So the two lookups in `matchDonor` pass the bare id and the bare address.
 The *create* path writes the shapes those columns require — `{url, text}` with the supporter
 URL for the link column and `{email, text}` for the email column (Monday rejects bare strings on
 both; see `salesforce-import`'s `load/columnValues.ts`) — so a donor this Worker creates looks
@@ -146,38 +148,41 @@ like a migrated one. Funraise sends `supporter.id` as a **number**; it is string
 lookup and the write. `donorExternalIdColumn` must therefore be a link column and
 `donorEmailColumn` an email column; a fork with a plain text id column changes `matchDonor`.
 
-## Monday targets (sandbox v2 ids, verified live 2026-09-17)
+## Monday targets (sandbox v3 ids, read live 2026-09-30)
 
-`config/sandbox.json` carries the real ids for the CRM Sandbox v2 boards — the same boards
-`salesforce-import` loads and `donation-rollups` reads — instead of placeholders. Re-verify
+`config/sandbox.json` carries the real ids for the CRM Sandbox `(sandbox v3)` boards — the same
+boards `salesforce-import` loads and `donation-rollups` reads — instead of placeholders. Re-verify
 against production ids before cutover; the sandbox gets rebuilt. Every id below was read from the
-board schemas via the Monday API on 2026-09-17.
+board schemas via the Monday API, by column title, on 2026-09-30. (The v2 boards these replaced
+were deleted when v3 went up on 2026-09-20; People moved on 2026-09-22, the rest on 2026-09-30.
+A rebuild changes every column id, not just the board ids, and strands this Worker's D1 pointers
+too — see "Rebuilt boards: remap, re-bootstrap, re-verify".)
 
 | Config key | Board / column | Id | Notes |
 |---|---|---|---|
-| `monday.boards["donations:live"]` | Donations (sandbox v2) | `18428131791` | webhook consumer's only target |
-| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v2) | `18428131768` | subscriptions poller's target |
-| `monday.boards["people-live"]` | People (sandbox v2) | `18428131737` | People (Historical) is not a match target |
-| `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm6jkxrs` | Funraise nests amount and status under `transaction` |
-| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm6jqdhn` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
-| `columnMap.donationDate` | Donations → Date (date) | `date_mm6jthpq` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
-| `entityIdColumn` | Donations → Funraise ID (link) | `link_mm6jhcj8` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
-| `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm78nf5s` | |
-| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm6j66w3` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
-| `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm70czyd` | |
-| `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm6jbjtd` | set on every write of an installment |
-| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm6j7djp` | lookup by bare id; create writes `{url, text}` |
-| `donorEmailColumn` | People → Personal Email (email) | `email_mm6j5e9q` | lookup by address; create writes `{email, text}` |
-| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm6jf5jb` | |
-| `subscriptionsPoll.columns.funraiseId` | Recurring Gifts → Funraise ID (link) | `link_mm6jryz2` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
-| `subscriptionsPoll.columns.donor` | Recurring Gifts → Donor (connect) | `board_relation_mm6j443g` | |
-| `subscriptionsPoll.columns.installmentAmount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm6jg878` | per-installment, per docs/03 |
-| `subscriptionsPoll.columns.annualizedValue` | Recurring Gifts → Annualized Value (numbers) | `numeric_mm6jt3sp` | computed: amount × `frequencyMultiplier[frequency]` (Monthly 12, Quarterly 4, Yearly 1) |
-| `subscriptionsPoll.columns.frequency` | Recurring Gifts → Frequency (status) | `color_mm6jc24s` | labels: Monthly / Yearly / Quarterly; a frequency missing from `frequencyMultiplier` leaves this and Annualized Value unset, with a warning |
-| `subscriptionsPoll.columns.status` | Recurring Gifts → Status (status) | `color_mm6j1tk1` | labels: Redacted / Active / Cancelled / Failed; via `statusLabelMap`, unmapped → unset with a warning |
-| `subscriptionsPoll.columns.nextPayment` | Recurring Gifts → Next Payment (date) | `date_mm6j20p6` | epoch ms in; cleared when the subscription has none (cancelled) |
-| `subscriptionsPoll.columns.designation` | Recurring Gifts → Designation (text) | `text_mm6jvmje` | from the subscription's `form.name` |
-| `subscriptionsPoll.columns.companyMatch` / `.matchEmployer` | Recurring Gifts → Company Match (checkbox) / Match Employer (text) | `boolean_mm6jbmvy` / `text_mm6jma3d` | from `companyMatch.companyName` |
+| `monday.boards["donations:live"]` | Donations (sandbox v3) | `18431577310` | webhook consumer's only target |
+| `monday.boards["recurring-gifts"]` | Recurring Gifts (sandbox v3) | `18431577263` | subscriptions poller's target |
+| `monday.boards["people-live"]` | People (sandbox v3) | `18431577220` | People (Historical) is not a match target |
+| `columnMap["transaction.amount"]` | Donations → Amount (numbers) | `numeric_mm79nz8b` | Funraise nests amount and status under `transaction` |
+| `columnMap["transaction.status"]` | Donations → Status (status) | `color_mm79q3b3` | labels: Received / Received (Historical) / Failed / Pending, plus **Refunded — not yet on the board, staff must add it** (#25); `Complete → Received`, `Refunded → Refunded`, `Failed → Failed` via `statusValueMap` |
+| `columnMap.donationDate` | Donations → Date (date) | `date_mm7938jk` | epoch ms in, `{ date: 'YYYY-MM-DD' }` out — see "Fiscal Year Ending" |
+| `entityIdColumn` | Donations → Funraise ID (link) | `link_mm79jtzp` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
+| `thankYouSentColumn` | Donations → Thank You Sent (checkbox) | `boolean_mm7ddybs` | |
+| `giftTypeColumn` | Donations → Gift Type (text) | `text_mm79fzs3` | `giftTypeValue` "Donation"; `eventGiftTypeValue` "Event Ticket" when the transaction carries `fundraisingEvent` — see "Gift Type" |
+| `fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm7973ah` | |
+| `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm79pphw` | set on every write of an installment |
+| `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm79dag0` | lookup by bare id; create writes `{url, text}` |
+| `donorEmailColumn` | People → Personal Email (email) | `email_mm79m5qa` | lookup by address; create writes `{email, text}` |
+| `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm795r2d` | connects to People, People (Historical) and Organizations |
+| `subscriptionsPoll.columns.funraiseId` | Recurring Gifts → Funraise ID (link) | `link_mm79bx08` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
+| `subscriptionsPoll.columns.donor` | Recurring Gifts → Donor (connect) | `board_relation_mm792b0c` | |
+| `subscriptionsPoll.columns.installmentAmount` | Recurring Gifts → Installment Amount (numbers) | `numeric_mm79vnnj` | per-installment, per docs/03 |
+| `subscriptionsPoll.columns.annualizedValue` | Recurring Gifts → Annualized Value (numbers) | `numeric_mm79zpt1` | computed: amount × `frequencyMultiplier[frequency]` (Monthly 12, Quarterly 4, Yearly 1) |
+| `subscriptionsPoll.columns.frequency` | Recurring Gifts → Frequency (status) | `color_mm793249` | labels: Monthly / Yearly / Quarterly; a frequency missing from `frequencyMultiplier` leaves this and Annualized Value unset, with a warning |
+| `subscriptionsPoll.columns.status` | Recurring Gifts → Status (status) | `color_mm79tvkt` | labels: Redacted / Active / Cancelled / Failed; via `statusLabelMap`, unmapped → unset with a warning |
+| `subscriptionsPoll.columns.nextPayment` | Recurring Gifts → Next Payment (date) | `date_mm79de3c` | epoch ms in; cleared when the subscription has none (cancelled) |
+| `subscriptionsPoll.columns.designation` | Recurring Gifts → Designation (text) | `text_mm79gmge` | from the subscription's `form.name` |
+| `subscriptionsPoll.columns.companyMatch` / `.matchEmployer` | Recurring Gifts → Company Match (checkbox) / Match Employer (text) | `boolean_mm79pqy4` / `text_mm79rpky` | from `companyMatch.companyName` |
 
 One id is deliberately absent:
 
@@ -251,10 +256,10 @@ write only, including adoption of an orphaned item, never a later update that co
 staff correction; a missing or unparseable `donationDate` logs a warning and leaves the cell
 blank, and leaves the Date column out too rather than writing a raw number (rollups then derive
 from whatever Date holds). Set `fiscalYearColumn` to `null`
-for a board without the column. `config/sandbox.json` points it at `text_mm70czyd`, the text column
-titled "Fiscal Year Ending" on the sandbox v2 Donations board (`18428131791`, verified live
-2026-09-17) — the same one `donation-rollups` reads — not the older numbers column titled "Fiscal
-Year" (`numeric_mm6jm0g4`) that `salesforce-import` no longer stamps. The date is the **Pacific**
+for a board without the column. `config/sandbox.json` points it at `text_mm7973ah`, the text column
+titled "Fiscal Year Ending" on the Donations (sandbox v3) board (`18431577310`, read live
+2026-09-30) — the same one `donation-rollups` reads. (The v2 board also had an older numbers
+column titled "Fiscal Year" that `salesforce-import` no longer stamps; v3 doesn't.) The date is the **Pacific**
 calendar day of `donationDate` (#25): it used to be the UTC day, which put a gift made between
 ~5 pm and midnight Pacific on June 30 (or Dec 31) into the next fiscal (or calendar) year on both
 columns, disagreeing with the local-date CloseDates `salesforce-import` migrated. Recurring
@@ -359,6 +364,67 @@ payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are l
 manual recovery from Funraise. To find dead gifts directly:
 `select entity_id, error, received_at from events where error like 'dead-lettered%'`.
 
+## Resetting for new board ids
+
+When the boards this Worker writes are deleted and rebuilt (a cutover retry — private runbook,
+Rollback step 8 — or a sandbox rebuild), every Monday item id in D1 is dead, and the Worker
+goes on using them: a Funraise edit to a known gift updates an item that no longer exists and
+dead-letters, an installment is written with a link to a Recurring Gifts item that no longer
+exists, and the poll skips each subscription as already written. Reset D1 before Funraise's
+webhook points at the Worker on the new boards. This is the procedure; "Rebuilt boards: remap,
+re-bootstrap, re-verify" below is the run that proved it on the sandbox (2026-09-30).
+
+**First:** delete or archive the old boards. The hourly poll keeps running on whatever config is
+deployed: while the old boards exist and the old config is live, it starts re-adopting their
+items into the emptied ledger; once they're gone its Monday calls fail and it writes nothing.
+
+```sh
+# 1. Export, to somewhere outside the repo (it holds donor payloads). Besides being the backup,
+#    it is the record of the gifts received against the old boards. The database is unavailable
+#    while the export runs (seconds). `wrangler d1 time-travel info` gives a restore point too.
+npx wrangler d1 export svbc-funraise-sync --remote --output <dir>/svbc-funraise-sync.sql
+
+# 2. The subscriptions ledger, always. -y answers any wrangler confirmation prompt; unanswered
+#    without a TTY, one cancels silently with exit 0.
+npx wrangler d1 execute svbc-funraise-sync --remote -y --command \
+  "DELETE FROM subscriptions; DELETE FROM subscription_claims; DELETE FROM poll_cursors;"
+
+# 3. events: pick 3a or 3b (see the table).
+# 3a. Keep the gifts and hand them to the redrive.
+npx wrangler d1 execute svbc-funraise-sync --remote -y --command \
+  "DELETE FROM events WHERE entity_id = '-1'; UPDATE events SET matched_donor_item_id = NULL WHERE status = 'failed'; UPDATE events SET status = 'failed', monday_item_id = NULL, matched_donor_item_id = NULL, written_at = NULL, error = 'boards rebuilt: was written to the old Donations board; re-drive' WHERE status = 'written';"
+# 3b. Or forget them.
+npx wrangler d1 execute svbc-funraise-sync --remote -y --command "DELETE FROM events;"
+
+# 4. Check: the ledger tables are 0, and no events row still names an item. Run it again just
+#    before deploying the new config, and repeat step 2 if the poll has written anything back.
+npx wrangler d1 execute svbc-funraise-sync --remote --command \
+  "SELECT 'subscriptions' AS t, COUNT(*) AS n FROM subscriptions UNION ALL SELECT 'subscription_claims', COUNT(*) FROM subscription_claims UNION ALL SELECT 'poll_cursors', COUNT(*) FROM poll_cursors UNION ALL SELECT 'events with an item id', COUNT(*) FROM events WHERE monday_item_id IS NOT NULL OR matched_donor_item_id IS NOT NULL"
+```
+
+Sandbox: `svbc-funraise-sync-sandbox`, with `--env sandbox` on every command.
+
+| Table | Reset | Why |
+|---|---|---|
+| `subscriptions` | cleared | Recurring Gifts and People item ids on the old boards. |
+| `subscription_claims` | cleared | No item ids, only in-flight create claims; they shouldn't outlive the ledger they guard. |
+| `poll_cursors` | cleared | Not ids, but a kept cursor would leave every subscription behind it out of the new ledger until it next changed. Cleared, the walk starts from the beginning. |
+| `events` | **3a: kept, pointers cleared, marked `failed`** | `monday_item_id` and `matched_donor_item_id` are Donations and People items on the old boards. Use 3a when gifts this Worker received against the old boards may be missing from the new ones: the redrive sends each stored payload through the normal path, where adopt-before-create updates a gift the new board already carries and creates one it doesn't. The first statement drops Funraise's Test-button row (transaction id `-1`) so the redrive doesn't recreate it. A row whose payload the retention purge has emptied can't be replayed; the script lists those. |
+| | **3b: cleared** | Use 3b when nothing in the table should reach the new boards: the production-named D1 before its first deploy (it holds sandbox rows — see "Rebuilt boards", Cutover), or a cutover retry whose Funraise handoff covers the failed window another way. With no row, the next delivery for a gift is matched to a donor again and adopted on the new board by its Funraise ID (or created). |
+
+`d1_migrations` is untouched, so nothing is re-applied. After 3b, a message still in the write
+queue finds no `events` row, retries, and is acked by the dead-letter consumer without writing
+anything.
+
+**Then**, in this order: deploy with the new ids; run the bootstrap walk locally ("Bootstrap
+walk, run locally" below; expect `adopted ≈ board count`, and `select count(*) from
+subscriptions` equal to the board); after 3a, run `scripts/redrive-failed.mjs` — only after the
+walk, so each installment finds its Recurring Gift in the ledger; then repoint Funraise's webhook.
+
+Tested: step 2 and 3a ran on the deployed sandbox D1 on 2026-09-30 (the "Rebuilt boards" run,
+without the Test-button delete; 53 gifts re-driven and created). 3b and the Test-button delete
+ran on local D1 copies only.
+
 ## Deployed and verified (CRM Sandbox, 2026-09-18)
 
 **The running deployment is `svbc-funraise-sync-sandbox`** (`npm run deploy:sandbox`; D1
@@ -403,6 +469,94 @@ this Worker's D1, and the gift's rows removed from `donation-rollups`' D1 (`pend
 Re-verify the same three steps after the sandbox rebuild and again against production ids at
 cutover. Since the sandbox environment split (below), every sandbox id lives in
 `config/sandbox.json`; `config/svbc.json` is production and holds placeholders until cutover.
+
+## Rebuilt boards: remap, re-bootstrap, re-verify (sandbox v3, 2026-09-30)
+
+The `(sandbox v2)` boards were deleted when the `(sandbox v3)` boards went up on 2026-09-20.
+This Worker kept pointing at them until 2026-09-30 (People alone was moved on 2026-09-22), and in
+that window every Funraise delivery failed its Monday write with `User unauthorized to perform
+action` (Monday's answer for a deleted board), retried, and dead-lettered: 41 real gifts. The
+hourly subscriptions poll stopped advancing on 2026-09-21. Nothing was lost: the route had
+stored every payload in D1.
+
+**A rebuild strands more than the config.** Four things point at the old boards, and all four
+have to move:
+
+1. `config/sandbox.json`: the board ids *and every column id* (a rebuilt board gets new ones).
+   Read them from the live schemas by column title; see "Monday targets".
+2. D1 `subscriptions`: each ledger row holds the Recurring Gifts item it wrote. A ledger hit
+   updates that item in place and hands its id to the Donations write as the Recurring Gift
+   link, so with stale rows the poll fails on its first changed subscription and every recurring
+   installment fails with it.
+3. D1 `poll_cursors`: with the ledger gone the walk has to restart from zero.
+4. D1 `events`: `matched_donor_item_id` (a People item) and `monday_item_id` (a Donations item).
+   A stored donor match is reused without a lookup, and a row with a Monday item is updated in
+   place rather than adopted or created.
+
+**What was run, in this order** (each step is safe to repeat):
+
+1. Config remapped, tests and typecheck green, `npm run deploy:sandbox`.
+2. Restore point noted: `npx wrangler d1 time-travel info svbc-funraise-sync-sandbox --env
+   sandbox` (bookmark `0000012e-00000000-000050f7-ade33e83d0c27e31bab45393296a5cff`, good for
+   30 days).
+3. Stale pointers cleared with `wrangler d1 execute … --remote`:
+
+   ```sql
+   DELETE FROM subscriptions;
+   DELETE FROM subscription_claims;
+   DELETE FROM poll_cursors;
+   UPDATE events SET matched_donor_item_id = NULL WHERE status = 'failed';
+   -- Gifts written to the old board: hand them to the redrive as well.
+   UPDATE events
+      SET status = 'failed', monday_item_id = NULL, matched_donor_item_id = NULL, written_at = NULL,
+          error = 'sandbox v3 remap 2026-09-30: was written to the deleted Donations (sandbox v2) board; re-drive'
+    WHERE status = 'written';
+   ```
+
+   That removed 1,175 ledger rows and 4 cursors, and left 53 events to re-drive: the 41 failures
+   plus 12 gifts written to the v2 board between 2026-09-19 and its deletion.
+4. The bootstrap walk, run locally exactly as in "Recurring gifts and registrations" below
+   (`wrangler dev --remote --test-scheduled --env sandbox`, one `__scheduled` request per page,
+   secrets in a temporary `.dev.vars`): 167 invocations in 47 minutes, every one HTTP 200. The
+   deployed hourly cron came due at 01:00 UTC partway through, and nothing was duplicated.
+   Result: all 604 importer items adopted and 572 created, ledger 1,176 =
+   board 1,176 with no item in the ledger twice (543 Active, 61 Cancelled, 4 Failed, 568
+   Redacted: one new Active subscription since 2026-09-19), every row with a Donor; cursor
+   `1790752061709`, no tie walk pending. People (sandbox v3) grew from 8,044 to 8,046 items over the walk,
+   consistent with two supporters the importer never carried. The poll's log line did not
+   appear in this run's `wrangler dev --remote` output, so progress was read from D1 between runs
+   (`select count(*) from subscriptions` and the two cursors); the walk is done when two runs in
+   a row leave both cursors unchanged with `subscriptions:id` at `-1`.
+5. The redrive, only after the walk so each installment found its Recurring Gift in the ledger:
+   `node scripts/redrive-failed.mjs --env sandbox --worker-url https://svbc-funraise-sync-sandbox.svbc-account.workers.dev`.
+   All 53 were re-enqueued and written within two and a half minutes. None was found on the v3 board
+   by its Funraise ID, so all 53 were created: Donations (sandbox v3) went from
+   3,828 to 3,881 items, each with Amount, Date, Donor link, Funraise ID, Fiscal Year Ending
+   2027, Gift Type Donation and Thank You Sent, 38 of them installments linked to their
+   Recurring Gift. Statuses as Funraise reported them: 42 Received, 10 Failed, 1 Pending.
+   `donation-rollups` has its webhooks on this board and picks the creates up on its own.
+6. Proof on the deployed Worker, both paths. **Webhook:** the next real Funraise gift
+   (transaction `14316775`, a one-time $10) arrived at 01:58:39 UTC and was a Donations
+   (sandbox v3) item 9 s later: Amount 10, Status Received, Date 2026-09-30 (the Pacific day),
+   Fiscal Year Ending 2027, Gift Type Donation, Thank You Sent, Funraise ID, Donor linked to the
+   existing People item, Recurring Gift empty as it should be for a one-time gift. It is a real
+   gift and stays. **Poll:** the 02:00 UTC cron was the first deployed run against the rebuilt
+   ledger; it read nothing new and left the cursor where the walk put it. Funraise's own
+   Test-button delivery (verification 3 above) has **not** been repeated on v3: it needs a
+   Funraise login. It exercises the same route and consumer the real gift just did.
+7. Redeployed once more after rebasing onto `main` (the shared transport's API-Version pin,
+   #39), so the running sandbox Worker is `main` plus this remap.
+
+**Still true on v3:** `Refunded` is not a label on the Donations Status column (see "The Funraise
+delivery, as actually sent"), so a refund write still dead-letters until staff add it.
+
+**Cutover: the production-named D1 carries sandbox pointers.** `svbc-funraise-sync`, kept for the
+production deploy, still holds what was copied out of it on 2026-09-19: 1,175 ledger rows, three
+poll cursors and six events, every one pointing at a deleted sandbox v2 item. Run step 3 against
+it (or recreate it from the migrations) **before** the production Worker's first deploy, then do
+the walk against the production Recurring Gifts board. Same lesson `donation-rollups` wrote up in
+`docs/22` §5 of the private planning repo: bootstrap the D1 for the new board ids before
+anything writes.
 
 ## Sandbox environment — inbound only, no outbound data
 
@@ -539,6 +693,9 @@ migration `0004`, `src/scheduled.ts`). How it runs:
   and fixed on the way: Funraise 500s on an `updtime` filter below ~2001 (cursor floored), a
   bulk import gave hundreds of rows one `updtime` (page index persisted across runs), and
   `Redacted` was not in `statusLabelMap` (mapped).
+* **Redone 2026-09-30 on Recurring Gifts (sandbox v3)** after the board rebuild left the ledger
+  pointing at deleted items: ledger and cursors cleared, 167 local invocations, 604 adopted and
+  572 created, ledger 1,176 = board 1,176. See "Rebuilt boards: remap, re-bootstrap, re-verify".
 
 ## Open
 

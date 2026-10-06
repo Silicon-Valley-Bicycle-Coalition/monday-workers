@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { BOARD_SPECS, PLUMBING, DASHBOARD_SPECS } from './spec.js';
+import { STATUS_LABELS } from '../load/boards.js';
+
+describe('BOARD_SPECS columns', () => {
+  it('Stakeholder Type carries exactly the labels load seeds, so whichever step creates it agrees (#46)', () => {
+    const col = BOARD_SPECS['people-live']!.columns!.find((c) => c.title === 'Stakeholder Type')!;
+    expect(col.type).toBe('status');
+    expect(col.labels).toEqual(STATUS_LABELS['Stakeholder Type']);
+    expect(col.labels).toContain('Elected Official');
+  });
+});
 
 describe('BOARD_SPECS views', () => {
   const all = Object.entries(BOARD_SPECS).flatMap(([board, s]) => (s.views ?? []).map((v) => ({ board, v })));

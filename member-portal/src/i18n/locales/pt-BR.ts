@@ -59,6 +59,8 @@ export const ptBR: Record<TranslationKey, string> = {
   'portal.tableDate': 'Data',
   'portal.tableAmount': 'Valor',
   'portal.tableDescription': 'Descrição',
+  'portal.impactHeading': 'Seu impacto em {{year}}',
+  'portal.impactIntro': 'Suas doações em {{year}} ajudaram a tornar isto possível:',
   'portal.donationsTabLabel': 'Doações',
   'portal.donationsEmptyMessage': 'Você ainda não fez nenhuma doação.',
   'portal.donateButton': 'Doar',

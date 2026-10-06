@@ -16,7 +16,9 @@ boards throughout.
 schedule — its checklist is [its README's Deploy section](../svbc-calendars/README.md#deploy).
 
 **Status as of 2026-09-29:** nothing below is done unless marked. `salesforce-import`'s
-`cutoverDateISO` is `2026-10-09`.
+`cutoverDateISO` is `2026-10-09`. Phase 3/4 order brought in line with the private cutover
+runbook (`docs/23-cutover-runbook.md`, step 4.0) on 2026-09-30: `donation-rollups` now deploys
+in Phase 3, before `configure` and the go/no-go.
 
 ---
 
@@ -122,18 +124,55 @@ Webhook secrets must be **fresh production values**, never the sandbox ones.
       keep its production connection off — otherwise the next merge to `main` deploys it with
       null board ids.
 
-## Phase 3 — `salesforce-import` production load
+## Phase 3 — `salesforce-import` production load, `donation-rollups`, go/no-go
 
 Everything downstream needs the board ids this run creates.
+
+`donation-rollups` deploys here, **before `configure` and before the go/no-go**, not in Phase 4
+(private runbook step 4.0; the order comes from the private plan's `docs/22` §5). Donor Level,
+the four chartable gift columns and the Annual Giving Summary don't exist or are empty until it
+has run, and both `configure`'s dashboards and the go/no-go sample review look at them.
 
 - [ ] Salesforce data freeze started (private plan, Cutover Safeguards).
 - [ ] Fresh Mailchimp consent export (`salesforce-import/README.md`).
 - [ ] `config/svbc.json` switched to the production workspace and suffix.
-- [ ] `extract` → `geocode` → `transform` → `load --dry-run` → `load` → `validate --live`.
+- [ ] `extract` → `geocode` → `transform` → `load --dry-run` → `load`.
 - [ ] **Keep the run's `data/` directory** (ledger, payloads) — `donation-rollups`' bootstrap
       reads it, and it's gitignored, so `git worktree remove` silently destroys it.
-- [ ] Go/no-go against the rollback threshold. No-go = don't cut over; Salesforce is untouched.
-- [ ] Record every production board id, column id, and workspace id in one place for Phase 4.
+- [ ] Record every production board id, column id, and workspace id in one place
+      (`data/load/boards.json` has the boards) for the next item and Phase 4.
+- [ ] **`donation-rollups`**, from `donation-rollups/`, in this order:
+  - [ ] Config and deploy (Phase 4's per-Worker steps 1–3): Donations board id, owner boards,
+        custodian workspace/alert ids.
+  - [ ] Provision columns and the summary board: `scripts/setup-owner-columns.mjs` (the
+        rollup set, including Donor Level on People and Organizations),
+        `setup-affiliation-columns.mjs`, `setup-annual-summary-board.mjs`, and
+        `scripts/setup-classification-columns.mjs <donationsBoardId>` (Funding Stream, Gift
+        Size, Fiscal Quarter, Gift Fiscal Year on Donations). Each prints a config block;
+        paste them in and repeat Phase 4's steps 2–3 so the deployed config has the new ids.
+  - [ ] Bootstrap D1 from the load's artifacts: `bootstrap-links-from-artifacts.mjs` and
+        `bootstrap-gifts-from-artifacts.mjs`, then apply each SQL file with
+        `npx wrangler d1 execute svbc-donation-rollups --remote --file <file> -y`. Keep the
+        `-y`: without a TTY, wrangler's prompt cancels silently with exit 0.
+  - [ ] If the D1 carries Annual Giving Summary rows from an earlier board set (it was kept
+        through the sandbox move; also true on any cutover retry), clear the stale pointers
+        right after the bootstrap, or `archive` fails with "Item not found in board":
+        `npx wrangler d1 execute svbc-donation-rollups --remote -y --command "UPDATE annual_summaries SET monday_item_id = NULL"`
+  - [ ] Monday webhooks via `scripts/setup-webhooks.mjs` →
+        `/webhooks/monday/donations?secret=`. Subscribed **before** the first sweep.
+  - [ ] Custodian passes, in this order: **`classify`**
+        (`POST /custodian/run/classify?secret=…`, repeated until `detail.remaining` is `0` —
+        at most 300 gifts a run) → **`sweep`** (one recompute per ledger owner; fills Donor
+        Level) → **`archive`** (restates the Annual Giving Summary). Budget 8–12 hours;
+        unmeasured at production scale.
+  - [ ] Verify: `GET /custodian/status` clean, recompute queue drained with an empty DLQ, a
+        spot-checked donor shows Donor Level and Lifetime Giving.
+- [ ] `configure --dry-run`, then `configure` — only after the `donation-rollups` item is
+      done; its dashboards chart the columns that item creates and fills. Then the manual
+      board configuration (private plan, `docs/22` §5).
+- [ ] `validate`, then `validate --live`.
+- [ ] Go/no-go against the rollback threshold. No-go = don't cut over; Salesforce is untouched,
+      but `donation-rollups` is already live against the new boards — see [Rollback](#rollback).
 
 ## Phase 4 — Production config and deploy, in dependency order
 
@@ -147,21 +186,19 @@ For each Worker:
 4. Register its inbound feeds.
 5. Run its verification before starting the next Worker.
 
-Order matters: `donation-rollups` must be listening before anything writes Donations.
+Order matters: `donation-rollups` must be listening before anything writes Donations, which is
+why it was already deployed, bootstrapped and subscribed in Phase 3.
 
-- [ ] **1. `donation-rollups`**
-  - [ ] Config: Donations board id, owner boards, custodian workspace/alert/annual-summary ids,
-        affiliations.
-  - [ ] Owner/affiliation columns and annual summary board (`scripts/setup-owner-columns`,
-        `setup-affiliation-columns`, `setup-annual-summary-board`).
-  - [ ] Bootstrap links and gifts from the Phase 3 artifacts (`bootstrap-links-from-artifacts`,
-        `bootstrap-gifts-from-artifacts`).
-  - [ ] Monday webhooks via `scripts/setup-webhooks` → `/webhooks/monday/donations?secret=`.
-  - [ ] Verify: edit one test gift, see the owner's rollups recompute; `/custodian/status` clean.
+- [ ] **1. `donation-rollups`** — deployed in Phase 3. Here, only the live check: edit one test
+      gift, see the owner's rollups recompute; `/custodian/status` clean.
 - [ ] **2. `funraise-sync`**
   - [ ] Config: Donations, Recurring Gifts, People boards + all `subscriptionsPoll.columns`,
         and a real `entityIdColumn` (adopt-before-create; the split test requires it, and
         without it the Worker duplicates migrated gifts).
+  - [ ] **Reset the production-named D1 before the first deploy.** `svbc-funraise-sync` still
+        holds what was copied out of it on 2026-09-19 — 1,175 ledger rows, cursors and six
+        events, all pointing at deleted sandbox items. README, "Resetting for new board ids",
+        step 2 and 3b.
   - [ ] Bootstrap the subscriptions poller locally *before* the deployed cron can fire
         (`funraise-sync/README.md`, `wrangler dev --remote --test-scheduled`).
   - [ ] **Repoint Funraise's single webhook** from the `-sandbox` Worker to
@@ -225,5 +262,12 @@ Decide these before deploying, not during.
   disable the Funraise/Mailchimp/Intuit webhook, or remove `member-portal`'s custom domain.
   Queued messages sit (and eventually DLQ) instead of writing.
 - **After the fix:** replay the DLQ, then reconcile anything that arrived while inbound was off.
+- **Boards rebuilt (a cutover retry):** every deployed Worker's D1 still holds the old boards'
+  item ids — reset each before redeploying it, per its README's "Resetting for new board ids"
+  ([`funraise-sync`](../funraise-sync/README.md#resetting-for-new-board-ids),
+  [`mailchimp-sync`](../mailchimp-sync/README.md#resetting-for-new-board-ids),
+  [`benevity-import`](../benevity-import/README.md#resetting-for-new-board-ids),
+  [`member-portal`](../member-portal/README.md#resetting-for-new-board-ids)); for
+  `donation-rollups`, re-run its Phase 3 item, `annual_summaries` step included.
 - Whole-migration rollback (before Salesforce retires) is governed by the private plan's
   threshold, not by any one Worker.

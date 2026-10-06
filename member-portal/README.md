@@ -2,7 +2,7 @@
 
 **Staff UAT script:** [`docs/uat/member-portal.md`](../docs/uat/member-portal.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Not yet deployed to production — no version has been live. Code-complete through v7
+**Status:** Not yet deployed to production — no version has been live. Code-complete through v8
 (the sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
 live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
@@ -651,6 +651,98 @@ unaffected — they remain full-history stewardship rollups for staff.
 *exist*. Copy them from this repo's `config/svbc.json` — `null` for both keeps the previous
 always-on, no-floor behavior... except that `historyVisibleFromISO: null` hides the tab, so a
 fork that wants history visible immediately should set it to any past date.
+
+## v8 — Impact summary
+
+From the IT Requests board Feature Request "Donor portal: impact summary" (item 12893527105,
+filed from the 2026-08-24 v2 brainstorm): tell a donor what their giving supported. Each donor's
+portal section gains a "Your 2026 impact" block above the tabs — a short list of org-wide
+statements for one calendar year, shown only to a donor who has a countable gift dated in that
+year, so "your giving in 2026" is always true of the person reading it.
+
+The statements are static config, not Monday data — the `impact` stanza:
+
+```json
+"impact": {
+  "statementsByYear": {
+    "2026": {
+      "en": ["Taught bike safety to 4,200 students", "Won 12 miles of protected bike lanes"],
+      "es": ["Enseñamos seguridad ciclista a 4,200 estudiantes"]
+    }
+  }
+}
+```
+
+* **Which year a donor sees:** the most recent year that has statements *and* holds one of that
+  donor's gifts (`src/impact/impact.ts`). One year only. A donor who gave in 2026 keeps seeing
+  the 2026 statements through 2027 until 2027's statements are added *and* they have a 2027
+  gift; a donor whose only gifts fall in years without statements sees nothing. A household
+  login checks each donor section against that donor's own gifts.
+* **Locales:** `en` is required for every year. Any other supported locale is optional and
+  falls back to the English list as a whole — a year's list is never mixed across languages.
+* **Validation at startup:** year keys must be four digits, locale keys must be supported
+  locales, and each list must be non-empty with no blank strings.
+
+**Gated two ways, both already in place.** An empty `statementsByYear` (`{}`, how
+`config/svbc.json` ships) renders nothing. And the block reads the gifts already loaded for the
+Donations tab, so it follows v7's date gate: nothing shows before
+`donations.historyVisibleFromISO` (SVBC: 2027-01-01), and only gifts on or after
+`historyStartISO` count. For SVBC the first statements anyone can see are 2026's, in January
+2027. It costs no extra Monday read, no D1 migration, no queue and no secret.
+
+Operator setup for v8: once staff have written a year's statements (after the year closes), add
+them under that year in `config/svbc.json`, commit, and deploy. `config/sandbox.json` and
+`config/local.json` carry statements marked "[Sample for testing]" so the block can be seen
+before any real ones exist.
+
+**Upgrading an existing deployment (forks included):** config validation requires the `impact`
+stanza to *exist*. Copy `"impact": { "statementsByYear": {} }` from this repo's
+`config/svbc.json` before deploying v8 code over an older config; the feature then stays off.
+
+## Resetting for new board ids
+
+When the People board is deleted and rebuilt (a cutover retry — private runbook, Rollback step 8
+— or a sandbox rebuild), every `donor_item_id` in D1 names an item that no longer exists. Reset
+D1 before deploying against the new boards, with the custom domain removed (or the Worker
+otherwise unreachable) and the letters automation off. The Change Requests and Letter Settings
+boards are staff-created and may survive; D1 holds no ids for either.
+
+```sh
+# 1. Export, to somewhere outside the repo — change requests hold donors' contact details. The
+#    database is unavailable while the export runs (seconds).
+npx wrangler d1 export svbc-member-portal --remote --output <dir>/svbc-member-portal.sql
+
+# 2. Change requests donors submitted that never reached the board. Hand any real ones to staff
+#    (keep the output out of tickets and chat); they can't be replayed after the reset.
+npx wrangler d1 execute svbc-member-portal --remote --command \
+  "SELECT id, donor_name, field, old_value, new_value, created_at FROM change_requests WHERE status = 'queued' ORDER BY created_at"
+
+# 3. Reset. -y answers any wrangler confirmation prompt; unanswered without a TTY, one cancels
+#    silently with exit 0.
+npx wrangler d1 execute svbc-member-portal --remote -y --command \
+  "DELETE FROM sessions; DELETE FROM magic_link_tokens; DELETE FROM card_tokens; DELETE FROM change_requests;"
+
+# 4. Check: 0 for each cleared table, and what letter_sends still holds.
+npx wrangler d1 execute svbc-member-portal --remote --command \
+  "SELECT 'sessions' AS t, COUNT(*) AS n FROM sessions UNION ALL SELECT 'magic_link_tokens', COUNT(*) FROM magic_link_tokens UNION ALL SELECT 'card_tokens', COUNT(*) FROM card_tokens UNION ALL SELECT 'change_requests', COUNT(*) FROM change_requests"
+npx wrangler d1 execute svbc-member-portal --remote --command \
+  "SELECT year, status, COUNT(*) AS n FROM letter_sends GROUP BY year, status"
+```
+
+Sandbox: `svbc-member-portal-sandbox`, with `--env sandbox` on every command. (The check is two
+queries because D1 caps a compound `SELECT` at five terms.)
+
+| Table | Reset | Why |
+|---|---|---|
+| `sessions`, `magic_link_tokens` | cleared | `donor_item_ids` are People items on the old board; a session that outlived the reset would load items that are gone. Donors sign in again. |
+| `card_tokens` | cleared | Each token resolves to an old People item, so `/verify` can only fail. A new token is minted on the donor's next dashboard visit; a card saved before the reset stops verifying. |
+| `change_requests` | cleared, after step 2 | `written` rows are spent audit rows; a `queued` row can't be replayed because its donor link is an old item. |
+| `letter_sends` | **kept** | The record of letter emails that went out, which a board rebuild doesn't undo. It can no longer dedupe: its key is the old item id, so a donor with a `sent` row for the year being sent gets the email again on the next trigger. If step 4 shows any, settle that with staff before re-arming the send. |
+| `login_attempts` | kept | No item ids; rate-limit history the daily cron purges. |
+
+Tested 2026-09-30 on a copy of the sandbox database (the export from step 1 loaded into a
+local D1, plus one seeded row per table): the four tables cleared, `letter_sends` kept. Not run
+on the deployed sandbox D1, whose boards hadn't changed.
 
 ## Development
 

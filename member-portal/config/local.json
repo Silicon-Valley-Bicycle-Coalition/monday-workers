@@ -118,5 +118,13 @@
   },
   "matchingGifts": {
     "doubleTheDonationPublicKey": null
+  },
+  "impact": {
+    "statementsByYear": {
+      "2025": {
+        "en": ["[Sample for testing] Taught bike safety to 4,200 students", "[Sample for testing] Won 12 miles of protected bike lanes"],
+        "es": ["[Ejemplo de prueba] Enseñamos seguridad ciclista a 4,200 estudiantes", "[Ejemplo de prueba] Logramos 12 millas de ciclovías protegidas"]
+      }
+    }
   }
 }

@@ -19,6 +19,18 @@ describe('donorRollups', () => {
       []);
     expect(r.get('c1')).toEqual({ lifetimeGiving: 10, firstGiftISO: '2020-01-01', giftCount: 1 });
   });
+
+  it('counts Eventbrite ticket orders (Closed Won by the integration user) but not user-keyed Closed Won (#43)', () => {
+    const opps = [
+      { Id: 'o1', npsp__Primary_Contact__c: 'c1', Amount: 10, CloseDate: '2020-01-01', StageName: 'Posted', CreatedBy: { Name: 'Gavin Powell' } },
+      { Id: 'o2', npsp__Primary_Contact__c: 'c1', Amount: 45, CloseDate: '2019-06-01', StageName: 'Closed Won', CreatedBy: { Name: 'SVBC Integration' } },
+      { Id: 'o3', npsp__Primary_Contact__c: 'c1', Amount: 500, CloseDate: '2018-01-01', StageName: 'Closed Won', CreatedBy: { Name: 'Gavin Powell' } },
+    ];
+    const r = donorRollups(opps, [], new Map(), undefined, 'SVBC Integration');
+    expect(r.get('c1')).toEqual({ lifetimeGiving: 55, firstGiftISO: '2019-06-01', giftCount: 2 });
+    // No configured user → the pre-#43 rule, so a fork without eb4sf is unchanged.
+    expect(donorRollups(opps, []).get('c1')).toEqual({ lifetimeGiving: 10, firstGiftISO: '2020-01-01', giftCount: 1 });
+  });
 });
 
 describe('donorRollups with attribution', () => {

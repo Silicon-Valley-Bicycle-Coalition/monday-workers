@@ -2,7 +2,7 @@
 
 **Status:** Decided — one-time custom import, not Monday's live Salesforce sync connector.
 **Priority:** Blocking. This is the central pre-migration engineering deliverable.
-**Owner:** Unassigned — needs an owner and an explicit time budget (see Risks in the plan).
+**Owner:** David (decided 2026-09-30, [svbc-monday-migration#49](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-migration/-/issues/49)). The time budget for its cutover runs is in the migration runbook (`docs/23`, Pre-weekend readiness and Timeline).
 **Language:** TypeScript, per the plan's standing language policy. **Runtime: decided 2026-08-22 —
 a plain Node.js 20+ CLI, not a Cloudflare Worker.** A one-time, long-running batch job has no use
 for Worker execution limits, and the local filesystem is the right home for extracts, caches, and
@@ -174,7 +174,9 @@ count as "without a Salesforce ID" and their ledger entries as missing.
 columns, column descriptions, and saved table views with filters — against whatever board ids are
 in `data/load/boards.json` (sandbox or production, whichever `load` last ran against). It's
 idempotent and non-destructive: an already-set description or column description is left alone
-rather than overwritten, and a view is only created if no view of that name exists yet. Run it
+rather than overwritten, a column already on the board (including Stakeholder Type, which `load`
+normally creates because `transform` seeds it — see "What the script must resolve") is skipped,
+and a view is only created if no view of that name exists yet. Run it
 after `load`'s `ensureBoards` pass and before staff get access, same sequencing docs/22 §5
 specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (no
 public API to create them), the Documentation doc view (no API for doc-kind views), stripping
@@ -211,6 +213,17 @@ ledger) — sandbox board ids and ledger entries left over from rehearsals would
 writes to the sandbox boards or suppress them entirely, since the ledger would report those items
 as already loaded — re-run `extract` fresh, then keep `data/` as the migration audit artifact
 alongside the backup archive.
+
+**Backup-only extracts** (`backupOnly: true` in `src/extract/queries.ts`) are written to
+`data/backup/*.ndjson` by `extract` and never read by `transform` — they exist so the archive is
+complete, not so anything lands on a board. Today: `ContactHistory`, `CampaignMember`, `Lead`,
+every `Task` and `EmailMessage` (the Activities board gets only the recent slice), NPSP payments
+(#23) and `npe4__Relationship__c`, plus — decided 2026-09-30 in the private planning repo's
+issue #53 — the sponsor benefit-fulfillment cluster (`Sponsorship_Level__c`,
+`Sponsorship_Package__c`, `Sponsor_Benefit__c`, `Benefit__c`; ~2,046 rows) and the Bike to Work
+Day logistics objects (`BTWD_Order__c`, `Energizer_Station__c`). Each of those six selects every
+custom field the schema reference lists plus Id, Name, record type and system dates; none is
+near the CLI's 50k ceiling, so none is paginated.
 
 ## Why not the live connector
 
@@ -297,7 +310,15 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   completed before the script can consume it.
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
-  Unique Advocacy-Specific Needs.
+  Unique Advocacy-Specific Needs. **Seeded at import (#46):** `extract` selects
+  `Contact.Elected__c` and `transform` writes `Stakeholder Type = Elected Official` on the 366
+  contacts that have it set (on whichever People board they land — the classification is a fact
+  about the person, not the board), and nothing on anyone else. Because `load` creates every
+  column a payload names, the status column comes into existence at load time with the full
+  four-label set (`STAKEHOLDER_TYPE_LABELS` in `src/load/boards.ts`, which `configure`'s spec
+  imports so the two can't drift), and `configure` then finds it present and leaves it alone.
+  The other three labels have no Salesforce source — City or Agency Staff in particular is a
+  Monday-side seed from the reviewed `find-city-agency-staff` CSV — so they start empty.
 * **Volume ceiling — verified 2026-08-22, redesigned 2026-08-25.** Monday's limit is a hard
   [10,000 items per board on Basic/Standard/Pro](https://support.monday.com/hc/en-us/articles/4404058746642-Item-and-subitem-limits-per-board)
   (100k on Enterprise), and the org this was built for is on Pro. That caps not just People but
@@ -366,6 +387,23 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   `Redacted` subscription) are all in
   `docs/03-monday-migration-mapping.md` (private planning repo) — treat
   that document as the authoritative field mapping for this script, not a summary of it.
+* **`Closed Won` is not a retired stage — decided 2026-09-30 (#43, migration issue #56).** The
+  `eb4sf` Eventbrite package still writes every paid ticket order as a `Closed Won` Opportunity
+  under the `SVBC Integration` user (211 records / $14,751.94 with `CloseDate` ≥ 2025-07-01 in the
+  2026-09-08 extract; none has a Funraise ID). Ticket revenue counts as giving, so `transform`
+  maps a `Closed Won` gift **created by `eventbriteIntegrationUserName`** (`config/svbc.json`)
+  to Status `Received` with Gift Type `Event Ticket` — the same label `funraise-sync` writes for
+  its paid events, so keep the two configs in step — and seeds Lifetime Giving / Gift Count with
+  it (`transform/rollups.ts`), as `donation-rollups` will once it recomputes on `Received`. The
+  138 `Closed Won` gifts individual users keyed in stay `Received (Historical)`, excluded from
+  revenue as before. The discriminator is `CreatedBy.Name`, not the "… Eventbrite" name suffix
+  (the package stamps the user on every order; the name is an editable template). No new SOQL
+  field and no re-extract: `CreatedBy.Name` has been on the Opportunity query since the extract
+  stage first shipped (`7e9def2`, 2026-08-22), so every `data/extract/` this script ever wrote
+  already carries it — but the mapping only lands after `transform` is re-run against it, so
+  re-run `transform` before the next `load`. **Follow-up, not done here:** the FY2026 reconciliation (migration `docs/16`, and §9
+  of the 2026-09-29 spec, which show Individual Giving $11,940.52 under Salesforce) must be
+  re-run on the sandbox after the next load to confirm the gap closes.
 * **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
   Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
   Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and
@@ -419,7 +457,7 @@ into the cutover log) and `data/reconcile/result.json`.
 | `donations-by-fiscal-year` | gift count and Amount sum per July–June fiscal year, by `CloseDate` / transaction date | the same, bucketed from each Donations item's `Date` and `Amount` |
 | `donations-by-salesforce-id` | each gift's Amount and fiscal year | gifts that landed once but with a different Amount or fiscal year |
 | `board-<key>` | payload count per board | items per board, active plus archived. Salesforce Ids missing, duplicated, or not from this extract |
-| `top-N-donors` | Lifetime Giving and Gift Count the importer derived from the extract (Posted Opportunities plus unique Click & Pledge, credited as the Donor link is) | the same columns on the owner item, which `donation-rollups` maintains |
+| `top-N-donors` | Lifetime Giving and Gift Count the importer derived from the extract (Posted Opportunities and Eventbrite ticket orders, plus unique Click & Pledge, credited as the Donor link is) | the same columns on the owner item, which `donation-rollups` maintains |
 
 ```sh
 npm run cli -- reconcile                    # top 25 donors, boards from data/load/boards.json

@@ -47,7 +47,30 @@ describe('buildExtracts', () => {
       if (ex.paginate) expect(ex.soql, ex.name).not.toMatch(/\b(WHERE|ORDER BY|LIMIT)\b/i);
     }
   });
+  it('selects Elected__c so transform can seed Stakeholder Type = Elected Official (#46)', () => {
+    expect(byName.get('contacts')!.soql).toContain('Elected__c');
+  });
   it('extracts the Funraise ticket name for the shared Ticket Type column', () => {
     expect(byName.get('registrations')!.soql).toContain('funraise__Ticket_Name__c');
+  });
+  it('keeps the sponsorship cluster and BTWD logistics objects backup-only (migration #53, 2026-09-30)', () => {
+    // Decided never to migrate to a board; the archive must still hold every custom field.
+    const expected: Record<string, string[]> = {
+      sponsorship_levels: ['FROM Sponsorship_Level__c', 'RecordType.Name', 'Logo_on_SVBC_Jersey__c', 'X25_One_year_complimentary_memberships__c'],
+      sponsorship_packages: ['FROM Sponsorship_Package__c', 'Account__c', 'Opportunity__c', 'Sponsorship_Level__c'],
+      sponsor_benefits: ['FROM Sponsor_Benefit__c', 'Benefit__c', 'Sponsorship_Package__c', 'Available__c', 'Redeemed__c'],
+      benefits: ['FROM Benefit__c', 'Available__c', 'Campaign__c'],
+      btwd_orders: ['FROM BTWD_Order__c', 'RecordType.Name', 'Energizer_Station__c', 'Total_of_Shirts__c', 'Poster_Order_Status__c'],
+      energizer_stations: ['FROM Energizer_Station__c', 'Host_Organization__c', 'Energizer_Station_Lead__c', 'Status__c', 'Location_City__c'],
+    };
+    for (const [name, fields] of Object.entries(expected)) {
+      const ex = byName.get(name);
+      expect(ex, name).toBeDefined();
+      expect(ex!.backupOnly, name).toBe(true);
+      // ~2,046 sponsorship rows and ~1,081 BTWD rows in total — nowhere near the 50k ceiling.
+      expect(ex!.paginate, name).toBeFalsy();
+      const soql = ex!.soql.replace(/\s+/g, ' ');
+      for (const f of ['Id', 'Name', 'CreatedDate', 'LastModifiedDate', ...fields]) expect(soql, `${name}.${f}`).toContain(f);
+    }
   });
 });

@@ -59,6 +59,8 @@ export const ko: Record<TranslationKey, string> = {
   'portal.tableDate': '날짜',
   'portal.tableAmount': '금액',
   'portal.tableDescription': '설명',
+  'portal.impactHeading': '{{year}}년 기부의 성과',
+  'portal.impactIntro': '{{year}}년에 보내 주신 기부 덕분에 다음이 가능했습니다:',
   'portal.donationsTabLabel': '기부',
   'portal.donationsEmptyMessage': '아직 기부하신 내역이 없습니다.',
   'portal.donateButton': '기부하기',

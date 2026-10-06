@@ -2,33 +2,33 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": 18428131791,
-      "recurring-gifts": 18428131768,
+      "donations:live": 18431577310,
+      "recurring-gifts": 18431577263,
       "people-live": 18431577220
     }
   },
   "funraiseSync": {
     "columnMap": {
-      "transaction.amount": "numeric_mm6jkxrs",
-      "transaction.status": "color_mm6jqdhn",
-      "donationDate": "date_mm6jthpq"
+      "transaction.amount": "numeric_mm79nz8b",
+      "transaction.status": "color_mm79q3b3",
+      "donationDate": "date_mm7938jk"
     },
     "itemNameField": "description",
     "entityIdField": "id",
-    "entityIdColumn": "link_mm6jhcj8",
-    "thankYouSentColumn": "boolean_mm78nf5s",
-    "giftTypeColumn": "text_mm6j66w3",
+    "entityIdColumn": "link_mm79jtzp",
+    "thankYouSentColumn": "boolean_mm7ddybs",
+    "giftTypeColumn": "text_mm79fzs3",
     "giftTypeValue": "Donation",
     "eventGiftTypeValue": "Event Ticket",
-    "fiscalYearColumn": "text_mm70czyd",
-    "recurringGiftLinkColumn": "board_relation_mm6jbjtd",
+    "fiscalYearColumn": "text_mm7973ah",
+    "recurringGiftLinkColumn": "board_relation_mm79pphw",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "supporter.id",
     "donorExternalIdColumn": "link_mm79dag0",
     "donorEmailColumn": "email_mm79m5qa",
     "donorNameField": "supporter.name",
-    "donorLinkColumn": "board_relation_mm6jf5jb",
+    "donorLinkColumn": "board_relation_mm795r2d",
     "emailFieldPrecedence": ["supporter.email"],
     "statusField": "transaction.status",
     "statusValueMap": {
@@ -49,16 +49,16 @@
   "subscriptionsPoll": {
     "enabled": true,
     "columns": {
-      "funraiseId": "link_mm6jryz2",
-      "donor": "board_relation_mm6j443g",
-      "installmentAmount": "numeric_mm6jg878",
-      "annualizedValue": "numeric_mm6jt3sp",
-      "frequency": "color_mm6jc24s",
-      "status": "color_mm6j1tk1",
-      "nextPayment": "date_mm6j20p6",
-      "designation": "text_mm6jvmje",
-      "companyMatch": "boolean_mm6jbmvy",
-      "matchEmployer": "text_mm6jma3d"
+      "funraiseId": "link_mm79bx08",
+      "donor": "board_relation_mm792b0c",
+      "installmentAmount": "numeric_mm79vnnj",
+      "annualizedValue": "numeric_mm79zpt1",
+      "frequency": "color_mm793249",
+      "status": "color_mm79tvkt",
+      "nextPayment": "date_mm79de3c",
+      "designation": "text_mm79gmge",
+      "companyMatch": "boolean_mm79pqy4",
+      "matchEmployer": "text_mm79rpky"
     },
     "frequencyMultiplier": { "Monthly": 12, "Quarterly": 4, "Yearly": 1 },
     "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed", "Redacted": "Redacted" },

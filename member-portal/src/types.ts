@@ -166,6 +166,19 @@ export interface MatchingGiftsConfig {
   doubleTheDonationPublicKey: string | null;
 }
 
+// Org-wide "your giving supported …" statements, keyed by calendar year (v8). An empty
+// statementsByYear is the feature's off switch. English is required for every year; any other
+// locale is optional and falls back to English (see impact/impact.ts).
+export interface ImpactConfig {
+  statementsByYear: Record<string, { en: string[] } & Partial<Record<Locale, string[]>>>;
+}
+
+// What one donor's section shows: the statements for a single year they gave in.
+export interface DonorImpact {
+  year: string;
+  statements: string[];
+}
+
 export interface Config {
   monday: {
     apiUrl: string;
@@ -214,6 +227,7 @@ export interface Config {
   funraise: FunraiseConfig;
   pledges: PledgesConfig;
   matchingGifts: MatchingGiftsConfig;
+  impact: ImpactConfig;
 }
 
 export interface DonorMatch {

@@ -52,8 +52,8 @@ export interface TopDonor { sfId: string; board: string; name: string; lifetimeC
 
 /**
  * The N largest donors by the Lifetime Giving the importer computed from the frozen extract
- * (Posted Opportunities + unique Click & Pledge, credited the way the Donor link is — see
- * transform/rollups.ts). donation-rollups recomputes the same column from the gifts actually on
+ * (Posted Opportunities and Eventbrite ticket orders + unique Click & Pledge, credited the way
+ * the Donor link is — see transform/rollups.ts). donation-rollups recomputes the same column from the gifts actually on
  * Monday, so a dropped, duplicated or re-pointed gift shows up as a difference here.
  */
 export function topDonors(payloads: readonly ItemPayload[], n: number): TopDonor[] {

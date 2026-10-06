@@ -59,6 +59,8 @@ export const fil: Record<TranslationKey, string> = {
   'portal.tableDate': 'Petsa',
   'portal.tableAmount': 'Halaga',
   'portal.tableDescription': 'Deskripsyon',
+  'portal.impactHeading': 'Ang iyong epekto noong {{year}}',
+  'portal.impactIntro': 'Nakatulong ang iyong mga donasyon noong {{year}} para maging posible ito:',
   'portal.donationsTabLabel': 'Mga Donasyon',
   'portal.donationsEmptyMessage': 'Wala ka pang na-donate.',
   'portal.donateButton': 'Mag-donate',

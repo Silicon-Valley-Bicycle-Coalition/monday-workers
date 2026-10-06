@@ -208,6 +208,27 @@ describe('ensureBoards', () => {
       { 0: 'Received', 1: 'Received (Historical)', 2: 'Failed', 3: 'Pending' });
   });
 
+  it('Stakeholder Type is created at load with the full docs/22 label set, so configure finds it present (#46)', async () => {
+    const defaultsByTitle: Record<string, string | undefined> = {};
+    const fetchFn = (async (_u: unknown, init: unknown) => {
+      const { query, variables } = JSON.parse((init as { body: string }).body);
+      if (/create_board/.test(query)) return Response.json({ data: { create_board: { id: '974' } } });
+      if (/boards\s*\(/.test(query)) return Response.json({ data: { boards: [{ columns: [] }] } });
+      if (/create_column/.test(query)) {
+        defaultsByTitle[variables.title as string] = variables.defaults as string | undefined;
+        return Response.json({ data: { create_column: { id: `col_${variables.title}` } } });
+      }
+      throw new Error(`no scripted response for: ${String(query).slice(0, 80)}`);
+    }) as typeof fetch;
+    const client = new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
+
+    // Transform only names the column on elected contacts, but the seeded vocabulary is the whole set.
+    await ensureBoards(client, loadConfig(), ['people-live'], new Map([['people-live', new Set(['Stakeholder Type'])]]));
+
+    expect(JSON.parse(defaultsByTitle['Stakeholder Type']!).labels).toEqual(
+      { 0: 'Individual Donor', 1: 'City or Agency Staff', 2: 'Elected Official', 3: 'Partner Org Contact' });
+  });
+
   it('Activity Type gets its closed vocabulary', async () => {
     const defaultsByTitle: Record<string, string | undefined> = {};
     const fetchFn = (async (_u: unknown, init: unknown) => {
@@ -234,7 +255,7 @@ describe('ensureBoards', () => {
       'Personal Email Consent', 'Household Email Consent', 'Work Email Consent', 'Household Primary',
       'Affiliation Role', 'Primary', 'Attribution', 'Organizational Giving', 'Attributed Giving',
       'Attributed Gift Count', 'Last Attributed Gift', 'Term Start', 'Lifetime Giving',
-      'Annualized Value', 'Historical']) {
+      'Annualized Value', 'Historical', 'Stakeholder Type']) {
       expect(COLUMN_TYPES[title], title).toBeDefined();
     }
     for (const title of ['Acting for', 'Affiliations']) {

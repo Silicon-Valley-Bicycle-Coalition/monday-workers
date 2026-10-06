@@ -144,8 +144,8 @@ that a person should confirm or reject) · **Current** · **By organization**.
 
 ## Donations
 
-[Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310), 3,828 active
-items (FY2026 and FY2027 to date) plus about 44,800 archived (FY2025 and earlier, on the same
+[Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310), about 3,880 active
+items (FY2026 and FY2027 to date, growing as Funraise gifts arrive) plus about 44,800 archived (FY2025 and earlier, on the same
 board). Replaces Salesforce Opportunities: one board for the whole history, with the current and
 previous fiscal year (July to June) active and everything older archived in place.
 
@@ -170,8 +170,9 @@ September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank
    separate email tier; Monday's replacement is a person working this list.
 3. **Revenue by funding stream.** Compare the group footers with what you'd expect for this year.
    FY2026 Matching Donations and Grants & Contracts reconcile to Salesforce to the cent;
-   Individual Giving reads about $11,900 lower because Salesforce's retired "Closed Won" stage
-   is excluded from revenue.
+   Individual Giving read about $11,900 lower on the 2026-09-29 load because every "Closed Won"
+   gift was excluded from revenue; the Eventbrite ticket orders that stage mostly holds now map
+   to Received / Event Ticket, so re-check this figure after the next load.
 4. **Find an old gift.** Searching the table only finds the active two years. For older gifts,
    use the board's ⋯ menu → Archived items, or start from the donor's card. Is that workable, or
    too awkward to live with?
@@ -187,7 +188,7 @@ Funraise and Benevity gifts aren't reaching this board yet (see the README).
 
 ## Recurring Gifts
 
-[Recurring Gifts (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577263), 604
+[Recurring Gifts (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577263), 1,176
 items, one per recurring plan or multi-year pledge. Replaces Salesforce's Subscription object.
 
 **Tabs:** **Active** (opens here; sorted by Next Payment; Failed rows red) · **Failed** ·
@@ -195,8 +196,8 @@ items, one per recurring plan or multi-year pledge. Replaces Salesforce's Subscr
 
 **Try it:** open a monthly donor's plan. **Annualized Value** (Installment × Frequency) is the
 number for stewardship tiers, not Installment Amount; the two get confused today. Is the
-distinction clear on the board? Once the Funraise sync is remapped, this board mirrors every
-Funraise plan (1,175, including redacted historical ones); see [Funraise sync](funraise-sync.md).
+distinction clear on the board? Since 2026-09-30 this board mirrors every Funraise plan,
+including 568 redacted historical ones; see [Funraise sync](funraise-sync.md).
 
 **Don't report these:** Frequency and Status may still show Monday's stock labels (Working on
 it, Done, Stuck) alongside the real ones; they're stripped before cutover.

@@ -59,6 +59,8 @@ export const vi: Record<TranslationKey, string> = {
   'portal.tableDate': 'Ngày',
   'portal.tableAmount': 'Số tiền',
   'portal.tableDescription': 'Mô tả',
+  'portal.impactHeading': 'Tác động của bạn trong năm {{year}}',
+  'portal.impactIntro': 'Các khoản quyên góp của bạn trong năm {{year}} đã góp phần làm nên những điều này:',
   'portal.donationsTabLabel': 'Quyên góp',
   'portal.donationsEmptyMessage': 'Bạn chưa thực hiện khoản quyên góp nào.',
   'portal.donateButton': 'Quyên góp',
