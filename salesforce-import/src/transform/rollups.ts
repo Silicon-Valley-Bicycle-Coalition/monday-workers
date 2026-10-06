@@ -1,12 +1,15 @@
 import type { ItemPayload } from './types.js';
 import { dateCol } from './fields.js';
-import { giftDonorSfId } from './donations.js';
+import { giftDonorSfId, isEventbriteTicketOrder } from './donations.js';
 
 // Posted only, not Closed Won — matches Salesforce's own IsWon flag (Posted: true,
 // Closed Won: false, per monday-migration docs/07 gotcha #10), which is what its legacy
 // NPSP rollups filter on. Including Closed Won here would make Monday's Lifetime Giving
 // diverge from SVBC's own historical/audited totals by the 438 stale-stage records
 // (~$40,659.59) gotcha #4 found — the reconciliation gotcha #1 exists to protect.
+// The one exception is the Eventbrite ticket orders eb4sf files as Closed Won (#43): those
+// migrate as Status Received, which donation-rollups counts, so they must count here too or
+// the seeded Lifetime Giving diverges from the first recompute.
 const RECEIVED = new Set(['Posted']);
 
 export interface DonorRollup { lifetimeGiving: number; firstGiftISO: string | null; giftCount: number }
@@ -22,6 +25,8 @@ export function donorRollups(
   // Attributed org gifts (transform/attribution.ts) credit the organization, exactly as their
   // Donor link does — see giftDonorSfId. Omit for the pre-attribution rule.
   attribution?: { orgAccountIds: ReadonlySet<string>; attributed: ReadonlyMap<string, string> },
+  // config.eventbriteIntegrationUserName — see donations.ts isEventbriteTicketOrder.
+  eventbriteIntegrationUserName?: string | null,
 ): Map<string, DonorRollup> {
   const cents = new Map<string, number>(), first = new Map<string, string>(), count = new Map<string, number>();
   const add = (rawDonor: string | null, amount: unknown, dateISO: string | null) => {
@@ -33,7 +38,7 @@ export function donorRollups(
     if (d && (!first.has(donor) || d < first.get(donor)!)) first.set(donor, d);
   };
   for (const o of opportunities) {
-    if (!RECEIVED.has(o['StageName'] as string)) continue;
+    if (!RECEIVED.has(o['StageName'] as string) && !isEventbriteTicketOrder(o, eventbriteIntegrationUserName)) continue;
     add(giftDonorSfId(o, { donorAlias, orgAccountIds: attribution?.orgAccountIds,
       actingFor: attribution?.attributed.get(o['Id'] as string) ?? null }),
       o['Amount'], o['CloseDate'] as string | null);

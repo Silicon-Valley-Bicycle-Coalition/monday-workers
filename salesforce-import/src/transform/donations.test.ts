@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { opportunityToPayload, cnpToPayload, cnpOverlapCheck, softCreditsByGift, unknownStages } from './donations.js';
+import { opportunityToPayload, cnpToPayload, cnpOverlapCheck, softCreditsByGift, unknownStages,
+  isEventbriteTicketOrder } from './donations.js';
 
 describe('opportunityToPayload', () => {
   const base = { Id: 'o1', Name: 'Gift', Amount: 50, CloseDate: '2026-01-15', StageName: 'Posted',
@@ -28,6 +29,43 @@ describe('opportunityToPayload', () => {
   it('maps Closed Won to a distinct label, not plain Received', () => {
     const p = opportunityToPayload({ ...base, StageName: 'Closed Won' }, { termCols: new Map() });
     expect(p.columns['Status']).toEqual({ label: 'Received (Historical)' });
+  });
+
+  describe('Closed Won by origin (#43: eb4sf files paid Eventbrite ticket orders as Closed Won)', () => {
+    const EB_USER = 'SVBC Integration';
+    const deps = { termCols: new Map(), eventbriteIntegrationUserName: EB_USER };
+    // Shaped like the real rows: eb4sf names every order "… Eventbrite" under the Donation record type.
+    const ticket = { ...base, Id: 'o-eb', Name: 'Ada Lovelace - Bike Summit 2026 - Eventbrite', Amount: 45,
+      CloseDate: '2025-09-20', StageName: 'Closed Won', RecordType: { Name: 'Donation' }, CreatedBy: { Name: EB_USER } };
+
+    it('maps an integration-user Closed Won order to Received / Event Ticket, keeping its links', () => {
+      const p = opportunityToPayload(ticket, deps);
+      expect(p.columns['Status']).toEqual({ label: 'Received' });
+      expect(p.columns['Gift Type']).toBe('Event Ticket');
+      expect(p.columns['Fiscal Year Ending']).toBe('2026');
+      expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
+    });
+
+    it('keeps a Closed Won gift a staff member created as Received (Historical), even with an Eventbrite name', () => {
+      const p = opportunityToPayload({ ...ticket, CreatedBy: { Name: 'Gavin Powell' } }, deps);
+      expect(p.columns['Status']).toEqual({ label: 'Received (Historical)' });
+      expect(p.columns['Gift Type']).toBe('Donation');
+    });
+
+    it('is Closed Won only: a Posted gift the integration user created is an ordinary Received gift', () => {
+      const p = opportunityToPayload({ ...ticket, StageName: 'Posted' }, deps);
+      expect(p.columns['Status']).toEqual({ label: 'Received' });
+      expect(p.columns['Gift Type']).toBe('Donation');
+    });
+
+    it('does nothing without a configured integration user (a fork without eb4sf)', () => {
+      for (const eventbriteIntegrationUserName of [undefined, null, '']) {
+        const p = opportunityToPayload(ticket, { termCols: new Map(), eventbriteIntegrationUserName });
+        expect(p.columns['Status'], String(eventbriteIntegrationUserName)).toEqual({ label: 'Received (Historical)' });
+        expect(p.columns['Gift Type']).toBe('Donation');
+      }
+      expect(isEventbriteTicketOrder({ ...ticket, CreatedBy: null }, EB_USER)).toBe(false);
+    });
   });
 
   it('maps Withdrawn→Failed and the not-yet stages to Pending', () => {

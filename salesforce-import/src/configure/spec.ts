@@ -259,8 +259,10 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Amount': 'Gift amount in dollars. Drives Acknowledgment Tier and every donor rollup.',
       'Fiscal Year Ending': "SVBC's July–June fiscal year, named by the calendar year it ends " +
         "in (a gift on 2025-08-01 is FY2026). Text on purpose, so it never renders as '2,025'.",
-      'Status': 'Received, or Received (Historical) for gifts Salesforce still filed under its ' +
-        'retired Closed Won stage. Failed and Pending are real outcomes, not stages to work.',
+      'Status': 'Received, or Received (Historical) for gifts staff filed under Salesforce’s ' +
+        'legacy Closed Won stage (Eventbrite ticket orders also arrive as Closed Won, but those ' +
+        'are Received with Gift Type Event Ticket). Failed and Pending are real outcomes, not ' +
+        'stages to work.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
         'Pledge (historical), Sponsorship, Grant, Contract…',
       'Donor': 'Who gave: a People, People (Historical), or Organizations item. Blank only when ' +
@@ -498,8 +500,9 @@ const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
 ];
 
 // Every widget that sums or counts Donations counts Received only — matching computeRollup and
-// docs/05's audited revenue definition (Received (Historical) is Salesforce's retired Closed Won
-// stage and is deliberately excluded). AND-ed with any filter the widget already has.
+// docs/05's audited revenue definition (Received (Historical) is the user-keyed Closed Won
+// residue and is deliberately excluded; Eventbrite's Closed Won ticket orders map to Received
+// and so count — transform/donations.ts). AND-ed with any filter the widget already has.
 const RECEIVED_RULE: FilterRule = { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] };
 
 export const DASHBOARD_SPECS: DashboardSpec[] = RAW_DASHBOARD_SPECS.map((d) => ({
