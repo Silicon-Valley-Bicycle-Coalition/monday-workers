@@ -171,6 +171,9 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
       done; its dashboards chart the columns that item creates and fills. Then the manual
       board configuration (private plan, `docs/22` §5).
 - [ ] `validate`, then `validate --live`.
+- [ ] `reconcile` (extract vs Monday, per fiscal year, per board, top-N donors; read-only; exit 0 = GO).
+      Paste `data/reconcile/report.md` into the cutover log. Run it before the sync Workers go
+      live so "items with no Salesforce Id" is 0. See `salesforce-import/README.md`, "`reconcile`".
 - [ ] Go/no-go against the rollback threshold. No-go = don't cut over; Salesforce is untouched,
       but `donation-rollups` is already live against the new boards — see [Rollback](#rollback).
 
