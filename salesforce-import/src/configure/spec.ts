@@ -1,4 +1,5 @@
 import type { DashboardSpec } from './dashboards.js';
+import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 // The board-configuration spec derived from docs/22-board-configuration-plan.md §3 (private
 // planning repo). Keyed by the same board keys as config/svbc.json's monday.boards / the
 // load-time board map (data/load/boards.json) — NOT docs/22's own board ids, which belonged to
@@ -112,7 +113,9 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       `linked to (see Organizations and Affiliations). Process overview & how-to: ${DOC('46299435')}`,
     groupTitle: 'People',
     columns: [
-      { title: 'Stakeholder Type', type: 'status', labels: ['Individual Donor', 'City or Agency Staff', 'Elected Official', 'Partner Org Contact'] },
+      // Normally already created by load (transform seeds Elected Official — see people.ts); this
+      // entry only matters for a board loaded with no elected contact in the run.
+      { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
       { title: 'Campaign', type: 'tags' },
       DNS_COLUMN,
     ],

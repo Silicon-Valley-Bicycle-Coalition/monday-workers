@@ -69,6 +69,12 @@ export function contactToPayload(
   // A shared household address is one Mailchimp contact; this flag says whose merge fields it
   // carries (spec: "Consent and mailchimp-sync"). Only ever written as true.
   if (deps.householdPrimary) columns['Household Primary'] = { checked: 'true' };
+  // Stakeholder Type's only Salesforce-sourced value (docs/22 §3.1; #46): Contact.Elected__c →
+  // Elected Official, 366 contacts. Written only when set, so load creates the column — seeded
+  // with the full label set from load/boards.ts STATUS_LABELS — before configure runs, and every
+  // other person starts blank: City or Agency Staff and Partner Org Contact have no Salesforce
+  // source, and Individual Donor is for staff to assign.
+  if (c['Elected__c']) columns['Stakeholder Type'] = { label: 'Elected Official' };
   if (deps.member) {
     columns['Membership Status'] = { label: deps.member.status };
     columns['Membership Tier'] = { label: deps.member.tier };

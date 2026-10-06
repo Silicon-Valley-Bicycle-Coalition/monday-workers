@@ -47,6 +47,9 @@ describe('buildExtracts', () => {
       if (ex.paginate) expect(ex.soql, ex.name).not.toMatch(/\b(WHERE|ORDER BY|LIMIT)\b/i);
     }
   });
+  it('selects Elected__c so transform can seed Stakeholder Type = Elected Official (#46)', () => {
+    expect(byName.get('contacts')!.soql).toContain('Elected__c');
+  });
   it('extracts the Funraise ticket name for the shared Ticket Type column', () => {
     expect(byName.get('registrations')!.soql).toContain('funraise__Ticket_Name__c');
   });

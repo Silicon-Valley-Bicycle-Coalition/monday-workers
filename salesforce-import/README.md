@@ -174,7 +174,9 @@ count as "without a Salesforce ID" and their ledger entries as missing.
 columns, column descriptions, and saved table views with filters — against whatever board ids are
 in `data/load/boards.json` (sandbox or production, whichever `load` last ran against). It's
 idempotent and non-destructive: an already-set description or column description is left alone
-rather than overwritten, and a view is only created if no view of that name exists yet. Run it
+rather than overwritten, a column already on the board (including Stakeholder Type, which `load`
+normally creates because `transform` seeds it — see "What the script must resolve") is skipped,
+and a view is only created if no view of that name exists yet. Run it
 after `load`'s `ensureBoards` pass and before staff get access, same sequencing docs/22 §5
 specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (no
 public API to create them), the Documentation doc view (no API for doc-kind views), stripping
@@ -308,7 +310,15 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   completed before the script can consume it.
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
-  Unique Advocacy-Specific Needs.
+  Unique Advocacy-Specific Needs. **Seeded at import (#46):** `extract` selects
+  `Contact.Elected__c` and `transform` writes `Stakeholder Type = Elected Official` on the 366
+  contacts that have it set (on whichever People board they land — the classification is a fact
+  about the person, not the board), and nothing on anyone else. Because `load` creates every
+  column a payload names, the status column comes into existence at load time with the full
+  four-label set (`STAKEHOLDER_TYPE_LABELS` in `src/load/boards.ts`, which `configure`'s spec
+  imports so the two can't drift), and `configure` then finds it present and leaves it alone.
+  The other three labels have no Salesforce source — City or Agency Staff in particular is a
+  Monday-side seed from the reviewed `find-city-agency-staff` CSV — so they start empty.
 * **Volume ceiling — verified 2026-08-22, redesigned 2026-08-25.** Monday's limit is a hard
   [10,000 items per board on Basic/Standard/Pro](https://support.monday.com/hc/en-us/articles/4404058746642-Item-and-subitem-limits-per-board)
   (100k on Enterprise), and the org this was built for is on Pro. That caps not just People but
