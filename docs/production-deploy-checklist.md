@@ -49,12 +49,16 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       Free cap already stalled `donation-rollups` in the sandbox (its README, "operational
       findings, 2026-09-17"), and donor-facing email to non-verified destinations requires Paid
       (sandbox design, Open items).
-- [ ] **Raise the "Billing Budget Alert"** (Manage account → Notifications) above the $5 base
-      subscription, or it fires immediately and means nothing.
+- [x] **"Billing Budget Alert" stays at $10** (reviewed 2026-10-06). Galileo covers the Business
+      plan, not Workers Paid, so the $5 base is billed and $10 means $5 of real usage overage —
+      an early warning, not noise.
 - [ ] Confirm every Worker's `limits.cpu_ms: 100` is still present — it's the guard that matters
       once Paid's 30 s default applies.
-- [ ] Resolve the open question whether rate-limit `namespace_id`s must be unique per account
-      (sandbox design, Open items) before two Workers deploy with colliding ids.
+- [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's
+      docs: the id "uniquely defines this rate limiting namespace within your Cloudflare
+      account", and two bindings with the same id share counters, even across Workers. Every
+      id in this repo is already distinct (`1001`–`1004`, `2001`–`2061`); keep it that way when
+      adding a Worker.
 - [ ] **Integration users and tokens, one per exposure class** (root README, "Least-privilege
       Monday tokens"). Create after the production workspace exists, scope before minting:
   - [ ] `member-portal` — its own user, read access to only the boards it reads.
@@ -64,7 +68,11 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] `monday-backup` — view access to every workspace.
   - [ ] Never a staff member's personal token.
 - [ ] **Mail domain:** `mail.bikesiliconvalley.org` onboarded for Email Sending, DMARC record in
-      place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it.
+      place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it. The name is
+      free: until 2026-10-06 `mail.bikesiliconvalley.org` was a proxied CNAME to
+      `ghs.googlehosted.com` (a Google Workspace shortcut that had been failing with a 525, since
+      Google presented no certificate for it); that record and the four sibling shortcuts
+      (`calendar.`, `docs.`, `groups.`, `sites.`) were deleted that day.
 - [ ] **Third-party accounts ready:**
   - [ ] Funraise production API key.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys

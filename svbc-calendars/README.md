@@ -157,21 +157,22 @@ moment..." page (`cf-mitigated: challenge`) instead of a calendar, and the subsc
 fails. That is what every route here returned to plain `curl` from 2026-09-25, when the mode was
 turned on, until this rule went in.
 
-A WAF custom rule on the zone (**Security → Security rules**, "Skip SBFM for svbc-calendars ICS
-feeds") skips Super Bot Fight Mode for the feeds only:
+A WAF custom rule on the zone (**Security → Security rules**, "Skip SBFM for feeds, calendar
+Worker routes and the portal webhook") skips Super Bot Fight Mode for this Worker's routes. It is
+one rule shared with the Squarespace RSS/iCal feeds and `member-portal`'s Monday webhook
+(widened 2026-10-06 from an ICS-only rule); the clause for this Worker is:
 
 ```text
-(http.host in {"committees.bikesiliconvalley.org" "events.bikesiliconvalley.org"}
- and http.request.method eq "GET"
- and starts_with(http.request.uri.path, "/calendars/")
- and ends_with(http.request.uri.path, ".ics"))
+(http.host in {"events.bikesiliconvalley.org" "committees.bikesiliconvalley.org"}
+ and (http.request.uri.path in {"/calendars" "/events" "/widget" "/status.json"}
+      or (starts_with(http.request.uri.path, "/calendars/")
+          and ends_with(http.request.uri.path, ".ics"))))
 ```
 
 Action: **Skip → All Super Bot Fight Mode rules** (API: `action_parameters.phases:
-["http_request_sbfm"]`). The feeds stay behind the 24h edge cache and the per-IP rate limit.
-Everything else — widget, JSON API, listing page, `/status.json` — is deliberately still
-challenged: a browser passes it, but a script (`curl`, an uptime monitor) gets the challenge page,
-so don't read a `403` there as the Worker being down.
+["http_request_sbfm"]`). Every route stays behind the edge cache and the per-IP rate limit.
+Only `/` and unknown paths are still challenged, so a script hitting the bare host gets the
+challenge page — don't read that `403` as the Worker being down.
 
 The rule lives only in the Cloudflare zone, not in `wrangler.jsonc` — a deploy neither creates nor
 checks it, and a fork on a zone with bot protection needs its own. To check it's still in place:
@@ -180,7 +181,9 @@ checks it, and a fork on a zone with bot protection needs its own. To check it's
 curl -sI https://committees.bikesiliconvalley.org/calendars/san-jose.ics
 ```
 
-Expect `200` with `content-type: text/calendar` and no `cf-mitigated` header.
+Expect `200` with `content-type: text/calendar` and no `cf-mitigated` header. A `403` with
+`cf-mitigated: challenge` means the rule is gone or no longer matches. Forks on a Free-plan zone
+can't do this: Bot Fight Mode can't be skipped per host, only turned off.
 
 ## Widget embed snippet
 

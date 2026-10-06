@@ -148,8 +148,10 @@ backfill) would silently lose recomputes the same way.
 **Proposed fix (not yet applied):**
 
 1. ~~**Workers Paid is the decisive fix.**~~ **Done — the account is on Workers Paid (Project
-   Galileo, confirmed 2026-09-29):** D1 goes to 50M rows written/day, CPU to 30 s, subrequests
-   to 1,000/invocation. Everything below is hardening that is worth doing regardless.
+   Galileo, confirmed 2026-09-29):** D1 has no daily write cap (50M rows written/month are
+   included, then $1 per million), CPU goes to 30 s by default, subrequests to
+   10,000/invocation. Everything below is hardening that is worth doing regardless — more so
+   now that a flood costs money instead of stalling.
 2. ~~**Stop rewriting unchanged gifts.**~~ **Done (branch `fix/rollups-diff-only-refresh-facts`):**
    `refreshFacts` now reads the stored facts for the gifts it was handed (one `IN (…)` query per
    100 ids) and upserts only the new or changed ones, returning `{ changed }`; the consumer logs
@@ -263,7 +265,7 @@ Two things worth knowing from this exercise:
 
 * Monday under-delivered on 09-03: 3,753 events on the board produced 3,427 pending rows (~9 %
   short). Whether Monday dropped them or the Worker 5xx'd is not recoverable now (Workers Logs
-  retention is 3 days on Free). Expect some loss under a burst; the owner-coalescing in fix 3
+  retention was 3 days on Free; it's 7 on Paid). Expect some loss under a burst; the owner-coalescing in fix 3
   plus the reconcile duty are what make that tolerable.
 * **How to verify delivery without trusting D1 row counts:** Cloudflare GraphQL
   `workersInvocationsAdaptive` grouped by `datetimeMinute` for `svbc-donation-rollups`, compared

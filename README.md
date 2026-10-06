@@ -194,9 +194,10 @@ kill is uncatchable, so the cap silently killed every run (issue #29; see its `w
 **Account-level spend alerting is not code-configurable** — Cloudflare has no API/wrangler-managed
 hard spend cap, only a dashboard Notification on a usage threshold. One already exists on this
 account: a Cloudflare-auto-created "Billing Budget Alert" at **$10/month**, emailing SVBC staff.
-Check it now that the account is on Workers Paid — if the $5/month base subscription is billed,
-at $10 it will fire almost immediately off that alone, before telling you anything about a real
-spike. Manage it at **Manage account → Notifications** in the Cloudflare dashboard.
+Project Galileo covers the zone's Business plan, not Workers Paid, so expect the $5/month Workers
+base subscription on the bill; the $10 alert then fires once usage overage passes $5 — a useful
+early warning, so leave it (reviewed 2026-10-06). Manage it at **Manage account → Notifications**
+in the Cloudflare dashboard.
 
 ## Error monitoring: Workers Issues
 
