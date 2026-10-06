@@ -20,6 +20,7 @@
     "giftTypeColumn": "REPLACE_WITH_COLUMN_ID",
     "giftTypeValue": "Donation",
     "eventGiftTypeValue": "Event Ticket",
+    "oldestActiveFiscalYear": 2026,
     "fiscalYearColumn": "REPLACE_WITH_COLUMN_ID",
     "recurringGiftLinkColumn": "REPLACE_WITH_COLUMN_ID",
     "rawPayloadRetentionDays": 90,

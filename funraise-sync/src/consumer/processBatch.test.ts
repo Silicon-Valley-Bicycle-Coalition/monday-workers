@@ -592,3 +592,101 @@ describe('retry backoff', () => {
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
   });
 });
+
+describe('archived-gift check (oldestActiveFiscalYear)', () => {
+  // The importer keeps FY 2026 and later active, so a gift dated before 2025-07-01 may have been
+  // archived, where the adopt lookup can't see it.
+  const archivedConfig: FunraiseSyncConfig = {
+    ...config,
+    funraiseSync: { ...config.funraiseSync, entityIdColumn: 'funraise_id_col', oldestActiveFiscalYear: 2026 },
+  };
+
+  const row = (donationDate: unknown) =>
+    eventRow({
+      matchedDonorItemId: '7',
+      rawPayload: JSON.stringify({ amount: 100, donationDate, donor: { contactId: 'fr-1' } }),
+    });
+
+  function client(overrides: Partial<MondayClient> = {}): MondayClient {
+    return {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem: vi.fn().mockResolvedValue({ id: 'item-new' }),
+      changeColumnValues: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
+  it('flags a gift before the oldest active fiscal year instead of creating a duplicate', async () => {
+    const eventStore = fakeStore(row('2025-06-30T12:00:00.000Z')); // FY 2025
+    const mondayClient = client();
+    const message = fakeMessage();
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config: archivedConfig });
+
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'needs_review', {
+      error: expect.stringContaining('fiscal year 2025'),
+    });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
+  it('creates a gift in the oldest active fiscal year (boundary)', async () => {
+    const eventStore = fakeStore(row('2025-07-01T12:00:00.000Z')); // FY 2026
+    const mondayClient = client();
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: archivedConfig });
+
+    expect(mondayClient.createItem).toHaveBeenCalled();
+    expect(eventStore.updateStatusByEntity).not.toHaveBeenCalledWith('transaction', 'txn-1', 'needs_review', expect.anything());
+  });
+
+  it('still adopts an old gift whose item is active — the check only runs when the lookup finds nothing', async () => {
+    const eventStore = fakeStore(row('2024-01-15T12:00:00.000Z'));
+    const mondayClient = client({ findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'item-active' }) });
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: archivedConfig });
+
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(111, 'item-active', expect.any(Object));
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+  });
+
+  it('still updates through a recorded item id regardless of the gift date', async () => {
+    const eventStore = fakeStore(
+      eventRow({
+        matchedDonorItemId: '7',
+        mondayItemId: 'item-existing',
+        rawPayload: JSON.stringify({ amount: 100, donationDate: '2020-01-01T00:00:00.000Z' }),
+      })
+    );
+    const mondayClient = client();
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: archivedConfig });
+
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(111, 'item-existing', expect.any(Object));
+  });
+
+  it('creates when the date is unparseable, since the fiscal year cannot be judged', async () => {
+    const eventStore = fakeStore(row('not a date'));
+    const mondayClient = client();
+
+    await processFunraiseQueueBatch([fakeMessage()], { eventStore, mondayClient, config: archivedConfig });
+
+    expect(mondayClient.createItem).toHaveBeenCalled();
+  });
+
+  it('does nothing when oldestActiveFiscalYear is null', async () => {
+    const eventStore = fakeStore(row('2019-01-01T00:00:00.000Z'));
+    const mondayClient = client();
+
+    await processFunraiseQueueBatch(
+      [fakeMessage()],
+      { eventStore, mondayClient, config: { ...archivedConfig, funraiseSync: { ...archivedConfig.funraiseSync, oldestActiveFiscalYear: null } } }
+    );
+
+    expect(mondayClient.createItem).toHaveBeenCalled();
+  });
+});

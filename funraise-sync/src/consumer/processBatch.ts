@@ -190,6 +190,22 @@ async function processOne(entityType: EntityType, entityId: string, deps: Proces
     }
   }
 
+  // Nothing carries this Funraise ID and the lookup above can't see archived items. A gift dated
+  // before the oldest active fiscal year may well be an archived migrated gift, and creating
+  // here would double it in donation-rollups, so flag it for staff instead. Terminal for this
+  // delivery (acked, not retried); a later edit re-enters the queue and is judged afresh.
+  const oldestActiveFiscalYear = deps.config.funraiseSync.oldestActiveFiscalYear;
+  const giftFiscalYear = fiscalYearEnding(transactionDate);
+  if (entityType === 'transaction' && oldestActiveFiscalYear !== null && giftFiscalYear !== null && Number(giftFiscalYear) < oldestActiveFiscalYear) {
+    const reason =
+      `needs review: transaction is in fiscal year ${giftFiscalYear}, before the oldest active year ` +
+      `${oldestActiveFiscalYear}, and no active Donations item carries its Funraise ID. It may be an archived ` +
+      `migrated gift (update it by hand) or a genuinely new back-dated gift (add it by hand). Nothing was created.`;
+    console.error(`funraise-sync consumer: transaction "${entityId}" ${reason}`);
+    await deps.eventStore.updateStatusByEntity(entityType, entityId, 'needs_review', { error: reason });
+    return;
+  }
+
   // Funraise's own transaction-time donor receipt already covers acknowledgment for
   // Funraise-sourced gifts (migration-plan.md Decisions Needed, Option 2), so this Worker
   // marks it sent itself instead of relying on Salesforce's donation-acknowledgment automation.

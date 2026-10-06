@@ -22,6 +22,7 @@ export function testConfig(
       giftTypeValue: 'Donation',
       eventGiftTypeValue: 'Event Ticket',
       fiscalYearColumn: null,
+      oldestActiveFiscalYear: null,
       recurringGiftLinkColumn: null,
       rawPayloadRetentionDays: 90,
       unresolvedPayloadRetentionDays: 365,
