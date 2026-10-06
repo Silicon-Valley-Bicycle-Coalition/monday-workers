@@ -364,6 +364,44 @@ payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are l
 manual recovery from Funraise. To find dead gifts directly:
 `select entity_id, error, received_at from events where error like 'dead-lettered%'`.
 
+## Replaying one Worker's deliveries into another (cutover handoff)
+
+At cutover Funraise's single webhook moves from the sandbox Worker to production
+(svbc-monday-migration#48, runbook `docs/23` step 5). The sandbox Worker's D1 `events` table is
+the record of every gift delivered while the webhook still pointed there, so after the repoint
+those deliveries are replayed into production:
+
+```sh
+# Plan only: reads the sandbox D1, needs no secret
+node scripts/replay-window.mjs --since 2026-10-09T17:30:00.000Z --dry-run
+# Replay into production, with the PRODUCTION Worker's secret
+FUNRAISE_WEBHOOK_SECRET=... node scripts/replay-window.mjs --since 2026-10-09T17:30:00.000Z \
+  --worker-url https://<production-worker-host> [--until <ISO UTC>] [--source-env sandbox|production] [--pause-ms 2000]
+```
+
+`--since` is when the final extract **started**; the overlap with what it carried is harmless
+because adopt-before-create updates a gift the import already put on the board. Run the
+subscriptions bootstrap walk first so each installment finds its Recurring Gift in the ledger.
+
+How it differs from `redrive-failed.mjs`, which it reuses `planRedrive` from:
+
+* **Selects by time, not status.** The gap's deliveries are `written` in the sandbox ledger, so a
+  status filter finds none of them. An edit replaces its row and `received_at`, so the window
+  catches edits to gifts first seen earlier. Rows come back ordered by `received_at`.
+* **Skips Funraise's Test-button transaction (id `-1`)**, which would otherwise create a fake
+  donor and Donations item in production.
+* **A `duplicate` answer is success.** The route answers it for a delivery it already holds, or
+  when the stored `sent_at` is newer (the stale-delivery guard), so the replay never undoes a
+  later edit, and re-running it is safe. A bad secret stops the run at the first delivery.
+* **Reports what it can't replay:** rows whose payload the retention purge emptied
+  (`rawPayloadRetentionDays`, 90 days after the write) must be recovered from Funraise by hand.
+  Exit codes: 0 clean, 1 a delivery failed or the secret was rejected, 2 only unreplayable rows.
+
+It sends the stored, already PII-stripped payload, and the production route strips it again. It
+changes nothing in D1 or Monday itself; each accepted delivery goes through the normal queue
+consumer, so replayed gifts are subject to everything it does, including the archived-year flag.
+Check the result with the window check in the runbook's step 5, not with this script's counts.
+
 ## Resetting for new board ids
 
 When the boards this Worker writes are deleted and rebuilt (a cutover retry — private runbook,
