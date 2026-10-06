@@ -47,8 +47,9 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       Free cap already stalled `donation-rollups` in the sandbox (its README, "operational
       findings, 2026-09-17"), and donor-facing email to non-verified destinations requires Paid
       (sandbox design, Open items).
-- [ ] **Raise the "Billing Budget Alert"** (Manage account → Notifications) above the $5 base
-      subscription, or it fires immediately and means nothing.
+- [x] **"Billing Budget Alert" stays at $10** (reviewed 2026-10-06). Galileo covers the Business
+      plan, not Workers Paid, so the $5 base is billed and $10 means $5 of real usage overage —
+      an early warning, not noise.
 - [ ] Confirm every Worker's `limits.cpu_ms: 100` is still present — it's the guard that matters
       once Paid's 30 s default applies.
 - [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's
@@ -65,7 +66,11 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] `monday-backup` — view access to every workspace.
   - [ ] Never a staff member's personal token.
 - [ ] **Mail domain:** `mail.bikesiliconvalley.org` onboarded for Email Sending, DMARC record in
-      place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it.
+      place (`member-portal/DEPLOY.md` Phase 2–3). `bp-feedback-notify` reuses it. **Check the
+      existing record first:** as of 2026-10-06 `mail.bikesiliconvalley.org` is a proxied CNAME to
+      `ghs.googlehosted.com` (a Google Workspace shortcut that already fails with a 525, since
+      Google presents no certificate for it). A CNAME can't share its name with other records, so
+      decide whether that shortcut goes before onboarding the subdomain.
 - [ ] **Third-party accounts ready:**
   - [ ] Funraise production API key.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys
