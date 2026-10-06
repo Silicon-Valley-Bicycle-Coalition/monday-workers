@@ -410,6 +410,11 @@ How it differs from `redrive-failed.mjs`, which it reuses `planRedrive` from:
 * **Reports what it can't replay:** rows whose payload the retention purge emptied
   (`rawPayloadRetentionDays`, 90 days after the write) must be recovered from Funraise by hand.
   Exit codes: 0 clean, 1 a delivery failed or the secret was rejected, 2 only unreplayable rows.
+* **Mind the Worker's rate limit.** The route allows 60 requests a minute per client
+  (`REQUEST_RATE_LIMITER`), and a rejected request comes back `429` and counts as `failed`. Keep
+  the default `--pause-ms 2000`, and after a run that ended with 429s wait a minute before
+  re-running: the re-run's first requests land in the window the first run used up. Both runs
+  were seen in the 2026-10-06 rehearsal (`docs/superpowers/specs/2026-10-06-funraise-replay-rehearsal-design.md`).
 
 It sends the stored, already PII-stripped payload, and the production route strips it again. It
 changes nothing in D1 or Monday itself; each accepted delivery goes through the normal queue
