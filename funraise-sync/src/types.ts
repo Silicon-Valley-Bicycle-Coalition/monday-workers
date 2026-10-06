@@ -5,7 +5,7 @@ import type { FunraiseQueueMessage } from './consumer/processBatch';
 // poller-design.md). Subscriptions are polled, not delivered, and registrations have no source.
 // Kept as a named type because the D1 `events.entity_type` column stores it.
 export type EntityType = 'transaction';
-export type EventStatus = 'received' | 'matched' | 'queued' | 'written' | 'failed';
+export type EventStatus = 'received' | 'matched' | 'queued' | 'written' | 'failed' | 'needs_review';
 
 export interface EventRow {
   eventId: string;
@@ -89,6 +89,12 @@ export interface FunraiseSyncConfig {
     // salesforce-import stamps the same column on every migrated gift; donation-rollups reads it
     // and derives from Date when blank but never backfills (decision 2026-09-17). null disables it.
     fiscalYearColumn: string | null;
+    // First SVBC fiscal year (named for the calendar year it ends in) that salesforce-import kept
+    // active on the Donations board; gifts in earlier years were archived, which the adopt-before-
+    // create lookup can't see. A transaction with no existing item and a fiscal year before this
+    // is flagged `needs_review` instead of creating a duplicate. It is the importer's
+    // `cutoffFY`: cutover fiscal year − donationsActiveFiscalYears + 1. null disables the check.
+    oldestActiveFiscalYear: number | null;
     // Connect column on the Donations board pointing at the Recurring Gifts board; set on every
     // write of an installment (a transaction carrying `subscription.id`). null disables it.
     recurringGiftLinkColumn: string | null;

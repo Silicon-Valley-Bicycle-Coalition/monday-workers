@@ -20,6 +20,7 @@ const validConfig = {
     giftTypeValue: 'Donation',
     eventGiftTypeValue: 'Event Ticket',
     fiscalYearColumn: null,
+    oldestActiveFiscalYear: null,
     recurringGiftLinkColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,
@@ -199,6 +200,21 @@ describe('validateConfig nullable column ids', () => {
       expect(() => validateConfig(withFunraiseSync({ [key]: 'some_col' }))).not.toThrow();
     });
   }
+});
+
+describe('validateConfig oldestActiveFiscalYear', () => {
+  it('requires the key to be present', () => {
+    const { oldestActiveFiscalYear: _drop, ...funraiseSync } = validConfig.funraiseSync;
+    expect(() => validateConfig({ ...validConfig, funraiseSync })).toThrow(/oldestActiveFiscalYear/);
+  });
+
+  it.each([0, -1, 2026.5, '2026', NaN])('rejects %s', (value) => {
+    expect(() => validateConfig(withFunraiseSync({ oldestActiveFiscalYear: value }))).toThrow(/oldestActiveFiscalYear/);
+  });
+
+  it.each([null, 2026])('accepts %s', (value) => {
+    expect(() => validateConfig(withFunraiseSync({ oldestActiveFiscalYear: value }))).not.toThrow();
+  });
 });
 
 describe('validateConfig subscriptionsPoll', () => {

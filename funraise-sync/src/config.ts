@@ -145,6 +145,14 @@ export function validateConfig(raw: unknown): FunraiseSyncConfig {
     }
   }
 
+  const oldestActiveFiscalYear = funraiseSync.oldestActiveFiscalYear;
+  if (
+    oldestActiveFiscalYear !== null &&
+    (typeof oldestActiveFiscalYear !== 'number' || !Number.isInteger(oldestActiveFiscalYear) || oldestActiveFiscalYear <= 0)
+  ) {
+    throw new Error('config: "funraiseSync.oldestActiveFiscalYear" must be a fiscal year (e.g. 2026) or null to disable the archived-gift check');
+  }
+
   for (const key of ['rawPayloadRetentionDays', 'unresolvedPayloadRetentionDays'] as const) {
     if (typeof funraiseSync[key] !== 'number' || (funraiseSync[key] as number) <= 0) {
       throw new Error(`config: "funraiseSync.${key}" must be a positive number of days`);

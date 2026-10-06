@@ -24,6 +24,7 @@ const config: FunraiseSyncConfig = {
     giftTypeValue: 'Donation',
     eventGiftTypeValue: 'Event Ticket',
     fiscalYearColumn: 'fiscal_year_col',
+    oldestActiveFiscalYear: null,
     recurringGiftLinkColumn: null,
     rawPayloadRetentionDays: 90,
     unresolvedPayloadRetentionDays: 365,

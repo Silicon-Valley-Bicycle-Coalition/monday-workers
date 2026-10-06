@@ -207,11 +207,25 @@ Fiscal Year Ending), and never the Donor link. A migrated gift's values for thos
 Salesforce, and the Donor there can deliberately be an Organization. An orphan of our own
 already got all of them when it was created.
 
-**Known gap: archived fiscal years.** `items_page_by_column_values` doesn't return archived
-items, and `salesforce-import` archives Donations older than the active fiscal-year window. A
-Funraise update to one of those old gifts finds nothing and still creates a new item. That is
-rare (refunds are almost always recent) but not impossible. Resolving it needs a decision:
-reject and flag such events for staff, or keep a Funraise-id → item map for archived gifts.
+**Archived fiscal years: flagged, not created (2026-10-06).** `items_page_by_column_values`
+doesn't return archived items, and `salesforce-import` archives Donations older than its active
+fiscal-year window, so the lookup above can't see an archived migrated gift. Without a guard, a
+Funraise edit or refund to one would create a second Donations item that `donation-rollups`
+counts twice. `funraiseSync.oldestActiveFiscalYear` is the importer's `cutoffFY` (cutover fiscal
+year − `donationsActiveFiscalYears` + 1; 2026 for the 2026-10-09 cutover with two active years).
+When no item carries the transaction's Funraise ID **and** the gift's fiscal year is earlier, the
+consumer creates nothing: the `events` row goes to `needs_review` with the reason in `error`, the
+message is acked (no retries), and one `console.error` line names the transaction id. A later
+edit is judged afresh. Staff list them with
+
+```sh
+wrangler d1 execute svbc-funraise-sync --remote \
+  --command "SELECT entity_id, error, received_at FROM events WHERE status = 'needs_review'"
+```
+
+(`svbc-funraise-sync-sandbox` for the sandbox) and either update the archived item by hand or, for a
+back-dated gift that was never migrated, add it. Nothing writes these to a Monday board yet.
+`null` disables the check; a gift with an unparseable date is created as before.
 
 Gone with the registration path (2026-09-18): the `event-registrations` board key, the
 per-entity `columnMap.recurringGift` / `.registration` maps, and the per-board column-id
