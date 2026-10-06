@@ -3,6 +3,7 @@ import { classifyContact, contactToPayload, accountToPayload, personNamedAccount
   type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
 import { setStaffMatcher } from './fields.js';
+import { BOARD_SPECS } from '../configure/spec.js';
 
 const emptyInc = (): InclusionInput => ({
   donorIds: new Set(), recentDonorIds: new Set(), memberSummaries: new Map(),
@@ -91,6 +92,25 @@ describe('contactToPayload', () => {
       LastModifiedDate: '2020-01-01T00:00:00Z', LastModifiedBy: { Name: 'X' } }, 'people-live',
       { consent: new Map() });
     expect(p.columns['Employer Name']).toBe('Google');
+  });
+
+  it('seeds Stakeholder Type = Elected Official from Elected__c and leaves everyone else blank (#46)', () => {
+    const base = { FirstName: 'A', LastName: 'B', CreatedDate: '2020-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
+      LastModifiedDate: '2020-01-01T00:00:00Z', LastModifiedBy: { Name: 'X' } };
+    const elected = contactToPayload({ Id: 'c5', ...base, Elected__c: true }, 'people-live', { consent: new Map() });
+    expect(elected.columns['Stakeholder Type']).toEqual({ label: 'Elected Official' });
+    // The classification is a fact about the person, not the board: an elected official with
+    // no recent activity keeps it on People (Historical).
+    const historical = contactToPayload({ Id: 'c8', ...base, Elected__c: true }, 'people-historical', { consent: new Map() });
+    expect(historical.columns['Stakeholder Type']).toEqual({ label: 'Elected Official' });
+    // Absent, not null — the column must not be forced onto a board with no elected contact.
+    for (const row of [{ Id: 'c6', ...base, Elected__c: false }, { Id: 'c7', ...base }]) {
+      const p = contactToPayload(row, 'people-live', { consent: new Map() });
+      expect('Stakeholder Type' in p.columns, row.Id).toBe(false);
+    }
+    // The label is the one configure's spec declares, or the seeded column would carry a stray value.
+    const spec = BOARD_SPECS['people-live']!.columns!.find((col) => col.title === 'Stakeholder Type')!;
+    expect(spec.labels).toContain('Elected Official');
   });
 
   it('takes Salesforce Owner from the one-to-one Account, not a Contact-level field', () => {

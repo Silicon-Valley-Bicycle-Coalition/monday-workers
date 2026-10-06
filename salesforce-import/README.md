@@ -174,7 +174,9 @@ count as "without a Salesforce ID" and their ledger entries as missing.
 columns, column descriptions, and saved table views with filters — against whatever board ids are
 in `data/load/boards.json` (sandbox or production, whichever `load` last ran against). It's
 idempotent and non-destructive: an already-set description or column description is left alone
-rather than overwritten, and a view is only created if no view of that name exists yet. Run it
+rather than overwritten, a column already on the board (including Stakeholder Type, which `load`
+normally creates because `transform` seeds it — see "What the script must resolve") is skipped,
+and a view is only created if no view of that name exists yet. Run it
 after `load`'s `ensureBoards` pass and before staff get access, same sequencing docs/22 §5
 specifies. Deliberately **not** scripted (see `src/configure/spec.ts` header): automations (no
 public API to create them), the Documentation doc view (no API for doc-kind views), stripping
@@ -211,6 +213,17 @@ ledger) — sandbox board ids and ledger entries left over from rehearsals would
 writes to the sandbox boards or suppress them entirely, since the ledger would report those items
 as already loaded — re-run `extract` fresh, then keep `data/` as the migration audit artifact
 alongside the backup archive.
+
+**Backup-only extracts** (`backupOnly: true` in `src/extract/queries.ts`) are written to
+`data/backup/*.ndjson` by `extract` and never read by `transform` — they exist so the archive is
+complete, not so anything lands on a board. Today: `ContactHistory`, `CampaignMember`, `Lead`,
+every `Task` and `EmailMessage` (the Activities board gets only the recent slice), NPSP payments
+(#23) and `npe4__Relationship__c`, plus — decided 2026-09-30 in the private planning repo's
+issue #53 — the sponsor benefit-fulfillment cluster (`Sponsorship_Level__c`,
+`Sponsorship_Package__c`, `Sponsor_Benefit__c`, `Benefit__c`; ~2,046 rows) and the Bike to Work
+Day logistics objects (`BTWD_Order__c`, `Energizer_Station__c`). Each of those six selects every
+custom field the schema reference lists plus Id, Name, record type and system dates; none is
+near the CLI's 50k ceiling, so none is paginated.
 
 ## Why not the live connector
 
@@ -297,7 +310,15 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   completed before the script can consume it.
 * **Stakeholder Type for individuals** — the same classification need, widened to all 49,749
   people (Individual Donor / City or Agency Staff / Elected Official / Partner Org Contact), per
-  Unique Advocacy-Specific Needs.
+  Unique Advocacy-Specific Needs. **Seeded at import (#46):** `extract` selects
+  `Contact.Elected__c` and `transform` writes `Stakeholder Type = Elected Official` on the 366
+  contacts that have it set (on whichever People board they land — the classification is a fact
+  about the person, not the board), and nothing on anyone else. Because `load` creates every
+  column a payload names, the status column comes into existence at load time with the full
+  four-label set (`STAKEHOLDER_TYPE_LABELS` in `src/load/boards.ts`, which `configure`'s spec
+  imports so the two can't drift), and `configure` then finds it present and leaves it alone.
+  The other three labels have no Salesforce source — City or Agency Staff in particular is a
+  Monday-side seed from the reviewed `find-city-agency-staff` CSV — so they start empty.
 * **Volume ceiling — verified 2026-08-22, redesigned 2026-08-25.** Monday's limit is a hard
   [10,000 items per board on Basic/Standard/Pro](https://support.monday.com/hc/en-us/articles/4404058746642-Item-and-subitem-limits-per-board)
   (100k on Enterprise), and the org this was built for is on Pro. That caps not just People but
