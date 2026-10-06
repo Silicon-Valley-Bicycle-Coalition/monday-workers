@@ -4,8 +4,8 @@
 step 5) requires the replay to be rehearsed before Gate A: "replaying one Worker's stored
 deliveries into another has never been run." This is how to do that with what exists, what it
 proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with
-reject-and-flag (!185). S0, S1, S2, S4 and the wrong-secret case of S6 have run and pass (S4's
-`Refunded` half confirms a known gap); S3 was blocked by a permission check; S5 and S7 have not run.
+reject-and-flag (!185). S0, S1, S2, S4, S5 and the wrong-secret case of S6 have run and pass (S4's
+`Refunded` half confirms a known gap); S3 was blocked by a permission check; S7 has not run.
 
 ## What there is to replay
 
@@ -111,7 +111,8 @@ noted.
 | **S3** create path | **Not run: blocked.** Claude Code's auto-mode permission check refused the `delete_item` calls on three sandbox Donations items (an installment, a one-time `Complete` and a `Failed`, chosen and recorded first), even after the user approved the sandbox writes. Nothing was deleted, and the create path (`createItem` for a gift with no existing item) is still unrehearsed. Re-run it with the deletion done by hand or under an explicit permission rule. |
 | **S4** stale guard | **Pass.** An envelope for a replayed transaction with `sentAt` 1,000 ms older than the stored one answered `{"ok":true,"duplicate":true}`; the item's amount and status were unchanged. |
 | **S4** `Refunded` | **Confirms the gap, and shows how it fails.** A newer envelope with `transaction.status: Refunded` was accepted (`{"ok":true}`) and the consumer's write was rejected by Monday: *"This status label doesn't exist, possible statuses are: Received, Received (Historical), Failed, Pending"*. The `events` row went to `failed` with that error, and the item stayed `Received`. The sandbox Donations Status column has **no `Refunded` label**, so runbook step 4.2 is a real prerequisite: on the deployed Worker every buffered refund would retry 1, 4 and 16 minutes and then dead-letter. Nothing needed reverting. No label was added. |
-| **S5**, **S7** | **Not run.** S5 needs !185's code; S7 needs the sandbox ledger copied into the local D1. |
+| **S5** archived-year flag | **Pass** (run after !185 merged, on `main`'s code). A synthetic envelope, transaction `99000001` dated 2025-01-15 (FY 2025), $1, built from an existing donor's payload shape so matching found the donor, item name "REHEARSAL S5 (synthetic, archived-year)". The route answered `{"ok":true}`; the local `events` row went to `needs_review` with no Monday item and the error *"needs review: transaction is in fiscal year 2025, before the oldest active year 2026, and no active Donations item carries its Funraise ID … Nothing was created."* The Donations board stayed at 3,899 items and none carries Funraise id `99000001`; the log has one error line naming only the id (no `@`), so the message was acked and not retried; the donor was matched, not created. |
+| **S7** | **Not run.** It needs the sandbox ledger copied into the local D1. |
 
 The marker edit was reverted (Gift Type back to `Donation`) and the local Worker stopped. Nothing
 else on the sandbox boards differs from before.
@@ -133,9 +134,29 @@ re-run after the window cleared completed cleanly. So:
   local run used the fixed `local` key, so the same behavior is expected but has not been seen
   deployed.
 
+### Finding: remote D1 reads failed mid-session (Cloudflare error 7403)
+
+Earlier on 2026-10-06, `wrangler d1 execute svbc-funraise-sync-sandbox --remote` worked for the
+preflight, the item-id mapping and the candidate selection. Later in the day the same call, under
+the same OAuth login (`wrangler whoami` still reported it logged in), returned *"The given account
+is not valid or is not authorized to access this service [code: 7403]"*. It is a Cloudflare-side
+authorization error, not an expired login (that one gives a different message and was fixed
+earlier by `wrangler login`). The cause is unknown: the login may have been refreshed with fewer
+scopes, or something changed on the account.
+
+* **What it means for cutover:** `replay-window.mjs` reads the **source D1 through wrangler**, so
+  it would fail the same way. Check `wrangler d1 execute <db> --remote --command "SELECT 1"` on the
+  operator's machine before the weekend, and `wrangler login` again if it fails. Do not discover
+  this at step 6.2.
+* **How S5 went around it:** it needed only one stored payload, which the local scratch D1 from S4
+  already held, so the envelope was built from that. The replay scenarios themselves (S0–S4) all
+  ran before the error appeared.
+* **Not yet diagnosed:** whether a fresh `wrangler login` clears it. The script's stderr fix (!187)
+  does surface the message, so the failure is at least readable.
+
 ## Exit criteria
 
-S0–S7 pass (S0, S1, S2, S4 and the wrong-secret case of S6 already have; S3 needs a way past the deletion block), and the output is kept. Then update the
+S0–S7 pass (S0, S1, S2, S4, S5 and the wrong-secret case of S6 already have; S3 needs a way past the deletion block, S7 the ledger copy), and the output is kept. Then update the
 runbook's `BUILD: TBD (#48)` for the replay rehearsal, and record any divergence, in particular
 anything the local queue did differently.
 
