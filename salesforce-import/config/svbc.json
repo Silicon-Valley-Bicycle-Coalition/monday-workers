@@ -5,6 +5,7 @@
   "activitySliceSinceISO": "2024-08-01",
   "boardMaxItems": 9000,
   "donationsActiveFiscalYears": 2,
+  "eventbriteIntegrationUserName": "SVBC Integration",
   "consumerEmailDomains": [
     "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "hotmail.com", "outlook.com", "live.com",
     "msn.com", "icloud.com", "me.com", "mac.com", "aol.com", "comcast.net", "sbcglobal.net",

@@ -170,8 +170,9 @@ September 2025), and **Gift Fiscal Year**. A gift entered today shows them blank
    separate email tier; Monday's replacement is a person working this list.
 3. **Revenue by funding stream.** Compare the group footers with what you'd expect for this year.
    FY2026 Matching Donations and Grants & Contracts reconcile to Salesforce to the cent;
-   Individual Giving reads about $11,900 lower because Salesforce's retired "Closed Won" stage
-   is excluded from revenue.
+   Individual Giving read about $11,900 lower on the 2026-09-29 load because every "Closed Won"
+   gift was excluded from revenue; the Eventbrite ticket orders that stage mostly holds now map
+   to Received / Event Ticket, so re-check this figure after the next load.
 4. **Find an old gift.** Searching the table only finds the active two years. For older gifts,
    use the board's ⋯ menu → Archived items, or start from the donor's card. Is that workable, or
    too awkward to live with?

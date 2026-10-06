@@ -267,8 +267,8 @@ export async function runTransform(args: string[]): Promise<number> {
   const attRollups = attributionRollups(opportunities, attributedOpps, affiliationIndex);
   // Personal / organization rollups follow the Donor link, which follows attribution — so
   // they are computed only now that attributedOpps exists (see donations.ts giftDonorSfId).
-  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed, { orgAccountIds, attributed: attributedOpps }),
-    cnpUnique, overlap: cnp.length - cnpUnique.length };
+  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed, { orgAccountIds, attributed: attributedOpps },
+    cfg.eventbriteIntegrationUserName), cnpUnique, overlap: cnp.length - cnpUnique.length };
 
   const payloads: ItemPayload[] = [];
   const includedContactIds = new Set<string>();
@@ -339,7 +339,8 @@ export async function runTransform(args: string[]): Promise<number> {
   const softCredits = softCreditsByGift(contactRoles, opportunities, placeholderDonorSfIds);
   for (const o of opportunities) {
     payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
-      actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string) }));
+      actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string),
+      eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName }));
   }
   for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 

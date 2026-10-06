@@ -8,6 +8,9 @@ import { attributionColumns, MATCHING_GIFT_TYPE } from './attribution.js';
 // filters on Status === 'Received' exactly, so a shared label would silently pull these
 // back into ongoing Lifetime Giving totals every time it recomputes, undoing the fix in
 // transform/rollups.ts. See docs/17 for the full picklist audit.
+// Closed Won is NOT a retired stage, though (#43, migration issue #56, decided 2026-09-30):
+// the eb4sf Eventbrite package still writes every paid ticket order as Closed Won, under the
+// integration user — see isEventbriteTicketOrder, which takes those out of this table.
 // Withdrawn is Failed, not Pending: the donor backed out, so the gift isn't coming.
 const STATUS: Record<string, string> = {
   Posted: 'Received', 'Closed Won': 'Received (Historical)', 'Closed Lost': 'Failed', Withdrawn: 'Failed',
@@ -18,6 +21,22 @@ const PENDING_STAGES = new Set(['Prospecting', 'Pledged', 'Invoiced', 'Not Poste
 
 export const donationStatus = (stage: unknown): string =>
   typeof stage === 'string' && Object.hasOwn(STATUS, stage) ? STATUS[stage]! : 'Pending';
+
+// Gift Type for an Eventbrite paid ticket order. Same label funraise-sync writes for its paid
+// events (`eventGiftTypeValue` in ../../funraise-sync/config/svbc.json) — keep them identical,
+// Gift Type is a text column and the dashboards group on the string.
+export const EVENT_TICKET_GIFT_TYPE = 'Event Ticket';
+
+// An eb4sf ticket order: Closed Won AND created by the integration user the package runs as
+// (config.eventbriteIntegrationUserName). Created-by is the discriminator, not the "Eventbrite"
+// name suffix, because the package stamps the user on every order while the name is a
+// template a staff member can edit or copy. Ticket revenue counts as giving, so these are
+// Received / Event Ticket; the Closed Won gifts individual users keyed in stay historical.
+// No configured user → nothing matches, so a fork without the package is unaffected.
+export function isEventbriteTicketOrder(o: Record<string, unknown>, integrationUserName?: string | null): boolean {
+  if (!integrationUserName || o['StageName'] !== 'Closed Won') return false;
+  return (o['CreatedBy'] as { Name?: string } | null)?.Name === integrationUserName;
+}
 
 // Stage name → gift count for every stage donationStatus doesn't recognise.
 export function unknownStages(opportunities: readonly Record<string, unknown>[]): Map<string, number> {
@@ -79,6 +98,8 @@ export interface DonorResolution {
 export interface OpportunityDeps extends DonorResolution {
   termCols: Map<string, Record<string, unknown>>;
   softCredits?: readonly string[];
+  // See isEventbriteTicketOrder. Omit (or null) to map every Closed Won gift as historical.
+  eventbriteIntegrationUserName?: string | null;
 }
 
 export const giftType = (o: Record<string, unknown>): string =>
@@ -104,7 +125,8 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
   const orgAccountIds = deps.orgAccountIds ?? new Set<string>();
   const accountId = o['AccountId'] as string | null;
   const donorId = giftDonorSfId(o, deps);
-  const type = giftType(o);
+  const ticketOrder = isEventbriteTicketOrder(o, deps.eventbriteIntegrationUserName);
+  const type = ticketOrder ? EVENT_TICKET_GIFT_TYPE : giftType(o);
   const attribution = attributionColumns(deps.actingFor ?? null);
   const links: ItemPayload['links'] = [...attribution.links];
   if (donorId) links.push({ column: 'Donor', targetSfIds: [donorId] });
@@ -126,7 +148,7 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Date': dateCol(o['CloseDate'] as string),
       'Fiscal Year Ending': fiscalYear(o['CloseDate'] as string | null),
       'Salesforce Owner': ownerAttribution(o['Owner']),
-      'Status': { label: donationStatus(o['StageName']) },
+      'Status': { label: ticketOrder ? 'Received' : donationStatus(o['StageName']) },
       'Gift Type': type,
       'Funraise ID': funraiseTransactionLink(o['funraise__fr_ID__c']),
       'Anonymous Donor': donorId ? null : { checked: 'true' },

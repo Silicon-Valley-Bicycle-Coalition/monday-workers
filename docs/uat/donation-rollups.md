@@ -79,9 +79,11 @@ spot.
   this account; the Gift Ledger column carries it instead.
 - On the day a membership expires, Status can read Active and then Lapsed within the same day.
 - A refund does not take back a membership term that was already granted.
-- Gifts marked "Received (Historical)" (Salesforce's retired Closed Won stage) are deliberately
-  excluded from totals. That is why FY2026 Individual Giving reads about $11,900 lower than the
-  Salesforce report.
+- Gifts marked "Received (Historical)" (Closed Won gifts staff keyed in by hand) are deliberately
+  excluded from totals. Eventbrite's paid ticket orders also reach Salesforce as Closed Won, and
+  until the next load they are excluded too — that is why FY2026 Individual Giving read about
+  $11,900 lower than the Salesforce report on 2026-09-29. The importer now maps them to Received
+  / Event Ticket, so expect the gap to close once the boards are reloaded.
 - Funraise and Benevity gifts aren't reaching this board yet; see the
   [README](README.md#known-gaps-across-the-whole-sandbox).
 

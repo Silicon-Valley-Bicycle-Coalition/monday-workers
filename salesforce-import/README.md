@@ -366,6 +366,23 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   `Redacted` subscription) are all in
   `docs/03-monday-migration-mapping.md` (private planning repo) — treat
   that document as the authoritative field mapping for this script, not a summary of it.
+* **`Closed Won` is not a retired stage — decided 2026-09-30 (#43, migration issue #56).** The
+  `eb4sf` Eventbrite package still writes every paid ticket order as a `Closed Won` Opportunity
+  under the `SVBC Integration` user (211 records / $14,751.94 with `CloseDate` ≥ 2025-07-01 in the
+  2026-09-08 extract; none has a Funraise ID). Ticket revenue counts as giving, so `transform`
+  maps a `Closed Won` gift **created by `eventbriteIntegrationUserName`** (`config/svbc.json`)
+  to Status `Received` with Gift Type `Event Ticket` — the same label `funraise-sync` writes for
+  its paid events, so keep the two configs in step — and seeds Lifetime Giving / Gift Count with
+  it (`transform/rollups.ts`), as `donation-rollups` will once it recomputes on `Received`. The
+  138 `Closed Won` gifts individual users keyed in stay `Received (Historical)`, excluded from
+  revenue as before. The discriminator is `CreatedBy.Name`, not the "… Eventbrite" name suffix
+  (the package stamps the user on every order; the name is an editable template). No new SOQL
+  field and no re-extract: `CreatedBy.Name` has been on the Opportunity query since the extract
+  stage first shipped (`7e9def2`, 2026-08-22), so every `data/extract/` this script ever wrote
+  already carries it — but the mapping only lands after `transform` is re-run against it, so
+  re-run `transform` before the next `load`. **Follow-up, not done here:** the FY2026 reconciliation (migration `docs/16`, and §9
+  of the 2026-09-29 spec, which show Individual Giving $11,940.52 under Salesforce) must be
+  re-run on the sandbox after the next load to confirm the gap closes.
 * **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
   Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
   Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and
@@ -419,7 +436,7 @@ into the cutover log) and `data/reconcile/result.json`.
 | `donations-by-fiscal-year` | gift count and Amount sum per July–June fiscal year, by `CloseDate` / transaction date | the same, bucketed from each Donations item's `Date` and `Amount` |
 | `donations-by-salesforce-id` | each gift's Amount and fiscal year | gifts that landed once but with a different Amount or fiscal year |
 | `board-<key>` | payload count per board | items per board, active plus archived. Salesforce Ids missing, duplicated, or not from this extract |
-| `top-N-donors` | Lifetime Giving and Gift Count the importer derived from the extract (Posted Opportunities plus unique Click & Pledge, credited as the Donor link is) | the same columns on the owner item, which `donation-rollups` maintains |
+| `top-N-donors` | Lifetime Giving and Gift Count the importer derived from the extract (Posted Opportunities and Eventbrite ticket orders, plus unique Click & Pledge, credited as the Donor link is) | the same columns on the owner item, which `donation-rollups` maintains |
 
 ```sh
 npm run cli -- reconcile                    # top 25 donors, boards from data/load/boards.json
