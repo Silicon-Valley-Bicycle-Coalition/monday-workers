@@ -1,9 +1,11 @@
 # Funraise replay rehearsal — design
 
-**Status:** proposal, 2026-10-06. The runbook (`monday-migration` `docs/23`, step 5) requires the
-replay to be rehearsed before Gate A: "replaying one Worker's stored deliveries into another has
-never been run." This is how to do that with what exists, what it proves, and what it can't.
-Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with reject-and-flag (!185).
+**Status:** partly run, 2026-10-06 (see "Results"). The runbook (`monday-migration` `docs/23`,
+step 5) requires the replay to be rehearsed before Gate A: "replaying one Worker's stored
+deliveries into another has never been run." This is how to do that with what exists, what it
+proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with
+reject-and-flag (!185). S0, S1, S2 and the wrong-secret case of S6 have run and pass; S3, S4, S5
+and S7 have not.
 
 ## What there is to replay
 
@@ -92,9 +94,45 @@ ledger. Copy the sandbox `subscriptions` and `poll_cursors` tables into the loca
 `events`, replay, and expect no Funraise subscription lookups in the consumer log. Without the copy
 (S1), each distinct subscription costs one Funraise API request against the 3,000-a-month budget.
 
+## Results (2026-10-06)
+
+Run as designed: the merged `main` code (replay script, without !185) as `wrangler dev --env sandbox`
+on a fresh local D1, the real sandbox D1 as the source, the real sandbox v3 boards as the write
+target, with the Sandbox Integration token. Replays used `--pause-ms 1000` or more except where
+noted.
+
+| | Result |
+|---|---|
+| **S0** preflight | **Pass.** 71 replayable, 0 not, all `written`, no `-1`. A `--since` in the future gave 0 rows. |
+| **S1** overlap (adopt) | **Pass.** 71 `enqueued`, 0 failed; the local D1 drained to 71 `written` within about 30 s. Donations board 3,899 items before and after. All 71 local `monday_item_id`s equal the sandbox ledger's. A before/after read of nine columns on the 71 items (Funraise link, Thank You Sent, Gift Type, Fiscal Year, Recurring Gift link, Donor link, amount, status, date) showed **no change**. A Gift Type hand-edited to `REHEARSAL-MARKER` before the run was still there after, so adopt does not rewrite first-write stamps. |
+| **S2** idempotency | **Pass on the third run:** 71 `already present`, 0 failed, exit 0, and no consumer activity. The first two runs had failures; see below. |
+| **S6** wrong secret | **Pass.** `STOPPED at <first id>` on HTTP 401 and nothing further sent; the local `events` table stayed empty. |
+| **S6** target down, then up | Not run as such. The 429 runs below showed the same recovery: a re-run after the cause cleared completed. |
+| **S3**, **S4**, **S5**, **S7** | **Not run.** S3 and S4 change or delete sandbox items and were held for explicit approval; S5 needs !185's code; S7 needs the sandbox ledger copied into the local D1. |
+
+The marker edit was reverted (Gift Type back to `Donation`) and the local Worker stopped. Nothing
+else on the sandbox boards differs from before.
+
+### Finding: the 60-requests-a-minute limiter, shared across runs
+
+The first S2 run, at `--pause-ms 100`, ended with 60 `already present` and **11 failed**; the
+second, at 1,500 ms, with 57 and **14 failed**. Every failure was `HTTP 429 rate limit exceeded`
+from the Worker's `REQUEST_RATE_LIMITER` (60 per 60 s, keyed per client). The first burst used up
+a window and the next run's opening requests landed in it. Both runs exited 1, which is correct:
+the script counts a 429 as `failed`, not as `auth`, so it neither aborts nor hides it, and a
+re-run after the window cleared completed cleanly. So:
+
+* Keep the default `--pause-ms 2000` (30 a minute). Do not drop it low for speed: a cutover
+  window is tens of gifts.
+* After any run that ended with 429s, wait a minute before the re-run, or the re-run collides with
+  the same window.
+* Production is keyed on `CF-Connecting-IP`, so the limit applies to the operator's address; the
+  local run used the fixed `local` key, so the same behavior is expected but has not been seen
+  deployed.
+
 ## Exit criteria
 
-S0–S6 pass, S7 shows the lookup count drop to zero, and the output is kept. Then update the
+S0–S7 pass (S0, S1, S2 and the wrong-secret case of S6 already have), and the output is kept. Then update the
 runbook's `BUILD: TBD (#48)` for the replay rehearsal, and record any divergence, in particular
 anything the local queue did differently.
 
