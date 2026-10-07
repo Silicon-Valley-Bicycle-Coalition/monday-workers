@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { listOrdersUrl, parseOrdersPage, planBackfill } from './backfill-orders-lib.mjs';
+import { listOrdersUrl, parseOrdersPage, planBackfill, readArg, checkTarget, sendDelivery } from './backfill-orders-lib.mjs';
 import { validateDelivery } from '../src/webhook/validate';
 import { testConfig } from '../src/test/testConfig';
 
@@ -70,5 +70,60 @@ describe('planBackfill', () => {
   it('builds api_url from the configured base, never from resource_uri', () => {
     const { deliveries } = planBackfill([{ id: '9', status: 'placed', resource_uri: 'https://evil.example/v3/orders/9/' }], { apiUrl: API });
     expect(deliveries[0].delivery.api_url).toBe('https://www.eventbriteapi.com/v3/orders/9/');
+  });
+});
+
+describe('readArg', () => {
+  it('returns the default when the flag is absent and the value when present', () => {
+    expect(readArg(['--event-id', '1'], '--env', null)).toBeNull();
+    expect(readArg(['--env', 'sandbox'], '--env', null)).toBe('sandbox');
+  });
+
+  it('refuses a missing value or one that is itself a flag', () => {
+    expect(() => readArg(['--env', '--dry-run'], '--env', null)).toThrow('--env needs a value');
+    expect(() => readArg(['--env'], '--env', null)).toThrow('--env needs a value');
+  });
+});
+
+describe('checkTarget', () => {
+  it('accepts matching environments and a dry run with no Worker', () => {
+    expect(() => checkTarget('sandbox', 'https://svbc-eventbrite-sync-sandbox.x.workers.dev')).not.toThrow();
+    expect(() => checkTarget(null, 'https://svbc-eventbrite-sync.x.workers.dev')).not.toThrow();
+    expect(() => checkTarget('sandbox', null)).not.toThrow();
+  });
+
+  it('refuses a sandbox run at a production Worker and the reverse', () => {
+    expect(() => checkTarget('sandbox', 'https://svbc-eventbrite-sync.x.workers.dev')).toThrow('not a -sandbox Worker');
+    expect(() => checkTarget(null, 'https://svbc-eventbrite-sync-sandbox.x.workers.dev')).toThrow('pass --env sandbox');
+  });
+});
+
+describe('sendDelivery', () => {
+  const noSleep = () => Promise.resolve();
+  const reply = (status, body) => ({ ok: status < 400, status, text: async () => body });
+
+  it('succeeds on an enqueued delivery without retrying', async () => {
+    const calls = [];
+    const fetchFn = async (...a) => (calls.push(a), reply(200, '{"ok":true}'));
+    expect(await sendDelivery(fetchFn, 'u', 's', { a: 1 }, { sleep: noSleep })).toMatchObject({ ok: true, status: 200 });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('retries a network error, a 429 and a 5xx, then succeeds', async () => {
+    const queue = [() => { throw new Error('boom'); }, () => reply(429, 'slow'), () => reply(502, 'bad'), () => reply(200, '{"ok":true}')];
+    const fetchFn = async () => queue.shift()();
+    expect(await sendDelivery(fetchFn, 'u', 's', {}, { attempts: 4, sleep: noSleep })).toMatchObject({ ok: true });
+  });
+
+  it('gives up after the attempts and reports the last failure', async () => {
+    const fetchFn = async () => reply(503, 'down');
+    expect(await sendDelivery(fetchFn, 'u', 's', {}, { attempts: 2, sleep: noSleep })).toEqual({ ok: false, status: 503, body: 'down' });
+  });
+
+  it('does not retry a 4xx, and an ignored delivery is not a success', async () => {
+    let n = 0;
+    expect((await sendDelivery(async () => (n++, reply(401, 'no')), 'u', 's', {}, { sleep: noSleep })).ok).toBe(false);
+    expect(n).toBe(1);
+    expect((await sendDelivery(async () => reply(200, '{"ok":true,"ignored":"x"}'), 'u', 's', {}, { sleep: noSleep })).ok).toBe(false);
   });
 });

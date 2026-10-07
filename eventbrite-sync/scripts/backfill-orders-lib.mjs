@@ -60,3 +60,53 @@ export function planBackfill(orders, { apiUrl, statuses = ['placed', 'refunded']
   }
   return { deliveries, skipped };
 }
+
+// A flag's value: the next argument, unless it is missing or is itself a flag (`--env --dry-run`
+// must not read "--dry-run" as the environment).
+export function readArg(argv, name, dflt) {
+  const i = argv.indexOf(name);
+  if (i < 0) return dflt;
+  const value = argv[i + 1];
+  if (value === undefined || value.startsWith('--')) {
+    throw new Error(`${name} needs a value`);
+  }
+  return value;
+}
+
+// `--env` only picks which config's API base the listing uses; the Worker that receives the
+// deliveries is `--worker-url` alone. Refuse the mismatches that would feed one environment's
+// orders into the other: a sandbox run aimed at a Worker not named -sandbox, or a production
+// run aimed at one that is.
+export function checkTarget(wranglerEnv, workerUrl) {
+  if (workerUrl === null) return;
+  const host = new URL(workerUrl).hostname;
+  const isSandboxWorker = host.split('.')[0].endsWith('-sandbox');
+  if (wranglerEnv === 'sandbox' && !isSandboxWorker) {
+    throw new Error(`--env sandbox but --worker-url ${host} is not a -sandbox Worker`);
+  }
+  if (wranglerEnv !== 'sandbox' && isSandboxWorker) {
+    throw new Error(`--worker-url ${host} is a -sandbox Worker; pass --env sandbox`);
+  }
+}
+
+// POST one delivery, retrying a network error, 429 or 5xx — the backfill is idempotent, so a
+// repeat is safe, and one blip must not abort a run partway down the list.
+export async function sendDelivery(fetchFn, url, secret, delivery, { attempts = 3, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  let last = { ok: false, status: 0, body: 'no attempt made' };
+  for (let n = 1; n <= attempts; n++) {
+    try {
+      const res = await fetchFn(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': secret },
+        body: JSON.stringify(delivery),
+      });
+      const body = await res.text();
+      last = { ok: res.ok && body.includes('"ok":true') && !body.includes('"ignored"'), status: res.status, body };
+      if (res.status !== 429 && res.status < 500) return last;
+    } catch (err) {
+      last = { ok: false, status: 0, body: `network error: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (n < attempts) await sleep(1000 * 2 ** (n - 1));
+  }
+  return last;
+}

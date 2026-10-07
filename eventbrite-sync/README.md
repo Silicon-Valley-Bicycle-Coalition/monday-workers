@@ -222,7 +222,9 @@ fixed; adopt-before-create makes it safe for the orders that did land.
 cd eventbrite-sync
 EVENTBRITE_PRIVATE_TOKEN=… node scripts/backfill-orders.mjs --event-id <id> --dry-run
 EVENTBRITE_PRIVATE_TOKEN=… EVENTBRITE_WEBHOOK_SECRET=… node scripts/backfill-orders.mjs \
-  --event-id <id> --worker-url https://svbc-eventbrite-sync.<subdomain>.workers.dev [--env sandbox] [--changed-since 2026-10-09T00:00:00Z]
+  --event-id <id> --worker-url https://svbc-eventbrite-sync.<subdomain>.workers.dev [--changed-since 2026-10-09T00:00:00Z]
+# sandbox: --env sandbox --worker-url https://svbc-eventbrite-sync-sandbox.<subdomain>.workers.dev
+# (the script refuses an --env that doesn't match the Worker URL)
 ```
 
 The script lists the event's orders (`GET /v3/events/{event_id}/orders/?status=all_not_deleted`,

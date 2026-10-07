@@ -11,7 +11,8 @@
 //   EVENTBRITE_PRIVATE_TOKEN=... EVENTBRITE_WEBHOOK_SECRET=... node scripts/backfill-orders.mjs \
 //     --event-id <eventbrite event id> \
 //     --worker-url https://svbc-eventbrite-sync.<subdomain>.workers.dev \
-//     [--env sandbox]                  read config/sandbox.json's API base instead of svbc.json's
+//     [--env sandbox]                  read config/sandbox.json's API base instead of svbc.json's;
+//                                      the Worker URL must then be a -sandbox Worker (and the reverse)
 //     [--changed-since 2026-10-09T00:00:00Z]   only orders changed on or after this time
 //     [--pause-ms 2000]                wait between deliveries (the consumer runs one at a time)
 //     [--dry-run]                      list the plan without posting anything
@@ -23,11 +24,11 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { listOrdersUrl, parseOrdersPage, planBackfill } from './backfill-orders-lib.mjs';
+import { listOrdersUrl, parseOrdersPage, planBackfill, readArg, checkTarget, sendDelivery } from './backfill-orders-lib.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const argIdx = (name) => process.argv.indexOf(name);
-const argValue = (name, dflt) => (argIdx(name) >= 0 ? process.argv[argIdx(name) + 1] : dflt);
+const argValue = (name, dflt) => readArg(process.argv, name, dflt);
 const flag = (name) => argIdx(name) >= 0;
 
 const token = process.env.EVENTBRITE_PRIVATE_TOKEN;
@@ -44,6 +45,12 @@ if (!token || !eventId) {
 }
 if (!dryRun && (!secret || !workerUrl)) {
   console.error('backfill-orders: EVENTBRITE_WEBHOOK_SECRET and --worker-url are required (or pass --dry-run)');
+  process.exit(1);
+}
+try {
+  checkTarget(wranglerEnv, workerUrl);
+} catch (err) {
+  console.error(`backfill-orders: ${err.message}`);
   process.exit(1);
 }
 const configFile = wranglerEnv === 'sandbox' ? 'sandbox.json' : 'svbc.json';
@@ -79,18 +86,13 @@ const url = `${workerUrl.replace(/\/$/, '')}/webhooks/eventbrite/order`;
 let ok = 0;
 let failed = 0;
 for (const d of deliveries) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': secret },
-    body: JSON.stringify(d.delivery),
-  });
-  const body = await res.text();
-  if (res.ok && body.includes('"ok":true') && !body.includes('"ignored"')) {
+  const res = await sendDelivery(fetch, url, secret, d.delivery);
+  if (res.ok) {
     ok++;
     log(`enqueued ${d.orderId}`);
   } else {
     failed++;
-    log(`NOT enqueued ${d.orderId}: HTTP ${res.status} ${body.slice(0, 200)}`);
+    log(`NOT enqueued ${d.orderId}: HTTP ${res.status} ${res.body.slice(0, 200)}`);
   }
   await sleep(pauseMs);
 }
