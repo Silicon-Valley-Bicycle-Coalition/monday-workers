@@ -1,6 +1,6 @@
 # UAT script: public events widget and committee calendars
 
-**Status 2026-09-30: live in production.** This is the one Worker here unrelated to the
+**Status 2026-10-06: live in production.** This is the one Worker here unrelated to the
 migration: it serves bikesiliconvalley.org directly and has been live since August. A five-minute
 smoke check is all that's needed, and anything you find is a real production issue.
 

@@ -1,6 +1,6 @@
 # UAT script: Funraise sync
 
-**Status 2026-09-30: testable now.** The sandbox copy was moved onto the `(sandbox v3)` boards
+**Status 2026-10-06: testable now.** The sandbox copy was moved onto the `(sandbox v3)` boards
 on 2026-09-30. The 53 Funraise gifts made since 2026-09-19, which had been held while it still
 pointed at the deleted v2 boards, were added to Donations (sandbox v3) the same evening, and
 Recurring Gifts (sandbox v3) now mirrors all 1,176 Funraise plans. The first new gift after the
@@ -66,8 +66,9 @@ to Monday. It sends no email and touches nothing in Funraise.
 
 - **Refunded** is not yet a Status label on the Donations board. Until someone adds it, a refund
   write fails quietly. It is on the pre-cutover list.
-- A gift that was migrated from Salesforce and then edited or refunded in Funraise gets a **new**
-  item rather than updating the archived one. Known limit.
+- A gift migrated from Salesforce in an archived fiscal year (FY2025 or earlier) that is later
+  edited or refunded in Funraise is **not** written to the board. It is flagged for staff and no
+  duplicate is created, but nothing surfaces the flag on a board yet.
 - Migrated gifts that this integration recognises as its own never get Thank You Sent, Gift Type,
   or Fiscal Year stamped afterwards; only new gifts do.
 - The **Event Ticket** gift type label hasn't been confirmed against a real paid-event purchase

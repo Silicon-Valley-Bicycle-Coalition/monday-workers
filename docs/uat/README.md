@@ -1,6 +1,6 @@
 # Staff UAT: the Monday.com boards and the integrations behind them
 
-**Last refreshed 2026-09-30** against the `(sandbox v3)` boards and the Workers deployed to the
+**Last refreshed 2026-10-06** against the `(sandbox v3)` boards and the Workers deployed to the
 sandbox. Each script below says when it was last checked.
 
 This folder holds the User Acceptance Testing scripts for the parts of SVBC's new CRM that stay
@@ -63,7 +63,7 @@ Work through the ones for the areas you touch. Each script says what the thing d
 language, what to try, what you should see and how long it takes, and which known gaps not to
 report again.
 
-| Script | What it covers | Status (2026-09-30) |
+| Script | What it covers | Status (2026-10-06) |
 |---|---|---|
 | [Monday boards](monday-boards.md) | Every board in the CRM Sandbox: the views, item cards, and what to try on each. Also the live SVBC-workspace boards (Grants, Events, Sponsorships, Communications) that carry over unchanged. | **Testable now** |
 | [Donation rollups](donation-rollups.md) | Giving totals, Donor Level, membership dates, and the chart columns that update on their own when gifts change | **Testable now** |
