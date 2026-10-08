@@ -20,7 +20,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-mailchimp-sync",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID", // set by `wrangler d1 create` at deploy time
+      "database_id": "af80fc24-f94e-4b6c-a4e1-64e48f0eac05",
       "migrations_dir": "migrations"
     }
   ],
