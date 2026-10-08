@@ -57,6 +57,12 @@ export function mapOrder(order: EventbriteOrder, config: EventbriteSyncConfig, o
   if (sync.skipFreeOrders && amountNumber === 0 && !options.hasItem) {
     return { outcome: 'skip', reason: 'free order (amount 0) with no Donations item — not giving', facts };
   }
+  // A refund reverses an item; with none on the board there is nothing to reverse, and creating a
+  // Refunded row would record money that was never received (at whatever `gross` Eventbrite
+  // still reports). Typically an order refunded before this Worker ever saw it, e.g. in a backfill.
+  if (status === 'refunded' && !options.hasItem) {
+    return { outcome: 'skip', reason: 'refunded order with no Donations item — never recorded as received, nothing to reverse', facts };
+  }
 
   const columnValues: Record<string, unknown> = {
     [sync.amountColumn]: amountNumber,

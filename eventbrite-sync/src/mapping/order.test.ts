@@ -71,6 +71,14 @@ describe('mapOrder', () => {
     expect(result.columnValues.status_col).toBe('Refunded');
   });
 
+  it('skips a refunded order that has no item, but still writes one that does', () => {
+    const refunded = testOrder({ status: 'refunded' });
+    const noItem = mapOrder(refunded, config, { hasItem: false });
+    expect(noItem.outcome).toBe('skip');
+    if (noItem.outcome === 'skip') expect(noItem.reason).toContain('nothing to reverse');
+    expect(mapOrder(refunded, config, { hasItem: true }).outcome).toBe('write');
+  });
+
   it('writes a free order when skipFreeOrders is off', () => {
     const free = testOrder({ costs: { gross: { currency: 'USD', value: 0, major_value: '0.00', display: '$0.00' } } });
     expect(mapOrder(free, testConfig({ skipFreeOrders: false }), { hasItem: false }).outcome).toBe('write');

@@ -189,7 +189,7 @@ were not, it is inside `gross` too. `costs.gross` is already net of any promo-co
 fork that wants organizer revenue net of Eventbrite's fees sets `amountSource: "base_price"`.
 **Free orders** (`gross` 0, or no `costs`) with no Donations item yet are skipped — a free
 registration is not a gift. An order that already has an item is always updated even at 0, so a
-refund can never be masked by the skip.
+refund can never be masked by the skip. A **refunded** order with no item yet is skipped too: nothing was ever recorded as received, so there is nothing to reverse. If staff delete or archive an order's item, a later update is recorded `failed` ("deleted or archived") and acked, not retried or recreated.
 
 ## Donor matching
 
@@ -240,7 +240,7 @@ Nothing personal is printed: ids and statuses only.
 the column in place (Sequencing, below), run it once with the Summit's event id — the event id is
 in the manage-page URL (`…/myevent?eid=<id>`) or from `GET /v3/organizations/{org}/events/`. Do
 the same for any other event that sold tickets between cutover and the webhook registration.
-Orders refunded by then arrive as `refunded` and are written `Refunded`. The consumer runs one
+An order refunded before the Worker ever saw it has no item to reverse, so it is recorded as `skipped` and nothing is written; one with an item is updated to `Refunded`. The consumer runs one
 message at a time, so a few hundred orders take a few minutes; then check the board and
 `select status, count(*) from orders where event_id = '<id>' group by status`.
 

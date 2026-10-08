@@ -3,6 +3,7 @@ import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { MondayApiError } from '../monday/graphql';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
@@ -147,13 +148,31 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
     // An update of this Worker's own item keeps its Donor link current; an adopted item gets only
     // the order-owned columns — its Donor (and its stamps) were set by whoever created it.
     const { [donorLinkColumn]: _donorLink, ...adoptValues } = columnValues;
-    await mondayClient.changeColumnValues(boardId, mondayItemId, adopted ? adoptValues : columnValues);
+    try {
+      await mondayClient.changeColumnValues(boardId, mondayItemId, adopted ? adoptValues : columnValues);
+    } catch (err) {
+      if (!isItemGone(err)) throw err;
+      // Staff deleted (or archived) the Donations item. Retrying cannot help, and recreating it
+      // would resurrect a gift someone removed on purpose — record it and stop, for a human.
+      const reason = `Donations item ${mondayItemId} was deleted or archived; nothing written`;
+      console.warn(`eventbrite-sync consumer: order "${orderId}": ${reason}`);
+      await orderStore.updateStatus(orderId, 'failed', { ...facts, error: reason });
+      return;
+    }
     await orderStore.updateStatus(orderId, 'written', { ...facts, mondayItemId, writtenAt });
     return;
   }
 
   const item = await mondayClient.createItem(boardId, mapping.itemName, { ...columnValues, ...mapping.firstWriteValues });
   await orderStore.updateStatus(orderId, 'written', { ...facts, mondayItemId: item.id, writtenAt });
+}
+
+// Monday's answer to a write against an item that no longer exists. The exact code is not yet
+// confirmed against the live API (the code and message patterns below are Monday's documented
+// names), so a miss here just falls back to the ordinary retry-then-dead-letter path.
+function isItemGone(err: unknown): boolean {
+  if (!(err instanceof MondayApiError)) return false;
+  return /ItemNotFound|InvalidItemId/i.test(err.code ?? '') || /item.{0,20}not found|inactive item/i.test(err.message);
 }
 
 // The ledger's COALESCE keeps an old value on null, so only hand over facts that exist.
