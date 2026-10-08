@@ -121,7 +121,35 @@ For each row:
 | `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
 | `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET` |
 
-Webhook secrets must be **fresh production values**, never the sandbox ones.
+Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in the
+password manager before `wrangler secret put` — the same value goes into the registration URL
+below, and a lost copy means re-setting the secret and re-registering the webhook.
+
+**Webhook registration URLs.** Register each after its Worker's production deploy, in that
+Worker's Phase 3/4 step; `<SECRET>` is the value set above. The secret is part of the URL, so
+**re-register the subscription if a secret is ever rotated**. Until a secret is set the route
+fails closed (401s everything). `<host>` is `https://svbc-<worker>.svbc-account.workers.dev`
+(`workers.dev` pattern as in the sandbox READMEs; the production hosts don't exist until each
+Worker's first deploy) except `member-portal`, which is
+`https://member.bikesiliconvalley.org`. `monday-backup` is cron-only: no webhooks.
+
+| Worker | Registered in | URL |
+|---|---|---|
+| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). | `<host>/webhooks/monday/donations?secret=<SECRET>` |
+| `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
+| `mailchimp-sync` | Monday webhook on the Donors board | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
+| `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
+| `benevity-import` | Monday webhook `change_specific_column_value` on the Uploads file column | `<host>/webhooks/monday/benevity-upload?secret=<SECRET>` |
+| `benevity-import` | Monday webhook on the worklist Retry status column (needs `uploadsBoard.retry` provisioned; until then the route ignores every event) | `<host>/webhooks/monday/benevity-retry?secret=<SECRET>` |
+| `member-portal` | Monday "Send Giving Letter" automation | `https://member.bikesiliconvalley.org/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>` |
+| `quickbooks-sync` | Monday webhook | `<host>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>` |
+| `quickbooks-sync` | Intuit developer dashboard — signed with `QB_WEBHOOK_VERIFIER_TOKEN`, no `?secret=` | `<host>/webhooks/quickbooks` |
+| `bp-feedback-notify` | Monday automation on the `Post-Event Feedback` column (note: singular `webhook`) | `<host>/webhook/bp-feedback?secret=<WEBHOOK_SECRET>` |
+| `eventbrite-sync` | Eventbrite API, one organization-wide webhook (`order.placed`, `order.updated`, `order.refunded`) — `POST /v3/organizations/{org}/webhooks/` (see its README) | `<host>/webhooks/eventbrite/order?secret=<SECRET>` |
+
+Checked against the route definitions on `main` (2026-10-08). Not verified: the production
+`workers.dev` hostnames, and the exact Monday event types for the `mailchimp-sync`,
+`quickbooks-sync` and `benevity-retry` subscriptions — take those from each Worker's README.
 
 - [ ] **Workers Builds:** each Worker has a production connection (root directory =
       its subdirectory, deploy command `npx wrangler deploy`, branch `main`) alongside its
