@@ -212,6 +212,22 @@ describe('processOrderQueueBatch', () => {
     }
   });
 
+  it('names every placeholder column up front instead of letting Monday reject the write', async () => {
+    const orderStore = fakeStore(orderRow());
+    const eventbriteClient = fakeEventbrite(testOrder());
+    const mondayClient = fakeMonday();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const message = fakeMessage();
+    try {
+      await processOrderQueueBatch([message], { orderStore, eventbriteClient, mondayClient, config: testConfig({ amountColumn: PLACEHOLDER_COLUMN_ID, dateColumn: PLACEHOLDER_COLUMN_ID }) });
+      expect(eventbriteClient.getOrder).not.toHaveBeenCalled();
+      expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: expect.stringMatching(/amountColumn.*dateColumn/) });
+      expect(message.retry).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('marks the row failed and retries with backoff on an Eventbrite failure', async () => {
     const orderStore = fakeStore(orderRow());
     const eventbriteClient: EventbriteClient = { getOrder: vi.fn().mockRejectedValue(new Error('eventbrite api: get order 442719216 failed with HTTP 503')) };

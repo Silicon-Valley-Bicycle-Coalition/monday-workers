@@ -20,6 +20,8 @@ export interface QueueMessageLike<T> {
 // Retry backoff (funraise-sync #25, same numbers): 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes
 // across wrangler.jsonc's max_retries of 3 — about 21 minutes of cover for a Monday or Eventbrite
 // blip — capped at Queues' 12-hour maximum delay.
+const REQUIRED_WRITE_COLUMNS = ['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
+
 const RETRY_BASE_SECONDS = 60;
 const RETRY_FACTOR = 4;
 const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
@@ -80,6 +82,13 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
   // message — add the column, put its id in config, re-drive (README "Prerequisite column").
   if (orderIdColumn === PLACEHOLDER_COLUMN_ID) {
     throw new Error('config: eventbriteSync.orderIdColumn is the placeholder — add the "Eventbrite Order ID" text column to the Donations board and set its id before any order can be written');
+  }
+  // Every other column the write needs, checked up front: left as the shipped placeholder, Monday
+  // rejects the write with an opaque column error that is retried and dead-lettered, and the
+  // fix (real ids in config/svbc.json) is nowhere in that message.
+  const unset = REQUIRED_WRITE_COLUMNS.filter((key) => config.eventbriteSync[key] === PLACEHOLDER_COLUMN_ID);
+  if (unset.length > 0) {
+    throw new Error(`config: eventbriteSync.${unset.join(', eventbriteSync.')} still the placeholder — set the real Monday column id${unset.length > 1 ? 's' : ''} in config before any order can be written`);
   }
 
   // Always the current state from Eventbrite, never the delivery: the delivery carried only a
