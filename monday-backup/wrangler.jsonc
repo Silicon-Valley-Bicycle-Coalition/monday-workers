@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-monday-backup",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "8f9de9e4-227c-4e8d-b27d-c158948a8a5e",
       "migrations_dir": "migrations"
     }
   ],

@@ -90,13 +90,13 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 
 | Worker | D1 (production) | Queues (+ `-dlq` each) | Still to do |
 |---|---|---|---|
-| `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` | create queues; apply 0001–0005 |
-| `funraise-sync` | exists, 0001–0003 applied | `funraise-sync-writes` | apply 0004–0005 (subscriptions ledger, subscription claims) |
+| `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` (both exist with DLQs, verified 2026-10-08) | nothing — 0001–0005 already applied (verified 2026-10-08) |
+| `funraise-sync` | exists, 0001–0004 applied (verified 2026-10-08) | `funraise-sync-writes` | apply 0005 (subscription claims) — the D1 is reset before first deploy anyway (Phase 4 step 2) |
 | `donation-rollups` | exists (kept through the §9 move) | `donation-rollups-recompute` | confirm 0001–0008 applied |
-| `mailchimp-sync` | **create** — id is `REPLACE_WITH_D1_DATABASE_ID` | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` | create D1 + queues; wire id; apply 0001–0005 |
-| `quickbooks-sync` | **create** — placeholder id | `quickbooks-sync-writes` | create D1 + queue; wire id; apply 0001–0006 |
-| `monday-backup` | **create** — placeholder id | — | create D1; wire id; apply 0001–0002 |
-| `benevity-import` | exists | `benevity-import-writes` | create queues; apply 0001–0003 |
+| `mailchimp-sync` | created 2026-10-08, id wired | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` (created 2026-10-08) | nothing — 0001–0005 applied 2026-10-08 |
+| `quickbooks-sync` | created 2026-10-08, id wired | `quickbooks-sync-writes` (created 2026-10-08) | nothing — 0001–0006 applied 2026-10-08 |
+| `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0002 applied 2026-10-08 |
+| `benevity-import` | exists, 0001 applied (verified 2026-10-08) | `benevity-import-writes` (created 2026-10-08) | apply 0002–0003; 0002 adds a unique constraint on disbursement id, so check the table for duplicates first |
 | `eventbrite-sync` | **create** — id is `REPLACE_WITH_D1_ID` (sandbox is also a placeholder) | `eventbrite-sync-writes` | create D1 + queues; wire id; apply 0001 — post-cutover, see Phase 4 step 9 |
 | `bp-feedback-notify` | — | — | nothing |
 

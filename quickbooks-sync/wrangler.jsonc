@@ -18,8 +18,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-quickbooks-sync",
-      // Replace after running: wrangler d1 create svbc-quickbooks-sync
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "51d31f9e-fee9-45ef-b90b-164f29ede5a4",
       "migrations_dir": "migrations"
     }
   ],
