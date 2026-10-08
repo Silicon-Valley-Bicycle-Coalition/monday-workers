@@ -5,6 +5,7 @@ import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { OrderRow } from '../types';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
+import { MondayApiError } from '../monday/graphql';
 import { testConfig, testOrder } from '../test/testConfig';
 
 const config = testConfig({ thankYouSentColumn: 'tys_col', giftTypeColumn: 'gift_col', fiscalYearColumn: 'fy_col' });
@@ -117,6 +118,40 @@ describe('processOrderQueueBatch', () => {
     });
     expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'written', expect.objectContaining({ mondayItemId: 'item-existing', eventbriteStatus: 'refunded' }));
     expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('records a deleted or archived item as failed and acks, without retrying or recreating', async () => {
+    const orderStore = fakeStore(orderRow({ matchedDonorItemId: '7', mondayItemId: 'item-gone' }));
+    const mondayClient = fakeMonday({
+      changeColumnValues: vi.fn().mockRejectedValue(new MondayApiError('Item not found', { code: 'ItemNotFoundException' })),
+    });
+    const message = fakeMessage();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await processOrderQueueBatch([message], { orderStore, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', expect.objectContaining({ error: expect.stringContaining('deleted or archived') }));
+      expect(message.ack).toHaveBeenCalled();
+      expect(message.retry).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('still retries an ordinary Monday failure on an existing item', async () => {
+    const orderStore = fakeStore(orderRow({ matchedDonorItemId: '7', mondayItemId: 'item-existing' }));
+    const mondayClient = fakeMonday({
+      changeColumnValues: vi.fn().mockRejectedValue(new MondayApiError('Monday is down', { httpStatus: 503 })),
+    });
+    const message = fakeMessage();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await processOrderQueueBatch([message], { orderStore, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+      expect(message.retry).toHaveBeenCalled();
+      expect(message.ack).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('adopts an item already carrying the order id instead of creating: order columns only, no Donor link, no stamps', async () => {
