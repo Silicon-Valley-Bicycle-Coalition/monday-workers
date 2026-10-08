@@ -92,7 +92,7 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 |---|---|---|---|
 | `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` (both exist with DLQs, verified 2026-10-08) | nothing — 0001–0005 already applied (verified 2026-10-08) |
 | `funraise-sync` | exists, 0001–0005 applied (0005 applied 2026-10-08) | `funraise-sync-writes` | nothing — the D1 is still reset before first deploy (Phase 4 step 2) |
-| `donation-rollups` | exists (kept through the §9 move); **0001–0007 applied, 0008 (`gifts_removed_at`) is NOT** (verified 2026-10-08) | `donation-rollups-recompute` | apply 0008 **before** the build that needs it goes live (its README) |
+| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards) | `donation-rollups-recompute` | nothing |
 | `mailchimp-sync` | created 2026-10-08, id wired | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` (created 2026-10-08) | nothing — 0001–0005 applied 2026-10-08 |
 | `quickbooks-sync` | created 2026-10-08, id wired | `quickbooks-sync-writes` (created 2026-10-08) | nothing — 0001–0006 applied 2026-10-08 |
 | `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0002 applied 2026-10-08 |
