@@ -33,7 +33,7 @@ describe('config split: board and column ids', () => {
     expect(sandbox.monday.boards.organizations).toBe(18431577213);
     expect(sandbox.monday.boards.people).toBe(18431577220);
     expect(sandbox.monday.boards.affiliations).toBe(18431577240);
-    expect(sandbox.monday.boards.benevityUploads).toBe(18431270204);
+    expect(sandbox.monday.boards.benevityUploads).toBe(18434850887);
   });
 
   it('no sandbox column or group id string-appears anywhere in production', () => {

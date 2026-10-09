@@ -395,7 +395,13 @@ until this remap an upload could not resolve a company or write a gift. `config/
 targets Donations `18431577310`, Organizations `18431577213`, Affiliations `18431577240` and
 People `18431577220`, with every column id read by title from the live schemas. The Uploads
 board (`18431270204`, still titled "(sandbox v2)") and its webhook `639785248` were not rebuilt
-and needed nothing. Two things the rebuild did not carry over:
+and needed nothing. **Rebuilt 2026-10-09:** that v2 Uploads board was later deleted, so
+`config/sandbox.json` now targets `Benevity Uploads (sandbox v3)` (`18434850887`; file column
+`Report`, `Review` group, worklist columns Reason / Email / Company / Amount / Date).
+`uploadsBoard.retry` and `worklistKeyColumn` are still `null`. **Webhook `639785248` went with the
+old board**: register a new `change_specific_column_value` webhook on the new file column before
+the next upload, and clear the D1 `uploads` and `rows` worklist ids (see the reset table above).
+Two things the 2026-09-30 rebuild did not carry over:
 
 * **Donations (sandbox v3) had no `Benevity Disbursement Date` column.** Nothing in
   `salesforce-import` creates it, so it was added to the board by hand (`date_mm7qjw79`). Every
