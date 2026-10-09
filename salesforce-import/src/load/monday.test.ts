@@ -239,4 +239,54 @@ describe('MondayClient', () => {
       expect(calls).toBe(1);
     });
   });
+
+  // #50: counters that say where a load's time goes (latency vs rejection backoff vs idle).
+  describe('stats', () => {
+    it('counts requests, latency and peak in-flight with no retries on success', async () => {
+      const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
+        fetchFn: sequence([() => Response.json({ data: { ok: 1 } })]) });
+      await c.gql('q');
+      const s = c.stats();
+      expect(s.requests).toBe(1);
+      expect(s.retries).toEqual({});
+      expect(s.backoffMs).toBe(0);
+      expect(s.peakInFlight).toBe(1);
+      expect(s.latencyMsTotal).toBeGreaterThanOrEqual(0);
+    });
+
+    it('attributes each retry to its reason and totals the backoff it asked for', async () => {
+      const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
+        fetchFn: sequence([
+          () => new Response('slow down', { status: 429, headers: { 'Retry-After': '3' } }),
+          () => Response.json({ errors: [{ message: 'x', extensions: { code: 'maxConcurrencyExceeded', retry_in_seconds: 2 } }] }),
+          () => Response.json({ data: { ok: 1 } }),
+        ]) });
+      await c.gql('q');
+      const s = c.stats();
+      expect(s.requests).toBe(3);
+      expect(s.retries).toEqual({ 'HTTP 429': 1, maxConcurrencyExceeded: 1 });
+      // 3 s Retry-After + 2 s retry_in_seconds + the exponential gaps before attempts 2 and 3 (2 s, 4 s, plus jitter).
+      expect(s.backoffMs).toBeGreaterThanOrEqual(11_000);
+    });
+
+    it('reports the peak number of requests in flight across concurrent callers', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const fetchFn = (async () => { await gate; return Response.json({ data: { ok: 1 } }); }) as typeof fetch;
+      const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep, fetchFn });
+      const calls = [c.gql('q'), c.gql('q'), c.gql('q')];
+      await Promise.resolve();
+      release();
+      await Promise.all(calls);
+      expect(c.stats().peakInFlight).toBe(3);
+    });
+
+    it('resetStats() zeroes everything', async () => {
+      const c = new MondayClient({ apiUrl: 'https://x', token: 't', sleepFn: noSleep,
+        fetchFn: sequence([() => Response.json({ data: { ok: 1 } })]) });
+      await c.gql('q');
+      c.resetStats();
+      expect(c.stats()).toMatchObject({ requests: 0, retries: {}, backoffMs: 0, peakInFlight: 0, latencyMsTotal: 0 });
+    });
+  });
 });

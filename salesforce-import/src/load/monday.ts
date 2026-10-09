@@ -42,14 +42,49 @@ export function retryInMs(errors: GqlError[]): number {
   return Math.min(secs * 1000, MAX_RETRY_IN_MS);
 }
 
+/**
+ * Where a run's requests went (#50). `retries` is keyed by why the request was re-sent;
+ * `backoffMs` is the total wait the client asked for between attempts, summed across callers, so
+ * it can exceed wall-clock time when several workers wait at once. Counted in send() only — the
+ * legacy `--sequential` client is deliberately left untouched.
+ */
+export interface ClientStats {
+  requests: number;
+  retries: Record<string, number>;
+  backoffMs: number;
+  latencyMsTotal: number;
+  latencyMsMax: number;
+  peakInFlight: number;
+}
+
+const emptyStats = (): ClientStats =>
+  ({ requests: 0, retries: {}, backoffMs: 0, latencyMsTotal: 0, latencyMsMax: 0, peakInFlight: 0 });
+
 export class MondayClient {
   private attempts: number;
+  private counters: ClientStats = emptyStats();
+  private inFlight = 0;
   constructor(private opts: {
     apiUrl: string; token: string; fetchFn?: typeof fetch;
     sleepFn?: (ms: number) => Promise<void>; maxAttempts?: number; requestTimeoutMs?: number;
     /** `load --sequential`: gql() runs the pre-#22 client unchanged (see gqlLegacy). */
     legacy?: boolean;
   }) { this.attempts = opts.maxAttempts ?? 6; }
+
+  /** A snapshot of the request counters since construction or the last resetStats(). */
+  stats(): ClientStats { return { ...this.counters, retries: { ...this.counters.retries } }; }
+
+  resetStats(): void { this.counters = emptyStats(); this.inFlight = 0; }
+
+  private noteRetry(reason: string): void {
+    this.counters.retries[reason] = (this.counters.retries[reason] ?? 0) + 1;
+  }
+
+  /** sleep() that also totals the wait into stats. */
+  private async backoff(ms: number): Promise<void> {
+    this.counters.backoffMs += ms;
+    await this.sleep(ms);
+  }
 
   /** The injected sleep (tests pass a no-op) — shared with callers that pace themselves. */
   sleep(ms: number): Promise<void> {
@@ -156,8 +191,12 @@ export class MondayClient {
     };
     let lastError = '';
     for (let attempt = 0; attempt < this.attempts; attempt++) {
-      if (attempt > 0) await this.sleep(2 ** attempt * 1000 + Math.random() * 500);
+      if (attempt > 0) await this.backoff(2 ** attempt * 1000 + Math.random() * 500);
       let res: Response;
+      const startedAt = Date.now();
+      this.counters.requests++;
+      this.inFlight++;
+      this.counters.peakInFlight = Math.max(this.counters.peakInFlight, this.inFlight);
       try {
         // Without a timeout one hung socket stalls an hours-long load indefinitely.
         res = await fetchFn(this.opts.apiUrl, {
@@ -169,16 +208,23 @@ export class MondayClient {
         });
       } catch (err) {
         // ECONNRESET, DNS failure, timeout — previously these escaped the retry loop entirely.
+        this.inFlight--;
+        this.noteRetry('network');
         lastError = ambiguous(`network error: ${String(err)}`);
         continue;
       }
+      this.inFlight--;
+      const elapsed = Date.now() - startedAt;
+      this.counters.latencyMsTotal += elapsed;
+      this.counters.latencyMsMax = Math.max(this.counters.latencyMsMax, elapsed);
       if (res.status === 429) {
         const after = Number(res.headers.get('Retry-After') ?? '0');
         lastError = 'HTTP 429';
-        if (after > 0) await this.sleep(Math.min(after * 1000, MAX_RETRY_IN_MS));
+        this.noteRetry('HTTP 429');
+        if (after > 0) await this.backoff(Math.min(after * 1000, MAX_RETRY_IN_MS));
         continue;
       }
-      if (res.status >= 500) { lastError = ambiguous(`HTTP ${res.status}`); continue; }
+      if (res.status >= 500) { this.noteRetry(`HTTP ${res.status}`); lastError = ambiguous(`HTTP ${res.status}`); continue; }
       if (!res.ok) throw new Error(`monday: HTTP ${res.status}: ${await res.text()}`);
       // error_message/status_code: Monday's rate-limit/auth shape — HTTP 200, NO data,
       // NO errors array (see funraise-sync/src/monday/client.ts for the same handling).
@@ -189,6 +235,7 @@ export class MondayClient {
       } catch (err) {
         // A reset or timeout mid-body (or a truncated body): the server already ran the
         // request, so for a write this is exactly as ambiguous as a dropped connection.
+        this.noteRetry('unreadable body');
         lastError = ambiguous(`unreadable response body: ${String(err)}`);
         continue;
       }
@@ -207,8 +254,9 @@ export class MondayClient {
           if (ran || !rejected) return { data: body.data ?? null, errors: body.errors };
         }
         if (rejected) {
+          this.noteRetry(body.errors.find(isRejectedBeforeRunning)?.extensions?.code ?? 'rejected');
           const wait = retryInMs(body.errors);
-          if (wait > 0) await this.sleep(wait);
+          if (wait > 0) await this.backoff(wait);
           continue;
         }
         throw new Error(`monday: ${lastError}`);
@@ -221,6 +269,7 @@ export class MondayClient {
           ? `no data — ${body.error_message}` +
             (body.status_code === undefined ? '' : ` (status_code ${body.status_code})`)
           : `no data — ${JSON.stringify(body)}`;
+        this.noteRetry('no data');
         if (body.status_code !== 429) lastError = ambiguous(lastError);
         continue;
       }
