@@ -11,7 +11,7 @@ import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
 import { ComplexityGate, chunk, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
 import { BATCHED_PRESET, describeMode, isLegacySequential, parseLoadOptions } from './options.js';
 import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
-import { estimateLoad, formatEstimate } from './estimate.js';
+import { DEFAULT_TIMING, estimateLoad, formatEstimate } from './estimate.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -82,21 +82,21 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       console.log(`load[dry-run]: ${key} → ${items.length} items, ${links} links` +
         (toArchive > 0 ? `, ${toArchive} to archive in place` : ''));
     }
-    // #22 measurement: old vs new request counts and a wall-clock estimate. The latency default
-    // is the measured pre-#22 rate (~40 h for ~94k sequential mutations ≈ 1.53 s each); the
-    // per-alias cost is a guess until a sandbox batch run measures it.
+    // #22/#50 measurement: old vs new request counts and a wall-clock estimate. The per-request
+    // and per-mutation costs are measured (see DEFAULT_TIMING); override them from a fresh sandbox run.
     const num = (flag: string, fallback: number): number => {
       const i = args.indexOf(flag);
       const n = i >= 0 ? Number(args[i + 1]) : fallback;
       return Number.isFinite(n) && n >= 0 ? n : fallback;
     };
-    const latencyMs = num('--latency-ms', 1530);
     // "new" always describes a batched run: this run's settings if batched, else --batched's.
     const batched = isLegacySequential(opts) ? { ...opts, ...BATCHED_PRESET } : opts;
     const estimate = estimateLoad([...byBoard.values()].flat(), keys,
       { batchSize: batched.batchSize, inlineLinks: batched.inlineLinks });
-    console.log(formatEstimate(estimate, { latencyMs, aliasMs: num('--alias-ms', latencyMs / 2),
-      concurrency: batched.concurrency, linkConcurrency: LINK_CONCURRENCY, batchSize: batched.batchSize }));
+    console.log(formatEstimate(estimate, {
+      requestMs: num('--request-ms', DEFAULT_TIMING.requestMs), createMs: num('--create-ms', DEFAULT_TIMING.createMs),
+      linkMs: num('--link-ms', DEFAULT_TIMING.linkMs), archiveMs: num('--archive-ms', DEFAULT_TIMING.archiveMs),
+      batchSize: batched.batchSize }));
     return 0;
   }
 
