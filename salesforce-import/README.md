@@ -85,7 +85,7 @@ archived/deferred items.
 every step of the rehearsal checklist below has passed on the sandbox account.** `load --batched`
 prints `load: mode = batched (size 10, concurrency 3, inline links on)`. It sends 10 aliased
 `create_item`s per request (`--batch-size N`, max 25) with 3 requests in flight
-(`--concurrency N`, max 8; archives use the same pool), and puts a payload's board-relation values straight into its `create_item` when every
+(`--concurrency N`, max 8; separate links and archives are aliased `--batch-size` to a request too, #50), and puts a payload's board-relation values straight into its `create_item` when every
 target is already on Monday — which covers nearly all Donation relations (Donor, Campaign,
 Recurring Gift, Matched By, Soft Credit) and most other boards' links. A relation only counts as
 written when `create_item`'s response echoes it back; anything else (a target still to be created,
@@ -119,7 +119,7 @@ board wasn't checked, so re-run `load` (or `validate --live`) before trusting it
 
 ```sh
 npm run cli -- load --dry-run                     # per-board plan + old vs --batched request counts and hours
-npm run cli -- load --dry-run --latency-ms 1500 --alias-ms 1650  # re-estimate with the measured 2026-10 timings
+npm run cli -- load --dry-run --request-ms 1100 --create-ms 435 --link-ms 700 --archive-ms 760  # override the measured cost defaults
 npm run cli -- load                               # DEFAULT: the pre-#22 sequential path, unchanged
 npm run cli -- load --sequential                  # the same thing, spelled out
 npm run cli -- load --batched                     # SANDBOX ONLY until rehearsed: 10 per request, 3 in flight, inline links
@@ -145,17 +145,17 @@ runs batched, and the mode line says so. `config/svbc.json`'s `load` block holds
 default. `load --dry-run`'s "new" figures always describe `--batched` (or the batched settings you
 pass), even though the default run is sequential.
 
-The dry-run estimate is `old = (C+A)·L + K·L/q` and `new = (B·L + (C−B)·α)/p + K′·L/q + A·L/p`
-(C creates, B create requests, K/K′ separate link writes, A archives, L seconds per request —
-default 1.53 s, from the ~40 h an earlier sequential rehearsal spent on its ~94k creates alone,
-not its links or archives — α the extra time per aliased create, p create/archive concurrency,
-q = 6 link concurrency). α defaults to a placeholder (L/2 = 765 ms); the 2026-10 rehearsal
-measured it at ≈ 1,650 ms, so pass `--alias-ms 1650`. The formula also assumes the link and
-archive passes really run q = 6 and p requests in flight. In that rehearsal they did not (see
-"Rehearsal results" below): both passes ran at effectively one request at a time, so the estimate
-under-predicts them several-fold. The link pool (`LINK_CONCURRENCY` workers) and the archive pool
-(`runPool` at `opts.concurrency`) in `src/load/index.ts` are the thing to fix; until they are,
-treat the "new" hours as a figure for the create pass, not the whole run.
+The dry-run estimate treats Monday as serialised (#50): it runs mutations one at a time across the
+whole account, so a bigger `--concurrency` or link pool only queues requests and adds nothing.
+Time is `requests·R + creates·c + links·l + archives·a`, where every request pays the overhead R once
+however many mutations are aliased into it, and each mutation pays its own type's cost. Defaults, from
+the full-size Donations (sandbox v3) board: R = 1100 ms, c = 435 ms, l = 700 ms, a = 760 ms (override
+with `--request-ms`, `--create-ms`, `--link-ms`, `--archive-ms`). In batched mode links and archives
+are aliased `--batch-size` to a request like creates, so they pay R once per batch; the sequential
+default sends one mutation per request. On the 2026-09-15 transform output that puts `--batched`
+at ≈ 26.7 h; expect ±20%, and complexity-budget waits are not modelled. `MondayClient.stats()`
+counts requests, retries by reason, backoff and peak in-flight, and `scripts/probe-pools.ts`
+re-measures the costs on a sandbox workspace.
 
 **Rehearse the batched path against the sandbox Monday account before cutover** (every step uses
 `--batched`; until all pass, production loads stay on the default):
@@ -167,8 +167,8 @@ treat the "new" hours as a figure for the create pass, not the whole run.
 4. If a `--batched` run exits 1 with "not re-sent this run" failures, the next run must adopt or create them
    and finish at 0. Confirm that happens, and budget for that extra run on cutover weekend.
 5. Resume a partial `--batched` ledger with plain `load` (the sequential default).
-6. Re-run `load --dry-run --latency-ms L --alias-ms α` with the measured timings, and decide
-   whether production uses `--batched`.
+6. Re-run `load --dry-run` (with `--request-ms` and the per-mutation flags set from the measured
+   timings) and decide whether production uses `--batched`.
 
 **Rehearsal results, 2026-10-09.** Measured 2026-10-06 → 09 against fresh `(batched rehearsal)`
 boards in the sandbox workspace, from the 2026-09-08 extract, at the defaults (size 10,
@@ -183,7 +183,7 @@ open — so the rule above stands: `--batched` stays off production.
 | 3. Kill mid-board, re-run `--batched` | Passed | Run 1 killed mid-FY2019; run 2's start-of-run scan adopted 120 items and duplicated none. |
 | 4. "Not re-sent" items adopted or created next run | Passed | Run 2 exited 1 with 110 not re-sent; run 3 created all 110, 0 duplicates, exit 0 in 5 min. 180 ambiguous creates across the three runs (0.19%), all resolved. |
 | 5. Resume a batched ledger with plain `load` | Not run | |
-| 6. Re-estimate with measured timings | Run | `load --dry-run --latency-ms 1500 --alias-ms 1650` → batched ≈ 21.1 h, sequential ≈ 66.3 h. The batched figure is low; see below. |
+| 6. Re-estimate with measured timings | Run | `load --dry-run --latency-ms 1500 --alias-ms 1650` → batched ≈ 21.1 h, sequential ≈ 66.3 h. The batched figure was low because that formula assumed parallel link and archive passes; Monday serialises mutations (#50), and the current model gives ≈ 26.7 h batched with aliased links and archives. |
 
 Run 1's 629 archive and 6 link failures were all "fetch failed" network errors on the operator
 machine (its proxy dropped connections, and it slept for part of the run); every one retried clean

@@ -101,7 +101,7 @@ describe.each(MODES)('runLoad (%s)', (_mode, flags) => {
 
   it('dry-run reports old vs new request counts for the transform output (#22)', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    expect(await runLoad(['--dry-run', '--latency-ms', '1000', ...flags], { client: fakeClient() })).toBe(0);
+    expect(await runLoad(['--dry-run', '--request-ms', '1000', ...flags], { client: fakeClient() })).toBe(0);
     const out = log.mock.calls.map((c) => String(c[0])).join('\n');
     log.mockRestore();
     expect(out).toMatch(flags.length ? /load: mode = batched \(size 10, concurrency 3, inline links on\)/
@@ -109,8 +109,9 @@ describe.each(MODES)('runLoad (%s)', (_mode, flags) => {
     expect(out).toMatch(/old \(default \/ --sequential\): 3 create_item \+ 2 link \+ 0 archive = 5 requests/);
     // "new" always describes --batched's settings, even when this run is sequential.
     expect(out).toMatch(/new \(--batched\): 3 create requests \(3 create_item, 2 links inline\) \+ 0 link/);
-    expect(out).toMatch(/batch 10, 3 create\+archive/);
-    expect(out).toMatch(/L=1000 ms\/request/);
+    expect(out).toMatch(/1000 ms per request/);
+    expect(out).toMatch(/batch 10\)/);
+    expect(out).toMatch(/pool size does not change this/);
     expect(linked).toEqual([]);
   });
 

@@ -30,6 +30,13 @@ class FakeMonday {
   columnTitles = new Map<string, string>(); // column id → title
   links: { itemId: string; targetIds: number[] }[] = [];
   archived: string[] = [];
+  // #50: how many mutations each archive_item / change_multiple_column_values request carried.
+  archiveRequests: number[] = [];
+  linkRequests: number[] = [];
+  // Item name → how many more archive_item calls for it answer with a GraphQL error.
+  archiveFaults = new Map<string, number>();
+  // The next N aliased (multi-mutation) requests of each kind answer 502 without committing.
+  failAliased = { archive: 0, link: 0 };
   nextId = 100;
   // Per item name: what the next create_item for it does. 'lost' commits then answers 502
   // (the response never reaches us); 'fail' answers 502 without committing; 'error' is a
@@ -122,12 +129,50 @@ class FakeMonday {
       return createResponse(query, calls, replies);
     }
     if (/change_multiple_column_values/.test(query)) {
+      const aliases = [...query.matchAll(/l(\d+): change_multiple_column_values/g)].map((m) => Number(m[1]));
+      if (aliases.length > 0) {
+        this.linkRequests.push(aliases.length);
+        if (this.failAliased.link > 0) { this.failAliased.link--; return new Response('bad gateway', { status: 502 }); }
+        const data: Record<string, unknown> = {};
+        for (const k of aliases) {
+          const cols = JSON.parse(variables[`c${k}`] as string) as Record<string, { item_ids: number[] }>;
+          this.links.push({ itemId: variables[`i${k}`] as string, targetIds: Object.values(cols)[0]!.item_ids });
+          data[`l${k}`] = { id: variables[`i${k}`] };
+        }
+        return Response.json({ data });
+      }
+      this.linkRequests.push(1);
       const cols = JSON.parse(variables['cols'] as string) as Record<string, { item_ids: number[] }>;
       this.links.push({ itemId: variables['itemId'] as string, targetIds: Object.values(cols)[0]!.item_ids });
       return Response.json({ data: { change_multiple_column_values: { id: variables['itemId'] } } });
     }
     if (/archive_item/.test(query)) {
+      const aliases = [...query.matchAll(/a(\d+): archive_item/g)].map((m) => Number(m[1]));
+      if (aliases.length > 0) {
+        this.archiveRequests.push(aliases.length);
+        if (this.failAliased.archive > 0) { this.failAliased.archive--; return new Response('bad gateway', { status: 502 }); }
+        const data: Record<string, unknown> = {};
+        const errors: { message: string; path: string[] }[] = [];
+        for (const k of aliases) {
+          const it = this.items.find((i) => i.id === variables[`i${k}`])!;
+          const left = this.archiveFaults.get(it.name) ?? 0;
+          if (left > 0) {
+            this.archiveFaults.set(it.name, left - 1);
+            data[`a${k}`] = null;
+            errors.push({ message: `archive boom: ${it.name}`, path: [`a${k}`] });
+            continue;
+          }
+          it.archived = true; this.archived.push(it.id); data[`a${k}`] = { id: it.id };
+        }
+        return Response.json(errors.length > 0 ? { data, errors } : { data });
+      }
+      this.archiveRequests.push(1);
       const item = this.items.find((i) => i.id === variables['id'])!;
+      const faultsLeft = this.archiveFaults.get(item.name) ?? 0;
+      if (faultsLeft > 0) {
+        this.archiveFaults.set(item.name, faultsLeft - 1);
+        return Response.json({ errors: [{ message: `archive boom: ${item.name}` }] });
+      }
       item.archived = true;
       this.archived.push(item.id);
       return Response.json({ data: { archive_item: { id: item.id } } });
@@ -264,6 +309,70 @@ describe.each(MODES)('runLoad partial and pending links (#21) (%s)', (_mode, fla
     const writes = monday.links.length;
     expect(await runLoad([...flags], { client: monday.client() })).toBe(0);
     expect(monday.links.length).toBe(writes);
+  });
+});
+
+describe('runLoad aliased links and archives (#50)', () => {
+  // Monday runs mutations one at a time account-wide, so pool size buys nothing; aliasing N
+  // mutations into one request pays the ~0.5 s request overhead once per N instead.
+  const gifts = (n: number) => Array.from({ length: n }, (_, i) => ({ board: 'donations', sfId: `o${i}`,
+    name: `G${i}`, archive: true, columns: { 'Fiscal Year Ending': '2015' },
+    links: [{ column: 'Donor', targetSfIds: ['c1'] }] }));
+  const seed = (n: number) => writeNdjson(dataPath('transform', 'payloads.ndjson'),
+    [{ board: 'people-live', sfId: 'c1', name: 'Ada', columns: {} }, ...gifts(n)]);
+
+  it('sends --batch-size links and archives per request, ledgering every one', async () => {
+    await seed(25);
+    expect(await runLoad(['--batch-size', '10'], { client: monday.client() })).toBe(0);
+    expect(monday.linkRequests).toEqual([10, 10, 5]);
+    expect(monday.archiveRequests).toEqual([10, 10, 5]);
+    expect(monday.archived).toHaveLength(25);
+    const l = new Ledger(); await l.load();
+    for (let i = 0; i < 25; i++) {
+      expect(l.archivedDone(`o${i}`)).toBe(true);
+      expect(l.linkDone(`o${i}`, 'Donor')).toBe(true);
+    }
+    const report = await readJson<{ links: { written: number; failed: number }; archive: { archived: number; failed: number } }>(
+      dataPath('load', 'report.json'));
+    expect(report.links).toMatchObject({ written: 25, failed: 0 });
+    expect(report.archive).toMatchObject({ archived: 25, failed: 0 });
+  });
+
+  it('keeps one mutation per request without --batch-size (the sequential fallback is unchanged)', async () => {
+    await seed(5);
+    expect(await runLoad(['--sequential'], { client: monday.client() })).toBe(0);
+    expect(monday.linkRequests).toEqual([1, 1, 1, 1, 1]);
+    expect(monday.archiveRequests).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it('retries only the archives an aliased request rejected, one at a time', async () => {
+    await seed(10);
+    monday.archiveFaults.set('G3', 1); // rejected inside the batch, fine when retried alone
+    expect(await runLoad(['--batch-size', '10'], { client: monday.client() })).toBe(0);
+    expect(monday.archiveRequests).toEqual([10, 1]);
+    expect(monday.archived).toHaveLength(10);
+  });
+
+  it('ledgers an archive failure that survives the single retry, and archives the rest', async () => {
+    await seed(10);
+    monday.archiveFaults.set('G3', 99);
+    expect(await runLoad(['--batch-size', '10'], { client: monday.client() })).toBe(1);
+    expect(monday.archived).toHaveLength(9);
+    const l = new Ledger(); await l.load();
+    expect(l.failures().map((f) => [f.sfId, f.board])).toEqual([['o3', 'archive']]);
+    expect(l.archivedDone('o3')).toBe(false);
+    expect(l.archivedDone('o4')).toBe(true);
+  });
+
+  it('falls back to single writes when an aliased request dies in transit (both are idempotent)', async () => {
+    await seed(10);
+    monday.failAliased = { archive: 1, link: 1 };
+    expect(await runLoad(['--batch-size', '10'], { client: monday.client() })).toBe(0);
+    expect(monday.linkRequests).toEqual([10, ...Array(10).fill(1)]);
+    expect(monday.archiveRequests).toEqual([10, ...Array(10).fill(1)]);
+    expect(monday.archived).toHaveLength(10);
+    const l = new Ledger(); await l.load();
+    for (let i = 0; i < 10; i++) expect(l.linkDone(`o${i}`, 'Donor')).toBe(true);
   });
 });
 

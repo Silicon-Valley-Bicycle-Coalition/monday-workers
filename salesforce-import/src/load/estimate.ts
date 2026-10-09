@@ -5,11 +5,15 @@ import { fiscalYearLoadOrder } from '../transform/schedule.js';
 export interface PathCounts {
   /** create_item requests (each carries 1 mutation old-style, up to batchSize new-style). */
   createRequests: number;
-  /** Separate change_multiple_column_values requests, one per link with a migrated target. */
+  /** Separate change_multiple_column_values mutations, one per link with a migrated target. */
   linkMutations: number;
+  /** Requests those link mutations travel in (aliased batchSize to a request since #50). */
+  linkRequests: number;
   /** Links set inside create_item instead (#22). */
   inlineLinks: number;
   archives: number;
+  /** Requests the archives travel in (aliased batchSize to a request since #50). */
+  archiveRequests: number;
   requests: number;
 }
 
@@ -36,55 +40,72 @@ export function estimateLoad(payloads: ItemPayload[], boardKeys: string[],
     groups.push(donations.filter((p) => fyOf(p) === fy));
   }
 
-  let items = 0, links = 0, inline = 0, batches = 0, archives = 0;
+  // Links and archives batch within a phase: all the non-donation boards' separate links go in
+  // one pass, each donation fiscal year batches its own links and its own archives. (A link
+  // that load defers to a later fiscal year is counted in its source's group, a few requests off.)
+  const perGroup = (n: number) => Math.ceil(n / opts.batchSize);
+  let items = 0, links = 0, inline = 0, batches = 0, archives = 0, archiveRequests = 0;
+  let linkRequests = 0, nonDonationSeparate = 0;
   const created = new Set<string>();
   for (const group of groups) {
     const unique = [...new Map(group.map((p) => [p.sfId, p])).values()];
+    const isDonationYear = unique.length > 0 && unique.every((p) => p.board === 'donations');
     items += unique.length;
     batches += Math.ceil(unique.length / opts.batchSize);
+    let groupArchives = 0, groupSeparate = 0;
     for (const p of unique) {
-      if (p.archive) archives++;
+      if (p.archive) groupArchives++;
       for (const link of p.links ?? []) {
         const targets = link.targetSfIds.filter((t) => expected.has(t));
         if (targets.length === 0) continue; // skipped by design either way
         links++;
         if (opts.inlineLinks && targets.every((t) => created.has(t))) inline++;
+        else groupSeparate++;
       }
     }
+    archives += groupArchives;
+    archiveRequests += perGroup(groupArchives);
+    if (isDonationYear) linkRequests += perGroup(groupSeparate);
+    else nonDonationSeparate += groupSeparate;
     for (const p of unique) created.add(p.sfId);
   }
+  linkRequests += perGroup(nonDonationSeparate);
   return {
     items,
-    old: { createRequests: items, linkMutations: links, inlineLinks: 0, archives,
-      requests: items + links + archives },
-    new: { createRequests: batches, linkMutations: links - inline, inlineLinks: inline, archives,
-      requests: batches + links - inline + archives },
+    old: { createRequests: items, linkMutations: links, inlineLinks: 0, linkRequests: links,
+      archives, archiveRequests: archives, requests: items + links + archives },
+    new: { createRequests: batches, linkMutations: links - inline, inlineLinks: inline, linkRequests,
+      archives, archiveRequests, requests: batches + linkRequests + archiveRequests },
   };
 }
 
+/**
+ * Monday runs mutations one at a time account-wide (#50: ~55/min flat for links and archives at
+ * pool sizes 1-12 and across boards, latency growing with the number in flight), so wall-clock is
+ * a sum, not a division by pool size: every request pays `requestMs` once and every mutation in it
+ * pays its own type's cost. Defaults are measured on the full-size Donations (sandbox v3) board:
+ * archives 1.9 s alone / 8.7 s per 10 → 1.1 s + 0.76 s each; links 1.6 s / 7.9 s → 0.9 s + 0.70 s
+ * each. Creates: the 1.53 s pre-#22 per-create rate and ~110 items/min at batch 10 give 1.1 s +
+ * 0.43 s each, inline links included.
+ */
 export interface TimingAssumptions {
-  /** Observed wall-clock per single-mutation request. */
-  latencyMs: number;
-  /** Extra time each additional aliased create_item adds to one request (measure in sandbox). */
-  aliasMs: number;
-  /** Create (and archive) requests in flight. */
-  concurrency: number;
-  /** Link requests in flight (both paths). */
-  linkConcurrency: number;
+  /** Per-request overhead, paid once however many mutations are aliased into it. */
+  requestMs: number;
+  /** Per create_item mutation (any inline links ride along). */
+  createMs: number;
+  /** Per separate change_multiple_column_values mutation. */
+  linkMs: number;
+  /** Per archive_item mutation. */
+  archiveMs: number;
 }
 
-/**
- * old = (C + A)·L + K·L/q
- * new = (B·L + (C − B)·α)/p + K′·L/q + A·L/p
- * C creates, B create requests, K / K′ separate link mutations, A archives, L latency,
- * α per-extra-alias cost, p create/archive concurrency, q link concurrency.
- */
+export const DEFAULT_TIMING: TimingAssumptions = { requestMs: 1100, createMs: 435, linkMs: 700, archiveMs: 760 };
+
+/** old = R·requests + creates·c + links·l + archives·a;  new the same with its own counts. */
 export function estimateHours(e: LoadEstimate, t: TimingAssumptions): { oldHours: number; newHours: number } {
-  const L = t.latencyMs;
-  const oldMs = (e.old.createRequests + e.old.archives) * L + e.old.linkMutations * L / t.linkConcurrency;
-  const newMs = (e.new.createRequests * L + (e.items - e.new.createRequests) * t.aliasMs) / t.concurrency +
-    e.new.linkMutations * L / t.linkConcurrency + e.new.archives * L / t.concurrency;
-  return { oldHours: oldMs / 3.6e6, newHours: newMs / 3.6e6 };
+  const ms = (c: PathCounts) =>
+    c.requests * t.requestMs + e.items * t.createMs + c.linkMutations * t.linkMs + c.archives * t.archiveMs;
+  return { oldHours: ms(e.old) / 3.6e6, newHours: ms(e.new) / 3.6e6 };
 }
 
 export function formatEstimate(e: LoadEstimate, t: TimingAssumptions & { batchSize: number }): string {
@@ -95,11 +116,13 @@ export function formatEstimate(e: LoadEstimate, t: TimingAssumptions & { batchSi
     `  old (default / --sequential): ${e.old.createRequests} create_item + ${e.old.linkMutations} link + ` +
       `${e.old.archives} archive = ${e.old.requests} requests`,
     `  new (--batched): ${e.new.createRequests} create requests (${e.items} create_item, ${e.new.inlineLinks} links inline) + ` +
-      `${e.new.linkMutations} link + ${e.new.archives} archive = ${e.new.requests} requests`,
+      `${e.new.linkMutations} link in ${e.new.linkRequests} requests + ${e.new.archives} archive in ` +
+      `${e.new.archiveRequests} requests = ${e.new.requests} requests`,
     `  est. wall-clock: old ≈ ${h(oldHours)} h, new ≈ ${h(newHours)} h ` +
-      `(L=${t.latencyMs} ms/request, +${t.aliasMs} ms per extra alias, batch ${t.batchSize}, ` +
-      `${t.concurrency} create+archive / ${t.linkConcurrency} link requests in flight)`,
-    '  old = (C+A)·L + K·L/q;  new = (B·L + (C−B)·α)/p + K′·L/q + A·L/p — ' +
-      'set --latency-ms / --alias-ms from a sandbox run; complexity-budget waits are not modelled',
+      `(${t.requestMs} ms per request + ${t.createMs} per create, ${t.linkMs} per link, ${t.archiveMs} per archive; ` +
+      `batch ${t.batchSize})`,
+    '  Monday runs mutations one at a time account-wide, so pool size does not change this: time = ' +
+      'requests·R + creates·c + links·l + archives·a. Override with --request-ms / --create-ms / ' +
+      '--link-ms / --archive-ms; complexity-budget waits are not modelled',
   ].join('\n');
 }
