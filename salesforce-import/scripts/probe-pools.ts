@@ -9,6 +9,11 @@
 //
 //   MONDAY_API_TOKEN=... tsx scripts/probe-pools.ts --workspace 17141226 --check
 //   MONDAY_API_TOKEN=... tsx scripts/probe-pools.ts --workspace 17141226 --run [--n 60] [--out probe.json]
+//   ... --run --real [--donations "Donations (sandbox v3)"] [--people "People (sandbox v3)"] [--n 30]
+//                            times single vs aliased(10) link and archive writes on a REAL
+//                            full-size Donations board (its connect columns into People, its real
+//                            column set), found by exact name inside --workspace, using throwaway
+//                            items named "POOL-PROBE #50 ..." that are left archived on that board.
 //   ... --run --only-extra   skips the pool-size sweep and runs two follow-ups: archives spread over
 //                            several boards at once, and archives aliased 10 to a request
 //
@@ -78,6 +83,63 @@ async function createItems(boardId: string, prefix: string, count: number): Prom
   return ids;
 }
 
+const aliasedLinks = async (boardId: string, colId: string, pairs: { id: string; person: string }[]): Promise<void> => {
+  const variables: Record<string, unknown> = {};
+  pairs.forEach((p, k) => {
+    variables[`b${k}`] = boardId; variables[`i${k}`] = p.id;
+    variables[`c${k}`] = JSON.stringify({ [colId]: { item_ids: [Number(p.person)] } });
+  });
+  await client.gql(`mutation (${pairs.map((_, k) => `$b${k}: ID!, $i${k}: ID!, $c${k}: JSON!`).join(', ')}) {
+    ${pairs.map((_, k) => `l${k}: change_multiple_column_values (board_id: $b${k}, item_id: $i${k}, column_values: $c${k}, create_labels_if_missing: true) { id }`).join('\n')} }`, variables);
+};
+const aliasedArchives = async (ids: string[]): Promise<void> => {
+  const variables: Record<string, unknown> = {};
+  ids.forEach((id, k) => { variables[`i${k}`] = id; });
+  await client.gql(`mutation (${ids.map((_, k) => `$i${k}: ID!`).join(', ')}) {
+    ${ids.map((_, k) => `a${k}: archive_item (item_id: $i${k}) { id }`).join('\n')} }`, variables);
+};
+const groupsOf = <T>(xs: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size));
+  return out;
+};
+
+async function runReal(donName: string, pplName: string): Promise<void> {
+  // Boards are found by exact name inside the named workspace, so the write can only land there.
+  const found = await client.gql<{ boards: { id: string; name: string; workspace: { id: string } | null }[] }>(
+    'query ($ws: [ID!]) { boards (workspace_ids: $ws, limit: 100, state: active) { id name workspace { id } } }',
+    { ws: [workspaceId] });
+  const pick = (name: string): string => {
+    const m = found.boards.filter((x) => x.name === name && String(x.workspace?.id) === workspaceId);
+    if (m.length !== 1) throw new Error(`probe: expected exactly one board named "${name}" in workspace ${workspaceId}, found ${m.length}`);
+    return m[0]!.id;
+  };
+  const donId = pick(donName), pplId = pick(pplName);
+  const cols = await client.gql<{ boards: { columns: { id: string; title: string; type: string }[] }[] }>(
+    'query ($b: ID!) { boards (ids: [$b]) { columns { id title type } } }', { b: donId });
+  const donorCol = cols.boards[0]!.columns.find((c) => c.title === 'Donor' && c.type === 'board_relation');
+  if (!donorCol) throw new Error(`probe: "${donName}" has no Donor connect column`);
+  const donor = donorCol.id;
+  const pr = await client.gql<{ boards: { items_page: { items: { id: string }[] } }[] }>(
+    'query ($b: ID!) { boards (ids: [$b]) { items_page (limit: 20) { items { id } } } }', { b: pplId });
+  const people = pr.boards[0]!.items_page.items.map((i) => i.id);
+  if (people.length === 0) throw new Error(`probe: "${pplName}" has no items to link to`);
+  console.log(`real boards: "${donName}" ${donId} (${cols.boards[0]!.columns.length} columns), "${pplName}" ${pplId}; ${people.length} real people as targets`);
+
+  const stamp = new Date().toISOString().slice(0, 16);
+  const ids = await createItems(donId, `POOL-PROBE #50 ${stamp}`, 4 * n);
+  const pair = (set: string[]) => set.map((id, i) => ({ id, person: people[i % people.length]! }));
+  const [A, B, C, D] = [0, 1, 2, 3].map((k) => pair(ids.slice(k * n, (k + 1) * n))) as [ReturnType<typeof pair>, ReturnType<typeof pair>, ReturnType<typeof pair>, ReturnType<typeof pair>];
+  await timed('link x1', 1, A.length, () => runPool(A, 1, async (p) => aliasedLinks(donId, donor, [p])));
+  await timed('link x10', 1, B.length, () => runPool(groupsOf(B, 10), 1, (grp) => aliasedLinks(donId, donor, grp)));
+  for (const set of [C, D]) await runPool(groupsOf(set, 10), 1, (grp) => aliasedLinks(donId, donor, grp)); // untimed
+  await timed('arch x1', 1, C.length, () => runPool(C, 1, async (p) => aliasedArchives([p.id])));
+  await timed('arch x10', 1, D.length, () => runPool(groupsOf(D.map((p) => p.id), 10), 1, aliasedArchives));
+  // The unlinked, never-archived A and B are archived too, so no probe item stays visible.
+  await runPool(groupsOf([...A, ...B].map((p) => p.id), 10), 1, aliasedArchives);
+  if (out) writeFileSync(out, JSON.stringify({ n, rows }, null, 2));
+}
+
 async function main(): Promise<void> {
   const ws = await checkWorkspace();
   console.log(`workspace ${ws.id}: "${ws.name}" (${ws.kind})`);
@@ -85,6 +147,9 @@ async function main(): Promise<void> {
   if (!process.argv.includes('--run')) throw new Error('probe: pass --check (read-only) or --run');
   if (!/sandbox/i.test(ws.name)) throw new Error(`probe: refusing to write — workspace "${ws.name}" is not named as a sandbox`);
 
+  if (process.argv.includes('--real')) {
+    return runReal(arg('--donations') ?? 'Donations (sandbox v3)', arg('--people') ?? 'People (sandbox v3)');
+  }
   const onlyExtra = process.argv.includes('--only-extra');
   const linkConcs = onlyExtra ? [] : [1, 6, 12];
   const archiveConcs = onlyExtra ? [] : [1, 3, 12];
