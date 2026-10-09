@@ -96,8 +96,8 @@ across every webhook-driven Worker in this plan.
   The route **fails closed**: any POST whose secret doesn't match — including every POST while
   the secret is unset — is rejected with 401. The comparison is constant-time (SHA-256 both
   sides, then an early-exit-free byte compare; #25). Callers that can set headers — the
-  redrive script, a hand replay — send the secret as the `X-Webhook-Secret` header instead,
-  which is checked first. **Funraise itself can't:** its webhook configuration is only a target
+  redrive and replay scripts, a hand replay — send the secret as the `X-Webhook-Secret` header
+  instead, which is checked first. **Funraise itself can't:** its webhook configuration is only a target
   URL and a contact email, so its deliveries keep `?secret=`. The tradeoff: a URL secret lands
   wherever the full request URL is recorded — Cloudflare's Workers Logs / observability
   invocation records for this Worker, and anyone with dashboard access to them. Mitigations:
@@ -383,7 +383,17 @@ manual recovery from Funraise. To find dead gifts directly:
 At cutover Funraise's single webhook moves from the sandbox Worker to production
 (svbc-monday-migration#48, runbook `docs/23` step 5). The sandbox Worker's D1 `events` table is
 the record of every gift delivered while the webhook still pointed there, so after the repoint
-those deliveries are replayed into production:
+those deliveries are replayed into production. In order:
+
+1. **Run the subscriptions bootstrap walk first** ("Bootstrap walk, run locally", under
+   "Recurring gifts and registrations"), so each replayed installment finds its Recurring Gift
+   in the ledger instead of fetching it from Funraise.
+2. **Plan with `--dry-run`.** It reads the source D1 and prints what would be sent, and needs no
+   secret or `--worker-url`. It is also the reachability check: the read is
+   `wrangler d1 execute --remote` with the local wrangler login, and a failure is reported with
+   wrangler's own reason (an expired login, an unknown database) before anything is sent.
+3. **Replay**, with the **target** Worker's secret in `FUNRAISE_WEBHOOK_SECRET`.
+4. **Re-run until every row reads `already present`**, then run the window check (below).
 
 ```sh
 # Plan only: reads the sandbox D1, needs no secret
@@ -393,9 +403,13 @@ FUNRAISE_WEBHOOK_SECRET=... node scripts/replay-window.mjs --since 2026-10-09T17
   --worker-url https://<production-worker-host> [--until <ISO UTC>] [--source-env sandbox|production] [--pause-ms 2000]
 ```
 
-`--since` is when the final extract **started**; the overlap with what it carried is harmless
-because adopt-before-create updates a gift the import already put on the board. Run the
-subscriptions bootstrap walk first so each installment finds its Recurring Gift in the ledger.
+`--since` (required, ISO UTC) is when the final extract **started**, not when it finished; the
+overlap with what it carried is harmless because adopt-before-create updates a gift the import
+already put on the board. `--until` is an exclusive upper bound (default: none). `--source-env`
+names whose D1 to read (default `sandbox`; `production` turns it round, for replaying production
+deliveries into the sandbox host). `--pause-ms` is the wait between deliveries (default 2000; the
+consumer writes one gift at a time). Both timestamps are validated before they reach
+`wrangler d1 execute`.
 
 How it differs from `redrive-failed.mjs`, which it reuses `planRedrive` from:
 
@@ -410,16 +424,31 @@ How it differs from `redrive-failed.mjs`, which it reuses `planRedrive` from:
 * **Reports what it can't replay:** rows whose payload the retention purge emptied
   (`rawPayloadRetentionDays`, 90 days after the write) must be recovered from Funraise by hand.
   Exit codes: 0 clean, 1 a delivery failed or the secret was rejected, 2 only unreplayable rows.
-* **Mind the Worker's rate limit.** The route allows 60 requests a minute per client
-  (`REQUEST_RATE_LIMITER`), and a rejected request comes back `429` and counts as `failed`. Keep
-  the default `--pause-ms 2000`, and after a run that ended with 429s wait a minute before
-  re-running: the re-run's first requests land in the window the first run used up. Both runs
-  were seen in the 2026-10-06 rehearsal (`docs/superpowers/specs/2026-10-06-funraise-replay-rehearsal-design.md`).
+* **Mind the Worker's rate limit.** The route allows 60 requests a minute per client address
+  (`REQUEST_RATE_LIMITER`, keyed on `CF-Connecting-IP`), so concurrent runs from one machine
+  share the budget, and a rejected request comes back `429` and counts as `failed` — never
+  hidden. Keep the default `--pause-ms 2000` (30 a minute), and after a run that ended with
+  429s wait a minute before re-running: the re-run's first requests land in the window the
+  first run used up. Seen in the 2026-10-06 rehearsal against a local Worker
+  (`docs/superpowers/specs/2026-10-06-funraise-replay-rehearsal-design.md`); the same behavior
+  is expected deployed, but has not been observed there.
+* **A refund in the window fails until `Refunded` exists.** The consumer maps a Funraise refund
+  to the Donations `Refunded` label (see "The Funraise delivery, as actually sent"); until staff
+  add it, the replay reports the delivery `enqueued` and the write dead-letters, leaving the
+  gift `Received`. Add the label before replaying, or expect those rows under
+  `error like 'dead-lettered%'`.
+* **Archived-year gifts are flagged, not written.** A replayed gift dated before
+  `funraiseSync.oldestActiveFiscalYear` with no active item carrying its Funraise ID lands in
+  `status = 'needs_review'` (see "Archived fiscal years: flagged, not created"); list them with
+  the query there once the queue has drained.
 
 It sends the stored, already PII-stripped payload, and the production route strips it again. It
 changes nothing in D1 or Monday itself; each accepted delivery goes through the normal queue
-consumer, so replayed gifts are subject to everything it does, including the archived-year flag.
-Check the result with the window check in the runbook's step 5, not with this script's counts.
+consumer, so replayed gifts are subject to everything it does. The script reports what the
+route accepted, not what was written: check the result with the runbook's **post-repoint window
+check** (`docs/23` step 5), run once the queue has drained. Of its five checks — ledger to
+ledger, against Funraise's own dashboard, nothing doubled, no archived-year duplicate, refunds
+can land — only the first is a query, and check 3 (nothing doubled) is scripted below; the rest are by hand on the board.
 
 Window check 3 (one Donations item per Funraise ID) is scripted and read-only:
 
@@ -657,7 +686,9 @@ dashboard refuses two connections on one root directory, fall back to the
 
 Funraise allows one webhook per organization. Until cutover it points at the sandbox Worker;
 at cutover it moves to production and the sandbox loses its live feed (design doc §7) — after
-that, sandbox testing uses Funraise's Test button or a hand replay of a stored delivery.
+that, sandbox testing uses Funraise's Test button or a replay of stored production deliveries
+(`scripts/replay-window.mjs --source-env production` against the sandbox host, with the sandbox
+Worker's secret; see "Replaying one Worker's deliveries into another").
 
 ## Recurring gifts and registrations — decided 2026-09-18
 

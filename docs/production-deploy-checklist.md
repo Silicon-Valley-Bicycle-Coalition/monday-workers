@@ -238,20 +238,46 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
   - [ ] Bootstrap the subscriptions poller locally *before* the deployed cron can fire
         (`funraise-sync/README.md`, `wrangler dev --remote --test-scheduled`).
   - [ ] **Repoint Funraise's single webhook** from the `-sandbox` Worker to
-        `/webhooks/funraise/transaction?secret=` on production. The sandbox loses its Funraise
-        feed from here on — expected.
-  - [ ] Don't reconcile the gap by hand: replay the sandbox Worker's stored deliveries with
-        `scripts/replay-window.mjs --since <final extract START time>` (`--dry-run` first;
-        README, "Replaying one Worker's deliveries into another"). A `duplicate` answer is
-        success and overlap with the import is safe. Then run
-        `node scripts/check-funraise-ids.mjs` (window check 3, one Donations item per Funraise
-        ID; exit 0 required). Not yet rehearsed against production credentials.
-  - [ ] **Open:** which control pauses Funraise → Salesforce sync after Gate C is unresolved
-        (not written down in this repo or the runbook); name it before Gate C.
+        `/webhooks/funraise/transaction?secret=` on production, and note the time. The sandbox
+        loses its Funraise feed from here on — expected.
+  - [ ] **Replay the cutover gap** — every delivery the sandbox Worker took between the final
+        extract and the repoint — with `funraise-sync/scripts/replay-window.mjs`
+        (`funraise-sync/README.md`, "Replaying one Worker's deliveries into another"). The
+        bootstrap walk above must be done first, so each replayed installment finds its
+        Recurring Gift in the ledger. `--since` is when the final extract **started**, not the
+        repoint: the overlap is harmless, because adopt-before-create updates a gift the import
+        already carried.
+        1. `node scripts/replay-window.mjs --since <extract start, ISO UTC> --dry-run` prints
+           the plan from the sandbox D1 and needs no secret or URL. It is also the reachability
+           check: a failure is reported with wrangler's own reason (most likely an expired
+           `wrangler login`); fix it before the real run.
+        2. `FUNRAISE_WEBHOOK_SECRET=<production's secret> node scripts/replay-window.mjs
+           --since <same> --worker-url https://<production-host>`, at the default
+           `--pause-ms 2000`. The route allows 60 requests a minute per client address, shared
+           by every run from that address, and a `429` counts as `failed`.
+        3. Exit 0 is clean. Exit 1: a delivery failed, or the secret was rejected (the run
+           stops at the first row). Wait a minute and re-run until every row reads
+           `already present`; re-running is safe. Exit 2: rows whose payload the retention
+           purge emptied — recover those from Funraise by hand.
+        The script reports *enqueued*, not *written*: the production consumer makes the Monday
+        writes one gift at a time afterwards. A refunded gift in the window dead-letters until
+        the `Refunded` label exists on Donations → Status — the label is listed under step 9
+        (`eventbrite-sync`) below, but a refund in the replay needs it now.
   - [ ] Confirm `funraiseSync.oldestActiveFiscalYear` in `config/svbc.json` equals the importer's
         `cutoffFY` (2026 for this cutover), then query `events` rows with
-        `status = 'needs_review'`: an edited or refunded gift from an archived fiscal year is
-        flagged there and written to no board.
+        `status = 'needs_review'`: an edited or refunded gift from an archived fiscal year —
+        a replayed one included — is flagged there and written to no board.
+  - [ ] **Post-repoint window check** (private runbook `docs/23`, step 5), once the replay's
+        queue has drained. Its five checks are the gate, not the script's counts: ledger to
+        ledger (every sandbox id in the window is `written` in production with a
+        `monday_item_id`; no `failed` or dead-lettered rows), against Funraise's own dashboard
+        (the only check that catches a delivery the sandbox Worker never received), nothing
+        doubled on the Donations board, no archived-year item created since the repoint, and
+        the `Refunded` label in place. Only the first is a query, plus check 3 (one Donations
+        item per Funraise ID), which `node scripts/check-funraise-ids.mjs` runs read-only (exit
+        0 required; not yet rehearsed against production); the rest are by hand on the board.
+  - [ ] **Open:** which control pauses Funraise → Salesforce sync after Gate C is unresolved
+        (not written down in this repo or the runbook); name it before Gate C.
   - [ ] Verify: Funraise Test-button delivery → Donations item with every column right →
         `donation-rollups` rolls it up (the README's three steps); delete the test items.
 - [ ] **3. `member-portal`** — follow [`DEPLOY.md`](../member-portal/DEPLOY.md) Phases 1–5.
