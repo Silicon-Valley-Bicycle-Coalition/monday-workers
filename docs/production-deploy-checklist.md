@@ -174,6 +174,18 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
       reads it, and it's gitignored, so `git worktree remove` silently destroys it.
 - [ ] Record every production board id, column id, and workspace id in one place
       (`data/load/boards.json` has the boards) for the next item and Phase 4.
+- [ ] **Make the donor boards private (#41), before any Worker deploy that holds a production
+      token** (including `donation-rollups` below): `salesforce-import` creates them public, so
+      until this is done every member token, the Sandbox Integration user's included, reaches and
+      can edit them. Rehearse on a sandbox board first. Then
+      `node scripts/make-boards-private.mjs --workspace <id> --prefix "<prefix>" --sandbox-user <id>`
+      (dry run), review the subscriber list, re-run with `--apply`. Details: root README, "Making
+      the production donor boards private".
+  - [ ] Subscribe the staff team, and each integration user to only the boards its Worker
+        reads/writes; the Sandbox Integration user to none.
+  - [ ] Run `node scripts/check-monday-token-scope.mjs --workspace <id>` for each production
+        token (and the sandbox token) and paste the results in the cutover log. Don't call a
+        token scoped before this.
 - [ ] **`donation-rollups`**, from `donation-rollups/`, in this order:
   - [ ] Config and deploy (Phase 4's per-Worker steps 1–3): Donations board id, owner boards,
         custodian workspace/alert ids.
@@ -211,6 +223,11 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
       but `donation-rollups` is already live against the new boards — see [Rollback](#rollback).
 
 ## Phase 4 — Production config and deploy, in dependency order
+
+**Gate:** the donor boards are private and the integration users subscribed (Phase 3,
+"Make the donor boards private", #41) before the first production deploy below. The private
+runbook (`monday-migration` `docs/23-cutover-runbook.md`) does not have this step yet: **outstanding**,
+add it after the load and before the Worker production deploys.
 
 For each Worker:
 
