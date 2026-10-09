@@ -240,6 +240,16 @@ Nothing personal is printed: ids and statuses only.
 the column in place (Sequencing, below), run it once with the Summit's event id — the event id is
 in the manage-page URL (`…/myevent?eid=<id>`) or from `GET /v3/organizations/{org}/events/`. Do
 the same for any other event that sold tickets between cutover and the webhook registration.
+**Owner and deadline (issue #44).** Run it on or after **2026-10-23**, once Summit sales have
+closed, by whoever owns the production deploy of this Worker — **owner not yet named** (the
+header's "Owner: Unassigned"; assign it on #44 before Oct 22). Pre-flight, in order: the
+`Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
+has no `REPLACE_WITH_COLUMN_ID` left; the Worker is deployed and the webhook registered; then
+`--dry-run`, compare its order count with the Eventbrite attendee/orders report, then the real
+run. If the Worker cannot be in production by then, `--dry-run` still needs only the read-only
+token and lists the paid orders (ids and statuses, no PII) — use it as the checklist for a
+manual entry on Donations (Gift Type `Event Ticket`, the order id in `Eventbrite Order ID` so a
+later backfill adopts the item instead of duplicating it).
 An order refunded before the Worker ever saw it has no item to reverse, so it is recorded as `skipped` and nothing is written; one with an item is updated to `Refunded`. The consumer runs one
 message at a time, so a few hundred orders take a few minutes; then check the board and
 `select status, count(*) from orders where event_id = '<id>' group by status`.

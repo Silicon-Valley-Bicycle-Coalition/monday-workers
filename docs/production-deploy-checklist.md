@@ -281,6 +281,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       `scripts/backfill-orders.mjs` (`--dry-run` first). Sequence per
       [`eventbrite-sync/README.md`](../eventbrite-sync/README.md): deploy → register webhook →
       backfill, so no order falls in a gap. Provision the sandbox first.
+      Backfill owner: **not yet named** (issue #44); run on/after 2026-10-23 with the Summit's event id.
 
 ## Phase 5 — First week
 
