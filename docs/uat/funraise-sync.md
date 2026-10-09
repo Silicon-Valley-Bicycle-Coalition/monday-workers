@@ -77,8 +77,10 @@ to Monday. It sends no email and touches nothing in Funraise.
 
 ## Not testable yet
 
-Nothing here is blocked. After cutover, the real Funraise webhook moves to production and the
-sandbox copy is exercised only with the Test button.
+Nothing here is blocked. After cutover, the real Funraise webhook moves to production. The real
+gifts that landed on this sandbox copy over the cutover weekend are replayed into production by
+the engineers, so nothing given during the weekend is lost; from then on the sandbox copy is
+exercised only with the Test button or a replayed delivery.
 
 ---
 
