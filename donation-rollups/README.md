@@ -378,6 +378,14 @@ fresh load, since item ids change between loads.
 
 ## Membership renewal write path (spec `docs/superpowers/specs/2026-09-15-membership-renewal-write-path-design.md`)
 
+> **Rule change decided 2026-10-09 — not yet implemented.** Membership becomes "gave ≥ $1 or
+> volunteered ≥ 1 hour in the last 13 months": `termMonths` 13, a `minAmountCents` gate, Event
+> Registrations check-ins as a second activity source, four more owner columns (Current Term
+> Start, Member Type, Lapse Count, Last Lapsed), the baseline capture retired, and a one-time
+> full-history recompute right after cutover. Design:
+> `docs/superpowers/specs/2026-10-09-membership-activity-rule-design.md`. Everything below
+> describes what is deployed today and stays true until that branch ships.
+
 Salesforce's `Create_members` flow turned every won Donation-type gift into a one-year
 membership term (and a $1,000+ gift into a Lifetime one). This Worker replicates that rule as
 one more step of the recompute: after the rollups, it folds the owner's eligible post-cutover
