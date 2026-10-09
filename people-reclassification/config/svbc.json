@@ -1,0 +1,34 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com"
+  },
+  "window": { "years": 7, "timeZone": "America/Los_Angeles" },
+  "boards": {
+    "live": { "boardId": 0, "groupId": null },
+    "historical": { "boardId": 0, "groupId": null }
+  },
+  "peopleColumns": {
+    "lastGift": "Last Gift Date",
+    "memberUntil": "Member Until",
+    "membershipTier": "Membership Tier",
+    "funraiseProfile": "Funraise Profile"
+  },
+  "perpetual": { "lifetimeTierLabel": "Lifetime", "funraiseLinked": true },
+  "eventRegistrations": {
+    "boardId": 0,
+    "columns": { "attendee": "Attendee", "event": "Event", "attendance": "Attendance", "source": "Source" },
+    "countedAttendanceLabels": ["Attended"],
+    "countedRegisteredSources": ["Funraise"],
+    "events": { "boardId": 0, "startColumn": "Start" }
+  },
+  "volunteers": {
+    "boardId": 0,
+    "columns": { "volunteer": "Volunteer", "date": "Date" }
+  },
+  "thresholds": { "itemsLimit": 10000, "liveTriggerPct": 85, "historicalWarnPct": 80 },
+  "run": { "maxMovesPerRun": 400, "quarterlyMonths": [1, 4, 7, 10], "cronHourUTC": 10 },
+  "alerts": {
+    "itRequests": { "boardId": 8846215481, "typeColumn": "Type", "typeLabel": "IT Support", "cooldownDays": 30 }
+  }
+}
