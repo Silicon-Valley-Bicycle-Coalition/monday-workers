@@ -11,7 +11,7 @@ still not connected to a real QuickBooks company — that needs an Intuit develo
 credentials, a staff/admin task (see "Sandbox environment" and "Open question" below), which
 hasn't happened yet.
 **Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
 
 ## The ask

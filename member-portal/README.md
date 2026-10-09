@@ -9,7 +9,7 @@ live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donati
 date-gated (see "v7 — Clean-start donation history"): hidden until 2027-01-01, and from then on
 showing only gifts dated 2026-01-01 or later.
 **Priority:** Post-migration, non-blocking on the October cutover.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript, D1 (tokens/sessions and queued change requests — Monday stays the
 system of record for donor data).
 

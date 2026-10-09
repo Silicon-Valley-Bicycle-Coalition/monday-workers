@@ -11,7 +11,7 @@ shares with `funraise-sync` is also still missing from the board.
 **Priority:** Post-cutover, **time-boxed by Bike Summit 2026 (Oct 22)** — ticket sales run
 through the Oct 9–11 cutover, and the one-off backfill (below) is what puts that revenue on the
 Donations board. Decision that it counts as giving: migration repo issue #56 (2026-09-30).
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queues (the shared stack, see `../README.md`).
 
 ## The ask
@@ -241,8 +241,7 @@ the column in place (Sequencing, below), run it once with the Summit's event id 
 in the manage-page URL (`…/myevent?eid=<id>`) or from `GET /v3/organizations/{org}/events/`. Do
 the same for any other event that sold tickets between cutover and the webhook registration.
 **Owner and deadline (issue #44).** Run it on or after **2026-10-23**, once Summit sales have
-closed, by whoever owns the production deploy of this Worker — **owner not yet named** (the
-header's "Owner: Unassigned"; assign it on #44 before Oct 22). Pre-flight, in order: the
+closed, by David (the Worker's owner, decided 2026-10-09). Pre-flight, in order: the
 `Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
 has no `REPLACE_WITH_COLUMN_ID` left; the Worker is deployed and the webhook registered; then
 `--dry-run`, compare its order count with the Eventbrite attendee/orders report, then the real
