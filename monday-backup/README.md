@@ -17,7 +17,7 @@ outstanding** (it needs the provisioned sandbox, issue #14).
 **Priority:** Post-migration, non-blocking, but time-relevant once `salesforce-import`'s load stage
 runs: from that point on, Monday is holding real donor/donation data with no Salesforce copy to
 fall back on if something goes wrong.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1, on a Cloudflare Cron Trigger instead of the usual
 webhook-driven shape — see `../README.md`'s shared-stack note.
 

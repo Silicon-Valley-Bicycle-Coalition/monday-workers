@@ -63,7 +63,7 @@ the moment the build goes live, the same hazard as 0007 below. Then re-run `setu
 
 **Priority:** Post-migration, non-blocking — the initial correct values ship as part of
 `salesforce-import`'s one-time load; this Worker is what keeps them from going stale afterward.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queue (`npm create cloudflare@latest`).
 
 ## Status and verification — operational findings, 2026-09-17

@@ -15,7 +15,7 @@ wants `[String]!`. See git history for both fixes.
 **Priority:** Post-migration, **time-sensitive** — SVBC's existing Mailchimp newsletter
 segmentation (by city, by donation history) is fed from Salesforce today and breaks at
 retirement, same urgency as the renewal reminders this Worker's predecessor was built for.
-**Owner:** Unassigned.
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queues (two pairs) + Cloudflare Cron Trigger.
 **Design doc:** [`docs/superpowers/specs/2026-08-26-mailchimp-sync-design.md`](../docs/superpowers/specs/2026-08-26-mailchimp-sync-design.md)
 

@@ -10,7 +10,7 @@ environments) — the first deployment's passes only record what they would move
 trigger line is 85%, and the growth analysis puts a 7-year window at ~71% today, so this is
 headroom maintenance rather than a cutover blocker — but it is the only thing that will ever
 move anyone between the two boards.
-**Owner:** Unassigned (see "Open").
+**Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 (the shared stack, see `../README.md`); a daily cron and an
 authenticated HTTP trigger; no queue (a failed pass is continued by the next day's cron).
 
@@ -213,8 +213,6 @@ Nothing below has been done.
 
 ## Open
 
-* **Owner: Unassigned.** The plan says "likely whoever ends up building donation-rollups-adjacent
-  Workers"; nobody has been named.
 * **Window granularity.** The sizing analysis compared calendar years (`refYear − year < N`);
   this Worker uses a rolling date (`today − 7 years`, same month/day), so people age out through
   the year in quarterly batches rather than all at once each January. The counts differ only at
