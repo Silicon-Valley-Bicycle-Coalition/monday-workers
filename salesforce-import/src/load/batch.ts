@@ -93,6 +93,14 @@ export class ComplexityGate {
   }
 }
 
+/** `items` split into consecutive groups of at most `size` (at least 1). */
+export function chunk<T>(items: T[], size: number): T[][] {
+  const n = Math.max(1, Math.floor(size));
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += n) out.push(items.slice(i, i + n));
+  return out;
+}
+
 /**
  * Runs `fn` over `tasks` with at most `concurrency` in flight. After any task throws, no new
  * task starts (in-flight ones finish) and the first error is rethrown — a crash, not a skip.

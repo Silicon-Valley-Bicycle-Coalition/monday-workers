@@ -8,7 +8,7 @@ import { Ledger } from './ledger.js';
 import { ensureBoards, COLUMN_TYPES } from './boards.js';
 import { formatColumnValue } from './columnValues.js';
 import { SF_ID_COLUMN, findItemIdsBySfId, scanBoardSfIds } from './lookup.js';
-import { ComplexityGate, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
+import { ComplexityGate, chunk, createBatch, runPool, type CreateEntry, type CreateOutcome } from './batch.js';
 import { BATCHED_PRESET, describeMode, isLegacySequential, parseLoadOptions } from './options.js';
 import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
 import { estimateLoad, formatEstimate } from './estimate.js';
@@ -381,32 +381,59 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     }
     return tasks;
   };
+  const markLinkWritten = async (t: LinkTask): Promise<void> => {
+    await ledger.recordLink(t.sfId, t.column, t.targetSfIds);
+    report.links.written++;
+    linkedThisRun.add(t.sfId);
+    // Targets count too: a retried incoming link means its target was unarchived for
+    // the write to stick, so the re-archive check below must see it as touched.
+    for (const target of t.targetSfIds) linkedThisRun.add(target);
+  };
+  const writeLinkOne = async (t: LinkTask): Promise<void> => {
+    try {
+      await client.gql(
+        `mutation ($boardId: ID!, $itemId: ID!, $cols: JSON!, $create: Boolean!) {
+           change_multiple_column_values (board_id: $boardId, item_id: $itemId, column_values: $cols,
+             create_labels_if_missing: $create) { id } }`,
+        { boardId: String(t.boardId), itemId: t.itemId,
+          cols: JSON.stringify({ [t.colId]: { item_ids: t.targetIds } }), create: true });
+      await markLinkWritten(t);
+    } catch (err) {
+      report.links.failed++;
+      await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err),
+        targetSfIds: t.targetSfIds });
+    }
+  };
+  // #50: Monday runs mutations one at a time account-wide (probe-pools.ts: flat ~55/min at pool
+  // sizes 1-12, and across boards), so a bigger pool only queues. What helps is aliasing N
+  // writes into one request, which pays the ~0.5 s per-request overhead once. Setting a column
+  // is idempotent, so anything the aliased request didn't confirm (a rejected alias, a 5xx, a
+  // dead connection) is simply retried singly, where failures are ledgered as before.
+  const writeLinkGroup = async (group: LinkTask[]): Promise<void> => {
+    if (group.length === 1) return writeLinkOne(group[0]!);
+    const landed = new Set<number>();
+    try {
+      const variables: Record<string, unknown> = {};
+      group.forEach((t, k) => {
+        variables[`b${k}`] = String(t.boardId);
+        variables[`i${k}`] = t.itemId;
+        variables[`c${k}`] = JSON.stringify({ [t.colId]: { item_ids: t.targetIds } });
+      });
+      const r = await client.gqlPartial<Record<string, { id: string } | null>>(
+        `mutation (${group.map((_, k) => `$b${k}: ID!, $i${k}: ID!, $c${k}: JSON!`).join(', ')}) {
+          ${group.map((_, k) => `l${k}: change_multiple_column_values (board_id: $b${k}, item_id: $i${k}, ` +
+            `column_values: $c${k}, create_labels_if_missing: true) { id }`).join('\n')} }`, variables);
+      group.forEach((_, k) => { if (r.data?.[`l${k}`]?.id) landed.add(k); });
+    } catch {
+      // Whole request lost or refused: nothing is confirmed, so every write is retried below.
+    }
+    for (const [k, t] of group.entries()) {
+      if (landed.has(k)) await markLinkWritten(t);
+      else await writeLinkOne(t);
+    }
+  };
   const runLinkTasks = async (linkTasks: LinkTask[]): Promise<void> => {
-    let nextTask = 0;
-    const linkWorker = async (): Promise<void> => {
-      while (nextTask < linkTasks.length) {
-        const t = linkTasks[nextTask++]!;
-        try {
-          await client.gql(
-            `mutation ($boardId: ID!, $itemId: ID!, $cols: JSON!, $create: Boolean!) {
-               change_multiple_column_values (board_id: $boardId, item_id: $itemId, column_values: $cols,
-                 create_labels_if_missing: $create) { id } }`,
-            { boardId: String(t.boardId), itemId: t.itemId,
-              cols: JSON.stringify({ [t.colId]: { item_ids: t.targetIds } }), create: true });
-          await ledger.recordLink(t.sfId, t.column, t.targetSfIds);
-          report.links.written++;
-          linkedThisRun.add(t.sfId);
-          // Targets count too: a retried incoming link means its target was unarchived for
-          // the write to stick, so the re-archive check below must see it as touched.
-          for (const target of t.targetSfIds) linkedThisRun.add(target);
-        } catch (err) {
-          report.links.failed++;
-          await ledger.recordLinkFailure({ sfId: t.sfId, column: t.column, error: String(err),
-            targetSfIds: t.targetSfIds });
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: LINK_CONCURRENCY }, () => linkWorker()));
+    await runPool(chunk(linkTasks, opts.batchSize), LINK_CONCURRENCY, writeLinkGroup);
   };
 
   const donations = byBoard.get('donations') ?? [];
@@ -471,8 +498,8 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
       const toArchive = group.filter((p) => p.archive);
       let archivedCount = 0, deferredCount = 0;
       // Decide every item first (the #21 gate reads only state settled above), then archive the
-      // cleared ones opts.concurrency at a time — archive_item is idempotent and was the largest
-      // remaining sequential cost after #22's create/link changes. --sequential keeps it 1.
+      // cleared ones opts.batchSize to a request, opts.concurrency requests at a time —
+      // archive_item is idempotent. --sequential keeps it one mutation per request.
       const cleared: { p: ItemPayload; itemId: string }[] = [];
       for (const p of toArchive) {
         // Re-archive when a link was rewritten this run (the user unarchived it for the retry).
@@ -488,7 +515,7 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
         }
         cleared.push({ p, itemId });
       }
-      await runPool(cleared, opts.concurrency, async ({ p, itemId }) => {
+      const archiveOne = async ({ p, itemId }: { p: ItemPayload; itemId: string }): Promise<void> => {
         try {
           await client.gql(`mutation ($id: ID!) { archive_item (item_id: $id) { id } }`, { id: itemId });
           await ledger.recordArchive(p.sfId);
@@ -498,7 +525,31 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
           report.archive.failed++;
           await ledger.recordArchiveFailure(p.sfId, String(err));
         }
-      });
+      };
+      // #50: aliased like the links above — archive_item is idempotent, so whatever an aliased
+      // request didn't confirm is retried singly.
+      const archiveGroup = async (group: typeof cleared): Promise<void> => {
+        if (group.length === 1) return archiveOne(group[0]!);
+        const landed = new Set<number>();
+        try {
+          const variables: Record<string, unknown> = {};
+          group.forEach((c, k) => { variables[`i${k}`] = c.itemId; });
+          const r = await client.gqlPartial<Record<string, { id: string } | null>>(
+            `mutation (${group.map((_, k) => `$i${k}: ID!`).join(', ')}) {
+              ${group.map((_, k) => `a${k}: archive_item (item_id: $i${k}) { id }`).join('\n')} }`, variables);
+          group.forEach((_, k) => { if (r.data?.[`a${k}`]?.id) landed.add(k); });
+        } catch {
+          // Whole request lost or refused: nothing is confirmed, so every archive is retried below.
+        }
+        for (const [k, c] of group.entries()) {
+          if (landed.has(k)) {
+            await ledger.recordArchive(c.p.sfId);
+            archivedCount++;
+            report.archive.archived++;
+          } else await archiveOne(c);
+        }
+      };
+      await runPool(chunk(cleared, opts.batchSize), opts.concurrency, archiveGroup);
       console.log(`load: donations FY${fy || '(undated)'} — ${group.length} items, ` +
         `${archivedCount} archived` + (deferredCount > 0 ? `, ${deferredCount} archive-deferred` : ''));
     }
