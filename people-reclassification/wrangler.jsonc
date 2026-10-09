@@ -1,0 +1,64 @@
+{
+  "name": "svbc-people-reclassification",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  // DRY_RUN: every Monday mutation (moves, the IT Requests alert) is off unless this is exactly
+  // "false" (src/dryRun.ts). Flip it per environment only once a dry-run pass's plan has been
+  // read; an operator can also run one live pass with POST /reclassify/run?dryRun=false.
+  "vars": { "DRY_RUN": "true" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-people-reclassification",
+      "database_id": "REPLACE_WITH_D1_ID", // wrangler d1 create svbc-people-reclassification
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". The only
+  // HTTP surface is the authenticated /reclassify/* operator routes, so 60/min/IP covers everything.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2081", "simple": { "limit": 60, "period": 60 } }],
+  // Above the repo's usual 100 ms: a quarterly pass pages ~25k items (both People boards, Event
+  // Registrations, Volunteers) through JSON.parse in one invocation, and a CPU-limit kill is
+  // uncatchable (the monday-backup finding, issue #29). Still 30x under Workers Paid's 30 s default.
+  "limits": { "cpu_ms": 1000 },
+  // Daily at 10:00 UTC (02:00/03:00 Pacific); src/duties.ts decides whether today owes a pass —
+  // the first of a quarter month, the live board over its trigger percentage, or unfinished work.
+  "triggers": {
+    "crons": ["0 10 * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-people-reclassification-
+  // sandbox against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
+  // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (MONDAY_API_TOKEN, RECLASSIFY_SECRET).
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox", "DRY_RUN": "true" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-people-reclassification-sandbox",
+          "database_id": "REPLACE_WITH_SANDBOX_D1_ID", // wrangler d1 create svbc-people-reclassification-sandbox
+          "migrations_dir": "migrations"
+        }
+      ],
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2082", "simple": { "limit": 60, "period": 60 } }],
+      "limits": { "cpu_ms": 1000 },
+      "triggers": {
+        "crons": ["0 10 * * *"]
+      },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
+  }
+}
