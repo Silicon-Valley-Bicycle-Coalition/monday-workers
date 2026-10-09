@@ -157,7 +157,8 @@ The one invariant that matters: the D1 "last processed" cursor must only advance
 confirmed Monday write, never before, or a failed run silently skips what it should have processed
 with nothing to retry it. (`svbc-calendars`'s daily cron is a KV-fallback warm, not a Monday write,
 so this invariant doesn't apply to it — no Worker in this repo currently needs this pattern for a
-real Monday-writing cron; it's documented here for the next one that does.)
+real Monday-writing cron; it's documented here for the next one that does — `people-reclassification`
+is the first: its D1 `moves` row goes to `moved` only after Monday confirms the move.)
 
 **`salesforce-import` is a one-time batch job**, not an ongoing sync, so it uses neither pattern.
 It's a self-registering CLI (`src/commands.ts` holds a `registerCommand` map; each pipeline stage
@@ -171,7 +172,7 @@ source — the goal is that another org's fork is a config change, not a rewrite
 
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
-`benevity-import`, `eventbrite-sync`; not `svbc-calendars`) carries a
+`benevity-import`, `eventbrite-sync`, `people-reclassification`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
@@ -188,8 +189,8 @@ writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.
 through constructor options in their own `client.ts`, never by editing the copy. The
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
-donation-rollups, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-portal and
-quickbooks-sync;
+donation-rollups, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-portal,
+people-reclassification and quickbooks-sync;
 salesforce-import deliberately keeps its own client (`src/load/monday.ts`) through the
 2026-10-09 cutover: it's the one every load rehearsal validated, its `gqlPartial()` (per-alias
 results from multi-create requests) has no transport equivalent, and `gqlLegacy()` must stay
