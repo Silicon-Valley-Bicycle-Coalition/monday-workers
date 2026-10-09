@@ -91,6 +91,11 @@ served as itself — see #39.
 
 ## Status at a glance
 
+For the picture version, see [`docs/systems-map.html`](docs/systems-map.html): one row per
+Worker (upstream system, trigger shape, where the data lands), the shared webhook → D1 → Queue
+reliability pattern, and a sandbox/production state table. It is a self-contained HTML page, so
+open it in a browser. Keep it in step with this table — it carries an "as of" date in its header.
+
 | Worker | Status | Priority |
 |---|---|---|
 | [`salesforce-import`](salesforce-import/README.md) | Built (merged) — full extract → geocode → transform → load → validate exercised against the **sandbox v2** workspace (rehearsal 2026-08-28, incremental Eventbrite-history resume 2026-09-08 — see monday-migration `docs/18` §9 for the resume-run limits); **no production boards exist yet** | **Blocking.** Central migration deliverable — needs a time budget for the load/validate/cutover runs |
