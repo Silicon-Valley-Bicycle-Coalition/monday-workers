@@ -85,7 +85,7 @@ archived/deferred items.
 every step of the rehearsal checklist below has passed on the sandbox account.** `load --batched`
 prints `load: mode = batched (size 10, concurrency 3, inline links on)`. It sends 10 aliased
 `create_item`s per request (`--batch-size N`, max 25) with 3 requests in flight
-(`--concurrency N`, max 8; archives use the same pool), and puts a payload's board-relation values straight into its `create_item` when every
+(`--concurrency N`, max 8; separate links and archives are aliased `--batch-size` to a request too, #50), and puts a payload's board-relation values straight into its `create_item` when every
 target is already on Monday — which covers nearly all Donation relations (Donor, Campaign,
 Recurring Gift, Matched By, Soft Credit) and most other boards' links. A relation only counts as
 written when `create_item`'s response echoes it back; anything else (a target still to be created,
