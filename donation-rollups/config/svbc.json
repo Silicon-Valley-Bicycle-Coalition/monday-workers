@@ -53,7 +53,7 @@
       "labels": { "leadership": "Leadership", "major": "Major", "donor": "Donor" }
     },
     "membership": {
-      "fromISO": "2026-10-09",
+      "fromISO": "2026-10-16",
       "eligibleGiftTypes": ["Donation"],
       "termMonths": 12,
       "lifetimeThresholdCents": 100000,

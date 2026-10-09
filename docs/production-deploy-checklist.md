@@ -17,7 +17,7 @@ schedule — its checklist is [its README's Deploy section](../svbc-calendars/RE
 
 **Status as of 2026-10-06:** nothing below is done unless marked (Phase 1 items resolved
 2026-09-29, 2026-10-01 and 2026-10-06 are ticked). `salesforce-import`'s
-`cutoverDateISO` is `2026-10-09`. Phase 3/4 order brought in line with the private cutover
+`cutoverDateISO` is `2026-10-16` (moved from `2026-10-09` on 2026-10-09 with the cutover weekend). Phase 3/4 order brought in line with the private cutover
 runbook (`docs/23-cutover-runbook.md`, step 4.0) on 2026-09-30: `donation-rollups` now deploys
 in Phase 3, before `configure` and the go/no-go.
 
