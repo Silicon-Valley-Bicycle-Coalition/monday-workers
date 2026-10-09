@@ -62,6 +62,23 @@ MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141
 
 It exits non-zero and lists the workspaces if the token reaches any board outside the ones named.
 
+**Making the production donor boards private (#41).** `salesforce-import` creates its boards
+`board_kind: public`, so after the cutover load every member token reaches and can edit them.
+Do this **after the load and before any Worker's production deploy**:
+
+1. Rehearse on a sandbox board first (dry run, then `--apply` on one throwaway board).
+2. Dry run against production: `MONDAY_API_TOKEN=... node scripts/make-boards-private.mjs
+   --workspace <id> --prefix "<board name prefix>" --sandbox-user <Sandbox Integration user id>`.
+   It lists each matching board's kind, subscribers and team subscribers and changes nothing.
+   Use the load user's or an admin's token, not a Worker integration user's.
+3. Re-run with `--apply`. It calls `change_board_kind(board_id, kind: PRIVATE)` and re-reads the
+   boards to confirm. (`update_board` cannot do this; its `board_attribute` has no `board_kind`.)
+4. In Monday, subscribe the staff team, and each production integration user to **only** the
+   boards its Worker reads or writes. The script reports subscribers; it does not add them.
+   The Sandbox Integration user must be on none (`--sandbox-user` makes the script exit 1 if so).
+5. Measure every token with `check-monday-token-scope.mjs` and record the result. A token is not
+   "scoped" until that has been run against it.
+
 **One Monday `API-Version` pin, also shared:** every Worker sends the `MONDAY_API_VERSION`
 constant from its copy of the shared GraphQL transport (`src/monday/graphql.ts`, currently
 `2026-07`) and never overrides it for ordinary calls; the two clients without a transport copy
