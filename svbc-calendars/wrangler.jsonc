@@ -32,12 +32,11 @@
     "CACHE_TTL": "900", // /events, /widget — 15 min, unchanged from events-widgets
     "CALENDAR_CACHE_TTL": "86400", // /calendars/*.ics, /calendars — 24h, "nothing needs to be real-time"
     "CACHE_VERSION": "1", // reset to 1 for the new merged Worker's cache key space
-    // Empty pending manual setup — enable Web Analytics for bikesiliconvalley.org (or its
-    // subdomains) in the Cloudflare dashboard (Analytics & Logs -> Web Analytics -> Add a site)
-    // and paste the resulting site token here before deploying. Deliberately empty rather than a
-    // non-empty placeholder: src/widget.ts and src/listing.ts only emit the beacon <script> when
-    // this is truthy, so an un-filled-in deploy silently ships with no analytics instead of a
-    // broken beacon carrying a garbage token.
+    // Deliberately empty. As of 2026-09-21 bikesiliconvalley.org had Web Analytics on automatic
+    // setup, which injects the beacon into every subdomain's pages with no code changes, so a
+    // manual token here would be a second, redundant beacon (README Deploy step 2 — confirm it is
+    // still on automatic setup). src/widget.ts and src/listing.ts only emit the beacon <script>
+    // when this is truthy, so it stays empty rather than carrying a token that double-counts.
     "CF_WEB_ANALYTICS_TOKEN": ""
   },
   "triggers": {
@@ -54,5 +53,68 @@
   "observability": {
     "enabled": true,
     "issues": { "enabled": true }
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // Unlike every other Worker's env.sandbox, this one has nothing to do with the CRM-migration
+  // "inbound only, no outbound data" convention (docs/superpowers/specs/2026-09-18-sandbox-
+  // environment-design.md explicitly lists svbc-calendars as out of scope there — no donor data,
+  // not migration-related). This is a plain staging tier: a place to deploy and exercise changes
+  // before they hit the real public domains, with its own KV/Analytics so test traffic can't
+  // corrupt the real cache or skew real Web Analytics numbers. `wrangler deploy --env sandbox`
+  // deploys svbc-calendars-sandbox.
+  //
+  // No staging subdomain exists for bikesiliconvalley.org, so this serves on its default
+  // workers.dev URL rather than a custom domain.
+  //
+  // Secrets aren't in this file — set the sandbox copies separately:
+  //   npx wrangler secret put EVENTBRITE_TOKEN --env sandbox   (same real token; public event
+  //                                                              data, no sensitivity)
+  //   npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  (optional — sendFailureAlert
+  //                                                              no-ops without it, so leaving it
+  //                                                              unset means test-triggered
+  //                                                              failures don't page the real
+  //                                                              ops channel)
+  "env": {
+    "sandbox": {
+      "workers_dev": true,
+      "preview_urls": false,
+      // Explicit empty override — env.sandbox otherwise INHERITS the top-level `routes` (the
+      // real custom domains) unless this is here. The first sandbox deploy, without this line,
+      // silently reassigned events.bikesiliconvalley.org and committees.bikesiliconvalley.org
+      // away from the production Worker and onto the untested sandbox Worker. Never remove it.
+      "routes": [],
+      "kv_namespaces": [
+        {
+          "binding": "CALENDAR_KV",
+          // Created via `wrangler kv namespace create CALENDAR_KV --env sandbox` — separate from
+          // production's so sandbox cache/last-known-good writes never collide with the real site.
+          "id": "92501769bf324c409dfdbba8f47b44bf"
+        }
+      ],
+      "analytics_engine_datasets": [
+        {
+          "binding": "CALENDAR_ANALYTICS",
+          "dataset": "svbc_calendars_sandbox"
+        }
+      ],
+      "vars": {
+        "EVENTBRITE_ORG_ID": "9974694499",
+        "CACHE_TTL": "900",
+        "CALENDAR_CACHE_TTL": "86400",
+        "CACHE_VERSION": "1",
+        // Left empty, same as production — sandbox traffic shouldn't count toward the real
+        // site's Web Analytics numbers at all.
+        "CF_WEB_ANALYTICS_TOKEN": ""
+      },
+      "triggers": {
+        "crons": ["0 13 * * *"]
+      },
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2062", "simple": { "limit": 120, "period": 60 } }],
+      "limits": { "cpu_ms": 100 },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
   }
 }
