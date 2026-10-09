@@ -1,7 +1,11 @@
 # Membership renewal write path — Design
 
 **Date:** 2026-09-15
-**Status:** Approved design, pre-implementation.
+**Status:** Implemented (shipped to the sandbox 2026-09-17). **Partly superseded 2026-10-09 by
+`2026-10-09-membership-activity-rule-design.md`:** the rule (any gift → 12-month term) becomes
+"≥ $1 given or ≥ 1 volunteer hour in the last 13 months", the baseline capture is retired, and
+four owner columns are added. The architecture, extend-only merge, changed-only writes and
+per-gift stamps below still apply and are extended there.
 **Workers:** `donation-rollups` (owns the rule), `funraise-sync` (one config-driven column).
 **Prior art:** `2026-08-22-membership-reminders-design.md` (the reminder side, since folded into
 `mailchimp-sync`); private planning repo `docs/05-migration-script-requirements.md` §2 (the
