@@ -421,6 +421,22 @@ changes nothing in D1 or Monday itself; each accepted delivery goes through the 
 consumer, so replayed gifts are subject to everything it does, including the archived-year flag.
 Check the result with the window check in the runbook's step 5, not with this script's counts.
 
+Window check 3 (one Donations item per Funraise ID) is scripted and read-only:
+
+```sh
+MONDAY_API_TOKEN=... node scripts/check-funraise-ids.mjs [--env sandbox]
+```
+
+It pages through the Donations board (`monday.boards["donations:live"]`, Funraise ID column
+`funraiseSync.entityIdColumn`) and exits 1 listing every Funraise ID carried by more than one
+item. Archived items aren't returned by the API, so it shares adopt-before-create's blind spot —
+which is why the consumer flags old gifts instead of creating them.
+
+**Open (not decided):** which control pauses the Funraise → Salesforce sync after Gate C is not
+written down anywhere (svbc-monday-migration docs/23). Funraise's managed package has no
+documented off switch in this repo; someone with Funraise/Salesforce admin access has to name the
+control and the runbook has to say who flips it and when.
+
 ## Resetting for new board ids
 
 When the boards this Worker writes are deleted and rebuilt (a cutover retry — private runbook,

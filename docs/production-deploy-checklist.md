@@ -240,10 +240,14 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
   - [ ] **Repoint Funraise's single webhook** from the `-sandbox` Worker to
         `/webhooks/funraise/transaction?secret=` on production. The sandbox loses its Funraise
         feed from here on — expected.
-  - [ ] Reconcile Funraise transactions dated between the Salesforce export and this step
-        against the Donations board; nothing else catches gifts in that gap. Replay them with
-        `scripts/replay-window.mjs --since <repoint time>` (README, "Replaying one Worker's
-        deliveries into another").
+  - [ ] Don't reconcile the gap by hand: replay the sandbox Worker's stored deliveries with
+        `scripts/replay-window.mjs --since <final extract START time>` (`--dry-run` first;
+        README, "Replaying one Worker's deliveries into another"). A `duplicate` answer is
+        success and overlap with the import is safe. Then run
+        `node scripts/check-funraise-ids.mjs` (window check 3, one Donations item per Funraise
+        ID; exit 0 required). Not yet rehearsed against production credentials.
+  - [ ] **Open:** which control pauses Funraise → Salesforce sync after Gate C is unresolved
+        (not written down in this repo or the runbook); name it before Gate C.
   - [ ] Confirm `funraiseSync.oldestActiveFiscalYear` in `config/svbc.json` equals the importer's
         `cutoffFY` (2026 for this cutover), then query `events` rows with
         `status = 'needs_review'`: an edited or refunded gift from an archived fiscal year is
