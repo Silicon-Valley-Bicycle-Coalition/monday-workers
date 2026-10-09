@@ -399,7 +399,7 @@ shortened or downgraded; shorten by hand if you mean to.
 
   ```json
   "membership": {
-    "fromISO": "2026-10-09",
+    "fromISO": "2026-10-16",
     "eligibleGiftTypes": ["Donation"],
     "termMonths": 12,
     "lifetimeThresholdCents": 100000,

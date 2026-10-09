@@ -10,7 +10,7 @@
     }
   },
   "benevityImport": {
-    "minDisbursementDate": "2026-10-09",
+    "minDisbursementDate": "2026-10-16",
     "donationsColumns": {
       "donor": "REPLACE_WITH_COLUMN_ID",
       "matchedBy": "REPLACE_WITH_COLUMN_ID",
