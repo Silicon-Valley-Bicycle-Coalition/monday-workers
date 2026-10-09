@@ -245,6 +245,10 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 - [ ] **1. `donation-rollups`** — deployed in Phase 3. Here, only the live check: edit one test
       gift, see the owner's rollups recompute; `/custodian/status` clean.
 - [ ] **2. `funraise-sync`**
+  - [ ] **Add the `Refunded` label to the production Donations board's Status column first.**
+        The consumer maps a Funraise refund to it, so a refund replayed below (or arriving live)
+        dead-letters and leaves the gift `Received` until it exists. It is not created by the
+        import and is missing on sandbox v3 too. `eventbrite-sync` (step 9) needs the same label.
   - [ ] Config: Donations, Recurring Gifts, People boards + all `subscriptionsPoll.columns`,
         and a real `entityIdColumn` (adopt-before-create; the split test requires it, and
         without it the Worker duplicates migrated gifts).
@@ -277,9 +281,8 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
            `already present`; re-running is safe. Exit 2: rows whose payload the retention
            purge emptied — recover those from Funraise by hand.
         The script reports *enqueued*, not *written*: the production consumer makes the Monday
-        writes one gift at a time afterwards. A refunded gift in the window dead-letters until
-        the `Refunded` label exists on Donations → Status — the label is listed under step 9
-        (`eventbrite-sync`) below, but a refund in the replay needs it now.
+        writes one gift at a time afterwards. A refunded gift in the window dead-letters if the
+        `Refunded` label (first item of this step) was not added before the replay.
   - [ ] Confirm `funraiseSync.oldestActiveFiscalYear` in `config/svbc.json` equals the importer's
         `cutoffFY` (2026 for this cutover), then query `events` rows with
         `status = 'needs_review'`: an edited or refunded gift from an archived fiscal year —
@@ -321,11 +324,11 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       boards, seed `qb_oauth_tokens` via the OAuth Playground, Intuit webhook
       `/webhooks/quickbooks`, Monday webhook `/webhooks/monday?secret=`. Not a cutover blocker.
 - [ ] **9. `eventbrite-sync`** (post-cutover; the Summit backfill is due after Oct 22 sales) —
-      add the `Eventbrite Order ID` text column and the `Refunded` Status label to the
-      production Donations board (the label is also missing on sandbox v3, and `funraise-sync`
-      shares it); fill `config/svbc.json` (all placeholders today); create D1 + queues; set
-      fresh secrets; deploy; register the Eventbrite webhook; *then* run
-      `scripts/backfill-orders.mjs` (`--dry-run` first). Sequence per
+      add the `Eventbrite Order ID` text column to the production Donations board (the
+      `Refunded` Status label it also needs was added in step 2; it is missing on sandbox v3);
+      fill `config/svbc.json` (all placeholders today); create D1 + queues; set fresh secrets;
+      deploy; register the Eventbrite webhook; *then* run `scripts/backfill-orders.mjs`
+      (`--dry-run` first). Sequence per
       [`eventbrite-sync/README.md`](../eventbrite-sync/README.md): deploy → register webhook →
       backfill, so no order falls in a gap. Provision the sandbox first.
       Backfill owner: **not yet named** (issue #44); run on/after 2026-10-23 with the Summit's event id.
