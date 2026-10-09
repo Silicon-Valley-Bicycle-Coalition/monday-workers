@@ -119,7 +119,7 @@ board wasn't checked, so re-run `load` (or `validate --live`) before trusting it
 
 ```sh
 npm run cli -- load --dry-run                     # per-board plan + old vs --batched request counts and hours
-npm run cli -- load --dry-run --latency-ms 1400 --alias-ms 300   # re-estimate with sandbox timings
+npm run cli -- load --dry-run --latency-ms 1500 --alias-ms 1650  # re-estimate with the measured 2026-10 timings
 npm run cli -- load                               # DEFAULT: the pre-#22 sequential path, unchanged
 npm run cli -- load --sequential                  # the same thing, spelled out
 npm run cli -- load --batched                     # SANDBOX ONLY until rehearsed: 10 per request, 3 in flight, inline links
@@ -147,8 +147,15 @@ pass), even though the default run is sequential.
 
 The dry-run estimate is `old = (C+A)·L + K·L/q` and `new = (B·L + (C−B)·α)/p + K′·L/q + A·L/p`
 (C creates, B create requests, K/K′ separate link writes, A archives, L seconds per request —
-default 1.53 s, the measured ~40 h / ~94k — α the extra time per aliased create, p create/archive
-concurrency, q = 6 link concurrency). α is a placeholder (L/2) until a sandbox run measures it.
+default 1.53 s, from the ~40 h an earlier sequential rehearsal spent on its ~94k creates alone,
+not its links or archives — α the extra time per aliased create, p create/archive concurrency,
+q = 6 link concurrency). α defaults to a placeholder (L/2 = 765 ms); the 2026-10 rehearsal
+measured it at ≈ 1,650 ms, so pass `--alias-ms 1650`. The formula also assumes the link and
+archive passes really run q = 6 and p requests in flight. In that rehearsal they did not (see
+"Rehearsal results" below): both passes ran at effectively one request at a time, so the estimate
+under-predicts them several-fold. The link pool (`LINK_CONCURRENCY` workers) and the archive pool
+(`runPool` at `opts.concurrency`) in `src/load/index.ts` are the thing to fix; until they are,
+treat the "new" hours as a figure for the create pass, not the whole run.
 
 **Rehearse the batched path against the sandbox Monday account before cutover** (every step uses
 `--batched`; until all pass, production loads stay on the default):
@@ -162,6 +169,36 @@ concurrency, q = 6 link concurrency). α is a placeholder (L/2) until a sandbox 
 5. Resume a partial `--batched` ledger with plain `load` (the sequential default).
 6. Re-run `load --dry-run --latency-ms L --alias-ms α` with the measured timings, and decide
    whether production uses `--batched`.
+
+**Rehearsal results, 2026-10-09.** Measured 2026-10-06 → 09 against fresh `(batched rehearsal)`
+boards in the sandbox workspace, from the 2026-09-08 extract, at the defaults (size 10,
+concurrency 3, inline links on). The final state matched the dry-run plan exactly: 96,007 items,
+110,013 links, 44,783 archives. **The checklist has not yet passed** — steps 1, 2 and 5 are still
+open — so the rule above stands: `--batched` stays off production.
+
+| Step | Result | Detail |
+|------|--------|--------|
+| 1. Full load, inline counts at 0, `validate --live` clean | Not clean as written | `links.inlineUnconfirmed` 3 and `links.inlineRejected` 2 (the step asks for 0; the link pass wrote all five). No `DUPLICATE` lines, `readBackFailed` empty. `validate --live` clean on every board (0 missing / 0 not in ledger / 0 duplicated / 0 untagged); ledger-coverage, link-integrity and archive-coverage OK. |
+| 2. UI spot-check of donation relations | Not done | |
+| 3. Kill mid-board, re-run `--batched` | Passed | Run 1 killed mid-FY2019; run 2's start-of-run scan adopted 120 items and duplicated none. |
+| 4. "Not re-sent" items adopted or created next run | Passed | Run 2 exited 1 with 110 not re-sent; run 3 created all 110, 0 duplicates, exit 0 in 5 min. 180 ambiguous creates across the three runs (0.19%), all resolved. |
+| 5. Resume a batched ledger with plain `load` | Not run | |
+| 6. Re-estimate with measured timings | Run | `load --dry-run --latency-ms 1500 --alias-ms 1650` → batched ≈ 21.1 h, sequential ≈ 66.3 h. The batched figure is low; see below. |
+
+Run 1's 629 archive and 6 link failures were all "fetch failed" network errors on the operator
+machine (its proxy dropped connections, and it slept for part of the run); every one retried clean
+in run 2.
+
+Throughput: creates sustained ~105–115 items/min, which from 3 lanes of 10-item requests gives
+α ≈ 1,650 ms per extra alias, not the 765 ms placeholder. The link pass managed 49 links/min and
+the archive pass 24–41 archives/min — one request every 1.2–2.5 s, i.e. effectively one in flight,
+not the 6 and 3 the estimate assumes — while `{ complexity }` showed the account at 9.6M of its
+10M budget. No run's wall-clock is a valid timing: the operator Mac slept for long stretches of
+runs 1 and 2 with no `caffeinate` held, so the figures above are 2–4 minute samples taken while
+the ledger was advancing. Projected from those rates, a clean end-to-end batched load of this
+dataset is on the order of 55–65 h (creates ≈ 14.5 h, the non-Donations link pass ≈ 17 h,
+archives ≈ 18–30 h), not the 14–21 h the dry-run prints. A timed re-run must stay awake: AC
+power, `caffeinate -s`, lid open.
 
 **`validate --live`** doesn't trust the ledger. It scans each board's active items by
 `Salesforce ID` and fails on items the ledger expects but Monday lacks, items Monday has that the
