@@ -8,12 +8,21 @@ const ownerColumns = {
   thisYearAmount: 'tya', thisYearCount: 'tyc', lastYearAmount: 'lya', lastYearCount: 'lyc',
   largestGift: 'lag', smallestGift: 'smg', averageGift: 'avg', lastGiftDate: 'lgd', lastGiftAmount: 'lga',
 };
-const membershipColumns = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' };
+const membershipColumns = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil',
+  currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
 const membership = {
-  fromISO: '2026-10-01', eligibleGiftTypes: ['Donation'], termMonths: 12, lifetimeThresholdCents: 100000,
+  fromISO: '2026-10-16', eligibleGiftTypes: ['Donation'], minAmountCents: 100, termMonths: 13, lifetimeThresholdCents: 100000,
   statusLabels: { active: 'Active', lapsed: 'Lapsed' },
   tierLabels: { member: 'Member', lifetime: 'Lifetime' },
-  typeLabels: { new: 'New', renewal: 'Renewal', reacquire: 'Reacquire', lifetime: 'Lifetime' },
+  typeLabels: { new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal', lifetime: 'Lifetime' },
+};
+const volunteerBoard = {
+  boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: null },
+  eventBoard: { boardId: 8, columns: { start: 'start' } },
+  volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'],
+};
+const historicalVolunteerBoard = {
+  boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'],
 };
 const donationBoard = {
   boardId: 1,
@@ -30,6 +39,7 @@ const base = {
     donationBoards: [donationBoard],
     ownerColumnsByBoard: { '2': { ...ownerColumns, membership: membershipColumns }, '3': ownerColumns },
     membership,
+    volunteerBoards: [volunteerBoard], historicalVolunteerBoards: [historicalVolunteerBoard],
   },
 };
 
@@ -63,10 +73,10 @@ describe('validateConfig — fiscalYear block (issue #27)', () => {
 
 // The block the README tells the operator to paste in AFTER migration 0005 is applied.
 const documentedMembershipBlock = {
-  fromISO: '2026-10-01', eligibleGiftTypes: ['Donation'], termMonths: 12, lifetimeThresholdCents: 100000,
+  fromISO: '2026-10-16', eligibleGiftTypes: ['Donation'], minAmountCents: 100, termMonths: 13, lifetimeThresholdCents: 100000,
   statusLabels: { active: 'Active', lapsed: 'Lapsed' },
   tierLabels: { member: 'Member', lifetime: 'Lifetime' },
-  typeLabels: { new: 'New', renewal: 'Renewal', reacquire: 'Reacquire', lifetime: 'Lifetime' },
+  typeLabels: { new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal', lifetime: 'Lifetime' },
 };
 
 describe('validateConfig — membership block', () => {
@@ -97,7 +107,7 @@ describe('validateConfig — membership block', () => {
     ['lifetimeThresholdCents', -1, /lifetimeThresholdCents/],
     ['statusLabels', { active: 'Active' }, /statusLabels\.lapsed/],
     ['tierLabels', { member: '', lifetime: 'Lifetime' }, /tierLabels\.member/],
-    ['typeLabels', { new: 'New', renewal: 'Renewal', reacquire: 'Reacquire' }, /typeLabels\.lifetime/],
+    ['typeLabels', { new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal' }, /typeLabels\.lifetime/],
   ])('rejects a bad membership.%s', (key, value, pattern) => {
     const bad = { ...base, donationRollups: { ...base.donationRollups, membership: { ...membership, [key]: value } } };
     expect(() => validateConfig(bad)).toThrow(pattern);
@@ -117,8 +127,8 @@ describe('validateConfig — membership block', () => {
 
   it('rejects a partial owner membership block', () => {
     const bad = { ...base, donationRollups: { ...base.donationRollups,
-      ownerColumnsByBoard: { '2': { ...ownerColumns, membership: { status: 'ms', tier: 'mt', since: 'msince' } } } } };
-    expect(() => validateConfig(bad)).toThrow(/membership\.until/);
+      ownerColumnsByBoard: { '2': { ...ownerColumns, membership: { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' } } } } };
+    expect(() => validateConfig(bad)).toThrow(/membership\.currentTermStart/);
   });
 
   it('the shipped production config/svbc.json validates with its placeholder ids', () => {
@@ -132,8 +142,62 @@ describe('validateConfig — membership block', () => {
   });
 
   it('the shipped sandbox config validates with the documented membership block switched on', () => {
-    const enabled = { ...rawSandboxConfig, donationRollups: { ...rawSandboxConfig.donationRollups, membership: documentedMembershipBlock } };
+    // The shipped sandbox config has membership off until Task 14 provisions the new People
+    // columns, so switching it on also needs an owner membership block and the volunteer arrays.
+    const raw = rawSandboxConfig.donationRollups.ownerColumnsByBoard as Record<string, any>;
+    const enabled = { ...rawSandboxConfig, donationRollups: { ...rawSandboxConfig.donationRollups,
+      ownerColumnsByBoard: { ...raw, '18431577220': { ...raw['18431577220'], membership: membershipColumns } },
+      membership: documentedMembershipBlock, volunteerBoards: [], historicalVolunteerBoards: [] } };
     expect(validateConfig(enabled).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
+  });
+});
+
+describe('validateConfig — membership activity rule (spec 2026-10-09)', () => {
+  it('passes minAmountCents and the renamed type labels through', () => {
+    const m = validateConfig(base).donationRollups.membership!;
+    expect(m.minAmountCents).toBe(100);
+    expect(m.typeLabels).toEqual({ new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal', lifetime: 'Lifetime' });
+  });
+  it.each([
+    ['minAmountCents', -1, /minAmountCents/],
+    ['minAmountCents', 1.5, /minAmountCents/],
+    ['typeLabels', { new: 'New', renewal: 'Renewal', reacquire: 'Reacquire', lifetime: 'Lifetime' }, /typeLabels\.continuing/],
+  ])('rejects a bad membership.%s', (key, value, pattern) => {
+    const bad = { ...base, donationRollups: { ...base.donationRollups, membership: { ...membership, [key]: value } } };
+    expect(() => validateConfig(bad)).toThrow(pattern);
+  });
+  it('requires all eight owner membership columns', () => {
+    const { lastLapsed: _l, ...seven } = membershipColumns;
+    const bad = { ...base, donationRollups: { ...base.donationRollups, ownerColumnsByBoard: { '2': { ...ownerColumns, membership: seven } } } };
+    expect(() => validateConfig(bad)).toThrow(/membership\.lastLapsed/);
+  });
+  it('passes volunteer boards through, hours may be null, arrays may be empty', () => {
+    const cfg = validateConfig(base).donationRollups;
+    expect(cfg.volunteerBoards).toEqual([volunteerBoard]);
+    expect(cfg.historicalVolunteerBoards).toEqual([historicalVolunteerBoard]);
+    const empty = validateConfig({ ...base, donationRollups: { ...base.donationRollups, volunteerBoards: [], historicalVolunteerBoards: [] } });
+    expect(empty.donationRollups.volunteerBoards).toEqual([]);
+  });
+  it('requires both volunteer arrays when membership is on, and defaults them to [] when it is off', () => {
+    const { volunteerBoards: _v, ...rest } = base.donationRollups;
+    expect(() => validateConfig({ ...base, donationRollups: rest })).toThrow(/volunteerBoards/);
+    const off = validateConfig({ ...base, donationRollups: { ...rest, membership: null, historicalVolunteerBoards: undefined } });
+    expect(off.donationRollups.volunteerBoards).toEqual([]);
+    expect(off.donationRollups.historicalVolunteerBoards).toEqual([]);
+  });
+  it.each([
+    ['columns.attendee', { ...volunteerBoard, columns: { ...volunteerBoard.columns, attendee: '' } }, /volunteerBoards\[0\]\.columns\.attendee/],
+    ['eventBoard.columns.start', { ...volunteerBoard, eventBoard: { boardId: 8, columns: { start: '' } } }, /eventBoard\.columns\.start/],
+    ['volunteerRoleLabels', { ...volunteerBoard, volunteerRoleLabels: [] }, /volunteerRoleLabels/],
+    ['hours as a number', { ...volunteerBoard, columns: { ...volunteerBoard.columns, hours: 3 } }, /columns\.hours/],
+  ])('rejects a bad volunteerBoards %s', (_label, board, pattern) => {
+    const bad = { ...base, donationRollups: { ...base.donationRollups, volunteerBoards: [board] } };
+    expect(() => validateConfig(bad)).toThrow(pattern);
+  });
+  it('rejects a historical volunteer board missing its status column', () => {
+    const { status: _s, ...columns } = historicalVolunteerBoard.columns;
+    const bad = { ...base, donationRollups: { ...base.donationRollups, historicalVolunteerBoards: [{ ...historicalVolunteerBoard, columns }] } };
+    expect(() => validateConfig(bad)).toThrow(/historicalVolunteerBoards\[0\]\.columns\.status/);
   });
 });
 
