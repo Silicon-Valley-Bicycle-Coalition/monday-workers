@@ -145,30 +145,59 @@ describe('getDonationsByIds — membership term columns', () => {
   });
 });
 
-describe('getOwnerMembership', () => {
-  const OWNER = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil' };
-  it('returns the four values, blanks as null', async () => {
-    const client = clientReturning(itemsResponse([
-      { id: 'o1', cells: { ms: 'Active', mt: 'Member', msince: '2015-01-01', muntil: '' } },
-    ]));
-    expect(await client.getOwnerMembership('o1', OWNER))
-      .toEqual({ statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: null });
-  });
-  it('a never-member reads as all null', async () => {
-    const client = clientReturning(itemsResponse([{ id: 'o1', cells: { ms: null, mt: null, msince: null, muntil: null } }]));
-    expect(await client.getOwnerMembership('o1', OWNER))
-      .toEqual({ statusLabel: null, tierLabel: null, since: null, until: null });
+describe('getOwnerMembership (eight columns)', () => {
+  const OWNER = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil', currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
+  it('returns all eight, blanks as null, Lapse Count as a number', async () => {
+    const client = clientReturning(itemsResponse([{ id: 'o1', cells: {
+      ms: 'Active', mt: 'Member', msince: '2015-01-01', muntil: '2027-12-03 00:00', mcts: '2026-11-03', mtype: 'New', mlc: '2', mll: '' } }]));
+    expect(await client.getOwnerMembership('o1', OWNER)).toEqual({
+      statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: '2027-12-03',
+      currentTermStart: '2026-11-03', memberTypeLabel: 'New', lapseCount: 2, lastLapsed: null });
   });
   it('a missing item reads as all null rather than throwing', async () => {
     const client = clientReturning(itemsResponse([]));
-    expect(await client.getOwnerMembership('gone', OWNER))
-      .toEqual({ statusLabel: null, tierLabel: null, since: null, until: null });
+    expect(await client.getOwnerMembership('gone', OWNER)).toEqual({
+      statusLabel: null, tierLabel: null, since: null, until: null, currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null });
   });
-  it('normalizes since/until that carry a time component', async () => {
-    const client = clientReturning(itemsResponse([
-      { id: 'o1', cells: { ms: 'Active', mt: 'Member', msince: '2015-01-01 09:00', muntil: '2027-04-11 00:00' } },
-    ]));
-    expect(await client.getOwnerMembership('o1', OWNER)).toMatchObject({ since: '2015-01-01', until: '2027-04-11' });
+});
+
+const VOL_BOARD = { boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: 'hrs' as string | null },
+  eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] };
+
+describe('registrations and events', () => {
+  const regResponse = (cells: Record<string, string | null>, links: Record<string, string[]>) => ({ data: { items: [{ id: 'r1', column_values:
+    Object.entries(cells).map(([id, text]) => ({ id, text, ...(links[id] ? { linked_item_ids: links[id] } : {}) })) }] } });
+  it('getRegistration reads links, labels and hours; blank hours is null', async () => {
+    const client = clientReturning(regResponse({ att: 'Ada', ev: 'Bike Party', atd: 'Attended', role: 'Volunteer', hrs: '' }, { att: ['p1'], ev: ['e1'] }));
+    expect(await client.getRegistration('r1', VOL_BOARD)).toEqual({ id: 'r1', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null });
+  });
+  it('getRegistration without an hours column configured reads hours as null; a deleted item is null', async () => {
+    const client = clientReturning(regResponse({ att: '', ev: '', atd: 'Registered', role: '' }, {}));
+    expect(await client.getRegistration('r1', { ...VOL_BOARD, columns: { ...VOL_BOARD.columns, hours: null } }))
+      .toEqual({ id: 'r1', attendeeItemId: null, eventItemId: null, attendanceLabel: 'Registered', roleLabel: null, hours: null });
+    expect(await clientReturning({ data: { items: [] } }).getRegistration('gone', VOL_BOARD)).toBeNull();
+  });
+  it('getEventStart normalizes to a date and returns null for blank or missing', async () => {
+    expect(await clientReturning(itemsResponse([{ id: 'e1', cells: { start: '2027-05-02 18:00' } }])).getEventStart('e1', 'start')).toBe('2027-05-02');
+    expect(await clientReturning(itemsResponse([{ id: 'e1', cells: { start: '' } }])).getEventStart('e1', 'start')).toBeNull();
+    expect(await clientReturning(itemsResponse([])).getEventStart('e1', 'start')).toBeNull();
+  });
+  it('pageRegistrations returns the page and cursor with the same record shape', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: 'next', items: [{ id: 'r1', column_values: [
+      { id: 'att', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'ev', text: 'X', linked_item_ids: ['e1'] },
+      { id: 'atd', text: 'Attended' }, { id: 'role', text: 'Volunteer' }, { id: 'hrs', text: '3' }] }] } }] } });
+    expect(await client.pageRegistrations(VOL_BOARD, null)).toEqual({ cursor: 'next',
+      items: [{ id: 'r1', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: 3 }] });
+  });
+  it('pageHistoricalShifts reads Volunteer link, Date, Hours and Status', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: 'v1', column_values: [
+      { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed' }] }] } }] } });
+    expect(await client.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'] }, null))
+      .toEqual({ cursor: null, items: [{ id: 'v1', volunteerItemId: 'p1', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed' }] });
+  });
+  it('getItemsBoardIds maps ids to boards and omits missing items', async () => {
+    const client = clientReturning({ data: { items: [{ id: 'p1', board: { id: '20' } }, { id: 'p2', board: { id: '28' } }] } });
+    expect(await client.getItemsBoardIds(['p1', 'p2', 'p3'])).toEqual(new Map([['p1', '20'], ['p2', '28']]));
   });
 });
 

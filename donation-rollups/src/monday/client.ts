@@ -1,6 +1,8 @@
 import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
-import type { OwnerMembershipColumns } from '../types';
+import { parseHours } from '../membership/volunteer';
+import type { BoardMembership } from '../membership/derive';
+import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig } from '../types';
 import {
   AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
   type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions,
@@ -34,6 +36,23 @@ export interface AffiliationSummary {
   personBoardId: string | null;
 }
 
+export interface RegistrationRecord {
+  id: string;
+  attendeeItemId: string | null;
+  eventItemId: string | null;
+  attendanceLabel: string | null;
+  roleLabel: string | null;
+  hours: number | null;
+}
+
+export interface HistoricalShiftRecord {
+  id: string;
+  volunteerItemId: string | null;
+  dateISO: string | null;
+  hours: number | null;
+  statusLabel: string | null;
+}
+
 export type DonationReadColumns = {
   amount: string; date: string; fiscalYear: string | null; status: string;
   giftType?: string | null; termStart?: string | null; termEnd?: string | null; membershipType?: string | null;
@@ -63,11 +82,20 @@ export interface DonationRollupsMondayClient {
     columns: DonationReadColumns,
     fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]>;
-  // The four membership columns on a People-type owner, as label/date text — the membership
+  // The eight membership columns on a People-type owner, as label/date text — the membership
   // step's "what does the board hold" read (spec §"Merge with the board"). A missing item
   // reads as all-null so a deleted owner degrades to "never a member", not a thrown recompute.
-  getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns):
-    Promise<{ statusLabel: string | null; tierLabel: string | null; since: string | null; until: string | null }>;
+  getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns): Promise<BoardMembership>;
+  // A registration item (event attendance) with all its fields parsed and links resolved.
+  getRegistration(itemId: string, board: VolunteerBoardConfig): Promise<RegistrationRecord | null>;
+  // The start date of an event item, normalized to YYYY-MM-DD, or null if missing/blank.
+  getEventStart(eventItemId: string, startColumnId: string): Promise<string | null>;
+  // A page of registration items with cursor pagination.
+  pageRegistrations(board: VolunteerBoardConfig, cursor: string | null): Promise<{ items: RegistrationRecord[]; cursor: string | null }>;
+  // A page of historical shift items with cursor pagination.
+  pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
+  // Map item IDs to their board IDs, chunked at 100; missing items absent from the result.
+  getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
   // The Affiliation item's own name and the Person it links to (and that Person's board,
   // needed since Person items can live on the Donor or Organization board) — null when the
   // Affiliation item itself has been deleted.
@@ -260,12 +288,98 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return donations;
   }
 
-  async getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns) {
-    const ids = [columns.status, columns.tier, columns.since, columns.until];
+  async getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns): Promise<BoardMembership> {
+    const ids = [columns.status, columns.tier, columns.since, columns.until,
+      columns.currentTermStart, columns.memberType, columns.lapseCount, columns.lastLapsed];
     const cols = (await this.getItemsColumnsText([ownerItemId], ids)).get(ownerItemId);
     const text = (id: string): string | null => cols?.get(id) ?? null;
     const date = (id: string): string | null => text(id)?.slice(0, 10) ?? null;
-    return { statusLabel: text(columns.status), tierLabel: text(columns.tier), since: date(columns.since), until: date(columns.until) };
+    const count = text(columns.lapseCount);
+    return {
+      statusLabel: text(columns.status), tierLabel: text(columns.tier), since: date(columns.since), until: date(columns.until),
+      currentTermStart: date(columns.currentTermStart), memberTypeLabel: text(columns.memberType),
+      lapseCount: count === null || !/^\d+$/.test(count.trim()) ? null : Number(count.trim()),
+      lastLapsed: date(columns.lastLapsed),
+    };
+  }
+
+  private registrationFrom(item: { id: string; column_values: ColumnValue[] }, board: VolunteerBoardConfig): RegistrationRecord {
+    const c = board.columns;
+    const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
+    const link = (id: string): string | null => byId.get(id)?.linked_item_ids?.[0] ?? null;
+    const text = (id: string | null): string | null => (id ? (byId.get(id)?.text || null) : null);
+    return { id: item.id, attendeeItemId: link(c.attendee), eventItemId: link(c.event),
+      attendanceLabel: text(c.attendance), roleLabel: text(c.role), hours: parseHours(text(c.hours)) };
+  }
+
+  private registrationColumnIds(board: VolunteerBoardConfig): string[] {
+    const c = board.columns;
+    return [c.attendee, c.event, c.attendance, c.role, ...(c.hours ? [c.hours] : [])];
+  }
+
+  async getRegistration(itemId: string, board: VolunteerBoardConfig): Promise<RegistrationRecord | null> {
+    const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
+      `query ($ids: [ID!], $columnIds: [String!]) {
+        items(ids: $ids) { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
+      }`,
+      { ids: [itemId], columnIds: this.registrationColumnIds(board) },
+    );
+    const item = data.items[0];
+    return item === undefined ? null : this.registrationFrom(item, board);
+  }
+
+  async getEventStart(eventItemId: string, startColumnId: string): Promise<string | null> {
+    const text = (await this.getItemsColumnsText([eventItemId], [startColumnId])).get(eventItemId)?.get(startColumnId) ?? null;
+    return text === null ? null : text.slice(0, 10);
+  }
+
+  async pageRegistrations(board: VolunteerBoardConfig, cursor: string | null) {
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+          }
+        }`,
+        { boardId: [board.boardId], columnIds: this.registrationColumnIds(board), cursor },
+      );
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) return { items: [], cursor: null };
+    return { cursor: page.cursor, items: page.items.map((item) => this.registrationFrom(item, board)) };
+  }
+
+  async pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null) {
+    const c = board.columns;
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+          }
+        }`,
+        { boardId: [board.boardId], columnIds: [c.volunteer, c.date, c.hours, c.status], cursor },
+      );
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) return { items: [], cursor: null };
+    return {
+      cursor: page.cursor,
+      items: page.items.map((item) => {
+        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
+        const text = (id: string): string | null => byId.get(id)?.text || null;
+        return { id: item.id, volunteerItemId: byId.get(c.volunteer)?.linked_item_ids?.[0] ?? null,
+          dateISO: text(c.date)?.slice(0, 10) ?? null, hours: parseHours(text(c.hours)), statusLabel: text(c.status) };
+      }),
+    };
+  }
+
+  async getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (const chunk of chunksOf(itemIds, 100)) {
+      const data = await this.graphql<{ items: { id: string; board: { id: string } }[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id board { id } } }`, { ids: chunk });
+      for (const item of data.items) out.set(item.id, item.board.id);
+    }
+    return out;
   }
 
   async getAffiliationSummary(affiliationItemId: string, personLinkColumnId: string): Promise<AffiliationSummary | null> {
