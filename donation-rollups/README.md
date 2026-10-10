@@ -487,7 +487,9 @@ membership keys and stamps are compared away).
   Volunteers board gets **no** subscription — it is record-keeping. An Attendee re-point
   recomputes both the old and the new person. A registration with no Event link or no Event Start
   is stored as non-qualifying, not a fault; an archived registration keeps its last read (archived
-  items read empty board relations — the same trap as archived gifts, issue #26).
+  items read empty board relations — the same trap as archived gifts, issue #26), and one read
+  back with state `deleted` is treated as deleted. The all=true load stores archived and deleted
+  registrations as non-qualifying, so a row loaded earlier stops counting.
 * **The `membership` duty.** Every run (nightly at 09:00 UTC, and first thing in every all=true
   run) recomputes everyone whose 13-month anniversary of Current Term Start fell since the last
   run's `anniversariesThroughISO` — normally just today; after missed nights it catches up, at

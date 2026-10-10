@@ -246,7 +246,14 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
   const owners: { ownerItemId: string; ownerBoardId: string }[] = [];
 
   const reg = await mondayClient.getRegistration(registrationItemId, board);
-  if (reg === null) {
+  if (reg !== null && reg.state === 'archived') {
+    // An archived item reads its board relations back empty (the archived-gift trap, issue #26),
+    // so a re-read would wrongly unlink the attendee: keep the stored row as it was, recompute nobody.
+    console.log(`donation-rollups consumer: registration "${registrationItemId}" is archived — keeping its last read`);
+    await deps.pendingStore.updateStatus(registrationItemId, 'written', { writtenAt: new Date().toISOString() });
+    return;
+  }
+  if (reg === null || reg.state === 'deleted') {
     const removed = await volunteerStore.markRemoved(registrationItemId, now);
     if (removed !== null) owners.push(removed);
   } else {

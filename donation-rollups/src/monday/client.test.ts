@@ -165,16 +165,20 @@ const VOL_BOARD = { boardId: 7, columns: { attendee: 'att', event: 'ev', attenda
   eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] };
 
 describe('registrations and events', () => {
-  const regResponse = (cells: Record<string, string | null>, links: Record<string, string[]>) => ({ data: { items: [{ id: 'r1', column_values:
+  const regResponse = (cells: Record<string, string | null>, links: Record<string, string[]>, state = 'active') => ({ data: { items: [{ id: 'r1', state, column_values:
     Object.entries(cells).map(([id, text]) => ({ id, text, ...(links[id] ? { linked_item_ids: links[id] } : {}) })) }] } });
   it('getRegistration reads links, labels and hours; blank hours is null', async () => {
     const client = clientReturning(regResponse({ att: 'Ada', ev: 'Bike Party', atd: 'Attended', role: 'Volunteer', hrs: '' }, { att: ['p1'], ev: ['e1'] }));
-    expect(await client.getRegistration('r1', VOL_BOARD)).toEqual({ id: 'r1', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null });
+    expect(await client.getRegistration('r1', VOL_BOARD)).toEqual({ id: 'r1', state: 'active', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null });
+  });
+  it('getRegistration parses the item state: archived and deleted are returned as such', async () => {
+    expect((await clientReturning(regResponse({ att: '' }, {}, 'archived')).getRegistration('r1', VOL_BOARD))?.state).toBe('archived');
+    expect((await clientReturning(regResponse({ att: '' }, {}, 'deleted')).getRegistration('r1', VOL_BOARD))?.state).toBe('deleted');
   });
   it('getRegistration without an hours column configured reads hours as null; a deleted item is null', async () => {
     const client = clientReturning(regResponse({ att: '', ev: '', atd: 'Registered', role: '' }, {}));
     expect(await client.getRegistration('r1', { ...VOL_BOARD, columns: { ...VOL_BOARD.columns, hours: null } }))
-      .toEqual({ id: 'r1', attendeeItemId: null, eventItemId: null, attendanceLabel: 'Registered', roleLabel: null, hours: null });
+      .toEqual({ id: 'r1', state: 'active', attendeeItemId: null, eventItemId: null, attendanceLabel: 'Registered', roleLabel: null, hours: null });
     expect(await clientReturning({ data: { items: [] } }).getRegistration('gone', VOL_BOARD)).toBeNull();
   });
   it('getEventStart normalizes to a date and returns null for blank or missing', async () => {
@@ -182,12 +186,12 @@ describe('registrations and events', () => {
     expect(await clientReturning(itemsResponse([{ id: 'e1', cells: { start: '' } }])).getEventStart('e1', 'start')).toBeNull();
     expect(await clientReturning(itemsResponse([])).getEventStart('e1', 'start')).toBeNull();
   });
-  it('pageRegistrations returns the page and cursor with the same record shape', async () => {
-    const client = clientReturning({ data: { boards: [{ items_page: { cursor: 'next', items: [{ id: 'r1', column_values: [
+  it('pageRegistrations returns the page and cursor with the same record shape, state included', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: 'next', items: [{ id: 'r1', state: 'archived', column_values: [
       { id: 'att', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'ev', text: 'X', linked_item_ids: ['e1'] },
       { id: 'atd', text: 'Attended' }, { id: 'role', text: 'Volunteer' }, { id: 'hrs', text: '3' }] }] } }] } });
     expect(await client.pageRegistrations(VOL_BOARD, null)).toEqual({ cursor: 'next',
-      items: [{ id: 'r1', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: 3 }] });
+      items: [{ id: 'r1', state: 'archived', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: 3 }] });
   });
   it('pageHistoricalShifts reads Volunteer link, Date, Hours and Status', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: 'v1', column_values: [

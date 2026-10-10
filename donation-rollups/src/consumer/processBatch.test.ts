@@ -1165,7 +1165,7 @@ describe('registration messages (kind: registration)', () => {
   const volunteerBoard = { boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: null },
     eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] };
   const cfg: DonationRollupsConfig = { ...membershipEnabled, donationRollups: { ...membershipEnabled.donationRollups, volunteerBoards: [volunteerBoard] } };
-  const reg = (over = {}) => ({ id: 'r1', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null, ...over });
+  const reg = (over = {}) => ({ id: 'r1', state: 'active', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null, ...over });
   const regMessage = () => ({ body: { kind: 'registration' as const, donationItemId: 'r1', donationBoardId: '7' }, ack: vi.fn(), retry: vi.fn() });
 
   function deps(over: { registration?: unknown; eventStart?: string | null; previousOwner?: { ownerItemId: string; ownerBoardId: string } | null; ownerBoard?: string } = {}) {
@@ -1226,6 +1226,25 @@ describe('registration messages (kind: registration)', () => {
     const d = deps({ registration: null });
     (d.volunteerStore.markRemoved as ReturnType<typeof vi.fn>).mockResolvedValue({ ownerItemId: 'p1', ownerBoardId: '2' });
     await d.run();
+    expect(d.volunteerStore.upsert).not.toHaveBeenCalled();
+    expect(d.changeColumnValues.mock.calls[0]![1]).toBe('p1');
+  });
+
+  it('an archived registration keeps its stored row: no upsert, no recompute, pending marked written', async () => {
+    const d = deps({ registration: reg({ state: 'archived', attendeeItemId: null, eventItemId: null }) });
+    await d.run();
+    expect(d.volunteerStore.upsert).not.toHaveBeenCalled();
+    expect(d.volunteerStore.markRemoved).not.toHaveBeenCalled();
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+    expect(d.queue.send).not.toHaveBeenCalled();
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('r1', 'written', expect.anything());
+  });
+
+  it('a registration read back with state deleted takes the deleted path', async () => {
+    const d = deps({ registration: reg({ state: 'deleted' }) });
+    (d.volunteerStore.markRemoved as ReturnType<typeof vi.fn>).mockResolvedValue({ ownerItemId: 'p1', ownerBoardId: '2' });
+    await d.run();
+    expect(d.volunteerStore.markRemoved).toHaveBeenCalledWith('r1', expect.any(String));
     expect(d.volunteerStore.upsert).not.toHaveBeenCalled();
     expect(d.changeColumnValues.mock.calls[0]![1]).toBe('p1');
   });

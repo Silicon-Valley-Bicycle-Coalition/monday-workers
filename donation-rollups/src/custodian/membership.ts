@@ -154,7 +154,9 @@ async function loadVolunteers(deps: CustodianDeps, now: Date): Promise<number> {
         const start = r.eventItemId === null ? null : eventStart.get(r.eventItemId) ?? null;
         return { registrationItemId: r.id, boardId: String(board.boardId),
           ownerItemId: r.attendeeItemId, ownerBoardId: r.attendeeItemId ? boards.get(r.attendeeItemId) ?? null : null,
-          activityDateISO: start, hours: r.hours, qualifies: registrationQualifies(r, start, board), source: 'sweep' as const };
+          // An archived or deleted registration no longer counts: stored as non-qualifying, so a
+          // row an earlier load stored stops counting too.
+          activityDateISO: start, hours: r.hours, qualifies: r.state === 'active' && registrationQualifies(r, start, board), source: 'sweep' as const };
       }), nowISO);
       loaded += page.items.length;
       cursor = page.cursor;

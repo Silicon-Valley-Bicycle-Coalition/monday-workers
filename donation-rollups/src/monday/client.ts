@@ -36,8 +36,12 @@ export interface AffiliationSummary {
   personBoardId: string | null;
 }
 
+export type ItemState = 'active' | 'archived' | 'deleted';
+
 export interface RegistrationRecord {
   id: string;
+  // An item items(ids:) no longer returns at all is read as null, not 'deleted'.
+  state: ItemState;
   attendeeItemId: string | null;
   eventItemId: string | null;
   attendanceLabel: string | null;
@@ -303,12 +307,13 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     };
   }
 
-  private registrationFrom(item: { id: string; column_values: ColumnValue[] }, board: VolunteerBoardConfig): RegistrationRecord {
+  private registrationFrom(item: { id: string; state?: string | null; column_values: ColumnValue[] }, board: VolunteerBoardConfig): RegistrationRecord {
     const c = board.columns;
     const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
     const link = (id: string): string | null => byId.get(id)?.linked_item_ids?.[0] ?? null;
     const text = (id: string | null): string | null => (id ? (byId.get(id)?.text || null) : null);
-    return { id: item.id, attendeeItemId: link(c.attendee), eventItemId: link(c.event),
+    const state: ItemState = item.state === 'archived' ? 'archived' : item.state === 'deleted' ? 'deleted' : 'active';
+    return { id: item.id, state, attendeeItemId: link(c.attendee), eventItemId: link(c.event),
       attendanceLabel: text(c.attendance), roleLabel: text(c.role), hours: parseHours(text(c.hours)) };
   }
 
@@ -318,9 +323,9 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   }
 
   async getRegistration(itemId: string, board: VolunteerBoardConfig): Promise<RegistrationRecord | null> {
-    const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
+    const data = await this.graphql<{ items: { id: string; state: string | null; column_values: ColumnValue[] }[] }>(
       `query ($ids: [ID!], $columnIds: [String!]) {
-        items(ids: $ids) { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
+        items(ids: $ids) { id state column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
       }`,
       { ids: [itemId], columnIds: this.registrationColumnIds(board) },
     );
@@ -334,11 +339,11 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   }
 
   async pageRegistrations(board: VolunteerBoardConfig, cursor: string | null) {
-    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; state: string | null; column_values: ColumnValue[] }[] } }[] } =
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id state column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
         { boardId: [board.boardId], columnIds: this.registrationColumnIds(board), cursor },

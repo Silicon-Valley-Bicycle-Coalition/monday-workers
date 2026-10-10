@@ -36,7 +36,7 @@ function config(): DonationRollupsConfig {
 interface Fake {
   // board id -> items with column text, as pageItemsColumnsText pages them (one page)
   pages?: Record<string, { id: string; text: Record<string, string | null> }[]>;
-  registrations?: { id: string; attendeeItemId: string | null; eventItemId: string | null; attendanceLabel: string | null; roleLabel: string | null; hours: number | null }[];
+  registrations?: { id: string; state?: 'active' | 'archived' | 'deleted'; attendeeItemId: string | null; eventItemId: string | null; attendanceLabel: string | null; roleLabel: string | null; hours: number | null }[];
   shifts?: { id: string; volunteerItemId: string | null; dateISO: string | null; hours: number | null; statusLabel: string | null }[];
   boardOf?: Record<string, string>;
   columnText?: Record<string, Record<string, string | null>>;
@@ -53,7 +53,7 @@ function fakeClient(f: Fake): CustodianMondayClient {
       for (const id of ids) { const rec = f.columnText?.[id]; if (rec) out.set(id, new Map(columnIds.map((c) => [c, rec[c] ?? null]))); }
       return out;
     },
-    async pageRegistrations() { return { items: f.registrations ?? [], cursor: null }; },
+    async pageRegistrations() { return { items: (f.registrations ?? []).map((r) => ({ state: 'active' as const, ...r })), cursor: null }; },
     async pageHistoricalShifts() { return { items: f.shifts ?? [], cursor: null }; },
     async getItemsBoardIds(ids) { return new Map(ids.flatMap((id) => (f.boardOf?.[id] ? [[id, f.boardOf[id]!] as [string, string]] : []))); },
   };
@@ -131,18 +131,20 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
       registrations: [
         { id: 'r1', attendeeItemId: 'pa', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null },
         { id: 'r2', attendeeItemId: 'pb', eventItemId: 'e1', attendanceLabel: 'Registered', roleLabel: 'Volunteer', hours: null },
-        { id: 'r3', attendeeItemId: null, eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null } ],
+        { id: 'r3', attendeeItemId: null, eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null },
+        { id: 'r4', state: 'archived', attendeeItemId: 'pd', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null } ],
       shifts: [
         { id: 'v1', volunteerItemId: 'pc', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed' },
         { id: 'v2', volunteerItemId: 'pc', dateISO: '2019-07-01', hours: 2, statusLabel: 'Canceled' } ],
-      boardOf: { pa: '20', pb: '28', pc: '28' },
+      boardOf: { pa: '20', pb: '28', pc: '28', pd: '20' },
     }, sent);
     const report = await runMembership(d, d.now!, { all: true, since: null }, null);
     const store = new D1VolunteerActivityStore(env.DB);
     expect(await store.forOwner('pa')).toEqual([expect.objectContaining({ registrationItemId: 'r1', ownerBoardId: '20', activityDateISO: '2027-05-02', qualifies: true, source: 'sweep' })]);
     expect(await store.forOwner('pb')).toEqual([]);
+    expect(await store.forOwner('pd')).toEqual([]);   // archived: stored, but non-qualifying
     expect(await store.forOwner('pc')).toEqual([expect.objectContaining({ registrationItemId: 'v1', hours: 2, source: 'historical' })]);
-    expect((report.detail as MembershipDetail).loaded).toBe(5);
+    expect((report.detail as MembershipDetail).loaded).toBe(6);
     expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0 });   // the tiny fixture completes in one run
   });
 
