@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { runMembership } from './membership';
+import { runMembership, ENQUEUE_PER_RUN, type MembershipDetail } from './membership';
 import type { CustodianDeps, CustodianMondayClient } from './custodian';
 import { D1GiftsStore } from '../db/gifts';
 import { D1PendingStore } from '../db/pending';
@@ -84,5 +84,84 @@ describe('membership duty — nightly anniversaries', () => {
     const report = await runMembership(d, d.now!, { all: false, since: null }, null);
     expect(report.ok).toBe(true);
     expect(sent).toEqual([]);
+  });
+});
+
+describe('membership duty — all=true (the post-cutover recompute)', () => {
+  beforeEach(async () => {
+    await env.DB.batch(['volunteer_activity', 'owner_recomputes', 'gifts', 'custodian_runs'].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+  });
+
+  it('phase 1 loads historical shifts and registrations into volunteer_activity with resolved owner boards', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({
+      pages: { '8': [{ id: 'e1', text: { start: '2027-05-02 18:00' } }] },
+      registrations: [
+        { id: 'r1', attendeeItemId: 'pa', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null },
+        { id: 'r2', attendeeItemId: 'pb', eventItemId: 'e1', attendanceLabel: 'Registered', roleLabel: 'Volunteer', hours: null },
+        { id: 'r3', attendeeItemId: null, eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null } ],
+      shifts: [
+        { id: 'v1', volunteerItemId: 'pc', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed' },
+        { id: 'v2', volunteerItemId: 'pc', dateISO: '2019-07-01', hours: 2, statusLabel: 'Canceled' } ],
+      boardOf: { pa: '20', pb: '28', pc: '28' },
+    }, sent);
+    const report = await runMembership(d, d.now!, { all: true, since: null }, null);
+    const store = new D1VolunteerActivityStore(env.DB);
+    expect(await store.forOwner('pa')).toEqual([expect.objectContaining({ registrationItemId: 'r1', ownerBoardId: '20', activityDateISO: '2027-05-02', qualifies: true, source: 'sweep' })]);
+    expect(await store.forOwner('pb')).toEqual([]);
+    expect(await store.forOwner('pc')).toEqual([expect.objectContaining({ registrationItemId: 'v1', hours: 2, source: 'historical' })]);
+    expect((report.detail as MembershipDetail).loaded).toBe(5);
+    expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0 });   // the tiny fixture completes in one run
+  });
+
+  it('phase 2 backfills migrated Term Starts from the board, blank as "", and skips post-cutover gifts', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const gifts = new D1GiftsStore(env.DB);
+    const base = { ownerItemId: 'bf-owner', ownerBoardId: '20', amountCents: 500, fiscalYear: 2019, status: 'Received' };
+    await gifts.refreshFacts([
+      { ...base, mondayItemId: 'bf-1', giftDateISO: '2019-01-01' }, { ...base, mondayItemId: 'bf-2', giftDateISO: '2019-02-01' },
+      { ...base, mondayItemId: 'bf-3', giftDateISO: '2026-11-01', fiscalYear: 2027 } ], 'import', 'now');
+    const d = deps({ columnText: { 'bf-1': { ts: '2019-01-01 00:00' }, 'bf-2': { ts: '' } } }, sent);
+    const last: MembershipDetail = { all: true, since: null, phase: 'backfill-terms', cursor: '', remaining: 1, scanned: 0, enqueued: 0, loaded: 0, backfilled: 0 };
+    const report = await runMembership(d, d.now!, { all: false, since: null }, last);   // nightly continuation
+    const rows = await gifts.giftsForOwner('bf-owner');
+    expect(rows.find((g) => g.mondayItemId === 'bf-1')?.termStart).toBe('2019-01-01');
+    expect(rows.find((g) => g.mondayItemId === 'bf-2')?.termStart).toBe('');
+    expect(rows.find((g) => g.mondayItemId === 'bf-3')?.termStart).toBeNull();
+    expect((report.detail as MembershipDetail).backfilled).toBeGreaterThanOrEqual(2);
+  });
+
+  it('phase 3 enqueues every person on the membership boards plus check-in-only owners, once, skipping those recomputed since the given instant', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({ pages: { '20': [{ id: 'q-a', text: {} }, { id: 'q-b', text: {} }], '28': [{ id: 'q-c', text: {} }] } }, sent);
+    await new D1VolunteerActivityStore(env.DB).upsert({ registrationItemId: 'q-r', boardId: '7', ownerItemId: 'q-vol', ownerBoardId: '28',
+      activityDateISO: '2027-01-01', hours: null, qualifies: true, source: 'sweep' }, 'now');
+    await new D1OwnerRecomputesStore(env.DB).record({ ownerItemId: 'q-b', ownerBoardId: '20', fetchedAt: '2026-10-18T01:00:00Z', writtenAt: '2026-10-18T01:01:00Z' });
+    const last: MembershipDetail = { all: true, since: '2026-10-18T00:00:00Z', phase: 'enqueue', cursor: '', remaining: 1, scanned: 0, enqueued: 0, loaded: 0, backfilled: 0 };
+    const report = await runMembership(d, d.now!, { all: false, since: null }, last);
+    expect(sent.map((m) => m.ownerItemId).sort()).toEqual(['q-a', 'q-c', 'q-vol']);
+    expect(sent.every((m) => m.donationItemId === 'custodian:membership')).toBe(true);
+    expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0, enqueued: 3 });
+  });
+
+  it('phase 3 slices at ENQUEUE_PER_RUN and resumes from an owner-id cursor', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const many = Array.from({ length: ENQUEUE_PER_RUN + 5 }, (_, i) => ({ id: `s-${String(i).padStart(5, '0')}`, text: {} }));
+    const d = deps({ pages: { '20': many } }, sent);
+    const last: MembershipDetail = { all: true, since: null, phase: 'enqueue', cursor: '', remaining: 1, scanned: 0, enqueued: 0, loaded: 0, backfilled: 0 };
+    const first = await runMembership(d, d.now!, { all: false, since: null }, last);
+    expect(sent.length).toBe(ENQUEUE_PER_RUN);
+    expect(first.detail).toMatchObject({ remaining: 5, cursor: `s-${String(ENQUEUE_PER_RUN - 1).padStart(5, '0')}` });
+    const second = await runMembership(d, d.now!, { all: false, since: null }, first.detail as MembershipDetail);
+    expect(sent.length).toBe(ENQUEUE_PER_RUN + 5);
+    expect(second.detail).toMatchObject({ remaining: 0 });
+  });
+
+  it('a fresh all=true after a finished pass starts over at phase 1', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({}, sent);
+    const done: MembershipDetail = { all: true, since: null, phase: 'enqueue', cursor: 'zzz', remaining: 0, scanned: 0, enqueued: 9, loaded: 0, backfilled: 0 };
+    const report = await runMembership(d, d.now!, { all: true, since: '2026-10-18T00:00:00Z' }, done);
+    expect(report.detail).toMatchObject({ all: true, since: '2026-10-18T00:00:00Z', loaded: 0 });
   });
 });
