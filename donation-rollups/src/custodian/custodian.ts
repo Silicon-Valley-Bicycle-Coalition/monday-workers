@@ -263,7 +263,7 @@ async function runRequeue(deps: CustodianDeps, now: Date): Promise<DutyReport> {
   const slice = stuck.slice(0, REQUEUE_BATCHES_PER_RUN * 100);
   for (let i = 0; i < slice.length; i += 100) {
     await deps.queue.sendBatch(slice.slice(i, i + 100)
-      .map((r) => ({ donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
+      .map((r) => ({ ...(r.kind === 'registration' ? { kind: r.kind } : {}), donationItemId: r.donationItemId, donationBoardId: r.donationBoardId })));
   }
   const remaining = stuck.length - slice.length;
   if (slice.length === 0) return { ok: true, summary: 'no stuck recomputes', detail: { enqueued: 0, remaining: 0 } };

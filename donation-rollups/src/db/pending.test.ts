@@ -62,8 +62,15 @@ describe('D1PendingStore.listStuck', () => {
 
     const stuck = await store.listStuck('2026-07-31T00:00:00Z', 10);
     expect(stuck.map((r) => r.donationItemId)).toEqual(['old-received', 'old-queued-a', 'old-queued-b']);
-    expect(stuck[0]).toEqual({ donationItemId: 'old-received', donationBoardId: '1', receivedAt: '2026-07-29T00:00:00Z' });
+    expect(stuck[0]).toEqual({ donationItemId: 'old-received', donationBoardId: '1', receivedAt: '2026-07-29T00:00:00Z', kind: 'donation' });
 
     expect(await store.listStuck('2026-07-31T00:00:00Z', 2)).toHaveLength(2);
+  });
+
+  it('carries the row kind, so a stuck registration is re-sent as one', async () => {
+    const store = new D1PendingStore(env.DB);
+    await store.upsertPending({ donationItemId: 'reg-stuck', donationBoardId: 'er', eventId: 'e', receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' });
+    expect(await store.listStuck('2026-07-31T00:00:00Z', 10))
+      .toEqual([{ donationItemId: 'reg-stuck', donationBoardId: 'er', receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' }]);
   });
 });

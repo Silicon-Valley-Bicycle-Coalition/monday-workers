@@ -677,9 +677,22 @@ describe('requeue duty', () => {
     expect(ids.has('never-enqueued')).toBe(true);
     expect(ids.has('fresh') || ids.has('done') || ids.has('dead')).toBe(false);
     expect(sent[0]).toEqual({ donationItemId: 'never-enqueued', donationBoardId: '100' });
+    expect(sent[0]).not.toHaveProperty('kind');
     expect(report.ok).toBe(false); // stuck rows mean the consumer lost work earlier — say so
     expect(report.summary).toContain('251');
     expect(state.updates).toHaveLength(1); // one alert
+  });
+
+  it('re-sends a stuck registration with kind: registration, and a donation with no kind key', async () => {
+    await new D1PendingStore(env.DB).upsertPending({ donationItemId: 'reg-stuck', donationBoardId: '700', eventId: 'e',
+      receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' });
+    await seed('dn-stuck', '2026-07-29T01:00:00Z', 'queued');
+    const sent: RecomputeQueueMessage[] = [];
+    await runDuty('requeue', deps({ archived: [], updates: [] }, sent, testConfig({ alertItemId: null })));
+    const byId = new Map(sent.map((m) => [m.donationItemId, m]));
+    expect(byId.get('reg-stuck')).toEqual({ kind: 'registration', donationItemId: 'reg-stuck', donationBoardId: '700' });
+    expect(byId.get('dn-stuck')).toEqual({ donationItemId: 'dn-stuck', donationBoardId: '100' });
+    expect(byId.get('dn-stuck')).not.toHaveProperty('kind');
   });
 
   it('is quiet when nothing is stuck', async () => {

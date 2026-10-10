@@ -23,9 +23,12 @@ export interface PendingStore {
   getPending(donationItemId: string): Promise<PendingRow | null>;
   // Rows the queue never finished — still 'received' (enqueue never happened) or 'queued'
   // (message expired unconsumed, or its batch died before touching D1) — received before the
-  // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5).
-  listStuck(olderThanISO: string, limit: number): Promise<{ donationItemId: string; donationBoardId: string; receivedAt: string }[]>;
+  // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5), with
+  // their kind — a registration re-sent as a donation message would read the wrong board.
+  listStuck(olderThanISO: string, limit: number): Promise<StuckPending[]>;
 }
+
+export interface StuckPending { donationItemId: string; donationBoardId: string; receivedAt: string; kind: RecomputeKind }
 
 interface D1PendingRecord {
   donation_item_id: string;
@@ -117,15 +120,15 @@ export class D1PendingStore implements PendingStore {
     return record === null ? null : toPendingRow(record);
   }
 
-  async listStuck(olderThanISO: string, limit: number): Promise<{ donationItemId: string; donationBoardId: string; receivedAt: string }[]> {
+  async listStuck(olderThanISO: string, limit: number): Promise<StuckPending[]> {
     const res = await this.db
       .prepare(
-        `SELECT donation_item_id, donation_board_id, received_at FROM pending_recomputes
+        `SELECT donation_item_id, donation_board_id, received_at, kind FROM pending_recomputes
          WHERE status IN ('received', 'queued') AND received_at < ?1
          ORDER BY received_at LIMIT ?2`,
       )
       .bind(olderThanISO, limit)
-      .all<{ donation_item_id: string; donation_board_id: string; received_at: string }>();
-    return res.results.map((r) => ({ donationItemId: r.donation_item_id, donationBoardId: r.donation_board_id, receivedAt: r.received_at }));
+      .all<{ donation_item_id: string; donation_board_id: string; received_at: string; kind: RecomputeKind }>();
+    return res.results.map((r) => ({ donationItemId: r.donation_item_id, donationBoardId: r.donation_board_id, receivedAt: r.received_at, kind: r.kind }));
   }
 }
