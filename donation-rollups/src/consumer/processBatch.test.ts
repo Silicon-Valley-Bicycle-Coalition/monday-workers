@@ -1145,3 +1145,87 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
     expect(message.ack).toHaveBeenCalled();
   });
 });
+
+describe('registration messages (kind: registration)', () => {
+  const volunteerBoard = { boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: null },
+    eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] };
+  const cfg: DonationRollupsConfig = { ...membershipEnabled, donationRollups: { ...membershipEnabled.donationRollups, volunteerBoards: [volunteerBoard] } };
+  const reg = (over = {}) => ({ id: 'r1', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null, ...over });
+  const regMessage = () => ({ body: { kind: 'registration' as const, donationItemId: 'r1', donationBoardId: '7' }, ack: vi.fn(), retry: vi.fn() });
+
+  function deps(over: { registration?: unknown; eventStart?: string | null; previousOwner?: { ownerItemId: string; ownerBoardId: string } | null; ownerBoard?: string } = {}) {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const volunteerStore = fakeVolunteerStore();
+    (volunteerStore.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({ previousOwner: over.previousOwner ?? null });
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const pendingStore = fakePendingStore();
+    const mondayClient = fakeMondayClient({
+      changeColumnValues,
+      getRegistration: vi.fn().mockResolvedValue(over.registration === undefined ? reg() : over.registration),
+      getEventStart: vi.fn().mockResolvedValue(over.eventStart === undefined ? '2027-05-02' : over.eventStart),
+      getItemBoardId: vi.fn().mockResolvedValue(over.ownerBoard ?? '2'),
+      getDonationsByIds: vi.fn().mockResolvedValue([]),
+    });
+    const linksStore = fakeLinksStore({ getLinksForOwner: vi.fn().mockResolvedValue(new Map()) });
+    return { changeColumnValues, volunteerStore, queue, pendingStore, mondayClient,
+      run: (message = regMessage()) => processRecomputeBatch([message], {
+        pendingStore, linksStore, giftsStore: fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
+        recomputesStore: fakeRecomputesStore(), volunteerStore, mondayClient, config: cfg, queue, now: NOW }) };
+  }
+
+  it('a qualifying check-in is stored and recomputes the attendee', async () => {
+    const d = deps();
+    await d.run();
+    expect(d.volunteerStore.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      registrationItemId: 'r1', boardId: '7', ownerItemId: 'p1', ownerBoardId: '2', activityDateISO: '2027-05-02', hours: null, qualifies: true, source: 'webhook' }), expect.any(String));
+    expect(d.changeColumnValues.mock.calls[0]![1]).toBe('p1');
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('r1', 'written', expect.objectContaining({ ownerItemId: 'p1' }));
+  });
+
+  it('an undated Event stores qualifies=false and still recomputes the attendee (Review Focus 1)', async () => {
+    const d = deps({ eventStart: null });
+    await d.run();
+    expect(d.volunteerStore.upsert).toHaveBeenCalledWith(expect.objectContaining({ qualifies: false, activityDateISO: null }), expect.any(String));
+    expect(d.changeColumnValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unlinked registrant is stored with no owner and recomputes nobody', async () => {
+    const d = deps({ registration: reg({ attendeeItemId: null }) });
+    await d.run();
+    expect(d.volunteerStore.upsert).toHaveBeenCalledWith(expect.objectContaining({ ownerItemId: null, qualifies: false }), expect.any(String));
+    expect(d.mondayClient.getItemBoardId).not.toHaveBeenCalled();
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('r1', 'written', expect.anything());
+  });
+
+  it('an Attendee re-point recomputes the new owner inline and queues the previous one (Review Focus 3)', async () => {
+    const d = deps({ previousOwner: { ownerItemId: 'p0', ownerBoardId: '2' } });
+    await d.run();
+    expect(d.changeColumnValues.mock.calls[0]![1]).toBe('p1');
+    expect(d.queue.send).toHaveBeenCalledWith({ donationItemId: 'r1', donationBoardId: '7', ownerItemId: 'p0', ownerBoardId: '2' });
+  });
+
+  it('a deleted registration is marked removed and its former owner recomputed', async () => {
+    const d = deps({ registration: null });
+    (d.volunteerStore.markRemoved as ReturnType<typeof vi.fn>).mockResolvedValue({ ownerItemId: 'p1', ownerBoardId: '2' });
+    await d.run();
+    expect(d.volunteerStore.upsert).not.toHaveBeenCalled();
+    expect(d.changeColumnValues.mock.calls[0]![1]).toBe('p1');
+  });
+
+  it('an attendee on a board without membership columns (Organizations) is stored but not recomputed', async () => {
+    const d = deps({ ownerBoard: '3' });
+    await d.run();
+    expect(d.volunteerStore.upsert).toHaveBeenCalled();
+    expect(d.changeColumnValues).not.toHaveBeenCalled();
+  });
+
+  it('a registration from a board outside volunteerBoards is non-retryable: marked failed and acked', async () => {
+    const d = deps();
+    const message = { body: { kind: 'registration' as const, donationItemId: 'r1', donationBoardId: '999' }, ack: vi.fn(), retry: vi.fn() };
+    await d.run(message);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('r1', 'failed', expect.objectContaining({ error: expect.stringContaining('volunteerBoards') }));
+  });
+});

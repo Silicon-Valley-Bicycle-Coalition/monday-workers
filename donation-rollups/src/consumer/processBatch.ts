@@ -23,6 +23,7 @@ import {
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 import { formatCents } from '../money';
+import { registrationQualifies } from '../membership/volunteer';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -120,6 +121,11 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   const { donationItemId, donationBoardId } = message;
   const { mondayClient, config } = deps;
   const { donationBoards } = config.donationRollups;
+
+  if (message.kind === 'registration') {
+    await processRegistration(message, deps);
+    return;
+  }
 
   // An owner-keyed message: a gift moved away from this owner (issue #26). Recompute it
   // unconditionally — its totals still include the gift until it does.
@@ -222,6 +228,48 @@ async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, st
   const extraAffiliations = new Set<string>();
   if (removed?.actingForItemId) extraAffiliations.add(removed.actingForItemId);
   await recomputeOwner(deps, previous.ownerItemId, previous.ownerBoardId, donationItemId, extraAffiliations);
+}
+
+// An Event Registrations item changed (spec 2026-10-09 "Architecture"): re-read it, store whether
+// it qualifies as a check-in, and recompute the attendee — plus whoever it counted for before,
+// when the Attendee link moved or the item was deleted. Same division of labor as a Donor re-point.
+async function processRegistration(message: RecomputeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
+  const { donationItemId: registrationItemId, donationBoardId: boardId } = message;
+  const { mondayClient, volunteerStore, config } = deps;
+  const board = config.donationRollups.volunteerBoards.find((b) => String(b.boardId) === boardId);
+  if (board === undefined) {
+    throw new NonRetryableError(`config: no volunteerBoards entry for board id "${boardId}" (this registration's board)`);
+  }
+  const now = new Date().toISOString();
+  const owners: { ownerItemId: string; ownerBoardId: string }[] = [];
+
+  const reg = await mondayClient.getRegistration(registrationItemId, board);
+  if (reg === null) {
+    const removed = await volunteerStore.markRemoved(registrationItemId, now);
+    if (removed !== null) owners.push(removed);
+  } else {
+    const eventStart = reg.eventItemId === null ? null : await mondayClient.getEventStart(reg.eventItemId, board.eventBoard.columns.start);
+    const ownerBoardId = reg.attendeeItemId === null ? null : await mondayClient.getItemBoardId(reg.attendeeItemId);
+    const qualifies = registrationQualifies(reg, eventStart, board);
+    const { previousOwner } = await volunteerStore.upsert({
+      registrationItemId, boardId, ownerItemId: reg.attendeeItemId, ownerBoardId,
+      activityDateISO: eventStart, hours: reg.hours, qualifies, source: 'webhook',
+    }, now);
+    if (reg.attendeeItemId !== null && ownerBoardId !== null) owners.push({ ownerItemId: reg.attendeeItemId, ownerBoardId });
+    if (previousOwner !== null && previousOwner.ownerItemId !== reg.attendeeItemId) owners.push(previousOwner);
+  }
+
+  // Only People boards carry membership columns; a registration linked elsewhere is recorded
+  // (the link may move later) but recomputes nothing. First owner inline, the rest queued —
+  // a second full recompute here would blow the per-invocation budget max_batch_size is tuned for.
+  const recomputable = owners.filter((o) => config.donationRollups.ownerColumnsByBoard[o.ownerBoardId]?.membership !== undefined);
+  const [first, ...rest] = recomputable;
+  if (first !== undefined) await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
+  for (const o of rest) await enqueueOwnerRecompute(deps, message, o);
+
+  await deps.pendingStore.updateStatus(registrationItemId, 'written', {
+    ...(first ? { ownerItemId: first.ownerItemId, ownerBoard: first.ownerBoardId } : {}), writtenAt: new Date().toISOString(),
+  });
 }
 
 async function enqueueOwnerRecompute(
