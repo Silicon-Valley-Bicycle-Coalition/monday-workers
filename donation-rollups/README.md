@@ -390,7 +390,7 @@ never touches the giving rollups.
 
 | Kind | Source | Qualifies when | Date |
 |---|---|---|---|
-| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too | Gift date |
+| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too (as ordinary activity — Lifetime only when the gift is dated on/after `fromISO`) | Gift date |
 | migrated term | Donations dated **before** `fromISO` | a pre-`fromISO` gift that does not itself qualify, with a migrated Term Start, counts on that Term Start — **regardless of its amount, type or status** | Term Start |
 | volunteer check-in | Event Registrations (D1 `volunteer_activity`) | Role ∈ `volunteerRoleLabels` (Volunteer) and Attendance ∈ `countedAttendanceLabels` (Attended); Hours ≥ 1, or **blank, which counts as 1**; an explicit 0 or 0.5 does not | the linked Event's Start (a registration has no date of its own) |
 | historical shift | Volunteers board, 2014–2020 (read once, by the post-cutover recompute) | Status ∈ `countedStatusLabels` (Completed) and Hours ≥ 1 | the shift's Date |
@@ -414,7 +414,7 @@ exactly 13 months to the day is still one run.
 | Member Since | first run's start — min with the board value (never later than what staff or the import wrote) |
 | Current Term Start | the current run's start — written outright |
 | Member Until | blank if Tier = Lifetime; else the current run's end, max with the board value (comps survive) |
-| Membership Tier | Lifetime if any qualifying gift is ≥ `lifetimeThresholdCents`, or the board already says Lifetime; else Member; untouched when the owner has no activity and no board membership |
+| Membership Tier | Lifetime if any qualifying gift is ≥ `lifetimeThresholdCents` — Lifetime only when the gift is dated on/after `fromISO` — or the board already says Lifetime; else Member; untouched when the owner has no activity and no board membership |
 | Membership Status | Active if Tier = Lifetime or the written Until ≥ today (UTC); else Lapsed |
 | Lapse Count | the number of earlier runs — written outright. A currently lapsed member's own lapse is not counted until they come back and start a new run |
 | Last Lapsed | the last earlier run's end, blank when Lapse Count is 0 — written outright |

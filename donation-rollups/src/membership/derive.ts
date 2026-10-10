@@ -82,7 +82,10 @@ export function activitiesFor(
   const out: MembershipActivity[] = [];
   for (const g of gifts) {
     if (isQualifyingGift(g, config, receivedStatusLabel)) {
-      out.push({ id: g.id, kind: 'gift', dateISO: g.dateISO.slice(0, 10), lifetime: g.amountCents >= config.lifetimeThresholdCents });
+      // Lifetime only from a gift on/after fromISO: pre-cutover large gifts were already judged
+      // by the old process, and their outcome is the migrated Tier the board keeps (mergeWithBoard).
+      const dateISO = g.dateISO.slice(0, 10);
+      out.push({ id: g.id, kind: 'gift', dateISO, lifetime: g.amountCents >= config.lifetimeThresholdCents && dateISO >= config.fromISO });
     } else if (isISODate(g.dateISO) && g.dateISO.slice(0, 10) < config.fromISO && g.termStart !== null && isISODate(g.termStart)) {
       // Migrated history is trusted as stamped: comps and $0 membership terms were memberships.
       out.push({ id: g.id, kind: 'migrated-term', dateISO: g.termStart.slice(0, 10), lifetime: false });

@@ -128,6 +128,14 @@ describe('deriveMembership — the docs/28 worked examples', () => {
     expect(d.terms.get('g1')).toEqual({ start: '2026-11-03', end: null, type: 'lifetime' });
     expect(d.terms.has('g2')).toBe(false);
   });
+  it('a pre-cutover $1,500 gift is ordinary activity, not Lifetime; the same gift after fromISO is Lifetime', () => {
+    const before = deriveMembership([gift({ amountCents: 150000, dateISO: '2012-06-01' })], [], config, RECEIVED, '2026-11-06');
+    expect(before.state).toMatchObject({ tier: 'member', until: '2013-07-01' });
+    expect(before.terms.size).toBe(0);
+    const after = deriveMembership([gift({ amountCents: 150000, dateISO: '2026-11-01' })], [], config, RECEIVED, '2026-11-06');
+    expect(after.state).toMatchObject({ tier: 'lifetime', until: null });
+    expect(after.terms.get('g1')).toEqual({ start: '2026-11-01', end: null, type: 'lifetime' });
+  });
   it('a currently lapsed member: their own lapse is not counted until they return', () => {
     const d = deriveMembership([gift({ dateISO: '2024-01-01' })], [], config, RECEIVED, '2026-11-06');
     expect(d.state).toMatchObject({ until: '2025-02-01', lapseCount: 0, lastLapsed: null, memberType: 'new' });
