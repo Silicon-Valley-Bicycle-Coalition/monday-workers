@@ -390,8 +390,8 @@ never touches the giving rollups.
 
 | Kind | Source | Qualifies when | Date |
 |---|---|---|---|
-| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), date ≥ `fromISO` | Gift date |
-| migrated term | Donations dated **before** `fromISO` | a migrated Term Start exists — **regardless of amount, type or status** | Term Start |
+| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too | Gift date |
+| migrated term | Donations dated **before** `fromISO` | a pre-`fromISO` gift that does not itself qualify, with a migrated Term Start, counts on that Term Start — **regardless of its amount, type or status** | Term Start |
 | volunteer check-in | Event Registrations (D1 `volunteer_activity`) | Role ∈ `volunteerRoleLabels` (Volunteer) and Attendance ∈ `countedAttendanceLabels` (Attended); Hours ≥ 1, or **blank, which counts as 1**; an explicit 0 or 0.5 does not | the linked Event's Start (a registration has no date of its own) |
 | historical shift | Volunteers board, 2014–2020 (read once, by the post-cutover recompute) | Status ∈ `countedStatusLabels` (Completed) and Hours ≥ 1 | the shift's Date |
 
@@ -444,12 +444,15 @@ membership keys and stamps are compared away).
   `gifts.term_start`, `pending_recomputes.kind`) must be applied **before deploying the build
   that reads it** — the same ordering lesson as 0005/0006, and stricter: the webhook insert
   writes `kind` and the ledger refresh reads and writes `term_start` whether or not the
-  membership block is on, so deploying first breaks every recompute, not just membership. The
-  block is `null` in the shipped configs until a database has the columns; `config/sandbox.json`
-  turns it on once the CRM Sandbox v3 column ids are filled in. For any database (the sandbox,
-  a fresh fork, the production cutover), in order:
+  membership block is on, so deploying first breaks every recompute, not just membership. 
+  `config/sandbox.json` carries `membership: null` today (it turns on once the CRM Sandbox v3
+  column ids are filled in); `config/svbc.json` carries the full block with
+  `REPLACE_WITH_COLUMN_ID` / board-id `0` placeholders that must be replaced before it is
+  deployed. For any other database (a fresh fork, the production cutover) the safe first deploy
+  sets `donationRollups.membership` to `null` until 0009 is applied and the ids are filled. In
+  order:
   1. `CI=1 wrangler d1 migrations apply svbc-donation-rollups --remote`
-  2. `node scripts/setup-membership-columns.mjs <peopleBoardId> [<peopleBoardId> …] [--registrations <eventRegistrationsBoardId>]`
+  2. `MONDAY_API_TOKEN=… node scripts/setup-membership-columns.mjs <peopleBoardId> [<peopleBoardId> …] [--registrations <eventRegistrationsBoardId>]`
      — finds the four existing columns by title, creates Current Term Start, Member Type, Lapse
      Count and Last Lapsed, and (with `--registrations`) an Hours column on Event Registrations;
      prints config-ready blocks. The Donations board's `termStart` / `termEnd` /
@@ -478,8 +481,9 @@ membership keys and stamps are compared away).
 * **Webhooks.** `scripts/setup-webhooks.mjs` now also subscribes `create_item`,
   `change_column_value` and `item_deleted` on every `volunteerBoards[]` board (a check-in, an
   Attendee re-point or a deletion must reach the consumer), to the same route; the Worker
-  accepts a registration event only for `create_item` and changes to the configured Attendee,
-  Event, Attendance, Role and Hours columns and acknowledges everything else. The historical
+  accepts a registration event only for `create_item`, `item_deleted` (a deletion carries no
+  `columnId`, so it always enqueues) and `change_column_value` on the configured Attendee,
+  Event, Attendance, Role and Hours columns, and acknowledges everything else. The historical
   Volunteers board gets **no** subscription — it is record-keeping. An Attendee re-point
   recomputes both the old and the new person. A registration with no Event link or no Event Start
   is stored as non-qualifying, not a fault; an archived registration keeps its last read (archived
@@ -510,7 +514,8 @@ membership keys and stamps are compared away).
      still honors the existing `owner_recomputes` coalescing and the daily D1 write quota.
 
   A run that crashes mid-way records no `detail`, so there is nothing to continue from: re-issue
-  `?all=true`, which restarts at phase 1 (idempotent). Because the pass is just the normal
+  `?all=true` (passing `since` again — the restart loses it), which restarts at phase 1
+  (idempotent). Because the pass is just the normal
   recompute per owner, there is no separate 12→13-month migration: the fold rewrites every owner
   column from history, the extend-only merge keeps anything staff set higher, and nobody loses
   status (13 months is longer than 12). Re-running it on the same inputs writes nothing.
@@ -816,8 +821,8 @@ sandbox gets rebuilt before cutover:
   covers both lists.
 * `donationRollups.historicalVolunteerBoards` — the 2014–2020 Volunteers board(s): `boardId`,
   `columns` (`volunteer`, `date`, `hours`, `status`) and `countedStatusLabels` (`["Completed"]`).
-  Read once by the `membership` duty's `load-volunteers` phase; **no webhook** — it is
-  record-keeping.
+  Required (may be `[]`) whenever `membership` is on. Read once by the `membership` duty's
+  `load-volunteers` phase; **no webhook** — it is record-keeping.
 * `affiliations` — `null` until the Affiliations board exists (every affiliation-model behavior is off); otherwise `{ boardId, columns: { personLink, attributedGiving, attributedGiftCount, lastAttributedGift } }` — the Person connect column and the three rollup columns on the Affiliations board (`scripts/setup-affiliation-columns.mjs` prints the block). When set, every `donationBoards[]` entry must have `columns.actingForLink` (the Donations board's "Acting for" connect column).
 * `donationRollups.ownerColumnsByBoard["<board id>"].organizationalGiving` — optional, People boards only; an owner board without it (Organizations, or a People board before the setup script has run) is skipped with a `console.warn` naming the board — the consumer never retries over it, and reconcile leg 6 skips those persons.
 

@@ -38,13 +38,15 @@ do not.
    threshold.
 2. **Change it, then remove it.** Edit the Amount; the totals follow. Delete the item (or archive
    it); the totals fall back. Both should take well under a minute.
-3. **Give a membership.** Add a gift with Gift Type **Donation**, Status Received, and a **Date of
-   2026-10-01 or later** (the sandbox only treats gifts from October onward as membership
-   payments). The gift should gain Term Start, Term End (one year later), and Membership Type
-   (New, Renewal, Reacquire, or Lifetime). The person should gain or extend Member Since and
-   Member Until, get Membership Tier **Member** (or **Lifetime** for $1,000 and up), and Status
-   **Active**. A term is only ever extended, never shortened, so a second gift dated earlier
-   changes nothing.
+3. **Give a membership.** Add a gift with Gift Type **Donation**, Status Received, an Amount of
+   **$1 or more**, and today's **Date**. (An attended volunteer check-in, a registration with Role
+   **Volunteer** and Attendance **Attended**, counts the same way, dated by its event.) The person
+   is a member for 13 months from that date: they should gain or extend Member Since and Member
+   Until, get Current Term Start, Member Type (New, Continuing, or Lapsed renewal), Membership
+   Tier **Member** (or **Lifetime** for $1,000 and up), and Status **Active**. A gift dated
+   on or after the sandbox's membership start date (ask the developer) also gains Term Start,
+   Term End (13 months later) and Membership Type.
+   A term is only ever extended, never shortened, so a second gift dated earlier changes nothing.
 4. **Come back the next morning.** The chart columns on your new gift, Funding Stream, Gift Size,
    Fiscal Quarter, and Gift Fiscal Year, fill in overnight (the nightly pass runs around 2 am
    Pacific). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.
