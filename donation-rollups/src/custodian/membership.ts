@@ -112,7 +112,9 @@ async function runAll(deps: CustodianDeps, now: Date, detail: MembershipDetail):
     const r = await backfillTermStarts(deps, now, d.cursor);
     d.backfilled += r.backfilled; d.cursor = r.cursor;
     if (r.remaining > 0) { d.remaining = r.remaining; return done(d); }
-    d.phase = 'enqueue'; d.cursor = ''; d.loadedAtISO = now.toISOString();
+    // The moment the load actually finished, not the run's start: phase 1 alone takes minutes,
+    // and a recompute in between read part-loaded history. (deps.now pins it in tests.)
+    d.phase = 'enqueue'; d.cursor = ''; d.loadedAtISO = (deps.now ?? new Date()).toISOString();
   }
   const r = await enqueueEveryone(deps, d.since, d.loadedAtISO, d.cursor);
   d.enqueued += r.enqueued; d.scanned += r.scanned; d.cursor = r.cursor; d.remaining = r.remaining;

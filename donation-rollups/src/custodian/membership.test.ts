@@ -186,6 +186,14 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
     expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0, enqueued: 3 });
   });
 
+  it('loadedAtISO is the wall clock when phase 2 finishes, not the run start', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({}, sent);
+    delete d.now;   // production: no pinned clock
+    const report = await runMembership(d, new Date('2020-01-01T00:00:00Z'), { all: false, since: null }, { ...PASS, phase: 'backfill-terms' });
+    expect((report.detail as MembershipDetail).loadedAtISO! > '2026-01-01').toBe(true);
+  });
+
   it('phase 3 skips only owners recomputed after the load finished, not ones recomputed between since and then', async () => {
     const sent: RecomputeQueueMessage[] = [];
     const d = deps({}, sent);
