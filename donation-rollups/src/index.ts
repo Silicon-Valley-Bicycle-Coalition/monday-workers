@@ -74,6 +74,8 @@ export default {
       const app = createApp({
         pendingStore: new D1PendingStore(env.DB),
         donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
+        registrationBoards: new Map(config.donationRollups.volunteerBoards.map((b) => [String(b.boardId),
+          new Set([b.columns.attendee, b.columns.event, b.columns.attendance, b.columns.role, ...(b.columns.hours ? [b.columns.hours] : [])])])),
         ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) =>
           b.columns.classification ? Object.values(b.columns.classification).map((col) => `${b.boardId}:${col}`) : [])),
         queue: {
