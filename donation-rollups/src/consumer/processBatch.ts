@@ -1,7 +1,7 @@
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
-import type { MembershipBaselineStore } from '../db/membershipBaseline';
+import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
@@ -14,12 +14,12 @@ import { donorLevel } from '../rollups/donorLevel';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
-  GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
+  GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
 } from '../projections/giftHistory';
 import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds, transientRetryDelaySeconds } from './quota';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
-  membershipColumnValues, termColumnValues, type MembershipState,
+  membershipColumnValues, termColumnValues, type MembershipGift,
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 import { formatCents } from '../money';
@@ -40,7 +40,7 @@ export interface ProcessBatchDeps {
   pendingStore: PendingStore;
   linksStore: DonationLinksStore;
   giftsStore: GiftsStore;
-  baselineStore: MembershipBaselineStore;
+  volunteerStore: VolunteerActivityStore;
   recomputesStore: OwnerRecomputesStore;
   affiliationsStore: AffiliationsStore;
   mondayClient: DonationRollupsMondayClient;
@@ -282,6 +282,7 @@ async function recomputeOwner(
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
       giftType: d.giftType ?? null,
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
+      termStart: d.termStart,               // undefined: no Term Start column; null: blank (leave stored)
     })),
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
@@ -291,7 +292,12 @@ async function recomputeOwner(
   const thisFY = currentFiscalYear(deps.now ?? new Date(), config.fiscalYear);
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
 
-  // Membership renewal write path (spec 2026-09-15): only for owners on a board with the four
+  // The ledger history, read ahead of the membership step because both it and the gift-history
+  // projections below want it: it carries gift types and archived state for the full history,
+  // including gifts archived long before this webhook.
+  const history = await deps.giftsStore.giftsForOwner(ownerItemId);
+
+  // Membership write path (spec 2026-10-09): only for owners on a board with the eight
   // membership columns, and only when the feature block is configured. Organizations and a
   // null block both skip silently — neither is a fault.
   const membership = config.donationRollups.membership;
@@ -299,16 +305,14 @@ async function recomputeOwner(
   let membershipValues: Record<string, unknown> = {};
   const giftTermWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
   if (membership !== null && membershipColumns !== undefined) {
-    const step = await planMembershipWrites(deps, ownerItemId, ownerBoardId, membershipColumns, membership, perBoard);
+    const step = await planMembershipWrites(deps, ownerItemId, membershipColumns, membership, perBoard, history);
     membershipValues = step.ownerValues;
     giftTermWrites.push(...step.giftWrites);
   }
 
   // Gift-history projections (docs/20 §5.5) ride the same write: the JSON column goes into
   // the one change_multiple_column_values call, the markdown description is its own call.
-  // Sourced from the ledger (not the Monday fetch) — it carries gift types and archived
-  // state for the full history, including gifts archived long before this webhook.
-  const history = await deps.giftsStore.giftsForOwner(ownerItemId);
+  // Sourced from the ledger (see `history` above).
   const ledgerProjection = buildGiftLedgerJson(history);
   // Docs/20 §5.5: overflow is a planned decision, never a surprise truncation — alert the
   // moment a projection crosses the planning threshold (48KB), and past the hard write
@@ -373,52 +377,45 @@ async function recomputeOwner(
 }
 
 async function planMembershipWrites(
-  deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string,
+  deps: ProcessBatchDeps, ownerItemId: string,
   columns: OwnerMembershipColumns, membership: MembershipConfig,
   perBoard: { board: DonationBoardConfig; items: DonationRecord[] }[],
+  history: GiftHistoryRow[],
 ): Promise<{ ownerValues: Record<string, unknown>; giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] }> {
-  const { mondayClient, baselineStore, config } = deps;
-  const board = await mondayClient.getOwnerMembership(ownerItemId, columns);
-  const boardState: MembershipState = { since: board.since, until: board.until, tier: tierFromLabel(board.tierLabel, membership) };
-
-  // Captured before this Worker's first membership write to the owner — by construction,
-  // since the capture happens on the same recompute that would make that write.
-  const baseline = (await baselineStore.get(ownerItemId))
-    ?? (await baselineStore.captureIfAbsent({ ownerItemId, ownerBoardId, ...boardState, capturedAt: new Date().toISOString() }));
-
-  const gifts = perBoard.flatMap((p) => p.items.map((d) => ({
-    id: d.id, dateISO: d.dateISO, amountCents: d.amountCents, status: d.status, giftType: d.giftType ?? null,
-  })));
-  const derived = deriveMembership({ since: baseline.since, until: baseline.until, tier: baseline.tier },
-    gifts, membership, config.donationRollups.receivedStatusLabel);
-  // The rule is about gifts creating or extending terms: an owner touched only by an unrelated
-  // Donations edit (or one whose only gifts are ineligible) must not have Status rewritten or a
-  // hand-set Until cleared — Status on the calendar is the native automation's job, not ours.
-  if (derived.terms.size === 0) return { ownerValues: {}, giftWrites: [] };
-  const merged = mergeWithBoard(derived.state, boardState);
+  const { mondayClient, volunteerStore, config } = deps;
   const todayISO = (deps.now ?? new Date()).toISOString().slice(0, 10);
-  const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO),
-    { ...boardState, statusLabel: board.statusLabel }, columns, membership);
 
-  // Fold order — sort by dateISO then id, same comparator deriveMembership uses — so a capped
-  // batch always stamps the oldest gifts first, matching the order the state was folded in.
+  // Activity comes from the ledger, not the Monday fetch: the ledger carries every gift the owner
+  // ever had, archived ones included, plus the migrated Term Start (spec 2026-10-09 "Qualifying
+  // activities"). The fetch only decides which active gifts can still take a stamp.
+  const gifts: MembershipGift[] = history.map((g) => ({
+    id: g.mondayItemId, dateISO: g.giftDateISO, amountCents: g.amountCents, status: g.status,
+    giftType: g.giftType, termStart: g.termStart ?? null,
+  }));
+  const volunteers = await volunteerStore.forOwner(ownerItemId);
+  const derived = deriveMembership(gifts, volunteers, membership, config.donationRollups.receivedStatusLabel, todayISO);
+  // No qualifying activity anywhere: never rewrite a hand-set membership or flip Status —
+  // Status on the calendar is the native automation's job, not ours.
+  if (derived.state === null) return { ownerValues: {}, giftWrites: [] };
+
+  const board = await mondayClient.getOwnerMembership(ownerItemId, columns);
+  const merged = mergeWithBoard(derived.state, { since: board.since, until: board.until, tier: tierFromLabel(board.tierLabel, membership) });
+  const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO), board, columns, membership);
+
   const candidates = perBoard.flatMap(({ board: b, items }) => {
     const cols = b.columns;
-    if (!cols.termStart || !cols.termEnd || !cols.membershipType) return []; // validated present when membership is on
+    if (!cols.termStart || !cols.termEnd || !cols.membershipType) return [];
     return items.map((d) => ({ board: b, d, cols: { termStart: cols.termStart!, termEnd: cols.termEnd!, membershipType: cols.membershipType! } }));
-  }).sort((a, b) => (a.d.dateISO < b.d.dateISO ? -1 : a.d.dateISO > b.d.dateISO ? 1
-    : a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0));
+  }).sort((a, b) => (a.d.dateISO < b.d.dateISO ? -1 : a.d.dateISO > b.d.dateISO ? 1 : a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0));
 
   const giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
   for (const { board: b, d, cols } of candidates) {
     const values = termColumnValues(derived.terms.get(d.id),
-      { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null },
-      cols, membership);
+      { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null }, cols, membership);
     if (Object.keys(values).length > 0) giftWrites.push({ boardId: b.boardId, itemId: d.id, values });
   }
   if (giftWrites.length > MAX_GIFT_TERM_WRITES_PER_RECOMPUTE) {
-    const remaining = giftWrites.length - MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
-    console.log(`donation-rollups: owner ${ownerItemId} has ${remaining} more gift term stamps pending; continuing on the next recompute`);
+    console.log(`donation-rollups: owner ${ownerItemId} has ${giftWrites.length - MAX_GIFT_TERM_WRITES_PER_RECOMPUTE} more gift term stamps pending; continuing on the next recompute`);
     giftWrites.length = MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
   }
   return { ownerValues, giftWrites };

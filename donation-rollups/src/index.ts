@@ -6,7 +6,7 @@ import { createApp } from './webhook/route';
 import { D1PendingStore } from './db/pending';
 import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
-import { D1MembershipBaselineStore } from './db/membershipBaseline';
+import { D1VolunteerActivityStore } from './db/volunteerActivity';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
 import { D1AffiliationsStore } from './db/affiliations';
 import { HttpMondayClient } from './monday/client';
@@ -100,7 +100,7 @@ export default {
       pendingStore: new D1PendingStore(env.DB),
       linksStore: new D1DonationLinksStore(env.DB),
       giftsStore: new D1GiftsStore(env.DB),
-      baselineStore: new D1MembershipBaselineStore(env.DB),
+      volunteerStore: new D1VolunteerActivityStore(env.DB),
       recomputesStore: new D1OwnerRecomputesStore(env.DB),
       affiliationsStore: new D1AffiliationsStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
