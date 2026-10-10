@@ -36,8 +36,22 @@ describe('custodian route auth', () => {
     const a = app({ secret: 'shh', runDuty });
     const res = await a.request('/custodian/run/sweep?secret=shh', { method: 'POST' });
     expect(res.status).toBe(200);
-    expect(runDuty).toHaveBeenCalledWith('sweep');
+    expect(runDuty).toHaveBeenCalledWith('sweep', {});
     expect(await res.json()).toMatchObject({ duty: 'sweep', ok: true });
+  });
+
+  it('passes all=true and since through to the duty; absent options are undefined', async () => {
+    const runDuty = vi.fn().mockResolvedValue({ ok: true, summary: 'x' });
+    const a = app({ secret: 'shh', runDuty });
+    await a.request('/custodian/run/membership?secret=shh&all=true&since=2026-10-17T00:00:00Z', { method: 'POST' });
+    expect(runDuty).toHaveBeenCalledWith('membership', { all: true, since: '2026-10-17T00:00:00Z' });
+    await a.request('/custodian/run/membership?secret=shh', { method: 'POST' });
+    expect(runDuty).toHaveBeenLastCalledWith('membership', {});
+  });
+
+  it('rejects a malformed since', async () => {
+    const a = app({ secret: 'shh' });
+    expect((await a.request('/custodian/run/membership?secret=shh&all=true&since=yesterday', { method: 'POST' })).status).toBe(400);
   });
 
   it('guards /custodian/status the same way', async () => {

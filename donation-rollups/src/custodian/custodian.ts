@@ -1,9 +1,14 @@
 import type { GiftsStore } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
-import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage } from '../types';
+import type { VolunteerActivityStore } from '../db/volunteerActivity';
+import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
+import type { RegistrationRecord, HistoricalShiftRecord } from '../monday/client';
+import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage, VolunteerBoardConfig,
+  HistoricalVolunteerBoardConfig } from '../types';
 import { currentFiscalYear, localDateParts } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
 import { runClassify } from './classify';
+import { runMembership, type MembershipDetail } from './membership';
 import { formatCents, parseAmountCents } from '../money';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
@@ -27,11 +32,16 @@ export interface CustodianMondayClient {
     opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
   pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
     Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }>;
+  pageRegistrations(board: VolunteerBoardConfig, cursor: string | null): Promise<{ items: RegistrationRecord[]; cursor: string | null }>;
+  pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
+  getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
 }
 
 export interface CustodianDeps {
   gifts: GiftsStore;
   pending: PendingStore;
+  volunteers: VolunteerActivityStore;
+  recomputes: OwnerRecomputesStore;
   mondayClient: CustodianMondayClient;
   queue: { sendBatch(messages: RecomputeQueueMessage[]): Promise<void> };
   config: DonationRollupsConfig;
@@ -40,7 +50,8 @@ export interface CustodianDeps {
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
 
-export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify'] as const;
+export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership'] as const;
+export interface DutyOptions { all?: boolean; since?: string }
 export type Duty = (typeof DUTIES)[number];
 
 // Cron schedule, decided by date so one daily trigger covers everything:
@@ -60,7 +71,7 @@ export function dutiesForDate(
   now: Date, fiscalYear: FiscalYearConfig, lastRuns: { duty: string; report: unknown }[] = [],
 ): Duty[] {
   const { year, month, day } = localDateParts(now, fiscalYear.timeZone);
-  const duties: Duty[] = ['reconcile', 'requeue', 'classify']; // requeue: fix 5; classify: chartable labels — all nightly
+  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership']; // requeue: fix 5; classify: chartable labels; membership: 13-month anniversaries — all nightly
   if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1) duties.push('capacity');
   if (month === fiscalYear.startMonth && day === 1) duties.push('sweep');
   if (month === fiscalYear.startMonth && day === 15) duties.push('archive');
@@ -73,7 +84,7 @@ export function dutiesForDate(
   return duties;
 }
 
-export async function runDuty(duty: Duty, deps: CustodianDeps): Promise<DutyReport> {
+export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions = {}): Promise<DutyReport> {
   const now = deps.now ?? new Date();
   let report: DutyReport;
   try {
@@ -83,6 +94,8 @@ export async function runDuty(duty: Duty, deps: CustodianDeps): Promise<DutyRepo
       : duty === 'sweep' ? await runSweep(deps)
       : duty === 'requeue' ? await runRequeue(deps, now)
       : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
+      : duty === 'membership' ? await runMembership(deps, now, { all: opts.all ?? false, since: opts.since ?? null },
+          ((await deps.gifts.lastRuns()).find((r) => r.duty === 'membership')?.report as { detail?: MembershipDetail } | undefined)?.detail ?? null)
       : await runReconcile(deps);
   } catch (err) {
     report = { ok: false, summary: `${duty} crashed: ${err instanceof Error ? err.message : String(err)}` };

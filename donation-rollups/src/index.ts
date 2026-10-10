@@ -37,6 +37,8 @@ function custodianDeps(env: Env): CustodianDeps {
   return {
     gifts: new D1GiftsStore(env.DB),
     pending: new D1PendingStore(env.DB),
+    volunteers: new D1VolunteerActivityStore(env.DB),
+    recomputes: new D1OwnerRecomputesStore(env.DB),
     mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
     queue: {
       sendBatch: (messages: RecomputeQueueMessage[]) =>
@@ -65,7 +67,7 @@ export default {
       if (new URL(request.url).pathname.startsWith('/custodian/')) {
         const deps = custodianDeps(env);
         const app = createCustodianApp({
-          runDuty: (duty) => runDuty(duty, deps),
+          runDuty: (duty, opts) => runDuty(duty, deps, opts),
           lastRuns: () => deps.gifts.lastRuns(),
           secret: env.MONDAY_WEBHOOK_SECRET,
         });

@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { DUTIES, type Duty, type DutyReport } from './custodian';
+import { DUTIES, type Duty, type DutyOptions, type DutyReport } from './custodian';
 import { secretsMatch } from '../secret';
 
 export interface CustodianAppDeps {
-  runDuty(duty: Duty): Promise<DutyReport>;
+  runDuty(duty: Duty, opts: DutyOptions): Promise<DutyReport>;
   lastRuns(): Promise<unknown>;
   // Same shared-secret convention as the webhook route (?secret=...), checked the same
   // constant-time, fail-closed way: an unset/empty secret disables these routes entirely.
@@ -31,7 +31,14 @@ export function createCustodianApp(deps: CustodianAppDeps) {
     if (!(DUTIES as readonly string[]).includes(duty)) {
       return c.json({ ok: false, error: `unknown duty "${duty}" — one of: ${DUTIES.join(', ')}` }, 400);
     }
-    const report = await deps.runDuty(duty as Duty);
+    const opts: DutyOptions = {};
+    if (c.req.query('all') === 'true') opts.all = true;
+    const since = c.req.query('since');
+    if (since !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(since)) return c.json({ ok: false, error: 'since must be an ISO 8601 timestamp' }, 400);
+      opts.since = since;
+    }
+    const report = await deps.runDuty(duty as Duty, opts);
     return c.json({ duty, ...report });
   });
 
