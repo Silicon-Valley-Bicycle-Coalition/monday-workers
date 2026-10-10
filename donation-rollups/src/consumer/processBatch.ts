@@ -200,14 +200,16 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     return;
   }
 
-  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
-
   // The gift moved here from another owner (issue #26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
-  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for.
+  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for. Queued *before* the
+  // inline recompute: the link row already says the new owner, so if that recompute throws and
+  // the retry finds the link unchanged, the previous owner would otherwise never be queued.
   if (link.previousOwner !== undefined) {
     await enqueueOwnerRecompute(deps, message, link.previousOwner);
   }
+
+  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
 
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
@@ -262,10 +264,12 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
   // Only People boards carry membership columns; a registration linked elsewhere is recorded
   // (the link may move later) but recomputes nothing. First owner inline, the rest queued —
   // a second full recompute here would blow the per-invocation budget max_batch_size is tuned for.
+  // The rest are queued *before* the inline recompute: the upsert above already moved the stored
+  // owner, so a retry after a failed recompute would no longer see the previous one.
   const recomputable = owners.filter((o) => config.donationRollups.ownerColumnsByBoard[o.ownerBoardId]?.membership !== undefined);
   const [first, ...rest] = recomputable;
-  if (first !== undefined) await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
   for (const o of rest) await enqueueOwnerRecompute(deps, message, o);
+  if (first !== undefined) await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
 
   await deps.pendingStore.updateStatus(registrationItemId, 'written', {
     ...(first ? { ownerItemId: first.ownerItemId, ownerBoard: first.ownerBoardId } : {}), writtenAt: new Date().toISOString(),
@@ -449,6 +453,12 @@ async function planMembershipWrites(
   const board = await mondayClient.getOwnerMembership(ownerItemId, columns);
   const merged = mergeWithBoard(derived.state, { since: board.since, until: board.until, tier: tierFromLabel(board.tierLabel, membership) });
   const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO), board, columns, membership);
+  // Lifetime came from the board (migrated or staff-granted), not the ledger: the derivation
+  // doesn't know, and would stamp New/Continuing terms on gifts to someone who is already a life
+  // member. Keep only Lifetime stamps (Salesforce's "already a life member" exit).
+  const terms = merged.tier === 'lifetime' && derived.state.tier !== 'lifetime'
+    ? new Map([...derived.terms].filter(([, t]) => t.type === 'lifetime'))
+    : derived.terms;
 
   const candidates = perBoard.flatMap(({ board: b, items }) => {
     const cols = b.columns;
@@ -458,7 +468,7 @@ async function planMembershipWrites(
 
   const giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
   for (const { board: b, d, cols } of candidates) {
-    const values = termColumnValues(derived.terms.get(d.id),
+    const values = termColumnValues(terms.get(d.id),
       { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null }, cols, membership);
     if (Object.keys(values).length > 0) giftWrites.push({ boardId: b.boardId, itemId: d.id, values });
   }

@@ -564,6 +564,18 @@ describe('membership step (spec 2026-10-09 — full-history fold)', () => {
     expect(d.changeColumnValues.mock.calls[1]![2]).toEqual({ ts_1: { date: '2026-11-05' }, mty_1: 'Lifetime' });
   });
 
+  it('a board-Lifetime owner (migrated, not from the ledger) gets no New/Continuing gift stamps and no Until', async () => {
+    const d = deps({
+      history: [ledgerGift({ mondayItemId: 'mig', amountCents: 0, giftDateISO: '2019-05-01', fiscalYear: 2019, termStart: '2019-05-01' }),
+        ledgerGift({ giftDateISO: '2026-11-01' })],
+      donations: [{ ...renewalGift, dateISO: '2026-11-01' }],
+      board: { statusLabel: 'Active', tierLabel: 'Lifetime', since: '2019-05-01', until: null } });
+    await d.run();
+    expect(d.changeColumnValues).toHaveBeenCalledTimes(1);   // the owner write only — no gift stamp
+    expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty('muntil');
+    expect(d.changeColumnValues.mock.calls[0]![2]).not.toHaveProperty('mt');
+  });
+
   it('a staff-extended Until on the board is kept (extend-only merge)', async () => {
     const d = deps({ board: { statusLabel: 'Active', tierLabel: 'Member', since: '2015-01-01', until: '2029-01-01' } });
     await d.run();
@@ -1129,6 +1141,8 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'donor-1', expect.anything()); // new owner now
     expect(queue.send).toHaveBeenCalledWith({ donationItemId: 'dnMoved', donationBoardId: '1',
       ownerItemId: 'donor-old', ownerBoardId: '3' });
+    const changeOrder = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(queue.send.mock.invocationCallOrder[0]!).toBeLessThan(changeOrder);
   });
 
   it('an owner-keyed message recomputes that owner directly, never coalesced and without touching the donation', async () => {
@@ -1203,6 +1217,8 @@ describe('registration messages (kind: registration)', () => {
     await d.run();
     expect(d.changeColumnValues.mock.calls[0]![1]).toBe('p1');
     expect(d.queue.send).toHaveBeenCalledWith({ donationItemId: 'r1', donationBoardId: '7', ownerItemId: 'p0', ownerBoardId: '2' });
+    // Queued before the inline recompute writes, so a failed recompute can't lose the previous owner.
+    expect(d.queue.send.mock.invocationCallOrder[0]!).toBeLessThan(d.changeColumnValues.mock.invocationCallOrder[0]!);
   });
 
   it('a deleted registration is marked removed and its former owner recomputed', async () => {
