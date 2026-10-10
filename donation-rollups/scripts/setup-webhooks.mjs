@@ -79,4 +79,21 @@ for (const board of config.donationRollups.donationBoards) {
     console.error(`setup-webhooks: board ${board.boardId} subscribed ${event} → webhook ${created.create_webhook.id}`);
   }
 }
+
+// Event Registrations boards (membership activity rule, spec 2026-10-09): a check-in, an
+// Attendee re-point or a deletion must reach the consumer. Three events, not five — a
+// registration is never archived or restored by this Worker's logic.
+for (const board of config.donationRollups.volunteerBoards ?? []) {
+  const existing = await graphql('query ($id: ID!) { webhooks (board_id: $id) { id event } }', { id: String(board.boardId) });
+  const have = new Set((existing.webhooks ?? []).map((w) => w.event));
+  for (const event of ['create_item', 'change_column_value', 'item_deleted']) {
+    if (have.has(event)) { console.error(`setup-webhooks: registrations board ${board.boardId} already has ${event} — skipping`); continue; }
+    const created = await graphql(
+      `mutation ($board: ID!, $url: String!, $event: WebhookEventType!) {
+         create_webhook (board_id: $board, url: $url, event: $event) { id } }`,
+      { board: String(board.boardId), url, event });
+    console.error(`setup-webhooks: registrations board ${board.boardId} subscribed ${event} → webhook ${created.create_webhook.id}`);
+  }
+}
+
 console.error('setup-webhooks: done');
