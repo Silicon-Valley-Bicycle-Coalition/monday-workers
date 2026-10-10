@@ -17,6 +17,15 @@ describe('D1VolunteerActivityStore', () => {
     expect(await store.forOwner('owner-a')).toEqual([r]);
   });
 
+  it('upsertMany writes rows across chunks and re-running updates them in place', async () => {
+    const store = new D1VolunteerActivityStore(env.DB);
+    const rows = Array.from({ length: 120 }, (_, i) => row({ registrationItemId: `many-${i}`, ownerItemId: 'owner-many', activityDateISO: `2027-01-${String(1 + (i % 28)).padStart(2, '0')}` }));
+    await store.upsertMany(rows, NOW);
+    expect(await store.forOwner('owner-many')).toHaveLength(120);
+    await store.upsertMany(rows.map((r, i) => ({ ...r, qualifies: i % 2 === 0 })), NOW);
+    expect(await store.forOwner('owner-many')).toHaveLength(60);
+  });
+
   it('forOwner omits non-qualifying rows', async () => {
     const store = new D1VolunteerActivityStore(env.DB);
     await store.upsert(row({ ownerItemId: 'owner-b', qualifies: false }), NOW);

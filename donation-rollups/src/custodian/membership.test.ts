@@ -157,6 +157,20 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
     expect(second.detail).toMatchObject({ remaining: 0 });
   });
 
+  it('phase 3 skips an owner whose board never resolved (a deleted attendee)', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({
+      pages: { '8': [{ id: 'e1', text: { start: '2027-05-02 18:00' } }] },
+      registrations: [
+        { id: 'g1', attendeeItemId: 'gone', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null },
+        { id: 'g2', attendeeItemId: 'here', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null } ],
+      boardOf: { here: '20' },   // 'gone' is absent, so phase 1 stores ownerBoardId null
+    }, sent);
+    const report = await runMembership(d, d.now!, { all: true, since: null }, null);
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['here']);
+    expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0, enqueued: 1 });
+  });
+
   it('a fresh all=true after a finished pass starts over at phase 1', async () => {
     const sent: RecomputeQueueMessage[] = [];
     const d = deps({}, sent);

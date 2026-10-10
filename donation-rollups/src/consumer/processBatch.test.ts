@@ -62,7 +62,7 @@ const membershipEnabled: DonationRollupsConfig = {
 };
 
 function fakeVolunteerStore(rows: VolunteerActivityRow[] = []): VolunteerActivityStore {
-  return { upsert: vi.fn().mockResolvedValue({ previousOwner: null }), forOwner: vi.fn().mockResolvedValue(rows),
+  return { upsert: vi.fn().mockResolvedValue({ previousOwner: null }), upsertMany: vi.fn().mockResolvedValue(undefined), forOwner: vi.fn().mockResolvedValue(rows),
     markRemoved: vi.fn().mockResolvedValue(null), ownersWithActivity: vi.fn().mockResolvedValue([]) };
 }
 

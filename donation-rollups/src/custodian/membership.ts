@@ -115,12 +115,10 @@ async function loadVolunteers(deps: CustodianDeps, now: Date): Promise<number> {
     do {
       const page = await deps.mondayClient.pageHistoricalShifts(board, cursor);
       const boards = await deps.mondayClient.getItemsBoardIds(page.items.flatMap((s) => (s.volunteerItemId ? [s.volunteerItemId] : [])));
-      for (const s of page.items) {
-        await deps.volunteers.upsert({ registrationItemId: s.id, boardId: String(board.boardId),
-          ownerItemId: s.volunteerItemId, ownerBoardId: s.volunteerItemId ? boards.get(s.volunteerItemId) ?? null : null,
-          activityDateISO: s.dateISO, hours: s.hours, qualifies: historicalShiftQualifies(s, board), source: 'historical' }, nowISO);
-        loaded++;
-      }
+      await deps.volunteers.upsertMany(page.items.map((s) => ({ registrationItemId: s.id, boardId: String(board.boardId),
+        ownerItemId: s.volunteerItemId, ownerBoardId: s.volunteerItemId ? boards.get(s.volunteerItemId) ?? null : null,
+        activityDateISO: s.dateISO, hours: s.hours, qualifies: historicalShiftQualifies(s, board), source: 'historical' as const })), nowISO);
+      loaded += page.items.length;
       cursor = page.cursor;
     } while (cursor !== null);
   }
@@ -131,13 +129,13 @@ async function loadVolunteers(deps: CustodianDeps, now: Date): Promise<number> {
     do {
       const page = await deps.mondayClient.pageRegistrations(board, cursor);
       const boards = await deps.mondayClient.getItemsBoardIds(page.items.flatMap((r) => (r.attendeeItemId ? [r.attendeeItemId] : [])));
-      for (const r of page.items) {
+      await deps.volunteers.upsertMany(page.items.map((r) => {
         const start = r.eventItemId === null ? null : eventStart.get(r.eventItemId) ?? null;
-        await deps.volunteers.upsert({ registrationItemId: r.id, boardId: String(board.boardId),
+        return { registrationItemId: r.id, boardId: String(board.boardId),
           ownerItemId: r.attendeeItemId, ownerBoardId: r.attendeeItemId ? boards.get(r.attendeeItemId) ?? null : null,
-          activityDateISO: start, hours: r.hours, qualifies: registrationQualifies(r, start, board), source: 'sweep' }, nowISO);
-        loaded++;
-      }
+          activityDateISO: start, hours: r.hours, qualifies: registrationQualifies(r, start, board), source: 'sweep' as const };
+      }), nowISO);
+      loaded += page.items.length;
       cursor = page.cursor;
     } while (cursor !== null);
   }
@@ -180,7 +178,7 @@ async function enqueueEveryone(deps: CustodianDeps, since: string | null, cursor
   let after = '';
   for (;;) {
     const batch = await deps.volunteers.ownersWithActivity(after, 1000);
-    for (const o of batch) if (!owners.has(o.ownerItemId) && o.ownerBoardId !== '') owners.set(o.ownerItemId, o.ownerBoardId);
+    for (const o of batch) if (!owners.has(o.ownerItemId) && o.ownerBoardId) owners.set(o.ownerItemId, o.ownerBoardId);
     if (batch.length < 1000) break;
     after = batch.at(-1)!.ownerItemId;
   }
