@@ -13,8 +13,9 @@ export interface OwnerRecompute {
 export interface OwnerRecomputesStore {
   get(ownerItemId: string): Promise<OwnerRecompute | null>;
   record(row: OwnerRecompute): Promise<void>;
-  // Owners recomputed at/after an instant — the membership duty's all=true pass skips them when
-  // told the sweep already covered everyone (runbook step 4.0: sweep first, then membership).
+  // Owners recomputed at/after an instant — the membership duty's all=true pass skips them: a
+  // recompute after its phases 1–2 finished (or after the caller's `since`) already saw the
+  // loaded history.
   writtenSince(iso: string): Promise<Set<string>>;
 }
 

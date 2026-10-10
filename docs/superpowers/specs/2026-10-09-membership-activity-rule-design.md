@@ -204,15 +204,18 @@ item id. The Volunteers (historical) board gets **no** subscription — it is re
 
 `DUTIES` gains `'membership'`, nightly, idempotent, cursor-resumed like `classify`:
 
-* **Nightly:** page each configured People board for items whose Current Term Start is between
-  13 months + 1 day ago and 13 months ago (inclusive of today's anniversary), enqueue an owner
-  recompute for each. Expected volume: tens per night.
-* **`POST /custodian/run/membership?secret=…&all=true`:** page *every* item on both People boards
-  plus every owner in `gifts` and `volunteer_activity`, dedupe, and enqueue one recompute each,
-  honoring the existing `owner_recomputes` coalescing and the daily D1 write quota
-  (`consumer/quota.ts`); the duty reports `remaining > 0` and resumes the next night until the
-  cursor clears. ~15,500 owners. Before the first run it also loads the historical Volunteers
-  board into `volunteer_activity` (source `historical`) and backfills `gifts.term_start`.
+* **Nightly (every run, including during an all=true pass):** page each configured People board
+  and enqueue an owner recompute for everyone whose anniversary (Current Term Start + 13 months)
+  falls after the last run's `anniversariesThroughISO` and on or before today — catching up on
+  missed nights, capped at 31 days back. Expected volume: tens per night.
+* **`POST /custodian/run/membership?secret=…&all=true`:** enqueue one recompute for every owner
+  with a gift on a membership board, plus everyone with a qualifying check-in on one, deduped
+  (*ruling 2026-10-10:* not every People item — a never-donor with no check-ins has nothing to
+  derive). Owner-keyed messages bypass the `owner_recomputes` coalescing; the daily D1 write
+  quota (`consumer/quota.ts`) still applies. The duty reports `remaining > 0` and resumes the
+  next night until the cursor clears. Before enqueueing it loads the historical Volunteers board
+  and every registration into `volunteer_activity` and backfills `gifts.term_start`; phase 3
+  skips only owners recomputed after those loads finished (and after `since`, if given).
   This is the post-cutover step; the runbook (private repo `docs/23`) gets one line pointing here.
 
 Because the one-time pass is just the normal recompute per owner, there is no separate

@@ -302,4 +302,19 @@ describe('term_start (membership activity rule)', () => {
     const rows = await store.giftsForOwner('o-ts');
     expect(rows.find((g) => g.mondayItemId === 'ts-b')?.termStart).toBe('');
   });
+  it('ownersOnBoards lists each owner with a live gift on the given boards once, skipping removed gifts and other boards', async () => {
+    const store = new D1GiftsStore(env.DB);
+    const g = { amountCents: 500, giftDateISO: '2020-05-01', fiscalYear: 2020, status: 'Received' };
+    await store.refreshFacts([
+      { ...g, mondayItemId: 'ob-1', ownerItemId: 'ob-p1', ownerBoardId: 'ob-20' },
+      { ...g, mondayItemId: 'ob-2', ownerItemId: 'ob-p1', ownerBoardId: 'ob-20' },
+      { ...g, mondayItemId: 'ob-3', ownerItemId: 'ob-p2', ownerBoardId: 'ob-28' },
+      { ...g, mondayItemId: 'ob-4', ownerItemId: 'ob-gone', ownerBoardId: 'ob-20' },
+      { ...g, mondayItemId: 'ob-5', ownerItemId: 'ob-org', ownerBoardId: 'ob-13' },
+    ], 'import', 'now');
+    await store.markRemoved('ob-4', 'later');
+    const owners = await store.ownersOnBoards(['ob-20', 'ob-28']);
+    expect(owners.sort((a, b) => (a.ownerItemId < b.ownerItemId ? -1 : 1))).toEqual([
+      { ownerItemId: 'ob-p1', ownerBoardId: 'ob-20' }, { ownerItemId: 'ob-p2', ownerBoardId: 'ob-28' }]);
+  });
 });

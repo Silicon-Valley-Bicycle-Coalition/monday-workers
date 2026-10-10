@@ -65,6 +65,9 @@ export interface GiftsStore {
   // '' — a read blank is stored as '' so the backfill never re-reads it).
   giftsMissingTermStart(beforeISO: string, afterItemId: string, limit: number): Promise<string[]>;
   setTermStarts(rows: { mondayItemId: string; termStart: string }[], now: string): Promise<void>;
+  // Distinct owners with at least one live (not removed) gift, on the given owner boards — the
+  // membership duty's all=true enqueue set, alongside owners with a qualifying check-in.
+  ownersOnBoards(boardIds: string[]): Promise<{ ownerItemId: string; ownerBoardId: string }[]>;
   // Distinct owners, for the July full-recompute sweep — paired with one linked donation id
   // each, since the recompute queue is donation-keyed and any one gift triggers the owner's
   // full recompute. Ordered by owner id with a cursor so the sweep can slice itself.
@@ -225,6 +228,20 @@ export class D1GiftsStore implements GiftsStore {
         .prepare(`UPDATE gifts SET term_start = ?2, updated_at = ?3 WHERE monday_item_id = ?1`)
         .bind(r.mondayItemId, r.termStart, now)));
     }
+  }
+
+  async ownersOnBoards(boardIds: string[]): Promise<{ ownerItemId: string; ownerBoardId: string }[]> {
+    const out: { ownerItemId: string; ownerBoardId: string }[] = [];
+    for (let i = 0; i < boardIds.length; i += READ_CHUNK) {
+      const ids = boardIds.slice(i, i + READ_CHUNK);
+      const res = await this.db
+        .prepare(`SELECT DISTINCT owner_item_id, owner_board_id FROM gifts
+                  WHERE removed_at IS NULL AND owner_board_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`)
+        .bind(...ids)
+        .all<{ owner_item_id: string; owner_board_id: string }>();
+      for (const r of res.results) out.push({ ownerItemId: r.owner_item_id, ownerBoardId: r.owner_board_id });
+    }
+    return out;
   }
 
   async actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>> {

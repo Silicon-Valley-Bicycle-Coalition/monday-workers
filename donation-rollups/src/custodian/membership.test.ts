@@ -64,6 +64,10 @@ function deps(f: Fake, sent: RecomputeQueueMessage[], now = new Date('2027-12-03
     queue: { sendBatch: async (m) => { sent.push(...m); } }, config: config(), now };
 }
 
+// An all=true pass at phase 3 with nothing done yet; tests override what they need.
+const PASS: MembershipDetail = { all: true, since: null, phase: 'enqueue', cursor: '', remaining: 1, scanned: 0, enqueued: 0,
+  loaded: 0, backfilled: 0, anniversariesThroughISO: '2027-12-02', loadedAtISO: null };
+
 describe('membership duty — nightly anniversaries', () => {
   it('enqueues owner-keyed recomputes for people whose Current Term Start anniversary is today or yesterday', async () => {
     const sent: RecomputeQueueMessage[] = [];
@@ -75,7 +79,35 @@ describe('membership duty — nightly anniversaries', () => {
     expect(report.ok).toBe(true);
     expect(sent.map((m) => [m.ownerItemId, m.ownerBoardId])).toEqual([['today', '20'], ['yesterday', '20'], ['hist-today', '28']]);
     expect(sent[0]).toEqual({ donationItemId: 'custodian:membership', donationBoardId: '', ownerItemId: 'today', ownerBoardId: '20' });
-    expect(report.detail).toMatchObject({ all: false, phase: 'anniversaries', enqueued: 3, scanned: 5, remaining: 0 });
+    expect(report.detail).toMatchObject({ all: false, phase: 'anniversaries', enqueued: 3, scanned: 5, remaining: 0, anniversariesThroughISO: '2027-12-03' });
+  });
+  it('catches up on missed nights: everyone whose anniversary fell after the last run’s anniversariesThroughISO', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({ pages: { '20': [
+      { id: 'two-days-ago', text: { mcts: '2026-11-01' } },    // anniversary 2027-12-01
+      { id: 'covered', text: { mcts: '2026-10-30' } },         // anniversary 2027-11-30 — the last run had it
+      { id: 'today', text: { mcts: '2026-11-03' } } ] } }, sent);
+    const last: MembershipDetail = { all: false, since: null, phase: 'anniversaries', cursor: '', remaining: 0, scanned: 0, enqueued: 0,
+      loaded: 0, backfilled: 0, anniversariesThroughISO: '2027-11-30', loadedAtISO: null };
+    await runMembership(d, d.now!, { all: false, since: null }, last);
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['two-days-ago', 'today']);
+  });
+  it('caps the catch-up window at ANNIVERSARY_CATCH_UP_DAYS', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({ pages: { '20': [
+      { id: 'in-window', text: { mcts: '2026-10-03' } },       // anniversary 2027-11-03, 30 days back
+      { id: 'too-old', text: { mcts: '2026-09-01' } } ] } }, sent);   // anniversary 2027-10-01
+    const last: MembershipDetail = { all: false, since: null, phase: 'anniversaries', cursor: '', remaining: 0, scanned: 0, enqueued: 0,
+      loaded: 0, backfilled: 0, anniversariesThroughISO: '2027-06-01', loadedAtISO: null };
+    await runMembership(d, d.now!, { all: false, since: null }, last);
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['in-window']);
+  });
+  it('a second run on the same day enqueues nobody again', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({ pages: { '20': [{ id: 'today', text: { mcts: '2026-11-03' } }] } }, sent);
+    const first = await runMembership(d, d.now!, { all: false, since: null }, null);
+    await runMembership(d, d.now!, { all: false, since: null }, first.detail as MembershipDetail);
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['today']);
   });
   it('is a no-op with a report when the membership block is null', async () => {
     const sent: RecomputeQueueMessage[] = [];
@@ -122,8 +154,9 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
       { ...base, mondayItemId: 'bf-1', giftDateISO: '2019-01-01' }, { ...base, mondayItemId: 'bf-2', giftDateISO: '2019-02-01' },
       { ...base, mondayItemId: 'bf-3', giftDateISO: '2026-11-01', fiscalYear: 2027 } ], 'import', 'now');
     const d = deps({ columnText: { 'bf-1': { ts: '2019-01-01 00:00' }, 'bf-2': { ts: '' } } }, sent);
-    const last: MembershipDetail = { all: true, since: null, phase: 'backfill-terms', cursor: '', remaining: 1, scanned: 0, enqueued: 0, loaded: 0, backfilled: 0 };
+    const last: MembershipDetail = { ...PASS, phase: 'backfill-terms' };
     const report = await runMembership(d, d.now!, { all: false, since: null }, last);   // nightly continuation
+    expect(report.detail).toMatchObject({ phase: 'enqueue', loadedAtISO: '2027-12-03T10:00:00.000Z' });   // phase 2 finished
     const rows = await gifts.giftsForOwner('bf-owner');
     expect(rows.find((g) => g.mondayItemId === 'bf-1')?.termStart).toBe('2019-01-01');
     expect(rows.find((g) => g.mondayItemId === 'bf-2')?.termStart).toBe('');
@@ -131,30 +164,63 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
     expect((report.detail as MembershipDetail).backfilled).toBeGreaterThanOrEqual(2);
   });
 
-  it('phase 3 enqueues every person on the membership boards plus check-in-only owners, once, skipping those recomputed since the given instant', async () => {
+  const seedGifts = (owners: [string, string][]) => new D1GiftsStore(env.DB).refreshFacts(owners.map(([ownerItemId, ownerBoardId]) => ({
+    mondayItemId: `gift-${ownerItemId}`, ownerItemId, ownerBoardId, amountCents: 500, giftDateISO: '2020-01-01', fiscalYear: 2020, status: 'Received' })), 'import', 'now');
+
+  it('phase 3 enqueues owners with a gift on a membership board plus check-in-only owners, once, skipping those recomputed since the given instant', async () => {
     const sent: RecomputeQueueMessage[] = [];
-    const d = deps({ pages: { '20': [{ id: 'q-a', text: {} }, { id: 'q-b', text: {} }], '28': [{ id: 'q-c', text: {} }] } }, sent);
-    await new D1VolunteerActivityStore(env.DB).upsert({ registrationItemId: 'q-r', boardId: '7', ownerItemId: 'q-vol', ownerBoardId: '28',
+    const d = deps({}, sent);
+    await seedGifts([['q-a', '20'], ['q-b', '20'], ['q-c', '28'], ['q-org', '13']]);   // '13' has no membership columns
+    const volunteers = new D1VolunteerActivityStore(env.DB);
+    await volunteers.upsert({ registrationItemId: 'q-r', boardId: '7', ownerItemId: 'q-vol', ownerBoardId: '28',
+      activityDateISO: '2027-01-01', hours: null, qualifies: true, source: 'sweep' }, 'now');
+    await volunteers.upsert({ registrationItemId: 'q-r99', boardId: '7', ownerItemId: 'q-elsewhere', ownerBoardId: '99',   // unconfigured board
       activityDateISO: '2027-01-01', hours: null, qualifies: true, source: 'sweep' }, 'now');
     await new D1OwnerRecomputesStore(env.DB).record({ ownerItemId: 'q-b', ownerBoardId: '20', fetchedAt: '2026-10-18T01:00:00Z', writtenAt: '2026-10-18T01:01:00Z' });
-    const last: MembershipDetail = { all: true, since: '2026-10-18T00:00:00Z', phase: 'enqueue', cursor: '', remaining: 1, scanned: 0, enqueued: 0, loaded: 0, backfilled: 0 };
+    const last: MembershipDetail = { ...PASS, since: '2026-10-18T00:00:00Z' };
     const report = await runMembership(d, d.now!, { all: false, since: null }, last);
-    expect(sent.map((m) => m.ownerItemId).sort()).toEqual(['q-a', 'q-c', 'q-vol']);
+    expect(sent.map((m) => [m.ownerItemId, m.ownerBoardId]).sort()).toEqual([['q-a', '20'], ['q-c', '28'], ['q-vol', '28']]);
     expect(sent.every((m) => m.donationItemId === 'custodian:membership')).toBe(true);
     expect(report.detail).toMatchObject({ phase: 'enqueue', remaining: 0, enqueued: 3 });
   });
 
+  it('phase 3 skips only owners recomputed after the load finished, not ones recomputed between since and then', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    const d = deps({}, sent);
+    await seedGifts([['l-before', '20'], ['l-after', '20']]);
+    const recomputes = new D1OwnerRecomputesStore(env.DB);
+    await recomputes.record({ ownerItemId: 'l-before', ownerBoardId: '20', fetchedAt: '2026-10-18T12:00:00Z', writtenAt: '2026-10-18T12:01:00Z' });
+    await recomputes.record({ ownerItemId: 'l-after', ownerBoardId: '20', fetchedAt: '2026-10-19T12:00:00Z', writtenAt: '2026-10-19T12:01:00Z' });
+    const last: MembershipDetail = { ...PASS, since: '2026-10-18T00:00:00Z', loadedAtISO: '2026-10-19T00:00:00Z' };
+    await runMembership(d, d.now!, { all: false, since: null }, last);
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['l-before']);
+    // With no since at all, loadedAtISO alone decides.
+    sent.length = 0;
+    await runMembership(d, d.now!, { all: false, since: null }, { ...PASS, loadedAtISO: '2026-10-19T00:00:00Z' });
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['l-before']);
+  });
+
   it('phase 3 slices at ENQUEUE_PER_RUN and resumes from an owner-id cursor', async () => {
     const sent: RecomputeQueueMessage[] = [];
-    const many = Array.from({ length: ENQUEUE_PER_RUN + 5 }, (_, i) => ({ id: `s-${String(i).padStart(5, '0')}`, text: {} }));
-    const d = deps({ pages: { '20': many } }, sent);
-    const last: MembershipDetail = { all: true, since: null, phase: 'enqueue', cursor: '', remaining: 1, scanned: 0, enqueued: 0, loaded: 0, backfilled: 0 };
-    const first = await runMembership(d, d.now!, { all: false, since: null }, last);
+    await seedGifts(Array.from({ length: ENQUEUE_PER_RUN + 5 }, (_, i) => [`s-${String(i).padStart(5, '0')}`, '20'] as [string, string]));
+    const d = deps({}, sent);
+    const first = await runMembership(d, d.now!, { all: false, since: null }, PASS);
     expect(sent.length).toBe(ENQUEUE_PER_RUN);
     expect(first.detail).toMatchObject({ remaining: 5, cursor: `s-${String(ENQUEUE_PER_RUN - 1).padStart(5, '0')}` });
     const second = await runMembership(d, d.now!, { all: false, since: null }, first.detail as MembershipDetail);
     expect(sent.length).toBe(ENQUEUE_PER_RUN + 5);
     expect(second.detail).toMatchObject({ remaining: 0 });
+  });
+
+  it('anniversaries still run during an unfinished all=true pass, and the pass continues', async () => {
+    const sent: RecomputeQueueMessage[] = [];
+    await seedGifts([['p-giver', '20']]);
+    const d = deps({ pages: { '20': [{ id: 'p-anniv', text: { mcts: '2026-11-03' } }] } }, sent);   // anniversary today
+    const report = await runMembership(d, d.now!, { all: false, since: null }, PASS);
+    expect(sent.map((m) => m.ownerItemId)).toEqual(['p-anniv', 'p-giver']);
+    expect(report.summary).toContain('enqueued 1 anniversary recompute(s)');
+    expect(report.summary).toContain('enqueued 1 owners');
+    expect(report.detail).toMatchObject({ all: true, phase: 'enqueue', remaining: 0, anniversariesThroughISO: '2027-12-03' });
   });
 
   it('phase 3 skips an owner whose board never resolved (a deleted attendee)', async () => {
@@ -174,7 +240,7 @@ describe('membership duty — all=true (the post-cutover recompute)', () => {
   it('a fresh all=true after a finished pass starts over at phase 1', async () => {
     const sent: RecomputeQueueMessage[] = [];
     const d = deps({}, sent);
-    const done: MembershipDetail = { all: true, since: null, phase: 'enqueue', cursor: 'zzz', remaining: 0, scanned: 0, enqueued: 9, loaded: 0, backfilled: 0 };
+    const done: MembershipDetail = { ...PASS, cursor: 'zzz', remaining: 0, enqueued: 9 };
     const report = await runMembership(d, d.now!, { all: true, since: '2026-10-18T00:00:00Z' }, done);
     expect(report.detail).toMatchObject({ all: true, since: '2026-10-18T00:00:00Z', loaded: 0 });
   });

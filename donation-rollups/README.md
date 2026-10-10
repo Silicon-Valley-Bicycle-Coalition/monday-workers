@@ -488,30 +488,38 @@ membership keys and stamps are compared away).
   recomputes both the old and the new person. A registration with no Event link or no Event Start
   is stored as non-qualifying, not a fault; an archived registration keeps its last read (archived
   items read empty board relations — the same trap as archived gifts, issue #26).
-* **The `membership` duty.** Nightly (09:00 UTC) it recomputes everyone whose 13-month
-  anniversary of Current Term Start fell today or yesterday, so Member Type moves from New to
-  Continuing without an event — tens of people a night. On demand, it is the **post-cutover
+* **The `membership` duty.** Every run (nightly at 09:00 UTC, and first thing in every all=true
+  run) recomputes everyone whose 13-month anniversary of Current Term Start fell since the last
+  run's `anniversariesThroughISO` — normally just today; after missed nights it catches up, at
+  most 31 days back — so Member Type moves from New to Continuing without an event, tens of
+  people a night. On demand, it is the **post-cutover
   recompute**, run once after the cutover load and the webhook subscriptions, before Gate C and
   before the November Board Elections export:
 
   ```
-  POST /custodian/run/membership?secret=…&all=true[&since=<ISO of the sweep's start>]
+  POST /custodian/run/membership?secret=…&all=true[&since=<ISO>]
   ```
 
-  Repeat it — or leave it to the 09:00 UTC cron, which continues an unfinished pass — until
-  `detail.remaining` is `0`. Three phases, in order, each idempotent:
+  Call it with a long client timeout (the HTTP request returns only when the run's slice
+  finishes; a 120 s timeout recorded no run on the sandbox). Repeat it — or leave it to the
+  09:00 UTC cron, which continues an unfinished pass — until `detail.remaining` is `0`. Three
+  phases, in order, each idempotent:
   1. `load-volunteers` — the historical Volunteers board and every Event Registrations item
      (with each registration's Event Start) into `volunteer_activity`, 50 rows per D1 batch.
      Reads only on Monday; runs once at the start, in the first run.
   2. `backfill-terms` — reads the migrated Term Start of every pre-`fromISO` gift into
      `gifts.term_start` (archived gifts included — the webhook path never reads them),
      `BACKFILL_PER_RUN` = 5,000 gifts a run, cursored (~37,000 gifts, so about eight runs).
-  3. `enqueue` — one owner-keyed recompute for every item on each membership People board plus
-     anyone with a qualifying check-in who is not on one, `ENQUEUE_PER_RUN` = 3,500 owners a run
-     with an owner-id cursor (~15,500 people, about five runs), minus owners whose recompute
-     already wrote since `since`. Pass `since` (the sweep's start time, the runbook runs the
-     sweep first) so people the sweep just covered are not recomputed twice; the queue consumer
-     still honors the existing `owner_recomputes` coalescing and the daily D1 write quota.
+  3. `enqueue` — one owner-keyed recompute for every owner with a gift on a membership board,
+     plus everyone with a qualifying check-in, `ENQUEUE_PER_RUN` = 3,500 owners a run with an
+     owner-id cursor. Never-donors with no check-ins are not recomputed by this pass — there is
+     nothing to derive for them, and their board membership stays as imported. It skips only
+     owners recomputed after phases 1–2 finished (`detail.loadedAtISO`) — a recompute before
+     then read incomplete history — or after `since`, whichever is later. The runbook order is
+     phases 1–2 first, then the sweep: a sweep recompute after the load is skipped here
+     automatically, so people the sweep covered are not recomputed twice (`since` only ever
+     moves the skip instant later). Owner-keyed messages bypass the `owner_recomputes`
+     coalescing (each one is a full recompute); the daily D1 write quota still applies.
 
   A run that crashes mid-way records no `detail`, so there is nothing to continue from: re-issue
   `?all=true` (passing `since` again — the restart loses it), which restarts at phase 1

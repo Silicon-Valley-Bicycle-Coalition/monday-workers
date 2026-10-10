@@ -113,6 +113,7 @@ function fakeGiftsStore(): GiftsStore {
     markArchived: vi.fn().mockResolvedValue(undefined),
     giftsMissingTermStart: vi.fn().mockResolvedValue([]),
     setTermStarts: vi.fn().mockResolvedValue(undefined),
+    ownersOnBoards: vi.fn().mockResolvedValue([]),
     ownersWithOneGift: vi.fn().mockResolvedValue([]),
     ownerTotals: vi.fn().mockResolvedValue(new Map()),
     fiscalYearTotals: vi.fn().mockResolvedValue([]),
