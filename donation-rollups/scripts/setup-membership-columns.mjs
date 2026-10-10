@@ -14,7 +14,8 @@ if (!token) { console.error('setup-membership-columns: MONDAY_API_TOKEN is requi
 const args = process.argv.slice(2);
 const regIdx = args.indexOf('--registrations');
 const registrationsBoardId = regIdx >= 0 ? args[regIdx + 1] : null;
-const boardIds = args.filter((a, i) => /^\d+$/.test(a) && i !== regIdx + 1);
+if (regIdx >= 0 && !/^\d+$/.test(registrationsBoardId ?? '')) { console.error('setup-membership-columns: --registrations needs a numeric board id'); process.exit(1); }
+const boardIds = args.filter((a, i) => /^\d+$/.test(a) && (regIdx < 0 || i !== regIdx + 1));
 if (boardIds.length === 0 && registrationsBoardId === null) {
   console.error('usage: node scripts/setup-membership-columns.mjs <peopleBoardId> [...] [--registrations <boardId>]');
   process.exit(1);
