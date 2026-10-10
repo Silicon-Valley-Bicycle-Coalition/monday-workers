@@ -81,12 +81,13 @@ for (const board of config.donationRollups.donationBoards) {
 }
 
 // Event Registrations boards (membership activity rule, spec 2026-10-09): a check-in, an
-// Attendee re-point or a deletion must reach the consumer. Three events, not five — a
-// registration is never archived or restored by this Worker's logic.
+// Attendee re-point, a deletion or a restore must reach the consumer — a restored registration
+// is re-read so it counts again. No item_archived: an archived registration keeps its last read.
+// Re-running this on a board subscribed to the first three adds only item_restored.
 for (const board of config.donationRollups.volunteerBoards ?? []) {
   const existing = await graphql('query ($id: ID!) { webhooks (board_id: $id) { id event } }', { id: String(board.boardId) });
   const have = new Set((existing.webhooks ?? []).map((w) => w.event));
-  for (const event of ['create_item', 'change_column_value', 'item_deleted']) {
+  for (const event of ['create_item', 'change_column_value', 'item_deleted', 'item_restored']) {
     if (have.has(event)) { console.error(`setup-webhooks: registrations board ${board.boardId} already has ${event} — skipping`); continue; }
     const created = await graphql(
       `mutation ($board: ID!, $url: String!, $event: WebhookEventType!) {

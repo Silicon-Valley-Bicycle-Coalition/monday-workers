@@ -479,10 +479,11 @@ membership keys and stamps are compared away).
   empty (a gifts-only rule) but not absent, and `hours: null` is accepted while the Event
   Registrations Hours column does not exist (blank counts as 1 hour either way).
 * **Webhooks.** `scripts/setup-webhooks.mjs` now also subscribes `create_item`,
-  `change_column_value` and `item_deleted` on every `volunteerBoards[]` board (a check-in, an
-  Attendee re-point or a deletion must reach the consumer), to the same route; the Worker
-  accepts a registration event only for `create_item`, `item_deleted` (a deletion carries no
-  `columnId`, so it always enqueues) and `change_column_value` on the configured Attendee,
+  `change_column_value`, `item_deleted` and `item_restored` on every `volunteerBoards[]` board
+  (a check-in, an Attendee re-point, a deletion or a restore must reach the consumer — a
+  restored registration is re-read), to the same route; the Worker accepts a registration event
+  only for `create_item`, `item_deleted` and `item_restored` (neither carries a `columnId`, so
+  both always enqueue) and `change_column_value` on the configured Attendee,
   Event, Attendance, Role and Hours columns, and acknowledges everything else. The historical
   Volunteers board gets **no** subscription — it is record-keeping. An Attendee re-point
   recomputes both the old and the new person. A registration with no Event link or no Event Start

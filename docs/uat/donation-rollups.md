@@ -44,9 +44,10 @@ do not.
    is a member for 13 months from that date: they should gain or extend Member Since and Member
    Until, get Current Term Start, Member Type (New, Continuing, or Lapsed renewal), Membership
    Tier **Member** (or **Lifetime** for $1,000 and up), and Status **Active**. A gift dated
-   on or after the sandbox's membership start date (ask the developer) also gains Term Start,
+   on or after the sandbox's membership start date (2026-10-01) also gains Term Start,
    Term End (13 months later) and Membership Type.
-   A term is only ever extended, never shortened, so a second gift dated earlier changes nothing.
+   A term is only ever extended, never shortened, so a second gift dated earlier can move Current
+   Term Start and Lapse Count, but never shortens Member Until.
 4. **Come back the next morning.** The chart columns on your new gift, Funding Stream, Gift Size,
    Fiscal Quarter, and Gift Fiscal Year, fill in overnight (the nightly pass runs around 2 am
    Pacific). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.

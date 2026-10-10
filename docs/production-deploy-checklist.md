@@ -135,7 +135,7 @@ Worker's first deploy) except `member-portal`, which is
 
 | Worker | Registered in | URL |
 |---|---|---|
-| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). | `<host>/webhooks/monday/donations?secret=<SECRET>` |
+| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). | `<host>/webhooks/monday/donations?secret=<SECRET>` |
 | `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
 | `mailchimp-sync` | Monday webhook on the Donors board | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
 | `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
@@ -195,6 +195,11 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
         `scripts/setup-classification-columns.mjs <donationsBoardId>` (Funding Stream, Gift
         Size, Fiscal Quarter, Gift Fiscal Year on Donations). Each prints a config block;
         paste them in and repeat Phase 4's steps 2–3 so the deployed config has the new ids.
+  - [ ] Membership labels: the Donations board's Membership Type values written from now on
+        are `New` / `Continuing` / `Lapsed renewal` / `Lifetime` (a text column, no label setup
+        needed). The People `Member Type` status column must carry the labels New / Continuing
+        / Lapsed renewal — `scripts/setup-membership-columns.mjs` creates them — because owner
+        writes do not pass `createLabelsIfMissing`.
   - [ ] Bootstrap D1 from the load's artifacts: `bootstrap-links-from-artifacts.mjs` and
         `bootstrap-gifts-from-artifacts.mjs`, then apply each SQL file with
         `npx wrangler d1 execute svbc-donation-rollups --remote --file <file> -y`. Keep the

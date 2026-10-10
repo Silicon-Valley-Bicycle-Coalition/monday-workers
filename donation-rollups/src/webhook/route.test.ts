@@ -183,11 +183,12 @@ describe('Event Registrations webhooks', () => {
     expect(send).toHaveBeenCalledWith({ kind: 'registration', donationItemId: '41', donationBoardId: '7' });
     expect(pendingStore.upsertPending).toHaveBeenCalledWith(expect.objectContaining({ donationItemId: '41', donationBoardId: '7', kind: 'registration' }));
   });
-  it('enqueues for a change to an accepted column and for item deletion', async () => {
+  it('enqueues for a change to an accepted column, item deletion and item restore', async () => {
     const { app, send } = regApp();
     await post(app, { event: { type: 'update_column_value', pulseId: 41, boardId: 7, columnId: 'atd' } });
     await post(app, { event: { type: 'delete_pulse', pulseId: 41, boardId: 7 } });
-    expect(send).toHaveBeenCalledTimes(2);
+    await post(app, { event: { type: 'restore_pulse', pulseId: 41, boardId: 7 } });
+    expect(send).toHaveBeenCalledTimes(3);
   });
   it('ignores a change to any other column on a registration board', async () => {
     const { app, send } = regApp();
