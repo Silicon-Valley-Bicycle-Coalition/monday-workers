@@ -133,6 +133,8 @@ export interface DonorLevelConfig {
 
 export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
 
+export type RecomputeKind = 'donation' | 'registration';
+
 export interface PendingRow {
   donationItemId: string;
   donationBoardId: string;
@@ -143,6 +145,7 @@ export interface PendingRow {
   error: string | null;
   receivedAt: string;
   writtenAt: string | null;
+  kind: RecomputeKind;
 }
 
 export interface Env {
@@ -157,6 +160,9 @@ export interface Env {
 }
 
 export interface RecomputeQueueMessage {
+  kind?: RecomputeKind;
+  // donationItemId is the triggering item: a Donations item for kind 'donation' (the default), an
+  // Event Registrations item for kind 'registration'. The name predates registrations.
   donationItemId: string;
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).

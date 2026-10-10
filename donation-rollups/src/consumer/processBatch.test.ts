@@ -93,7 +93,7 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
 }
 
 function fakeRecomputesStore(last: OwnerRecompute | null = null): OwnerRecomputesStore {
-  return { get: vi.fn().mockResolvedValue(last), record: vi.fn().mockResolvedValue(undefined) };
+  return { get: vi.fn().mockResolvedValue(last), record: vi.fn().mockResolvedValue(undefined), writtenSince: vi.fn().mockResolvedValue(new Set()) };
 }
 
 function fakeGiftsStore(): GiftsStore {
@@ -109,6 +109,8 @@ function fakeGiftsStore(): GiftsStore {
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
     markArchived: vi.fn().mockResolvedValue(undefined),
+    giftsMissingTermStart: vi.fn().mockResolvedValue([]),
+    setTermStarts: vi.fn().mockResolvedValue(undefined),
     ownersWithOneGift: vi.fn().mockResolvedValue([]),
     ownerTotals: vi.fn().mockResolvedValue(new Map()),
     fiscalYearTotals: vi.fn().mockResolvedValue([]),

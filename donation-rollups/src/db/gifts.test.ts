@@ -130,7 +130,7 @@ describe('D1GiftsStore', () => {
     const rows = await store.giftsForOwner('oJ');
     expect(rows).toEqual([{
       mondayItemId: 'j1', donationBoardId: '100', amountCents: 1000, giftDateISO: '2020-01-15',
-      fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, archived: true,
+      fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, termStart: null, archived: true,
     }]);
   });
 
@@ -277,5 +277,29 @@ describe('D1GiftsStore — acting_for', () => {
     expect(await store.organizationalGivingAll('Received')).toEqual(new Map([
       ['p-lonely', { cents: 0, personBoardId: 'b1' }],
     ]));
+  });
+});
+
+describe('term_start (membership activity rule)', () => {
+  const base = { ownerItemId: 'o-ts', ownerBoardId: 'b1', amountCents: 500, giftDateISO: '2020-05-01', fiscalYear: 2020, status: 'Received' };
+  it('refreshFacts stores a supplied termStart and leaves it alone when undefined', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'ts-1', termStart: '2020-05-01' }], 'import', 'now');
+    await store.refreshFacts([{ ...base, mondayItemId: 'ts-1' }], 'webhook', 'later');
+    expect((await store.giftsForOwner('o-ts')).find((g) => g.mondayItemId === 'ts-1')?.termStart).toBe('2020-05-01');
+  });
+  it('giftsMissingTermStart lists pre-cutover gifts never read, cursored; setTermStarts clears them, blank as ""', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([
+      { ...base, mondayItemId: 'ts-a', giftDateISO: '2019-01-01' },
+      { ...base, mondayItemId: 'ts-b', giftDateISO: '2019-02-01' },
+      { ...base, mondayItemId: 'ts-c', giftDateISO: '2026-11-01' },   // post-cutover: never listed
+    ], 'import', 'now');
+    expect(await store.giftsMissingTermStart('2026-10-16', '', 10)).toEqual(expect.arrayContaining(['ts-a', 'ts-b']));
+    expect(await store.giftsMissingTermStart('2026-10-16', 'ts-a', 10)).not.toContain('ts-a');
+    await store.setTermStarts([{ mondayItemId: 'ts-a', termStart: '2019-01-01' }, { mondayItemId: 'ts-b', termStart: '' }], 'now');
+    expect(await store.giftsMissingTermStart('2026-10-16', '', 10)).not.toEqual(expect.arrayContaining(['ts-a', 'ts-b']));
+    const rows = await store.giftsForOwner('o-ts');
+    expect(rows.find((g) => g.mondayItemId === 'ts-b')?.termStart).toBe('');
   });
 });

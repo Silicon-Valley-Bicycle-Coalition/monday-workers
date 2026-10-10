@@ -1,10 +1,11 @@
-import type { PendingRow, PendingStatus } from '../types';
+import type { PendingRow, PendingStatus, RecomputeKind } from '../types';
 
 export interface NewPending {
   donationItemId: string;
   donationBoardId: string;
   eventId: string;
   receivedAt: string;
+  kind?: RecomputeKind;
 }
 
 export interface PendingStatusPatch {
@@ -36,6 +37,7 @@ interface D1PendingRecord {
   error: string | null;
   received_at: string;
   written_at: string | null;
+  kind: RecomputeKind;
 }
 
 function toPendingRow(record: D1PendingRecord): PendingRow {
@@ -49,6 +51,7 @@ function toPendingRow(record: D1PendingRecord): PendingRow {
     error: record.error,
     receivedAt: record.received_at,
     writtenAt: record.written_at,
+    kind: record.kind,
   };
 }
 
@@ -67,16 +70,17 @@ export class D1PendingStore implements PendingStore {
 
     const result = await this.db
       .prepare(
-        `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at)
-         VALUES (?1, ?2, ?3, 'received', ?4)
+        `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at, kind)
+         VALUES (?1, ?2, ?3, 'received', ?4, ?5)
          ON CONFLICT (donation_item_id) DO UPDATE SET
            donation_board_id = excluded.donation_board_id,
            event_id = excluded.event_id,
            status = 'received',
            error = NULL,
-           received_at = excluded.received_at`,
+           received_at = excluded.received_at,
+           kind = excluded.kind`,
       )
-      .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt)
+      .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt, row.kind ?? 'donation')
       .run();
 
     if (existing !== null && result.meta.changes === 0) return 'duplicate';
@@ -105,7 +109,7 @@ export class D1PendingStore implements PendingStore {
   async getPending(donationItemId: string): Promise<PendingRow | null> {
     const record = await this.db
       .prepare(
-        `SELECT donation_item_id, donation_board_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at
+        `SELECT donation_item_id, donation_board_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at, kind
          FROM pending_recomputes WHERE donation_item_id = ?1`,
       )
       .bind(donationItemId)
