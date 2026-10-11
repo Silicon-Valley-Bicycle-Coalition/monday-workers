@@ -376,55 +376,164 @@ board `18428131791`** (17 anonymous gifts and 11,231 excluded-owner gifts skippe
 `-y` matters: without a TTY, wrangler's confirm prompt silently cancels with exit 0 — after any
 fresh load, since item ids change between loads.
 
-## Membership renewal write path (spec `docs/superpowers/specs/2026-09-15-membership-renewal-write-path-design.md`)
+## Membership — the activity rule (spec `docs/superpowers/specs/2026-10-09-membership-activity-rule-design.md`)
 
-> **Rule change decided 2026-10-09 — not yet implemented.** Membership becomes "gave ≥ $1 or
-> volunteered ≥ 1 hour in the last 13 months": `termMonths` 13, a `minAmountCents` gate, Event
-> Registrations check-ins as a second activity source, four more owner columns (Current Term
-> Start, Member Type, Lapse Count, Last Lapsed), the baseline capture retired, and a one-time
-> full-history recompute right after cutover. Design:
-> `docs/superpowers/specs/2026-10-09-membership-activity-rule-design.md`. Everything below
-> describes what is deployed today and stays true until that branch ships.
+A person is a member when they have **given at least $1 or volunteered at least 1 hour in the
+last 13 months.** This Worker keeps eight membership columns on every People / People
+(Historical) item true to that rule from the person's full history, as one more step of the
+recompute (after the rollups), and stamps Term Start / Term End / Membership Type on each
+post-cutover qualifying gift. Gated on `donationRollups.membership` (null = off) and on an owner
+board having a `membership` column block; Organizations never get a term. Volunteer activity
+never touches the giving rollups.
 
-Salesforce's `Create_members` flow turned every won Donation-type gift into a one-year
-membership term (and a $1,000+ gift into a Lifetime one). This Worker replicates that rule as
-one more step of the recompute: after the rollups, it folds the owner's eligible post-cutover
-gifts (Status = Received, Gift Type in `membership.eligibleGiftTypes`, date ≥
-`membership.fromISO`) into Membership Status / Tier / Member Since / Member Until on the owner's
-People item, and stamps Term Start / Term End / Membership Type on each eligible gift. Both
-writes are compare-before-write, so the gift stamp's own webhook triggers one idle recompute and
-stops. The merge with the board is **extend-only** — a staff-granted comp or Lifetime is never
-shortened or downgraded; shorten by hand if you mean to.
+**What counts as an activity:**
 
-* **Enabling — order matters.** The block is **on** in the shipped config because migration
-  0005 was applied to the CRM Sandbox database on 2026-09-17; 0006 (`owner_recomputes`, fix 3
-  coalescing) must be applied the same way before deploying that change. For any other database (a fresh
-  fork, the production cutover), set `donationRollups.membership` to `null` first, then:
+| Kind | Source | Qualifies when | Date |
+|---|---|---|---|
+| gift | Donations (D1 `gifts`) | Status = Received, Gift Type in `eligibleGiftTypes` (`["Donation"]`), amount ≥ `minAmountCents` ($1.00), a valid date — no date gate: a qualifying gift before `fromISO` counts too (as ordinary activity — Lifetime only when the gift is dated on/after `fromISO`) | Gift date |
+| migrated term | Donations dated **before** `fromISO` | a pre-`fromISO` gift that does not itself qualify, with a migrated Term Start, counts on that Term Start — **regardless of its amount, type or status** | Term Start |
+| volunteer check-in | Event Registrations (D1 `volunteer_activity`) | Role ∈ `volunteerRoleLabels` (Volunteer) and Attendance ∈ `countedAttendanceLabels` (Attended); Hours ≥ 1, or **blank, which counts as 1**; an explicit 0 or 0.5 does not | the linked Event's Start (a registration has no date of its own) |
+| historical shift | Volunteers board, 2014–2020 (read once, by the post-cutover recompute) | Status ∈ `countedStatusLabels` (Completed) and Hours ≥ 1 | the shift's Date |
+
+Migrated terms are trusted as stamped because Salesforce never booked membership revenue as
+Opportunity amounts and comp terms have no gift at all — an amount gate over history would
+un-member people who were members. `fromISO` (the cutover date) is therefore the boundary between
+*migrated history, trusted as stamped* and *the live rule, amount-gated*, not an exclusion.
+
+**Runs.** Sort an owner's activities by date (ties by kind, then item id, so the order is
+stable). Each activity reaches `addMonths(date, termMonths)` (13; Feb 29 and month-end overflow
+roll to the 1st). An activity dated on or before the previous one's reach extends the current
+run; a later one starts a new run. A run's start is its first activity's date and its end is its
+last activity's date + 13 months; the last run is the current one, the rest are earlier. A gap of
+exactly 13 months to the day is still one run.
+
+**The eight owner columns:**
+
+| Column | Derivation |
+|---|---|
+| Member Since | first run's start — min with the board value (never later than what staff or the import wrote) |
+| Current Term Start | the current run's start — written outright |
+| Member Until | blank if Tier = Lifetime; else the current run's end, max with the board value (comps survive) |
+| Membership Tier | Lifetime if any qualifying gift is ≥ `lifetimeThresholdCents` — Lifetime only when the gift is dated on/after `fromISO` — or the board already says Lifetime; else Member; untouched when the owner has no activity and no board membership |
+| Membership Status | Active if Tier = Lifetime or the written Until ≥ today (UTC); else Lapsed |
+| Lapse Count | the number of earlier runs — written outright. A currently lapsed member's own lapse is not counted until they come back and start a new run |
+| Last Lapsed | the last earlier run's end, blank when Lapse Count is 0 — written outright |
+| Member Type | `anniversary` = Current Term Start + 13 months. **Continuing** if today ≥ anniversary **and** the run's end is past the anniversary (the run holds more than one activity — otherwise a single-activity run would read Continuing for the one day it is both past its anniversary and still Active). Else **New** if Lapse Count = 0, else **Lapsed renewal**. On lapse the last value stays; Status already says Lapsed |
+
+Member Type is the only column that depends on today without an event, which is why the nightly
+`membership` duty exists (below).
+
+**Per-gift stamps** apply to post-`fromISO` qualifying gifts only: Term Start = gift date, Term
+End = gift date + 13 months (blank for a Lifetime gift), Membership Type = **New** if the gift
+starts the owner's first run, **Lapsed renewal** if it starts a later run, **Continuing** if it
+extends a run, **Lifetime** for a Lifetime gift (`typeLabels` keys `new` / `continuing` /
+`lapsedRenewal` / `lifetime`; the same labels serve the owner's Member Type). A gift that lands
+while the owner is already Lifetime gets no stamp (Salesforce's "already a life member" exit).
+Migrated per-gift terms (before `fromISO`) keep their 12-month ends and old labels — only the
+owner columns are recomputed over history. Volunteer activities stamp nothing.
+
+**Merge with the board** is **extend-only** for Since (min), Until (max, blank for Lifetime) and
+Tier (never downgrades), so a staff-granted comp or Lifetime is never shortened; shorten by hand
+if you mean to. Current Term Start, Lapse Count, Last Lapsed and Member Type are derived facts
+**written outright** — a staff edit to them is overwritten on the next recompute. All eight
+writes, and the gift stamps, are compare-before-write, so a stamp's own webhook triggers one idle
+recompute and stops (that recompute still writes the owner rollups and descriptions; only the
+membership keys and stamps are compared away).
+
+* **Enabling — order matters.** Migration `0009_membership_activity.sql` (`volunteer_activity`,
+  `gifts.term_start`, `pending_recomputes.kind`) must be applied **before deploying the build
+  that reads it** — the same ordering lesson as 0005/0006, and stricter: the webhook insert
+  writes `kind` and the ledger refresh reads and writes `term_start` whether or not the
+  membership block is on, so deploying first breaks every recompute, not just membership. 
+  `config/sandbox.json` carries `membership: null` today (it turns on once the CRM Sandbox v3
+  column ids are filled in); `config/svbc.json` carries the full block with
+  `REPLACE_WITH_COLUMN_ID` / board-id `0` placeholders that must be replaced before it is
+  deployed. For any other database (a fresh fork, the production cutover) the safe first deploy
+  sets `donationRollups.membership` to `null` until 0009 is applied and the ids are filled. In
+  order:
   1. `CI=1 wrangler d1 migrations apply svbc-donation-rollups --remote`
-  2. set `donationRollups.membership` in `config/svbc.json` to the block below and deploy.
-  Deploying with the block set before step 1 makes every People-board recompute throw on
-  `membership_baseline`, which stops **rollups** for those owners too, not just membership.
+  2. `MONDAY_API_TOKEN=… node scripts/setup-membership-columns.mjs <peopleBoardId> [<peopleBoardId> …] [--registrations <eventRegistrationsBoardId>]`
+     — finds the four existing columns by title, creates Current Term Start, Member Type, Lapse
+     Count and Last Lapsed, and (with `--registrations`) an Hours column on Event Registrations;
+     prints config-ready blocks. The Donations board's `termStart` / `termEnd` /
+     `membershipType` column ids are unchanged, but its Membership Type status needs the labels
+     New / Continuing / Lapsed renewal / Lifetime.
+  3. set `donationRollups.membership`, the eight-key `membership` block under each People board
+     in `ownerColumnsByBoard`, `volunteerBoards` and `historicalVolunteerBoards` in
+     `config/<env>.json`, then deploy:
 
   ```json
   "membership": {
     "fromISO": "2026-10-16",
     "eligibleGiftTypes": ["Donation"],
-    "termMonths": 12,
+    "minAmountCents": 100,
+    "termMonths": 13,
     "lifetimeThresholdCents": 100000,
     "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
     "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
-    "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
+    "typeLabels": { "new": "New", "continuing": "Continuing", "lapsedRenewal": "Lapsed renewal", "lifetime": "Lifetime" }
   }
   ```
-  `fromISO` is the cutover date; set it to the real one when fixed.
-* **Gated** on `donationRollups.membership` (null = off) and on an owner board having a
-  `membership` column block; Organizations never get a term.
-* **Baseline.** `membership_baseline` (migration 0005) holds each owner's pre-feature state,
-  captured from the board on the first recompute that touches them, so New/Renewal/Reacquire
-  stays stable across re-runs. It is never updated. To re-seed one owner after correcting their
-  migrated history in the UI:
-  `wrangler d1 execute svbc-donation-rollups --remote --command "DELETE FROM membership_baseline WHERE owner_item_id='<id>'" -y`
-  — the next recompute recaptures it.
+  `fromISO` is the cutover date; set it to the real one when fixed. With the block on, every
+  board that has a `membership` entry must carry all eight column ids, `volunteerBoards` may be
+  empty (a gifts-only rule) but not absent, and `hours: null` is accepted while the Event
+  Registrations Hours column does not exist (blank counts as 1 hour either way).
+* **Webhooks.** `scripts/setup-webhooks.mjs` now also subscribes `create_item`,
+  `change_column_value`, `item_deleted` and `item_restored` on every `volunteerBoards[]` board
+  (a check-in, an Attendee re-point, a deletion or a restore must reach the consumer — a
+  restored registration is re-read), to the same route; the Worker accepts a registration event
+  only for `create_item`, `item_deleted` and `item_restored` (neither carries a `columnId`, so
+  both always enqueue) and `change_column_value` on the configured Attendee,
+  Event, Attendance, Role and Hours columns, and acknowledges everything else. The historical
+  Volunteers board gets **no** subscription — it is record-keeping. An Attendee re-point
+  recomputes both the old and the new person. A registration with no Event link or no Event Start
+  is stored as non-qualifying, not a fault; an archived registration keeps its last read (archived
+  items read empty board relations — the same trap as archived gifts, issue #26), and one read
+  back with state `deleted` is treated as deleted. The all=true load stores archived and deleted
+  registrations as non-qualifying, so a row loaded earlier stops counting.
+* **The `membership` duty.** Every run (nightly at 09:00 UTC, and first thing in every all=true
+  run) recomputes everyone whose 13-month anniversary of Current Term Start fell since the last
+  run's `anniversariesThroughISO` — normally just today; after missed nights it catches up, at
+  most 31 days back — so Member Type moves from New to Continuing without an event, tens of
+  people a night. On demand, it is the **post-cutover
+  recompute**, run once after the cutover load and the webhook subscriptions, before Gate C and
+  before the November Board Elections export:
+
+  ```
+  POST /custodian/run/membership?secret=…&all=true[&since=<ISO>]
+  ```
+
+  Call it with a long client timeout (the HTTP request returns only when the run's slice
+  finishes; a 120 s timeout recorded no run on the sandbox). Repeat it — or leave it to the
+  09:00 UTC cron, which continues an unfinished pass — until `detail.remaining` is `0`. Three
+  phases, in order, each idempotent:
+  1. `load-volunteers` — the historical Volunteers board and every Event Registrations item
+     (with each registration's Event Start) into `volunteer_activity`, 50 rows per D1 batch.
+     Reads only on Monday; runs once at the start, in the first run.
+  2. `backfill-terms` — reads the migrated Term Start of every pre-`fromISO` gift into
+     `gifts.term_start` (archived gifts included — the webhook path never reads them),
+     `BACKFILL_PER_RUN` = 5,000 gifts a run, cursored (~37,000 gifts, so about eight runs).
+  3. `enqueue` — one owner-keyed recompute for every owner with a gift on a membership board,
+     plus everyone with a qualifying check-in, `ENQUEUE_PER_RUN` = 3,500 owners a run with an
+     owner-id cursor. Never-donors with no check-ins are not recomputed by this pass — there is
+     nothing to derive for them, and their board membership stays as imported. It skips only
+     owners recomputed after phases 1–2 finished (`detail.loadedAtISO`) — a recompute before
+     then read incomplete history — or after `since`, whichever is later. The runbook order is
+     phases 1–2 first, then the sweep: a sweep recompute after the load is skipped here
+     automatically, so people the sweep covered are not recomputed twice (`since` only ever
+     moves the skip instant later). Owner-keyed messages bypass the `owner_recomputes`
+     coalescing (each one is a full recompute); the daily D1 write quota still applies.
+
+  A run that crashes mid-way records no `detail`, so there is nothing to continue from: re-issue
+  `?all=true` (passing `since` again — the restart loses it), which restarts at phase 1
+  (idempotent). Because the pass is just the normal
+  recompute per owner, there is no separate 12→13-month migration: the fold rewrites every owner
+  column from history, the extend-only merge keeps anything staff set higher, and nobody loses
+  status (13 months is longer than 12). Re-running it on the same inputs writes nothing.
+* **Known limits.** A staff comp that only extends Until does not bridge two runs, so a person
+  comped across a gap still counts one lapse — if a comp should count as activity, log it as a
+  volunteer registration. Migrated terms on the 6,619-term placeholder Opportunity have no Term
+  Start and so do not seed runs; Member Since still comes from the board, through min.
 * **Auto-lapse** stays a native board automation ("When Member Until arrives … set Membership
   Status to Lapsed"); this Worker agrees with it by construction. `mailchimp-sync` picks up the
   People changes through its own webhook; the donor portal reads the same columns.
@@ -434,23 +543,28 @@ shortened or downgraded; shorten by hand if you mean to.
 * Not replicated: Salesforce's inconsistent Lifetime firing, and the Matching Donation terms
   staff created by cloning gifts. Add `"Matching Donation"` to `eligibleGiftTypes` if that
   practice should continue.
-* **Recurring donors:** every recurring charge is a Received Donation, so a monthly donor
-  accrues a term per charge, as in Salesforce; their Member Until is always about a year past
+* **Recurring donors:** every recurring charge is a Received Donation of at least $1, so a
+  monthly donor extends their run with each charge; their Member Until is always 13 months past
   the latest charge.
 * **Expiry-day boundary:** the Worker counts Member Until = today as Active; the native
   automation lapses on that day. A recompute on the expiry date can flip Lapsed back to Active
   for that one day. The Worker's "today" is UTC, the automation's is the account timezone.
 * **Lifetime Term End:** post-cutover Lifetime gifts have a blank Term End; migrated Lifetime
   history carries 2122-01-01. Sorting "Membership payments" by Term End mixes the two.
-* **Refunds:** a gift flipped to Failed drops out of the fold but keeps its stamped term columns,
-  and the owner keeps their Until — same as Salesforce. Shorten by hand if intended.
+* **Refunds:** a gift flipped to Failed drops out of the fold but keeps its stamped term columns;
+  the owner's Until is recomputed from what remains but, being extend-only, never shortens below
+  what the board already says — same as Salesforce. Shorten by hand if intended.
 * **Concurrent gifts:** two gifts for one owner recomputing at once can each write a merge of
   what it read; the later writer wins and the stamped gifts' webhooks re-converge on the next
   pass. Not atomic.
-* **Baseline with Since but no Until:** treated as Renewal, matching the Salesforce formula
-  (a null end date is not "before today").
-* Qualify the "idle recompute" sentence above: the recompute still performs the owner rollup and
-  description writes; only the membership keys and gift stamps are compared away.
+* **What changed from the 2026-09-15 write path:** the rule is activity-based (gift ≥ $1 or a
+  volunteer hour) instead of "any Received Donation"; `termMonths` 12 → 13; `minAmountCents`
+  added; the `typeLabels` keys `renewal` / `reacquire` became `continuing` / `lapsedRenewal`
+  (Renewal and Reacquire no longer exist as labels); four owner columns added (Current Term
+  Start, Member Type, Lapse Count, Last Lapsed); and the `membership_baseline` capture retired —
+  a full-history fold is deterministic from the ledger, so the table (migration 0005) is no
+  longer read and its per-owner reset runbook line is gone. The table stays; dropping it is a
+  separate migration, not worth a deploy.
 
 ## Ledger v2 + the custodian (docs/20 §5.1/§5.3)
 
@@ -701,10 +815,25 @@ sandbox gets rebuilt before cutover:
   Count, First Gift, This/Last Year amount+count, Largest/Smallest/Average, Last Gift date+amount).
   A donor whose owner board isn't a key in this map fails loudly (retried via the queue), not
   silently skipped — add the board before donors can land there, don't wait for the failure.
-* `donationRollups.membership` (null = off), the per-board `membership` column ids under
-  `ownerColumnsByBoard`, and the Donations board's `termStart`/`termEnd`/`membershipType` column
-  ids together configure the membership renewal write path — see "Membership renewal write path"
-  above.
+* `donationRollups.membership` (null = off), the per-board eight-key `membership` column ids
+  under `ownerColumnsByBoard`, and the Donations board's `termStart`/`termEnd`/`membershipType`
+  column ids together configure the membership activity rule — see "Membership — the activity
+  rule" above.
+* `donationRollups.membership.minAmountCents` — the "given at least $1" gate (100): a Received
+  Donation below it neither starts nor extends a run after `fromISO`. Migrated terms before
+  `fromISO` ignore it.
+* `donationRollups.volunteerBoards` — the Event Registrations board(s) whose check-ins count as
+  volunteering: `boardId`; `columns` with `attendee` (the People link), `event` (the Event link),
+  `attendance`, `role` and `hours` (`null` until the Hours column exists — blank counts as 1
+  hour); `eventBoard` (`boardId` and `columns.start`, the Events board's Start date, which dates
+  the check-in); `volunteerRoleLabels` (`["Volunteer"]`) and `countedAttendanceLabels`
+  (`["Attended"]`). Required (may be an empty array) whenever `membership` is on. **Every board
+  here needs its own webhook subscription**, as with `donationBoards` — `setup-webhooks.mjs`
+  covers both lists.
+* `donationRollups.historicalVolunteerBoards` — the 2014–2020 Volunteers board(s): `boardId`,
+  `columns` (`volunteer`, `date`, `hours`, `status`) and `countedStatusLabels` (`["Completed"]`).
+  Required (may be `[]`) whenever `membership` is on. Read once by the `membership` duty's
+  `load-volunteers` phase; **no webhook** — it is record-keeping.
 * `affiliations` — `null` until the Affiliations board exists (every affiliation-model behavior is off); otherwise `{ boardId, columns: { personLink, attributedGiving, attributedGiftCount, lastAttributedGift } }` — the Person connect column and the three rollup columns on the Affiliations board (`scripts/setup-affiliation-columns.mjs` prints the block). When set, every `donationBoards[]` entry must have `columns.actingForLink` (the Donations board's "Acting for" connect column).
 * `donationRollups.ownerColumnsByBoard["<board id>"].organizationalGiving` — optional, People boards only; an owner board without it (Organizations, or a People board before the setup script has run) is skipped with a `console.warn` naming the board — the consumer never retries over it, and reconcile leg 6 skips those persons.
 
@@ -811,6 +940,8 @@ dashboard refuses two connections on one root directory, fall back to the
   Run `scripts/setup-affiliation-columns.mjs`, paste its output into config, and set
   `donationRollups.donationBoards[].columns.actingForLink`; see "Affiliation model (Plan 2)"
   above.
+* **Sync Member Type and Current Term Start to Mailchimp merge fields (`mailchimp-sync`), so a
+  welcome-back Journey can target Lapsed renewal.**
 * **Non-money rollups (registrations, volunteer hours, activities) and post-cutover Donor
   re-pointing are out of scope for this plan** — the latter belongs to the resolver Worker in
   Plan 3.

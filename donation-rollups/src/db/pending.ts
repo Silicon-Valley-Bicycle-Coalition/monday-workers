@@ -1,10 +1,11 @@
-import type { PendingRow, PendingStatus } from '../types';
+import type { PendingRow, PendingStatus, RecomputeKind } from '../types';
 
 export interface NewPending {
   donationItemId: string;
   donationBoardId: string;
   eventId: string;
   receivedAt: string;
+  kind?: RecomputeKind;
 }
 
 export interface PendingStatusPatch {
@@ -22,9 +23,12 @@ export interface PendingStore {
   getPending(donationItemId: string): Promise<PendingRow | null>;
   // Rows the queue never finished — still 'received' (enqueue never happened) or 'queued'
   // (message expired unconsumed, or its batch died before touching D1) — received before the
-  // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5).
-  listStuck(olderThanISO: string, limit: number): Promise<{ donationItemId: string; donationBoardId: string; receivedAt: string }[]>;
+  // cutoff, oldest first. The custodian's nightly requeue duty re-enqueues them (fix 5), with
+  // their kind — a registration re-sent as a donation message would read the wrong board.
+  listStuck(olderThanISO: string, limit: number): Promise<StuckPending[]>;
 }
+
+export interface StuckPending { donationItemId: string; donationBoardId: string; receivedAt: string; kind: RecomputeKind }
 
 interface D1PendingRecord {
   donation_item_id: string;
@@ -36,6 +40,7 @@ interface D1PendingRecord {
   error: string | null;
   received_at: string;
   written_at: string | null;
+  kind: RecomputeKind;
 }
 
 function toPendingRow(record: D1PendingRecord): PendingRow {
@@ -49,6 +54,7 @@ function toPendingRow(record: D1PendingRecord): PendingRow {
     error: record.error,
     receivedAt: record.received_at,
     writtenAt: record.written_at,
+    kind: record.kind,
   };
 }
 
@@ -67,16 +73,17 @@ export class D1PendingStore implements PendingStore {
 
     const result = await this.db
       .prepare(
-        `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at)
-         VALUES (?1, ?2, ?3, 'received', ?4)
+        `INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, status, received_at, kind)
+         VALUES (?1, ?2, ?3, 'received', ?4, ?5)
          ON CONFLICT (donation_item_id) DO UPDATE SET
            donation_board_id = excluded.donation_board_id,
            event_id = excluded.event_id,
            status = 'received',
            error = NULL,
-           received_at = excluded.received_at`,
+           received_at = excluded.received_at,
+           kind = excluded.kind`,
       )
-      .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt)
+      .bind(row.donationItemId, row.donationBoardId, row.eventId, row.receivedAt, row.kind ?? 'donation')
       .run();
 
     if (existing !== null && result.meta.changes === 0) return 'duplicate';
@@ -105,7 +112,7 @@ export class D1PendingStore implements PendingStore {
   async getPending(donationItemId: string): Promise<PendingRow | null> {
     const record = await this.db
       .prepare(
-        `SELECT donation_item_id, donation_board_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at
+        `SELECT donation_item_id, donation_board_id, event_id, status, owner_item_id, owner_board, error, received_at, written_at, kind
          FROM pending_recomputes WHERE donation_item_id = ?1`,
       )
       .bind(donationItemId)
@@ -113,15 +120,15 @@ export class D1PendingStore implements PendingStore {
     return record === null ? null : toPendingRow(record);
   }
 
-  async listStuck(olderThanISO: string, limit: number): Promise<{ donationItemId: string; donationBoardId: string; receivedAt: string }[]> {
+  async listStuck(olderThanISO: string, limit: number): Promise<StuckPending[]> {
     const res = await this.db
       .prepare(
-        `SELECT donation_item_id, donation_board_id, received_at FROM pending_recomputes
+        `SELECT donation_item_id, donation_board_id, received_at, kind FROM pending_recomputes
          WHERE status IN ('received', 'queued') AND received_at < ?1
          ORDER BY received_at LIMIT ?2`,
       )
       .bind(olderThanISO, limit)
-      .all<{ donation_item_id: string; donation_board_id: string; received_at: string }>();
-    return res.results.map((r) => ({ donationItemId: r.donation_item_id, donationBoardId: r.donation_board_id, receivedAt: r.received_at }));
+      .all<{ donation_item_id: string; donation_board_id: string; received_at: string; kind: RecomputeKind }>();
+    return res.results.map((r) => ({ donationItemId: r.donation_item_id, donationBoardId: r.donation_board_id, receivedAt: r.received_at, kind: r.kind }));
   }
 }

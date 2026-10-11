@@ -92,7 +92,7 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 |---|---|---|---|
 | `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` (both exist with DLQs, verified 2026-10-08) | nothing — 0001–0005 already applied (verified 2026-10-08) |
 | `funraise-sync` | exists, 0001–0005 applied (0005 applied 2026-10-08) | `funraise-sync-writes` | nothing — the D1 is still reset before first deploy (Phase 4 step 2) |
-| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards) | `donation-rollups-recompute` | nothing |
+| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards); 0009 pending (membership rule) — `0001–0009` must be applied, and 0009 **before** deploying the membership-rule build (same ordering rule as 0005/0006: the build reads `volunteer_activity`, `gifts.term_start` and `pending_recomputes.kind`) | `donation-rollups-recompute` | apply 0009 first |
 | `mailchimp-sync` | created 2026-10-08, id wired | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` (created 2026-10-08) | nothing — 0001–0005 applied 2026-10-08 |
 | `quickbooks-sync` | created 2026-10-08, id wired | `quickbooks-sync-writes` (created 2026-10-08) | nothing — 0001–0006 applied 2026-10-08 |
 | `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0002 applied 2026-10-08 |
@@ -135,7 +135,7 @@ Worker's first deploy) except `member-portal`, which is
 
 | Worker | Registered in | URL |
 |---|---|---|
-| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). | `<host>/webhooks/monday/donations?secret=<SECRET>` |
+| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). | `<host>/webhooks/monday/donations?secret=<SECRET>` |
 | `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
 | `mailchimp-sync` | Monday webhook on the Donors board | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
 | `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
@@ -195,6 +195,11 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
         `scripts/setup-classification-columns.mjs <donationsBoardId>` (Funding Stream, Gift
         Size, Fiscal Quarter, Gift Fiscal Year on Donations). Each prints a config block;
         paste them in and repeat Phase 4's steps 2–3 so the deployed config has the new ids.
+  - [ ] Membership labels: the Donations board's Membership Type values written from now on
+        are `New` / `Continuing` / `Lapsed renewal` / `Lifetime` (a text column, no label setup
+        needed). The People `Member Type` status column must carry the labels New / Continuing
+        / Lapsed renewal — `scripts/setup-membership-columns.mjs` creates them — because owner
+        writes do not pass `createLabelsIfMissing`.
   - [ ] Bootstrap D1 from the load's artifacts: `bootstrap-links-from-artifacts.mjs` and
         `bootstrap-gifts-from-artifacts.mjs`, then apply each SQL file with
         `npx wrangler d1 execute svbc-donation-rollups --remote --file <file> -y`. Keep the

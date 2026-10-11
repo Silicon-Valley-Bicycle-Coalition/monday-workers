@@ -25,13 +25,21 @@ describe('D1PendingStore', () => {
     expect(row).toEqual({
       donationItemId: 'd2', donationBoardId: 'b1', eventId: 'e1', status: 'written',
       ownerItemId: 'owner-1', ownerBoard: '18427756096', error: null,
-      receivedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T01:00:00Z',
+      receivedAt: '2026-01-01T00:00:00Z', writtenAt: '2026-01-01T01:00:00Z', kind: 'donation',
     });
   });
 
   it('returns null for an unknown donation item', async () => {
     const store = new D1PendingStore(env.DB);
     expect(await store.getPending('nope')).toBeNull();
+  });
+
+  it('stores and reads back kind, defaulting to donation', async () => {
+    const store = new D1PendingStore(env.DB);
+    await store.upsertPending({ donationItemId: 'reg-1', donationBoardId: 'er', eventId: 'e', receivedAt: 'now', kind: 'registration' });
+    await store.upsertPending({ donationItemId: 'dn-k', donationBoardId: '1', eventId: 'e', receivedAt: 'now' });
+    expect((await store.getPending('reg-1'))?.kind).toBe('registration');
+    expect((await store.getPending('dn-k'))?.kind).toBe('donation');
   });
 });
 
@@ -54,8 +62,15 @@ describe('D1PendingStore.listStuck', () => {
 
     const stuck = await store.listStuck('2026-07-31T00:00:00Z', 10);
     expect(stuck.map((r) => r.donationItemId)).toEqual(['old-received', 'old-queued-a', 'old-queued-b']);
-    expect(stuck[0]).toEqual({ donationItemId: 'old-received', donationBoardId: '1', receivedAt: '2026-07-29T00:00:00Z' });
+    expect(stuck[0]).toEqual({ donationItemId: 'old-received', donationBoardId: '1', receivedAt: '2026-07-29T00:00:00Z', kind: 'donation' });
 
     expect(await store.listStuck('2026-07-31T00:00:00Z', 2)).toHaveLength(2);
+  });
+
+  it('carries the row kind, so a stuck registration is re-sent as one', async () => {
+    const store = new D1PendingStore(env.DB);
+    await store.upsertPending({ donationItemId: 'reg-stuck', donationBoardId: 'er', eventId: 'e', receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' });
+    expect(await store.listStuck('2026-07-31T00:00:00Z', 10))
+      .toEqual([{ donationItemId: 'reg-stuck', donationBoardId: 'er', receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' }]);
   });
 });

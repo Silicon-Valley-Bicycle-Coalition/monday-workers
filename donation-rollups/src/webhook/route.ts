@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { PendingStore } from '../db/pending';
 import { validateWebhookBody } from './validate';
-import type { RecomputeQueueMessage } from '../types';
+import type { RecomputeKind, RecomputeQueueMessage } from '../types';
 import { secretsMatch } from '../secret';
 import { MONDAY_WEBHOOK_PATH } from '../rateLimit'; // one path, so the limiter exemption can't drift from the route
 
@@ -19,6 +19,10 @@ export interface AppDeps {
   // every delivery, and a 4xx would make Monday retry or eventually disable the
   // subscription. We want stale subscriptions visibly ignored, not churning.
   donationBoardIds: ReadonlySet<string>;
+  // Event Registrations boards → the column ids whose changes matter (Attendee, Event,
+  // Attendance, Role, Hours). create_pulse and item deletion always matter; any other column
+  // change on these boards is acknowledged and ignored.
+  registrationBoards: ReadonlyMap<string, ReadonlySet<string>>;
   // "<boardId>:<columnId>" for the classify duty's own output columns (spec 2026-09-29 §10.2):
   // writing them must not enqueue owner recomputes, or the first classify pass floods the queue.
   ignoredColumnIds: ReadonlySet<string>;
@@ -66,13 +70,17 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
-    if (!deps.donationBoardIds.has(donationEvent.boardId)) {
-      console.warn(`donation-rollups webhook: ignoring event for donation "${donationEvent.donationItemId}" on board "${donationEvent.boardId}" — not in config.donationBoards (stale subscription?)`);
-      return c.json({ ok: true, ignored: `board "${donationEvent.boardId}" not in config.donationBoards` }, 200);
+    const registrationColumns = deps.registrationBoards.get(donationEvent.boardId);
+    const kind: RecomputeKind = registrationColumns !== undefined ? 'registration' : 'donation';
+    if (kind === 'donation' && !deps.donationBoardIds.has(donationEvent.boardId)) {
+      console.warn(`donation-rollups webhook: ignoring event for item "${donationEvent.donationItemId}" on board "${donationEvent.boardId}" — not in config.donationBoards or volunteerBoards (stale subscription?)`);
+      return c.json({ ok: true, ignored: `board "${donationEvent.boardId}" not in config.donationBoards or volunteerBoards` }, 200);
     }
-
     if (donationEvent.columnId !== null && deps.ignoredColumnIds.has(`${donationEvent.boardId}:${donationEvent.columnId}`)) {
       return c.json({ ok: true, ignored: `classification column "${donationEvent.columnId}"` }, 200);
+    }
+    if (kind === 'registration' && donationEvent.columnId !== null && !registrationColumns!.has(donationEvent.columnId)) {
+      return c.json({ ok: true, ignored: `registration column "${donationEvent.columnId}" does not affect membership` }, 200);
     }
 
     await deps.pendingStore.upsertPending({
@@ -80,10 +88,11 @@ export function createApp(deps: AppDeps) {
       donationBoardId: donationEvent.boardId,
       eventId: donationEvent.eventId,
       receivedAt: new Date().toISOString(),
+      kind,
     });
 
     try {
-      await deps.queue.send({ donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId });
+      await deps.queue.send({ ...(kind === 'registration' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId });
       await deps.pendingStore.updateStatus(donationEvent.donationItemId, 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

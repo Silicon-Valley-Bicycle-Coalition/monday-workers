@@ -79,4 +79,22 @@ for (const board of config.donationRollups.donationBoards) {
     console.error(`setup-webhooks: board ${board.boardId} subscribed ${event} → webhook ${created.create_webhook.id}`);
   }
 }
+
+// Event Registrations boards (membership activity rule, spec 2026-10-09): a check-in, an
+// Attendee re-point, a deletion or a restore must reach the consumer — a restored registration
+// is re-read so it counts again. No item_archived: an archived registration keeps its last read.
+// Re-running this on a board subscribed to the first three adds only item_restored.
+for (const board of config.donationRollups.volunteerBoards ?? []) {
+  const existing = await graphql('query ($id: ID!) { webhooks (board_id: $id) { id event } }', { id: String(board.boardId) });
+  const have = new Set((existing.webhooks ?? []).map((w) => w.event));
+  for (const event of ['create_item', 'change_column_value', 'item_deleted', 'item_restored']) {
+    if (have.has(event)) { console.error(`setup-webhooks: registrations board ${board.boardId} already has ${event} — skipping`); continue; }
+    const created = await graphql(
+      `mutation ($board: ID!, $url: String!, $event: WebhookEventType!) {
+         create_webhook (board_id: $board, url: $url, event: $event) { id } }`,
+      { board: String(board.boardId), url, event });
+    console.error(`setup-webhooks: registrations board ${board.boardId} subscribed ${event} → webhook ${created.create_webhook.id}`);
+  }
+}
+
 console.error('setup-webhooks: done');

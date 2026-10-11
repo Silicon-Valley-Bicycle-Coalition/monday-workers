@@ -1,7 +1,7 @@
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
-import type { MembershipBaselineStore } from '../db/membershipBaseline';
+import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
 import type { AffiliationsStore } from '../db/affiliations';
 import type { DonationRollupsMondayClient, DonationRecord } from '../monday/client';
@@ -14,15 +14,16 @@ import { donorLevel } from '../rollups/donorLevel';
 import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
-  GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection,
+  GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
 } from '../projections/giftHistory';
 import { isD1QuotaError, secondsUntilMidnightUTC, rateLimitRetryDelaySeconds, transientRetryDelaySeconds } from './quota';
 import {
   deriveMembership, mergeWithBoard, statusFor, tierFromLabel,
-  membershipColumnValues, termColumnValues, type MembershipState,
+  membershipColumnValues, termColumnValues, type MembershipGift,
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 import { formatCents } from '../money';
+import { registrationQualifies } from '../membership/volunteer';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -40,7 +41,7 @@ export interface ProcessBatchDeps {
   pendingStore: PendingStore;
   linksStore: DonationLinksStore;
   giftsStore: GiftsStore;
-  baselineStore: MembershipBaselineStore;
+  volunteerStore: VolunteerActivityStore;
   recomputesStore: OwnerRecomputesStore;
   affiliationsStore: AffiliationsStore;
   mondayClient: DonationRollupsMondayClient;
@@ -121,6 +122,11 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   const { mondayClient, config } = deps;
   const { donationBoards } = config.donationRollups;
 
+  if (message.kind === 'registration') {
+    await processRegistration(message, deps);
+    return;
+  }
+
   // An owner-keyed message: a gift moved away from this owner (issue #26). Recompute it
   // unconditionally — its totals still include the gift until it does.
   if (message.ownerItemId !== undefined && message.ownerBoardId !== undefined) {
@@ -194,14 +200,16 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
     return;
   }
 
-  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
-
   // The gift moved here from another owner (issue #26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
-  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for.
+  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for. Queued *before* the
+  // inline recompute: the link row already says the new owner, so if that recompute throws and
+  // the retry finds the link unchanged, the previous owner would otherwise never be queued.
   if (link.previousOwner !== undefined) {
     await enqueueOwnerRecompute(deps, message, link.previousOwner);
   }
+
+  await recomputeOwner(deps, ownerItemId, ownerBoardId, donationItemId);
 
   await deps.pendingStore.updateStatus(donationItemId, 'written', {
     ownerItemId, ownerBoard: ownerBoardId, writtenAt: new Date().toISOString(),
@@ -222,6 +230,57 @@ async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, st
   const extraAffiliations = new Set<string>();
   if (removed?.actingForItemId) extraAffiliations.add(removed.actingForItemId);
   await recomputeOwner(deps, previous.ownerItemId, previous.ownerBoardId, donationItemId, extraAffiliations);
+}
+
+// An Event Registrations item changed (spec 2026-10-09 "Architecture"): re-read it, store whether
+// it qualifies as a check-in, and recompute the attendee — plus whoever it counted for before,
+// when the Attendee link moved or the item was deleted. Same division of labor as a Donor re-point.
+async function processRegistration(message: RecomputeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
+  const { donationItemId: registrationItemId, donationBoardId: boardId } = message;
+  const { mondayClient, volunteerStore, config } = deps;
+  const board = config.donationRollups.volunteerBoards.find((b) => String(b.boardId) === boardId);
+  if (board === undefined) {
+    throw new NonRetryableError(`config: no volunteerBoards entry for board id "${boardId}" (this registration's board)`);
+  }
+  const now = new Date().toISOString();
+  const owners: { ownerItemId: string; ownerBoardId: string }[] = [];
+
+  const reg = await mondayClient.getRegistration(registrationItemId, board);
+  if (reg !== null && reg.state === 'archived') {
+    // An archived item reads its board relations back empty (the archived-gift trap, issue #26),
+    // so a re-read would wrongly unlink the attendee: keep the stored row as it was, recompute nobody.
+    console.log(`donation-rollups consumer: registration "${registrationItemId}" is archived — keeping its last read`);
+    await deps.pendingStore.updateStatus(registrationItemId, 'written', { writtenAt: new Date().toISOString() });
+    return;
+  }
+  if (reg === null || reg.state === 'deleted') {
+    const removed = await volunteerStore.markRemoved(registrationItemId, now);
+    if (removed !== null) owners.push(removed);
+  } else {
+    const eventStart = reg.eventItemId === null ? null : await mondayClient.getEventStart(reg.eventItemId, board.eventBoard.columns.start);
+    const ownerBoardId = reg.attendeeItemId === null ? null : await mondayClient.getItemBoardId(reg.attendeeItemId);
+    const qualifies = registrationQualifies(reg, eventStart, board);
+    const { previousOwner } = await volunteerStore.upsert({
+      registrationItemId, boardId, ownerItemId: reg.attendeeItemId, ownerBoardId,
+      activityDateISO: eventStart, hours: reg.hours, qualifies, source: 'webhook',
+    }, now);
+    if (reg.attendeeItemId !== null && ownerBoardId !== null) owners.push({ ownerItemId: reg.attendeeItemId, ownerBoardId });
+    if (previousOwner !== null && previousOwner.ownerItemId !== reg.attendeeItemId) owners.push(previousOwner);
+  }
+
+  // Only People boards carry membership columns; a registration linked elsewhere is recorded
+  // (the link may move later) but recomputes nothing. First owner inline, the rest queued —
+  // a second full recompute here would blow the per-invocation budget max_batch_size is tuned for.
+  // The rest are queued *before* the inline recompute: the upsert above already moved the stored
+  // owner, so a retry after a failed recompute would no longer see the previous one.
+  const recomputable = owners.filter((o) => config.donationRollups.ownerColumnsByBoard[o.ownerBoardId]?.membership !== undefined);
+  const [first, ...rest] = recomputable;
+  for (const o of rest) await enqueueOwnerRecompute(deps, message, o);
+  if (first !== undefined) await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
+
+  await deps.pendingStore.updateStatus(registrationItemId, 'written', {
+    ...(first ? { ownerItemId: first.ownerItemId, ownerBoard: first.ownerBoardId } : {}), writtenAt: new Date().toISOString(),
+  });
 }
 
 async function enqueueOwnerRecompute(
@@ -282,6 +341,7 @@ async function recomputeOwner(
       giftDateISO: d.dateISO, fiscalYear: d.fiscalYear, status: d.status,
       giftType: d.giftType ?? null,
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
+      termStart: d.termStart,               // undefined: no Term Start column; null: blank (leave stored)
     })),
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
@@ -291,7 +351,12 @@ async function recomputeOwner(
   const thisFY = currentFiscalYear(deps.now ?? new Date(), config.fiscalYear);
   const rollup = computeRollup(donations, receivedStatusLabel, thisFY);
 
-  // Membership renewal write path (spec 2026-09-15): only for owners on a board with the four
+  // The ledger history, read ahead of the membership step because both it and the gift-history
+  // projections below want it: it carries gift types and archived state for the full history,
+  // including gifts archived long before this webhook.
+  const history = await deps.giftsStore.giftsForOwner(ownerItemId);
+
+  // Membership write path (spec 2026-10-09): only for owners on a board with the eight
   // membership columns, and only when the feature block is configured. Organizations and a
   // null block both skip silently — neither is a fault.
   const membership = config.donationRollups.membership;
@@ -299,16 +364,14 @@ async function recomputeOwner(
   let membershipValues: Record<string, unknown> = {};
   const giftTermWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
   if (membership !== null && membershipColumns !== undefined) {
-    const step = await planMembershipWrites(deps, ownerItemId, ownerBoardId, membershipColumns, membership, perBoard);
+    const step = await planMembershipWrites(deps, ownerItemId, membershipColumns, membership, perBoard, history);
     membershipValues = step.ownerValues;
     giftTermWrites.push(...step.giftWrites);
   }
 
   // Gift-history projections (docs/20 §5.5) ride the same write: the JSON column goes into
   // the one change_multiple_column_values call, the markdown description is its own call.
-  // Sourced from the ledger (not the Monday fetch) — it carries gift types and archived
-  // state for the full history, including gifts archived long before this webhook.
-  const history = await deps.giftsStore.giftsForOwner(ownerItemId);
+  // Sourced from the ledger (see `history` above).
   const ledgerProjection = buildGiftLedgerJson(history);
   // Docs/20 §5.5: overflow is a planned decision, never a surprise truncation — alert the
   // moment a projection crosses the planning threshold (48KB), and past the hard write
@@ -373,52 +436,51 @@ async function recomputeOwner(
 }
 
 async function planMembershipWrites(
-  deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string,
+  deps: ProcessBatchDeps, ownerItemId: string,
   columns: OwnerMembershipColumns, membership: MembershipConfig,
   perBoard: { board: DonationBoardConfig; items: DonationRecord[] }[],
+  history: GiftHistoryRow[],
 ): Promise<{ ownerValues: Record<string, unknown>; giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] }> {
-  const { mondayClient, baselineStore, config } = deps;
-  const board = await mondayClient.getOwnerMembership(ownerItemId, columns);
-  const boardState: MembershipState = { since: board.since, until: board.until, tier: tierFromLabel(board.tierLabel, membership) };
-
-  // Captured before this Worker's first membership write to the owner — by construction,
-  // since the capture happens on the same recompute that would make that write.
-  const baseline = (await baselineStore.get(ownerItemId))
-    ?? (await baselineStore.captureIfAbsent({ ownerItemId, ownerBoardId, ...boardState, capturedAt: new Date().toISOString() }));
-
-  const gifts = perBoard.flatMap((p) => p.items.map((d) => ({
-    id: d.id, dateISO: d.dateISO, amountCents: d.amountCents, status: d.status, giftType: d.giftType ?? null,
-  })));
-  const derived = deriveMembership({ since: baseline.since, until: baseline.until, tier: baseline.tier },
-    gifts, membership, config.donationRollups.receivedStatusLabel);
-  // The rule is about gifts creating or extending terms: an owner touched only by an unrelated
-  // Donations edit (or one whose only gifts are ineligible) must not have Status rewritten or a
-  // hand-set Until cleared — Status on the calendar is the native automation's job, not ours.
-  if (derived.terms.size === 0) return { ownerValues: {}, giftWrites: [] };
-  const merged = mergeWithBoard(derived.state, boardState);
+  const { mondayClient, volunteerStore, config } = deps;
   const todayISO = (deps.now ?? new Date()).toISOString().slice(0, 10);
-  const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO),
-    { ...boardState, statusLabel: board.statusLabel }, columns, membership);
 
-  // Fold order — sort by dateISO then id, same comparator deriveMembership uses — so a capped
-  // batch always stamps the oldest gifts first, matching the order the state was folded in.
+  // Activity comes from the ledger, not the Monday fetch: the ledger carries every gift the owner
+  // ever had, archived ones included, plus the migrated Term Start (spec 2026-10-09 "Qualifying
+  // activities"). The fetch only decides which active gifts can still take a stamp.
+  const gifts: MembershipGift[] = history.map((g) => ({
+    id: g.mondayItemId, dateISO: g.giftDateISO, amountCents: g.amountCents, status: g.status,
+    giftType: g.giftType, termStart: g.termStart ?? null,
+  }));
+  const volunteers = await volunteerStore.forOwner(ownerItemId);
+  const derived = deriveMembership(gifts, volunteers, membership, config.donationRollups.receivedStatusLabel, todayISO);
+  // No qualifying activity anywhere: never rewrite a hand-set membership or flip Status —
+  // Status on the calendar is the native automation's job, not ours.
+  if (derived.state === null) return { ownerValues: {}, giftWrites: [] };
+
+  const board = await mondayClient.getOwnerMembership(ownerItemId, columns);
+  const merged = mergeWithBoard(derived.state, { since: board.since, until: board.until, tier: tierFromLabel(board.tierLabel, membership) });
+  const ownerValues = membershipColumnValues(merged, statusFor(merged, todayISO), board, columns, membership);
+  // Lifetime came from the board (migrated or staff-granted), not the ledger: the derivation
+  // doesn't know, and would stamp New/Continuing terms on gifts to someone who is already a life
+  // member. Keep only Lifetime stamps (Salesforce's "already a life member" exit).
+  const terms = merged.tier === 'lifetime' && derived.state.tier !== 'lifetime'
+    ? new Map([...derived.terms].filter(([, t]) => t.type === 'lifetime'))
+    : derived.terms;
+
   const candidates = perBoard.flatMap(({ board: b, items }) => {
     const cols = b.columns;
-    if (!cols.termStart || !cols.termEnd || !cols.membershipType) return []; // validated present when membership is on
+    if (!cols.termStart || !cols.termEnd || !cols.membershipType) return [];
     return items.map((d) => ({ board: b, d, cols: { termStart: cols.termStart!, termEnd: cols.termEnd!, membershipType: cols.membershipType! } }));
-  }).sort((a, b) => (a.d.dateISO < b.d.dateISO ? -1 : a.d.dateISO > b.d.dateISO ? 1
-    : a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0));
+  }).sort((a, b) => (a.d.dateISO < b.d.dateISO ? -1 : a.d.dateISO > b.d.dateISO ? 1 : a.d.id < b.d.id ? -1 : a.d.id > b.d.id ? 1 : 0));
 
   const giftWrites: { boardId: number; itemId: string; values: Record<string, unknown> }[] = [];
   for (const { board: b, d, cols } of candidates) {
-    const values = termColumnValues(derived.terms.get(d.id),
-      { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null },
-      cols, membership);
+    const values = termColumnValues(terms.get(d.id),
+      { termStart: d.termStart ?? null, termEnd: d.termEnd ?? null, membershipType: d.membershipType ?? null }, cols, membership);
     if (Object.keys(values).length > 0) giftWrites.push({ boardId: b.boardId, itemId: d.id, values });
   }
   if (giftWrites.length > MAX_GIFT_TERM_WRITES_PER_RECOMPUTE) {
-    const remaining = giftWrites.length - MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
-    console.log(`donation-rollups: owner ${ownerItemId} has ${remaining} more gift term stamps pending; continuing on the next recompute`);
+    console.log(`donation-rollups: owner ${ownerItemId} has ${giftWrites.length - MAX_GIFT_TERM_WRITES_PER_RECOMPUTE} more gift term stamps pending; continuing on the next recompute`);
     giftWrites.length = MAX_GIFT_TERM_WRITES_PER_RECOMPUTE;
   }
   return { ownerValues, giftWrites };

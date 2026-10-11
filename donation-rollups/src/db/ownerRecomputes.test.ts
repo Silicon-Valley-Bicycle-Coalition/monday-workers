@@ -16,4 +16,13 @@ describe('D1OwnerRecomputesStore', () => {
     await store.record({ ownerItemId: 'o1', ownerBoardId: '2', fetchedAt: '2026-01-02T00:00:00Z', writtenAt: '2026-01-02T00:00:03Z' });
     expect((await store.get('o1'))!.fetchedAt).toBe('2026-01-02T00:00:00Z');
   });
+
+  it('writtenSince returns the owners whose last successful recompute landed at/after the instant', async () => {
+    const store = new D1OwnerRecomputesStore(env.DB);
+    await store.record({ ownerItemId: 'ws-old', ownerBoardId: 'b', fetchedAt: '2026-10-17T00:00:00Z', writtenAt: '2026-10-17T00:01:00Z' });
+    await store.record({ ownerItemId: 'ws-new', ownerBoardId: 'b', fetchedAt: '2026-10-18T00:00:00Z', writtenAt: '2026-10-18T00:01:00Z' });
+    const since = await store.writtenSince('2026-10-18T00:00:00Z');
+    expect(since.has('ws-new')).toBe(true);
+    expect(since.has('ws-old')).toBe(false);
+  });
 });

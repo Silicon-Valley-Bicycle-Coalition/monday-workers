@@ -4,6 +4,7 @@ import sandbox from './sandbox.json';
 import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 import { validateConfig } from '../src/config';
+import type { VolunteerBoardConfig, HistoricalVolunteerBoardConfig } from '../src/types';
 import { queueBaseName } from '../src/environment';
 import { isDeadLetterBatch } from '../src/index';
 
@@ -31,6 +32,10 @@ function columnIds(columns: Record<string, unknown>): string[] {
 // once they're real, they must differ from every sandbox id. Either state passes.
 const isPlaceholder = (id: unknown) => id === 0 || id === '0' || id === null;
 
+// The sandbox ships these empty (`[]` infers `never[]` from the JSON), so give them their real types.
+const sandboxVolunteerBoards: VolunteerBoardConfig[] = sandbox.donationRollups.volunteerBoards;
+const sandboxHistoricalBoards: HistoricalVolunteerBoardConfig[] = sandbox.donationRollups.historicalVolunteerBoards;
+
 describe('config split: board ids', () => {
   it('the sandbox Donations board is the CRM Sandbox one; production is a placeholder or a different board', () => {
     expect(sandbox.donationRollups.donationBoards[0]!.boardId).toBe(18431577310);
@@ -45,6 +50,19 @@ describe('config split: board ids', () => {
     expect(sandboxOwners).toEqual(['18431577213', '18431577220', '18431577228']);
     for (const key of Object.keys(production.donationRollups.ownerColumnsByBoard)) {
       expect(isPlaceholder(key) || !sandboxOwners.includes(key), key).toBe(true);
+    }
+  });
+
+  it('volunteer boards: production ids are placeholders or differ from the sandbox ones', () => {
+    const sandboxBoards = new Set([
+      ...sandboxVolunteerBoards.flatMap((b) => [b.boardId, b.eventBoard.boardId]),
+      ...sandboxHistoricalBoards.map((b) => b.boardId),
+    ]);
+    for (const b of production.donationRollups.volunteerBoards) {
+      for (const id of [b.boardId, b.eventBoard.boardId]) expect(isPlaceholder(id) || !sandboxBoards.has(id), String(id)).toBe(true);
+    }
+    for (const b of production.donationRollups.historicalVolunteerBoards) {
+      expect(isPlaceholder(b.boardId) || !sandboxBoards.has(b.boardId), String(b.boardId)).toBe(true);
     }
   });
 
@@ -64,6 +82,8 @@ describe('config split: column ids', () => {
       ...columnIds(sandbox.donationRollups.donationBoards[0]!.columns as Record<string, unknown>),
       ...Object.values(sandbox.donationRollups.ownerColumnsByBoard).flatMap((c) => columnIds(c as Record<string, unknown>)),
       ...columnIds((sandbox.custodian.annualSummaryColumns ?? {}) as Record<string, unknown>),
+      ...sandboxVolunteerBoards.flatMap((b) => [...columnIds(b.columns as Record<string, unknown>), ...columnIds(b.eventBoard.columns as Record<string, unknown>)]),
+      ...sandboxHistoricalBoards.flatMap((b) => columnIds(b.columns as Record<string, unknown>)),
     ]);
     expect(sandboxIds.size).toBeGreaterThan(40);
     expect(sandboxIds.has(PLACEHOLDER)).toBe(false);

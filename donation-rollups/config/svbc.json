@@ -42,7 +42,11 @@
           "status": "REPLACE_WITH_COLUMN_ID",
           "tier": "REPLACE_WITH_COLUMN_ID",
           "since": "REPLACE_WITH_COLUMN_ID",
-          "until": "REPLACE_WITH_COLUMN_ID"
+          "until": "REPLACE_WITH_COLUMN_ID",
+          "currentTermStart": "REPLACE_WITH_COLUMN_ID",
+          "memberType": "REPLACE_WITH_COLUMN_ID",
+          "lapseCount": "REPLACE_WITH_COLUMN_ID",
+          "lastLapsed": "REPLACE_WITH_COLUMN_ID"
         }
       }
     },
@@ -55,12 +59,25 @@
     "membership": {
       "fromISO": "2026-10-16",
       "eligibleGiftTypes": ["Donation"],
-      "termMonths": 12,
+      "minAmountCents": 100,
+      "termMonths": 13,
       "lifetimeThresholdCents": 100000,
       "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
       "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
-      "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
-    }
+      "typeLabels": { "new": "New", "continuing": "Continuing", "lapsedRenewal": "Lapsed renewal", "lifetime": "Lifetime" }
+    },
+    "volunteerBoards": [{
+      "boardId": 0,
+      "columns": { "attendee": "REPLACE_WITH_COLUMN_ID", "event": "REPLACE_WITH_COLUMN_ID", "attendance": "REPLACE_WITH_COLUMN_ID", "role": "REPLACE_WITH_COLUMN_ID", "hours": null },
+      "eventBoard": { "boardId": 0, "columns": { "start": "REPLACE_WITH_COLUMN_ID" } },
+      "volunteerRoleLabels": ["Volunteer"],
+      "countedAttendanceLabels": ["Attended"]
+    }],
+    "historicalVolunteerBoards": [{
+      "boardId": 0,
+      "columns": { "volunteer": "REPLACE_WITH_COLUMN_ID", "date": "REPLACE_WITH_COLUMN_ID", "hours": "REPLACE_WITH_COLUMN_ID", "status": "REPLACE_WITH_COLUMN_ID" },
+      "countedStatusLabels": ["Completed"]
+    }]
   },
   "custodian": {
     "activeFiscalYears": 2,

@@ -13,6 +13,10 @@ export interface OwnerRecompute {
 export interface OwnerRecomputesStore {
   get(ownerItemId: string): Promise<OwnerRecompute | null>;
   record(row: OwnerRecompute): Promise<void>;
+  // Owners recomputed at/after an instant — the membership duty's all=true pass skips them: a
+  // recompute after its phases 1–2 finished (or after the caller's `since`) already saw the
+  // loaded history.
+  writtenSince(iso: string): Promise<Set<string>>;
 }
 
 interface D1Row { owner_item_id: string; owner_board_id: string; fetched_at: string; written_at: string }
@@ -39,5 +43,13 @@ export class D1OwnerRecomputesStore implements OwnerRecomputesStore {
                   written_at = excluded.written_at`)
       .bind(row.ownerItemId, row.ownerBoardId, row.fetchedAt, row.writtenAt)
       .run();
+  }
+
+  async writtenSince(iso: string): Promise<Set<string>> {
+    const res = await this.db
+      .prepare(`SELECT owner_item_id FROM owner_recomputes WHERE written_at >= ?1`)
+      .bind(iso)
+      .all<{ owner_item_id: string }>();
+    return new Set(res.results.map((r) => r.owner_item_id));
   }
 }

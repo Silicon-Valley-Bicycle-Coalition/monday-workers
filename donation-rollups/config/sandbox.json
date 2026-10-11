@@ -45,13 +45,17 @@
         "lastGiftDate": "date_mm7dkxka",
         "lastGiftAmount": "numeric_mm7dajjw",
         "donorLevel": "color_mm7n1mar",
+        "organizationalGiving": "numeric_mm79238a",
         "membership": {
           "status": "color_mm79yw6p",
           "tier": "color_mm79baj4",
           "since": "date_mm79y9fa",
-          "until": "date_mm79p82j"
-        },
-        "organizationalGiving": "numeric_mm79238a"
+          "until": "date_mm79p82j",
+          "currentTermStart": "date_mm80ztb3",
+          "memberType": "color_mm80zk1q",
+          "lapseCount": "numeric_mm801yx0",
+          "lastLapsed": "date_mm80h0px"
+        }
       },
       "18431577228": {
         "giftLedgerJson": "text_mm7dhpt",
@@ -71,7 +75,11 @@
           "status": "color_mm799gd3",
           "tier": "color_mm798xgf",
           "since": "date_mm79x5wg",
-          "until": "date_mm79zek4"
+          "until": "date_mm79zek4",
+          "currentTermStart": "date_mm80gwy0",
+          "memberType": "color_mm80pyg6",
+          "lapseCount": "numeric_mm80v5j3",
+          "lastLapsed": "date_mm801bc6"
         }
       },
       "18431577213": {
@@ -100,12 +108,25 @@
     "membership": {
       "fromISO": "2026-10-01",
       "eligibleGiftTypes": ["Donation"],
-      "termMonths": 12,
+      "minAmountCents": 100,
+      "termMonths": 13,
       "lifetimeThresholdCents": 100000,
       "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
       "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
-      "typeLabels": { "new": "New", "renewal": "Renewal", "reacquire": "Reacquire", "lifetime": "Lifetime" }
-    }
+      "typeLabels": { "new": "New", "continuing": "Continuing", "lapsedRenewal": "Lapsed renewal", "lifetime": "Lifetime" }
+    },
+    "volunteerBoards": [{
+      "boardId": 18431577302,
+      "columns": { "attendee": "board_relation_mm794v4j", "event": "board_relation_mm79jqs7", "attendance": "color_mm79pht5", "role": "color_mm79smj", "hours": "numeric_mm80asy5" },
+      "eventBoard": { "boardId": 18431577282, "columns": { "start": "date_mm79ek6s" } },
+      "volunteerRoleLabels": ["Volunteer"],
+      "countedAttendanceLabels": ["Attended"]
+    }],
+    "historicalVolunteerBoards": [{
+      "boardId": 18431577321,
+      "columns": { "volunteer": "board_relation_mm79gsmx", "date": "date_mm79agc0", "hours": "numeric_mm794ggj", "status": "color_mm79bhta" },
+      "countedStatusLabels": ["Completed"]
+    }]
   },
   "custodian": {
     "activeFiscalYears": 2,

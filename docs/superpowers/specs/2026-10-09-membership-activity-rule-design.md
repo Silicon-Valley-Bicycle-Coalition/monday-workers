@@ -72,7 +72,7 @@ An **activity** is a date, an owner (People item), a kind, and a source item id:
 
 | Kind | Source | Qualifies when | Date |
 |---|---|---|---|
-| `gift` | Donations item (D1 `gifts`) | `status = receivedStatusLabel`, `gift_type ∈ eligibleGiftTypes`, `amount_cents ≥ minAmountCents` (100), `gift_date ≥ fromISO` | `gift_date` |
+| `gift` | Donations item (D1 `gifts`) | `status = receivedStatusLabel`, `gift_type ∈ eligibleGiftTypes`, `amount_cents ≥ minAmountCents` (100), a valid date — no date gate | `gift_date` |
 | `migrated-term` | Donations item with a migrated Term Start, `gift_date < fromISO` | Term Start non-empty — **regardless of amount, type or status**. Salesforce never booked membership revenue as Opportunity amounts and comp terms have no gift at all; an amount gate over history would un-member people who were members | Term Start |
 | `volunteer` | Event Registrations item (D1 `volunteer_activity`) | Role label ∈ `volunteerRoleLabels`, Attendance label ∈ `countedAttendanceLabels`, Hours ≥ 1 or blank, Attendee set | the linked Event's Start date (the registration carries no date of its own) |
 | `volunteer-historical` | Volunteers board (2014–2020, read once by the full recompute) | Status ∈ `countedStatusLabels`, Hours ≥ 1 | Date |
@@ -97,7 +97,7 @@ the previous activity's reach extends the current run; one dated after it starts
 | Member Since | `runs[0].start` — min with the board value (never later than what staff or the import wrote) |
 | Current Term Start | `current.start` — written outright |
 | Member Until | blank if Tier = Lifetime; else `current.end`, max with the board value (comps survive) |
-| Membership Tier | Lifetime if any qualifying `gift` has `amount_cents ≥ lifetimeThresholdCents`, or the board already says Lifetime; else Member; untouched when the owner has no activity and no board membership |
+| Membership Tier | Lifetime if any qualifying `gift` has `amount_cents ≥ lifetimeThresholdCents` — Lifetime only when the gift is dated on/after `fromISO` (a pre-cutover large gift is ordinary activity; its outcome is the migrated Tier the board keeps) — or the board already says Lifetime; else Member; untouched when the owner has no activity and no board membership |
 | Membership Status | Active if Tier = Lifetime or written Until ≥ today (UTC); else Lapsed — unchanged |
 | Lapse Count | `earlier.length` — written outright. A currently lapsed member's own lapse is not counted until they come back and start a new run |
 | Last Lapsed | `earlier.at(-1).end`, blank when Lapse Count = 0 — written outright |
@@ -204,15 +204,18 @@ item id. The Volunteers (historical) board gets **no** subscription — it is re
 
 `DUTIES` gains `'membership'`, nightly, idempotent, cursor-resumed like `classify`:
 
-* **Nightly:** page each configured People board for items whose Current Term Start is between
-  13 months + 1 day ago and 13 months ago (inclusive of today's anniversary), enqueue an owner
-  recompute for each. Expected volume: tens per night.
-* **`POST /custodian/run/membership?secret=…&all=true`:** page *every* item on both People boards
-  plus every owner in `gifts` and `volunteer_activity`, dedupe, and enqueue one recompute each,
-  honoring the existing `owner_recomputes` coalescing and the daily D1 write quota
-  (`consumer/quota.ts`); the duty reports `remaining > 0` and resumes the next night until the
-  cursor clears. ~15,500 owners. Before the first run it also loads the historical Volunteers
-  board into `volunteer_activity` (source `historical`) and backfills `gifts.term_start`.
+* **Nightly (every run, including during an all=true pass):** page each configured People board
+  and enqueue an owner recompute for everyone whose anniversary (Current Term Start + 13 months)
+  falls after the last run's `anniversariesThroughISO` and on or before today — catching up on
+  missed nights, capped at 31 days back. Expected volume: tens per night.
+* **`POST /custodian/run/membership?secret=…&all=true`:** enqueue one recompute for every owner
+  with a gift on a membership board, plus everyone with a qualifying check-in on one, deduped
+  (*ruling 2026-10-10:* not every People item — a never-donor with no check-ins has nothing to
+  derive). Owner-keyed messages bypass the `owner_recomputes` coalescing; the daily D1 write
+  quota (`consumer/quota.ts`) still applies. The duty reports `remaining > 0` and resumes the
+  next night until the cursor clears. Before enqueueing it loads the historical Volunteers board
+  and every registration into `volunteer_activity` and backfills `gifts.term_start`; phase 3
+  skips only owners recomputed after those loads finished (and after `since`, if given).
   This is the post-cutover step; the runbook (private repo `docs/23`) gets one line pointing here.
 
 Because the one-time pass is just the normal recompute per owner, there is no separate

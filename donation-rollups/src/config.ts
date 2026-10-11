@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -8,7 +8,7 @@ const REQUIRED_OWNER_COLUMNS = [
 ] as const;
 const CLASSIFICATION_COLUMNS = ['fundingStream', 'giftSize', 'fiscalQuarter', 'giftFiscalYear'] as const;
 const OPTIONAL_TERM_COLUMNS = ['giftType', 'termStart', 'termEnd', 'membershipType'] as const;
-const MEMBERSHIP_COLUMNS = ['status', 'tier', 'since', 'until'] as const;
+const MEMBERSHIP_COLUMNS = ['status', 'tier', 'since', 'until', 'currentTermStart', 'memberType', 'lapseCount', 'lastLapsed'] as const;
 
 function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig {
   if (typeof raw !== 'object' || raw === null) {
@@ -91,7 +91,7 @@ function validateOwnerColumns(raw: unknown, boardId: string): OwnerColumns {
         throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].membership.${key} must be a Monday column id string`);
       }
     }
-    membership = { status: m.status as string, tier: m.tier as string, since: m.since as string, until: m.until as string };
+    membership = Object.fromEntries(MEMBERSHIP_COLUMNS.map((k) => [k, m[k] as string])) as unknown as OwnerMembershipColumns;
   }
   if (columns.organizationalGiving !== undefined && (typeof columns.organizationalGiving !== 'string' || columns.organizationalGiving === '')) {
     throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].organizationalGiving must be a Monday column id string or omitted`);
@@ -144,6 +144,9 @@ function validateMembership(raw: unknown): MembershipConfig | null {
   if (typeof m.termMonths !== 'number' || !Number.isInteger(m.termMonths) || m.termMonths < 1) {
     throw new Error('config: "donationRollups.membership.termMonths" must be a positive integer');
   }
+  if (typeof m.minAmountCents !== 'number' || !Number.isInteger(m.minAmountCents) || m.minAmountCents < 0) {
+    throw new Error('config: "donationRollups.membership.minAmountCents" must be a non-negative integer');
+  }
   if (typeof m.lifetimeThresholdCents !== 'number' || !Number.isInteger(m.lifetimeThresholdCents) || m.lifetimeThresholdCents < 0) {
     throw new Error('config: "donationRollups.membership.lifetimeThresholdCents" must be a non-negative integer');
   }
@@ -161,12 +164,77 @@ function validateMembership(raw: unknown): MembershipConfig | null {
   return {
     fromISO: m.fromISO,
     eligibleGiftTypes: m.eligibleGiftTypes as string[],
+    minAmountCents: m.minAmountCents,
     termMonths: m.termMonths,
     lifetimeThresholdCents: m.lifetimeThresholdCents,
     statusLabels: labels('statusLabels', ['active', 'lapsed']) as MembershipConfig['statusLabels'],
     tierLabels: labels('tierLabels', ['member', 'lifetime']) as MembershipConfig['tierLabels'],
-    typeLabels: labels('typeLabels', ['new', 'renewal', 'reacquire', 'lifetime']) as MembershipConfig['typeLabels'],
+    typeLabels: labels('typeLabels', ['new', 'continuing', 'lapsedRenewal', 'lifetime']) as MembershipConfig['typeLabels'],
   };
+}
+
+const nonEmptyLabels = (v: unknown, path: string): string[] => {
+  if (!Array.isArray(v) || v.length === 0 || v.some((s) => typeof s !== 'string' || s === '')) {
+    throw new Error(`config: ${path} must be a non-empty array of labels`);
+  }
+  return v as string[];
+};
+const columnId = (v: unknown, path: string): string => {
+  if (typeof v !== 'string' || v === '') throw new Error(`config: ${path} must be a Monday column id string`);
+  return v;
+};
+
+function validateVolunteerBoards(raw: unknown, membershipOn: boolean): VolunteerBoardConfig[] {
+  if (raw === undefined || raw === null) {
+    if (membershipOn) throw new Error('config: "donationRollups.volunteerBoards" is required (may be []) when membership is configured');
+    return [];
+  }
+  if (!Array.isArray(raw)) throw new Error('config: "donationRollups.volunteerBoards" must be an array');
+  return raw.map((b, i) => {
+    const path = `donationRollups.volunteerBoards[${i}]`;
+    const v = (typeof b === 'object' && b !== null ? b : {}) as Record<string, unknown>;
+    if (typeof v.boardId !== 'number') throw new Error(`config: ${path}.boardId must be a number`);
+    const c = (typeof v.columns === 'object' && v.columns !== null ? v.columns : {}) as Record<string, unknown>;
+    if (c.hours !== undefined && c.hours !== null && (typeof c.hours !== 'string' || c.hours === '')) {
+      throw new Error(`config: ${path}.columns.hours must be a column id string or null`);
+    }
+    const e = (typeof v.eventBoard === 'object' && v.eventBoard !== null ? v.eventBoard : {}) as Record<string, unknown>;
+    if (typeof e.boardId !== 'number') throw new Error(`config: ${path}.eventBoard.boardId must be a number`);
+    const ec = (typeof e.columns === 'object' && e.columns !== null ? e.columns : {}) as Record<string, unknown>;
+    return {
+      boardId: v.boardId,
+      columns: {
+        attendee: columnId(c.attendee, `${path}.columns.attendee`), event: columnId(c.event, `${path}.columns.event`),
+        attendance: columnId(c.attendance, `${path}.columns.attendance`), role: columnId(c.role, `${path}.columns.role`),
+        hours: (c.hours ?? null) as string | null,
+      },
+      eventBoard: { boardId: e.boardId, columns: { start: columnId(ec.start, `${path}.eventBoard.columns.start`) } },
+      volunteerRoleLabels: nonEmptyLabels(v.volunteerRoleLabels, `${path}.volunteerRoleLabels`),
+      countedAttendanceLabels: nonEmptyLabels(v.countedAttendanceLabels, `${path}.countedAttendanceLabels`),
+    };
+  });
+}
+
+function validateHistoricalVolunteerBoards(raw: unknown, membershipOn: boolean): HistoricalVolunteerBoardConfig[] {
+  if (raw === undefined || raw === null) {
+    if (membershipOn) throw new Error('config: "donationRollups.historicalVolunteerBoards" is required (may be []) when membership is configured');
+    return [];
+  }
+  if (!Array.isArray(raw)) throw new Error('config: "donationRollups.historicalVolunteerBoards" must be an array');
+  return raw.map((b, i) => {
+    const path = `donationRollups.historicalVolunteerBoards[${i}]`;
+    const v = (typeof b === 'object' && b !== null ? b : {}) as Record<string, unknown>;
+    if (typeof v.boardId !== 'number') throw new Error(`config: ${path}.boardId must be a number`);
+    const c = (typeof v.columns === 'object' && v.columns !== null ? v.columns : {}) as Record<string, unknown>;
+    return {
+      boardId: v.boardId,
+      columns: {
+        volunteer: columnId(c.volunteer, `${path}.columns.volunteer`), date: columnId(c.date, `${path}.columns.date`),
+        hours: columnId(c.hours, `${path}.columns.hours`), status: columnId(c.status, `${path}.columns.status`),
+      },
+      countedStatusLabels: nonEmptyLabels(v.countedStatusLabels, `${path}.countedStatusLabels`),
+    };
+  });
 }
 
 export function validateConfig(raw: unknown): DonationRollupsConfig {
@@ -214,6 +282,8 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   }
 
   const membership = validateMembership(dr.membership);
+  const volunteerBoards = validateVolunteerBoards(dr.volunteerBoards, membership !== null);
+  const historicalVolunteerBoards = validateHistoricalVolunteerBoards(dr.historicalVolunteerBoards, membership !== null);
   const donorLevel = validateDonorLevel(dr.donorLevel);
   if (membership !== null) {
     donationBoards.forEach((b, i) => {
@@ -234,7 +304,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
-    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel },
+    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards },
   };
 }
 

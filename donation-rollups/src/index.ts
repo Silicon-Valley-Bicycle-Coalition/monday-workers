@@ -6,7 +6,7 @@ import { createApp } from './webhook/route';
 import { D1PendingStore } from './db/pending';
 import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
-import { D1MembershipBaselineStore } from './db/membershipBaseline';
+import { D1VolunteerActivityStore } from './db/volunteerActivity';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
 import { D1AffiliationsStore } from './db/affiliations';
 import { HttpMondayClient } from './monday/client';
@@ -37,6 +37,8 @@ function custodianDeps(env: Env): CustodianDeps {
   return {
     gifts: new D1GiftsStore(env.DB),
     pending: new D1PendingStore(env.DB),
+    volunteers: new D1VolunteerActivityStore(env.DB),
+    recomputes: new D1OwnerRecomputesStore(env.DB),
     mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
     queue: {
       sendBatch: (messages: RecomputeQueueMessage[]) =>
@@ -65,7 +67,7 @@ export default {
       if (new URL(request.url).pathname.startsWith('/custodian/')) {
         const deps = custodianDeps(env);
         const app = createCustodianApp({
-          runDuty: (duty) => runDuty(duty, deps),
+          runDuty: (duty, opts) => runDuty(duty, deps, opts),
           lastRuns: () => deps.gifts.lastRuns(),
           secret: env.MONDAY_WEBHOOK_SECRET,
         });
@@ -74,6 +76,8 @@ export default {
       const app = createApp({
         pendingStore: new D1PendingStore(env.DB),
         donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
+        registrationBoards: new Map(config.donationRollups.volunteerBoards.map((b) => [String(b.boardId),
+          new Set([b.columns.attendee, b.columns.event, b.columns.attendance, b.columns.role, ...(b.columns.hours ? [b.columns.hours] : [])])])),
         ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) =>
           b.columns.classification ? Object.values(b.columns.classification).map((col) => `${b.boardId}:${col}`) : [])),
         queue: {
@@ -100,7 +104,7 @@ export default {
       pendingStore: new D1PendingStore(env.DB),
       linksStore: new D1DonationLinksStore(env.DB),
       giftsStore: new D1GiftsStore(env.DB),
-      baselineStore: new D1MembershipBaselineStore(env.DB),
+      volunteerStore: new D1VolunteerActivityStore(env.DB),
       recomputesStore: new D1OwnerRecomputesStore(env.DB),
       affiliationsStore: new D1AffiliationsStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),

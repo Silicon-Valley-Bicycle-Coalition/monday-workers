@@ -10,6 +10,8 @@ export interface GiftFact {
   // bootstrap value; null/undefined leaves the stored value untouched.
   giftType?: string | null;
   actingForItemId?: string | null; // undefined = column not configured, leave stored value
+  // Migrated Term Start — undefined = column not configured, leave stored
+  termStart?: string | null;
 }
 
 export interface AnnualSummaryRow {
@@ -59,6 +61,13 @@ export interface GiftsStore {
   // Active gifts older than the retention cutoff — the year-end archive run's work list.
   getArchivable(cutoffFY: number): Promise<{ mondayItemId: string; fiscalYear: number }[]>;
   markArchived(mondayItemIds: string[], now: string): Promise<void>;
+  // Pre-cutover gifts whose migrated Term Start has never been read from the board (NULL, not
+  // '' — a read blank is stored as '' so the backfill never re-reads it).
+  giftsMissingTermStart(beforeISO: string, afterItemId: string, limit: number): Promise<string[]>;
+  setTermStarts(rows: { mondayItemId: string; termStart: string }[], now: string): Promise<void>;
+  // Distinct owners with at least one live (not removed) gift, on the given owner boards — the
+  // membership duty's all=true enqueue set, alongside owners with a qualifying check-in.
+  ownersOnBoards(boardIds: string[]): Promise<{ ownerItemId: string; ownerBoardId: string }[]>;
   // Distinct owners, for the July full-recompute sweep — paired with one linked donation id
   // each, since the recompute queue is donation-keyed and any one gift triggers the owner's
   // full recompute. Ordered by owner id with a cursor so the sweep can slice itself.
@@ -88,6 +97,7 @@ interface StoredFacts {
   status: string;
   gift_type: string | null;
   acting_for_item_id: string | null;
+  term_start: string | null;
   archived_at: string | null;
   removed_at: string | null;
 }
@@ -97,7 +107,8 @@ interface StoredFacts {
 // different value counts (mirrors the COALESCE in the upsert below). actingForItemId follows the
 // upsert's CASE: undefined never counts, and an archived gift keeps D1's value whatever Monday
 // says now, so only an active gift with a supplied, different value (including a clear to null)
-// is a change.
+// is a change. termStart follows giftType: undefined means "leave stored", so only a present,
+// different value counts.
 function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
   if (stored === undefined) return true;
   return stored.removed_at !== null
@@ -108,7 +119,8 @@ function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
     || stored.fiscal_year !== g.fiscalYear
     || stored.status !== g.status
     || (g.giftType != null && g.giftType !== stored.gift_type)
-    || (g.actingForItemId !== undefined && stored.archived_at === null && g.actingForItemId !== stored.acting_for_item_id);
+    || (g.actingForItemId !== undefined && stored.archived_at === null && g.actingForItemId !== stored.acting_for_item_id)
+    || (g.termStart != null && g.termStart !== stored.term_start);
 }
 
 export class D1GiftsStore implements GiftsStore {
@@ -121,7 +133,7 @@ export class D1GiftsStore implements GiftsStore {
       const res = await this.db
         .prepare(
           `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type,
-             acting_for_item_id, archived_at, removed_at
+             acting_for_item_id, term_start, archived_at, removed_at
            FROM gifts WHERE monday_item_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`,
         )
         .bind(...ids)
@@ -135,8 +147,8 @@ export class D1GiftsStore implements GiftsStore {
       await this.db.batch(chunk.map((g) => this.db
         .prepare(
           `INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents,
-             gift_date, fiscal_year, status, gift_type, acting_for_item_id, source, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             gift_date, fiscal_year, status, gift_type, acting_for_item_id, term_start, source, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?13, ?10, ?11)
            ON CONFLICT (monday_item_id) DO UPDATE SET
              owner_item_id = excluded.owner_item_id,
              owner_board_id = excluded.owner_board_id,
@@ -145,6 +157,7 @@ export class D1GiftsStore implements GiftsStore {
              fiscal_year = excluded.fiscal_year,
              status = excluded.status,
              gift_type = COALESCE(excluded.gift_type, gifts.gift_type),
+             term_start = COALESCE(excluded.term_start, gifts.term_start),
              -- ?12 = 1 when the caller supplied acting_for (even null). Active gifts take the new value verbatim (staff may clear it); archived gifts always keep D1's — an archived item's board_relation reads back empty on Monday, and nothing else may rewrite history.
              acting_for_item_id = CASE
                WHEN ?12 = 0 THEN gifts.acting_for_item_id
@@ -157,7 +170,7 @@ export class D1GiftsStore implements GiftsStore {
         )
         .bind(g.mondayItemId, g.ownerItemId, g.ownerBoardId, g.amountCents,
           g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null,
-          g.actingForItemId ?? null, source, now, g.actingForItemId === undefined ? 0 : 1)));
+          g.actingForItemId ?? null, source, now, g.actingForItemId === undefined ? 0 : 1, g.termStart ?? null)));
     }
     return { changed: changed.length };
   }
@@ -167,17 +180,18 @@ export class D1GiftsStore implements GiftsStore {
     // duplicate it. LEFT JOIN so a link-less row still renders (without a link).
     const res = await this.db
       .prepare(`SELECT g.monday_item_id, l.donation_board_id, g.amount_cents, g.gift_date,
-                       g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.archived_at
+                       g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.term_start, g.archived_at
                 FROM gifts g LEFT JOIN donation_links l ON l.donation_item_id = g.monday_item_id
                 WHERE g.owner_item_id = ?1 AND g.removed_at IS NULL`)
       .bind(ownerItemId)
       .all<{ monday_item_id: string; donation_board_id: string | null; amount_cents: number;
         gift_date: string; fiscal_year: number; status: string; gift_type: string | null;
-        acting_for_item_id: string | null; archived_at: string | null }>();
+        acting_for_item_id: string | null; term_start: string | null; archived_at: string | null }>();
     return res.results.map((r) => ({
       mondayItemId: r.monday_item_id, donationBoardId: r.donation_board_id,
       amountCents: r.amount_cents, giftDateISO: r.gift_date, fiscalYear: r.fiscal_year,
       status: r.status, giftType: r.gift_type, actingForItemId: r.acting_for_item_id,
+      termStart: r.term_start,
       archived: r.archived_at !== null,
     }));
   }
@@ -195,6 +209,39 @@ export class D1GiftsStore implements GiftsStore {
         .run();
     }
     return { ownerItemId: row.owner_item_id, ownerBoardId: row.owner_board_id, actingForItemId: row.acting_for_item_id };
+  }
+
+  async giftsMissingTermStart(beforeISO: string, afterItemId: string, limit: number): Promise<string[]> {
+    const res = await this.db
+      .prepare(`SELECT monday_item_id FROM gifts
+                WHERE term_start IS NULL AND removed_at IS NULL AND gift_date < ?1 AND monday_item_id > ?2
+                ORDER BY monday_item_id LIMIT ?3`)
+      .bind(beforeISO, afterItemId, limit)
+      .all<{ monday_item_id: string }>();
+    return res.results.map((r) => r.monday_item_id);
+  }
+
+  async setTermStarts(rows: { mondayItemId: string; termStart: string }[], now: string): Promise<void> {
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      await this.db.batch(chunk.map((r) => this.db
+        .prepare(`UPDATE gifts SET term_start = ?2, updated_at = ?3 WHERE monday_item_id = ?1`)
+        .bind(r.mondayItemId, r.termStart, now)));
+    }
+  }
+
+  async ownersOnBoards(boardIds: string[]): Promise<{ ownerItemId: string; ownerBoardId: string }[]> {
+    const out: { ownerItemId: string; ownerBoardId: string }[] = [];
+    for (let i = 0; i < boardIds.length; i += READ_CHUNK) {
+      const ids = boardIds.slice(i, i + READ_CHUNK);
+      const res = await this.db
+        .prepare(`SELECT DISTINCT owner_item_id, owner_board_id FROM gifts
+                  WHERE removed_at IS NULL AND owner_board_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`)
+        .bind(...ids)
+        .all<{ owner_item_id: string; owner_board_id: string }>();
+      for (const r of res.results) out.push({ ownerItemId: r.owner_item_id, ownerBoardId: r.owner_board_id });
+    }
+    return out;
   }
 
   async actingForByIds(mondayItemIds: string[]): Promise<Map<string, string | null>> {

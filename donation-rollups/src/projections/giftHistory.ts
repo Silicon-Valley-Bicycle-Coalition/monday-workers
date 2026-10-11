@@ -17,6 +17,7 @@ export interface GiftHistoryRow {
   status: string;
   giftType: string | null;
   actingForItemId: string | null;
+  termStart?: string | null;
   archived: boolean;
 }
 

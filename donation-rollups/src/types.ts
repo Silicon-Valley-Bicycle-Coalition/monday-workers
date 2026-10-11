@@ -79,6 +79,8 @@ export interface DonationRollupsConfig {
     ownerColumnsByBoard: Record<string, OwnerColumns>;
     membership: MembershipConfig | null;
     donorLevel: DonorLevelConfig | null;
+    volunteerBoards: VolunteerBoardConfig[];
+    historicalVolunteerBoards: HistoricalVolunteerBoardConfig[];
   };
 }
 
@@ -102,24 +104,45 @@ export interface OwnerColumns {
   donorLevel?: string;             // status column; written only when donationRollups.donorLevel is set.
 }
 
-// The four membership columns on a People-type owner board. Absent on Organizations: an
+// The eight membership columns on a People-type owner board. Absent on Organizations: an
 // owner whose board has no entry never gets a membership write (spec "The rule").
 export interface OwnerMembershipColumns {
   status: string;
   tier: string;
   since: string;
   until: string;
+  currentTermStart: string;
+  memberType: string;
+  lapseCount: string;
+  lastLapsed: string;
 }
 
 // donationRollups.membership — the Create_members rule, in Monday terms. null = feature off.
 export interface MembershipConfig {
   fromISO: string;
   eligibleGiftTypes: string[];
+  minAmountCents: number;
   termMonths: number;
   lifetimeThresholdCents: number;
   statusLabels: { active: string; lapsed: string };
   tierLabels: { member: string; lifetime: string };
-  typeLabels: { new: string; renewal: string; reacquire: string; lifetime: string };
+  typeLabels: { new: string; continuing: string; lapsedRenewal: string; lifetime: string };
+}
+
+// A volunteer-activity source board (attendance rows, each linking an event with a start date).
+export interface VolunteerBoardConfig {
+  boardId: number;
+  columns: { attendee: string; event: string; attendance: string; role: string; hours: string | null };
+  eventBoard: { boardId: number; columns: { start: string } };
+  volunteerRoleLabels: string[];
+  countedAttendanceLabels: string[];
+}
+
+// A historical volunteer-hours board (one row per volunteer shift).
+export interface HistoricalVolunteerBoardConfig {
+  boardId: number;
+  columns: { volunteer: string; date: string; hours: string; status: string };
+  countedStatusLabels: string[];
 }
 
 // donationRollups.donorLevel — the Salesforce "Major (Lifetime >= 500 or Largest > 200)" and
@@ -133,6 +156,8 @@ export interface DonorLevelConfig {
 
 export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
 
+export type RecomputeKind = 'donation' | 'registration';
+
 export interface PendingRow {
   donationItemId: string;
   donationBoardId: string;
@@ -143,6 +168,7 @@ export interface PendingRow {
   error: string | null;
   receivedAt: string;
   writtenAt: string | null;
+  kind: RecomputeKind;
 }
 
 export interface Env {
@@ -157,6 +183,9 @@ export interface Env {
 }
 
 export interface RecomputeQueueMessage {
+  kind?: RecomputeKind;
+  // donationItemId is the triggering item: a Donations item for kind 'donation' (the default), an
+  // Event Registrations item for kind 'registration'. The name predates registrations.
   donationItemId: string;
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).
