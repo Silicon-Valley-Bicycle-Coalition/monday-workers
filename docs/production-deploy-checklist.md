@@ -135,7 +135,7 @@ Worker's first deploy) except `member-portal`, which is
 
 | Worker | Registered in | URL |
 |---|---|---|
-| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). | `<host>/webhooks/monday/donations?secret=<SECRET>` |
+| `donation-rollups` | `scripts/setup-webhooks.mjs` — subscribes `create_item`, `change_column_value`, `item_deleted`, `item_archived`, `item_restored` on every board in `config/svbc.json`, and `create_item`, `change_column_value`, `item_deleted`, `item_restored` on every `volunteerBoards` (Event Registrations) board. Run it before the first custodian sweep; it reads the env var `WEBHOOK_SECRET` (not `MONDAY_WEBHOOK_SECRET`). **Deletions only work on a build at or after `a27a0bc` (2026-10-12, !214):** Monday's `delete_pulse` / `restore_pulse` payloads carry `itemId`, not `pulseId`, and every earlier build rejected them as "no pulseId", so a deleted gift never left its owner's totals and a deleted check-in kept counting. | `<host>/webhooks/monday/donations?secret=<SECRET>` |
 | `funraise-sync` | Funraise dashboard (transactions only; recurring gifts come from the hourly poller). Repointing the existing sandbox registration moves the feed off the sandbox. | `<host>/webhooks/funraise/transaction?secret=<SECRET>` |
 | `mailchimp-sync` | Monday webhook on the Donors board | `<host>/webhooks/monday/donors?secret=<MONDAY_WEBHOOK_SECRET>` |
 | `mailchimp-sync` | Mailchimp audience webhook, **API source unchecked** | `<host>/webhooks/mailchimp/audience?secret=<MAILCHIMP_WEBHOOK_SECRET>` |
@@ -217,6 +217,8 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
         unmeasured at production scale.
   - [ ] Verify: `GET /custodian/status` clean, recompute queue drained with an empty DLQ, a
         spot-checked donor shows Donor Level and Lifetime Giving.
+        Then delete the test gift: its owner's Lifetime Giving and Gift Count must drop within a
+        minute (the `delete_pulse` path, which no build before `a27a0bc` ever handled — !214).
 - [ ] `configure --dry-run`, then `configure` — only after the `donation-rollups` item is
       done; its dashboards chart the columns that item creates and fills. Then the manual
       board configuration (private plan, `docs/22` §5).
