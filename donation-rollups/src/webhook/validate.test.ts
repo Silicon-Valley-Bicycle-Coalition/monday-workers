@@ -18,7 +18,23 @@ describe('validateWebhookBody', () => {
     expect(() => validateWebhookBody({})).toThrow(/no "event" object/);
   });
 
-  it('rejects an event with no pulseId', () => {
+  // Monday's item_deleted payload (type delete_pulse) carries itemId, not pulseId — verified on
+  // the CRM Sandbox 2026-10-12, where every deletion had been rejected as "no pulseId" since
+  // the subscription was created. restore_pulse is shaped the same way.
+  it('accepts itemId in place of pulseId, as delete_pulse and restore_pulse send it', () => {
+    const deleted = validateWebhookBody({ event: { type: 'delete_pulse', itemId: 13269289918, boardId: 18431577302, itemName: 'x' } });
+    expect(deleted.donationItemId).toBe('13269289918');
+    expect(deleted.boardId).toBe('18431577302');
+    expect(deleted.columnId).toBeNull();
+    expect(deleted.eventId).toMatch(/^13269289918:delete_pulse:/);
+    expect(validateWebhookBody({ event: { type: 'restore_pulse', itemId: '7', boardId: 1 } }).donationItemId).toBe('7');
+  });
+
+  it('prefers pulseId when both are present', () => {
+    expect(validateWebhookBody({ event: { type: 'update_column_value', pulseId: 5, itemId: 6, boardId: 1 } }).donationItemId).toBe('5');
+  });
+
+  it('rejects an event with neither pulseId nor itemId', () => {
     expect(() => validateWebhookBody({ event: { type: 'create_pulse', boardId: 1 } })).toThrow(/pulseId/);
   });
 

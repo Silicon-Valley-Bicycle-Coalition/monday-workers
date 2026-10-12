@@ -8,6 +8,11 @@ export interface DonationEvent {
 
 // Monday's webhook payload for a subscribed event looks like:
 //   { event: { type: 'create_pulse' | 'update_column_value' | ..., pulseId, boardId, ... } }
+// except that the item-deletion and restore events (delete_pulse, restore_pulse) name the item
+// `itemId` instead of `pulseId`. Verified on the CRM Sandbox 2026-10-12: every deletion since the
+// item_deleted subscription was created had been rejected here as "no pulseId", so a deleted
+// gift never left its owner's totals and a deleted check-in kept counting. Both spellings are
+// accepted; pulseId wins when both are present.
 // There's no vendor-supplied delivery id, so the event id used for dedup is derived
 // from the payload shape itself (pulseId + type + a coarse timestamp bucket) rather
 // than trusted from the sender — good enough since the real dedup key downstream is
@@ -21,9 +26,9 @@ export function validateWebhookBody(body: unknown): DonationEvent {
     throw new Error('webhook body has no "event" object');
   }
   const e = event as Record<string, unknown>;
-  const pulseId = e.pulseId;
+  const pulseId = typeof e.pulseId === 'number' || typeof e.pulseId === 'string' ? e.pulseId : e.itemId;
   if (typeof pulseId !== 'number' && typeof pulseId !== 'string') {
-    throw new Error('webhook event has no pulseId');
+    throw new Error('webhook event has no pulseId (or itemId)');
   }
   const boardId = e.boardId;
   if (typeof boardId !== 'number' && typeof boardId !== 'string') {
