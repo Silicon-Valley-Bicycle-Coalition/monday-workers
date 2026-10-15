@@ -43,14 +43,14 @@ Read from `monday-workers` main (8913fce) on 2026-10-14.
 | D1 | **An Overview is created whole or not at all.** Every widget resolves first; if any fails (missing column, missing label), nothing is created and the notes say why. | Widgets added after the view has been opened don't render (#51). A half-built Overview can't be finished by a later run. |
 | D2 | **A same-named Overview already on the board is adopted and left alone.** Its id is recorded as `adopted`; no widget is added, changed or deleted. | The hand-built sandbox views carry staff-visible layout and pinning that no API can restore. |
 | D3 | **`--rebuild-overviews <board-keys>` replaces an Overview whole.** Keys are mandatory, never "all"; dry-run lists what would be deleted. **Decided at review: the sandbox People and Organizations Overviews are rebuilt** to carry the extended widget sets. | The step costs the view's pin and sizes, so it must be explicit, and the sandbox owner re-pins and re-sizes afterwards. |
-| D4 | **Overview specs live in a new `overviews.spec.ts`, keyed by board key**, including `annual-giving-summary`. This departs from #51's `BoardSpec.overview` suggestion. | `spec.ts` is already 518 lines and Annual Giving Summary has no `BoardSpec`. One table keeps the 12 specs together. |
+| D4 | **Overview specs live in a new `overviewSpecs.ts`, keyed by board key**, including `annual-giving-summary`. This departs from #51's `BoardSpec.overview` suggestion. | `spec.ts` is already 518 lines and Annual Giving Summary has no `BoardSpec`. One table keeps the 12 specs together. |
 | D5 | **"This FY" is resolved at run time from the clock**: label values `@FY` and `@FY-1`, and a date value `{ fiscalYear: 'current' \| 'previous' }` that becomes a `between` on two ISO dates. | The API has no fiscal operator (`docs/31` §9). Hard-coded `FY2027` would go stale on July 1. |
 | D6 | **The ordinary client and token are used** for the whole step. | Verified 2026-10-14: no dashboard-rights token needed for board-view dashboards. |
 | D7 | **Two merge requests, decided at review**: A is #51 as written (Find views, People and Organizations Overviews at their as-built widget set, count and list widget kinds, array guard, adoption); B is the other ten boards, the extended People and Organizations sets, Calendar, relative and fiscal values, and `--rebuild-overviews`. B is stacked on A's branch. | A is small and unblocks the cutover checklist item; B depends on A's types. |
 | D8 | **The Donations `Received` rule applies to NUMBER, CHART and LISTVIEW widgets on Donations, and a widget opts out with `allStatuses: true`.** | The existing mapper ANDs `Status = Received` onto every Donations widget. The Pending tile and the Needs-a-donor tile deliberately span every Status and would otherwise count nothing. |
 | D9 | **A refused Overview makes `configure` exit non-zero.** The existing workspace-dashboard step only notes a refusal. | A missing Overview at cutover is a missing deliverable. The operator must see it. |
 
-## 4. Spec shape (`spec.ts` and `overviews.spec.ts`)
+## 4. Spec shape (`spec.ts` and `overviewSpecs.ts`)
 
 ```ts
 export type WidgetKind = 'NUMBER' | 'CHART' | 'LISTVIEW' | 'CALENDAR';
@@ -157,10 +157,10 @@ Vitest, in the pattern of `dashboards.test.ts` (a fake client records every `gql
 * **Applying:** one row of §5.2 per test, including the failed-run leftover and the adopted view
   (no `delete_view` and no `create_widget` calls for it); second run makes no calls; rebuild
   deletes first and then creates; keys are mandatory.
-* **Spec consistency** (`overviews.spec.test.ts`): every Overview widget names only its own board;
+* **Spec consistency** (`overviewSpecs.test.ts`): every Overview widget names only its own board;
   widget names are unique per board; every column title a widget uses is known: in `COLUMN_TYPES`,
   `CONNECT_COLUMNS`, that board's `BoardSpec.columns`, or `PROVISIONED_ELSEWHERE`, an explicit list
-  in `overviews.spec.ts` of the rollup columns the `donation-rollups` scripts create (Donor Level,
+  in `overviewSpecs.ts` of the rollup columns the `donation-rollups` scripts create (Donor Level,
   This Year Amount, Funding Stream and the like), which this repo can't see statically; all 12
   boards have an Overview spec.
 

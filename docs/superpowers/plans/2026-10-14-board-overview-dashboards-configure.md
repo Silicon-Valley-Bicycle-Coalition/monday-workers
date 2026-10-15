@@ -4,7 +4,7 @@
 
 **Goal:** `salesforce-import configure` creates an **Overview** dashboard view on each of the 12 CRM boards, so the production cutover reproduces the sandbox dashboards by running a command.
 
-**Architecture:** One `OVERVIEW_SPECS` table (new `overviews.spec.ts`) names the widgets per board key. A pure planner resolves every widget against the board's live columns and refuses the whole Overview if any widget fails; an applier creates the view and its widgets in one pass, remembers them in `data/load/dashboards.json` under `overview:<board>`, adopts a hand-built Overview untouched, and replaces one only when asked. Widget resolution moves out of `dashboards.ts` into a shared `widgets.ts`. Two merge requests, B stacked on A.
+**Architecture:** One `OVERVIEW_SPECS` table (new `overviewSpecs.ts`) names the widgets per board key. A pure planner resolves every widget against the board's live columns and refuses the whole Overview if any widget fails; an applier creates the view and its widgets in one pass, remembers them in `data/load/dashboards.json` under `overview:<board>`, adopts a hand-built Overview untouched, and replaces one only when asked. Widget resolution moves out of `dashboards.ts` into a shared `widgets.ts`. Two merge requests, B stacked on A.
 
 **Tech Stack:** TypeScript (ES modules, strict, imports end in `.js`), Vitest 4, tsx, Node 26 (20+ supported), Monday GraphQL API version `2026-10`.
 
@@ -50,8 +50,8 @@ The inputs and failure modes the spec implies that most need a pinned test, most
 | `src/configure/dashboards.ts` | modify (A3) | Workspace dashboards only; imports the resolvers; exports `STATE_FILE` |
 | `src/configure/overviews.ts` | create (A6, A8), extend (B9) | `planOverview`, `decideOverview`, `configureOverviews`, `overviewScope`, `parseRebuild` |
 | `src/configure/overviews.test.ts` | create (A6, A8), extend | Planner, decision table, applier |
-| `src/configure/overviews.spec.ts` | create (A7), extend (B7, B8) | `OVERVIEW_SPECS`, `PROVISIONED_ELSEWHERE` |
-| `src/configure/overviews.spec.test.ts` | create (A7), extend | Spec consistency |
+| `src/configure/overviewSpecs.ts` | create (A7), extend (B7, B8) | `OVERVIEW_SPECS`, `PROVISIONED_ELSEWHERE` |
+| `src/configure/overviewSpecs.test.ts` | create (A7), extend | Spec consistency |
 | `src/configure/fiscal.ts` | create (B2) | Fiscal label and range from an injected clock |
 | `src/configure/fiscal.test.ts` | create (B2) | Fiscal tests |
 | `src/configure/spec.ts` | modify (A2, B3, B6) | Find views; operator doc; `withReceivedRule` |
@@ -604,17 +604,17 @@ git commit -m "feat(configure): all-or-nothing Overview planner"
 The widget sets are exactly #51 §2, the ones built by hand on the sandbox on 2026-10-09.
 
 **Files:**
-- Create: `src/configure/overviews.spec.ts`, `src/configure/overviews.spec.test.ts`
+- Create: `src/configure/overviewSpecs.ts`, `src/configure/overviewSpecs.test.ts`
 
 **Interfaces:**
 - Consumes: `OverviewSpec` (A6), `WidgetSpec`, `FilterRule` (`spec.ts`).
 - Produces: `OVERVIEW_SPECS: Record<string, OverviewSpec>` with keys `people-live` and `organizations`; `PROVISIONED_ELSEWHERE: Record<string, string[]>`.
 
-- [ ] **Step 1: Write the failing tests.** Create `overviews.spec.test.ts`:
+- [ ] **Step 1: Write the failing tests.** Create `overviewSpecs.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { OVERVIEW_SPECS, PROVISIONED_ELSEWHERE } from './overviews.spec.js';
+import { OVERVIEW_SPECS, PROVISIONED_ELSEWHERE } from './overviewSpecs.js';
 import { BOARD_SPECS } from './spec.js';
 import { COLUMN_TYPES, CONNECT_COLUMNS } from '../load/boards.js';
 import type { WidgetSpec } from './widgets.js';
@@ -673,10 +673,10 @@ describe('OVERVIEW_SPECS', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run src/configure/overviews.spec.test.ts`
-Expected: FAIL, cannot resolve `./overviews.spec.js`.
+Run: `npx vitest run src/configure/overviewSpecs.test.ts`
+Expected: FAIL, cannot resolve `./overviewSpecs.js`.
 
-- [ ] **Step 3: Implement.** Create `overviews.spec.ts`:
+- [ ] **Step 3: Implement.** Create `overviewSpecs.ts`:
 
 ```ts
 import type { OverviewSpec } from './overviews.js';
@@ -740,7 +740,7 @@ Expected: PASS. If the known-columns test names a column, it is missing from `CO
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/configure/overviews.spec.ts src/configure/overviews.spec.test.ts
+git add src/configure/overviewSpecs.ts src/configure/overviewSpecs.test.ts
 git commit -m "feat(configure): Overview specs for People and Organizations at their as-built widget sets"
 ```
 
@@ -941,7 +941,7 @@ import type { MondayClient } from '../load/monday.js';
 import { VIEW_API_VERSION } from './constants.js';
 import { STATE_FILE, type DashboardState } from './dashboards.js';
 import type { ConfigureResult } from './index.js';
-import { OVERVIEW_SPECS } from './overviews.spec.js';
+import { OVERVIEW_SPECS } from './overviewSpecs.js';
 import type { CurrentColumn } from './plan.js';
 import { widgetFilter, widgetSettings, type Columns, type WidgetSpec } from './widgets.js';
 ```
@@ -1147,7 +1147,7 @@ with
 
 ```markdown
 The `overviews` step (`--only overviews`, or a board key such as `--only people-live`) creates an
-**Overview** dashboard view on each board that has an entry in `src/configure/overviews.spec.ts`.
+**Overview** dashboard view on each board that has an entry in `src/configure/overviewSpecs.ts`.
 It uses the ordinary `MONDAY_API_TOKEN`; no dashboard-rights user is needed. An Overview is created
 whole or not at all, because widgets added to a board-view dashboard after it has been opened do not
 render, so a widget that can't resolve (a missing column or label) stops the whole Overview and makes
@@ -1654,7 +1654,7 @@ git commit -m "refactor(configure): one Received-rule mapper for Donations widge
 ### Task B7: Probes, then the five full Overview specs
 
 **Files:**
-- Modify: `src/configure/overviews.spec.ts`, `src/configure/overviews.spec.test.ts`
+- Modify: `src/configure/overviewSpecs.ts`, `src/configure/overviewSpecs.test.ts`
 - Results go to `docs/31` §9 in `monday-migration`
 
 **Interfaces:**
@@ -1669,7 +1669,7 @@ git commit -m "refactor(configure): one Received-rule mapper for Donations widge
 
 Record all three in `docs/31` §9 (a dated bullet each), then delete the probe views and confirm with `boards { views { name } }` that no `zz` view remains. If probe 3 fails, change the Events spec below to omit `colorBy` and note it.
 
-- [ ] **Step 2: Write the failing tests.** In `overviews.spec.test.ts` replace the `boardsOf` and `columnTitlesOf` helpers so they know calendars, and add the new expectations:
+- [ ] **Step 2: Write the failing tests.** In `overviewSpecs.test.ts` replace the `boardsOf` and `columnTitlesOf` helpers so they know calendars, and add the new expectations:
 
 ```ts
 const boardsOf = (w: WidgetSpec): string[] => [
@@ -1716,10 +1716,10 @@ and inside `describe('OVERVIEW_SPECS', …)` add:
 
 - [ ] **Step 3: Run to verify they fail**
 
-Run: `npx vitest run src/configure/overviews.spec.test.ts`
+Run: `npx vitest run src/configure/overviewSpecs.test.ts`
 Expected: FAIL (the new names and boards are missing).
 
-- [ ] **Step 4: Implement.** Replace the whole of `overviews.spec.ts` with:
+- [ ] **Step 4: Implement.** Replace the whole of `overviewSpecs.ts` with:
 
 ```ts
 import type { OverviewSpec } from './overviews.js';
@@ -1872,13 +1872,13 @@ git commit -m "feat(configure): Overview specs for People, Organizations, Donati
 ### Task B8: The seven health strips and full coverage
 
 **Files:**
-- Modify: `src/configure/overviews.spec.ts`
-- Test: `src/configure/overviews.spec.test.ts`
+- Modify: `src/configure/overviewSpecs.ts`
+- Test: `src/configure/overviewSpecs.test.ts`
 
 **Interfaces:**
 - Produces: `OVERVIEW_SPECS` has all 12 board keys. `annual-giving-summary` is keyed by its `extra-boards.json` name.
 
-- [ ] **Step 1: Write the failing tests.** Add to `overviews.spec.test.ts`, inside `describe('OVERVIEW_SPECS', …)`:
+- [ ] **Step 1: Write the failing tests.** Add to `overviewSpecs.test.ts`, inside `describe('OVERVIEW_SPECS', …)`:
 
 ```ts
   it('covers all 12 CRM boards', () => {
@@ -1909,10 +1909,10 @@ git commit -m "feat(configure): Overview specs for People, Organizations, Donati
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `npx vitest run src/configure/overviews.spec.test.ts`
+Run: `npx vitest run src/configure/overviewSpecs.test.ts`
 Expected: FAIL (seven keys missing).
 
-- [ ] **Step 3: Implement.** In `overviews.spec.ts`, extend `PROVISIONED_ELSEWHERE` with
+- [ ] **Step 3: Implement.** In `overviewSpecs.ts`, extend `PROVISIONED_ELSEWHERE` with
 
 ```ts
   'people-historical': ['This Year Amount'],
