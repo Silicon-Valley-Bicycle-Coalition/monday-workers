@@ -4,10 +4,11 @@ import type { FilterRule } from './spec.js';
 
 export interface WidgetSpec {
   name: string;
-  kind: 'CHART' | 'NUMBER';
+  kind: 'CHART' | 'NUMBER' | 'LISTVIEW';
   chart?: { board: string; graphType: string; x: string; xGroupBy: 'color' | 'date' | 'name' | 'group';
     dateGroupBy?: 'month' | 'quarter'; y: string | 'count'; z?: string };
   number?: { boards: string[]; column?: string; count?: true; counter?: 'sum' | 'average'; prefix?: string; format?: 'currency' | 'number' };
+  list?: { board: string; columns: string[] };
   filter?: { board: string; rules: FilterRule[] };
 }
 export type Columns = Map<string, { boardId: number; columns: CurrentColumn[] }>;
@@ -39,6 +40,18 @@ export function widgetSettings(w: WidgetSpec, columns: Columns): unknown | { err
       settings['z_axis_columns'] = { [boardId]: [zId] };
     }
     return settings;
+  }
+  if (w.list) {
+    const b = columns.get(w.list.board);
+    if (!b) return { error: `board "${w.list.board}" has no id` };
+    const shown: string[] = [];
+    for (const title of w.list.columns) {
+      const id = colId(columns, w.list.board, title);
+      if (typeof id !== 'string') return id;
+      if (!shown.includes(id)) shown.push(id);
+    }
+    const hidden = b.columns.map((c) => c.id).filter((id) => id !== 'name' && !shown.includes(id));
+    return { order_columns: ['name', ...shown], show_hide_columns: hidden, item_height: 'single', is_docked: true };
   }
   const n = w.number;
   if (!n) return { error: `widget "${w.name}" needs a chart or number definition` };

@@ -50,3 +50,17 @@ describe('widget filter compare values', () => {
         { column_id: 'ms', operator: 'is_empty', compare_value: [] }] });
   });
 });
+
+describe('LISTVIEW widgets', () => {
+  const list = (columns: string[]): WidgetSpec => ({ name: 'Find', kind: 'LISTVIEW', list: { board: 'people-live', columns } });
+
+  it('orders the named columns after Name and hides every other column', () => {
+    expect(widgetSettings(list(['Membership Status', 'This Year Amount']), COLUMNS)).toEqual({
+      order_columns: ['name', 'ms', 'tya'], show_hide_columns: ['tyc', 'mu'], item_height: 'single', is_docked: true });
+  });
+
+  it('errors on an unknown column or board', () => {
+    expect(widgetSettings(list(['Nope']), COLUMNS)).toEqual({ error: 'board "people-live" has no column "Nope"' });
+    expect(widgetSettings({ name: 'x', kind: 'LISTVIEW', list: { board: 'nope', columns: [] } }, COLUMNS)).toEqual({ error: 'board "nope" has no id' });
+  });
+});
