@@ -5,11 +5,12 @@ import type { FilterRule } from './spec.js';
 
 export interface WidgetSpec {
   name: string;
-  kind: 'CHART' | 'NUMBER' | 'LISTVIEW';
+  kind: 'CHART' | 'NUMBER' | 'LISTVIEW' | 'CALENDAR';
   chart?: { board: string; graphType: string; x: string; xGroupBy: 'color' | 'date' | 'name' | 'group';
     dateGroupBy?: 'month' | 'quarter' | 'year'; y: string | 'count'; z?: string };
   number?: { boards: string[]; column?: string; count?: true; counter?: 'sum' | 'average'; prefix?: string; format?: 'currency' | 'number' };
   list?: { board: string; columns: string[] };
+  calendar?: { board: string; dateColumn: string; colorBy?: string };
   filter?: { board: string; rules: FilterRule[] };
 }
 export type Columns = Map<string, { boardId: number; columns: CurrentColumn[] }>;
@@ -41,6 +42,24 @@ export function widgetSettings(w: WidgetSpec, columns: Columns): unknown | { err
       settings['z_axis_columns'] = { [boardId]: [zId] };
     }
     return settings;
+  }
+  if (w.calendar) {
+    const { board, dateColumn, colorBy } = w.calendar;
+    const b = columns.get(board);
+    if (!b) return { error: `board "${board}" has no id` };
+    const dateId = colId(columns, board, dateColumn);
+    if (typeof dateId !== 'string') return dateId;
+    let colorId = 'board';
+    let colorType = 'board';
+    if (colorBy) {
+      const id = colId(columns, board, colorBy);
+      if (typeof id !== 'string') return id;
+      colorId = id;
+      colorType = 'color';
+    }
+    const boardId = String(b.boardId);
+    return { columns: { [boardId]: [dateId], all: false }, color_by_type: colorType,
+      colorByIdPerBoardId: { [boardId]: [colorId] }, view_mode: 'month', show_time_slots: false };
   }
   if (w.list) {
     const b = columns.get(w.list.board);

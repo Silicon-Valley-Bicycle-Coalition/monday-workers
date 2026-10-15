@@ -116,3 +116,28 @@ describe('chart types', () => {
     expect((widgetSettings(w, cols) as { graph_type: string }).graph_type).toBe('donut');
   });
 });
+
+describe('CALENDAR widgets', () => {
+  const cols: Columns = new Map([['events', { boardId: 30, columns: [
+    col('name', 'Name', 'name'), col('dt', 'Date', 'date'), col('pg', 'Program', 'status', '{"labels":{"0":"Public"}}'),
+  ] }]]);
+
+  it('plots a date column, coloured by board when no colour column is named (the shape verified 2026-10-14)', () => {
+    const w: WidgetSpec = { name: 'Calendar', kind: 'CALENDAR', calendar: { board: 'events', dateColumn: 'Date' } };
+    expect(widgetSettings(w, cols)).toEqual({ columns: { '30': ['dt'], all: false }, color_by_type: 'board',
+      colorByIdPerBoardId: { '30': ['board'] }, view_mode: 'month', show_time_slots: false });
+  });
+
+  it('colours by a status column when one is named', () => {
+    const w: WidgetSpec = { name: 'Calendar', kind: 'CALENDAR', calendar: { board: 'events', dateColumn: 'Date', colorBy: 'Program' } };
+    expect(widgetSettings(w, cols)).toEqual({ columns: { '30': ['dt'], all: false }, color_by_type: 'color',
+      colorByIdPerBoardId: { '30': ['pg'] }, view_mode: 'month', show_time_slots: false });
+  });
+
+  it('errors on an unknown date column or board', () => {
+    expect(widgetSettings({ name: 'c', kind: 'CALENDAR', calendar: { board: 'events', dateColumn: 'Nope' } }, cols))
+      .toEqual({ error: 'board "events" has no column "Nope"' });
+    expect(widgetSettings({ name: 'c', kind: 'CALENDAR', calendar: { board: 'nope', dateColumn: 'Date' } }, cols))
+      .toEqual({ error: 'board "nope" has no id' });
+  });
+});
