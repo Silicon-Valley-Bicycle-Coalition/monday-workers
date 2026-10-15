@@ -492,13 +492,12 @@ const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
       filter: { board: 'people-live', rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] } },
     { name: 'Members by tier', kind: 'CHART', chart: { board: 'people-live', graphType: 'pie', x: 'Membership Tier', xGroupBy: 'color', y: 'count' } },
   ] },
-  { name: 'Board Report — quarterly', boards: ['donations', 'people-live', 'people-historical', 'organizations', 'annual-giving-summary', 'sponsorships'], widgets: [
+  { name: 'Board Report — quarterly', boards: ['donations', 'people-live', 'people-historical', 'organizations', 'annual-giving-summary'], widgets: [
     { name: 'Raised this FY', kind: 'NUMBER', number: { boards: ['people-live', 'people-historical', 'organizations'], column: 'This Year Amount', counter: 'sum', format: 'currency' } },
     { name: 'Raised last FY', kind: 'NUMBER', number: { boards: ['people-live', 'people-historical', 'organizations'], column: 'Last Year Amount', counter: 'sum', format: 'currency' } },
     { name: 'Revenue by funding stream, this FY vs last', kind: 'CHART', chart: { board: 'donations', graphType: 'stacked_column', x: 'Funding Stream', xGroupBy: 'color', y: 'Amount', z: 'Gift Fiscal Year' } },
     { name: 'Revenue by fiscal quarter and stream', kind: 'CHART', chart: { board: 'donations', graphType: 'stacked_column', x: 'Fiscal Quarter', xGroupBy: 'color', y: 'Amount', z: 'Funding Stream' } },
     { name: 'Total received by fiscal year', kind: 'CHART', chart: { board: 'annual-giving-summary', graphType: 'column', x: 'name', xGroupBy: 'name', y: 'Total Received' } },
-    { name: 'Sponsorships by status', kind: 'CHART', chart: { board: 'sponsorships', graphType: 'column', x: 'Status', xGroupBy: 'color', y: 'Sponsorship Amount' } },
   ] },
 ];
 

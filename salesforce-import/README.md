@@ -225,9 +225,8 @@ backfill (a data operation, not board configuration).
 The `dashboards` step (`--only dashboards`) also creates the Development, Membership, and Board
 Report dashboards with their chart/number widgets in `monday.workspaceId`. What it created is
 remembered in gitignored `data/load/dashboards.json`, so reruns skip existing dashboards and
-widgets (delete a widget's entry there to recreate it). Two boards outside the board map are read
-from gitignored `data/load/extra-boards.json`, e.g.
-`{ "annual-giving-summary": 18431966690, "sponsorships": 18432083323 }`.
+widgets (delete a widget's entry there to recreate it). One board outside the board map is read
+from gitignored `data/load/extra-boards.json`, e.g. `{ "annual-giving-summary": 18431966690 }`.
 
 The dashboards step's `create_dashboard` / `create_widget` mutations are refused (403) for the
 integration user, so they use `MONDAY_DASHBOARD_TOKEN` (a token for a user allowed to create
