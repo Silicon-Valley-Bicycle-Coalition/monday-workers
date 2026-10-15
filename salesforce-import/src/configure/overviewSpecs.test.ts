@@ -77,4 +77,29 @@ describe('OVERVIEW_SPECS', () => {
     expect(rules('donations', 'Major gifts to thank (list)')).toEqual(rules('donations', 'Major gifts to thank'));
     expect(rules('people-live', 'Gave last year, not this year (list)')).toEqual(rules('people-live', 'Gave last year, not this year'));
   });
+
+  it('covers all 12 CRM boards', () => {
+    expect(Object.keys(OVERVIEW_SPECS).sort()).toEqual([
+      'activities', 'affiliations', 'annual-giving-summary', 'campaigns', 'donations', 'event-registrations',
+      'events', 'organizations', 'people-historical', 'people-live', 'recurring-gifts', 'volunteers']);
+  });
+
+  it('keeps the seven strips to docs/31 §5: one row of tiles, with a chart only where it earns one', () => {
+    const strips = ['people-historical', 'affiliations', 'campaigns', 'annual-giving-summary', 'event-registrations', 'volunteers', 'activities'];
+    for (const k of strips) {
+      const w = OVERVIEW_SPECS[k]!.widgets;
+      expect(w.filter((x) => x.kind === 'NUMBER').length, k).toBeGreaterThanOrEqual(3);
+      expect(w.filter((x) => x.kind === 'LISTVIEW' || x.kind === 'CALENDAR'), k).toEqual([]);
+      expect(w.filter((x) => x.kind === 'CHART').length, k).toBe(['annual-giving-summary', 'activities'].includes(k) ? 1 : 0);
+    }
+  });
+
+  it('gives each strip one data-quality tile (docs/31 §5)', () => {
+    const tile = (k: string, name: string) => OVERVIEW_SPECS[k]!.widgets.some((w) => w.name === name);
+    expect(tile('people-historical', 'Gave this year')).toBe(true);
+    expect(tile('affiliations', 'Drafts to confirm')).toBe(true);
+    expect(tile('event-registrations', 'Unlinked attendees')).toBe(true);
+    expect(tile('volunteers', 'Unlinked')).toBe(true);
+    expect(tile('activities', 'Unlinked')).toBe(true);
+  });
 });

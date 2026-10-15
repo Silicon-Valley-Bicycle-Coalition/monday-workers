@@ -12,12 +12,16 @@ export const PROVISIONED_ELSEWHERE: Record<string, string[]> = {
   'people-live': ['Donor Level', 'This Year Count', 'This Year Amount', 'Last Year Amount', 'Last Gift Date', 'Last Gift Amount'],
   organizations: ['Donor Level', 'This Year Count', 'This Year Amount', 'Last Year Amount', 'Last Gift Date'],
   donations: ['Gift Fiscal Year', 'Funding Stream', 'Gift Size'],
+  'people-historical': ['This Year Amount'],
+  'annual-giving-summary': ['Total Received'],
 };
 
 // ---- rule shorthand -------------------------------------------------------------------------
 const is = (columnTitle: string, ...labelValues: string[]): FilterRule => ({ columnTitle, operator: 'any_of', labelValues });
 const gt0 = (columnTitle: string): FilterRule => ({ columnTitle, operator: 'greater_than', compareValue: [0] });
 const empty = (columnTitle: string): FilterRule => ({ columnTitle, operator: 'is_empty' });
+const notEmpty = (columnTitle: string): FilterRule => ({ columnTitle, operator: 'is_not_empty' });
+const thisFYDates = (columnTitle: string): FilterRule => ({ columnTitle, operator: 'between', compareValue: { fiscalYear: 'current' } });
 const within = (columnTitle: string, operator: 'within_the_next' | 'within_the_last', unit: 'DAYS' | 'MONTHS', n: number): FilterRule =>
   ({ columnTitle, operator, compareValue: [unit, n] });
 const thisFY = is('Gift Fiscal Year', '@FY');
@@ -127,6 +131,51 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     donut('Events by Program', 'events', 'Program'),
     overTime('Events by year', 'events', 'Date', 'count', 'year'),
     bars('Tickets sold by Program', 'events', 'Program', 'Tickets Sold'),
+  ] },
+
+  // docs/31 §5 — health strips. Filters are the existing worklist views' own (spec.ts).
+  'people-historical': { widgets: [
+    count('People', 'people-historical'),
+    sum('Lifetime giving', 'people-historical', 'Lifetime Giving'),
+    count('Members ever', 'people-historical', [notEmpty('Membership Status')]),
+    count('Gave this year', 'people-historical', [gt0('This Year Amount')]),       // should be 0: a donor here belongs on People
+  ] },
+  affiliations: { widgets: [
+    count('Affiliations', 'affiliations'),
+    count('Current', 'affiliations', [is('Status', 'Current')]),
+    count('Drafts to confirm', 'affiliations', [is('Status', 'Draft')]),
+    sum('Attributed giving', 'affiliations', 'Attributed Giving'),
+  ] },
+  campaigns: { widgets: [
+    count('Campaigns', 'campaigns'),
+    count('Active', 'campaigns', [notEmpty('Active')]),
+    count('Ended this FY', 'campaigns', [thisFYDates('End')]),
+  ] },
+  'annual-giving-summary': { widgets: [
+    count('Fiscal years', 'annual-giving-summary'),
+    sum('Total received, all years', 'annual-giving-summary', 'Total Received'),
+    sum('Gifts, all years', 'annual-giving-summary', 'Gift Count', [], 'number'),
+    { name: 'Total received by fiscal year', kind: 'CHART',
+      chart: { board: 'annual-giving-summary', graphType: 'column', x: 'name', xGroupBy: 'name', y: 'Total Received' } },
+  ] },
+  'event-registrations': { widgets: [
+    count('Registrations', 'event-registrations'),
+    count('Attended', 'event-registrations', [is('Attendance', 'Attended')]),
+    sum('Volunteer hours', 'event-registrations', 'Hours', [], 'number'),
+    count('Unlinked attendees', 'event-registrations', [empty('Attendee'), is('Source', 'Eventbrite')]),
+  ] },
+  volunteers: { widgets: [
+    count('Shifts', 'volunteers'),
+    sum('Hours', 'volunteers', 'Hours', [], 'number'),
+    sum('Hours this FY', 'volunteers', 'Hours', [thisFYDates('Date')], 'number'),
+    count('Unlinked', 'volunteers', [empty('Volunteer')]),
+  ] },
+  activities: { widgets: [
+    count('Activities', 'activities'),
+    count('Open', 'activities', [{ columnTitle: 'Status', operator: 'not_any_of', labelValues: ['Completed'] }]),
+    count('Last 30 days', 'activities', [within('Date', 'within_the_last', 'DAYS', 30)]),
+    count('Unlinked', 'activities', [empty('Person')]),
+    donut('Activities by Activity Type', 'activities', 'Activity Type'),
   ] },
 };
 
