@@ -1,4 +1,5 @@
 import type { DashboardSpec } from './dashboards.js';
+import type { WidgetSpec } from './widgets.js';
 import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 // The board-configuration spec derived from docs/22-board-configuration-plan.md §3 (private
 // planning repo). Keyed by the same board keys as config/svbc.json's monday.boards / the
@@ -516,11 +517,14 @@ const RAW_DASHBOARD_SPECS: DashboardSpec[] = [
 // and so count — transform/donations.ts). AND-ed with any filter the widget already has.
 const RECEIVED_RULE: FilterRule = { columnTitle: 'Status', operator: 'any_of', labelValues: ['Received'] };
 
-export const DASHBOARD_SPECS: DashboardSpec[] = RAW_DASHBOARD_SPECS.map((d) => ({
-  ...d,
-  widgets: d.widgets.map((w) => {
-    const onDonations = w.chart?.board === 'donations' || w.number?.boards.includes('donations');
-    if (!onDonations) return w;
+// ANDs the Received rule onto every NUMBER, CHART and LISTVIEW widget on Donations, except one that
+// sets `allStatuses` because it deliberately spans every Status (a Pending or no-donor tile).
+export function withReceivedRule(widgets: WidgetSpec[]): WidgetSpec[] {
+  return widgets.map((w) => {
+    const onDonations = w.chart?.board === 'donations' || w.number?.boards.includes('donations') || w.list?.board === 'donations';
+    if (!onDonations || w.allStatuses) return w;
     return { ...w, filter: { board: 'donations', rules: [...(w.filter?.rules ?? []), RECEIVED_RULE] } };
-  }),
-}));
+  });
+}
+
+export const DASHBOARD_SPECS: DashboardSpec[] = RAW_DASHBOARD_SPECS.map((d) => ({ ...d, widgets: withReceivedRule(d.widgets) }));

@@ -12,6 +12,7 @@ export interface WidgetSpec {
   list?: { board: string; columns: string[] };
   calendar?: { board: string; dateColumn: string; colorBy?: string };
   filter?: { board: string; rules: FilterRule[] };
+  allStatuses?: true;   // Donations only: skip the Received rule (a tile that spans every Status)
 }
 export type Columns = Map<string, { boardId: number; columns: CurrentColumn[] }>;
 
