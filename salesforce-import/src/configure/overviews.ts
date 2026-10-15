@@ -37,13 +37,14 @@ export function planOverview(spec: OverviewSpec, columns: Columns, now: Date = n
 export type OverviewAction =
   | { kind: 'create' }                                     // no Overview on the board (any state entry is stale)
   | { kind: 'adopt'; viewId: string }                      // an Overview configure did not make: leave it, remember it
-  | { kind: 'replace'; viewId: string; why: 'half-built' } // delete, then create whole
+  | { kind: 'replace'; viewId: string; why: 'half-built' | 'rebuild' } // delete, then create whole
   | { kind: 'leave'; note?: string };
 
-export interface DecideInput { entry?: DashboardState[string]; viewId?: string; specNames: string[] }
+export interface DecideInput { entry?: DashboardState[string]; viewId?: string; specNames: string[]; rebuild?: boolean }
 
 // The Overview on a board is found by name alone: the API reports a null type for dashboard views.
-export function decideOverview({ entry, viewId, specNames }: DecideInput): OverviewAction {
+export function decideOverview({ entry, viewId, specNames, rebuild }: DecideInput): OverviewAction {
+  if (rebuild) return viewId ? { kind: 'replace', viewId, why: 'rebuild' } : { kind: 'create' };
   if (!viewId) return { kind: 'create' };
   if (!entry || entry.id !== viewId) return { kind: 'adopt', viewId };
   if (entry.adopted) return { kind: 'leave' };
@@ -85,7 +86,7 @@ async function buildOverview(client: MondayClient, boardId: number, stateKey: st
   await writeJson(STATE_FILE(), state);
 }
 
-export interface OverviewOptions { only?: string[]; now?: Date }
+export interface OverviewOptions { only?: string[]; now?: Date; rebuild?: string[] }
 
 export async function configureOverviews(
   client: MondayClient, boardIds: Record<string, number>, dryRun: boolean,
@@ -107,7 +108,7 @@ export async function configureOverviews(
     let entry = state[stateKey];
     if (entry && !existing) { delete state[stateKey]; entry = undefined; }
 
-    const action = decideOverview({ entry, viewId: existing?.id, specNames: spec.widgets.map((w) => w.name) });
+    const action = decideOverview({ entry, viewId: existing?.id, specNames: spec.widgets.map((w) => w.name), rebuild: opts.rebuild?.includes(key) });
     if (action.kind === 'leave') { if (action.note) notes.push(`${key}: ${action.note}`); continue; }
     if (action.kind === 'adopt') {
       notes.push(`${key}: existing Overview left as built`);
@@ -129,6 +130,9 @@ export async function configureOverviews(
       delete state[stateKey];
     }
     await buildOverview(client, boardId, stateKey, plan.widgets, state);
+    if (action.kind === 'replace' && action.why === 'rebuild') {
+      notes.push(`${key}: rebuilt — pin the new Overview first and re-size its widgets (UI-only, no API)`);
+    }
     actions.push(`${action.kind === 'replace' ? 'replaced' : 'created'} Overview on ${key} (${plan.widgets.length} widgets)`);
   }
   return { ok, summary: actions.length ? actions.join('; ') : 'overviews up to date', notes };
@@ -139,4 +143,17 @@ export function overviewScope(only: string[] | undefined): { run: boolean; board
   if (!only || only.includes('overviews')) return { run: true };
   const boards = only.filter((k) => k !== 'dashboards');
   return boards.length ? { run: true, boards } : { run: false };
+}
+
+/** `--rebuild-overviews people-live,organizations`: explicit keys only. Undefined when the flag is absent. */
+export function parseRebuild(args: string[], knownKeys: string[] = Object.keys(OVERVIEW_SPECS)): { keys: string[] } | { error: string } | undefined {
+  const i = args.indexOf('--rebuild-overviews');
+  if (i < 0) return undefined;
+  const value = args[i + 1];
+  if (!value || value.startsWith('--')) return { error: '--rebuild-overviews needs board keys, for example --rebuild-overviews people-live,organizations' };
+  const keys = value.split(',').map((k) => k.trim()).filter(Boolean);
+  if (keys.includes('all')) return { error: '--rebuild-overviews takes explicit board keys, never "all"' };
+  const unknown = keys.filter((k) => !knownKeys.includes(k));
+  if (unknown.length) return { error: `--rebuild-overviews: no Overview spec for ${unknown.join(', ')} (known: ${knownKeys.join(', ')})` };
+  return { keys };
 }

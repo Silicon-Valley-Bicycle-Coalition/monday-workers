@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { planOverview, decideOverview, configureOverviews, overviewScope, type OverviewSpec } from './overviews.js';
+import { planOverview, decideOverview, configureOverviews, overviewScope, parseRebuild, type OverviewSpec } from './overviews.js';
 import type { Columns } from './widgets.js';
 import type { DashboardState } from './dashboards.js';
 import type { MondayClient } from '../load/monday.js';
@@ -214,5 +214,69 @@ describe('overviewScope (--only handling)', () => {
   });
   it('does not run for --only dashboards alone', () => {
     expect(overviewScope(['dashboards'])).toEqual({ run: false });
+  });
+});
+
+describe('parseRebuild', () => {
+  const known = ['people-live', 'organizations'];
+  it('is undefined when the flag is absent', () => { expect(parseRebuild(['--only', 'overviews'], known)).toBeUndefined(); });
+  it('returns the board keys', () => { expect(parseRebuild(['--rebuild-overviews', 'people-live,organizations'], known)).toEqual({ keys: ['people-live', 'organizations'] }); });
+  it('rejects a missing value, all, and unknown keys (Review Focus 6)', () => {
+    expect(parseRebuild(['--rebuild-overviews'], known)).toMatchObject({ error: expect.stringMatching(/needs board keys/) });
+    expect(parseRebuild(['--rebuild-overviews', '--dry-run'], known)).toMatchObject({ error: expect.stringMatching(/needs board keys/) });
+    expect(parseRebuild(['--rebuild-overviews', 'all'], known)).toMatchObject({ error: expect.stringMatching(/never "all"/) });
+    expect(parseRebuild(['--rebuild-overviews', 'people-live,nope'], known)).toMatchObject({ error: expect.stringMatching(/no Overview spec for nope/) });
+  });
+});
+
+describe('decideOverview with rebuild', () => {
+  it('replaces whatever Overview is on the board, adopted or complete', () => {
+    expect(decideOverview({ viewId: 'v7', specNames: ['A'], rebuild: true })).toEqual({ kind: 'replace', viewId: 'v7', why: 'rebuild' });
+    expect(decideOverview({ entry: { id: 'v7', widgets: { A: 'w1' }, complete: true }, viewId: 'v7', specNames: ['A'], rebuild: true }))
+      .toEqual({ kind: 'replace', viewId: 'v7', why: 'rebuild' });
+  });
+  it('just creates when there is nothing to replace', () => {
+    expect(decideOverview({ specNames: ['A'], rebuild: true })).toEqual({ kind: 'create' });
+  });
+});
+
+describe('configureOverviews with rebuild', () => {
+  beforeEach(() => { process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-'))); });
+  const kinds = (f: ReturnType<typeof fake>) => f.mutations().map((c) => (/delete_view/.test(c.query) ? 'delete' : /create_view/.test(c.query) ? 'view' : 'widget'));
+
+  it('deletes a hand-built Overview first, then builds the full set, and says what is left to do by hand', async () => {
+    const f = fake({ views: [{ id: 'v7', name: 'Overview' }] });
+    const r = await configureOverviews(f.client, BOARD_IDS, false, SPECS, { rebuild: ['people-live'] });
+    expect(kinds(f)).toEqual(['delete', 'view', 'widget', 'widget', 'widget']);
+    expect(r.summary).toMatch(/replaced Overview on people-live/);
+    expect(r.notes.join()).toMatch(/people-live: rebuilt — pin the new Overview first and re-size its widgets/);
+    expect((await readJson<DashboardState>(STATE()))[KEY]!.complete).toBe(true);
+  });
+
+  it('replaces one that configure itself made and finished', async () => {
+    await configureOverviews(fake().client, BOARD_IDS, false, SPECS);
+    const f = fake({ views: [{ id: '101', name: 'Overview' }] });
+    await configureOverviews(f.client, BOARD_IDS, false, SPECS, { rebuild: ['people-live'] });
+    expect(kinds(f)).toEqual(['delete', 'view', 'widget', 'widget', 'widget']);
+  });
+
+  it('dry-run lists the replacement and makes no calls beyond reads', async () => {
+    const f = fake({ views: [{ id: 'v7', name: 'Overview' }] });
+    const r = await configureOverviews(f.client, BOARD_IDS, true, SPECS, { rebuild: ['people-live'] });
+    expect(r.summary).toMatch(/would replace Overview on people-live \(3 widgets\)/);
+    expect(f.mutations()).toEqual([]);
+  });
+
+  it('a refused plan never deletes the hand-built view it was going to replace', async () => {
+    const f = fake({ views: [{ id: 'v7', name: 'Overview' }], columns: COLS.filter((c) => c.title !== 'This Year Amount') });
+    const r = await configureOverviews(f.client, BOARD_IDS, false, SPECS, { rebuild: ['people-live'] });
+    expect(f.mutations()).toEqual([]);
+    expect(r.ok).toBe(false);
+  });
+
+  it('leaves boards not named in the rebuild list alone', async () => {
+    const f = fake({ views: [{ id: 'v7', name: 'Overview' }] });
+    await configureOverviews(f.client, BOARD_IDS, false, SPECS, { rebuild: ['organizations'] });
+    expect(f.mutations().some((c) => /delete_view/.test(c.query))).toBe(false);
   });
 });
