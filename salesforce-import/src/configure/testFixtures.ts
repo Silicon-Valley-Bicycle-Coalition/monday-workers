@@ -7,3 +7,6 @@ export const COLS: CurrentColumn[] = [
   { id: 'dl', title: 'Donor Level', type: 'status', description: null, settings_str: '{"labels":{"0":"Leadership","1":"Major","2":"Donor"}}' },
   { id: 'dbg', title: 'Salesforce Debug', type: 'long_text', description: null, settings_str: '{}' },
 ];
+
+export const col = (id: string, title: string, type = 'numbers', settings_str = '{}'): CurrentColumn =>
+  ({ id, title, type, description: null, settings_str });

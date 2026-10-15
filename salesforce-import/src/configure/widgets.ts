@@ -7,7 +7,7 @@ export interface WidgetSpec {
   kind: 'CHART' | 'NUMBER';
   chart?: { board: string; graphType: string; x: string; xGroupBy: 'color' | 'date' | 'name' | 'group';
     dateGroupBy?: 'month' | 'quarter'; y: string | 'count'; z?: string };
-  number?: { boards: string[]; column: string; counter: 'sum' | 'average'; prefix?: string; format?: 'currency' | 'number' };
+  number?: { boards: string[]; column?: string; count?: true; counter?: 'sum' | 'average'; prefix?: string; format?: 'currency' | 'number' };
   filter?: { board: string; rules: FilterRule[] };
 }
 export type Columns = Map<string, { boardId: number; columns: CurrentColumn[] }>;
@@ -40,7 +40,18 @@ export function widgetSettings(w: WidgetSpec, columns: Columns): unknown | { err
     }
     return settings;
   }
-  const n = w.number!;
+  const n = w.number;
+  if (!n) return { error: `widget "${w.name}" needs a chart or number definition` };
+  if (n.count) {
+    const countPerBoard: Record<string, string[]> = {};
+    for (const board of n.boards) {
+      const b = columns.get(board);
+      if (!b) return { error: `board "${board}" has no id` };
+      countPerBoard[String(b.boardId)] = [];
+    }
+    return { counter_data: { calculation_type: 'count', counter_type: 'sum', column_ids_per_board: countPerBoard, should_count_items: true } };
+  }
+  if (!n.column) return { error: `number widget "${w.name}" needs a column or count` };
   const perBoard: Record<string, string[]> = {};
   for (const board of n.boards) {
     const id = colId(columns, board, n.column);
@@ -48,7 +59,7 @@ export function widgetSettings(w: WidgetSpec, columns: Columns): unknown | { err
     perBoard[String(columns.get(board)!.boardId)] = [id];
   }
   return {
-    counter_data: { calculation_type: 'columns', counter_type: n.counter, column_ids_per_board: perBoard,
+    counter_data: { calculation_type: 'columns', counter_type: n.counter ?? 'sum', column_ids_per_board: perBoard,
       ...(n.format === 'currency' ? { counter_unit: { symbol: '$', direction: 'left' } } : {}) },
     ...(n.prefix ? { prefix: n.prefix } : {}),
     number_format: n.format ?? 'number',
@@ -67,6 +78,8 @@ export function widgetFilter(w: WidgetSpec, columns: Columns): { operator: 'and'
       if (ids.some((i) => i === undefined)) return { error: `filter on "${r.columnTitle}" has an unknown label` };
       compare_value = ids;
     }
+    // Widgets silently ignore a bare numeric compare value (#51): always send an array.
+    if (typeof compare_value === 'number') compare_value = [compare_value];
     rules.push({ column_id: c.id, operator: r.operator, compare_value });
   }
   return { operator: 'and', rules };
