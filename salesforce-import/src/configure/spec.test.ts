@@ -34,6 +34,20 @@ describe('BOARD_SPECS views', () => {
     }
   });
 
+  it('lookup boards open on a flat Find view, sorted by Name (#51)', () => {
+    const first = (k: string) => BOARD_SPECS[k]!.views![0]!;
+    expect(first('people-live').name).toBe('Find a person');
+    expect(first('people-historical').name).toBe('Find a person');
+    expect(first('organizations').name).toBe('Find an organization');
+    for (const k of ['people-live', 'people-historical', 'organizations']) {
+      const v = first(k);
+      expect(v.tag, k).toBe('Reference');
+      expect(v.filter, k).toBeUndefined();
+      expect(v.groupBy, k).toBeUndefined();
+      expect(v.sort, k).toEqual([{ columnTitle: 'Name' }]);
+    }
+  });
+
   it('has the report replacements from the Salesforce usage survey', () => {
     const names = (k: string) => (BOARD_SPECS[k]!.views ?? []).map((v) => v.name);
     expect(names('people-live')).toEqual(expect.arrayContaining(
