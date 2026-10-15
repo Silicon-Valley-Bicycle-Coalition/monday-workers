@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { planOverview, decideOverview, configureOverviews, type OverviewSpec } from './overviews.js';
+import { planOverview, decideOverview, configureOverviews, overviewScope, type OverviewSpec } from './overviews.js';
 import type { Columns } from './widgets.js';
 import type { DashboardState } from './dashboards.js';
 import type { MondayClient } from '../load/monday.js';
@@ -200,5 +200,19 @@ describe('configureOverviews', () => {
     const f = fake();
     await configureOverviews(f.client, BOARD_IDS, false, SPECS, { only: ['organizations'] });
     expect(f.calls).toEqual([]);
+  });
+});
+
+describe('overviewScope (--only handling)', () => {
+  it('runs every board when --only is absent or names overviews', () => {
+    expect(overviewScope(undefined)).toEqual({ run: true });
+    expect(overviewScope(['overviews'])).toEqual({ run: true });
+    expect(overviewScope(['dashboards', 'overviews'])).toEqual({ run: true });
+  });
+  it('scopes to the named boards, ignoring the dashboards keyword', () => {
+    expect(overviewScope(['people-live', 'dashboards'])).toEqual({ run: true, boards: ['people-live'] });
+  });
+  it('does not run for --only dashboards alone', () => {
+    expect(overviewScope(['dashboards'])).toEqual({ run: false });
   });
 });

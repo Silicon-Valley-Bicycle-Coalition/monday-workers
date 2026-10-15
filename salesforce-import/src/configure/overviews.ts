@@ -133,3 +133,10 @@ export async function configureOverviews(
   }
   return { ok, summary: actions.length ? actions.join('; ') : 'overviews up to date', notes };
 }
+
+/** `--only`: absent runs every board; `overviews` runs them all; board keys scope to those boards; `dashboards` alone skips the step. */
+export function overviewScope(only: string[] | undefined): { run: boolean; boards?: string[] } {
+  if (!only || only.includes('overviews')) return { run: true };
+  const boards = only.filter((k) => k !== 'dashboards');
+  return boards.length ? { run: true, boards } : { run: false };
+}
