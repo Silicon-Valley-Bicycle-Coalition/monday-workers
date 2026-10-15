@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OVERVIEW_SPECS, PROVISIONED_ELSEWHERE } from './overviews.spec.js';
+import { OVERVIEW_SPECS, PROVISIONED_ELSEWHERE } from './overviewSpecs.js';
 import { BOARD_SPECS } from './spec.js';
 import { COLUMN_TYPES, CONNECT_COLUMNS } from '../load/boards.js';
 import type { WidgetSpec } from './widgets.js';
