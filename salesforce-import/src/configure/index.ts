@@ -5,6 +5,7 @@ import { dataPath, readJson } from '../artifacts.js';
 import { MondayClient } from '../load/monday.js';
 import type { BoardMap } from '../load/boards.js';
 import { configureDashboards } from './dashboards.js';
+import { VIEW_API_VERSION } from './constants.js';
 import { BOARD_SPECS, type ColumnSpec } from './spec.js';
 import { planBoardBase, planColumnDescriptions, planViews, type ResolvedView, type CurrentBoard, type CurrentColumn } from './plan.js';
 
@@ -41,7 +42,6 @@ const VIEW_PASS = `board_id: $board, name: $name, filter: $filter, sort: $sort, 
   settings: $settings, conditional_formatting_settings: $conditional_formatting_settings`;
 
 // conditional_formatting_settings on create/update_view_table exists only in API 2026-10.
-const VIEW_API_VERSION = '2026-10';
 
 const viewIds = (board: { views: { id: string; name: string }[] }) => new Map(board.views.map((v) => [v.name, v.id]));
 
