@@ -23,7 +23,8 @@ const within = (columnTitle: string, operator: 'within_the_next' | 'within_the_l
 const thisFY = is('Gift Fiscal Year', '@FY');
 const lastFY = is('Gift Fiscal Year', '@FY-1');
 
-// The existing worklist views' own filters (spec.ts), reused so a tile and its tab agree.
+// The existing worklist views' own filters (spec.ts), so a tile and its tab agree. Exception: on
+// Donations the Received rule is added (spec D8), and the worklist tab also shows Pending and Failed gifts.
 const NOT_DNS: FilterRule = { columnTitle: 'Do Not Solicit', operator: 'is_empty' };
 const LYBUNT: FilterRule[] = [gt0('Last Year Amount'), { columnTitle: 'This Year Count', operator: 'lower_than', compareValue: [1] }, NOT_DNS];
 const MAJOR_TO_THANK: FilterRule[] = [is('Acknowledgment Tier', 'Major'), empty('Thank You Sent')];
@@ -111,7 +112,7 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     count('Failed', 'recurring-gifts', [is('Status', 'Failed')]),
     list('Failed pledges', 'recurring-gifts', ['Donor', 'Installment Amount', 'Next Payment'], [is('Status', 'Failed')]),
     donut('Active pledges by Frequency', 'recurring-gifts', 'Frequency', [is('Status', 'Active')]),
-    overTime('Expected installments by month', 'recurring-gifts', 'Next Payment', 'Installment Amount', 'month', [is('Status', 'Active')]),
+    overTime('Next installment by month', 'recurring-gifts', 'Next Payment', 'Installment Amount', 'month', [is('Status', 'Active')]),
     donut('Pledges by Status', 'recurring-gifts', 'Status'),
   ] },
 
