@@ -18,7 +18,7 @@ const isError = (v: unknown): v is { error: string } => typeof v === 'object' &&
 
 // An Overview is created whole or not at all: widgets added to a board-view dashboard after it has
 // been opened do not render, so a half-resolvable spec must not produce a half-built view.
-export function planOverview(spec: OverviewSpec, columns: Columns): OverviewPlan {
+export function planOverview(spec: OverviewSpec, columns: Columns, now: Date = new Date()): OverviewPlan {
   const widgets: PlannedWidget[] = [];
   const errors: string[] = [];
   const seen = new Set<string>();
@@ -27,7 +27,7 @@ export function planOverview(spec: OverviewSpec, columns: Columns): OverviewPlan
     seen.add(w.name);
     const settings = widgetSettings(w, columns);
     if (isError(settings)) { errors.push(`widget "${w.name}": ${settings.error}`); continue; }
-    const filter = widgetFilter(w, columns);
+    const filter = widgetFilter(w, columns, now);
     if (isError(filter)) { errors.push(`widget "${w.name}": ${filter.error}`); continue; }
     widgets.push({ name: w.name, kind: w.kind, settings, ...(filter ? { filter } : {}) });
   }
@@ -85,7 +85,7 @@ async function buildOverview(client: MondayClient, boardId: number, stateKey: st
   await writeJson(STATE_FILE(), state);
 }
 
-export interface OverviewOptions { only?: string[] }
+export interface OverviewOptions { only?: string[]; now?: Date }
 
 export async function configureOverviews(
   client: MondayClient, boardIds: Record<string, number>, dryRun: boolean,
@@ -120,7 +120,7 @@ export async function configureOverviews(
 
     // create or replace: plan first, so a refusal never deletes anything.
     const columns: Columns = new Map([[key, { boardId, columns: board.columns }]]);
-    const plan = planOverview(spec, columns);
+    const plan = planOverview(spec, columns, opts.now ?? new Date());
     if (!plan.ok) { ok = false; notes.push(`${key}: Overview not created — ${plan.errors.join('; ')}`); continue; }
     if (dryRun) { actions.push(`would ${action.kind === 'replace' ? 'replace' : 'create'} Overview on ${key} (${plan.widgets.length} widgets)`); continue; }
     if (action.kind === 'replace') {

@@ -1,3 +1,4 @@
+import { fiscalYearLabel, fiscalYearRange, isFiscalYearValue } from './fiscal.js';
 import { resolveLabelId } from './labels.js';
 import type { CurrentColumn, ResolvedRule } from './plan.js';
 import type { FilterRule } from './spec.js';
@@ -79,20 +80,27 @@ export function widgetSettings(w: WidgetSpec, columns: Columns): unknown | { err
   };
 }
 
-export function widgetFilter(w: WidgetSpec, columns: Columns): { operator: 'and'; rules: ResolvedRule[] } | undefined | { error: string } {
+// '@FY' and '@FY-1' stand for the current and previous fiscal-year label, resolved from the clock.
+const fiscalLabel = (label: string, now: Date): string =>
+  label === '@FY' ? fiscalYearLabel(now) : label === '@FY-1' ? fiscalYearLabel(now, -1) : label;
+
+export function widgetFilter(w: WidgetSpec, columns: Columns, now: Date = new Date()): { operator: 'and'; rules: ResolvedRule[] } | undefined | { error: string } {
   if (!w.filter) return undefined;
   const rules: ResolvedRule[] = [];
   for (const r of w.filter.rules) {
     const c = columns.get(w.filter.board)?.columns.find((x) => x.title === r.columnTitle);
     if (!c) return { error: `filter column "${r.columnTitle}" missing` };
     let compare_value: unknown = r.compareValue ?? [];
+    if (isFiscalYearValue(compare_value)) compare_value = fiscalYearRange(now, compare_value.fiscalYear === 'previous' ? -1 : 0);
+    // Widgets silently ignore a bare numeric compare value (#51): always send an array.
+    else if (typeof compare_value === 'number') compare_value = [compare_value];
     if (r.labelValues) {
-      const ids = r.labelValues.map((l) => resolveLabelId(c.type, c.settings_str, l));
-      if (ids.some((i) => i === undefined)) return { error: `filter on "${r.columnTitle}" has an unknown label` };
+      const labels = r.labelValues.map((l) => fiscalLabel(l, now));
+      const ids = labels.map((l) => resolveLabelId(c.type, c.settings_str, l));
+      const missing = labels.find((_, i) => ids[i] === undefined);
+      if (missing !== undefined) return { error: `filter on "${r.columnTitle}" has an unknown label "${missing}"` };
       compare_value = ids;
     }
-    // Widgets silently ignore a bare numeric compare value (#51): always send an array.
-    if (typeof compare_value === 'number') compare_value = [compare_value];
     rules.push({ column_id: c.id, operator: r.operator, compare_value });
   }
   return { operator: 'and', rules };

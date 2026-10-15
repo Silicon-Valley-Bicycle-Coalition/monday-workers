@@ -26,8 +26,10 @@ export interface ColumnSpec {
 
 export interface FilterRule {
   columnTitle: string;
-  // any_of | not_any_of | is_empty | is_not_empty | contains_text | greater_than | ... |
-  // within_the_next (relative date; compareValue ['DAYS', 60])
+  // any_of | not_any_of | is_empty | is_not_empty | contains_text | greater_than | between | ... |
+  // within_the_next / within_the_last (relative date; compareValue ['DAYS' | 'MONTHS', n]).
+  // Widgets only: labelValues may hold '@FY' / '@FY-1', and a date rule's compareValue may be
+  // { fiscalYear: 'current' | 'previous' } (resolved at apply time from the clock, fiscal.ts).
   operator: string;
   labelValues?: string[]; // resolved to label ids at apply time (status/dropdown columns)
   compareValue?: unknown; // literal compare value for non-label columns; default [] when omitted
