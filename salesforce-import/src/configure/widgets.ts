@@ -7,7 +7,7 @@ export interface WidgetSpec {
   name: string;
   kind: 'CHART' | 'NUMBER' | 'LISTVIEW';
   chart?: { board: string; graphType: string; x: string; xGroupBy: 'color' | 'date' | 'name' | 'group';
-    dateGroupBy?: 'month' | 'quarter'; y: string | 'count'; z?: string };
+    dateGroupBy?: 'month' | 'quarter' | 'year'; y: string | 'count'; z?: string };
   number?: { boards: string[]; column?: string; count?: true; counter?: 'sum' | 'average'; prefix?: string; format?: 'currency' | 'number' };
   list?: { board: string; columns: string[] };
   filter?: { board: string; rules: FilterRule[] };

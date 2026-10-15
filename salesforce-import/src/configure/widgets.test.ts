@@ -99,3 +99,20 @@ describe('relative dates and fiscal values', () => {
       .toEqual({ error: 'filter on "Gift Fiscal Year" has an unknown label "FY2028"' });
   });
 });
+
+describe('chart types', () => {
+  const cols: Columns = new Map([['events', { boardId: 30, columns: [
+    col('name', 'Name', 'name'), col('dt', 'Date', 'date'), col('pg', 'Program', 'status', '{"labels":{"0":"Public"}}'),
+  ] }]]);
+
+  it('groups a date axis by year', () => {
+    const w: WidgetSpec = { name: 'Events by year', kind: 'CHART', chart: { board: 'events', graphType: 'column', x: 'Date', xGroupBy: 'date', dateGroupBy: 'year', y: 'count' } };
+    expect(widgetSettings(w, cols)).toEqual({ graph_type: 'column', x_axis_columns: { '30': ['dt'] }, y_axis_columns: { '30': ['default-label-count'] },
+      x_axis_group_by: 'date', y_axis_group_by: 'default-label-count', group_by: 'year' });
+  });
+
+  it('passes a donut graph type through', () => {
+    const w: WidgetSpec = { name: 'By program', kind: 'CHART', chart: { board: 'events', graphType: 'donut', x: 'Program', xGroupBy: 'color', y: 'count' } };
+    expect((widgetSettings(w, cols) as { graph_type: string }).graph_type).toBe('donut');
+  });
+});
