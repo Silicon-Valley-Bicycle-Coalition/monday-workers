@@ -247,7 +247,9 @@ board is computed before anything is deleted, so a refused plan never removes a 
 not idempotent: rerun it with only the boards that failed, or finished boards are rebuilt again and
 lose the pin and sizes you gave them. It is also the repair for one edge case: if a `create_view`
 call commits but its response is lost, the next run finds an Overview it has no record of and
-adopts it as hand-built, leaving it empty until it is rebuilt.
+adopts it as hand-built, leaving it empty until it is rebuilt. It is normally paired with
+`--only <the same board keys>`, since without `--only` it also re-applies every board's views and the
+workspace dashboards (idempotent, but slow and noisy).
 
 Fiscal-year widgets (`@FY` and `@FY-1` labels, `{ fiscalYear: 'current' }` date ranges) are resolved
 from the clock on every run, in Pacific time, so a July run needs the `Gift Fiscal Year` column to

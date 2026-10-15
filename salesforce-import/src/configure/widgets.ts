@@ -76,6 +76,7 @@ export function widgetSettings(w: WidgetSpec, columns: Columns): unknown | { err
   }
   const n = w.number;
   if (!n) return { error: `widget "${w.name}" needs a chart or number definition` };
+  if (n.count && n.column) return { error: `number widget "${w.name}" has both count and column` };
   if (n.count) {
     const countPerBoard: Record<string, string[]> = {};
     for (const board of n.boards) {

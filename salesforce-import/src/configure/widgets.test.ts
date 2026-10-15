@@ -22,6 +22,11 @@ describe('NUMBER count widgets', () => {
     expect(widgetSettings(w, COLUMNS)).toEqual({ error: 'board "nope" has no id' });
   });
 
+  it('errors when a number widget has both count and a column', () => {
+    const w: WidgetSpec = { name: 'Both', kind: 'NUMBER', number: { boards: ['people-live'], count: true, column: 'This Year Amount' } };
+    expect(widgetSettings(w, COLUMNS)).toEqual({ error: 'number widget "Both" has both count and column' });
+  });
+
   it('errors when a number widget has neither a column nor count', () => {
     const w: WidgetSpec = { name: 'Broken', kind: 'NUMBER', number: { boards: ['people-live'] } };
     expect(widgetSettings(w, COLUMNS)).toEqual({ error: 'number widget "Broken" needs a column or count' });

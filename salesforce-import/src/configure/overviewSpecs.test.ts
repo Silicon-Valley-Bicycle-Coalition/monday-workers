@@ -17,6 +17,9 @@ const columnTitlesOf = (w: WidgetSpec): string[] => {
   for (const r of w.filter?.rules ?? []) t.push(r.columnTitle);
   return t.filter((x) => x !== 'name');
 };
+// Checks titles against a flat map across all boards (COLUMN_TYPES), so it catches typos but not a
+// title that exists only on a different board; the sandbox rehearsal is what proves each spec
+// resolves on its own board.
 const known = (board: string) => new Set<string>([
   ...Object.keys(COLUMN_TYPES), ...CONNECT_COLUMNS,
   ...(BOARD_SPECS[board]?.columns ?? []).map((c) => c.title), ...(PROVISIONED_ELSEWHERE[board] ?? []),
@@ -76,6 +79,19 @@ describe('OVERVIEW_SPECS', () => {
     const rules = (k: string, n: string) => OVERVIEW_SPECS[k]!.widgets.find((w) => w.name === n)!.filter!.rules;
     expect(rules('donations', 'Major gifts to thank (list)')).toEqual(rules('donations', 'Major gifts to thank'));
     expect(rules('people-live', 'Gave last year, not this year (list)')).toEqual(rules('people-live', 'Gave last year, not this year'));
+  });
+
+  it('writes fiscal years as @FY / @FY-1 and { fiscalYear } ranges, never literal years, dates or bare numbers', () => {
+    for (const [board, s] of entries) for (const w of s.widgets) for (const r of w.filter?.rules ?? []) {
+      const where = `${board} / ${w.name} / ${r.columnTitle}`;
+      for (const l of r.labelValues ?? []) expect(l, where).not.toMatch(/^FY\d{4}$/);
+      if (r.columnTitle === 'Gift Fiscal Year') for (const l of r.labelValues ?? []) expect(['@FY', '@FY-1'], where).toContain(l);
+      expect(typeof r.compareValue, where).not.toBe('number');
+      if (r.operator === 'between') {
+        expect(r.compareValue, where).toEqual(expect.objectContaining({ fiscalYear: expect.any(String) }));
+        expect(Array.isArray(r.compareValue), where).toBe(false);
+      }
+    }
   });
 
   it('covers all 12 CRM boards', () => {
