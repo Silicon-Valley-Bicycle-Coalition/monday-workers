@@ -13,6 +13,14 @@ export interface WorklistItemInput {
   date: string;
 }
 
+// Monday's email column takes {email, text}, not a bare string, and rejects anything that isn't
+// an address — including Benevity's literal "Not shared by donor" for a withheld email. Leave the
+// column empty in that case rather than failing the whole worklist write.
+function emailColumnValue(columnId: string, email: string): Record<string, { email: string; text: string }> {
+  const trimmed = email.trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? { [columnId]: { email: trimmed, text: trimmed } } : {};
+}
+
 /**
  * Returns the id of the one worklist item for `input.key`, creating it only if none exists
  * (#34). Monday's createItem has no dedup of its own, so a retry that re-ran it after the
@@ -57,7 +65,7 @@ export async function ensureWorklistItem(
     input.name || input.company || 'Benevity row needs review',
     {
       [worklistColumns.reason]: input.reason,
-      [worklistColumns.email]: input.email,
+      ...emailColumnValue(worklistColumns.email, input.email),
       [worklistColumns.company]: input.company,
       [worklistColumns.amount]: input.amount,
       [worklistColumns.date]: { date: input.date },

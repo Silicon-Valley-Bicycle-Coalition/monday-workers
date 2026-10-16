@@ -59,7 +59,7 @@ describe('ensureWorklistItem', () => {
       'Jordan Rivera',
       {
         reason_c: 'no Organization matches "Acme Co"',
-        email_c: 'jordan@acme.example',
+        email_c: { email: 'jordan@acme.example', text: 'jordan@acme.example' },
         company_c: 'Acme Co',
         amount_c: 50,
         date_c: { date: '2025-12-06' },
@@ -114,6 +114,14 @@ describe('ensureWorklistItem', () => {
 
     await ensureWorklistItem(monday as unknown as MondayClient, fakeConfig('key_c', RETRY), input, '77');
     expect(monday.changeColumnValues).toHaveBeenCalledWith(777, '77', { reason_c: input.reason, retry_c: { label: 'Needs review' } });
+  });
+});
+
+describe('ensureWorklistItem email column', () => {
+  it.each(['Not shared by donor', '', '  '])('leaves the email column out for %j', async (email) => {
+    const monday = fakeMonday();
+    await ensureWorklistItem(monday as unknown as MondayClient, fakeConfig('key_c'), { ...input, email }, null);
+    expect(monday.createItem.mock.calls[0]![2]).not.toHaveProperty('email_c');
   });
 });
 
