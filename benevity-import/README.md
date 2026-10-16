@@ -399,8 +399,11 @@ and needed nothing. **Rebuilt 2026-10-09:** that v2 Uploads board was later dele
 `config/sandbox.json` now targets `Benevity Uploads (sandbox v3)` (`18434850887`; file column
 `Report`, `Review` group, worklist columns Reason / Email / Company / Amount / Date).
 `uploadsBoard.retry` and `worklistKeyColumn` are still `null`. **Webhook `639785248` went with the
-old board**: register a new `change_specific_column_value` webhook on the new file column before
-the next upload, and clear the D1 `uploads` and `rows` worklist ids (see the reset table above).
+old board**. **Re-registered 2026-10-15:** webhook `654180110` (`change_specific_column_value` on
+file column `file_mm7z4ax3`) on the new board, with a freshly generated sandbox
+`BENEVITY_WEBHOOK_SECRET` (Cloudflare secrets can't be read back, so the old one was replaced); no
+test file has been sent through it yet. Still to do before the next upload: clear the D1 `uploads`
+and `rows` worklist ids (see the reset table above).
 Two things the 2026-09-30 rebuild did not carry over:
 
 * **Donations (sandbox v3) had no `Benevity Disbursement Date` column.** Nothing in
