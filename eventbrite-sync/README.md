@@ -5,12 +5,13 @@
 **Status:** Built (`feat/eventbrite-orders`, 2026-10-06; design:
 [`docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md`](../docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md))
 — **not deployed anywhere yet.** Blocked on prerequisites nobody has done: the `Eventbrite Order
-ID` column on Donations (see "Prerequisite column"), an Eventbrite private token, D1 and queue
+ID` column's id in config (see "Prerequisite column"), an Eventbrite private token, D1 and queue
 provisioning, the three secrets, and the webhook registration. The `Refunded` Status label it
 shares with `funraise-sync` is also still missing from the board.
-**Priority:** Post-cutover, **time-boxed by Bike Summit 2026 (Oct 22)** — ticket sales run
-through the Oct 9–11 cutover, and the one-off backfill (below) is what puts that revenue on the
-Donations board. Decision that it counts as giving: migration repo issue #56 (2026-09-30).
+**Priority:** Post-cutover (2026-10-23). Bike Summit 2026 (Oct 22) now sells out *before*
+cutover, so `eb4sf` puts its orders in Salesforce and `salesforce-import` carries them over as
+Event Ticket gifts with their order ids; this Worker takes every order after that, and the
+backfill (below) covers the gap between the final extract and the webhook registration. Decision that it counts as giving: migration repo issue #56 (2026-09-30).
 **Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 + Cloudflare Queues (the shared stack, see `../README.md`).
 
@@ -119,13 +120,11 @@ standard across every webhook-driven Worker here.
 ## Prerequisite column: `Eventbrite Order ID`
 
 The idempotency key is the Eventbrite order id, stored in a **text** column titled
-**`Eventbrite Order ID`** on the Donations board, config `eventbriteSync.orderIdColumn`. **It does
-not exist yet** on Donations (sandbox v3) or on the production board (2026-10-06). Someone with
-write access adds it, either in the UI (board → `+` → Text → title exactly `Eventbrite Order ID`)
-or by adding `{ title: 'Eventbrite Order ID', type: 'text' }` to the `donations` entry's
-`columns` in `salesforce-import/src/configure/spec.ts` and running
-`npm run cli -- configure --only donations` there (idempotent), then puts the new column's id in
-`config/sandbox.json` (and `config/svbc.json` at cutover) and tightens `config/split.test.ts`
+**`Eventbrite Order ID`** on the Donations board, config `eventbriteSync.orderIdColumn`.
+`salesforce-import` declares it on every migrated gift (2026-10-19), so its `load` creates the
+column on the next sandbox load and on the production cutover load — no hand-made column. After
+each load, read the column id from `salesforce-import/data/load/boards.json` (or the board), put it in
+`config/sandbox.json` (and `config/svbc.json` at cutover) and tighten `config/split.test.ts`
 (move `orderIdColumn` into its `COLUMN_KEYS`). Text, not link: nothing in Eventbrite's organizer
 UI deep-links an order by id, and a bare-text exact match is the simplest lookup.
 
@@ -145,9 +144,16 @@ entered by hand with the id filled in. An adopted item gets only the order-owned
 as funraise-sync treats migrated gifts. Same known gap: archived items aren't visible to the
 lookup.
 
-`salesforce-import` migrates **no Eventbrite order as a Donations item** (the decision postdates
-its transform; it carries Eventbrite attendees onto Event Registrations only), so there is
-nothing on the board for this Worker to collide with at cutover.
+`salesforce-import` **does** migrate Eventbrite orders as Donations items: `eb4sf` files each paid
+order as a Closed Won Opportunity, which the importer maps to Received / Event Ticket (#43), and
+it stamps `Eventbrite Order ID` from the `eb4sf__Eventbrite_Order__c` record linked to that
+Opportunity (the order record's `Name` is Eventbrite's order id). So a webhook or backfill for an
+order placed before the final extract adopts the migrated item instead of creating a second one.
+Adopting overwrites Amount, Status and Date with what Eventbrite reports now (a refund since the
+extract shows as `Refunded`) and leaves the importer's Donor link alone. Coverage, checked live on
+2026-10-19: every 2026 Eventbrite-created Closed Won has a linked order; 206 from 2024–2025 have
+none and migrate with a blank id, so **never backfill an event that sold tickets before 2026** —
+those orders would be created a second time.
 
 ## Monday targets (sandbox v3 ids, from funraise-sync's config, read live 2026-09-30)
 
@@ -222,7 +228,7 @@ fixed; adopt-before-create makes it safe for the orders that did land.
 cd eventbrite-sync
 EVENTBRITE_PRIVATE_TOKEN=… node scripts/backfill-orders.mjs --event-id <id> --dry-run
 EVENTBRITE_PRIVATE_TOKEN=… EVENTBRITE_WEBHOOK_SECRET=… node scripts/backfill-orders.mjs \
-  --event-id <id> --worker-url https://svbc-eventbrite-sync.<subdomain>.workers.dev [--changed-since 2026-10-09T00:00:00Z]
+  --event-id <id> --worker-url https://svbc-eventbrite-sync.<subdomain>.workers.dev [--changed-since 2026-10-23T00:00:00Z]
 # sandbox: --env sandbox --worker-url https://svbc-eventbrite-sync-sandbox.<subdomain>.workers.dev
 # (the script refuses an --env that doesn't match the Worker URL)
 ```
@@ -237,9 +243,12 @@ the code the live webhook will, and a re-run is a no-op. It never touches D1 or 
 Nothing personal is printed: ids and statuses only.
 
 **Procedure for Bike Summit 2026:** after cutover and once this Worker is in production with
-the column in place (Sequencing, below), run it once with the Summit's event id — the event id is
+the column id in config (see "Deploy"), run it once with the Summit's event id — the event id is
 in the manage-page URL (`…/myevent?eid=<id>`) or from `GET /v3/organizations/{org}/events/`. Do
-the same for any other event that sold tickets between cutover and the webhook registration.
+the same for any other event that sold tickets between the final Salesforce extract and the
+webhook registration. Orders the cutover load already carried over are adopted, not duplicated
+(see "Adopt before create"), so the dry-run's order count includes them; the real run only
+creates what landed after the extract.
 **Owner and deadline (issue #44).** Run it on or after **2026-10-23**, once Summit sales have
 closed, by David (the Worker's owner, decided 2026-10-09). Pre-flight, in order: the
 `Eventbrite Order ID` column and `Refunded` label exist on production Donations; `config/svbc.json`
@@ -265,8 +274,9 @@ message at a time, so a few hundred orders take a few minutes; then check the bo
   `Received` with whatever `gross` Eventbrite now reports. Whether that `gross` reflects the
   refund is not stated in the blueprint — verify on the first real one, then decide whether to
   compute from `attendees[].costs`.
-* **Historical orders** (before cutover) are not migrated as Donations. The backfill script can
-  walk older events one id at a time if staff want them.
+* **Historical orders** come over from Salesforce, not from here: `salesforce-import` migrates
+  every eb4sf ticket gift (with its order id where Salesforce linked one, i.e. all of 2026). Don't
+  point the backfill at older events — see "Adopt before create".
 * **Multi-currency.** `currency` is stored, not converted; SVBC's events are USD.
 
 ## Sandbox environment — inbound only, no outbound data
@@ -303,7 +313,7 @@ npx wrangler secret put EVENTBRITE_WEBHOOK_SECRET --env sandbox
 npm run deploy:sandbox
 ```
 
-Then the prerequisite column and its id in `config/sandbox.json`, redeploy, and register a
+Then the prerequisite column's id (created by the sandbox load) in `config/sandbox.json`, redeploy, and register a
 webhook on a sandbox-safe test event (Eventbrite allows several webhooks per organization).
 **Verify** with a free order on that event (expect a `skipped` row, nothing on the board), a paid
 order (expect the Donations item with every column in the table above and a Donor link),
@@ -313,14 +323,13 @@ no second item). Production repeats the list under the production names at cutov
 
 ## Open
 
-1. **The `Eventbrite Order ID` column** on Donations (sandbox v3 and production) — see
-   "Prerequisite column". Nothing can be written until it exists.
+1. **The `Eventbrite Order ID` column id** in config — the column arrives with the next sandbox
+   load and the production cutover load; see "Prerequisite column". Nothing can be written until
+   the id is set.
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.
 3. **Eventbrite private token and organization id** — which staff account mints the token, and
    `eventbrite.organizationId` in config (optional but recommended).
 4. **Partial-refund behaviour** — verify `costs.gross` on the first real one (Out of scope).
-5. **Pre-cutover ticket revenue** — do staff want historical Eventbrite orders on the board?
-   The backfill script can walk old events; not scheduled.
 
 ## Development
 
