@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { BOARD_SPECS, PLUMBING, DASHBOARD_SPECS } from './spec.js';
+import { BOARD_SPECS, PLUMBING, DASHBOARD_SPECS, withReceivedRule } from './spec.js';
+import type { WidgetSpec } from './widgets.js';
 import { STATUS_LABELS } from '../load/boards.js';
 
 describe('BOARD_SPECS columns', () => {
@@ -94,5 +95,35 @@ describe('final-review spec rulings', () => {
     for (const b of ['people-live', 'organizations']) expect(BOARD_SPECS[b]!.columnDescriptions!['Donor Level']).toMatch(/Leadership.*Overwritten|Edits are overwritten/s);
     for (const c of ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year'])
       expect(BOARD_SPECS['donations']!.columnDescriptions![c]).toMatch(/donation-rollups integration from Gift Type, Amount, and Date\. Edits are overwritten\.$/);
+  });
+});
+
+describe('withReceivedRule', () => {
+  const received = (w: WidgetSpec) => (w.filter?.rules ?? []).filter((r) => r.columnTitle === 'Status' && r.labelValues?.includes('Received')).length;
+  const num = (over: Partial<WidgetSpec> = {}): WidgetSpec => ({ name: 'w', kind: 'NUMBER', number: { boards: ['donations'], count: true }, ...over });
+
+  it('adds Received to NUMBER, CHART and LISTVIEW widgets on Donations', () => {
+    const out = withReceivedRule([
+      num(),
+      { name: 'c', kind: 'CHART', chart: { board: 'donations', graphType: 'donut', x: 'Gift Size', xGroupBy: 'color', y: 'count' } },
+      { name: 'l', kind: 'LISTVIEW', list: { board: 'donations', columns: ['Donor'] } },
+    ]);
+    for (const w of out) expect(received(w), w.name).toBe(1);
+  });
+
+  it('keeps a widget’s own rules and appends Received', () => {
+    const own = { columnTitle: 'Thank You Sent', operator: 'is_empty' };
+    const [w] = withReceivedRule([num({ filter: { board: 'donations', rules: [own] } })]);
+    expect(w!.filter!.rules[0]).toEqual(own);
+    expect(received(w!)).toBe(1);
+  });
+
+  it('skips a widget marked allStatuses, and widgets on other boards (Review Focus 7)', () => {
+    const [spans, elsewhere] = withReceivedRule([
+      num({ allStatuses: true }),
+      { name: 'e', kind: 'NUMBER', number: { boards: ['events'], count: true } },
+    ]);
+    expect(received(spans!)).toBe(0);
+    expect(received(elsewhere!)).toBe(0);
   });
 });

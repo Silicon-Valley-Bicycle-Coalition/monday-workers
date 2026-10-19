@@ -5,7 +5,7 @@ import { dataPath, readJson } from '../artifacts.js';
 import { MondayClient } from '../load/monday.js';
 import type { BoardMap } from '../load/boards.js';
 import { configureDashboards } from './dashboards.js';
-import { configureOverviews, overviewScope } from './overviews.js';
+import { configureOverviews, overviewScope, parseRebuild, checkRebuildScope } from './overviews.js';
 import { VIEW_API_VERSION } from './constants.js';
 import { BOARD_SPECS, type ColumnSpec } from './spec.js';
 import { planBoardBase, planColumnDescriptions, planViews, type ResolvedView, type CurrentBoard, type CurrentColumn } from './plan.js';
@@ -146,6 +146,11 @@ export async function runConfigure(args: string[], deps: { client?: MondayClient
   const dryRun = args.includes('--dry-run');
   const onlyIdx = args.indexOf('--only');
   const only = onlyIdx >= 0 ? args[onlyIdx + 1]?.split(',') : undefined;
+  const rebuild = parseRebuild(args);
+  if (rebuild && 'error' in rebuild) { console.error(`configure: ${rebuild.error}`); return 1; }
+  const overviews = overviewScope(only);
+  const scopeError = checkRebuildScope(rebuild?.keys, overviews);
+  if (scopeError) { console.error(`configure: ${scopeError}`); return 1; }
 
   const boardsPath = dataPath('load', 'boards.json');
   if (!existsSync(boardsPath)) {
@@ -178,10 +183,9 @@ export async function runConfigure(args: string[], deps: { client?: MondayClient
   const boardIds: Record<string, number> = { ...Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.boardId])), ...extra };
 
   // Overview dashboard views: ordinary token, no dashboard-rights user needed (verified 2026-10-14).
-  const overviews = overviewScope(only);
   if (overviews.run) {
     try {
-      const result = await configureOverviews(client, boardIds, dryRun, undefined, { only: overviews.boards });
+      const result = await configureOverviews(client, boardIds, dryRun, undefined, { only: overviews.boards, rebuild: rebuild?.keys });
       console.log(`configure: overviews — ${result.summary}`);
       for (const note of result.notes) console.log(`  note: ${note}`);
       if (!result.ok) ok = false;

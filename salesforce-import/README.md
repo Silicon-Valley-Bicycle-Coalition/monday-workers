@@ -239,6 +239,22 @@ under `overview:<board key>`; a run that dies midway is repaired on the next run
 half-built view. Pinning the Overview as a tab, and widget size and position, have no API and stay
 manual (private repo: `docs/22` §5).
 
+`--rebuild-overviews people-live,organizations` deletes and recreates the named boards' Overviews
+whole (explicit board keys only, never `all`), which also replaces a hand-built one. A new view has
+no pin and default widget sizes, so the output lists what is left to do by hand. The plan for a
+board is computed before anything is deleted, so a refused plan never removes a view. The flag is
+not idempotent: rerun it with only the boards that failed, or finished boards are rebuilt again and
+lose the pin and sizes you gave them. It is also the repair for one edge case: if a `create_view`
+call commits but its response is lost, the next run finds an Overview it has no record of and
+adopts it as hand-built, leaving it empty until it is rebuilt. It is normally paired with
+`--only <the same board keys>`, since without `--only` it also re-applies every board's views and the
+workspace dashboards (idempotent, but slow and noisy).
+
+Fiscal-year widgets (`@FY` and `@FY-1` labels, `{ fiscalYear: 'current' }` date ranges) are resolved
+from the clock on every run, in Pacific time, so a July run needs the `Gift Fiscal Year` column to
+already hold the new year's label (`classify` creates it); otherwise the Donations Overview is
+refused and `configure` exits non-zero.
+
 The dashboards step's `create_dashboard` / `create_widget` mutations are refused (403) for the
 integration user, so they use `MONDAY_DASHBOARD_TOKEN` (a token for a user allowed to create
 dashboards) when set, else `MONDAY_API_TOKEN`. Saved-view create/update calls use API-Version

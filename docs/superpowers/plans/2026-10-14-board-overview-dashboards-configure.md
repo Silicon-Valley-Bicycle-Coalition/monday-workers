@@ -1835,7 +1835,7 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     count('Failed', 'recurring-gifts', [is('Status', 'Failed')]),
     list('Failed pledges', 'recurring-gifts', ['Donor', 'Installment Amount', 'Next Payment'], [is('Status', 'Failed')]),
     donut('Active pledges by Frequency', 'recurring-gifts', 'Frequency', [is('Status', 'Active')]),
-    overTime('Expected installments by month', 'recurring-gifts', 'Next Payment', 'Installment Amount', 'month', [is('Status', 'Active')]),
+    overTime('Next installment by month', 'recurring-gifts', 'Next Payment', 'Installment Amount', 'month', [is('Status', 'Active')]),
     donut('Pledges by Status', 'recurring-gifts', 'Status'),
   ] },
 
@@ -1845,7 +1845,8 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
     count('Upcoming', 'events', [is('Event Status', 'Upcoming')]),
     sum('Tickets sold', 'events', 'Tickets Sold', [], 'number'),
     count('Drafts', 'events', [is('Event Status', 'Draft')]),
-    calendar('Calendar', 'events', 'Date', 'Program'),
+    // coloured by board (verified); colorBy 'Program' is unverified, see docs/31 §9
+    calendar('Calendar', 'events', 'Date'),
     donut('Events by Program', 'events', 'Program'),
     overTime('Events by year', 'events', 'Date', 'count', 'year'),
     bars('Tickets sold by Program', 'events', 'Program', 'Tickets Sold'),
