@@ -149,6 +149,9 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Donor Level': DONOR_LEVEL_DESCRIPTION,
     },
     views: [
+      { name: 'Find a person', tag: 'Reference',
+        columns: ['Personal Email', 'Phone', 'City', 'Organization', 'Membership Status', 'Donor Level'],
+        sort: [{ columnTitle: 'Name' }] },
       { name: 'Donors', tag: 'Report',
         columns: ['Personal Email', 'City', 'Lifetime Giving', 'Last Gift Date', 'Last Gift Amount', 'This Year Amount', 'Membership Status'],
         groupBy: { columnTitle: 'Donor Level' }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }],
@@ -208,7 +211,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'DNS Reason Status': DNS_REASON_STATUS_DESC,
     },
     views: [
-      { name: 'People', tag: 'Reference', columns: ['Personal Email', 'City', 'Lifetime Giving', 'Last Gift Date'], sort: [{ columnTitle: 'Name' }] },
+      { name: 'Find a person', tag: 'Reference', columns: ['Personal Email', 'Phone', 'City', 'Lifetime Giving', 'Last Gift Date'],
+        sort: [{ columnTitle: 'Name' }] },
       { name: 'Active again', tag: 'Worklist', columns: ['Personal Email', 'Last Gift Date', 'Membership Status', 'Lifetime Giving'],
         filter: { operator: 'or', rules: [
           { columnTitle: 'Last Gift Date', operator: 'greater_than', compareValue: ['EXACT', '2019-01-01'] },
@@ -234,6 +238,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'matches only; near-matches await human review).',
     },
     views: [
+      { name: 'Find an organization', tag: 'Reference', columns: ['Partner Type', 'City', 'Website', 'Phone', 'Donor Level'],
+        sort: [{ columnTitle: 'Name' }] },
       { name: 'Organizations', tag: 'Report', columns: ['Partner Type', 'City', 'Website', 'Lifetime Giving', 'Last Gift Date'],
         groupBy: { columnTitle: 'Donor Level' }, sort: [{ columnTitle: 'Name' }] },
       { name: 'Untyped', tag: 'Worklist', columns: ['Website', 'City', 'Lifetime Giving'],

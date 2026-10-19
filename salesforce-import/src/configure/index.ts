@@ -5,6 +5,8 @@ import { dataPath, readJson } from '../artifacts.js';
 import { MondayClient } from '../load/monday.js';
 import type { BoardMap } from '../load/boards.js';
 import { configureDashboards } from './dashboards.js';
+import { configureOverviews, overviewScope } from './overviews.js';
+import { VIEW_API_VERSION } from './constants.js';
 import { BOARD_SPECS, type ColumnSpec } from './spec.js';
 import { planBoardBase, planColumnDescriptions, planViews, type ResolvedView, type CurrentBoard, type CurrentColumn } from './plan.js';
 
@@ -41,7 +43,6 @@ const VIEW_PASS = `board_id: $board, name: $name, filter: $filter, sort: $sort, 
   settings: $settings, conditional_formatting_settings: $conditional_formatting_settings`;
 
 // conditional_formatting_settings on create/update_view_table exists only in API 2026-10.
-const VIEW_API_VERSION = '2026-10';
 
 const viewIds = (board: { views: { id: string; name: string }[] }) => new Map(board.views.map((v) => [v.name, v.id]));
 
@@ -172,10 +173,25 @@ export async function runConfigure(args: string[], deps: { client?: MondayClient
       ok = false;
     }
   }
+  const extraPath = dataPath('load', 'extra-boards.json');
+  const extra = existsSync(extraPath) ? await readJson<Record<string, number>>(extraPath) : {};
+  const boardIds: Record<string, number> = { ...Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.boardId])), ...extra };
+
+  // Overview dashboard views: ordinary token, no dashboard-rights user needed (verified 2026-10-14).
+  const overviews = overviewScope(only);
+  if (overviews.run) {
+    try {
+      const result = await configureOverviews(client, boardIds, dryRun, undefined, { only: overviews.boards });
+      console.log(`configure: overviews — ${result.summary}`);
+      for (const note of result.notes) console.log(`  note: ${note}`);
+      if (!result.ok) ok = false;
+    } catch (err) {
+      console.error(`configure: overviews — FAILED: ${(err as Error).message}`);
+      ok = false;
+    }
+  }
+
   if (!only || only.includes('dashboards')) {
-    const extraPath = dataPath('load', 'extra-boards.json');
-    const extra = existsSync(extraPath) ? await readJson<Record<string, number>>(extraPath) : {};
-    const boardIds: Record<string, number> = { ...Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.boardId])), ...extra };
     try {
       if (cfg.monday.workspaceId == null) throw new Error('monday.workspaceId is not set in config — cannot create dashboards');
       const dashToken = dashboardToken();
