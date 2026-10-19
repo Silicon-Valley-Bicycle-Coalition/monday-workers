@@ -221,6 +221,27 @@ describe('processBenevityQueueBatch', () => {
     expect(deps.rowStore.updateStatus).toHaveBeenCalledWith('TXN001', 'needs-review', expect.any(Object));
   });
 
+  it('names the worklist item after the company when the donor withheld their name', async () => {
+    const parsed = { ...fakeParsedRow(), donorFirstName: 'Not shared by donor', donorLastName: 'Not shared by donor', email: 'Not shared by donor' };
+    const createItem = vi.fn().mockResolvedValue({ id: '1', name: 'x' });
+    const deps = fakeDeps({
+      mondayClient: {
+        findItemsByColumnValue: vi.fn().mockResolvedValue([]),
+        findItemsByName: vi.fn().mockResolvedValue([]), // no Organization match
+        getLinkedItemIds: vi.fn().mockResolvedValue([]),
+        createItem,
+        changeColumnValues: vi.fn(),
+        archiveItem: vi.fn(),
+        fetchAsset: vi.fn(),
+      } as never,
+    });
+    (deps.rowStore.getRow as ReturnType<typeof vi.fn>).mockResolvedValue(fakeRowRecord(parsed));
+
+    await processBenevityQueueBatch([message('TXN001')], deps);
+
+    expect(createItem).toHaveBeenCalledWith(expect.anything(), parsed.company, expect.any(Object), expect.anything());
+  });
+
   it('leaves the row status alone and retries on an unexpected error', async () => {
     const parsed = fakeParsedRow();
     const deps = fakeDeps({

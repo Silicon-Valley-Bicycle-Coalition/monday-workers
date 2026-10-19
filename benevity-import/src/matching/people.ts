@@ -13,7 +13,7 @@ export interface PersonResolutionRow {
   email: string;
 }
 
-function isWithheld(value: string): boolean {
+export function isWithheld(value: string): boolean {
   const trimmed = value.trim().toLowerCase();
   return trimmed === '' || trimmed === 'not shared by donor';
 }

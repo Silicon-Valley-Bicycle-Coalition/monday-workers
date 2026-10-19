@@ -5,7 +5,7 @@ import type { AliasStore } from '../db/aliases';
 import type { BenevityImportConfig } from '../types';
 import type { ParsedRow } from '../parse/report';
 import { resolveOrganization } from '../matching/organizations';
-import { resolvePerson } from '../matching/people';
+import { isWithheld, resolvePerson } from '../matching/people';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
 import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
@@ -184,7 +184,8 @@ async function worklistAndMarkReview(
     {
       key: row.transactionId,
       reason,
-      name: `${parsed.donorFirstName} ${parsed.donorLastName}`.trim(),
+      // A withheld name is "Not shared by donor"; leave it out so the item falls back to the company.
+      name: [parsed.donorFirstName, parsed.donorLastName].filter((part) => !isWithheld(part)).join(' '),
       email: parsed.email,
       company: parsed.company,
       amount: parsed.totalDonationToBeAcknowledged + parsed.matchAmount,
