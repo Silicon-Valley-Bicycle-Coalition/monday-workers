@@ -45,8 +45,11 @@
         "amount": "numeric_mm7zkeh0",
         "date": "date_mm7z85m5"
       },
-      "worklistKeyColumn": null,
-      "retry": null
+      "worklistKeyColumn": "text_mm892fps",
+      "retry": {
+        "column": "color_mm89sfqw",
+        "labels": { "needsReview": "Needs review", "retry": "Retry", "queued": "Queued", "done": "Done" }
+      }
     },
     "organizationAliases": {},
     "rawRowRetentionDays": 90,

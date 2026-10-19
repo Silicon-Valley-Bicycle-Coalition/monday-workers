@@ -374,9 +374,10 @@ sandbox column ids appears in `config/svbc.json`. The Benevity Uploads board web
 the sandbox Worker's `/webhooks/monday/benevity-upload` route (see "Data flow") with the sandbox
 `BENEVITY_WEBHOOK_SECRET`. The worklist Retry column needs a second webhook, same shape
 (`change_specific_column_value`, `config: {"columnId": "<retry column id>"}`), pointing at
-`/webhooks/monday/benevity-retry?secret=<BENEVITY_WEBHOOK_SECRET>`. Not yet provisioned on the
-sandbox board: `uploadsBoard.retry` and `uploadsBoard.worklistKeyColumn` are `null` in
-`config/sandbox.json` until the two columns exist.
+`/webhooks/monday/benevity-retry?secret=<BENEVITY_WEBHOOK_SECRET>`. Provisioned on the sandbox
+board 2026-10-19: Retry status column `color_mm89sfqw` (labels Needs review / Retry / Queued /
+Done), Key text column `text_mm892fps`, and the Retry webhook `655429553`; all three are wired
+into `config/sandbox.json`.
 
 Provisioned and verified 2026-09-19: D1 `svbc-benevity-import-sandbox` (id in `wrangler.jsonc`),
 both queues, both secrets, and Monday webhook `639785248` on the sandbox Uploads board. Register
@@ -398,7 +399,7 @@ board (`18431270204`, still titled "(sandbox v2)") and its webhook `639785248` w
 and needed nothing. **Rebuilt 2026-10-09:** that v2 Uploads board was later deleted, so
 `config/sandbox.json` now targets `Benevity Uploads (sandbox v3)` (`18434850887`; file column
 `Report`, `Review` group, worklist columns Reason / Email / Company / Amount / Date).
-`uploadsBoard.retry` and `worklistKeyColumn` are still `null`. **Webhook `639785248` went with the
+`uploadsBoard.retry` and `worklistKeyColumn` were still `null` then (provisioned 2026-10-19, see Sandbox environment). **Webhook `639785248` went with the
 old board**. **Re-registered 2026-10-15:** webhook `654180110` (`change_specific_column_value` on
 file column `file_mm7z4ax3`) on the new board, with a freshly generated sandbox
 `BENEVITY_WEBHOOK_SECRET` (Cloudflare secrets can't be read back, so the old one was replaced); no
