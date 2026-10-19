@@ -170,7 +170,7 @@
 
 <h1>SVBC Systems Map</h1>
 <p class="lede">How Silicon Valley Bicycle Coalition's Monday.com CRM and its Cloudflare Workers fit together once Salesforce retires in October 2026. Monday.com becomes the single system of record; every Worker either feeds it once, keeps it current, or reads from it.</p>
-<div class="meta">as of 2026-10-09 &middot; production cutover 2026-10-16 &middot; most Workers run in the sandbox environment, none against production boards yet &mdash; see status table</div>
+<div class="meta">as of 2026-10-09 &middot; production cutover 2026-10-23 &middot; most Workers run in the sandbox environment, none against production boards yet &mdash; see status table</div>
 
 <div class="legend">
   <span class="item"><span class="swatch" style="background:var(--orange)"></span>Cloudflare Worker</span>
@@ -598,7 +598,7 @@
   </thead>
   <tbody>
     <tr><td class="worker">svbc-calendars</td><td><span class="pill pill-live">production</span></td><td>nothing &mdash; live; the only Worker redeployed by Workers Builds on merge. Its ICS feeds depend on a WAF rule exempting them from Super Bot Fight Mode (added 2026-10-02)</td></tr>
-    <tr><td class="worker">salesforce-import</td><td><span class="pill pill-live">rehearsed</span></td><td>full pipeline run against the sandbox v2 workspace (2026-08-28, resume 2026-09-08); the production load is the 2026-10-16 cutover</td></tr>
+    <tr><td class="worker">salesforce-import</td><td><span class="pill pill-live">rehearsed</span></td><td>full pipeline run against the sandbox v2 workspace (2026-08-28, resume 2026-09-08); the production load is the 2026-10-23 cutover</td></tr>
     <tr><td class="worker">funraise-sync</td><td><span class="pill pill-sandbox">sandbox</span></td><td>live against the (sandbox v3) boards since 2026-09-30: Funraise webhook registered, hourly subscriptions poll mirrors all 1,175 Recurring Gifts; production board ids at cutover</td></tr>
     <tr><td class="worker">donation-rollups</td><td><span class="pill pill-sandbox">sandbox</span></td><td>live against (sandbox v3) with five board webhooks and a re-bootstrapped D1 ledger (2026-09-29); production board ids at cutover</td></tr>
     <tr><td class="worker">member-portal</td><td><span class="pill pill-sandbox">sandbox</span></td><td>live at member.sandbox.bikesiliconvalley.org (2026-09-22); production needs the pre-launch checklist: domain verification, real column ids, dedicated integration token</td></tr>
