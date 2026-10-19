@@ -63,6 +63,12 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         eb4sf__Status__c, eb4sf__Checked_In__c, eb4sf__Cancelled__c, eb4sf__Ticket_Class_Name__c, eb4sf__Base_Price__c,
         eb4sf__Contact__c, eb4sf__Eventbrite_Event__c,
         CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM eb4sf__Eventbrite_Attendee__c` },
+    // The Eventbrite order behind each eb4sf ticket gift: the record Name is Eventbrite's order id.
+    // Transform stamps it on the gift's Donations item as Eventbrite Order ID, so eventbrite-sync's
+    // webhook and backfill adopt the migrated item instead of creating a second one. Only orders
+    // linked to an Opportunity (~1.6k of ~5.7k) — the rest never became gifts.
+    { name: 'eb4sf_orders', soql: `SELECT Id, Name, eb4sf__Opportunity__c, eb4sf__Event_Id__c, eb4sf__Status__c
+        FROM eb4sf__Eventbrite_Order__c WHERE eb4sf__Opportunity__c != null` },
     { name: 'campaigns', soql: `SELECT Id, Name, RecordType.Name, StartDate, EndDate, IsActive,
         Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Campaign` },
     { name: 'clickpledge_transactions', soql: `SELECT Id, Name, CnP_PaaS__Contact__c, CnP_PaaS__Account__c,

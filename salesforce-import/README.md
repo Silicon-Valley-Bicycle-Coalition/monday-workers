@@ -467,6 +467,14 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   re-run `transform` before the next `load`. **Follow-up, not done here:** the FY2026 reconciliation (migration `docs/16`, and §9
   of the 2026-09-29 spec, which show Individual Giving $11,940.52 under Salesforce) must be
   re-run on the sandbox after the next load to confirm the gap closes.
+* **Eventbrite Order ID on migrated ticket gifts (2026-10-19).** The `eb4sf_orders` extract
+  (`eb4sf__Eventbrite_Order__c` linked to an Opportunity; the record `Name` is Eventbrite's order
+  id) lets `transform` stamp `Eventbrite Order ID` on each linked gift, so `eventbrite-sync`'s
+  webhook and Summit backfill adopt the migrated item instead of duplicating it — needed since
+  the cutover moved past Bike Summit 2026. The column is declared on every gift, so `load` creates
+  it. Live counts on 2026-10-19: all 133 Eventbrite-created `Closed Won` from 2026 link an order;
+  206 from 2024–2025 don't and stay blank. **This one does need a re-extract**: `transform` warns
+  and stamps nothing when `data/extract/eb4sf_orders.ndjson` is missing.
 * **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
   Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
   Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and

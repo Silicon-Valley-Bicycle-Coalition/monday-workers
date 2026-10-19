@@ -177,6 +177,22 @@ describe('runTransform', () => {
     expect(report.warnings.some((w) => w.includes('unrecognised stage'))).toBe(false);
   });
 
+  it('stamps Eventbrite Order ID from eb4sf_orders, and warns when that extract is missing', async () => {
+    expect(await runTransform([])).toBe(0);
+    let report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.warnings.some((w) => w.includes('eb4sf_orders.ndjson not found'))).toBe(true);
+
+    await writeNdjson(dataPath('extract', 'eb4sf_orders.ndjson'), [
+      { Id: 'ord1', Name: '15915360463', eb4sf__Opportunity__c: 'o1' },
+    ]);
+    expect(await runTransform([])).toBe(0);
+    const bySf = new Map((await readNdjson<ItemPayload>(dataPath('transform', 'payloads.ndjson'))).map((p) => [p.sfId, p]));
+    expect(bySf.get('o1')!.columns['Eventbrite Order ID']).toBe('15915360463');
+    expect(bySf.get('o2')!.columns['Eventbrite Order ID']).toBe('');
+    report = await readJson<TransformReport>(dataPath('transform', 'report.json'));
+    expect(report.warnings.some((w) => w.includes('eb4sf_orders'))).toBe(false);
+  });
+
   it('excludes a work email shared by multiple affiliations from attribution matching, with a warning', async () => {
     // Two different contacts at Beta Org whose secondary address is the same shared mailbox
     // (e.g. info@) — each still gets a Work Email on their own Affiliation, but neither may
