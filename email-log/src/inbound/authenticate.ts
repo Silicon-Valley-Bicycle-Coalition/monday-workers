@@ -11,22 +11,81 @@ export type AuthResult =
   | { ok: true; staffEmail: string }
   | { ok: false; reason: 'not-staff' | 'dkim-missing' | 'dkim-fail' | 'not-allowlisted' };
 
-const domainOf = (address: string): string => address.slice(address.lastIndexOf('@') + 1);
+const domainOf = (address: string): string => {
+  const at = address.lastIndexOf('@');
+  return at < 0 ? '' : address.slice(at + 1);
+};
 
-// The topmost Authentication-Results header stamped by our own receiving MTA. Anyone can add
-// their own such headers, but they land below the one Cloudflare prepends, so only the first
-// header whose authserv-id matches is trusted.
-function trustedResults(headers: HeaderLine[], authServId: string): string | null {
+// Splits an Authentication-Results value into clauses of whitespace-separated tokens (RFC 8601).
+// Quoted strings stay inside one token (the receiving MTA echoes sender-controlled values such
+// as smtp.mailfrom, so a ';' or "dkim=pass" inside quotes is data, not structure). Comments are
+// dropped, with nesting and backslash escapes honoured. Returns null if quoting or parentheses
+// are unbalanced.
+function parseClauses(value: string): string[][] | null {
+  const clauses: string[][] = [];
+  let tokens: string[] = [];
+  let token = '';
+  let inQuote = false;
+  let depth = 0;
+  const endToken = () => {
+    if (token) tokens.push(token);
+    token = '';
+  };
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i]!;
+    if (depth > 0) {
+      if (c === '\\') i++;
+      else if (c === '(') depth++;
+      else if (c === ')') depth--;
+      continue;
+    }
+    if (inQuote) {
+      token += c;
+      if (c === '\\' && i + 1 < value.length) token += value[++i];
+      else if (c === '"') inQuote = false;
+      continue;
+    }
+    if (c === '"') {
+      inQuote = true;
+      token += c;
+    } else if (c === '(') {
+      depth = 1;
+      endToken();
+    } else if (c === ';') {
+      endToken();
+      clauses.push(tokens);
+      tokens = [];
+    } else if (/\s/.test(c)) {
+      endToken();
+    } else {
+      token += c;
+    }
+  }
+  if (inQuote || depth > 0) return null;
+  endToken();
+  clauses.push(tokens);
+  return clauses;
+}
+
+const unquote = (v: string): string => (v.startsWith('"') && v.endsWith('"') && v.length >= 2 ? v.slice(1, -1).replace(/\\(.)/g, '$1') : v);
+
+// The one Authentication-Results header stamped by our own receiving MTA, as clauses after the
+// authserv-id. Anyone can add their own such headers, so trust only a header whose authserv-id
+// matches, and only when exactly one does: a second one means we can't tell which is ours.
+// Returns null (fail closed) when none, several, or any unparseable header is present.
+function trustedResults(headers: HeaderLine[], authServId: string): string[][] | null {
   const wanted = authServId.toLowerCase();
+  let found: string[][] | null = null;
   for (const h of headers) {
     if (h.key !== 'authentication-results') continue;
-    const value = h.value.replace(/\([^)]*\)/g, ' '); // drop RFC 8601 comments
-    const semi = value.indexOf(';');
-    if (semi < 0) continue;
+    const clauses = parseClauses(h.value);
+    if (clauses === null) return null;
     // authserv-id may be followed by a version number: "mx.cloudflare.net 1; ..."
-    if (value.slice(0, semi).trim().split(/\s+/)[0]?.toLowerCase() === wanted) return value.slice(semi + 1);
+    if (clauses[0]?.[0]?.toLowerCase() !== wanted) continue;
+    if (found) return null;
+    found = clauses.slice(1);
   }
-  return null;
+  return found;
 }
 
 interface DkimResult {
@@ -34,13 +93,15 @@ interface DkimResult {
   domain: string | null;
 }
 
-function dkimResults(results: string): DkimResult[] {
+function dkimResults(clauses: string[][]): DkimResult[] {
   const out: DkimResult[] = [];
-  for (const clause of results.split(';')) {
-    const tokens = clause.trim().split(/\s+/);
+  for (const tokens of clauses) {
     const method = /^dkim=(\w+)$/i.exec(tokens[0] ?? '');
     if (!method) continue;
-    const prop = (name: string) => tokens.map((t) => t.toLowerCase()).find((t) => t.startsWith(`${name}=`))?.slice(name.length + 1);
+    const prop = (name: string) => {
+      const t = tokens.find((x) => x.toLowerCase().startsWith(`${name}=`));
+      return t === undefined ? undefined : unquote(t.slice(name.length + 1)).toLowerCase();
+    };
     const d = prop('header.d');
     const i = prop('header.i');
     out.push({ pass: method[1]!.toLowerCase() === 'pass', domain: d ?? (i ? domainOf(i) : null) });
@@ -64,6 +125,8 @@ export function authenticateSender(headers: HeaderLine[], fromAddress: string, m
   const dkim = results === null ? [] : dkimResults(results);
   if (dkim.length === 0) return { ok: false, reason: 'dkim-missing' };
 
-  const ok = dkim.some((r) => r.pass && r.domain !== null && staffDomains.includes(r.domain));
+  // The signature must align with the From domain, not merely be some staff domain.
+  const fromDomain = domainOf(staffEmail);
+  const ok = dkim.some((r) => r.pass && r.domain === fromDomain);
   return ok ? { ok: true, staffEmail } : { ok: false, reason: 'dkim-fail' };
 }

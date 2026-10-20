@@ -59,9 +59,10 @@ describe('authenticateSender', () => {
     expect(authenticateSender([ar(v2)], FROM, mail).ok).toBe(true);
   });
 
-  it("ignores a forged header below Cloudflare's", () => {
+  it('rejects when two headers carry the trusted authserv-id', () => {
     const failing = 'mx.cloudflare.net; dkim=fail header.d=bikesiliconvalley.org';
-    expect(authenticateSender([ar(failing), ar(pass)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-fail' });
+    expect(authenticateSender([ar(failing), ar(pass)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-missing' });
+    expect(authenticateSender([ar(pass), ar(failing)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-missing' });
   });
 
   it('ignores a forged header with another authserv-id above the trusted one', () => {
@@ -98,5 +99,36 @@ describe('authenticateSender', () => {
     const m = { ...mail, trustedAuthServId: PLACEHOLDER_AUTHSERV_ID };
     const v = pass.replace('mx.cloudflare.net', PLACEHOLDER_AUTHSERV_ID);
     expect(authenticateSender([ar(v)], FROM, m)).toEqual({ ok: false, reason: 'dkim-missing' });
+  });
+
+  it('ignores a dkim=pass injected through a quoted smtp.mailfrom', () => {
+    const v = 'mx.cloudflare.net; dkim=none; spf=pass smtp.mailfrom="x; dkim=pass header.d=bikesiliconvalley.org z"@evil.com';
+    expect(authenticateSender([ar(v)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-fail' });
+    const escaped = 'mx.cloudflare.net; dkim=fail header.d=bikesiliconvalley.org; spf=pass smtp.mailfrom="a\\"; dkim=pass header.d=bikesiliconvalley.org"@evil.com';
+    expect(authenticateSender([ar(escaped)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-fail' });
+  });
+
+  it('ignores a dkim=pass hidden in a nested comment', () => {
+    const v = 'mx.cloudflare.net; dkim=fail header.d=bikesiliconvalley.org (a (b) ; dkim=pass header.d=bikesiliconvalley.org) ';
+    expect(authenticateSender([ar(v)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-fail' });
+  });
+
+  it('fails closed on an unbalanced quote or comment', () => {
+    for (const v of [
+      'mx.cloudflare.net; dkim=pass header.d=bikesiliconvalley.org; spf=pass smtp.mailfrom="oops',
+      'mx.cloudflare.net; dkim=pass header.d=bikesiliconvalley.org (unclosed',
+    ]) {
+      expect(authenticateSender([ar(v)], FROM, mail)).toEqual({ ok: false, reason: 'dkim-missing' });
+    }
+  });
+
+  it('rejects dkim=pass for a different staff domain than From', () => {
+    const m = { ...mail, staffDomains: ['bikesiliconvalley.org', 'other.org'] };
+    const v = 'mx.cloudflare.net; dkim=pass header.d=other.org';
+    expect(authenticateSender([ar(v)], FROM, m)).toEqual({ ok: false, reason: 'dkim-fail' });
+  });
+
+  it('treats a From without @ as not-staff', () => {
+    expect(authenticateSender([ar(pass)], 'bikesiliconvalley.org', mail)).toEqual({ ok: false, reason: 'not-staff' });
   });
 });
