@@ -38,6 +38,27 @@ export function isEventbriteTicketOrder(o: Record<string, unknown>, integrationU
   return (o['CreatedBy'] as { Name?: string } | null)?.Name === integrationUserName;
 }
 
+// Opportunity Id → Eventbrite order id, from the eb4sf_orders extract (the order record's Name is
+// Eventbrite's id). Stamped on the gift as Eventbrite Order ID — the column eventbrite-sync adopts
+// by — so a migrated ticket gift is updated, not duplicated, when its order arrives again by
+// webhook or backfill. An Opportunity with more than one order (none as of 2026-10-19) keeps the
+// lowest id and is counted, so transform reports it.
+export function eventbriteOrderIdsByOpportunity(
+  orders: readonly Record<string, unknown>[],
+): { byOpportunity: Map<string, string>; multiOrderOpportunities: number } {
+  const byOpportunity = new Map<string, string>();
+  const multi = new Set<string>();
+  for (const o of orders) {
+    const oppId = o['eb4sf__Opportunity__c'] as string | null;
+    const orderId = typeof o['Name'] === 'string' ? o['Name'].trim() : '';
+    if (!oppId || !orderId) continue;
+    const prev = byOpportunity.get(oppId);
+    if (prev !== undefined && prev !== orderId) multi.add(oppId);
+    if (prev === undefined || orderId < prev) byOpportunity.set(oppId, orderId);
+  }
+  return { byOpportunity, multiOrderOpportunities: multi.size };
+}
+
 // Stage name → gift count for every stage donationStatus doesn't recognise.
 export function unknownStages(opportunities: readonly Record<string, unknown>[]): Map<string, number> {
   const counts = new Map<string, number>();
@@ -100,6 +121,8 @@ export interface OpportunityDeps extends DonorResolution {
   softCredits?: readonly string[];
   // See isEventbriteTicketOrder. Omit (or null) to map every Closed Won gift as historical.
   eventbriteIntegrationUserName?: string | null;
+  // See eventbriteOrderIdsByOpportunity.
+  eventbriteOrderId?: string | null;
 }
 
 export const giftType = (o: Record<string, unknown>): string =>
@@ -155,6 +178,8 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       // Salesforce never stored Benevity's transaction id, so this is blank on every migrated
       // gift; declared here so load creates the column for the benevity-import Worker to fill.
       'Benevity Transaction ID': '',
+      // Always declared, so load creates the column eventbrite-sync writes and adopts by.
+      'Eventbrite Order ID': deps.eventbriteOrderId ?? '',
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
       ...attribution.columns,
       ...salesforceDebug(o),

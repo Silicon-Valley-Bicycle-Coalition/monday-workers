@@ -21,7 +21,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Lifetime Giving': 'numbers', 'First Gift': 'date', 'Gift Count': 'numbers',
   'Amount': 'numbers', 'Date': 'date', 'Fiscal Year Ending': 'text', 'Status': 'status', 'Gift Type': 'text',
   'Funraise ID': 'link', 'Funraise Profile': 'link', 'Anonymous Donor': 'checkbox',
-  'Benevity Transaction ID': 'text',
+  'Benevity Transaction ID': 'text', 'Eventbrite Order ID': 'text',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
   'Partner Type': 'text', 'Website': 'link',
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',

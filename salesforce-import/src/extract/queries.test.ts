@@ -31,6 +31,11 @@ describe('buildExtracts', () => {
       expect(attendees.soql, f).toContain(f);
     }
   });
+  it('extracts the eb4sf order behind each ticket gift, for the Eventbrite Order ID stamp', () => {
+    const orders = byName.get('eb4sf_orders')!;
+    expect(orders.backupOnly).toBeFalsy();
+    for (const f of ['Name', 'eb4sf__Opportunity__c', 'FROM eb4sf__Eventbrite_Order__c']) expect(orders.soql, f).toContain(f);
+  });
   it('paginates every object near the 50k CLI ceiling (contact roles ~54k, opportunities ~48k, payments/tasks ~42k)', () => {
     for (const name of ['contacts', 'accounts', 'opportunities', 'contact_roles', 'payments', 'tasks_all']) {
       expect(byName.get(name)!.paginate, name).toBe(true);

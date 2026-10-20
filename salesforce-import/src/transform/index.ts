@@ -14,7 +14,8 @@ import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './m
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
   type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
-import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages } from './donations.js';
+import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
+  eventbriteOrderIdsByOpportunity } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
   eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
@@ -337,10 +338,24 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(r ? applyRollups(p, r) : p);
   }
   const softCredits = softCreditsByGift(contactRoles, opportunities, placeholderDonorSfIds);
+  // Optional so an extract from before the eb4sf_orders query still transforms, but a cutover
+  // load without it leaves every ticket gift unstamped, and eventbrite-sync would duplicate them.
+  const ordersPath = dataPath('extract', 'eb4sf_orders.ndjson');
+  const ordersExist = existsSync(ordersPath);
+  if (!ordersExist) {
+    warnings.push('donations: eb4sf_orders.ndjson not found — no gift gets an Eventbrite Order ID; ' +
+      're-run extract before a real load, or eventbrite-sync will duplicate migrated ticket gifts');
+  }
+  const ebOrders = eventbriteOrderIdsByOpportunity(ordersExist ? await load('eb4sf_orders') : []);
   for (const o of opportunities) {
     payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
       actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string),
-      eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName }));
+      eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName,
+      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null }));
+  }
+  if (ebOrders.multiOrderOpportunities > 0) {
+    warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +
+      'each keeps the lowest order id, so eventbrite-sync creates a separate item for the others');
   }
   for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
 

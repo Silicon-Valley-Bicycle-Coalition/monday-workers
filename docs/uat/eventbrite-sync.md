@@ -1,9 +1,10 @@
 # UAT script: Eventbrite ticket orders
 
-**Status 2026-10-06: nothing to test yet.** The integration is built but not running anywhere.
-Before it can be switched on in the sandbox, someone needs to add an **Eventbrite Order ID** text
-column and the **Refunded** Status label to the Donations board, create the sandbox D1 and
-queue, and set up its Eventbrite and Cloudflare credentials. This script
+**Status 2026-10-19: nothing to test yet.** The integration is built but not running anywhere.
+Before it can be switched on in the sandbox, the next sandbox load needs to create the
+**Eventbrite Order ID** column on the Donations board, someone needs to add the **Refunded**
+Status label there, create the sandbox D1 and queue, and set up its Eventbrite and Cloudflare
+credentials. This script
 will be updated when it is live.
 
 ## What it does

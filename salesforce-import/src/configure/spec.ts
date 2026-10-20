@@ -95,6 +95,7 @@ const DNS_COLUMN: ColumnSpec = { title: 'DNS Reason Status', type: 'status', lab
 export const PLUMBING = [
   'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
   'Funraise Event ID', 'Eventbrite ID', 'Eventbrite Attendee ID', 'Benevity Transaction ID',
+  'Eventbrite Order ID',
 ] as const;
 
 const dnsViews = (contactColumn: string): ViewSpec[] => [
@@ -288,6 +289,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'recruiter or influencer. Reference only: soft credits count toward nobody’s Lifetime Giving.',
       'Benevity Transaction ID': 'Set by the benevity-import integration so a Benevity report ' +
         'row is never entered twice. Blank on migrated history.',
+      'Eventbrite Order ID': 'The Eventbrite order behind an Event Ticket gift, set by the eventbrite-sync ' +
+        'integration (and carried over from Salesforce on migrated tickets) so an order is never entered twice.',
       'Campaign': 'The Salesforce campaign the gift came in under, where known. Reference only.',
       'Recurring Gift': 'Set when this gift is one installment of a recurring pledge.',
       'Thank You Sent': 'Checked automatically for Funraise gifts (Funraise sends the receipt). ' +

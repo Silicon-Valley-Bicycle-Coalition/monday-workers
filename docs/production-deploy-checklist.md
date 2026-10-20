@@ -331,14 +331,19 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       boards, seed `qb_oauth_tokens` via the OAuth Playground, Intuit webhook
       `/webhooks/quickbooks`, Monday webhook `/webhooks/monday?secret=`. Not a cutover blocker.
 - [ ] **9. `eventbrite-sync`** (post-cutover; the Summit backfill is due after Oct 22 sales) —
-      add the `Eventbrite Order ID` text column to the production Donations board (the
-      `Refunded` Status label it also needs was added in step 2; it is missing on sandbox v3);
+      the `Eventbrite Order ID` column on production Donations comes from the cutover load
+      (`salesforce-import` stamps it on migrated ticket gifts; transform warns if
+      `eb4sf_orders.ndjson` is missing from the extract — re-extract before loading if it does),
+      so read its id from the load's `boards.json` (the `Refunded` Status label it also needs was
+      added in step 2; it is missing on sandbox v3);
       fill `config/svbc.json` (all placeholders today); create D1 + queues; set fresh secrets;
       deploy; register the Eventbrite webhook; *then* run `scripts/backfill-orders.mjs`
       (`--dry-run` first). Sequence per
       [`eventbrite-sync/README.md`](../eventbrite-sync/README.md): deploy → register webhook →
       backfill, so no order falls in a gap. Provision the sandbox first.
       Backfill owner: David (decided 2026-10-09); run on/after 2026-10-23 with the Summit's event id.
+      Summit orders in the cutover load carry their order id and are adopted, not duplicated;
+      never backfill an event that sold tickets before 2026 (those gifts have no id).
 
 ## Phase 5 — First week
 

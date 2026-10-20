@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { opportunityToPayload, cnpToPayload, cnpOverlapCheck, softCreditsByGift, unknownStages,
-  isEventbriteTicketOrder } from './donations.js';
+  isEventbriteTicketOrder, eventbriteOrderIdsByOpportunity } from './donations.js';
 
 describe('opportunityToPayload', () => {
   const base = { Id: 'o1', Name: 'Gift', Amount: 50, CloseDate: '2026-01-15', StageName: 'Posted',
@@ -56,6 +56,13 @@ describe('opportunityToPayload', () => {
       const p = opportunityToPayload({ ...ticket, StageName: 'Posted' }, deps);
       expect(p.columns['Status']).toEqual({ label: 'Received' });
       expect(p.columns['Gift Type']).toBe('Donation');
+    });
+
+    it('stamps the linked Eventbrite order id so eventbrite-sync adopts the item, blank otherwise', () => {
+      expect(opportunityToPayload(ticket, { ...deps, eventbriteOrderId: '15915360463' })
+        .columns['Eventbrite Order ID']).toBe('15915360463');
+      expect(opportunityToPayload(ticket, deps).columns['Eventbrite Order ID']).toBe('');
+      expect(opportunityToPayload(base, { termCols: new Map() }).columns['Eventbrite Order ID']).toBe('');
     });
 
     it('does nothing without a configured integration user (a fork without eb4sf)', () => {
@@ -252,5 +259,31 @@ describe('softCreditsByGift', () => {
 
   it('never credits the placeholder Anonymous Person', () => {
     expect(softCreditsByGift([role('o1', 'anon', 'Influencer')], opps, new Set(['anon'])).size).toBe(0);
+  });
+});
+
+describe('eventbriteOrderIdsByOpportunity', () => {
+  it('maps each Opportunity to its order Name, skipping unlinked or unnamed orders', () => {
+    const { byOpportunity, multiOrderOpportunities } = eventbriteOrderIdsByOpportunity([
+      { Id: 'x1', Name: '15915360463', eb4sf__Opportunity__c: 'o1' },
+      { Id: 'x2', Name: ' 15913876273 ', eb4sf__Opportunity__c: 'o2' },
+      { Id: 'x3', Name: '15912820233', eb4sf__Opportunity__c: null },
+      { Id: 'x4', Name: null, eb4sf__Opportunity__c: 'o3' },
+    ]);
+    expect([...byOpportunity]).toEqual([['o1', '15915360463'], ['o2', '15913876273']]);
+    expect(multiOrderOpportunities).toBe(0);
+  });
+
+  it('keeps the lowest order id, whatever the row order, and counts the Opportunity', () => {
+    const rows = [
+      { Name: '200', eb4sf__Opportunity__c: 'o1' },
+      { Name: '100', eb4sf__Opportunity__c: 'o1' },
+      { Name: '100', eb4sf__Opportunity__c: 'o1' },
+    ];
+    for (const orders of [rows, [...rows].reverse()]) {
+      const r = eventbriteOrderIdsByOpportunity(orders);
+      expect(r.byOpportunity.get('o1')).toBe('100');
+      expect(r.multiOrderOpportunities).toBe(1);
+    }
   });
 });
