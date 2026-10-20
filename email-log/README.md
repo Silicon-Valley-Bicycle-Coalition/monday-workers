@@ -33,7 +33,10 @@ email stays in email.
 * You'll only hear back if something didn't match: a short reply listing addresses that aren't on
   anyone's record, with a link to the item. Add the address to the right person in Monday (or
   create the person), then link the item to them. If nobody matched, the item's Status is
-  `Needs Person`. You'll also hear back if the item couldn't be written after several tries.
+  `Needs Person`. If no outside address could be read from the email at all (for example a
+  forward the Worker couldn't parse), the reply says so and the item is `Needs Person`: open it
+  and link the person by hand. You'll also hear back if the item couldn't be written after
+  several tries.
 * A clean log is silent. Mail with no one outside SVBC on it (staff to staff) is dropped without
   a reply.
 
@@ -55,7 +58,7 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
                                                     c. create the Activities (Logged) item
                                                     d. mark the D1 row `logged`
                                                     e. reply to the staff member if any address
-                                                       was unmatched
+                                                       was unmatched, or none was found
                                              retries (1, 4, 16 min) → dead-letter consumer
 ```
 
@@ -78,7 +81,9 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
   empty), Activity Type = `Email`, Date, Status = `Done` (or `Needs Person` when nothing
   matched), Owner = the Monday user whose email is the sender's (left blank if none; the address
   then goes in Notes), Person = every matched People / People (Historical) item, Notes = body plus
-  a footer (direction, unmatched addresses, attachment filenames), Message Hash = the dedupe hash.
+  a footer (direction, unmatched addresses, attachment filenames; each list shows its first 10,
+  then `+N more`, and Notes as a whole is cut to 2,000 characters), Message Hash = the dedupe
+  hash. Inline images the HTML shows in place (signature logos) aren't listed as attachments.
 * **If nothing matched, the item is still created**, with an empty Person link and `Needs Person`.
 
 ## Matching
@@ -89,7 +94,8 @@ One module (`src/matching/people.ts`). Each lowercased address is looked up exac
 * People: the two email columns in `matching.peopleEmailColumns` (Personal Email, Household Email);
 * People (Historical): `matching.historicalEmailColumns`;
 * Affiliations: `matching.affiliationsWorkEmailColumn`, then the affiliation's Person via
-  `matching.affiliationsPersonColumn` (skipped while those are `null`).
+  `matching.affiliationsPersonColumn` (skipped when the Affiliations board id or either column
+  is `null`).
 
 A household address can match more than one person; all are linked. Columns are matched by id, so
 their titles don't matter. Lookups are sequential to spare Monday's complexity budget.
@@ -97,9 +103,12 @@ their titles don't matter. Lookups are sequential to spare Monday's complexity b
 ## Config and secrets
 
 `config/svbc.json` (production) and `config/sandbox.json`, chosen at request time by
-`env.ENVIRONMENT` (`src/environment.ts`), validated once per isolate (`src/config.ts`). Both ship
-with `REPLACE_WITH_COLUMN_ID` / `REPLACE_WITH_AUTHSERV_ID` placeholders until the board and live
-mail exist.
+`env.ENVIRONMENT` (`src/environment.ts`), validated once per isolate (`src/config.ts`).
+Production (`svbc.json`) ships placeholders throughout: `null` boards, `REPLACE_WITH_COLUMN_ID`
+columns and `REPLACE_WITH_AUTHSERV_ID`. The sandbox (`sandbox.json`) already has the CRM
+Sandbox's real People, People (Historical) and Affiliations board and matching column ids; only
+the Activities (Logged) board and its `activities.*` columns, and `mail.trustedAuthServId`, are
+still unset until the board and live mail exist.
 
 | Key | What |
 |---|---|
@@ -162,7 +171,9 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
 1. **Board.** Create the sandbox Activities (Logged) board with the columns above. Connect Person
    to both People boards. Put the board id in `monday.boards.activities-logged` and the column
    ids in `activities.*` in `config/sandbox.json`. While any is a placeholder the consumer
-   refuses to write and the message dead-letters naming the key. Optionally set
+   refuses to write and the message dead-letters. The consumer's log line on each attempt names
+   the missing key (`config: activities.<key> is not configured`); the D1 row's error ends up as
+   `dead-lettered after retries`. Optionally set
    `alerts.itRequests` (board id, **column id** for `typeColumn`, label, `cooldownDays`).
 2. **D1 and queues.** `wrangler d1 create svbc-email-log-sandbox`, paste the id into
    `wrangler.jsonc` `env.sandbox.d1_databases[0].database_id`, then
@@ -181,6 +192,14 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    authserv-id only, never addresses, then remove the logging). Set `mail.trustedAuthServId` in
    `config/sandbox.json` and redeploy. **If there is no DKIM verdict in the header, stop and
    report back** (spec section 1); don't fall back to trusting From.
+
+   **Then the forgery check.** From an outside (non-staff) account, send *unsigned* mail to the
+   sandbox address with a staff `From:` and a forged
+   `Authentication-Results: <trusted-id>; dkim=pass header.d=bikesiliconvalley.org` header (the
+   real authserv-id you just set). Cloudflare should add its own header with that id on top,
+   making two, which the parser rejects. Confirm the message is rejected. **If Cloudflare does not
+   add its own `Authentication-Results` header to unsigned mail, stop and report back before going
+   live:** the parser's single-header rule is then forgeable.
 6. **Live check: email lookup case.** Does `items_page_by_column_values` on an email column
    ignore case? The Worker looks up lowercased addresses. If Monday's lookup is case-sensitive,
    record that here and open an issue: a person stored with a mixed-case address shows as
@@ -231,10 +250,10 @@ staff note (significant touches only) in the staff guide.
   header claiming the trusted authserv-id, rejects otherwise-legitimate mail.
 * **A forward whose `Fwd:` block doesn't parse** is still logged, as a BCC with the To + Cc
   counterparts, never dropped. That list is usually empty, so the result is a `Needs Person` item
-  with no Person link. No reply is sent in that case (a reply goes out only when at least one
-  address was looked up and not found), so staff find these by the `Needs Person` status.
+  with no Person link, and the staff member gets the "no outside address was found" reply with
+  the item link.
 * **Create succeeded, D1 `markLogged` failed.** The retry finds the item by its Message Hash and
-  adopts it; the unmatched-address reply is not sent for that message.
+  adopts it; no reply to staff is sent for that message.
 * **A row can stay `queued`** if the isolate dies between claiming the hash and enqueueing. The
   sender's retry then looks like a duplicate and is dropped. Rare; accepted for v1.
 * **One IT item can stand for many events.** Dead-letter, capacity and board-full alerts each have

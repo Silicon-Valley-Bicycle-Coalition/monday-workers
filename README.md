@@ -293,7 +293,8 @@ turning on the fallback never risks a double deploy alongside a working dashboar
 **Current state (verified 2026-09-28) — merging deploys only `svbc-calendars`.** All eight
 provisioned sandbox Workers were last hand-deployed from `main` on 2026-10-09 (none had pending D1
 migrations); `eventbrite-sync` and `people-reclassification` still carry placeholder sandbox D1
-ids and were skipped. It is the only
+ids and were skipped, and `email-log` (built after that deploy, not yet deployed) carries them
+too. It is the only
 Worker with a Workers Builds connection (production, live). No sandbox connection exists and the
 `CLOUDFLARE_API_TOKEN` CI variable is not set, so the `deploy-sandbox:<worker>` jobs never run: a
 merge to `main` does **not** redeploy any sandbox Worker. After merging, deploy the sandbox by
