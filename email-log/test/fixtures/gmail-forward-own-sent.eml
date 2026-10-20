@@ -1,0 +1,16 @@
+Authentication-Results: mx.cloudflare.net; dkim=pass header.d=bikesiliconvalley.org header.s=google; spf=pass smtp.mailfrom=bikesiliconvalley.org
+From: Dana Staff <dana@bikesiliconvalley.org>
+To: log@log.bikesiliconvalley.org
+Subject: Fwd: Re: Grant question
+Date: Tue, 20 Oct 2026 15:00:00 -0700
+Message-ID: <fwd-own-1@mail.bikesiliconvalley.org>
+Content-Type: text/plain; charset=utf-8
+
+---------- Forwarded message ---------
+From: Dana Staff <dana@bikesiliconvalley.org>
+Date: Mon, Oct 19, 2026 at 9:15 AM
+Subject: Re: Grant question
+To: Jane Rider <jane@example.org>
+Cc: Bob <bob@example.com>, Sam <sam@bikesiliconvalley.org>
+
+Here is the answer.

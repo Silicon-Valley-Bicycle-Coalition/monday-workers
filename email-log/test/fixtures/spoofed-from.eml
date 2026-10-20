@@ -1,0 +1,9 @@
+Authentication-Results: mx.cloudflare.net; dkim=pass header.d=example.com header.s=sel; spf=pass smtp.mailfrom=example.com
+From: Dana Staff <dana@bikesiliconvalley.org>
+To: Jane Rider <jane@example.org>
+Subject: Spoofed
+Date: Tue, 20 Oct 2026 19:00:00 -0700
+Message-ID: <spoof-1@example.com>
+Content-Type: text/plain; charset=utf-8
+
+Not really staff.

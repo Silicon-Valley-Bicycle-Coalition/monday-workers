@@ -1,0 +1,143 @@
+import PostalMime from 'postal-mime';
+import { describe, expect, it } from 'vitest';
+import { testConfig } from '../test/testConfig';
+import { extract } from './extract';
+import bccNew from '../../test/fixtures/gmail-bcc-new.eml?raw';
+import bccReply from '../../test/fixtures/gmail-bcc-reply.eml?raw';
+import forward from '../../test/fixtures/gmail-forward.eml?raw';
+import forwardOwn from '../../test/fixtures/gmail-forward-own-sent.eml?raw';
+import outlook from '../../test/fixtures/outlook-forward.eml?raw';
+import staffOnly from '../../test/fixtures/staff-only.eml?raw';
+import htmlOnly from '../../test/fixtures/html-only.eml?raw';
+import noMessageId from '../../test/fixtures/no-message-id.eml?raw';
+import logInTo from '../../test/fixtures/log-in-to.eml?raw';
+import withAttachment from '../../test/fixtures/with-attachment.eml?raw';
+
+const { mail } = testConfig({
+  mail: { staffDomains: ['bikesiliconvalley.org'], loggingAddress: 'log@log.bikesiliconvalley.org' },
+});
+const NOW = new Date('2030-01-01T00:00:00.000Z');
+const run = async (raw: string) => extract(await PostalMime.parse(raw), mail, NOW);
+const logged = async (raw: string) => {
+  const r = await run(raw);
+  if (r.kind !== 'log') throw new Error('expected log');
+  return r;
+};
+
+describe('extract', () => {
+  it('bcc: counterparts are To + Cc', async () => {
+    const r = await logged(bccNew);
+    expect(r.message).toEqual({
+      kind: 'bcc',
+      counterparts: ['jane@example.org', 'bob@example.com', 'carol@example.net'],
+      subject: 'Trail closure follow-up',
+      dateISO: '2026-10-19T22:04:00.000Z',
+      body: 'Hi Jane,\nThanks for the call.',
+      attachmentNames: [],
+    });
+    expect(r.dedupeSource).toEqual({ messageId: '<bcc-new-1@mail.bikesiliconvalley.org>' });
+  });
+
+  it('bcc: cuts quoted history from the body', async () => {
+    expect((await logged(bccReply)).message.body).toBe('Sounds good.');
+  });
+
+  it('excludes the logging address and staff from counterparts', async () => {
+    expect((await logged(bccReply)).message.counterparts).toEqual(['jane@example.org']);
+    expect((await logged(logInTo)).message.counterparts).toEqual(['jane@example.org']);
+  });
+
+  it('staff-only mail is staff-only', async () => {
+    expect(await run(staffOnly)).toEqual({ kind: 'staff-only' });
+  });
+
+  it('does not treat a staff subdomain as staff', async () => {
+    const raw = bccNew.replace('jane@example.org', 'x@log.bikesiliconvalley.org');
+    expect((await logged(raw)).message.counterparts).toContain('x@log.bikesiliconvalley.org');
+  });
+
+  it('forward: counterparts are the block\'s From plus its non-staff Cc; subject loses "Fwd: "; date and body come from the block', async () => {
+    const r = await logged(forward);
+    expect(r.message).toEqual({
+      kind: 'forward',
+      counterparts: ['jane@example.org', 'bob@example.com'],
+      subject: 'Trail closure',
+      dateISO: '2026-10-19T22:04:00.000Z',
+      body: 'Hello Dana,\nThe trail is closed.',
+      attachmentNames: [],
+    });
+    expect(r.dedupeSource).toEqual({
+      from: 'jane@example.org',
+      dateISO: '2026-10-19T22:04:00.000Z',
+      subject: 'Trail closure',
+    });
+  });
+
+  it('forward: uses the block Message-ID for dedupe when present', async () => {
+    const raw = forward.replace('Subject: Trail closure\n', 'Subject: Trail closure\nMessage-ID: <orig-1@example.org>\n');
+    expect((await logged(raw)).dedupeSource).toEqual({ messageId: '<orig-1@example.org>' });
+  });
+
+  it("forward of staff's own sent message uses the block's To and Cc", async () => {
+    const r = await logged(forwardOwn);
+    expect(r.message.kind).toBe('forward');
+    expect(r.message.counterparts).toEqual(['jane@example.org', 'bob@example.com']);
+    expect(r.message.subject).toBe('Re: Grant question');
+  });
+
+  it('strips stacked Fwd: prefixes but keeps Re:', async () => {
+    const raw = forward.replace('Subject: Fwd: Trail closure', 'Subject: Fwd: FW: Re: Trail closure');
+    expect((await logged(raw)).message.subject).toBe('Re: Trail closure');
+  });
+
+  it('Fwd: subject with no parseable block falls back to bcc', async () => {
+    const raw = bccNew.replace('Subject: Trail closure follow-up', 'Subject: Fwd: Trail closure follow-up');
+    const r = await logged(raw);
+    expect(r.message.kind).toBe('bcc');
+    expect(r.message.subject).toBe('Fwd: Trail closure follow-up');
+  });
+
+  it('outlook forward falls back to bcc', async () => {
+    // No Gmail marker, so it is handled as a BCC: the only recipient is the logging address,
+    // leaving no counterparts.
+    expect(await run(outlook)).toEqual({ kind: 'staff-only' });
+    const withCounterpart = outlook.replace('To: log@log.bikesiliconvalley.org', 'To: log@log.bikesiliconvalley.org, Jane <jane@example.org>');
+    const r = await logged(withCounterpart);
+    expect(r.message.kind).toBe('bcc');
+    expect(r.message.subject).toBe('FW: Ride schedule');
+  });
+
+  it('lists attachment filenames and keeps no content', async () => {
+    const r = await logged(withAttachment);
+    expect(r.message.attachmentNames).toEqual(['flyer.pdf']);
+    expect(JSON.stringify(r.message)).not.toContain('JVBERi');
+  });
+
+  it('forward date falls back to the message Date when the block date is unparseable', async () => {
+    const raw = forward.replace('Date: Mon, Oct 19, 2026 at 3:04 PM', 'Date: sometime last week');
+    const r = await logged(raw);
+    expect(r.message.dateISO).toBe('2026-10-20T21:00:00.000Z');
+  });
+
+  it('reads an html-only body', async () => {
+    expect((await logged(htmlOnly)).message.body).toBe('Hello Jane');
+  });
+
+  it('bcc without Message-ID dedupes on from, date and subject', async () => {
+    expect((await logged(noMessageId)).dedupeSource).toEqual({
+      from: 'dana@bikesiliconvalley.org',
+      dateISO: '2026-10-20T20:00:00.000Z',
+      subject: 'No id',
+    });
+  });
+
+  it('uses the injected now only when no Date header exists', async () => {
+    const raw = noMessageId.replace(/^Date:.*\n/m, '');
+    expect((await logged(raw)).message.dateISO).toBe(NOW.toISOString());
+  });
+
+  it('empty subject becomes (no subject)', async () => {
+    const raw = bccNew.replace('Subject: Trail closure follow-up', 'Subject:   ');
+    expect((await logged(raw)).message.subject).toBe('(no subject)');
+  });
+});

@@ -1,0 +1,12 @@
+Authentication-Results: mx.cloudflare.net; dkim=pass header.d=bikesiliconvalley.org header.s=google; spf=pass smtp.mailfrom=bikesiliconvalley.org
+From: Dana Staff <dana@bikesiliconvalley.org>
+To: Jane Rider <jane@example.org>, Bob <bob@example.com>
+Cc: Carol <carol@example.net>
+Bcc: log@log.bikesiliconvalley.org
+Subject: Trail closure follow-up
+Date: Mon, 19 Oct 2026 15:04:00 -0700
+Message-ID: <bcc-new-1@mail.bikesiliconvalley.org>
+Content-Type: text/plain; charset=utf-8
+
+Hi Jane,
+Thanks for the call.

@@ -33,7 +33,11 @@ export function truncate(text: string, maxChars: number): string {
   return text.slice(0, keep) + SUFFIX;
 }
 
+/** The message's plain text, or its stripped HTML when the plain part is empty. Quoted history is kept. */
+export function rawText(parsed: { text?: string; html?: string }): string {
+  return parsed.text?.trim() ? parsed.text : stripHtml(parsed.html ?? '');
+}
+
 export function bodyText(parsed: { text?: string; html?: string }, maxChars: number): string {
-  const raw = parsed.text?.trim() ? parsed.text : stripHtml(parsed.html ?? '');
-  return truncate(cutQuotedHistory(raw), maxChars);
+  return truncate(cutQuotedHistory(rawText(parsed)).trim(), maxChars);
 }

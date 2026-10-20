@@ -1,0 +1,9 @@
+Authentication-Results: mx.cloudflare.net; dkim=fail header.d=bikesiliconvalley.org header.s=google
+From: Dana Staff <dana@bikesiliconvalley.org>
+To: Jane Rider <jane@example.org>
+Subject: Bad signature
+Date: Tue, 20 Oct 2026 18:00:00 -0700
+Message-ID: <dkim-fail-1@mail.bikesiliconvalley.org>
+Content-Type: text/plain; charset=utf-8
+
+Signature failed.
