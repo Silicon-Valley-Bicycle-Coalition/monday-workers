@@ -68,7 +68,7 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-portal/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-portal/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
@@ -104,6 +104,11 @@ donation-rollups:
   extends: .worker_job
   variables:
     WORKER_DIR: donation-rollups
+
+email-log:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: email-log
 
 eventbrite-sync:
   extends: .worker_job
@@ -174,6 +179,11 @@ deploy-sandbox:donation-rollups:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: donation-rollups
+
+deploy-sandbox:email-log:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: email-log
 
 deploy-sandbox:eventbrite-sync:
   extends: .deploy_sandbox_job
