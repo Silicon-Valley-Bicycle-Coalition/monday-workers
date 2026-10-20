@@ -1,0 +1,58 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com",
+    "boards": {
+      "activities-logged": null,
+      "people-live": null,
+      "people-historical": null,
+      "affiliations": null
+    }
+  },
+  "activities": {
+    "activityTypeColumn": "REPLACE_WITH_COLUMN_ID",
+    "activityTypeLabel": "Email",
+    "dateColumn": "REPLACE_WITH_COLUMN_ID",
+    "statusColumn": "REPLACE_WITH_COLUMN_ID",
+    "doneLabel": "Done",
+    "needsPersonLabel": "Needs Person",
+    "ownerColumn": "REPLACE_WITH_COLUMN_ID",
+    "personColumn": "REPLACE_WITH_COLUMN_ID",
+    "notesColumn": "REPLACE_WITH_COLUMN_ID",
+    "messageHashColumn": "REPLACE_WITH_COLUMN_ID"
+  },
+  "matching": {
+    "peopleEmailColumns": [
+      "REPLACE_WITH_COLUMN_ID",
+      "REPLACE_WITH_COLUMN_ID"
+    ],
+    "historicalEmailColumns": [
+      "REPLACE_WITH_COLUMN_ID",
+      "REPLACE_WITH_COLUMN_ID"
+    ],
+    "affiliationsWorkEmailColumn": "REPLACE_WITH_COLUMN_ID",
+    "affiliationsPersonColumn": "REPLACE_WITH_COLUMN_ID"
+  },
+  "mail": {
+    "loggingAddress": "log@log.bikesiliconvalley.org",
+    "staffDomains": [
+      "bikesiliconvalley.org"
+    ],
+    "staffSenders": [],
+    "trustedAuthServId": "REPLACE_WITH_AUTHSERV_ID",
+    "bodyMaxChars": 1900,
+    "maxRawBytes": 10000000,
+    "forwardTimeZone": "America/Los_Angeles",
+    "replyFrom": {
+      "email": "noreply@mail.bikesiliconvalley.org",
+      "name": "SVBC Monday Log"
+    }
+  },
+  "capacity": {
+    "activitiesMaxItems": 10000,
+    "warnPct": 95
+  },
+  "alerts": {
+    "itRequests": null
+  }
+}
