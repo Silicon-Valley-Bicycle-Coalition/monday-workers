@@ -99,6 +99,29 @@ describe('buildActivity', () => {
     expect(text).toContain('… [truncated]');
   });
 
+  it('caps notes at 2000 even with 60 unmatched addresses', () => {
+    const many = Array.from({ length: 60 }, (_, i) => `person${String(i).padStart(2, '0')}.with.a.long.name@some-organisation.example.com`);
+    const { columnValues } = buildActivity(
+      message({ counterparts: many, attachmentNames: Array.from({ length: 30 }, (_, i) => `attachment-${i}.pdf`) }),
+      { personItemIds: [], unmatched: many },
+      null,
+      config,
+    );
+    const text = (columnValues.notes_col as { text: string }).text;
+    expect(text.length).toBeLessThanOrEqual(2000);
+    expect(text).toContain(`Sent by dana@example.org to ${many.slice(0, 10).join(', ')}, +50 more`);
+    expect(text).toContain(`Not on anyone's record: ${many.slice(0, 10).join(', ')}, +50 more`);
+    expect(text).not.toContain(many[10]);
+  });
+
+  it('caps notes at 2000 when the footer alone is over the limit', () => {
+    const huge = Array.from({ length: 3 }, (_, i) => `${'a'.repeat(900)}${i}@example.com`);
+    const { columnValues } = buildActivity(message({ counterparts: huge }), { personItemIds: [], unmatched: huge }, null, config);
+    const text = (columnValues.notes_col as { text: string }).text;
+    expect(text.length).toBeLessThanOrEqual(2000);
+    expect(text.endsWith('… [truncated]')).toBe(true);
+  });
+
   it('cuts the item name to 255 characters', () => {
     const { name } = buildActivity(message({ subject: 'a'.repeat(300) }), { personItemIds: [], unmatched: [] }, 77, config);
     expect(name.length).toBe(255);
