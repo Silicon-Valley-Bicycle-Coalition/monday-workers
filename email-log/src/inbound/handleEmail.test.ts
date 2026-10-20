@@ -110,6 +110,23 @@ describe('handleEmail', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  it('rethrows the queue error even when markFailed fails', async () => {
+    send.mockRejectedValueOnce(new Error('queue down'));
+    const d = deps();
+    vi.spyOn(d.store, 'markFailed').mockRejectedValueOnce(new Error('D1 unavailable'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(handleEmail(fakeMessage(bccNew).message, d)).rejects.toThrow('queue down');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const line = String(errorSpy.mock.calls[0]![0]);
+      expect(line).toMatch(/[0-9a-f]{12}/);
+      expect(line).toContain('D1 unavailable');
+      expect(line).not.toContain('@');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('logs only the hash prefix', async () => {
     await handleEmail(fakeMessage(bccNew).message, deps());
     await handleEmail(fakeMessage(bccNew).message, deps());

@@ -4,6 +4,7 @@ import type { EmailLogConfig } from '../types';
 import { authenticateSender } from './authenticate';
 import { messageIdHash } from './dedupe';
 import { extract, type LogQueueMessage } from './extract';
+import { errorText } from '../logSafe';
 
 export interface HandleEmailDeps {
   config: EmailLogConfig;
@@ -62,7 +63,13 @@ export async function handleEmail(message: ForwardableEmailMessage, deps: Handle
     await deps.queue.send({ ...extracted.message, messageIdHash: hash, staffEmail: auth.staffEmail });
   } catch (err) {
     // Rethrowing makes Email Routing answer with a temporary failure, so the sender's server retries.
-    await deps.store.markFailed(hash, err instanceof Error ? err.message : String(err));
+    // A D1 error here must not replace the queue error: the row then stays 'queued' and a retry
+    // is a duplicate, but the cause that surfaces is still the real one.
+    try {
+      await deps.store.markFailed(hash, errorText(err));
+    } catch (markErr) {
+      console.error(`email-log inbound: ${id} could not mark the row failed: ${errorText(markErr)}`);
+    }
     throw err;
   }
   log('queued', { id, kind });
