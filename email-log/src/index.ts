@@ -6,7 +6,7 @@ import { D1LoggedMessageStore } from './db/loggedMessages';
 import { CloudflareReplySender } from './email/reply';
 import { sandboxEmailBinding } from './email/sandboxBinding';
 import { validateConfig } from './config';
-import { createConfigSelector, environmentOf, queueBaseName } from './environment';
+import { createConfigSelector, environmentOf } from './environment';
 import { handleEmail } from './inbound/handleEmail';
 import type { LogQueueMessage } from './inbound/extract';
 import { HttpMondayClient } from './monday/client';
@@ -16,10 +16,23 @@ import type { Env } from './types';
 // per isolate — see src/environment.ts.
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
-// Production queue names from wrangler.jsonc; the sandbox's carry a "-sandbox" suffix that
-// queueBaseName strips, so one router serves both.
+// Queue names from wrangler.jsonc, matched exactly: the sandbox DLQ ("…-sandbox-dlq") doesn't end
+// in "-sandbox", so stripping a suffix can't route it.
 const WRITE_QUEUE = 'email-log-writes';
+const SANDBOX_WRITE_QUEUE = 'email-log-writes-sandbox';
 const DEAD_LETTER_QUEUE = 'email-log-writes-dlq';
+const SANDBOX_DEAD_LETTER_QUEUE = 'email-log-writes-sandbox-dlq';
+
+export function isDeadLetterBatch(queueName: string): boolean {
+  return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE;
+}
+
+/** Which consumer a batch goes to; throws for a queue this Worker doesn't consume. */
+export function consumerFor(queueName: string): 'log' | 'dead-letter' {
+  if (isDeadLetterBatch(queueName)) return 'dead-letter';
+  if (queueName === WRITE_QUEUE || queueName === SANDBOX_WRITE_QUEUE) return 'log';
+  throw new Error(`email-log: no consumer for queue "${queueName}"`);
+}
 
 // In the sandbox every reply goes to the sink (the platform's allowed_destination_addresses is the
 // second lock). A missing sink fails closed rather than falling back to the real binding.
@@ -42,11 +55,7 @@ export default {
   // Both the write queue and its dead-letter queue are consumed here; wrangler.jsonc names them.
   async queue(batch: MessageBatch<LogQueueMessage>, env: Env): Promise<void> {
     const config = configFor(env);
-    const base = queueBaseName(batch.queue);
-    if (base !== WRITE_QUEUE && base !== DEAD_LETTER_QUEUE) {
-      console.error(`email-log: batch from unexpected queue "${batch.queue}"`);
-      throw new Error(`email-log: no consumer for queue "${batch.queue}"`);
-    }
+    const consumer = consumerFor(batch.queue);
     const deps: ConsumerDeps = {
       config,
       store: new D1LoggedMessageStore(env.DB),
@@ -54,7 +63,7 @@ export default {
       reply: new CloudflareReplySender(replyBinding(env), config.mail.replyFrom),
       now: () => new Date(),
     };
-    if (base === DEAD_LETTER_QUEUE) await processDeadLetters([...batch.messages], deps);
+    if (consumer === 'dead-letter') await processDeadLetters([...batch.messages], deps);
     else await processLogBatch([...batch.messages], deps);
   },
 };

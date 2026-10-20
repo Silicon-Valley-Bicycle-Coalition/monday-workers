@@ -5,6 +5,7 @@ import wranglerText from '../wrangler.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 import { validateConfig, PLACEHOLDER_COLUMN_ID } from '../src/config';
 import { queueBaseName } from '../src/environment';
+import { consumerFor } from '../src/index';
 
 // Keeps the sandbox and production deployments apart at the repo level: sandbox.json is the
 // real CRM Sandbox config; svbc.json is production and may hold no sandbox id; and env.sandbox
@@ -117,6 +118,17 @@ describe('wrangler.jsonc env.sandbox', () => {
     for (const consumer of writers) {
       expect(consumer.queue.endsWith('-sandbox')).toBe(true);
       expect(consumer.dead_letter_queue).toBe(`${consumer.queue}-dlq`);
+    }
+  });
+
+  it('routes every consumed queue to the right consumer, in both environments', () => {
+    for (const queues of [wrangler.queues as Json, sandboxEnv.queues as Json]) {
+      const consumers = queues.consumers as { queue: string; dead_letter_queue?: string }[];
+      const writer = consumers.find((c) => c.dead_letter_queue !== undefined)!;
+      const dlq = consumers.find((c) => c.dead_letter_queue === undefined)!;
+      expect(dlq.queue).toBe(writer.dead_letter_queue);
+      expect(consumerFor(writer.queue)).toBe('log');
+      expect(consumerFor(dlq.queue)).toBe('dead-letter');
     }
   });
 
