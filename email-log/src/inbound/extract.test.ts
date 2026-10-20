@@ -97,14 +97,28 @@ describe('extract', () => {
     expect(r.message.subject).toBe('Fwd: Trail closure follow-up');
   });
 
-  it('outlook forward falls back to bcc', async () => {
-    // No Gmail marker, so it is handled as a BCC: the only recipient is the logging address,
-    // leaving no counterparts.
-    expect(await run(outlook)).toEqual({ kind: 'staff-only' });
-    const withCounterpart = outlook.replace('To: log@log.bikesiliconvalley.org', 'To: log@log.bikesiliconvalley.org, Jane <jane@example.org>');
-    const r = await logged(withCounterpart);
+  it('outlook forward falls back to bcc and is still logged', async () => {
+    const r = await logged(outlook);
     expect(r.message.kind).toBe('bcc');
+    expect(r.message.counterparts).toEqual([]);
     expect(r.message.subject).toBe('FW: Ride schedule');
+  });
+
+  it('Fwd: subject between staff only with no block is logged, not dropped', async () => {
+    const raw = staffOnly.replace('Subject: Internal', 'Subject: Fwd: Internal');
+    const r = await logged(raw);
+    expect(r.message.kind).toBe('bcc');
+    expect(r.message.counterparts).toEqual([]);
+  });
+
+  it('forward whose block is all staff is staff-only', async () => {
+    const raw = forward.replace('From: Jane Rider <jane@example.org>', 'From: Jane <jane@bikesiliconvalley.org>').replace('Cc: Bob <bob@example.com>, ', 'Cc: ');
+    expect(await run(raw)).toEqual({ kind: 'staff-only' });
+  });
+
+  it('bcc dedupe fallback uses the normalized subject', async () => {
+    const raw = noMessageId.replace('Subject: No id', 'Subject:   ');
+    expect((await logged(raw)).dedupeSource).toMatchObject({ subject: '(no subject)' });
   });
 
   it('lists attachment filenames and keeps no content', async () => {

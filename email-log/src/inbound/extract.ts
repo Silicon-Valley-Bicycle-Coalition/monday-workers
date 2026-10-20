@@ -49,7 +49,8 @@ export function extract(parsed: Email, mail: EmailLogConfig['mail'], now: Date):
   const messageDate = validDate(parsed.date) ?? now.toISOString();
   const attachmentNames = parsed.attachments.flatMap((a) => (a.filename ? [a.filename] : []));
 
-  const block = FORWARD_SUBJECT.test(rawSubject) ? parseForwardBlock(rawText(parsed), mail.forwardTimeZone) : null;
+  const forwardLike = FORWARD_SUBJECT.test(rawSubject);
+  const block = forwardLike ? parseForwardBlock(rawText(parsed), mail.forwardTimeZone) : null;
 
   if (block) {
     const counterparts = external(isStaff(block.from) ? [...block.to, ...block.cc] : [block.from, ...block.cc]);
@@ -74,7 +75,9 @@ export function extract(parsed: Email, mail: EmailLogConfig['mail'], now: Date):
   }
 
   const counterparts = external([...addresses(parsed.to), ...addresses(parsed.cc)]);
-  if (counterparts.length === 0) return { kind: 'staff-only' };
+  // A Fwd: subject whose block did not parse is still logged (the consumer makes a Needs Person
+  // item and replies); only a plain BCC with no external counterpart is dropped as staff-only.
+  if (counterparts.length === 0 && !forwardLike) return { kind: 'staff-only' };
   const subject = rawSubject || '(no subject)';
   return {
     kind: 'log',
@@ -88,6 +91,6 @@ export function extract(parsed: Email, mail: EmailLogConfig['mail'], now: Date):
     },
     dedupeSource: parsed.messageId
       ? { messageId: parsed.messageId }
-      : { from: addresses(parsed.from)[0] ?? '', dateISO: messageDate, subject: rawSubject },
+      : { from: addresses(parsed.from)[0] ?? '', dateISO: messageDate, subject },
   };
 }
