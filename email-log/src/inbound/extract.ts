@@ -1,4 +1,4 @@
-import type { Address, Email } from 'postal-mime';
+import type { Address, Attachment, Email } from 'postal-mime';
 import type { EmailLogConfig } from '../types';
 import { bodyText, rawText } from './body';
 import type { DedupeSource } from './dedupe';
@@ -29,6 +29,14 @@ function addresses(list: Address[] | Address | undefined): string[] {
     .flatMap((m) => ('address' in m && m.address ? [m.address.trim().toLowerCase()] : []));
 }
 
+// An image the HTML shows in place (a signature logo, a pasted screenshot) rather than a file the
+// sender attached: postal-mime marks a Content-ID part inside multipart/related as `related`, and
+// an inline part with a Content-ID is embedded the same way. Apple Mail sends real files as inline
+// without a Content-ID, so the disposition alone doesn't decide.
+function isEmbedded(a: Attachment): boolean {
+  return a.related === true || (a.disposition === 'inline' && a.contentId !== undefined);
+}
+
 function validDate(value: string | undefined): string | null {
   if (!value) return null;
   const d = new Date(value);
@@ -47,7 +55,7 @@ export function extract(parsed: Email, mail: EmailLogConfig['mail'], now: Date):
 
   const rawSubject = (parsed.subject ?? '').trim();
   const messageDate = validDate(parsed.date) ?? now.toISOString();
-  const attachmentNames = parsed.attachments.flatMap((a) => (a.filename ? [a.filename] : []));
+  const attachmentNames = parsed.attachments.flatMap((a) => (a.filename && !isEmbedded(a) ? [a.filename] : []));
 
   const forwardLike = FORWARD_SUBJECT.test(rawSubject);
   const block = forwardLike ? parseForwardBlock(rawText(parsed), mail.forwardTimeZone) : null;

@@ -12,6 +12,7 @@ import htmlOnly from '../../test/fixtures/html-only.eml?raw';
 import noMessageId from '../../test/fixtures/no-message-id.eml?raw';
 import logInTo from '../../test/fixtures/log-in-to.eml?raw';
 import withAttachment from '../../test/fixtures/with-attachment.eml?raw';
+import withInlineImage from '../../test/fixtures/with-inline-image.eml?raw';
 
 const { mail } = testConfig({
   mail: { staffDomains: ['bikesiliconvalley.org'], loggingAddress: 'log@log.bikesiliconvalley.org' },
@@ -125,6 +126,16 @@ describe('extract', () => {
     const r = await logged(withAttachment);
     expect(r.message.attachmentNames).toEqual(['flyer.pdf']);
     expect(JSON.stringify(r.message)).not.toContain('JVBERi');
+  });
+
+  it('ignores inline signature images', async () => {
+    const r = await logged(withInlineImage);
+    expect(r.message.attachmentNames).toEqual(['flyer.pdf']);
+  });
+
+  it('keeps an inline-disposition file that has no Content-ID (Apple Mail sends real files this way)', async () => {
+    const r = await logged(withAttachment.replace('Content-Disposition: attachment;', 'Content-Disposition: inline;'));
+    expect(r.message.attachmentNames).toEqual(['flyer.pdf']);
   });
 
   it('forward date falls back to the message Date when the block date is unparseable', async () => {
