@@ -7,6 +7,7 @@ import { handleEmail } from './handleEmail';
 import bccNew from '../../test/fixtures/gmail-bcc-new.eml?raw';
 import dkimFail from '../../test/fixtures/dkim-fail.eml?raw';
 import forward from '../../test/fixtures/gmail-forward.eml?raw';
+import longBody from '../../test/fixtures/long-body.eml?raw';
 import spoofed from '../../test/fixtures/spoofed-from.eml?raw';
 import staffOnly from '../../test/fixtures/staff-only.eml?raw';
 
@@ -98,6 +99,15 @@ describe('handleEmail', () => {
       staffEmail: 'dana@bikesiliconvalley.org',
       counterparts: expect.arrayContaining(['jane@example.org']),
     });
+  });
+
+  it('truncates a ~50 KB body to bodyMaxChars before enqueueing', async () => {
+    expect(longBody.length).toBeGreaterThan(50_000);
+    await handleEmail(fakeMessage(longBody).message, deps());
+    expect(send).toHaveBeenCalledTimes(1);
+    const { body } = send.mock.calls[0]![0] as { body: string };
+    expect(body.length).toBeLessThanOrEqual(config.mail.bodyMaxChars);
+    expect(body.endsWith('… [truncated]')).toBe(true);
   });
 
   it('marks the ledger failed and rethrows when the queue send fails', async () => {
