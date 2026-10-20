@@ -52,7 +52,7 @@ describe('processDeadLetters', () => {
 
   it('acks even when the ledger and the reply both fail', async () => {
     const { store, reply, deps } = setup();
-    store.failMarkFailed = true;
+    store.failBookkeeping = true;
     reply.sendNotLogged.mockRejectedValueOnce(new Error('send failed'));
     const msg = fakeMessage(logMessage());
     await processDeadLetters([msg], deps);

@@ -9,6 +9,7 @@ import type { EmailLogConfig } from '../types';
 
 const NOW = new Date('2026-10-20T12:00:00.000Z');
 const HASH = 'ab'.repeat(32);
+const OTHER_HASH = 'cd'.repeat(32);
 const BOARD = 111;
 const IT = { boardId: 900, typeColumn: 'it_type', typeLabel: 'Integration', cooldownDays: 7 };
 
@@ -29,8 +30,11 @@ function logMessage(overrides: Partial<LogQueueMessage> = {}): LogQueueMessage {
 const PAT = { '42:personal_email_col:pat@gmail.com': ['11'] };
 const LEE = { '42:household_email_col:lee@corp.com': ['22'] };
 
-function setup(lookups: Record<string, string[]> = {}, configOverrides: DeepPartial<EmailLogConfig> = {}, count?: number) {
+async function setup(lookups: Record<string, string[]> = {}, configOverrides: DeepPartial<EmailLogConfig> = {}, count?: number) {
+  // Rows arrive claimed ('queued') by the email handler, as in production.
   const store = new FakeStore();
+  await store.claim(HASH);
+  await store.claim(OTHER_HASH);
   const monday = fakeMonday(lookups, { count });
   const reply = fakeReply();
   const config = testConfig(configOverrides);
@@ -57,7 +61,7 @@ describe('retryDelaySeconds', () => {
 
 describe('processLogBatch', () => {
   it('full match: creates the item, marks logged, sends no reply, acks', async () => {
-    const { store, monday, reply, deps } = setup({ ...PAT, ...LEE });
+    const { store, monday, reply, deps } = await setup({ ...PAT, ...LEE });
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
 
@@ -72,7 +76,7 @@ describe('processLogBatch', () => {
   });
 
   it('partial match: creates, replies with the unmatched list and the item URL', async () => {
-    const { store, reply, deps } = setup(PAT);
+    const { store, reply, deps } = await setup(PAT);
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
 
@@ -88,7 +92,7 @@ describe('processLogBatch', () => {
   });
 
   it('no match: creates with Needs Person, replies with nothingMatched', async () => {
-    const { monday, reply, deps } = setup();
+    const { monday, reply, deps } = await setup();
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
 
@@ -106,7 +110,7 @@ describe('processLogBatch', () => {
   });
 
   it('adopts an existing item by Message Hash before creating', async () => {
-    const { store, monday, reply, deps } = setup({ [`${BOARD}:hash_col:${HASH}`]: ['555'] });
+    const { store, monday, reply, deps } = await setup({ [`${BOARD}:hash_col:${HASH}`]: ['555'] });
     const msg = fakeMessage(logMessage(), 2);
     await processLogBatch([msg], deps);
 
@@ -118,7 +122,7 @@ describe('processLogBatch', () => {
   });
 
   it('reply failure does not fail the message', async () => {
-    const { store, reply, deps } = setup();
+    const { store, reply, deps } = await setup();
     reply.sendUnmatched.mockRejectedValueOnce(new Error('send failed'));
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
@@ -133,20 +137,32 @@ describe('processLogBatch', () => {
   });
 
   it('Monday 429 → retry with retryDelaySeconds(attempts)', async () => {
-    const { store, monday, deps } = setup();
+    const { store, monday, deps } = await setup();
     monday.createItem.mockRejectedValueOnce(new MondayApiError('rate limited', { httpStatus: 429 }));
     const msg = fakeMessage(logMessage(), 2);
     await processLogBatch([msg], deps);
 
     expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: retryDelaySeconds(2) });
     expect(msg.ack).not.toHaveBeenCalled();
-    expect(store.failed.has(HASH)).toBe(true);
+    expect(store.errors.get(HASH)).toBe('rate limited');
+    expect(store.failed.size).toBe(0);
     expect(store.logged.size).toBe(0);
   });
 
+  it('a retry keeps the row queued so a redelivery is still a duplicate', async () => {
+    const { store, monday, deps } = await setup();
+    monday.createItem.mockRejectedValueOnce(new MondayApiError('rate limited', { httpStatus: 429 }));
+    const msg = fakeMessage(logMessage());
+    await processLogBatch([msg], deps);
+
+    expect(msg.retry).toHaveBeenCalled();
+    expect(store.status.get(HASH)).toBe('queued');
+    expect(await store.claim(HASH)).toBe(false);
+  });
+
   it('still retries when recording the failure fails too', async () => {
-    const { store, monday, deps } = setup();
-    store.failMarkFailed = true;
+    const { store, monday, deps } = await setup();
+    store.failBookkeeping = true;
     monday.createItem.mockRejectedValueOnce(new MondayApiError('rate limited', { httpStatus: 429 }));
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
@@ -154,7 +170,7 @@ describe('processLogBatch', () => {
   });
 
   it('"Board has reached its max size" → raises the board-full alert and retries', async () => {
-    const { store, monday, deps } = setup({}, { alerts: { itRequests: IT } });
+    const { store, monday, deps } = await setup({}, { alerts: { itRequests: IT } });
     monday.createItem.mockImplementation(async (board: number) => {
       if (board === BOARD) throw new MondayApiError('Board has reached its max size', { code: 'ItemsLimitationException' });
       return '9001';
@@ -169,7 +185,7 @@ describe('processLogBatch', () => {
   });
 
   it('at warnPct of activitiesMaxItems → raises the capacity alert and still writes', async () => {
-    const { store, monday, deps } = setup({}, { alerts: { itRequests: IT }, capacity: { activitiesMaxItems: 1000, warnPct: 90 } }, 900);
+    const { store, monday, deps } = await setup({}, { alerts: { itRequests: IT }, capacity: { activitiesMaxItems: 1000, warnPct: 90 } }, 900);
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
 
@@ -182,35 +198,35 @@ describe('processLogBatch', () => {
   });
 
   it('below warnPct raises no alert', async () => {
-    const { store, deps } = setup({}, { alerts: { itRequests: IT }, capacity: { activitiesMaxItems: 1000, warnPct: 90 } }, 899);
+    const { store, deps } = await setup({}, { alerts: { itRequests: IT }, capacity: { activitiesMaxItems: 1000, warnPct: 90 } }, 899);
     await processLogBatch([fakeMessage(logMessage())], deps);
     expect(store.alerts.size).toBe(0);
   });
 
   it('refuses to write while activities-logged is null', async () => {
-    const { store, monday, deps } = setup({}, { monday: { boards: { 'activities-logged': null } } });
+    const { store, monday, deps } = await setup({}, { monday: { boards: { 'activities-logged': null } } });
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
 
     expect(monday.createItem).not.toHaveBeenCalled();
     expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
-    expect(store.failed.get(HASH)).toBe('config: monday.boards.activities-logged is not configured');
+    expect(store.errors.get(HASH)).toBe('config: monday.boards.activities-logged is not configured');
   });
 
   it('refuses to write while an activities column is the placeholder', async () => {
-    const { store, monday, deps } = setup({}, { activities: { notesColumn: PLACEHOLDER_COLUMN_ID } });
+    const { store, monday, deps } = await setup({}, { activities: { notesColumn: PLACEHOLDER_COLUMN_ID } });
     const msg = fakeMessage(logMessage());
     await processLogBatch([msg], deps);
 
     expect(monday.createItem).not.toHaveBeenCalled();
     expect(msg.retry).toHaveBeenCalled();
-    expect(store.failed.get(HASH)).toBe('config: activities.notesColumn is not configured');
+    expect(store.errors.get(HASH)).toBe('config: activities.notesColumn is not configured');
   });
 
   it('processes each message independently', async () => {
-    const { monday, deps } = setup({ ...PAT, ...LEE });
+    const { monday, deps } = await setup({ ...PAT, ...LEE });
     monday.createItem.mockRejectedValueOnce(new Error('boom'));
-    const first = fakeMessage(logMessage({ messageIdHash: 'cd'.repeat(32) }));
+    const first = fakeMessage(logMessage({ messageIdHash: OTHER_HASH }));
     const second = fakeMessage(logMessage());
     await processLogBatch([first, second], deps);
     expect(first.retry).toHaveBeenCalled();
@@ -218,7 +234,7 @@ describe('processLogBatch', () => {
   });
 
   it('never logs an address or subject', async () => {
-    const { monday, reply, deps } = setup();
+    const { monday, reply, deps } = await setup();
     monday.createItem.mockRejectedValueOnce(new Error('boom'));
     reply.sendUnmatched.mockRejectedValueOnce(new Error('send failed'));
     await processLogBatch([fakeMessage(logMessage()), fakeMessage(logMessage())], deps);

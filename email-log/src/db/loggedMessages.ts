@@ -15,6 +15,11 @@ export interface LoggedMessageStore {
    * Never downgrades a 'logged' row (a late failure after a confirmed write is not a failure).
    */
   markFailed(hash: string, error: string): Promise<void>;
+  /**
+   * Records the latest consumer error on a row that is still queued, without changing its status:
+   * a retry keeps the row 'queued' so a redelivered inbound copy is still a duplicate.
+   */
+  recordError(hash: string, error: string): Promise<void>;
   lastAlertAt(kind: AlertKind): Promise<string | null>;
   recordAlert(kind: AlertKind, at: string, itemId: string | null): Promise<void>;
 }
@@ -45,6 +50,13 @@ export class D1LoggedMessageStore implements LoggedMessageStore {
   async markFailed(hash: string, error: string): Promise<void> {
     await this.db
       .prepare(`UPDATE logged_messages SET status = 'failed', error = ?2 WHERE message_id_hash = ?1 AND status != 'logged'`)
+      .bind(hash, error.slice(0, MAX_ERROR_CHARS))
+      .run();
+  }
+
+  async recordError(hash: string, error: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE logged_messages SET error = ?2 WHERE message_id_hash = ?1 AND status = 'queued'`)
       .bind(hash, error.slice(0, MAX_ERROR_CHARS))
       .run();
   }

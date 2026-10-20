@@ -64,6 +64,24 @@ describe('D1LoggedMessageStore', () => {
     expect(await row('h-7')).toMatchObject({ status: 'logged', activity_item_id: 'item-7', error: null });
   });
 
+  it('recordError keeps the row queued', async () => {
+    const store = new D1LoggedMessageStore(env.DB);
+    await store.claim('h-8', 'bcc', T0);
+    await store.recordError('h-8', 'y'.repeat(900));
+    const r = await row('h-8');
+    expect(r).toMatchObject({ status: 'queued' });
+    expect((r?.error as string).length).toBe(500);
+    expect(await store.claim('h-8', 'bcc', T1)).toBe(false);
+  });
+
+  it('recordError leaves a logged row alone', async () => {
+    const store = new D1LoggedMessageStore(env.DB);
+    await store.claim('h-9', 'bcc', T0);
+    await store.markLogged('h-9', 'item-9', T1);
+    await store.recordError('h-9', 'late');
+    expect(await row('h-9')).toMatchObject({ status: 'logged', error: null });
+  });
+
   it('alerts round-trip', async () => {
     const store = new D1LoggedMessageStore(env.DB);
     expect(await store.lastAlertAt('capacity')).toBeNull();

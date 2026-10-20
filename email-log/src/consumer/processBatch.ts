@@ -68,9 +68,11 @@ export async function processLogBatch(messages: QueueMessageLike<LogQueueMessage
     } catch (err) {
       const error = errorText(err);
       console.error(`email-log consumer: ${shortId(hash)} failed (attempt ${message.attempts ?? 1}): ${error}`);
-      // Bookkeeping only: a D1 error here must not take the retry decision down with it.
+      // Bookkeeping only: a D1 error here must not take the retry decision down with it. Never
+      // markFailed here: the message is still live in the queue, and a 'failed' row would let a
+      // redelivered inbound copy claim and enqueue a second one. Only the DLQ sets 'failed'.
       try {
-        await deps.store.markFailed(hash, error);
+        await deps.store.recordError(hash, error);
       } catch (recordErr) {
         console.error(`email-log consumer: ${shortId(hash)} could not record the failure: ${errorText(recordErr)}`);
       }

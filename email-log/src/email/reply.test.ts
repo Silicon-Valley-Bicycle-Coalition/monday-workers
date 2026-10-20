@@ -52,6 +52,20 @@ describe('CloudflareReplySender', () => {
     }
   });
 
+  it('strips CR/LF and control characters from the subject', async () => {
+    const binding = fakeBinding();
+    const sender = new CloudflareReplySender(binding, FROM);
+    const subject = 'Hi\r\nBcc: x@example.com\t\x00there';
+    await sender.sendUnmatched('staff@example.org', subject, URL, ['a@x.com\r\nBcc: y@example.com'], false);
+    await sender.sendNotLogged('staff@example.org', subject);
+    for (const [msg] of binding.send.mock.calls as [EmailMessageBuilder][]) {
+      expect(msg.subject).not.toMatch(/[\r\n]/);
+      expect(msg.subject).toMatch(/: Hi Bcc: x@example\.com there$/);
+      expect(msg.text).toContain('"Hi Bcc: x@example.com there"');
+    }
+    expect(sent(binding).text).toContain('- a@x.com Bcc: y@example.com\n');
+  });
+
   it('the sandbox wrapper redirects the reply to the sink', async () => {
     const inner = fakeBinding();
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});

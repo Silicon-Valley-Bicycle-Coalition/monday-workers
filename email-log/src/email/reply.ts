@@ -6,6 +6,12 @@ export interface ReplySender {
   sendNotLogged(to: string, subject: string): Promise<void>;
 }
 
+// The subject comes from inbound mail; a CR/LF in it could inject headers into the outbound
+// Subject. Collapses every run of control characters to one space.
+export function oneLine(s: string): string {
+  return s.replace(/[\r\n\t\x00-\x1f\x7f]+/g, ' ').trim();
+}
+
 export class CloudflareReplySender implements ReplySender {
   private readonly binding: SendEmail;
   private readonly from: { email: string; name: string };
@@ -15,16 +21,18 @@ export class CloudflareReplySender implements ReplySender {
     this.from = from;
   }
 
-  async sendUnmatched(to: string, subject: string, itemUrl: string, unmatched: string[], nothingMatched: boolean): Promise<void> {
+  async sendUnmatched(to: string, rawSubject: string, itemUrl: string, unmatched: string[], nothingMatched: boolean): Promise<void> {
+    const subject = oneLine(rawSubject);
     let text =
       `Your email "${subject}" is on the Activities (Logged) board:\n${itemUrl}\n\n` +
-      `These addresses aren't on anyone's record in Monday:\n${unmatched.map((a) => '- ' + a).join('\n')}\n\n` +
+      `These addresses aren't on anyone's record in Monday:\n${unmatched.map((a) => '- ' + oneLine(a)).join('\n')}\n\n` +
       'Add each address to the right person in Monday (or create the person), then link this item to them.';
     if (nothingMatched) text += '\n\nBecause no one matched, the item is marked Needs Person.';
     await this.send(to, `Logged to Monday, but some addresses aren't on file: ${subject}`, text);
   }
 
-  async sendNotLogged(to: string, subject: string): Promise<void> {
+  async sendNotLogged(to: string, rawSubject: string): Promise<void> {
+    const subject = oneLine(rawSubject);
     await this.send(
       to,
       `Couldn't log to Monday: ${subject}`,
