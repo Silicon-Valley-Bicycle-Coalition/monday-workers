@@ -117,18 +117,15 @@ async function processOne(msg: LogQueueMessage, deps: ConsumerDeps): Promise<voi
   await store.markLogged(hash, itemId, deps.now().toISOString());
   console.log(JSON.stringify({ emailLog: 'logged', id: shortId(hash), unmatched: match.unmatched.length }));
 
-  if (match.unmatched.length > 0) {
+  // Anything left Needs Person, or with an address not on file, gets a reply saying what to fix.
+  if (match.personItemIds.length === 0 || match.unmatched.length > 0) {
+    const itemUrl = `${config.monday.accountUrl}/boards/${board}/pulses/${itemId}`;
     try {
-      await deps.reply.sendUnmatched(
-        msg.staffEmail,
-        msg.subject,
-        `${config.monday.accountUrl}/boards/${board}/pulses/${itemId}`,
-        match.unmatched,
-        match.personItemIds.length === 0
-      );
+      if (msg.counterparts.length === 0) await deps.reply.sendNoAddress(msg.staffEmail, msg.subject, itemUrl);
+      else await deps.reply.sendUnmatched(msg.staffEmail, msg.subject, itemUrl, match.unmatched, match.personItemIds.length === 0);
     } catch (err) {
       // The item is written; a lost reply is not worth a retry that would re-check and adopt it.
-      console.error(`email-log consumer: ${shortId(hash)} logged, but the unmatched-address reply failed: ${errorText(err)}`);
+      console.error(`email-log consumer: ${shortId(hash)} logged, but the reply to staff failed: ${errorText(err)}`);
     }
   }
 }

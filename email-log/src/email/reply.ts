@@ -3,6 +3,7 @@
 // The wording asks staff to fix the record, never to log more mail ("significant touches only").
 export interface ReplySender {
   sendUnmatched(to: string, subject: string, itemUrl: string, unmatched: string[], nothingMatched: boolean): Promise<void>;
+  sendNoAddress(to: string, subject: string, itemUrl: string): Promise<void>;
   sendNotLogged(to: string, subject: string): Promise<void>;
 }
 
@@ -29,6 +30,16 @@ export class CloudflareReplySender implements ReplySender {
       'Add each address to the right person in Monday (or create the person), then link this item to them.';
     if (nothingMatched) text += '\n\nBecause no one matched, the item is marked Needs Person.';
     await this.send(to, `Logged to Monday, but some addresses aren't on file: ${subject}`, text);
+  }
+
+  async sendNoAddress(to: string, rawSubject: string, itemUrl: string): Promise<void> {
+    const subject = oneLine(rawSubject);
+    await this.send(
+      to,
+      `Logged to Monday, but no outside address was found: ${subject}`,
+      `Your email "${subject}" is on the Activities (Logged) board:\n${itemUrl}\n\n` +
+        "No outside address could be read from it, so it isn't linked to anyone and is marked Needs Person. Open the item and link the person by hand."
+    );
   }
 
   async sendNotLogged(to: string, rawSubject: string): Promise<void> {

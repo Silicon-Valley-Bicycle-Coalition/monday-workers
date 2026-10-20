@@ -56,6 +56,7 @@ export function fakeMonday(lookups: Record<string, string[]> = {}, opts: { count
 export function fakeReply() {
   return {
     sendUnmatched: vi.fn(async () => {}),
+    sendNoAddress: vi.fn(async () => {}),
     sendNotLogged: vi.fn(async () => {}),
   } satisfies ReplySender;
 }

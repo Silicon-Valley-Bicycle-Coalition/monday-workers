@@ -33,6 +33,18 @@ describe('CloudflareReplySender', () => {
     expect(sent(binding).text).toMatch(/link this item to them\.\n\nBecause no one matched, the item is marked Needs Person\.$/);
   });
 
+  it('sendNoAddress: subject, item link and how to fix it', async () => {
+    const binding = fakeBinding();
+    await new CloudflareReplySender(binding, FROM).sendNoAddress('staff@example.org', 'Spring\r\nride', URL);
+    const msg = sent(binding);
+    expect(msg).toMatchObject({ from: FROM, to: 'staff@example.org' });
+    expect(msg.subject).toBe('Logged to Monday, but no outside address was found: Spring ride');
+    expect(msg.text).toBe(
+      `Your email "Spring ride" is on the Activities (Logged) board:\n${URL}\n\n` +
+        "No outside address could be read from it, so it isn't linked to anyone and is marked Needs Person. Open the item and link the person by hand."
+    );
+  });
+
   it('sendNotLogged: subject and text', async () => {
     const binding = fakeBinding();
     await new CloudflareReplySender(binding, FROM).sendNotLogged('staff@example.org', 'Spring ride');
@@ -46,6 +58,7 @@ describe('CloudflareReplySender', () => {
     const binding = fakeBinding();
     const sender = new CloudflareReplySender(binding, FROM);
     await sender.sendUnmatched('staff@example.org', 'S', URL, ['a@x.com'], true);
+    await sender.sendNoAddress('staff@example.org', 'S', URL);
     await sender.sendNotLogged('staff@example.org', 'S');
     for (const [msg] of binding.send.mock.calls as [EmailMessageBuilder][]) {
       expect(`${msg.subject}\n${msg.text}`.toLowerCase()).not.toContain('every email');

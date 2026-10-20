@@ -109,6 +109,19 @@ describe('processLogBatch', () => {
     expect(msg.ack).toHaveBeenCalledTimes(1);
   });
 
+  it('zero counterparts: creates Needs Person and sends the no-address reply', async () => {
+    const { store, monday, reply, deps } = await setup();
+    const msg = fakeMessage(logMessage({ counterparts: [] }));
+    await processLogBatch([msg], deps);
+
+    const [, , columnValues] = activityCreates(monday)[0]!;
+    expect(columnValues).toMatchObject({ status_col: { label: 'Needs Person' } });
+    expect(store.logged.get(HASH)).toBe('1000');
+    expect(reply.sendNoAddress).toHaveBeenCalledWith('dana@example.org', 'Ride planning', `https://example.monday.com/boards/${BOARD}/pulses/1000`);
+    expect(reply.sendUnmatched).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+  });
+
   it('adopts an existing item by Message Hash before creating', async () => {
     const { store, monday, reply, deps } = await setup({ [`${BOARD}:hash_col:${HASH}`]: ['555'] });
     const msg = fakeMessage(logMessage(), 2);
