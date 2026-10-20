@@ -6,6 +6,10 @@ describe('bodyText', () => {
     expect(bodyText({ text: 'plain', html: '<p>html</p>' }, 100)).toBe('plain');
   });
 
+  it('uses html when text is an empty string', () => {
+    expect(bodyText({ text: '  \n', html: '<p>html</p>' }, 100)).toBe('html');
+  });
+
   it('strips html to text when there is no text part', () => {
     const html =
       '<style>p{color:red}</style><script>alert(1)</script><p>Tom &amp; Jerry &lt;3 &quot;hi&quot; it&#39;s&nbsp;ok</p>line<br>two &gt; one';

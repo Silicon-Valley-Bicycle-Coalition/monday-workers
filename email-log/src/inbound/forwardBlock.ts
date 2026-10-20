@@ -11,8 +11,8 @@ export interface ForwardBlock {
 const MARKER = /^-{5,}\s*Forwarded message\s*-{5,}\s*$/i;
 const HEADER = /^([A-Za-z][A-Za-z-]*):[ \t]*(.*)$/;
 
-/** Lowercased bare addresses from a header address list; commas inside quoted names do not split. */
-export function parseAddressList(value: string): string[] {
+/** Splits a header address list on commas outside quotes and angle brackets. */
+function splitAddressList(value: string): string[] {
   const parts: string[] = [];
   let current = '';
   let quoted = false;
@@ -29,13 +29,28 @@ export function parseAddressList(value: string): string[] {
     }
   }
   parts.push(current);
-  const out: string[] = [];
-  for (const part of parts) {
-    const angle = /<([^<>]*)>\s*$/.exec(part);
-    const addr = (angle ? angle[1]! : part).trim().replace(/^"|"$/g, '').trim().toLowerCase();
-    if (addr) out.push(addr);
-  }
-  return out;
+  return parts;
+}
+
+function entryAddress(entry: string): string | null {
+  const angle = /<([^<>]*)>/.exec(entry);
+  const raw = angle ? angle[1]! : (/\S+@\S+/.exec(entry)?.[0] ?? '');
+  const addr = raw.replace(/^[\s"'(),;:<>]+|[\s"'(),;:<>]+$/g, '').toLowerCase();
+  return addr.includes('@') ? addr : null;
+}
+
+/** Lowercased bare addresses from a header address list; entries without an address are dropped. */
+export function parseAddressList(value: string): string[] {
+  return splitAddressList(value).flatMap((entry) => entryAddress(entry) ?? []);
+}
+
+/** True when the line is nothing but address-list entries (display name optional). */
+function isAddressOnly(line: string): boolean {
+  const entries = splitAddressList(line).filter((e) => e.trim() !== '');
+  return (
+    entries.length > 0 &&
+    entries.every((e) => /^\s*(?:"[^"]*"\s*|[^<>,"@:]*?\s)?<[^<>\s]+@[^<>\s]+>\s*$|^\s*[^\s,<>"]+@[^\s,<>"]+\s*$/.test(e))
+  );
 }
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -88,18 +103,30 @@ export function parseForwardBlock(text: string, timeZone: string): ForwardBlock 
   const headers = new Map<string, string>();
   let lastKey: string | null = null;
   let i = start + 1;
-  while (i < lines.length && lines[i]!.trim() === '' && headers.size === 0) i++;
+  while (i < lines.length && lines[i]!.trim() === '') i++;
+  let bodyStart = i;
   for (; i < lines.length; i++) {
     const line = lines[i]!;
-    if (line.trim() === '') break;
-    if (/^\s/.test(line) && lastKey) {
-      headers.set(lastKey, `${headers.get(lastKey)} ${line.trim()}`);
+    if (line.trim() === '') {
+      bodyStart = i + 1;
+      break;
+    }
+    const prev = lastKey ? headers.get(lastKey)! : '';
+    const addressKey = lastKey === 'to' || lastKey === 'cc';
+    const continuation =
+      lastKey !== null && (/^\s/.test(line) || (addressKey && (prev.endsWith(',') || isAddressOnly(line))));
+    if (continuation) {
+      headers.set(lastKey!, `${prev} ${line.trim()}`);
       continue;
     }
     const h = HEADER.exec(line);
-    if (!h) break;
+    if (!h) {
+      bodyStart = i;
+      break;
+    }
     lastKey = h[1]!.toLowerCase();
     if (!headers.has(lastKey)) headers.set(lastKey, h[2]!.trim());
+    bodyStart = i + 1;
   }
 
   const from = parseAddressList(headers.get('from') ?? '')[0];
@@ -112,6 +139,6 @@ export function parseForwardBlock(text: string, timeZone: string): ForwardBlock 
     subject: headers.get('subject') ?? '',
     dateISO: date ? parseGmailDate(date, timeZone) : null,
     messageId: headers.get('message-id') ?? null,
-    body: lines.slice(i + 1).join('\n').trim(),
+    body: lines.slice(bodyStart).join('\n').trim(),
   };
 }

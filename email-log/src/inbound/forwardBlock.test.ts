@@ -42,6 +42,34 @@ body`;
     expect(block.messageId).toBe('<abc@example.org>');
   });
 
+  it('joins an un-indented To continuation after a trailing comma', () => {
+    const text = `---------- Forwarded message ---------
+From: a@example.org
+To: b@example.org,
+c@example.org
+Subject: S
+
+body`;
+    const block = parseForwardBlock(text, TZ)!;
+    expect(block.to).toEqual(['b@example.org', 'c@example.org']);
+    expect(block.subject).toBe('S');
+    expect(block.body).toBe('body');
+  });
+
+  it('keeps the first body line when the header block has no blank line', () => {
+    const text = `---------- Forwarded message ---------
+From: a@example.org
+Subject: S
+Hello there, this is the body
+second line`;
+    expect(parseForwardBlock(text, TZ)!.body).toBe('Hello there, this is the body\nsecond line');
+  });
+
+  it('returns null when the block has no parseable From', () => {
+    expect(parseForwardBlock('---------- Forwarded message ---------\nFrom: undisclosed\nSubject: S\n\nbody', TZ)).toBeNull();
+    expect(parseForwardBlock('---------- Forwarded message ---------\nSubject: S\n\nbody', TZ)).toBeNull();
+  });
+
   it('accepts a date without a weekday and handles PST', () => {
     expect(parseForwardBlock(gmail('Jan 5, 2026 at 12:00 AM'), TZ)!.dateISO).toBe('2026-01-05T08:00:00.000Z');
   });
@@ -77,6 +105,15 @@ describe('parseAddressList', () => {
       'john@example.com',
       'bare@example.net',
     ]);
+  });
+
+  it('extracts a bare address after a display name without brackets', () => {
+    expect(parseAddressList('Jane Rider jane@example.org, "(bob@example.com)"')).toEqual(['jane@example.org', 'bob@example.com']);
+  });
+
+  it('drops entries without an address', () => {
+    expect(parseAddressList('undisclosed-recipients:;')).toEqual([]);
+    expect(parseAddressList('Jane, a@example.org')).toEqual(['a@example.org']);
   });
 
   it('returns [] for an empty list', () => {

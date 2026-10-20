@@ -34,6 +34,6 @@ export function truncate(text: string, maxChars: number): string {
 }
 
 export function bodyText(parsed: { text?: string; html?: string }, maxChars: number): string {
-  const raw = parsed.text ?? (parsed.html !== undefined ? stripHtml(parsed.html) : '');
+  const raw = parsed.text?.trim() ? parsed.text : stripHtml(parsed.html ?? '');
   return truncate(cutQuotedHistory(raw), maxChars);
 }
