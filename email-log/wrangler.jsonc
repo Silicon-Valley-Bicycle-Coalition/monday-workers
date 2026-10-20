@@ -1,0 +1,94 @@
+{
+  "name": "svbc-email-log",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  // Email-only Worker: no HTTP surface at all, so no workers.dev URL and no custom-domain routes.
+  "workers_dev": false,
+  "routes": [],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-email-log",
+      // Not yet created. `wrangler d1 create svbc-email-log` on the SVBC account and paste
+      // the id here; forks: create your own.
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [{ "queue": "email-log-writes", "binding": "WRITE_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "email-log-writes",
+        "max_retries": 3,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain.
+        "max_concurrency": 1,
+        "dead_letter_queue": "email-log-writes-dlq"
+      },
+      {
+        "queue": "email-log-writes-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
+      }
+    ]
+  },
+  // Reply emails (alerts and confirmations) go out through the Email Sending binding.
+  "send_email": [{ "name": "EMAIL" }],
+  // Workers Paid defaults to 30s CPU/request; cap it as a guardrail. 1000 ms rather than the other
+  // Workers' 100 ms because MIME-parsing a large message needs more CPU than a JSON webhook does.
+  "limits": { "cpu_ms": 1000 },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-email-log-sandbox.
+  // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
+  // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Set the sandbox secret with `wrangler secret put MONDAY_API_TOKEN --env sandbox`.
+  "env": {
+    "sandbox": {
+      "name": "svbc-email-log-sandbox",
+      "vars": { "ENVIRONMENT": "sandbox", "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org" },
+      "workers_dev": false,
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-email-log-sandbox",
+          // Not yet created. `wrangler d1 create svbc-email-log-sandbox` and paste the id.
+          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "queues": {
+        "producers": [{ "queue": "email-log-writes-sandbox", "binding": "WRITE_QUEUE" }],
+        "consumers": [
+          {
+            "queue": "email-log-writes-sandbox",
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "dead_letter_queue": "email-log-writes-sandbox-dlq"
+          },
+          {
+            "queue": "email-log-writes-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
+          }
+        ]
+      },
+      // Locked at the platform: the sandbox can only ever send to the sink address.
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
+      "limits": { "cpu_ms": 1000 },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
+  }
+}

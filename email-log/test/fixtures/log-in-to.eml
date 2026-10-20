@@ -1,0 +1,9 @@
+Authentication-Results: mx.cloudflare.net; dkim=pass header.d=bikesiliconvalley.org header.s=google; spf=pass smtp.mailfrom=bikesiliconvalley.org
+From: Dana Staff <dana@bikesiliconvalley.org>
+To: LOG@log.bikesiliconvalley.org, Jane Rider <jane@example.org>
+Subject: Quick note
+Date: Tue, 20 Oct 2026 10:00:00 -0700
+Message-ID: <log-in-to-1@mail.bikesiliconvalley.org>
+Content-Type: text/plain; charset=utf-8
+
+Noted.
