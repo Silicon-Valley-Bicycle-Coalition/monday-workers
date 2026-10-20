@@ -10,7 +10,10 @@ export interface LoggedMessageStore {
   /** True when the row was inserted or re-opened from 'failed': the caller should enqueue. */
   claim(hash: string, kind: 'bcc' | 'forward', now: string): Promise<boolean>;
   markLogged(hash: string, itemId: string, now: string): Promise<void>;
-  /** `error` must be an error message only, never message content; stored truncated to 500 chars. */
+  /**
+   * `error` must be an error message only, never message content; stored truncated to 500 chars.
+   * Never downgrades a 'logged' row (a late failure after a confirmed write is not a failure).
+   */
   markFailed(hash: string, error: string): Promise<void>;
   lastAlertAt(kind: AlertKind): Promise<string | null>;
   recordAlert(kind: AlertKind, at: string, itemId: string | null): Promise<void>;
@@ -41,7 +44,7 @@ export class D1LoggedMessageStore implements LoggedMessageStore {
 
   async markFailed(hash: string, error: string): Promise<void> {
     await this.db
-      .prepare(`UPDATE logged_messages SET status = 'failed', error = ?2 WHERE message_id_hash = ?1`)
+      .prepare(`UPDATE logged_messages SET status = 'failed', error = ?2 WHERE message_id_hash = ?1 AND status != 'logged'`)
       .bind(hash, error.slice(0, MAX_ERROR_CHARS))
       .run();
   }

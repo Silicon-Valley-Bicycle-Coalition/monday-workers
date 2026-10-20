@@ -56,6 +56,14 @@ describe('D1LoggedMessageStore', () => {
     expect(((await row('h-6'))?.error as string).length).toBe(500);
   });
 
+  it('markFailed never downgrades a logged row', async () => {
+    const store = new D1LoggedMessageStore(env.DB);
+    await store.claim('h-7', 'bcc', T0);
+    await store.markLogged('h-7', 'item-7', T1);
+    await store.markFailed('h-7', 'late failure');
+    expect(await row('h-7')).toMatchObject({ status: 'logged', activity_item_id: 'item-7', error: null });
+  });
+
   it('alerts round-trip', async () => {
     const store = new D1LoggedMessageStore(env.DB);
     expect(await store.lastAlertAt('capacity')).toBeNull();
