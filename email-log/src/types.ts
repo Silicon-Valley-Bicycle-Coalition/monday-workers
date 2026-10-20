@@ -1,3 +1,4 @@
+import type { LogQueueMessage } from './inbound/extract';
 export interface EmailLogConfig {
   monday: {
     apiUrl: string;
@@ -41,4 +42,16 @@ export interface EmailLogConfig {
   };
   capacity: { activitiesMaxItems: number; warnPct: number };
   alerts: { itRequests: { boardId: number; typeColumn: string; typeLabel: string; cooldownDays: number } | null };
+}
+
+// Bindings are generated into worker-configuration.d.ts by `wrangler types`; only the narrowed
+// queue message type and secrets/vars are declared here.
+export interface Env extends Cloudflare.Env {
+  DB: D1Database;
+  WRITE_QUEUE: Queue<LogQueueMessage>;
+  EMAIL: SendEmail;
+  MONDAY_API_TOKEN: string;
+  // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
+  ENVIRONMENT?: string;
+  SANDBOX_EMAIL_SINK?: string;
 }
