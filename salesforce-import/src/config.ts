@@ -54,5 +54,15 @@ export function loadConfig(path = defaultConfigPath()): Config {
   if (ebUser !== undefined && (typeof ebUser !== 'string' || ebUser.trim() === '')) {
     throw new Error(`config: "eventbriteIntegrationUserName" must be a non-empty string in ${path}`);
   }
+  // A present-but-null workspaceId is the cutover placeholder (runbook 0.5): the production config
+  // is prepared before the production workspace exists (runbook 0.3). Fail here rather than let
+  // create_board fall through to the account's Main workspace. Omit the key entirely to opt into
+  // that fallback on purpose (a fork whose Main workspace allows it).
+  if ('workspaceId' in cfg.monday) {
+    const ws = cfg.monday.workspaceId;
+    if (typeof ws !== 'number' || !Number.isInteger(ws) || ws <= 0) {
+      throw new Error(`config: "monday.workspaceId" is ${JSON.stringify(ws)} in ${path} — set it to the production workspace id (cutover runbook step 0.3) or remove the key`);
+    }
+  }
   return cfg;
 }

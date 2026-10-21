@@ -42,6 +42,28 @@ describe('loadConfig', () => {
     }
   });
 
+  it('rejects a null or non-positive monday.workspaceId placeholder, and accepts its absence', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'si-config-ws-'));
+    const base = JSON.parse(readFileSync('config/svbc.json', 'utf8')) as { monday: Record<string, unknown> };
+    const write = (name: string, value: unknown) => {
+      const path = join(dir, `${name}.json`);
+      const monday = { ...base.monday };
+      if (value === undefined) delete monday['workspaceId']; else monday['workspaceId'] = value;
+      writeFileSync(path, JSON.stringify({ ...base, monday }));
+      return path;
+    };
+    try {
+      // The prepared production config (runbook 0.5) carries null until the workspace exists (0.3).
+      expect(() => loadConfig(write('null', null))).toThrow(/workspaceId.*runbook step 0\.3/);
+      expect(() => loadConfig(write('zero', 0))).toThrow(/workspaceId/);
+      expect(() => loadConfig(write('string', '17141226'))).toThrow(/workspaceId/);
+      expect(loadConfig(write('absent', undefined)).monday.workspaceId).toBeUndefined();
+      expect(loadConfig(write('set', 17141226)).monday.workspaceId).toBe(17141226);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('ships a consumer-mail domain list and an affiliations board key', () => {
     const cfg = loadConfig();
     expect(cfg.consumerEmailDomains).toContain('gmail.com');
