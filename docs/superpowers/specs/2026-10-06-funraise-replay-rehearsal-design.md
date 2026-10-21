@@ -1,11 +1,12 @@
 # Funraise replay rehearsal — design
 
-**Status:** partly run, 2026-10-06 (see "Results"). The runbook (`monday-migration` `docs/23`,
+**Status:** partly run, 2026-10-06 and 2026-10-21 (see "Results"). The runbook (`monday-migration` `docs/23`,
 step 5) requires the replay to be rehearsed before Gate A: "replaying one Worker's stored
 deliveries into another has never been run." This is how to do that with what exists, what it
 proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with
-reject-and-flag (!185). S0, S1, S2, S4, S5 and the wrong-secret case of S6 have run and pass (S4's
-`Refunded` half confirms a known gap); S3 was blocked by a permission check; S7 has not run.
+reject-and-flag (!185). S0, S1, S2, S4, S5, S7 and the wrong-secret case of S6 have run and pass
+(S4's `Refunded` half confirms a known gap); S3 was blocked by a permission check and is the one
+scenario left.
 
 ## What there is to replay
 
@@ -112,7 +113,7 @@ noted.
 | **S4** stale guard | **Pass.** An envelope for a replayed transaction with `sentAt` 1,000 ms older than the stored one answered `{"ok":true,"duplicate":true}`; the item's amount and status were unchanged. |
 | **S4** `Refunded` | **Confirms the gap, and shows how it fails.** A newer envelope with `transaction.status: Refunded` was accepted (`{"ok":true}`) and the consumer's write was rejected by Monday: *"This status label doesn't exist, possible statuses are: Received, Received (Historical), Failed, Pending"*. The `events` row went to `failed` with that error, and the item stayed `Received`. The sandbox Donations Status column has **no `Refunded` label**, so runbook step 4.2 is a real prerequisite: on the deployed Worker every buffered refund would retry 1, 4 and 16 minutes and then dead-letter. Nothing needed reverting. No label was added. |
 | **S5** archived-year flag | **Pass** (run after !185 merged, on `main`'s code). A synthetic envelope, transaction `99000001` dated 2025-01-15 (FY 2025), $1, built from an existing donor's payload shape so matching found the donor, item name "REHEARSAL S5 (synthetic, archived-year)". The route answered `{"ok":true}`; the local `events` row went to `needs_review` with no Monday item and the error *"needs review: transaction is in fiscal year 2025, before the oldest active year 2026, and no active Donations item carries its Funraise ID … Nothing was created."* The Donations board stayed at 3,899 items and none carries Funraise id `99000001`; the log has one error line naming only the id (no `@`), so the message was acked and not retried; the donor was matched, not created. |
-| **S7** | **Not run.** It needs the sandbox ledger copied into the local D1. |
+| **S7** installments, ledger filled | **Pass (2026-10-21,** `main` at `174c4bc`). Same setup as S1 (`wrangler dev --env sandbox`, fresh local D1, sandbox v3 boards, Sandbox Integration token), with the sandbox D1's `subscriptions` (1,176 rows) and `poll_cursors` (2) exported with `wrangler d1 export --table … --no-schema` and loaded into the local D1 first. `FUNRAISE_API_KEY` was a dummy value: without one the consumer has no Funraise client and skips the ledger lookup too (`not wired`), so S7 would prove nothing; with a dummy, a ledger hit never calls Funraise and a miss would fail with a 401 and log `could not resolve Recurring Gift`. The window has grown since S1: `--since 2026-09-01T00:00:00.000Z` now holds **114** transactions, **78** of them installments across 73 subscriptions, all in the ledger. Replay at the default `--pause-ms 2000`: 114 `enqueued`, 0 failed, exit 0. The consumer drained to 114 `written`, every local `monday_item_id` equal to the sandbox ledger's; the log has **0** `could not resolve`, `not found in Funraise` or `not wired` lines and no errors or 429s, so there were no Funraise lookups; the local `subscriptions` table stayed at 1,176 rows with nothing newly written. Donations board 3,942 items before and after, and a full before/after read of every column on the 114 items showed **no change**. All 78 installments' Recurring Gift links (read as `linked_item_ids`; a connect column's `text` and `value` come back empty) point at the Recurring Gifts item the ledger names: 78 match, 0 empty, 0 different. |
 
 The marker edit was reverted (Gift Type back to `Donation`) and the local Worker stopped. Nothing
 else on the sandbox boards differs from before.
@@ -156,7 +157,7 @@ scopes, or something changed on the account.
 
 ## Exit criteria
 
-S0–S7 pass (S0, S1, S2, S4, S5 and the wrong-secret case of S6 already have; S3 needs a way past the deletion block, S7 the ledger copy), and the output is kept. Then update the
+S0–S7 pass (S0, S1, S2, S4, S5, S7 and the wrong-secret case of S6 already have; S3 needs a way past the deletion block), and the output is kept. Then update the
 runbook's `BUILD: TBD (#48)` for the replay rehearsal, and record any divergence, in particular
 anything the local queue did differently.
 
