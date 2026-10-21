@@ -53,10 +53,13 @@ These are landmines in the repo itself that break the cutover MR if left alone.
 - [x] **"Billing Budget Alert" stays at $10** (reviewed 2026-10-06). Galileo covers the Business
       plan, not Workers Paid, so the $5 base is billed and $10 means $5 of real usage overage —
       an early warning, not noise.
-- [ ] Confirm every Worker's `limits.cpu_ms: 100` is still present — it's the guard that matters
-      once Paid's 30 s default applies. Audited 2026-10-06: present at top level and in
-      `env.sandbox` for every Worker except `monday-backup`, which deliberately runs
-      `cpu_ms: 300000` and `subrequests: 50000` (a full-workspace snapshot) — keep that exception.
+- [x] **Every Worker carries `limits.cpu_ms`** (re-audited 2026-10-21) — the guard that matters
+      once Paid's 30 s default applies. Present at top level and in `env.sandbox` for all
+      thirteen Workers. Three run above 100 ms on purpose, each with the reason in a comment
+      beside the setting: `monday-backup` (`cpu_ms: 300000` and `subrequests: 50000`, a
+      full-workspace snapshot), `email-log` (`1000`, MIME-parsing a large message) and
+      `people-reclassification` (`1000`, a board sweep). Keep those exceptions; re-check
+      the rest before the production deploy if a `wrangler.jsonc` changes.
 - [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's
       docs: the id "uniquely defines this rate limiting namespace within your Cloudflare
       account", and two bindings with the same id share counters, even across Workers. Every
