@@ -41,6 +41,30 @@ describe('classifyContact', () => {
 });
 
 describe('contactToPayload', () => {
+  // 1,492 People in the 2026-09-08 extract had a Mailing City but no geocode result, so City and
+  // Zip loaded blank even though Address showed them (#13 sample review, 2026-10-23).
+  it('falls back to Mailing City/Zip when there is no geocode result', () => {
+    const p = contactToPayload({ Id: 'c9', FirstName: 'No', LastName: 'Street',
+      MailingCity: 'San Jose', MailingState: 'CA', MailingPostalCode: '95110-1442' },
+    'people-live', { consent: new Map() });
+    expect(p.columns['Address']).toBe('San Jose, CA, 95110-1442');
+    expect(p.columns['City']).toBe('San Jose');
+    expect(p.columns['Zip']).toBe('95110');
+    expect(p.columns['Lat']).toBe('');
+  });
+  it('prefers the geocoded City/Zip over the Salesforce values', () => {
+    const p = contactToPayload({ Id: 'c10', MailingStreet: '1 Elm', MailingCity: 'SJ',
+      MailingPostalCode: '95112' },
+    'people-live', { consent: new Map(),
+      geo: { lat: 37.3, lng: -121.9, city: 'San Jose', zip: '95113', source: 'census' } });
+    expect(p.columns['City']).toBe('San Jose');
+    expect(p.columns['Zip']).toBe('95113');
+  });
+  it('keeps a non-US postal code as written', () => {
+    const p = contactToPayload({ Id: 'c11', MailingCity: 'Toronto', MailingPostalCode: ' M5V 2T6 ' },
+      'people-live', { consent: new Map() });
+    expect(p.columns['Zip']).toBe('M5V 2T6');
+  });
   it('builds the full column set with Account-nested Do_Not_Solicit fields and Employer Name', () => {
     const member: MemberSummary = { status: 'Active', tier: 'Lifetime', sinceISO: '2010-01-01', untilISO: null };
     const p = contactToPayload(
@@ -166,6 +190,15 @@ describe('accountToPayload', () => {
     const p = accountToPayload({ Id: 'a4', Name: 'NoAddr', npe01__SYSTEM_AccountType__c: null })!;
     expect(p.columns['Lat']).toBe('');
     expect(p.columns['City']).toBe('');
+  });
+  // No street (or a street the geocoder couldn't match) means no geocode result, but Salesforce
+  // still has the city and zip: 94 Organizations in the 2026-09-08 extract (#13 sample review).
+  it('falls back to Billing City/Zip when there is no geocode result', () => {
+    const p = accountToPayload({ Id: 'a5', Name: 'Acme', npe01__SYSTEM_AccountType__c: null,
+      BillingCity: ' Milpitas ', BillingState: 'CA', BillingPostalCode: '95035-1234' })!;
+    expect(p.columns['City']).toBe('Milpitas');
+    expect(p.columns['Zip']).toBe('95035');
+    expect(p.columns['Lat']).toBe('');
   });
 });
 

@@ -314,6 +314,9 @@ describe('runTransform', () => {
     const acme = bySf.get('a-org')!;
     expect(acme.columns['Website']).toBe('https://acme.example/');
     expect(acme.columns['Address']).toBe('5 Bike Way, San Jose, CA 95112, USA');
+    // From the geocode when cached, else from the enriched address's own parts.
+    expect(acme.columns['City']).toBe('San Jose');
+    expect(acme.columns['Zip']).toBe('95112');
     // a-org2 now carries its own Website directly (needed for work-email domain classification —
     // see Task 9's seed), so the account's own field wins outright and the close-confidence,
     // not-approved enrichment record correctly never gets a chance to fill in a blank.

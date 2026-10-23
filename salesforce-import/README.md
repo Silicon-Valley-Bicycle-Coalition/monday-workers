@@ -414,7 +414,9 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   2025, replaced by per-SKU free tiers — currently 10,000 free geocoding calls/month on the
   Essentials tier, likely covering the whole fallback set — confirm current terms at signup). Capture `lat`/`lng`, **city**, and **zip code** from whichever geocoder
   resolves the address — all three are needed downstream (Map View, bike-lane proximity, the
-  per-contact bike-lane map, local news links, advocacy geography filtering). Nominatim was
+  per-contact bike-lane map, local news links, advocacy geography filtering). An address with no
+  street, or one neither geocoder matches, takes City and Zip (ZIP+4 cut to five digits) from
+  Salesforce's own Mailing/Billing fields instead, and has no `lat`/`lng`. Nominatim was
   considered and ruled out for this step specifically (1 req/sec usage-policy cap, unsuited to a
   bulk one-time run).
 * **Local News link** — derived from the geocoded city, no extra lookup: San Jose →
