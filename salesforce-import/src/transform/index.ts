@@ -333,6 +333,8 @@ export async function runTransform(args: string[]): Promise<number> {
     if (enriched) {
       if (!p.columns['Website'] && enriched.website) p.columns['Website'] = enriched.website;
       if (!p.columns['Address'] && enriched.address) p.columns['Address'] = enriched.address;
+      if (!p.columns['City'] && enriched.parts?.city) p.columns['City'] = enriched.parts.city;
+      if (!p.columns['Zip'] && enriched.parts?.zip) p.columns['Zip'] = enriched.parts.zip;
     }
     const r = rollups.map.get(a['Id'] as string);
     payloads.push(r ? applyRollups(p, r) : p);

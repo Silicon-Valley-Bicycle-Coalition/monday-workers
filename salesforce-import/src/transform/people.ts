@@ -30,6 +30,18 @@ export function classifyContact(
 
 const emailCol = (e: string | null) => (e ? { email: e, text: e } : null);
 
+// City/Zip come from the geocode when there is one; otherwise from Salesforce's own fields, so an
+// address with no street (never geocoded) or an unmatched one still filters by city. US ZIP+4 is
+// cut to five digits to match what the geocoder writes; anything else is kept as written.
+const clean = (s: unknown) => String(s ?? '').replace(/\s+/g, ' ').trim();
+function cityZip(geo: GeoResult | undefined, city: unknown, zip: unknown): { City: string; Zip: string } {
+  const z = clean(zip);
+  return {
+    City: geo?.city || clean(city),
+    Zip: geo?.zip || (/^\d{5}(?:[- ]?\d{4})?$/.test(z) ? z.slice(0, 5) : z),
+  };
+}
+
 export function contactToPayload(
   c: Record<string, unknown>, board: 'people-live' | 'people-historical',
   deps: {
@@ -53,7 +65,7 @@ export function contactToPayload(
     'Address': [c['MailingStreet'], c['MailingCity'], c['MailingState'], c['MailingPostalCode']]
       .filter(Boolean).join(', '),
     'Funraise Profile': funraiseSupporterLink(c['funraise__fr_ID__c']),
-    'City': deps.geo?.city ?? '', 'Zip': deps.geo?.zip ?? '',
+    ...cityZip(deps.geo, c['MailingCity'], c['MailingPostalCode']),
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
     'Do Not Solicit': account?.Do_Not_Solicit__c ? { checked: 'true' } : null,
     'Do Not Solicit Reason': (account?.Do_Not_Solicit_What__c ?? '') as string,
@@ -141,7 +153,7 @@ export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): I
       'Phone': (a['Phone'] ?? '') as string,
       'Address': [a['BillingStreet'], a['BillingCity'], a['BillingState'], a['BillingPostalCode']]
         .filter(Boolean).join(', '),
-      'City': geo?.city ?? '', 'Zip': geo?.zip ?? '',
+      ...cityZip(geo, a['BillingCity'], a['BillingPostalCode']),
       'Lat': geo ? String(geo.lat) : '', 'Lng': geo ? String(geo.lng) : '',
       'Do Not Solicit': a['Do_Not_Solicit__c'] ? { checked: 'true' } : null,
       'Do Not Solicit Reason': (a['Do_Not_Solicit_What__c'] ?? '') as string,
