@@ -58,6 +58,10 @@ export function contactToPayload(
     : ((c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null);
   const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string;
     Owner?: { Name?: string } } | null;
+  // Deceased (24 contacts, monday-migration docs/32 §3.1) has no column of its own: it suppresses
+  // every solicitation, so it lands as Do Not Solicit with the reason saying why.
+  const deceased = !!(c['Deceased__c'] || c['npsp__Deceased__c']);
+  const dnsReason = [deceased ? 'Deceased' : '', account?.Do_Not_Solicit_What__c ?? ''].filter(Boolean).join('; ');
   const columns: Record<string, unknown> = {
     'Personal Email': emailCol(personal),
     'Household Email': emailCol(household),
@@ -67,8 +71,12 @@ export function contactToPayload(
     'Funraise Profile': funraiseSupporterLink(c['funraise__fr_ID__c']),
     ...cityZip(deps.geo, c['MailingCity'], c['MailingPostalCode']),
     'Lat': deps.geo ? String(deps.geo.lat) : '', 'Lng': deps.geo ? String(deps.geo.lng) : '',
-    'Do Not Solicit': account?.Do_Not_Solicit__c ? { checked: 'true' } : null,
-    'Do Not Solicit Reason': (account?.Do_Not_Solicit_What__c ?? '') as string,
+    'Do Not Solicit': account?.Do_Not_Solicit__c || deceased ? { checked: 'true' } : null,
+    'Do Not Solicit Reason': dnsReason,
+    // Postal only (547 contacts): email consent comes from Mailchimp. Reason is "Opt out all mail"
+    // or "Undeliverable" (a bad address to fix).
+    'Do Not Mail': c['Do_Not_Mail__c'] ? { checked: 'true' } : null,
+    'Do Not Mail Reason': (c['Do_Not_Mail_Reason__c'] ?? '') as string,
     // The one-to-one Account's owner, not a Contact-level owner field — matches how
     // monday-migration docs/05 §9 verified this (Account.OwnerId, not Contact.OwnerId).
     'Salesforce Owner': ownerAttribution(account?.Owner),

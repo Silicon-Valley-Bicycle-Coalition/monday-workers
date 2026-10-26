@@ -12,6 +12,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Personal Email': 'email', 'Household Email': 'email', 'Work Email': 'email', 'Phone': 'phone',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
+  'Do Not Mail': 'checkbox', 'Do Not Mail Reason': 'text',
   'Personal Email Consent': 'status', 'Household Email Consent': 'status', 'Work Email Consent': 'status',
   'Household Primary': 'checkbox', 'Primary': 'checkbox', 'Affiliation Role': 'text', 'Attribution': 'status',
   'Organizational Giving': 'numbers', 'Attributed Giving': 'numbers',

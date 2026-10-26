@@ -55,6 +55,11 @@ describe('buildExtracts', () => {
   it('selects Elected__c so transform can seed Stakeholder Type = Elected Official (#46)', () => {
     expect(byName.get('contacts')!.soql).toContain('Elected__c');
   });
+  it('selects Do Not Mail and both Deceased flags for postal suppression (monday-migration docs/32 §3.1)', () => {
+    for (const f of ['Do_Not_Mail__c', 'Do_Not_Mail_Reason__c', 'Deceased__c', 'npsp__Deceased__c']) {
+      expect(byName.get('contacts')!.soql, f).toContain(f);
+    }
+  });
   it('extracts the Funraise ticket name for the shared Ticket Type column', () => {
     expect(byName.get('registrations')!.soql).toContain('funraise__Ticket_Name__c');
   });
