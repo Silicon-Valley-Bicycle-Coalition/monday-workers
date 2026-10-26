@@ -244,7 +244,8 @@ delivery, as actually sent" for the translation). One board-side constraint on t
 `config/sandbox.json` maps the webhook's `Complete` to `Received` (the doc's `Posted` is the same
 gift as seen from Salesforce) because the Donations board's status vocabulary (seeded by
 `salesforce-import`) is exactly `Received` /
-`Received (Historical)` / `Failed` / `Pending` (plus `Refunded`, which staff must add — #25),
+`Received (Historical)` / `Failed` / `Pending` / `Lost` (plus `Refunded`, which staff must add — #25;
+`Lost` is migrated pipeline only, never a Funraise outcome),
 and `donation-rollups` counts only `Received` —
 mapping to any label outside that set silently drops the gift from rollups. Notably: **Pledge and
 Subscription are a confirmed 1:1 duplicate** — do not create separate items for both; **8 email

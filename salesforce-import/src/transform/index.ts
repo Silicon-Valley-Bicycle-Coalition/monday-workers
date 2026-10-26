@@ -13,9 +13,9 @@ import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
   type InclusionInput } from './people.js';
-import { donationArchivePlan, shouldArchive } from './schedule.js';
+import { archiveCutoffFY, donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
-  eventbriteOrderIdsByOpportunity, foldFeeCoverage } from './donations.js';
+  eventbriteOrderIdsByOpportunity, foldFeeCoverage, LOST } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
   eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
@@ -353,12 +353,17 @@ export async function runTransform(args: string[]): Promise<number> {
       're-run extract before a real load, or eventbrite-sync will duplicate migrated ticket gifts');
   }
   const ebOrders = eventbriteOrderIdsByOpportunity(ordersExist ? await load('eb4sf_orders') : []);
+  const staleBeforeFY = archiveCutoffFY(cfg.cutoverDateISO, cfg.donationsActiveFiscalYears);
   for (const o of opportunities) {
     payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
       actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string),
       eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName,
-      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null }));
+      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null, staleBeforeFY }));
   }
+  const lostCount = payloads.filter((p) => p.board === 'donations'
+    && (p.columns['Status'] as { label?: string } | undefined)?.label === LOST).length;
+  warnings.push(`donations: ${lostCount} gifts Lost — pipeline pitches closed lost or withdrawn, and open ` +
+    `stages dated before FY${staleBeforeFY} (docs/32)`);
   if (ebOrders.multiOrderOpportunities > 0) {
     warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +
       'each keeps the lowest order id, so eventbrite-sync creates a separate item for the others');
