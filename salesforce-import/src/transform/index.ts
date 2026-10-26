@@ -15,7 +15,7 @@ import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount,
   type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
-  eventbriteOrderIdsByOpportunity } from './donations.js';
+  eventbriteOrderIdsByOpportunity, foldFeeCoverage } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
   eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
@@ -48,13 +48,17 @@ export async function runTransform(args: string[]): Promise<number> {
   if (!consentExists) console.warn('transform: consent.ndjson not found — proceeding with ' +
     '--no-consent (empty consent map, every contact will show "Not in Mailchimp")');
 
-  const [contacts, accounts, opportunities, contactRoles, memberships, affiliations, subscriptions, pledges,
+  const [contacts, accounts, rawOpportunities, contactRoles, memberships, affiliations, subscriptions, pledges,
     events, registrations, ebEvents, ebAttendees, campaigns, cnp, volunteerHours, tasksRecent, consentRows] =
     await Promise.all([load('contacts'), load('accounts'), load('opportunities'), load('contact_roles'),
       load('memberships'), load('affiliations'), load('subscriptions'), load('pledges'), load('events'),
       load('registrations'), load('eb4sf_events'), load('eb4sf_attendees'), load('campaigns'),
       load('clickpledge_transactions'), load('volunteer_hours'), load('tasks_recent'),
       consentExists ? load('consent') : Promise.resolve([])]);
+  // Fee-coverage splits fold into their gifts before anything reads Opportunities, so rollups,
+  // donor inclusion and the Donations payloads all see one gift per donor payment.
+  const feeFold = foldFeeCoverage(rawOpportunities);
+  const opportunities = feeFold.gifts;
 
   const consent = new Map((consentRows as { email: string; status: string }[]).map((r) => [r.email, r.status]));
   const geoCache = new GeoCache();
@@ -424,6 +428,11 @@ export async function runTransform(args: string[]): Promise<number> {
   if (unknown.size > 0) {
     warnings.push(`donations: ${[...unknown.values()].reduce((a, b) => a + b, 0)} gifts have an unrecognised ` +
       `stage, loaded as Pending — ${[...unknown].map(([stage, n]) => `${stage} (${n})`).join(', ')}`);
+  }
+  if (feeFold.folded > 0 || feeFold.unpaired > 0) {
+    warnings.push(`donations: ${feeFold.folded} Funraise fee-coverage splits folded into their gifts ` +
+      `($${(feeFold.foldedCents / 100).toFixed(2)} as Fee Covered); ${feeFold.unpaired} with no matching gift ` +
+      `kept as gifts of their own`);
   }
   if (rollups.overlap > 0) {
     warnings.push(`click-pledge overlap: ${rollups.overlap} transactions already present as Opportunities — deduped`);

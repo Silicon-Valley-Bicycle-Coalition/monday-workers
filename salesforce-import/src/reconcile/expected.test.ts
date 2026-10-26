@@ -51,6 +51,14 @@ describe('expectedGifts', () => {
     expect(t.get('2025')).toEqual({ count: 2, cents: 2600 });
     expect(t.get('2021')).toEqual({ count: 1, cents: 5225 });
   });
+
+  it('expects a fee-coverage split folded into its gift: one fewer gift, same cents', () => {
+    const split = { Id: 'o3', Amount: 1.6, CloseDate: '2024-07-01', StageName: 'Posted',
+      npsp__Primary_Contact__c: 'c1', CreatedDate: 't', Funraise_Fee_Match_Opportunity__c: true };
+    const gift = { ...split, Id: 'o4', Amount: 20, Funraise_Fee_Match_Opportunity__c: false,
+      Funraise_Fee_Match_Amount__c: 1.6 };
+    expect(expectedGifts([gift, split], []).gifts).toEqual([{ sfId: 'o4', fy: '2025', cents: 2160 }]);
+  });
 });
 
 describe('fyOrder', () => {
