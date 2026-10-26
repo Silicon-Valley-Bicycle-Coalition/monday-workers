@@ -265,17 +265,18 @@ sandbox with a test Eventbrite event and Sequences that send to staff addresses 
 
 ## Sandbox check, 2026-10-26
 
-**Result: blocked, not yet run.** The gate (formatting kept, `Class Day` inserted, sending mailbox) is
-unanswered; nothing was sent.
+**Result: still blocked, not yet run.** The gate (formatting kept, `Class Day` inserted, sending
+mailbox) is unanswered; nothing was sent. History: first attempt blocked (no mailbox); rerun after
+David connected Gmail in Emails & Activities was blocked identically.
 
-* Created scratch board `18437217754` "Sequences check (sandbox, delete me)" in workspace
-  `17141226`, with columns Email (`email_mm8ghvpm`), Class Day (`text_mm8gx7am`) and Follow-up
-  Email status (`color_mm8gcdc2`). No items, no Sequence, no automation yet.
-* The monday MCP `create-sequence` (the only path tried) refused: `connections_not_specified`,
-  `mailboxes: []`, "The user has no connected gmail / outlook mailbox." A Sequence with an
-  automatic email step needs a connected mailbox as sender, so no Sequence exists.
-* Unblock: a connected Gmail/Outlook mailbox for David's monday user (an OAuth grant only he can
-  make; no mailbox, integration or account setting was changed). Then rerun Task 0.
-* Unverified: whether a Sequence email keeps bold/link/line breaks, inserts the column value, and
-  which mailbox it sends from. Whether the MCP can create the status-to-enroll automation is also
-  untested; `enroll-item-in-sequence` is the fallback.
+* Scratch board `18437217754` "Sequences check (sandbox, delete me)" in workspace `17141226`:
+  Email `email_mm8ghvpm`, Class Day `text_mm8gx7am`, Follow-up Email status `color_mm8gcdc2`, and
+  item `13390907087` (Email = David's address, Class Day = Saturday). No Sequence or automation.
+* On the rerun, MCP `create-sequence` again returned `connections_not_specified` with
+  `mailboxes: []` ("no connected gmail / outlook mailbox"). So the MCP's mailbox list does not see
+  the Gmail connection David made; possibly it needs the connection finished through the MCP's
+  `show_connect_integration` / `check-integration-connection-status` flow (which registers the
+  mailbox as a CRM sending account), or it was connected under another user. Not tried: that flow
+  changes integration settings.
+* Unverified: formatting, column insert, sending mailbox, and whether the status automation is
+  creatable via MCP (`enroll-item-in-sequence` is the fallback).
