@@ -262,3 +262,20 @@ sandbox with a test Eventbrite event and Sequences that send to staff addresses 
 4. Follow-up job, Sequences and automations; one real class run end to end.
 5. Production setup at cutover; then Kendra's Salesforce user is deactivated (`docs/23`, Gate C
    step 1).
+
+## Sandbox check, 2026-10-26
+
+**Result: blocked, not yet run.** The gate (formatting kept, `Class Day` inserted, sending mailbox) is
+unanswered; nothing was sent.
+
+* Created scratch board `18437217754` "Sequences check (sandbox, delete me)" in workspace
+  `17141226`, with columns Email (`email_mm8ghvpm`), Class Day (`text_mm8gx7am`) and Follow-up
+  Email status (`color_mm8gcdc2`). No items, no Sequence, no automation yet.
+* The monday MCP `create-sequence` (the only path tried) refused: `connections_not_specified`,
+  `mailboxes: []`, "The user has no connected gmail / outlook mailbox." A Sequence with an
+  automatic email step needs a connected mailbox as sender, so no Sequence exists.
+* Unblock: a connected Gmail/Outlook mailbox for David's monday user (an OAuth grant only he can
+  make; no mailbox, integration or account setting was changed). Then rerun Task 0.
+* Unverified: whether a Sequence email keeps bold/link/line breaks, inserts the column value, and
+  which mailbox it sends from. Whether the MCP can create the status-to-enroll automation is also
+  untested; `enroll-item-in-sequence` is the fallback.
