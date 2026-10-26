@@ -56,6 +56,14 @@ describe('BOARD_SPECS views', () => {
     expect(names('donations')).toEqual(expect.arrayContaining(
       ['Recent gifts', 'Revenue by funding stream', 'By gift size', 'By fiscal quarter', 'Major gifts to thank']));
   });
+
+  it('"Postal appeal list" needs an address and suppresses Do Not Solicit and Do Not Mail', () => {
+    const v = BOARD_SPECS['people-live']!.views!.find((x) => x.name === 'Postal appeal list')!;
+    const rules = v.filter!.rules.map((r) => `${r.columnTitle} ${r.operator}`);
+    expect(rules).toEqual(expect.arrayContaining(
+      ['Address is_not_empty', 'Do Not Solicit is_empty', 'Do Not Mail is_empty', 'Gift Count greater_than']));
+    expect(rules.some((r) => r.startsWith('Personal Email'))).toBe(false);
+  });
 });
 
 describe('DASHBOARD_SPECS revenue filters', () => {

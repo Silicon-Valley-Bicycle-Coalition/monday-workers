@@ -82,6 +82,11 @@ const SHARED_DESCRIPTIONS = {
     'DNS Reason Status flags a missing one.',
   'Do Not Solicit Reason': 'Why this record is not to be solicited. Required whenever Do Not Solicit is checked.',
 } as const;
+// People boards only — Organizations has no Do Not Mail.
+const POSTAL_DESCRIPTIONS = {
+  'Do Not Mail': 'Leave this person off postal mailings. Email consent is separate (the Consent columns).',
+  'Do Not Mail Reason': 'Opt out all mail, or Undeliverable (the address needs fixing).',
+} as const;
 const ROLLUP_DESCRIPTION = 'Computed automatically from Donations by the donation-rollups integration. Edits are overwritten.';
 const DONOR_LEVEL_DESCRIPTION = 'Leadership ($5,000+ lifetime), Major ($500+ lifetime or a single gift of $200+), or Donor. ' +
   ROLLUP_DESCRIPTION;
@@ -124,7 +129,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       DNS_COLUMN,
     ],
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -178,6 +183,17 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Personal Email', operator: 'is_not_empty' }, NOT_DNS] },
         groupBy: { columnTitle: 'Donor Level' } },
+      // Replaces the Salesforce Winter Appeal pulls (monday-migration docs/32 §3.1): gave in the
+      // last five years, single gift of $25 or more. Recurring donors aren't excluded — People has
+      // no recurring-gift flag; check Recurring Gifts › Active by hand.
+      { name: 'Postal appeal list', tag: 'Report',
+        columns: ['Address', 'City', 'Zip', 'Last Gift Date', 'Largest Gift', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
+          { columnTitle: 'Address', operator: 'is_not_empty' },
+          { columnTitle: 'Largest Gift', operator: 'greater_than', compareValue: 24.99 },
+          { columnTitle: 'Last Gift Date', operator: 'within_the_last', compareValue: ['MONTHS', 60] },
+          NOT_DNS, { columnTitle: 'Do Not Mail', operator: 'is_empty' }] },
+        groupBy: { columnTitle: 'Donor Level' } },
       { name: 'Members', tag: 'Report',
         columns: ['Personal Email', 'Membership Status', 'Membership Tier', 'Member Since', 'Member Until', 'City'],
         filter: { rules: [{ columnTitle: 'Membership Status', operator: 'is_not_empty' }] },
@@ -208,7 +224,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     groupTitle: 'People',
     columns: [DNS_COLUMN],
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
