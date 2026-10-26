@@ -265,22 +265,22 @@ sandbox with a test Eventbrite event and Sequences that send to staff addresses 
 
 ## Sandbox check, 2026-10-26
 
-**Result: still blocked, not yet run.** The gate (formatting kept, `Class Day` inserted, sending
-mailbox) is unanswered; nothing was sent. History: attempt 1 blocked (no mailbox); attempt 2 after
-David connected Gmail blocked identically (`mailboxes: []`).
+**Result: passed.** David confirmed the delivered email kept bold, a link and line breaks, and the
+`Class Day` column came through as "Saturday".
 
-* Scratch board `18437217754` "Sequences check (sandbox, delete me)" in workspace `17141226`:
-  Email `email_mm8ghvpm`, Class Day `text_mm8gx7am`, Follow-up Email status `color_mm8gcdc2`, and
-  item `13390907087` (Email = David's address, Class Day = Saturday). No Sequence or automation.
-* Attempt 3: `create-sequence` now lists the mailbox (connectionId `33826938`,
-  `dwk@bikesiliconvalley.org`, gmail). Creating with that sender, `emailColumnId`
-  `email_mm8ghvpm`, and one automatic_email step failed with `Fetcher response returned NON-OK
-  status=400 statusText=Bad Request`. The same 400 came back for an HTML body with
-  `{{Class Day}}`, an HTML body with no variable, a plain-text body, and an empty `steps: []`.
-  So the 400 is not about the body; likely the sender/board/column arguments or the endpoint.
-  `get-board-sequences` shows 0 sequences.
-* monday's Sequences help article (via `get_monday_knowledge`) says "email templates and HTML are
-  not supported in Sequences", and column values go in through the editor's "{ } Columns" button.
-  If so, bold and link formatting may not survive in a Sequence at all. Unverified, a doc claim.
-* Unverified: formatting, column insert, sending mailbox actually used, whether the status
-  automation is creatable via MCP (`enroll-item-in-sequence` is the fallback).
+* **Sequences only connect to boards in a CRM workspace.** The "Connect a board" picker offered
+  only SVBC-workspace boards; no CRM Sandbox (`17141226`) board was eligible, which is also why
+  every `create-sequence` call through the MCP returned HTTP 400. The check ran on a scratch board
+  in the SVBC workspace (David's approval, one item, his address only), since deleted with its
+  Sequence.
+* **Consequence:** the production Events and Event Registrations boards must live in a CRM
+  workspace. `docs/23` step 0.3 creates the production workspace; it has to be created in monday
+  CRM. Sequence and Mass email steps can't be rehearsed on CRM Sandbox boards; rehearse them on a
+  staff-only scratch board in a CRM workspace instead.
+* The Sequence was built in the UI (the API create path failed as above); **enrollment through the
+  API worked** (`enroll-item-in-sequence`), so a status automation or the Worker can enroll items.
+* The editor has a formatting toolbar and a `{ } Columns` picker; a column shows as
+  `{pulse.<column id>}`. Sequence settings include the sender mailbox, a time zone and send window
+  (default 7:00 AM–5:00 PM Los Angeles, every day), unsubscribe controls (global list and
+  per-sequence), and removal on reply, bounce or auto-reply.
+* Earlier attempts (history): blocked with no connected mailbox, twice; then 400s from the API.
