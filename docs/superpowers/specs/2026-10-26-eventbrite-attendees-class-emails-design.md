@@ -266,17 +266,21 @@ sandbox with a test Eventbrite event and Sequences that send to staff addresses 
 ## Sandbox check, 2026-10-26
 
 **Result: still blocked, not yet run.** The gate (formatting kept, `Class Day` inserted, sending
-mailbox) is unanswered; nothing was sent. History: first attempt blocked (no mailbox); rerun after
-David connected Gmail in Emails & Activities was blocked identically.
+mailbox) is unanswered; nothing was sent. History: attempt 1 blocked (no mailbox); attempt 2 after
+David connected Gmail blocked identically (`mailboxes: []`).
 
 * Scratch board `18437217754` "Sequences check (sandbox, delete me)" in workspace `17141226`:
   Email `email_mm8ghvpm`, Class Day `text_mm8gx7am`, Follow-up Email status `color_mm8gcdc2`, and
   item `13390907087` (Email = David's address, Class Day = Saturday). No Sequence or automation.
-* On the rerun, MCP `create-sequence` again returned `connections_not_specified` with
-  `mailboxes: []` ("no connected gmail / outlook mailbox"). So the MCP's mailbox list does not see
-  the Gmail connection David made; possibly it needs the connection finished through the MCP's
-  `show_connect_integration` / `check-integration-connection-status` flow (which registers the
-  mailbox as a CRM sending account), or it was connected under another user. Not tried: that flow
-  changes integration settings.
-* Unverified: formatting, column insert, sending mailbox, and whether the status automation is
-  creatable via MCP (`enroll-item-in-sequence` is the fallback).
+* Attempt 3: `create-sequence` now lists the mailbox (connectionId `33826938`,
+  `dwk@bikesiliconvalley.org`, gmail). Creating with that sender, `emailColumnId`
+  `email_mm8ghvpm`, and one automatic_email step failed with `Fetcher response returned NON-OK
+  status=400 statusText=Bad Request`. The same 400 came back for an HTML body with
+  `{{Class Day}}`, an HTML body with no variable, a plain-text body, and an empty `steps: []`.
+  So the 400 is not about the body; likely the sender/board/column arguments or the endpoint.
+  `get-board-sequences` shows 0 sequences.
+* monday's Sequences help article (via `get_monday_knowledge`) says "email templates and HTML are
+  not supported in Sequences", and column values go in through the editor's "{ } Columns" button.
+  If so, bold and link formatting may not survive in a Sequence at all. Unverified, a doc claim.
+* Unverified: formatting, column insert, sending mailbox actually used, whether the status
+  automation is creatable via MCP (`enroll-item-in-sequence` is the fallback).
