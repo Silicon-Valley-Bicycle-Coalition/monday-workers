@@ -95,6 +95,61 @@ export function softCreditsByGift(
   return new Map([...credits].map(([id, set]) => [id, [...set].sort()]));
 }
 
+// Row key foldFeeCoverage stamps on a gift that absorbed its fee-coverage split: the fee in dollars.
+export const FEE_COVERED = 'feeCoveredAmount';
+
+const cents = (v: unknown): number | null => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+};
+const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+
+// Funraise fee coverage (docs/32 finding 3): when a donor covers the processing fee, Salesforce
+// saves the fee as a second Opportunity (Funraise_Fee_Match_Opportunity__c), created in the same
+// second for the same donor and stage, whose Amount equals the gift's Funraise_Fee_Match_Amount__c
+// — 2,166 of them as of 2026-10-26, $0.12–$20. Loaded as gifts of their own they'd add 2,166 to
+// Gift Count and drag Smallest/Average Gift to cents, so each paired split is folded into its gift
+// instead: the gift's Amount becomes gift + fee (the donor's whole payment, and what NPSP's own
+// rollups summed, so reconciliation totals don't move) and FEE_COVERED records the fee part.
+// A split with no matching gift stays a gift of its own, so no money drops off the board; the
+// caller reports how many.
+export function foldFeeCoverage(opportunities: readonly Record<string, unknown>[]): {
+  gifts: Record<string, unknown>[]; folded: number; foldedCents: number; unpaired: number;
+} {
+  const isSplit = (o: Record<string, unknown>) => o['Funraise_Fee_Match_Opportunity__c'] === true;
+  const keyOf = (o: Record<string, unknown>, feeCents: number | null) => [
+    o['npsp__Primary_Contact__c'] ?? o['funraise__fr_Donor__c'] ?? o['AccountId'] ?? '',
+    o['CreatedDate'] ?? '', o['StageName'] ?? '', feeCents ?? '',
+  ].join('|');
+  // Parents waiting for their split, by key; each takes at most one.
+  const parents = new Map<string, Record<string, unknown>[]>();
+  for (const o of opportunities) {
+    const fee = cents(o['Funraise_Fee_Match_Amount__c']);
+    if (isSplit(o) || !fee) continue;
+    const key = keyOf(o, fee);
+    (parents.get(key) ?? parents.set(key, []).get(key)!).push(o);
+  }
+  const feeOf = new Map<Record<string, unknown>, number>();
+  const absorbed = new Set<Record<string, unknown>>();
+  for (const o of opportunities) {
+    if (!isSplit(o)) continue;
+    const fee = cents(o['Amount']);
+    const parent = fee ? parents.get(keyOf(o, fee))?.shift() : undefined;
+    if (!parent || !fee) continue;
+    feeOf.set(parent, fee);
+    absorbed.add(o);
+  }
+  let foldedCents = 0;
+  const gifts = opportunities.filter((o) => !absorbed.has(o)).map((o) => {
+    const fee = feeOf.get(o);
+    if (fee === undefined) return o;
+    foldedCents += fee;
+    return { ...o, Amount: ((cents(o['Amount']) ?? 0) + fee) / 100, [FEE_COVERED]: fee / 100 };
+  });
+  const splits = opportunities.filter(isSplit).length;
+  return { gifts, folded: absorbed.size, foldedCents, unpaired: splits - absorbed.size };
+}
+
 // Donor precedence, then re-pointed through `donorAlias` when the fallback AccountId is a
 // person-named Account folded into a Person (people.ts personNamedAccountIds) — otherwise
 // the Donor link would target an Organization item that is never created.
@@ -180,6 +235,13 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Benevity Transaction ID': '',
       // Always declared, so load creates the column eventbrite-sync writes and adopts by.
       'Eventbrite Order ID': deps.eventbriteOrderId ?? '',
+      'Fee Covered': o[FEE_COVERED] != null ? String(o[FEE_COVERED]) : '',
+      'Finance Class': text(o['Finance_Class__c']),
+      'Revenue Code': text(o['Finance_Revenue_Code__c']),
+      'Payment Method': text(o['Payment_Method__c']),
+      'Check/Reference Number': text(o['Check_Reference_Number__c']),
+      'In-Kind Value': o['Retail_Value__c'] != null ? String(o['Retail_Value__c']) : '',
+      'In-Kind Category': text(o['In_Kind_Category__c']),
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
       ...attribution.columns,
       ...salesforceDebug(o),

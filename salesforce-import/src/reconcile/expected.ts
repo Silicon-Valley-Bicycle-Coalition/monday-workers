@@ -1,5 +1,5 @@
 import { fiscalYear } from '../transform/fields.js';
-import { cnpOverlapCheck } from '../transform/donations.js';
+import { cnpOverlapCheck, foldFeeCoverage } from '../transform/donations.js';
 import type { ItemPayload } from '../transform/types.js';
 
 type Row = Record<string, unknown>;
@@ -20,11 +20,13 @@ export const fyOf = (dateISO: unknown): string =>
 
 /**
  * Every gift the frozen extract says must be on the Donations board: all Opportunities (every
- * stage — each one migrates, Closed Lost included) plus the Click & Pledge transactions that
- * aren't already an Opportunity. Computed from the extract alone, not from transform output.
+ * stage — each one migrates, Closed Lost included) except the Funraise fee-coverage splits folded
+ * into their gifts, plus the Click & Pledge transactions that aren't already an Opportunity.
+ * Computed from the extract alone, not from transform output.
  */
-export function expectedGifts(opportunities: readonly Row[], cnp: readonly Row[]):
+export function expectedGifts(rawOpportunities: readonly Row[], cnp: readonly Row[]):
   { gifts: Gift[]; cnpUnique: number; cnpOverlap: number } {
+  const opportunities = foldFeeCoverage(rawOpportunities).gifts;
   const { unique, duplicateTransactionIds } = cnpOverlapCheck([...cnp], [...opportunities]);
   const gifts = [
     ...opportunities.map((o) => ({ sfId: o['Id'] as string, fy: fyOf(o['CloseDate']), cents: toCents(o['Amount']) })),

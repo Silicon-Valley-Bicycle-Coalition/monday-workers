@@ -36,6 +36,13 @@ describe('buildExtracts', () => {
     expect(orders.backupOnly).toBeFalsy();
     for (const f of ['Name', 'eb4sf__Opportunity__c', 'FROM eb4sf__Eventbrite_Order__c']) expect(orders.soql, f).toContain(f);
   });
+  it('extracts the Opportunity fields the 2026-10-26 audit found in use (docs/32)', () => {
+    const soql = byName.get('opportunities')!.soql;
+    for (const f of ['Finance_Class__c', 'Finance_Revenue_Code__c', 'Payment_Method__c', 'Check_Reference_Number__c',
+      'Retail_Value__c', 'In_Kind_Category__c', 'Funraise_Fee_Match_Opportunity__c', 'Funraise_Fee_Match_Amount__c']) {
+      expect(soql, f).toContain(f);
+    }
+  });
   it('paginates every object near the 50k CLI ceiling (contact roles ~54k, opportunities ~48k, payments/tasks ~42k)', () => {
     for (const name of ['contacts', 'accounts', 'opportunities', 'contact_roles', 'payments', 'tasks_all']) {
       expect(byName.get(name)!.paginate, name).toBe(true);

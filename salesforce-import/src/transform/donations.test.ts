@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { opportunityToPayload, cnpToPayload, cnpOverlapCheck, softCreditsByGift, unknownStages,
-  isEventbriteTicketOrder, eventbriteOrderIdsByOpportunity } from './donations.js';
+  isEventbriteTicketOrder, eventbriteOrderIdsByOpportunity, foldFeeCoverage, FEE_COVERED } from './donations.js';
 
 describe('opportunityToPayload', () => {
   const base = { Id: 'o1', Name: 'Gift', Amount: 50, CloseDate: '2026-01-15', StageName: 'Posted',
@@ -285,5 +285,75 @@ describe('eventbriteOrderIdsByOpportunity', () => {
       expect(r.byOpportunity.get('o1')).toBe('100');
       expect(r.multiOrderOpportunities).toBe(1);
     }
+  });
+});
+
+describe('audited Opportunity columns (docs/32)', () => {
+  const base = { Id: 'o1', Name: 'Gift', Amount: 50, CloseDate: '2026-01-15', StageName: 'Posted',
+    RecordType: { Name: 'Donation' }, npsp__Primary_Contact__c: 'c1' };
+
+  it('carries finance coding, payment method, check number and in-kind value/category', () => {
+    const p = opportunityToPayload({ ...base, Finance_Class__c: '4400 Programs:4420 BTWD',
+      Finance_Revenue_Code__c: '45100 Special Event Sponsorships', Payment_Method__c: 'Cash/Check',
+      Check_Reference_Number__c: ' 1042 ', Retail_Value__c: 10394.8, In_Kind_Category__c: 'Bike Accessories' },
+    { termCols: new Map() });
+    expect(p.columns).toMatchObject({
+      'Finance Class': '4400 Programs:4420 BTWD', 'Revenue Code': '45100 Special Event Sponsorships',
+      'Payment Method': 'Cash/Check', 'Check/Reference Number': '1042',
+      'In-Kind Value': '10394.8', 'In-Kind Category': 'Bike Accessories', 'Fee Covered': '',
+    });
+  });
+
+  it('declares every audited column blank when Salesforce has nothing, so load still creates it', () => {
+    const p = opportunityToPayload(base, { termCols: new Map() });
+    for (const col of ['Fee Covered', 'Finance Class', 'Revenue Code', 'Payment Method', 'Check/Reference Number',
+      'In-Kind Value', 'In-Kind Category']) {
+      expect(p.columns[col], col).toBe('');
+    }
+  });
+});
+
+describe('foldFeeCoverage', () => {
+  // Shaped like the real pair: same donor, same CreatedDate second, the split's Amount equal to
+  // the gift's Funraise_Fee_Match_Amount__c, no Funraise id on the split.
+  const gift = { Id: 'g1', Amount: 20, StageName: 'Posted', npsp__Primary_Contact__c: 'c1',
+    CreatedDate: '2026-10-25T07:30:01.000+0000', funraise__fr_ID__c: '14431664',
+    Funraise_Fee_Match_Opportunity__c: false, Funraise_Fee_Match_Amount__c: 1.6 };
+  const split = { ...gift, Id: 's1', Amount: 1.6, funraise__fr_ID__c: null, Funraise_Fee_Match_Opportunity__c: true };
+
+  it('drops the split and adds its fee to the gift, recorded as Fee Covered', () => {
+    const r = foldFeeCoverage([split, gift]);
+    expect(r.gifts.map((o) => o['Id'])).toEqual(['g1']);
+    expect(r.gifts[0]).toMatchObject({ Amount: 21.6, [FEE_COVERED]: 1.6 });
+    expect(r).toMatchObject({ folded: 1, foldedCents: 160, unpaired: 0 });
+    expect(opportunityToPayload(r.gifts[0]!, { termCols: new Map() }).columns).toMatchObject({
+      'Amount': '21.6', 'Fee Covered': '1.6' });
+  });
+
+  it('pairs each split with its own gift when one donor gives twice the same day', () => {
+    const gift2 = { ...gift, Id: 'g2', CreatedDate: '2026-10-25T15:33:24.000+0000' };
+    const split2 = { ...split, Id: 's2', CreatedDate: gift2.CreatedDate };
+    const r = foldFeeCoverage([gift, split, gift2, split2]);
+    expect(r.gifts.map((o) => o['Id'])).toEqual(['g1', 'g2']);
+    expect(r.folded).toBe(2);
+  });
+
+  it('keeps a split with no matching gift as a gift of its own, and counts it', () => {
+    for (const orphan of [
+      split,
+      { ...split, CreatedDate: '2026-10-25T07:30:02.000+0000' },
+      { ...split, Amount: 1.5 },
+      { ...split, StageName: 'Closed Lost' },
+    ]) {
+      const r = foldFeeCoverage(orphan === split ? [split] : [gift, orphan]);
+      expect(r.gifts).toContain(orphan);
+      expect(r.unpaired).toBe(1);
+    }
+  });
+
+  it('leaves gifts with no split untouched (same object), even when they record a fee amount', () => {
+    const r = foldFeeCoverage([gift]);
+    expect(r.gifts[0]).toBe(gift);
+    expect(r).toMatchObject({ folded: 0, unpaired: 0 });
   });
 });

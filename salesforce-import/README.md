@@ -477,6 +477,21 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   it. Live counts on 2026-10-19: all 133 Eventbrite-created `Closed Won` from 2026 link an order;
   206 from 2024–2025 don't and stay blank. **This one does need a re-extract**: `transform` warns
   and stamps nothing when `data/extract/eb4sf_orders.ndjson` is missing.
+* **Opportunity audit fields and fee-coverage folding (2026-10-26).** The audit in migration
+  `docs/32` found Opportunity fields in active use that never reached Donations. Six new columns,
+  each declared on every gift so `load` creates them: **Finance Class** and **Revenue Code**
+  (`Finance_Class__c` / `Finance_Revenue_Code__c`, staff's accounting coding on ~8,100 gifts from
+  2020 on), **Payment Method** (20,983) and **Check/Reference Number** (5,959), **In-Kind Value**
+  (`Retail_Value__c`, 993; 115 posted in-kind gifts carry $345k there with a blank or $0 Amount)
+  and **In-Kind Category** (645). Amount itself is unchanged for in-kind gifts. Separately, the
+  2,166 Funraise fee-coverage splits (`Funraise_Fee_Match_Opportunity__c`, $0.12–$20 each) are
+  folded into the gift they belong to — same donor, same `CreatedDate` second, same stage, split
+  Amount = the gift's `Funraise_Fee_Match_Amount__c` — before anything else reads Opportunities
+  (`foldFeeCoverage` in `transform/donations.ts`). The gift's Amount becomes gift + fee, so
+  Lifetime Giving and the per-FY reconciliation totals don't move, and the new **Fee Covered**
+  column records the fee part; Gift Count drops by the number folded. `reconcile` folds the same
+  way. A split with no matching gift stays a gift of its own and `transform` reports the count.
+  **Needs a re-extract**, since the opportunities query gained the fields.
 * **Employer matching gifts (Benevity) — decided 2026-09-08.** The "Matching donations" stream is
   Benevity disbursement CSVs keyed in by hand (3,020 Opportunities of record type Matching
   Donation), not 360MatchPro, whose `dtd` package holds zero records — nothing of it migrates, and
