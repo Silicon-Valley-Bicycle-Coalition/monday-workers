@@ -115,4 +115,79 @@ describe('validateConfig', () => {
     cfg.eventbriteSync.itemNameTemplate = '';
     expect(() => validateConfig(cfg)).toThrow('itemNameTemplate');
   });
+
+  describe('attendeeSync', () => {
+    it('requires registrations.attendanceColumn to be a column id string', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.registrations.attendanceColumn;
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.registrations.attendanceColumn" must be a Monday column id string');
+    });
+
+    it('requires events.classTypeColumn to be a column id string', () => {
+      const cfg = valid();
+      cfg.attendeeSync.events.classTypeColumn = '';
+      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.events.classTypeColumn" must be a Monday column id string');
+    });
+
+    it('requires attendeeSync and peopleEmailColumn', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.peopleEmailColumn;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.peopleEmailColumn');
+      delete cfg.attendeeSync;
+      expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync"');
+    });
+
+    it('accepts null board ids for events and event-registrations, but requires the keys', () => {
+      const cfg = valid();
+      cfg.monday.boards['events'] = null;
+      cfg.monday.boards['event-registrations'] = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      delete cfg.monday.boards['events'];
+      expect(() => validateConfig(cfg)).toThrow('monday.boards.events');
+    });
+
+    it('requires followups.maxAgeDays to be a positive number', () => {
+      const cfg = valid();
+      for (const bad of [0, -1, '3']) {
+        cfg.attendeeSync.followups.maxAgeDays = bad;
+        expect(() => validateConfig(cfg)).toThrow('attendeeSync.followups.maxAgeDays');
+      }
+    });
+
+    it('requires followups.sendHourLocal to be an integer from 0 to 23', () => {
+      const cfg = valid();
+      for (const bad of [-1, 24, 8.5, '8']) {
+        cfg.attendeeSync.followups.sendHourLocal = bad;
+        expect(() => validateConfig(cfg)).toThrow('attendeeSync.followups.sendHourLocal');
+      }
+      cfg.attendeeSync.followups.sendHourLocal = 0;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.followups.sendHourLocal = 23;
+      expect(() => validateConfig(cfg)).not.toThrow();
+    });
+
+    it('accepts notifyUserId null or an integer, and rejects anything else', () => {
+      const cfg = valid();
+      cfg.attendeeSync.followups.notifyUserId = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.followups.notifyUserId = 74336833;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.followups.notifyUserId = '74336833';
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.followups.notifyUserId');
+    });
+
+    it('requires well-formed actions, string-to-string programByOrganizer and string volunteerPrograms', () => {
+      const cfg = valid();
+      cfg.attendeeSync.actions = [];
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.actions');
+      cfg.attendeeSync.actions = ['attendee updated'];
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.actions');
+      cfg.attendeeSync.actions = ['attendee.updated'];
+      cfg.attendeeSync.programByOrganizer = { '123': 7 };
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.programByOrganizer');
+      cfg.attendeeSync.programByOrganizer = { '123': 'Volunteering' };
+      cfg.attendeeSync.volunteerPrograms = 'Volunteering';
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.volunteerPrograms');
+    });
+  });
 });

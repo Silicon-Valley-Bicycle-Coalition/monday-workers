@@ -3,7 +3,9 @@
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
       "donations:live": 18431577310,
-      "people-live": 18431577220
+      "people-live": 18431577220,
+      "events": 18431577282,
+      "event-registrations": 18431577302
     }
   },
   "eventbrite": {
@@ -29,5 +31,56 @@
     "fiscalYearColumn": "text_mm7973ah",
     "donorEmailColumn": "email_mm79m5qa",
     "donorLinkColumn": "board_relation_mm795r2d"
+  },
+  "attendeeSync": {
+    "actions": [
+      "attendee.updated",
+      "attendee.checked_in",
+      "attendee.checked_out",
+      "event.created",
+      "event.published",
+      "event.updated",
+      "event.unpublished"
+    ],
+    "programByOrganizer": {},
+    "volunteerPrograms": [
+      "Volunteering"
+    ],
+    "events": {
+      "eventbriteIdColumn": "text_mm795t6s",
+      "dateColumn": "date_mm79ek6s",
+      "endColumn": "date_mm79jnsz",
+      "venueColumn": "text_mm79dag5",
+      "addressColumn": "text_mm798hwr",
+      "cityColumn": "text_mm79zwes",
+      "programColumn": "color_mm79t0ga",
+      "eventStatusColumn": "color_mm79dkmj",
+      "sourceColumn": "color_mm799v1e",
+      "urlColumn": "link_mm79b6kx",
+      "classTypeColumn": "color_mm8gngpx",
+      "followupsColumn": "color_mm8gfb93"
+    },
+    "registrations": {
+      "attendeeIdColumn": "text_mm79bmyb",
+      "attendeeNameColumn": "text_mm79qtdt",
+      "attendeeEmailColumn": "email_mm8gk8v0",
+      "firstNameColumn": "text_mm8g8fhj",
+      "attendanceColumn": "color_mm79pht5",
+      "sourceColumn": "color_mm791rf",
+      "roleColumn": "color_mm79smj",
+      "eventLinkColumn": "board_relation_mm79jqs7",
+      "attendeeLinkColumn": "board_relation_mm794v4j",
+      "classDateColumn": "date_mm8gggwd",
+      "classDayColumn": "text_mm8gkw96",
+      "classLocationColumn": "text_mm8gmxsr",
+      "classTypeColumn": "text_mm8gvjfd",
+      "followupEmailColumn": "color_mm8gaqs2"
+    },
+    "peopleEmailColumn": "email_mm79m5qa",
+    "followups": {
+      "maxAgeDays": 3,
+      "sendHourLocal": 8,
+      "notifyUserId": 74336833
+    }
   }
 }

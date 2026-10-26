@@ -25,9 +25,45 @@ export interface OrderRow {
   writtenAt: string | null;
 }
 
+// The attendee/event ledgers reuse the order statuses: received → queued → written | skipped | failed.
+export type LedgerStatus = OrderStatus;
+
+// One row per Eventbrite event this Worker has heard about. Ids, times and statuses only — no
+// payload, as with orders.
+export interface EventRow {
+  eventId: string;
+  mondayItemId: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  locationKey: string | null;
+  eventbriteStatus: string | null;
+  status: LedgerStatus;
+  lastAction: string;
+  error: string | null;
+  deliveries: number;
+  receivedAt: string;
+  writtenAt: string | null;
+}
+
+// One row per Eventbrite attendee. No name or email: the consumer re-fetches the attendee.
+export interface AttendeeRow {
+  attendeeId: string;
+  eventId: string;
+  mondayItemId: string | null;
+  matchedPersonItemId: string | null;
+  status: LedgerStatus;
+  lastAction: string;
+  error: string | null;
+  deliveries: number;
+  receivedAt: string;
+  writtenAt: string | null;
+}
+
 export interface MondayBoards {
   'donations:live': number | null;
   'people-live': number | null;
+  events: number | null;
+  'event-registrations': number | null;
 }
 
 export type AmountSource = 'gross' | 'base_price';
@@ -76,6 +112,56 @@ export interface EventbriteSyncConfig {
     // Donations board's Donor connect column.
     donorEmailColumn: string;
     donorLinkColumn: string;
+  };
+  // The attendee/event feed: Eventbrite events → Events board, attendees → Event Registrations,
+  // and the class follow-up emails (docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md).
+  attendeeSync: {
+    // Webhook actions the attendee/event route processes; anything else is acknowledged and ignored.
+    actions: string[];
+    // Eventbrite organizer id → Program label (Events board Program column). Unlisted = Public.
+    programByOrganizer: Record<string, string>;
+    // Programs whose attendees get Role = Volunteer.
+    volunteerPrograms: string[];
+    events: {
+      eventbriteIdColumn: string;
+      dateColumn: string;
+      endColumn: string;
+      venueColumn: string;
+      addressColumn: string;
+      cityColumn: string;
+      programColumn: string;
+      eventStatusColumn: string;
+      sourceColumn: string;
+      urlColumn: string;
+      classTypeColumn: string;
+      followupsColumn: string;
+    };
+    registrations: {
+      attendeeIdColumn: string;
+      attendeeNameColumn: string;
+      attendeeEmailColumn: string;
+      firstNameColumn: string;
+      attendanceColumn: string;
+      sourceColumn: string;
+      roleColumn: string;
+      eventLinkColumn: string;
+      attendeeLinkColumn: string;
+      classDateColumn: string;
+      classDayColumn: string;
+      classLocationColumn: string;
+      classTypeColumn: string;
+      followupEmailColumn: string;
+    };
+    // People board email column used to match attendees to People.
+    peopleEmailColumn: string;
+    followups: {
+      // Events that ended more than this many days ago are not sent follow-ups.
+      maxAgeDays: number;
+      // Local (America/Los_Angeles) hour at which the daily follow-up sweep sends.
+      sendHourLocal: number;
+      // Monday user notified when follow-ups are Held; null disables the notification.
+      notifyUserId: number | null;
+    };
   };
 }
 

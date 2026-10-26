@@ -18,7 +18,7 @@ const get = (obj: unknown, path: string): unknown => path.split('.').reduce<unkn
 const wrangler = parseJsonc(wranglerText) as Json;
 const sandboxEnv = get(wrangler, 'env.sandbox') as Json;
 
-const BOARD_KEYS = ['donations:live', 'people-live'];
+const BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations'];
 const COLUMN_KEYS = [
   'eventbriteSync.amountColumn',
   'eventbriteSync.statusColumn',
@@ -28,6 +28,33 @@ const COLUMN_KEYS = [
   'eventbriteSync.fiscalYearColumn',
   'eventbriteSync.donorEmailColumn',
   'eventbriteSync.donorLinkColumn',
+  'attendeeSync.events.eventbriteIdColumn',
+  'attendeeSync.events.dateColumn',
+  'attendeeSync.events.endColumn',
+  'attendeeSync.events.venueColumn',
+  'attendeeSync.events.addressColumn',
+  'attendeeSync.events.cityColumn',
+  'attendeeSync.events.programColumn',
+  'attendeeSync.events.eventStatusColumn',
+  'attendeeSync.events.sourceColumn',
+  'attendeeSync.events.urlColumn',
+  'attendeeSync.events.classTypeColumn',
+  'attendeeSync.events.followupsColumn',
+  'attendeeSync.registrations.attendeeIdColumn',
+  'attendeeSync.registrations.attendeeNameColumn',
+  'attendeeSync.registrations.attendeeEmailColumn',
+  'attendeeSync.registrations.firstNameColumn',
+  'attendeeSync.registrations.attendanceColumn',
+  'attendeeSync.registrations.sourceColumn',
+  'attendeeSync.registrations.roleColumn',
+  'attendeeSync.registrations.eventLinkColumn',
+  'attendeeSync.registrations.attendeeLinkColumn',
+  'attendeeSync.registrations.classDateColumn',
+  'attendeeSync.registrations.classDayColumn',
+  'attendeeSync.registrations.classLocationColumn',
+  'attendeeSync.registrations.classTypeColumn',
+  'attendeeSync.registrations.followupEmailColumn',
+  'attendeeSync.peopleEmailColumn',
 ];
 
 describe('config split: board and column ids', () => {
@@ -65,6 +92,19 @@ describe('config split: board and column ids', () => {
     expect(sandbox.monday.boards['people-live']).toBe(18431577220);
   });
 
+  it('sandbox.json targets the Events and Event Registrations (sandbox v3) boards; production leaves them null', () => {
+    expect(sandbox.monday.boards['events']).toBe(18431577282);
+    expect(sandbox.monday.boards['event-registrations']).toBe(18431577302);
+    expect(production.monday.boards['events']).toBeNull();
+    expect(production.monday.boards['event-registrations']).toBeNull();
+  });
+
+  it('attendee follow-ups: sandbox notifies David, production has no one until cutover', () => {
+    expect(sandbox.attendeeSync.followups).toEqual({ maxAgeDays: 3, sendHourLocal: 8, notifyUserId: 74336833 });
+    expect(production.attendeeSync.followups.notifyUserId).toBeNull();
+    expect(sandbox.attendeeSync.peopleEmailColumn).toBe('email_mm79m5qa');
+  });
+
   it('both configs subscribe the three order actions and map placed/refunded to the labels funraise-sync writes', () => {
     for (const cfg of [sandbox, production]) {
       expect(cfg.eventbrite.actions).toEqual(['order.placed', 'order.updated', 'order.refunded']);
@@ -81,7 +121,8 @@ describe('config split: board and column ids', () => {
       else if (value !== null && typeof value === 'object') Object.values(value as Record<string, unknown>).forEach(collect);
     };
     collect(sandbox.eventbriteSync);
-    expect(ids.size).toBeGreaterThan(6);
+    collect(sandbox.attendeeSync);
+    expect(ids.size).toBeGreaterThan(30);
     const productionText = JSON.stringify(production);
     for (const id of ids) {
       expect(productionText, id).not.toContain(`"${id}"`);
