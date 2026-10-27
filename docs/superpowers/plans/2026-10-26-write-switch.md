@@ -142,7 +142,7 @@ it('logDebug is silent unless logLevel is debug', () => {});
   - A Worker that doesn't yet have the file or binding is reported as "pending", not as a failure, until a `--strict` flag is passed.
   - Exit 1 on any drift.
 
-- [ ] **Step 7: Add the CI job `worker-flags-copies`** (stage test; rules: changes to `*/src/flags.ts`, `*/wrangler.jsonc`, `scripts/check-worker-flags.mjs`, `.gitlab-ci.yml`). It runs `node scripts/check-worker-flags.mjs --strict` and `node --input-type=module -e "await import('./member-portal/src/flags.ts')"`. Then add `'redactPayload'` to `ALLOWED_WRAPPERS` in `scripts/check-log-safety.mjs`.
+- [ ] **Step 7: Add the CI job `worker-flags-copies`** (stage test; rules: changes to `*/src/flags.ts`, `*/wrangler.jsonc`, `scripts/check-worker-flags.mjs`, `.gitlab-ci.yml`). It runs `node scripts/check-worker-flags.mjs` (not yet `--strict`; Task 13 switches it once every Worker carries the module) and `node --input-type=module -e "await import('./member-portal/src/flags.ts')"`. Then add `'redactPayload'` to `ALLOWED_WRAPPERS` in `scripts/check-log-safety.mjs`.
 
 - [ ] **Step 8: Run** `node --test scripts/*.test.mjs && node scripts/check-log-safety.mjs`. Expected: PASS.
 
