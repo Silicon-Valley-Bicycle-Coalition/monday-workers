@@ -1297,12 +1297,18 @@ describe('write switch (consumeRecomputeBatch)', () => {
     return { deps, pendingStore, linksStore, giftsStore, recomputesStore, affiliationsStore, volunteerStore, queue, mondayClient };
   }
 
+  // A dry run's one pending write: closing its own row out as 'dropped' (never 'written' or
+  // 'failed'), so the nightly requeue can't re-send it live.
+  function expectOnlyDropped(s: ReturnType<typeof setup>, id: string) {
+    expect(vi.mocked(s.pendingStore.updateStatus).mock.calls).toEqual([[id, 'dropped', undefined]]);
+  }
+
   function expectNoWrites(s: ReturnType<typeof setup>) {
     expect(s.mondayClient.changeColumnValues).not.toHaveBeenCalled();
     expect(s.mondayClient.setItemDescription).not.toHaveBeenCalled();
     expect(s.mondayClient.createUpdate).not.toHaveBeenCalled();
     expect(s.queue.send).not.toHaveBeenCalled();
-    for (const fn of [s.pendingStore.upsertPending, s.pendingStore.updateStatus, s.linksStore.upsertLink, s.linksStore.deleteLink,
+    for (const fn of [s.pendingStore.upsertPending, s.linksStore.upsertLink, s.linksStore.deleteLink,
       s.linksStore.bulkUpsert, s.giftsStore.refreshFacts, s.giftsStore.markRemoved, s.recomputesStore.record,
       s.affiliationsStore.upsert, s.volunteerStore.upsert, s.volunteerStore.markRemoved]) {
       expect(fn).not.toHaveBeenCalled();
@@ -1316,6 +1322,7 @@ describe('write switch (consumeRecomputeBatch)', () => {
     await consumeRecomputeBatch([message], s.deps, gate('off'));
 
     expectNoWrites(s);
+    expectOnlyDropped(s, 'dn1');
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     // It still read the way a live run would.
@@ -1334,6 +1341,7 @@ describe('write switch (consumeRecomputeBatch)', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await consumeRecomputeBatch([message], s.deps, gate('on'));
     expectNoWrites(s);
+    expectOnlyDropped(s, 'dn1');
     expect(message.ack).toHaveBeenCalled();
   });
 
@@ -1345,6 +1353,7 @@ describe('write switch (consumeRecomputeBatch)', () => {
     expect(message.ack).not.toHaveBeenCalled();
     expect(s.mondayClient.getDonorLinkForDonation).not.toHaveBeenCalled();
     expectNoWrites(s);
+    expect(s.pendingStore.updateStatus).not.toHaveBeenCalled();
   });
 
   it('hold backs off by attempt, capped at an hour', async () => {
@@ -1381,6 +1390,16 @@ describe('write switch (consumeRecomputeBatch)', () => {
     expect(message.ack).not.toHaveBeenCalled();
   });
 
+  it('off: an owner-keyed fan-out message has no pending row of its own — it marks nothing', async () => {
+    const s = setup();
+    const message = { body: { donationItemId: 'dnMoved', donationBoardId: '1', ownerItemId: 'donor-0', ownerBoardId: '3' }, ack: vi.fn(), retry: vi.fn() };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await consumeRecomputeBatch([message], s.deps, gate('off'));
+    expectNoWrites(s);
+    expect(s.pendingStore.updateStatus).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('off: a registration message dry-runs the volunteer upsert too', async () => {
     const s = setup();
     const reg = { body: { kind: 'registration' as const, donationItemId: 'r1', donationBoardId: '7' }, ack: vi.fn(), retry: vi.fn() };
@@ -1393,6 +1412,7 @@ describe('write switch (consumeRecomputeBatch)', () => {
     await consumeRecomputeBatch([reg], { ...s.deps, config: cfg }, gate('off'));
     expect(s.mondayClient.getRegistration).toHaveBeenCalled();
     expectNoWrites(s);
+    expectOnlyDropped(s, 'r1');
     expect(reg.ack).toHaveBeenCalled();
   });
 });

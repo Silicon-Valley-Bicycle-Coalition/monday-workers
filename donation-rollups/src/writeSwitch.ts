@@ -81,10 +81,26 @@ function dryRunVolunteerStore(store: VolunteerActivityStore): VolunteerActivityS
   });
 }
 
+/**
+ * The pending store for a dry-run recompute: every write dropped except updateStatus(id,
+ * 'dropped'), which reaches the real store. The consumer makes that one call per message it
+ * dry-runs, so a delivery ingested live but consumed under `off` (an emergency stop) is closed
+ * out instead of staying 'queued' — where the nightly requeue would re-send it as a live
+ * recompute once writes are back on.
+ */
+function dryRunPendingStore(store: PendingStore): PendingStore {
+  const readOnly = dryRunStore(store, PENDING_MUTATORS);
+  return dryRunStore(readOnly, [], {
+    updateStatus: async (donationItemId, status, patch) => {
+      if (status === 'dropped') await store.updateStatus(donationItemId, status, patch);
+    },
+  });
+}
+
 export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext): ProcessBatchDeps {
   return {
     ...deps,
-    pendingStore: dryRunStore(deps.pendingStore, PENDING_MUTATORS),
+    pendingStore: dryRunPendingStore(deps.pendingStore),
     linksStore: dryRunLinksStore(deps.linksStore),
     giftsStore: dryRunGiftsStore(deps.giftsStore),
     recomputesStore: dryRunStore(deps.recomputesStore, RECOMPUTES_MUTATORS),

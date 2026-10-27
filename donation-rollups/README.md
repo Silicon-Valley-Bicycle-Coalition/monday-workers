@@ -929,15 +929,18 @@ namespaces exist):
   messages on the queue (retrying at 1 minute doubling to an hour), skips the daily custodian
   run and answers `POST /custodian/run/:duty` with 409; `off` recomputes and runs duties against
   recording proxies, logging one `"writeSwitch":"skipped"` line per would-be write and acking.
-  **A missing key means `off`**, and a KV read error means hold.
+  **A missing key means `off`**, and a KV read error behaves like hold except that the queue is
+  not paused (messages keep retrying on the backoff).
 - `donation-rollups:log` — `debug` adds redacted payloads to those lines.
 
 Under `off` nothing in D1 moves except ingest: the webhook still records its pending row and
 enqueues (stamped, so that message is never written even if the switch is `on` by the time it's
 consumed), but the ledger, links, summaries and `custodian_runs` are not refreshed — so no duty
-cursor advances, and a sliced sweep/archive resumes where the last live run stopped. Pending rows
-a dry run consumed stay `queued`; once writes are `on`, the nightly requeue re-enqueues those
-older than 24 hours as live recomputes (and reports ATTENTION once). A message already queued
+cursor advances, and a sliced sweep/archive resumes where the last live run stopped. The one
+other D1 write a dry run makes is closing out its pending row as `dropped` — whether the webhook
+stamped it under `off` or it was ingested live and consumed after an emergency `off` — so the
+nightly requeue never re-sends it as a live recompute once writes are back `on`; the item's next
+webhook resets the row and is processed normally. A message already queued
 before this build has no stamp and is written under `on`. The dead-letter consumer runs in every
 mode. Set the switch with the operator CLI at the repo root, never by hand — `writes hold`/`on`
 also pauses and resumes `donation-rollups-recompute`:

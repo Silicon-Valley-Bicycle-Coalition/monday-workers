@@ -76,7 +76,7 @@ export async function consumeRecomputeBatch(
     const disposition = messageDisposition(gate.mode, message.body);
     logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
     if (disposition === 'retry') return null;
-    return disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx);
+    return disposition === 'write' ? { deps, dryRun: false } : { deps: dryRunConsumerDeps(deps, ctx), dryRun: true };
   });
 }
 
@@ -84,7 +84,7 @@ export async function consumeRecomputeBatch(
 export async function processRecomputeBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[], deps: ProcessBatchDeps,
 ): Promise<void> {
-  await runBatch(messages, () => deps);
+  await runBatch(messages, () => ({ deps, dryRun: false }));
 }
 
 function deliveryIdOf(body: RecomputeQueueMessage): string {
@@ -95,7 +95,7 @@ function deliveryIdOf(body: RecomputeQueueMessage): string {
 // depsFor returns null for a message the write switch holds on the queue.
 async function runBatch(
   messages: QueueMessageLike<RecomputeQueueMessage>[],
-  depsFor: (message: QueueMessageLike<RecomputeQueueMessage>) => ProcessBatchDeps | null,
+  depsFor: (message: QueueMessageLike<RecomputeQueueMessage>) => { deps: ProcessBatchDeps; dryRun: boolean } | null,
 ): Promise<void> {
   // Once D1 has refused a query for the day, or Monday has said the token's budget is spent,
   // every later message in this batch would fail the same way after spending Monday calls of
@@ -109,14 +109,22 @@ async function runBatch(
       message.retry({ delaySeconds: batchDelaySeconds });
       continue;
     }
-    const deps = depsFor(message);
-    if (deps === null) {
+    const chosen = depsFor(message);
+    if (chosen === null) {
       // `hold` or an unreadable switch: not processed, not dropped — back on the queue at the
       // shared backoff (1 minute doubling to an hour) until the mode is `on` or `off`.
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
+    const { deps, dryRun } = chosen;
     try {
+      // A dry-run delivery is closed out as 'dropped' (the one pending write a dry run makes —
+      // writeSwitch.ts dryRunPendingStore), so the nightly requeue can't re-send it as live work
+      // later. An owner-keyed message has no pending row of its own: its donationItemId is the
+      // gift whose own row tracks the message that fanned it out.
+      if (dryRun && message.body.ownerItemId === undefined) {
+        await deps.pendingStore.updateStatus(donationItemId, 'dropped');
+      }
       await processOne(message.body, deps);
       message.ack();
     } catch (err) {
@@ -143,8 +151,9 @@ async function runBatch(
         // Issue #27: retrying straight back into an exhausted complexity budget just burns the
         // message's retries into the DLQ. Wait out Monday's hint, backing off per attempt. The
         // daily call limit with no hint resets at midnight UTC — defer to it exactly as the D1
-        // quota does, capped at Queues' 12 h (a capped retry fails fast on its first Monday call
-        // and defers again).
+        // quota does. A hinted delay (midnight, or Monday's own) is capped at Queues' 12 h — a
+        // capped retry fails fast on its first Monday call and defers again; an unhinted one at
+        // the shared backoff's hour.
         const hintSeconds = err.daily && err.retryInSeconds === undefined
           ? secondsUntilMidnightUTC(deps.now ?? new Date())
           : err.retryInSeconds === undefined ? undefined : Math.ceil(err.retryInSeconds);

@@ -100,7 +100,9 @@ export function createApp(deps: AppDeps) {
     const stamp = stampFor(await deps.writeMode());
     try {
       await deps.queue.send({ ...(kind === 'registration' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId, ...stamp });
-      await deps.pendingStore.updateStatus(donationEvent.donationItemId, 'queued');
+      // A delivery stamped dropped is a dry run from the start: recorded as 'dropped', not
+      // 'queued', so the nightly requeue never re-sends it as a live recompute later.
+      await deps.pendingStore.updateStatus(donationEvent.donationItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups webhook: enqueue failed for donation "${donationEvent.donationItemId}": ${errMsg}`);

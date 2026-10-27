@@ -222,6 +222,14 @@ describe('write switch', () => {
     expect(res.status).toBe(200);
     expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1', writeStamp: 'dropped' });
     expect(pendingStore.upsertPending).toHaveBeenCalledOnce();
+    // Recorded 'dropped', not 'queued': the nightly requeue must never re-send it as live work.
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('5', 'dropped');
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('5', 'queued');
+  });
+
+  it.each([['on'], ['hold']] as const)('records the row queued under %s', async (mode) => {
+    const { app, pendingStore } = switchApp(mode);
+    await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId: 1 } });
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('5', 'queued');
   });
 

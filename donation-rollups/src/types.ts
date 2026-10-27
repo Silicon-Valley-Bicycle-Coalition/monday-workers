@@ -166,7 +166,10 @@ export interface DonorLevelConfig {
   labels: { leadership: string; major: string; donor: string };
 }
 
-export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
+// 'dropped': consumed (or enqueued) under the write switch's `off` — a dry run, never to be
+// written later. Terminal like 'written', so the nightly requeue (listStuck) never picks it up;
+// a later delivery for the same item resets it to 'received' (upsertPending).
+export type PendingStatus = 'received' | 'queued' | 'written' | 'failed' | 'dropped';
 
 export type RecomputeKind = 'donation' | 'registration';
 
