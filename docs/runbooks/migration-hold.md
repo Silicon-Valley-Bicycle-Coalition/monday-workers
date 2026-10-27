@@ -1,13 +1,25 @@
 # Runbook: holding writes during the Salesforce to Monday load
 
 Uses the write switch (README, "Write switch: off / hold / on"). Run every command from the repo
-root. Never run `hold` to `off` to leave a hold: it drops the held messages.
+root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
+`all writes on`: two Workers must stay `off` until their own checks pass (below), and `all` would
+turn them on.
 
-## Prerequisites
+The in-scope Workers, in three groups that this runbook treats differently:
 
-The FLAGS KV namespaces must exist and their ids be in all 12 in-scope `wrangler.jsonc` files; they are
-placeholders (`REPLACE_WITH_FLAGS_KV_ID`, `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`) until then, and
-`flags.mjs` refuses to run on placeholders.
+- **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
+  `email-log`, `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
+  `monday-backup`, `quickbooks-sync`, `report-digests`.
+- **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
+  (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
+- **`people-reclassification`**: stays `off` until the staged one-item live check in its README
+  ("Not verified against a live board yet") has passed; never part of a bulk flip.
+
+## Merging / first deploy sequencing
+
+CI deploys the sandbox Workers from `main`, and a missing key reads as `off`, so the order is:
+
+1. Create the namespaces (live account changes; confirm before running):
 
 ```sh
 npx wrangler kv namespace create svbc-worker-flags
@@ -17,16 +29,47 @@ npx wrangler kv namespace create svbc-worker-flags
 npx wrangler kv namespace create svbc-worker-flags-sandbox
 ```
 
+2. Fill the two ids into every in-scope `wrangler.jsonc` in your working copy, uncommitted
+   (`flags.mjs` reads them from `member-portal/wrangler.jsonc` and refuses the placeholders
+   `REPLACE_WITH_FLAGS_KV_ID` / `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`), and check them:
+
 ```sh
 node scripts/check-worker-flags.mjs --strict
 ```
 
-A missing key reads as `off`, so for every Worker that should keep writing, set `on` **before**
-deploying the build that reads the switch (`member-portal` login returns 503 otherwise):
+3. Put the sandbox keys **`on`** for every Worker that should keep writing in the sandbox (the
+   "writing normally" group, plus `donation-rollups` if its sandbox webhooks are subscribed), one
+   Worker at a time (see "Setting keys" for the loop).
+4. Only then commit the real ids and merge. The sandbox deploys that follow read `on` and keep
+   writing; a Worker whose key was not set comes up `off` (dry runs only, and `member-portal`
+   login returns 503).
+
+Production follows the same order before the first production deploy of each Worker.
+
+## Setting keys
+
+A Worker's main queues exist once it has been deployed; `writes` pauses or resumes them, and a
+queue wrangler reports missing is a **failure** for that Worker (create the queues — deploy the
+Worker — first, then rerun). With several Workers (or `all`), every Worker still runs after one
+fails, and the command lists each failure (Worker, step, KV/queue mismatch) and exits non-zero.
+For `on`, the CLI waits 60 s after the KV write before resuming the Worker's queues (it prints a
+notice), so allow about a minute per Worker that has queues.
+
+Set the writing-normally group one Worker at a time, never with `all`:
 
 ```sh
-node scripts/flags.mjs all writes on --env production
+for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup quickbooks-sync report-digests; do
+  node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
+done
 ```
+
+```sh
+node scripts/flags.mjs status --env production
+```
+
+`status` exits non-zero on any `MISMATCH` or `?` (a value it could not read). It parses
+`wrangler queues info` and `kv key get` output, which is unverified against real wrangler: on
+first use, confirm it against the dashboard.
 
 ## Before the load
 
@@ -39,40 +82,58 @@ node scripts/flags.mjs all writes on --env production
 node scripts/flags.mjs retention --env production
 ```
 
-3. Hold all Workers. Each Worker's KV key is set first, then its main queues are paused (DLQs
-   never are).
-
-```sh
-node scripts/flags.mjs all writes hold --env production
-```
-
-4. Check the result. Every Worker should read `writes=hold`, queues `paused`, no `MISMATCH`.
-   `status` parses `wrangler queues info` and `kv key get` output, which is unverified against
-   real wrangler: on first use, confirm it against the dashboard; a `?` means output was not parsed.
-
-```sh
-node scripts/flags.mjs status --env production
-```
-
-5. `donation-rollups`: keep it `off` (or its Monday webhooks unsubscribed) during the load,
-   otherwise it holds one message per imported gift.
+3. Set `donation-rollups` **`off` first**, before anything is held. Held, it would keep one message
+   per imported gift and recompute every owner when released; `off` drops them, and the real load
+   sets the totals anyway. Its webhooks stay unsubscribed until after the load, as before.
 
 ```sh
 node scripts/flags.mjs donation-rollups writes off --env production
 ```
 
-Subscribe its webhooks after the load, as before; flip it `on` only after they are subscribed.
+4. Hold the writing-normally group, one Worker at a time. Each Worker's KV key is set first, then
+   its main queues are paused (DLQs never are). Don't use `all writes hold`: it would also move
+   `donation-rollups` and `people-reclassification` from `off` to `hold`, and releasing them later
+   with `on` would turn them on.
+
+```sh
+for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup quickbooks-sync report-digests; do
+  node scripts/flags.mjs "$w" writes hold --env production || echo "FAILED: $w"
+done
+```
+
+   (To keep donor login up during the load, leave `member-portal` out of the loop; see "During
+   the hold" for what that costs.)
+
+5. Check the result. Every held Worker should read `writes=hold`, queues `paused`;
+   `donation-rollups` and `people-reclassification` read `writes=off`; no `MISMATCH`, no `?`.
+
+```sh
+node scripts/flags.mjs status --env production
+```
+
+6. **Wait about a minute before starting the load.** KV reads are edge-cached for 30 s, so a
+   Worker can act on the old mode for up to that long after the flip.
 
 ## During the hold
 
 - `member-portal` is donor-visibly unavailable under `hold`, `unknown` and `off`: login,
   change-request and card-regenerate POSTs render a 503 "temporarily unavailable" page, while
-  reads still work. Holding `all` therefore takes donor login offline for the whole hold. Trade-off:
-  announce the outage to donors beforehand, or hold Workers individually instead of `all` (for
-  example leaving `member-portal` `on` if its boards stay readable during the load).
-- `bp-feedback-notify` has no queue: under `hold` it returns 503 and only Monday's own retries
-  apply, so a feedback request fired mid-migration may need re-triggering by hand. The two
-  `benevity-import` routes also return 503 under `hold`.
+  reads still work. Holding it takes donor login offline for the whole hold. The alternative,
+  leaving it `on`, is not read-only: under `on` the portal still writes change requests, card
+  regenerations and letter sends to Monday during the load. Choose one and announce it.
+- `bp-feedback-notify` has no queue: under `hold` (or an unreadable switch, `unknown`) it returns
+  503 and only Monday's own retries apply, so a feedback request fired mid-migration may need
+  re-triggering by hand once Monday gives up. The two `benevity-import` routes also return 503
+  under `hold`/`unknown`: an upload or Retry during the hold is refused and must be repeated
+  after the flip to `on`.
+- A `member-portal` letter queued under `hold` but consumed under `off` (someone flipped the
+  Worker to `off` instead of `on`) stays stranded as `queued` until a staff re-click.
+- `report-digests` skips each hour's digests under `hold` and does not catch up: after the flip,
+  resend any digest that fell due with `POST /digests/run?key=<key>&date=<day it was due>`.
+- `eventbrite-sync` skips its hourly class follow-ups and its daily missed-order check under
+  `hold`. A class that ended more than `followups.maxAgeDays` (3) days before the flip gets no
+  follow-ups; the missed-order check looks back only 26 h, so compare the held days by hand
+  (`scripts/backfill-orders.mjs --dry-run` per event).
 - Queue retries: 1 minute doubling to 1 hour, `max_retries: 100` (about 4 days) before the DLQ;
   hinted waits (Retry-After, midnight daily limit) up to 12 h. A held message that keeps failing on
   reads can still reach a DLQ, and DLQ alerts stay live.
@@ -80,26 +141,37 @@ Subscribe its webhooks after the load, as before; flip it `on` only after they a
 
 ## After `validate`
 
-1. Release the hold with `on`, not `off`.
+1. Release the hold with `on`, not `off`, one Worker at a time — the same writing-normally list,
+   never `all`. The CLI waits 60 s before resuming each Worker's queues.
 
 ```sh
-node scripts/flags.mjs all writes on --env production
+for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup quickbooks-sync report-digests; do
+  node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
+done
 ```
 
 2. Watch backlog drain until every queue reads 0. A non-zero exit means KV changed but a queue
-   resume failed: fix and rerun, then check for `MISMATCH`.
+   resume failed: fix and rerun that Worker, then check for `MISMATCH`.
 
 ```sh
 node scripts/flags.mjs status --env production
 ```
 
-3. Follow-ups:
-   - `donation-rollups`: if it was held or off for more than 24 h, flip it to `on` early enough
-     for the queue to drain before the 09:00 UTC custodian requeue, or expect one ATTENTION and
-     duplicate (idempotent) recomputes.
+3. `donation-rollups`: subscribe its webhooks (as before), and only then flip it `on`:
+
+```sh
+node scripts/flags.mjs donation-rollups writes on --env production
+```
+
+4. `people-reclassification` stays `off` until its staged one-item live check passes.
+5. Follow-ups:
+   - `donation-rollups`: if it was off for more than 24 h, flip it to `on` early enough for the
+     queue to drain before the 09:00 UTC custodian requeue, or expect one ATTENTION and duplicate
+     (idempotent) recomputes.
    - `monday-backup`: after an off/hold period the 36 h stale-snapshot Slack alert fires after the
      flip until the next 09:00 UTC backup succeeds. Flip shortly before 09:00 or expect one alert.
      Abandoned-run alerts under `off` are only logged.
+   - `report-digests`: resend any digest that fell due during the hold (above).
 
 ## Work ingested under `off` is deliberately not written later
 
@@ -113,3 +185,5 @@ flip. Recover them by hand if wanted:
 - `member-portal`: change requests are refused with 503 under `off` (the donor re-submits); the
   letters webhook logs and returns 200 with no `letter_sends` row (staff re-click); a message
   queued under `hold` but consumed under `off` stays `queued`.
+- `eventbrite-sync`: orders, events and attendees ingested under `off` are re-driven with
+  `scripts/backfill-orders.mjs` / `scripts/backfill-attendees.mjs` for the affected events.

@@ -191,11 +191,19 @@ only) to the skip lines. `<worker>` is the directory name. **A missing key, or a
 reads as `off`; a KV read error is `unknown` and behaves like `hold`** (never write, retry, crons
 skip). Reads are edge-cached for 30 s, so a flip takes up to that long to reach a warm location.
 `bp-feedback-notify` has no queue: under `hold`/`unknown` it returns 503 and only Monday's own
-retries apply, so a request fired mid-migration may need re-triggering by hand.
+retries apply, so a request fired mid-migration may need re-triggering by hand. Both
+`benevity-import` routes also return 503 under `hold`/`unknown` (repeat the upload or Retry after
+the flip). A `member-portal` letter queued under `hold` but consumed under `off` stays stranded
+as `queued` until a staff re-click — one more reason to leave `hold` with `on`.
 
 **Set `on` before deploying.** Because a missing key is `off`, set `<worker>:writes on` for every
 Worker that should keep writing *before* deploying the build that reads the switch (otherwise, for
-example, `member-portal` login returns 503).
+example, `member-portal` login returns 503). CI deploys the sandbox from `main`, so the first time:
+create the namespaces, put the sandbox keys `on` (with the real ids filled in locally), and only
+then commit the real ids — the runbook's "Merging / first deploy sequencing" has the steps. Set
+keys one Worker at a time, **never `all writes on`**: `people-reclassification` stays `off` until
+its staged one-item live check passes, and `donation-rollups` goes `on` only after its webhooks
+are subscribed.
 
 **Operator CLI** (`scripts/flags.mjs`, shells out to `npx wrangler`; run from the repo root):
 
@@ -204,7 +212,7 @@ node scripts/flags.mjs member-portal writes hold --env production
 ```
 
 ```sh
-node scripts/flags.mjs all writes on --env production
+node scripts/flags.mjs funraise-sync writes on --env production
 ```
 
 ```sh
@@ -232,7 +240,9 @@ the mode, log level, and each queue's paused/delivering state and backlog (`?` w
 not be read or wrangler's output could not be parsed), and exits non-zero on any `MISMATCH` or
 `?`. `retention` sets 14-day message retention (1,209,600 s) on every main
 queue and DLQ; it is operational, not in `wrangler.jsonc`. Leave `hold` with `on`, not `off`:
-`hold` to `off` drops what was held.
+`hold` to `off` drops what was held. After a `writes hold`, wait about a minute (the KV cache
+window) before starting anything that relies on it, such as the load; the CLI already waits
+before resuming queues on `on`.
 
 **Outage retry.** Main-queue consumers retry with a delay of `min(60 x 2^(attempts-1), 3600)`
 seconds (1 minute doubling to 1 hour), raised to any longer hint (`Retry-After`, midnight for a
