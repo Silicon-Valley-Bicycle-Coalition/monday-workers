@@ -103,6 +103,14 @@ describe('redactPayload', () => {
     expect(redactPayload({ column_values: '{"x":"a@b.org"}' }, DEFAULT_PII_KEYS))
       .toEqual({ column_values: '{"x":"<email>"}' });
   });
+  it('redacts inside JSON-string values', () => {
+    const out = redactPayload({ column_values: '{"phone_x":"555-1234","location_y":"1 Main St"}' }, DEFAULT_PII_KEYS) as { column_values: string };
+    expect(JSON.parse(out.column_values)).toEqual({ phone_x: '<masked:8>', location_y: '1 Main St' });
+  });
+  it('redacts email-shaped object keys', () => {
+    const out = JSON.stringify(redactPayload({ 'a@b.org': 1 }, DEFAULT_PII_KEYS));
+    expect(out).toBe('{"<email>":1}');
+  });
   it('masks non-string values under PII keys without leaking them', () => {
     expect(redactPayload({ zip: 94301, address: { line: 'x' } }, DEFAULT_PII_KEYS))
       .toEqual({ zip: '<masked>', address: '<masked>' });
@@ -133,12 +141,12 @@ describe('recordingProxy', () => {
     // The proxy calls a placeholder with `this` = { n }, its 1-based call count for this proxy.
     const placeholder = function (this: { n: number }) { return { id: `dry-run-${this.n}` }; };
     const target = { createItem: async () => ({ id: 'real' }), archive: async () => 'real' };
-    const p = recordingProxy(target, 'monday', { createItem: placeholder as never, archive: undefined }, ctx());
+    const p = recordingProxy(target, 'monday', { createItem: placeholder, archive: undefined }, ctx());
     expect(await p.createItem()).toEqual({ id: 'dry-run-1' });
     expect(await p.createItem()).toEqual({ id: 'dry-run-2' });
     // A listed method with no placeholder function resolves undefined.
     expect(await p.archive()).toBeUndefined();
-    const other = recordingProxy(target, 'monday', { createItem: placeholder as never }, ctx());
+    const other = recordingProxy(target, 'monday', { createItem: placeholder }, ctx());
     expect(await other.createItem()).toEqual({ id: 'dry-run-1' });
   });
 });
@@ -169,6 +177,14 @@ describe('logSkip', () => {
     const parsed = JSON.parse(String(log.mock.calls[0]![0]));
     expect(parsed.payload).toEqual([{ itemId: 5, email: '<masked:7>', body: '<text:2>' }]);
   });
+});
+
+it('logSkip debug masks positional string arguments', () => {
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  logSkip(ctx({ logLevel: 'debug' }), 'monday', 'createItem', [123, 'Ann Smith', { email: 'a@b.org' }]);
+  const line = String(log.mock.calls[0]![0]);
+  expect(JSON.parse(line).payload).toEqual([123, '<masked:9>', { email: '<masked:7>' }]);
+  expect(line).not.toContain('Ann');
 });
 
 describe('logDebug', () => {

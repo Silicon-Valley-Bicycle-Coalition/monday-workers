@@ -98,7 +98,18 @@ function keyMatches(key: string, needles: readonly string[]): boolean {
 }
 
 function redactValue(value: unknown, piiKeys: readonly string[], seen: WeakSet<object>): unknown {
-  if (typeof value === 'string') return value.replace(EMAIL_PATTERN, '<email>');
+  if (typeof value === 'string') {
+    // Monday column_values and similar arrive as JSON text: redact inside it, keyed.
+    const trimmed = value.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return JSON.stringify(redactValue(JSON.parse(trimmed), piiKeys, seen));
+      } catch {
+        // Not JSON after all; fall through to the plain scrub.
+      }
+    }
+    return value.replace(EMAIL_PATTERN, '<email>');
+  }
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return '<cycle>';
   seen.add(value);
@@ -107,10 +118,11 @@ function redactValue(value: unknown, piiKeys: readonly string[], seen: WeakSet<o
     out = value.map((item) => redactValue(item, piiKeys, seen));
   } else {
     const result: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value)) {
-      if (keyMatches(key, piiKeys)) {
+    for (const [rawKey, child] of Object.entries(value)) {
+      const key = rawKey.replace(EMAIL_PATTERN, '<email>');
+      if (keyMatches(rawKey, piiKeys)) {
         result[key] = typeof child === 'string' ? `<masked:${child.length}>` : '<masked>';
-      } else if (keyMatches(key, FREE_TEXT_KEYS) && typeof child === 'string') {
+      } else if (keyMatches(rawKey, FREE_TEXT_KEYS) && typeof child === 'string') {
         result[key] = `<text:${child.length}>`;
       } else {
         result[key] = redactValue(child, piiKeys, seen);
@@ -152,7 +164,11 @@ export function logSkip(ctx: SkipContext, sink: string, operation: string, paylo
     operation,
     args,
   };
-  if (ctx.logLevel === 'debug') line.payload = redactPayload(payload, ctx.piiKeys);
+  if (ctx.logLevel === 'debug') {
+    // Positional string arguments carry no key to match on, so they are masked outright.
+    const maskTop = (v: unknown): unknown => (typeof v === 'string' ? `<masked:${v.length}>` : redactPayload(v, ctx.piiKeys));
+    line.payload = Array.isArray(payload) ? payload.map(maskTop) : maskTop(payload);
+  }
   console.log(JSON.stringify(line));
 }
 
@@ -174,10 +190,12 @@ type AnyFn = (...args: never[]) => unknown;
 // resolves to its placeholder's result; a placeholder is called with `this` = { n }, the 1-based
 // count of placeholder calls on this proxy, so it can mint ids like `dry-run-1`. A listed method
 // with no placeholder resolves undefined. Every other member is forwarded to the target, bound.
+// Debug output masks positional string arguments outright, so clients should take keyed objects
+// for useful debug output.
 export function recordingProxy<T extends object>(
   target: T,
   sink: string,
-  placeholders: { [K in keyof T]?: T[K] extends (...a: infer A) => infer R ? (...a: A) => Awaited<R> : never },
+  placeholders: { [K in keyof T]?: T[K] extends (...a: infer A) => infer R ? (this: { n: number }, ...a: A) => Awaited<R> : never },
   ctx: SkipContext,
 ): T {
   let n = 0;
