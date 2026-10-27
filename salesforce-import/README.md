@@ -530,7 +530,8 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
 
   Only Contacts that pass the People inclusion rule carry it: in a dry run over the 2026-09-08
   extract with Windfall fields merged in, 6,585 of the 14,131 (3,663 live, 2,922 historical).
-  The rest are on no board and keep their Windfall data only in the raw `contacts` extract.
+  The rest are on no board and keep their Windfall data only in the raw `contacts` extract;
+  Windfall data alone deliberately doesn't qualify a Contact for People (decided 2026-10-26).
   `load` creates the columns from the payloads; `configure` describes them on both People
   boards, adds a **Wealth screening** view to People, and lists Windfall ID as plumbing.
   **Needs a re-extract**, since the Contact query gained the fields.
