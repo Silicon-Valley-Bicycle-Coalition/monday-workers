@@ -56,7 +56,7 @@ Cloudflare Queue → consumer (one at a time)
   │  3. donor: cached on the row, else People lookup by email, else create
   │  4. write: ledger item → update; else adopt by Eventbrite Order ID → update; else create
   │     with the first-write stamps (Thank You Sent, Gift Type, Fiscal Year Ending)
-  │  failure → retry with backoff (1, 4, 16 min) → dead-letter consumer marks the row and logs
+  │  failure → retry with backoff (1 min doubling to 1 h, 100 tries) → dead-letter consumer marks the row and logs
   ▼
 Donations board (+ Donor link to People; ids in config/sandbox.json, svbc.json for production)
 ```
