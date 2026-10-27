@@ -1,12 +1,12 @@
 # Funraise replay rehearsal — design
 
-**Status:** partly run, 2026-10-06 and 2026-10-21 (see "Results"). The runbook (`monday-migration` `docs/23`,
+**Status:** run, 2026-10-06, 2026-10-21 and 2026-10-26 (see "Results"). The runbook (`monday-migration` `docs/23`,
 step 5) requires the replay to be rehearsed before Gate A: "replaying one Worker's stored
 deliveries into another has never been run." This is how to do that with what exists, what it
 proves, and what it can't. Tool under test: `funraise-sync/scripts/replay-window.mjs` (!186), with
-reject-and-flag (!185). S0, S1, S2, S4, S5, S7 and the wrong-secret case of S6 have run and pass
-(S4's `Refunded` half confirms a known gap); S3 was blocked by a permission check and is the one
-scenario left.
+reject-and-flag (!185). Every scenario has run and passes: S0–S5, S7 and the wrong-secret case of
+S6 (S4's `Refunded` half confirms a known gap; S6's target-down case is covered by the 429
+recoveries, see "Results").
 
 ## What there is to replay
 
@@ -109,7 +109,7 @@ noted.
 | **S2** idempotency | **Pass on the third run:** 71 `already present`, 0 failed, exit 0, and no consumer activity. The first two runs had failures; see below. |
 | **S6** wrong secret | **Pass.** `STOPPED at <first id>` on HTTP 401 and nothing further sent; the local `events` table stayed empty. |
 | **S6** target down, then up | Not run as such. The 429 runs below showed the same recovery: a re-run after the cause cleared completed. |
-| **S3** create path | **Not run: blocked.** Claude Code's auto-mode permission check refused the `delete_item` calls on three sandbox Donations items (an installment, a one-time `Complete` and a `Failed`, chosen and recorded first), even after the user approved the sandbox writes. Nothing was deleted, and the create path (`createItem` for a gift with no existing item) is still unrehearsed. Re-run it with the deletion done by hand or under an explicit permission rule. |
+| **S3** create path | **Pass (2026-10-26,** `main` at `eeefd2f`). On 2026-10-06 Claude Code's auto-mode permission check refused the `delete_item` calls, so this run had the deletions done by hand. Three gifts from the window, each the only item carrying its Funraise ID: a one-time `Complete` (transaction 14407088, $28), an installment `Complete` (14406895, $50, subscription 208297, linked to Recurring Gift 13075825682) and a one-time `Failed` (14390079, $5); their Donations items were deleted by hand. Same setup as S7 (fresh local D1 with the sandbox `subscriptions` and `poll_cursors` copied in, dummy `FUNRAISE_API_KEY`). The window had grown to **136** transactions (97 installments, every subscription in the ledger). Replay: 136 `enqueued`, 0 failed, exit 0; the consumer drained to 136 `written` with no errors, 429s or Funraise lookups in the log. **Created:** the three gifts, once each, under new item ids, and the board went from 3,961 to 3,964 items. Each new item has its Funraise link, Donor link (the same donor the sandbox Worker's ledger had matched), amount, date, status mapped (`Complete` → Received, `Failed` → Failed), Gift Type `Donation`, Fiscal Year Ending 2027 and Thank You Sent; the installment's Recurring Gift link is 13075825682, the item the deleted one linked to. **Adopted:** the other 133, each with the sandbox ledger's item id, and a before/after read of every column on them showed **no change**. A column-by-column comparison of the recreated items with the deleted ones was planned but not possible: the before-snapshot was lost with the session scratchpad. **Cleanup done:** the sandbox Worker's three `events` rows had `monday_item_id` set to NULL, so a later Funraise edit adopts the new item by its Funraise ID. |
 | **S4** stale guard | **Pass.** An envelope for a replayed transaction with `sentAt` 1,000 ms older than the stored one answered `{"ok":true,"duplicate":true}`; the item's amount and status were unchanged. |
 | **S4** `Refunded` | **Confirms the gap, and shows how it fails.** A newer envelope with `transaction.status: Refunded` was accepted (`{"ok":true}`) and the consumer's write was rejected by Monday: *"This status label doesn't exist, possible statuses are: Received, Received (Historical), Failed, Pending"*. The `events` row went to `failed` with that error, and the item stayed `Received`. The sandbox Donations Status column has **no `Refunded` label**, so runbook step 4.2 is a real prerequisite: on the deployed Worker every buffered refund would retry 1, 4 and 16 minutes and then dead-letter. Nothing needed reverting. No label was added. |
 | **S5** archived-year flag | **Pass** (run after !185 merged, on `main`'s code). A synthetic envelope, transaction `99000001` dated 2025-01-15 (FY 2025), $1, built from an existing donor's payload shape so matching found the donor, item name "REHEARSAL S5 (synthetic, archived-year)". The route answered `{"ok":true}`; the local `events` row went to `needs_review` with no Monday item and the error *"needs review: transaction is in fiscal year 2025, before the oldest active year 2026, and no active Donations item carries its Funraise ID … Nothing was created."* The Donations board stayed at 3,899 items and none carries Funraise id `99000001`; the log has one error line naming only the id (no `@`), so the message was acked and not retried; the donor was matched, not created. |
@@ -157,7 +157,9 @@ scopes, or something changed on the account.
 
 ## Exit criteria
 
-S0–S7 pass (S0, S1, S2, S4, S5, S7 and the wrong-secret case of S6 already have; S3 needs a way past the deletion block), and the output is kept. Then update the
+S0–S7 pass, and the output is kept. **Met 2026-10-26:** every scenario has passed (S6's
+target-down case through the 429 recoveries rather than on its own). The results are kept in this
+document; the raw run logs were scratch files and are not. Then update the
 runbook's `BUILD: TBD (#48)` for the replay rehearsal, and record any divergence, in particular
 anything the local queue did differently.
 
