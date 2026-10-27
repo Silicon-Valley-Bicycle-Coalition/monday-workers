@@ -2,7 +2,7 @@ import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
 import { windfallColumns } from './windfall.js';
-import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAttribution, salesforceDebug } from './fields.js';
+import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAttribution, relationshipOwner, salesforceDebug } from './fields.js';
 
 export interface InclusionInput {
   donorIds: Set<string>; recentDonorIds: Set<string>;
@@ -59,7 +59,7 @@ export function contactToPayload(
     : ((c['Secondary_Email__c'] as string | null)?.trim().toLowerCase() || null);
   const account = c['Account'] as { Do_Not_Solicit__c?: boolean; Do_Not_Solicit_What__c?: string;
     Owner?: { Name?: string } } | null;
-  // Deceased (24 contacts, monday-migration docs/32 §3.1) has no column of its own: it suppresses
+  // Deceased (24 contacts, monday-migration docs/35 §3.1) has no column of its own: it suppresses
   // every solicitation, so it lands as Do Not Solicit with the reason saying why.
   const deceased = !!(c['Deceased__c'] || c['npsp__Deceased__c']);
   const dnsReason = [deceased ? 'Deceased' : '', account?.Do_Not_Solicit_What__c ?? ''].filter(Boolean).join('; ');
@@ -81,6 +81,8 @@ export function contactToPayload(
     // The one-to-one Account's owner, not a Contact-level owner field — matches how
     // monday-migration docs/05 §9 verified this (Account.OwnerId, not Contact.OwnerId).
     'Salesforce Owner': ownerAttribution(account?.Owner),
+    // Donor portfolios (monday-migration docs/35 §3.5): seeded only where that owner is on staff.
+    'Relationship Owner': relationshipOwner(account?.Owner),
     // Employer__c is the populated field (10,354 Contacts); dtd__company__c is 360MatchPro's
     // lookup, empty on every record (plan: Benevity in Integrations). Kept as a fallback only.
     'Employer Name': (c['Employer__c'] ?? c['dtd__company__c'] ?? '') as string,

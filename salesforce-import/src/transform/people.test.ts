@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds, soleContactAccountIds,
   type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
-import { setStaffMatcher } from './fields.js';
+import { setOwnerMatcher, setStaffMatcher } from './fields.js';
 import { BOARD_SPECS } from '../configure/spec.js';
 
 const emptyInc = (): InclusionInput => ({
@@ -108,6 +108,20 @@ describe('contactToPayload', () => {
     expect('Household Email Consent' in p.columns).toBe(false);
     expect(p.columns['Household Primary']).toEqual({ checked: 'true' });
     expect(p.links).toContainEqual({ column: 'Affiliations', targetSfIds: ['af1', 'af2'] });
+  });
+
+  it('seeds Relationship Owner with the staff email only when the Account owner is on staff', () => {
+    setOwnerMatcher((n) => (n === 'Cherie Barnett' ? 'cherie@bikesiliconvalley.org' : null));
+    try {
+      const owned = contactToPayload({ Id: 'c16', FirstName: 'A', LastName: 'B',
+        Account: { Owner: { Name: 'Cherie Barnett' } } }, 'people-live', { consent: new Map() });
+      expect(owned.columns['Relationship Owner']).toBe('cherie@bikesiliconvalley.org');
+      const former = contactToPayload({ Id: 'c17', FirstName: 'A', LastName: 'B',
+        Account: { Owner: { Name: 'Gavin Powell' } } }, 'people-live', { consent: new Map() });
+      expect(former.columns['Relationship Owner']).toBe('');
+    } finally {
+      setOwnerMatcher(null);
+    }
   });
 
   it('carries Do Not Mail and its reason, and leaves both blank when unset', () => {

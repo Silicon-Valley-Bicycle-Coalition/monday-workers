@@ -27,6 +27,18 @@ let staffMatch: ((sfName: string) => string | null) | null = null;
 export function setStaffMatcher(matcher: ((sfName: string) => string | null) | null): void {
   staffMatch = matcher;
 }
+// Exact-name only (staff.ts exactStaffMatcher); feeds the Relationship Owner people column.
+let ownerMatch: ((sfName: string) => string | null) | null = null;
+export function setOwnerMatcher(matcher: ((sfName: string) => string | null) | null): void {
+  ownerMatch = matcher;
+}
+
+// The current staff member's Monday email for a Salesforce owner, or '' — former staff and
+// integration users leave Relationship Owner empty. Load swaps the email for a Monday user id.
+export function relationshipOwner(v: unknown): string {
+  const name = (v as { Name?: string } | null)?.Name ?? '';
+  return (name && ownerMatch?.(name)) || '';
+}
 
 // "Name (email)" when the Salesforce user matches a current Monday staff member,
 // bare "Name" otherwise — covers former staff *and* non-human accounts (integration

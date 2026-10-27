@@ -50,6 +50,9 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 #   naming an affiliation that contact doesn't have is ignored with a warning in the report) and
 #   data/review/unaffiliated-org-gifts.csv (org gifts whose primary contact has no Affiliation at
 #   that org — create the Affiliation in Salesforce or accept the gift as organization-only).
+#   Put Monday's admin user export at data/enrich/monday-users.csv first: without it, People's
+#   Relationship Owner loads empty (it is seeded only for owners whose name exactly matches a
+#   current Monday staff member; load looks each one's Monday user id up by email).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only (sequential by default;
                                     #   --batched is opt-in, sandbox-only until its rehearsal passes)

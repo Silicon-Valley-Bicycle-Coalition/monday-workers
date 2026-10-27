@@ -87,6 +87,13 @@ const POSTAL_DESCRIPTIONS = {
   'Do Not Mail': 'Leave this person off postal mailings. Email consent is separate (the Consent columns).',
   'Do Not Mail Reason': 'Opt out all mail, or Undeliverable (the address needs fixing).',
 } as const;
+// People boards only.
+const PORTFOLIO_DESCRIPTIONS = {
+  'Relationship Owner': 'The staff member who stewards this donor. Seeded at migration from the Salesforce owner ' +
+    'where that person is still on staff; set it by hand from then on.',
+  'Has Active Recurring Gift': 'Checked while this person has an Active item on Recurring Gifts. Set nightly by the ' +
+    'donation-rollups integration; edits are overwritten. The Postal appeal list leaves these donors out.',
+} as const;
 // People boards only. Windfall wealth screening, loaded once from Salesforce (monday-migration
 // docs/09); SVBC's subscription has ended, so nothing refreshes these.
 const WINDFALL_FROZEN = 'From Windfall wealth screening, frozen at migration — the subscription has ended and nothing updates it.';
@@ -146,7 +153,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       DNS_COLUMN,
     ],
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -200,17 +207,35 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Personal Email', operator: 'is_not_empty' }, NOT_DNS] },
         groupBy: { columnTitle: 'Donor Level' } },
-      // Replaces the Salesforce Winter Appeal pulls (monday-migration docs/32 §3.1): gave in the
-      // last five years, single gift of $25 or more. Recurring donors aren't excluded — People has
-      // no recurring-gift flag; check Recurring Gifts › Active by hand.
+      // Replaces the Salesforce Winter Appeal pulls (monday-migration docs/35 §3.1): gave in the
+      // last five years, single gift of $25 or more, not already giving monthly or quarterly.
       { name: 'Postal appeal list', tag: 'Report',
         columns: ['Address', 'City', 'Zip', 'Last Gift Date', 'Largest Gift', 'Lifetime Giving'],
         filter: { rules: [{ columnTitle: 'Gift Count', operator: 'greater_than', compareValue: 0 },
           { columnTitle: 'Address', operator: 'is_not_empty' },
           { columnTitle: 'Largest Gift', operator: 'greater_than', compareValue: 24.99 },
           { columnTitle: 'Last Gift Date', operator: 'within_the_last', compareValue: ['MONTHS', 60] },
-          NOT_DNS, { columnTitle: 'Do Not Mail', operator: 'is_empty' }] },
+          NOT_DNS, { columnTitle: 'Do Not Mail', operator: 'is_empty' },
+          { columnTitle: 'Has Active Recurring Gift', operator: 'is_empty' }] },
         groupBy: { columnTitle: 'Donor Level' } },
+      // Replaces the yearly Salesforce "Board Donor Call List" (docs/35 §3.4): recent donors to
+      // thank by phone. On People, not Donations, because Do Not Solicit and Phone live here.
+      // Salesforce filtered on the winter appeal campaign; run this once the appeal's gifts are in.
+      { name: 'Board donor call list', tag: 'Worklist',
+        columns: ['Phone', 'Last Gift Date', 'Last Gift Amount', 'Lifetime Giving', 'Membership Status', 'Relationship Owner'],
+        filter: { rules: [{ columnTitle: 'Last Gift Date', operator: 'within_the_last', compareValue: ['MONTHS', 3] },
+          { columnTitle: 'Phone', operator: 'is_not_empty' }, NOT_DNS] },
+        sort: [{ columnTitle: 'Last Gift Amount', direction: 'desc' }] },
+      // Replaces "Household Gifts for 990" (docs/35 §3.4): each donor's total for the last closed
+      // fiscal year, which the Last Year Amount rollup already sums.
+      { name: 'Gave last fiscal year (990)', tag: 'Report',
+        columns: ['Last Year Amount', 'Last Year Count', 'Address', 'City', 'Zip', 'Lifetime Giving'],
+        filter: { rules: [{ columnTitle: 'Last Year Amount', operator: 'greater_than', compareValue: 0 }] },
+        sort: [{ columnTitle: 'Last Year Amount', direction: 'desc' }] },
+      { name: 'Donor portfolios', tag: 'Reference',
+        columns: ['Relationship Owner', 'Donor Level', 'Lifetime Giving', 'Last Gift Date', 'Phone', 'Personal Email'],
+        filter: { rules: [{ columnTitle: 'Relationship Owner', operator: 'is_not_empty' }] },
+        groupBy: { columnTitle: 'Relationship Owner' }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }] },
       { name: 'Members', tag: 'Report',
         columns: ['Personal Email', 'Membership Status', 'Membership Tier', 'Member Since', 'Member Until', 'City'],
         filter: { rules: [{ columnTitle: 'Membership Status', operator: 'is_not_empty' }] },
@@ -245,7 +270,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     groupTitle: 'People',
     columns: [DNS_COLUMN],
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -339,6 +364,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'In-Kind Value': 'Retail value of donated goods or services. Amount can be blank or lower on in-kind gifts; ' +
         'this is the value Salesforce recorded.',
       'In-Kind Category': 'What kind of goods or services an in-kind gift was (Bicycle, Travel, Wine…).',
+      'Sponsorship Cycle': 'Which sponsorship cycle(s) a Salesforce sponsorship opportunity belonged to (e.g. 2024 Summit). ' +
+        'Migrated history; earlier cycles are in the sponsor-history export in the Drive archive.',
       'Campaign': 'The Salesforce campaign the gift came in under, where known. Reference only.',
       'Recurring Gift': 'Set when this gift is one installment of a recurring pledge.',
       'Thank You Sent': 'Checked automatically for Funraise gifts (Funraise sends the receipt). ' +

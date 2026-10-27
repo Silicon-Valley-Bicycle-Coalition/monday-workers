@@ -44,7 +44,10 @@ status right on the record instead of tracked separately.
 **Gave last year, not this year** (Worklist: the lapsed-donor call list) · **Appeal list**
 (donors with an email and no Do Not Solicit flag, grouped by level) · **Postal appeal list**
 (donors with an address, a gift of $25 or more in the last five years, and neither Do Not Solicit
-nor Do Not Mail; deceased contacts carry Do Not Solicit) · **Members** (everyone with
+nor Do Not Mail, leaving out anyone with an active recurring gift; deceased contacts carry Do Not
+Solicit) · **Board donor call list** (Worklist: gave in the last three months, has a phone, no Do
+Not Solicit; biggest last gift first) · **Gave last fiscal year (990)** (each donor's total for the
+last closed fiscal year) · **Donor portfolios** (grouped by Relationship Owner) · **Members** (everyone with
 a membership status, sorted by Member Until; amber within 60 days, red when lapsed) · **Active
 members** (the Board Elections export) · **By city** · **Stakeholders** · **By campaign** ·
 **Do Not Solicit** · **DNS reason missing** (Worklist, red).

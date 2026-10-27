@@ -43,6 +43,9 @@ describe('buildExtracts', () => {
       expect(soql, f).toContain(f);
     }
   });
+  it('extracts Sponsorship_Cycle__c for the Donations Sponsorship Cycle column (docs/35 §3.2)', () => {
+    expect(byName.get('opportunities')!.soql).toContain('Sponsorship_Cycle__c');
+  });
   it('paginates every object near the 50k CLI ceiling (contact roles ~54k, opportunities ~48k, payments/tasks ~42k)', () => {
     for (const name of ['contacts', 'accounts', 'opportunities', 'contact_roles', 'payments', 'tasks_all']) {
       expect(byName.get(name)!.paginate, name).toBe(true);
@@ -62,7 +65,7 @@ describe('buildExtracts', () => {
   it('selects Elected__c so transform can seed Stakeholder Type = Elected Official (#46)', () => {
     expect(byName.get('contacts')!.soql).toContain('Elected__c');
   });
-  it('selects Do Not Mail and both Deceased flags for postal suppression (monday-migration docs/32 §3.1)', () => {
+  it('selects Do Not Mail and both Deceased flags for postal suppression (monday-migration docs/35 §3.1)', () => {
     for (const f of ['Do_Not_Mail__c', 'Do_Not_Mail_Reason__c', 'Deceased__c', 'npsp__Deceased__c']) {
       expect(byName.get('contacts')!.soql, f).toContain(f);
     }

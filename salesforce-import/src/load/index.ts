@@ -12,6 +12,7 @@ import { ComplexityGate, chunk, createBatch, runPool, type CreateEntry, type Cre
 import { BATCHED_PRESET, describeMode, isLegacySequential, parseLoadOptions } from './options.js';
 import { planInlineLinks, type InlineContext, type InlineLink } from './inline.js';
 import { DEFAULT_TIMING, estimateLoad, formatEstimate } from './estimate.js';
+import { resolvePeopleColumns } from './people.js';
 
 // Donations load LAST among linked boards, in a per-fiscal-year create → link → archive loop
 // (docs/20 in the private planning repo): the single Donations board can't hold its full
@@ -107,6 +108,12 @@ export async function runLoad(args: string[], deps: { client?: MondayClient } = 
     legacy: isLegacySequential(opts) });
   const ledger = new Ledger();
   await ledger.load();
+
+  const owners = await resolvePeopleColumns(payloads, client);
+  if (owners.resolved > 0 || owners.unmatched.length > 0) {
+    console.log(`load: ${owners.resolved} people-column values resolved to Monday users` +
+      (owners.unmatched.length > 0 ? `; no Monday user for ${owners.unmatched.length} staff email(s), left empty` : ''));
+  }
 
   const needed = new Map<string, Set<string>>();
   for (const key of keys) {
