@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import worker, { isDeadLetterBatch, runScheduled } from './index';
 import type { Env } from './types';
 import type { runFollowups } from './followups/run';
+import type { checkMissedOrders } from './missedOrders/check';
 
 describe('isDeadLetterBatch', () => {
   it('recognizes the production and sandbox dead-letter queues', () => {
@@ -96,5 +97,59 @@ describe('scheduled (hourly follow-ups)', () => {
     await worker.scheduled(controller, { ...withToken, ENVIRONMENT: 'sandbox' } as unknown as Env, ctx);
     await Promise.all(waited);
     expect(log).toHaveBeenCalledWith('eventbrite-sync follow-ups: sent 0, held 0, skipped 0, failed 0');
+  });
+
+  describe('the daily missed-order check', () => {
+    const checkTime = Date.parse('2026-11-02T15:00:00Z');
+    const checkController = { scheduledTime: checkTime, cron: '0 * * * *' } as unknown as ScheduledController;
+    const withTokens = { ...withToken, EVENTBRITE_PRIVATE_TOKEN: 'eb-token' } as unknown as Env;
+    const idle = () => vi.fn<typeof runFollowups>().mockResolvedValue({ sent: [], held: [], skipped: [], failed: [] });
+
+    it('runs only at the check hour', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const check = vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 0, missing: [] });
+      const { ctx, waited } = context();
+      await runScheduled(controller, withTokens, ctx, idle(), check);
+      await Promise.all(waited);
+      expect(check).not.toHaveBeenCalled();
+
+      await runScheduled(checkController, withTokens, ctx, idle(), check);
+      await Promise.all(waited);
+      expect(check.mock.calls[0]![0]).toEqual(new Date(checkTime));
+      expect(Object.keys(check.mock.calls[0]![1]).sort()).toEqual(['ledger', 'lister', 'organizationId']);
+    });
+
+    it('logs missed orders as an error', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const check = vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 3, missing: ['55'] });
+      const { ctx, waited } = context();
+      await runScheduled(checkController, withTokens, ctx, idle(), check);
+      await Promise.all(waited);
+      expect(error.mock.calls[0]![0]).toContain('1 of 3 orders');
+    });
+
+    it('logs a check that throws and does not reject the waitUntil promise', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const check = vi.fn<typeof checkMissedOrders>().mockRejectedValue(new Error('HTTP 503'));
+      const { ctx, waited } = context();
+      await runScheduled(checkController, withTokens, ctx, idle(), check);
+      await expect(Promise.all(waited)).resolves.toBeDefined();
+      expect(error).toHaveBeenCalledWith('eventbrite-sync missed orders: check failed: HTTP 503');
+    });
+
+    it('logs an unset EVENTBRITE_PRIVATE_TOKEN and still runs the follow-ups', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const run = idle();
+      const check = vi.fn<typeof checkMissedOrders>();
+      const { ctx, waited } = context();
+      await runScheduled(checkController, { ...withToken, EVENTBRITE_PRIVATE_TOKEN: undefined } as unknown as Env, ctx, run, check);
+      await Promise.all(waited);
+      expect(run).toHaveBeenCalled();
+      expect(check).not.toHaveBeenCalled();
+      expect(error.mock.calls[0]![0]).toContain('EVENTBRITE_PRIVATE_TOKEN is not set');
+    });
   });
 });
