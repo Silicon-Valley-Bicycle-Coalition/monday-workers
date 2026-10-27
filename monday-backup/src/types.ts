@@ -131,4 +131,8 @@ export interface BackupConfig {
   // non-empty, only boards/docs whose workspaceId is in this list are backed up. Absent or
   // empty means no filter — today's "snapshot everything the token can see" behaviour.
   workspaceIds?: string[];
+  // Run the account-wide Monday API usage check (src/usage.ts) from the hourly watchdog. The daily
+  // limit is per Monday account and sandbox and production share one, so exactly one deployment
+  // sets this. Absent means false.
+  apiUsageAlerts: boolean;
 }

@@ -8,6 +8,7 @@ import { D1SnapshotRunStore } from './db/runs';
 import { GoogleDriveClient } from './drive/client';
 import { HttpMondayClient } from './monday/client';
 import { Deadline } from './deadline';
+import { runUsageCheck } from './usage';
 import { runWatchdog } from './watchdog';
 import type { Env } from './env';
 
@@ -33,16 +34,28 @@ export default {
   fetch: app.fetch,
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    const config = configFor(env);
+
     if (controller.cron === WATCHDOG_CRON) {
-      await runWatchdog({
-        store: new D1SnapshotRunStore(env.DB),
-        slackWebhookUrl: env.SLACK_WEBHOOK_URL,
-        now: () => new Date(),
-      });
+      const store = new D1SnapshotRunStore(env.DB);
+      // Independent checks: a Monday outage failing the usage check must not skip the staleness
+      // check, nor the reverse. The first failure is rethrown so Workers Issues still records it.
+      const results = await Promise.allSettled([
+        runWatchdog({ store, slackWebhookUrl: env.SLACK_WEBHOOK_URL, now: () => new Date() }),
+        config.apiUsageAlerts
+          ? runUsageCheck({
+              fetchUsage: () => new HttpMondayClient(MONDAY_API_URL, env.MONDAY_API_TOKEN).getDailyUsage(),
+              store,
+              slackWebhookUrl: env.SLACK_WEBHOOK_URL,
+              now: () => new Date(),
+            })
+          : Promise.resolve(),
+      ]);
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed) throw failed.reason;
       return;
     }
 
-    const config = configFor(env);
     // One deadline shared by both clients; runBackup sets and extends it (src/deadline.ts).
     const deadline = new Deadline();
     await runBackup({

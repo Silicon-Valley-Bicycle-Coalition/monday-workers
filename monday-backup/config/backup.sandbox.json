@@ -1,5 +1,6 @@
 {
   "destinationParentFolderId": "REPLACE_WITH_SANDBOX_DRIVE_FOLDER_ID",
   "excludeBoardIds": [],
-  "workspaceIds": ["17141226"]
+  "workspaceIds": ["17141226"],
+  "apiUsageAlerts": false
 }
