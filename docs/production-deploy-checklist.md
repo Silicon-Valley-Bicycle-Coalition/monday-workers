@@ -306,8 +306,10 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
         the `Refunded` label in place. Only the first is a query, plus check 3 (one Donations
         item per Funraise ID), which `node scripts/check-funraise-ids.mjs` runs read-only (exit
         0 required; not yet rehearsed against production); the rest are by hand on the board.
-  - [ ] **Open:** which control pauses Funraise → Salesforce sync after Gate C is unresolved
-        (not written down in this repo or the runbook); name it before Gate C.
+  - [ ] After Gate C, not before: pause Funraise → Salesforce sync by blocking the `Funraise`
+        connected app (Salesforce Setup → Connected Apps OAuth Usage → Block). The paused-state
+        check and the later disconnect are in the private runbook (`docs/23`, Salesforce after
+        Gate C, step 4).
   - [ ] Verify: Funraise Test-button delivery → Donations item with every column right →
         `donation-rollups` rolls it up (the README's three steps); delete the test items.
 - [ ] **3. `member-portal`** — follow [`DEPLOY.md`](../member-portal/DEPLOY.md) Phases 1–5.
