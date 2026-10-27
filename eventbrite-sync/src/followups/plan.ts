@@ -34,8 +34,12 @@ function pacificHourOnNextDay(isoDate: string, hour: number): number {
   return naive - pacificOffsetMs(first);
 }
 
+// Only an event that ran gets follow-ups. An allowlist, because Eventbrite also reports `deleted`
+// for a canceled event that was removed, and any status it adds later should send nothing.
+const RAN_STATUSES = new Set(['live', 'started', 'ended', 'completed']);
+
 export function isDue(row: EventRow, now: Date, cfg: { maxAgeDays: number; sendHourLocal: number }): boolean {
-  if (row.eventbriteStatus === 'canceled' || row.endsAt === null) return false;
+  if (!RAN_STATUSES.has(row.eventbriteStatus ?? '') || row.endsAt === null) return false;
   const endsMs = Date.parse(row.endsAt);
   const endDay = toISODate(row.endsAt);
   if (Number.isNaN(endsMs) || endDay === null) return false;

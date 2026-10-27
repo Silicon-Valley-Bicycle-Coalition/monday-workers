@@ -21,10 +21,12 @@ export interface EventMapping {
 
 const pacificWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long' });
 
-// Matches salesforce-import/src/transform/boards.ts EVENTBRITE_EVENT_STATUS; anything else
-// (including Eventbrite's `ended`) is Completed.
+// Matches salesforce-import/src/transform/boards.ts EVENTBRITE_EVENT_STATUS, plus `deleted` (what
+// Eventbrite reports for a canceled event that was removed); anything else (including `ended`) is
+// Completed.
 const EVENT_STATUS: Record<string, string> = {
-  live: 'Upcoming', started: 'Upcoming', completed: 'Completed', canceled: 'Canceled', draft: 'Draft',
+  live: 'Upcoming', started: 'Upcoming', completed: 'Completed', canceled: 'Canceled', deleted: 'Canceled',
+  draft: 'Draft',
 };
 
 // Copied from salesforce-import/src/transform/boards.ts (`programFromOrganizer`; Workers share no

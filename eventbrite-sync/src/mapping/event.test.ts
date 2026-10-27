@@ -72,6 +72,7 @@ describe('mapEvent', () => {
     ['ended', 'Completed'],
     ['completed', 'Completed'],
     ['canceled', 'Canceled'],
+    ['deleted', 'Canceled'],
     ['draft', 'Draft'],
     ['something-new', 'Completed'],
   ])('maps Eventbrite status %s to Event Status %s', (status, label) => {

@@ -49,8 +49,14 @@ describe('isDue', () => {
     expect(isDue(row, new Date('2026-10-25T15:00:00Z'), cfg)).toBe(false);
   });
 
-  it('is false for a canceled event', () => {
-    expect(isDue(event({ eventbriteStatus: 'canceled' }), new Date('2026-10-25T15:00:00Z'), cfg)).toBe(false);
+  // Eventbrite reports a canceled-then-removed event as `deleted` (seen in the 2026-10-26 sandbox
+  // rehearsal), so only statuses of an event that ran are due.
+  it.each(['canceled', 'deleted', 'draft', null])('is false for an event with status %s', (status) => {
+    expect(isDue(event({ eventbriteStatus: status }), new Date('2026-10-25T15:00:00Z'), cfg)).toBe(false);
+  });
+
+  it.each(['live', 'started', 'ended', 'completed'])('is true for an event with status %s', (status) => {
+    expect(isDue(event({ eventbriteStatus: status }), new Date('2026-10-25T15:00:00Z'), cfg)).toBe(true);
   });
 
   it('is false with no end time', () => {
