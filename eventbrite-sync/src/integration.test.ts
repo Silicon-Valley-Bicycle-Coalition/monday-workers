@@ -149,7 +149,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
       changeColumnValues: vi.fn().mockImplementation(async (_board: number, id: string, values: Record<string, unknown>) => {
         Object.assign(items.get(id)!.columns, flat(values));
       }),
-      getItems: vi.fn().mockImplementation(async (_board: number, ids: string[]) => ids.filter((id) => items.has(id)).map((id) => ({ id, name: items.get(id)!.name, columns: items.get(id)!.columns }))),
+      getItems: vi.fn().mockImplementation(async (_board: number, ids: string[]) => ids.filter((id) => items.has(id)).map((id) => ({ id, name: items.get(id)!.name, state: 'active', columns: items.get(id)!.columns }))),
       notify: vi.fn().mockResolvedValue(undefined),
     };
     const eventbriteClient: EventbriteClient = {

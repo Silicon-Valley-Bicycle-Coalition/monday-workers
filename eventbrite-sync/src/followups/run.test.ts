@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MondayClient, MondayItemColumns } from '../monday/client';
+import { MondayApiError } from '../monday/graphql';
 import { fakeAttendeeStore, fakeEventStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import type { AttendeeRow, EventbriteSyncConfig, EventRow } from '../types';
@@ -48,6 +49,7 @@ interface FakeEvent {
   name: string;
   classType: string;
   followups: string;
+  state?: string;
 }
 interface FakeReg {
   name: string;
@@ -55,6 +57,7 @@ interface FakeReg {
   email: string;
   link?: string;
   followup?: string;
+  state?: string;
 }
 
 // An in-memory Monday holding Events and Event Registrations items, keyed by item id.
@@ -68,7 +71,7 @@ function fakeMonday(events: Record<string, FakeEvent>, regs: Record<string, Fake
       if (boardId === EVENTS && events[id]) {
         const e = events[id];
         const all: Record<string, string> = { [ev.classTypeColumn]: e.classType, [ev.followupsColumn]: e.followups };
-        out.push({ id, name: e.name, columns: Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])) });
+        out.push({ id, name: e.name, state: e.state ?? 'active', columns: Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])) });
       } else if (boardId === REGS && regs[id]) {
         const r = regs[id];
         const all: Record<string, string> = {
@@ -77,7 +80,7 @@ function fakeMonday(events: Record<string, FakeEvent>, regs: Record<string, Fake
           [rc.attendeeLinkColumn]: r.link ?? '',
           [rc.followupEmailColumn]: r.followup ?? '',
         };
-        out.push({ id, name: r.name, columns: Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])) });
+        out.push({ id, name: r.name, state: r.state ?? 'active', columns: Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])) });
       }
     }
     return out;
@@ -346,5 +349,84 @@ describe('runFollowups', () => {
       [REGS, '502', { [rc.followupEmailColumn]: 'Thank-you: Family Ride', [rc.classTypeColumn]: 'Family Ride' }],
       [EVENTS, '9001', { [ev.followupsColumn]: 'Sent' }],
     ]);
+  });
+
+  it('skips an event whose Events item is archived', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '', state: 'archived' } },
+      { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat' } }
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
+    expect(monday.changeColumnValues).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('drops archived and deleted registrations: no label, and they do not count for Held', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      {
+        '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat', state: 'archived' },
+        '502': { name: 'Lee', attendance: 'Registered', email: 'lee@example.com', state: 'deleted' },
+        '503': { name: 'Sam', attendance: 'Attended', email: 'sam@example.com', link: 'Sam' },
+      }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: ['501', '502', '503'].map((id, i) => attendeeRow(`a${i}`, 'ev1', id)) }, monday);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
+    expect(vi.mocked(monday.changeColumnValues).mock.calls).toEqual([
+      [REGS, '503', { [rc.followupEmailColumn]: 'Thank-you: Commute', [rc.classTypeColumn]: 'Commute' }],
+      [EVENTS, '9001', { [ev.followupsColumn]: 'Sent' }],
+    ]);
+  });
+
+  it('holds when the only Attended registration is archived', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      {
+        '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', state: 'archived' },
+        '502': { name: 'Lee', attendance: 'Registered', email: 'lee@example.com' },
+      }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501'), attendeeRow('a2', 'ev1', '502')] }, monday);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: ['ev1'], skipped: [], failed: [] });
+  });
+
+  it('skips a class whose only registrations are archived or deleted: no Held, no notify', async () => {
+    const config = testConfig();
+    config.attendeeSync.followups.notifyUserId = 555;
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      {
+        '501': { name: 'Pat', attendance: 'Registered', email: 'pat@example.com', state: 'archived' },
+        '502': { name: 'Lee', attendance: 'Attended', email: 'lee@example.com', state: 'deleted' },
+      }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501'), attendeeRow('a2', 'ev1', '502')] }, monday, config);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
+    expect(monday.changeColumnValues).not.toHaveBeenCalled();
+    expect(monday.notify).not.toHaveBeenCalled();
+  });
+
+  it('logs and skips a registration Monday says is gone on write, and still sends the rest', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      {
+        '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat' },
+        '502': { name: 'Lee', attendance: 'Attended', email: 'lee@example.com', link: 'Lee' },
+      }
+    );
+    const write = vi.mocked(monday.changeColumnValues);
+    write.mockImplementation(async (_board, itemId) => {
+      if (itemId === '501') throw new MondayApiError('Item not found', { code: 'ItemNotFoundException' });
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501'), attendeeRow('a2', 'ev1', '502')] }, monday);
+
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
+    expect(write).toHaveBeenCalledWith(REGS, '502', expect.anything());
+    expect(write).toHaveBeenLastCalledWith(EVENTS, '9001', { [ev.followupsColumn]: 'Sent' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('501'));
+    warn.mockRestore();
   });
 });

@@ -1,7 +1,8 @@
 import type { AttendeeStore } from '../db/attendees';
 import type { EventStore } from '../db/events';
 import { matchPerson } from '../matching/people';
-import type { MondayClient } from '../monday/client';
+import { isActive, type MondayClient } from '../monday/client';
+import { isItemGone } from '../monday/itemGone';
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { errorMessage } from '../util/errorMessage';
 import { isDue, planFollowups, type Registration } from './plan';
@@ -66,8 +67,8 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
   const eventItemId = row.mondayItemId as string; // listEndedBetween only returns rows with an item
 
   const [eventItem] = await mondayClient.getItems(boards.events, [eventItemId], [ev.classTypeColumn, ev.followupsColumn]);
-  if (eventItem === undefined) {
-    console.warn(`eventbrite-sync follow-ups: event "${row.eventId}" has no Events item ${eventItemId} on Monday; skipped`);
+  if (!isActive(eventItem)) {
+    console.warn(`eventbrite-sync follow-ups: event "${row.eventId}" has no active Events item ${eventItemId} on Monday (deleted or archived); skipped`);
     return 'skipped';
   }
   const classType = (eventItem.columns[ev.classTypeColumn] ?? '').trim();
@@ -80,11 +81,14 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
   const fetched = itemIds.length === 0
     ? []
     : await mondayClient.getItems(boards.registrations, itemIds, [rc.attendanceColumn, rc.attendeeEmailColumn, rc.attendeeLinkColumn, rc.followupEmailColumn]);
-  const byId = new Map(fetched.map((item) => [item.id, item]));
+  // items(ids:) also returns archived and deleted items: those are gone too — no label, and they
+  // don't count towards (or against) Held.
+  const byId = new Map(fetched.filter(isActive).map((item) => [item.id, item]));
   const items = itemIds.map((id) => byId.get(id)).filter((item) => item !== undefined);
 
-  // No registrations to judge (none in the ledger, or all gone from Monday): nothing to send and
-  // nothing to hold — Held would page staff about a class nobody signed up for.
+  // No registrations to judge (none in the ledger, or all gone from Monday — purged, archived or
+  // deleted): nothing to send and nothing to hold — Held would page staff about a class nobody
+  // signed up for.
   if (items.length === 0) return 'skipped';
 
   const regs: Registration[] = items.map((item) => ({
@@ -137,7 +141,14 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
   // label, so the retry writes only what's left. Even a re-write of an unchanged label would be
   // harmless — Monday's "status changes to" automation doesn't fire when the value doesn't change.
   for (const [itemId, values] of columnValuesById) {
-    await mondayClient.changeColumnValues(boards.registrations, itemId, values);
+    try {
+      await mondayClient.changeColumnValues(boards.registrations, itemId, values);
+    } catch (err) {
+      // Deleted or archived since the read: nothing to send it to, and it mustn't hold up the rest
+      // of the class. Anything else fails the event, which the next hourly run retries.
+      if (!isItemGone(err)) throw err;
+      console.warn(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} is gone (${errorMessage(err)}); skipped it`);
+    }
   }
   await mondayClient.changeColumnValues(boards.events, eventItemId, { [ev.followupsColumn]: 'Sent' });
   return 'sent';

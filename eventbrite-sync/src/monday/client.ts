@@ -8,7 +8,9 @@ export interface MondayClient {
   findItemByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem | null>;
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<MondayItem>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
-  // Item names and the `text` of the requested columns (blank text -> ''); ids Monday no longer has are omitted.
+  // Item names, state and the `text` of the requested columns (blank text -> ''). items(ids:) also
+  // returns archived and deleted items, so callers must check `state === 'active'` (isActive) rather
+  // than treat an omitted id as the only way an item can be gone; an id Monday has purged is omitted.
   getItems(boardId: number, itemIds: string[], columnIds: string[]): Promise<MondayItemColumns[]>;
   // Bell notification to a user about an item (create_notification, target_type Project).
   notify(userId: number, itemId: string, text: string): Promise<void>;
@@ -17,7 +19,13 @@ export interface MondayClient {
 export interface MondayItemColumns {
   id: string;
   name: string;
+  // Monday's item state: 'active', 'archived' or 'deleted'.
+  state: string;
   columns: Record<string, string>;
+}
+
+export function isActive(item: MondayItemColumns | undefined): item is MondayItemColumns {
+  return item !== undefined && item.state === 'active';
 }
 
 // items(ids:) accepts at most 100 ids per call.
@@ -80,12 +88,14 @@ export class HttpMondayClient implements MondayClient {
     const result: MondayItemColumns[] = [];
     for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
       const data = await this.transport.request<{
-        items: { id: string; name: string; column_values: { id: string; text: string | null }[] }[] | null;
+        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null }[] }[] | null;
       }>(
+        // limit: without it items(ids:) returns at most 25 (Monday's default page size).
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids) {
+          items(ids: $ids, limit: ${ITEMS_BATCH_SIZE}) {
             id
             name
+            state
             column_values(ids: $columnIds) { id text }
           }
         }`,
@@ -95,6 +105,7 @@ export class HttpMondayClient implements MondayClient {
         result.push({
           id: item.id,
           name: item.name,
+          state: item.state,
           columns: Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? ''])),
         });
       }

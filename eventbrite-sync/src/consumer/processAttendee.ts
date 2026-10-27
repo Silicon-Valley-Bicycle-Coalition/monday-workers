@@ -2,6 +2,7 @@ import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from '../mapping/attendee';
 import { mapEvent } from '../mapping/event';
 import { matchPerson } from '../matching/people';
+import { isActive } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
 
@@ -67,8 +68,10 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   let linkAlreadySet = false;
   if (mondayItemId !== null) {
     const [current] = await mondayClient.getItems(boardId, [mondayItemId], [cols.attendanceColumn, cols.attendeeLinkColumn]);
-    if (current === undefined) {
-      // Staff deleted the item: recreating it would resurrect a registration removed on purpose.
+    if (!isActive(current)) {
+      // Staff deleted or archived the item (purged items are omitted; items(ids:) still returns
+      // archived and deleted ones, with their state). Recreating or writing it would resurrect a
+      // registration removed on purpose.
       await markGone(mondayItemId);
       return;
     }

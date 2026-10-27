@@ -145,16 +145,31 @@ describe('HttpMondayClient transport (#35)', () => {
   describe('getItems', () => {
     it('reads item names and column text', async () => {
       const fetchMock = mockFetchOnce({
-        data: { items: [{ id: '1', name: 'Jane', column_values: [{ id: 'status', text: 'Registered' }, { id: 'blank', text: null }] }] },
+        data: { items: [{ id: '1', name: 'Jane', state: 'active', column_values: [{ id: 'status', text: 'Registered' }, { id: 'blank', text: null }] }] },
       });
 
       const items = await newClient().getItems(999, ['1'], ['status', 'blank']);
 
-      expect(items).toEqual([{ id: '1', name: 'Jane', columns: { status: 'Registered', blank: '' } }]);
+      expect(items).toEqual([{ id: '1', name: 'Jane', state: 'active', columns: { status: 'Registered', blank: '' } }]);
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
-      expect(body.query).toContain('items(ids:');
+      // Without a limit items(ids:) returns at most 25 items (Monday's default page size).
+      expect(body.query).toMatch(/items\(ids: \$ids, limit: 100\)/);
+      expect(body.query).toMatch(/\bstate\b/);
       expect(body.query).toContain('column_values(ids:');
       expect(body.variables).toEqual({ ids: ['1'], columnIds: ['status', 'blank'] });
+    });
+
+    it('passes archived and deleted items through with their state', async () => {
+      mockFetchOnce({
+        data: { items: [
+          { id: '1', name: 'A', state: 'archived', column_values: [] },
+          { id: '2', name: 'B', state: 'deleted', column_values: [] },
+        ] },
+      });
+
+      const items = await newClient().getItems(999, ['1', '2'], []);
+
+      expect(items.map((i) => i.state)).toEqual(['archived', 'deleted']);
     });
 
     it('batches 230 ids into 3 requests and returns nothing for no ids', async () => {
