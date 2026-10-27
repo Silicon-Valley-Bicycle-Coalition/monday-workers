@@ -57,7 +57,7 @@
       "eventStatusColumn": "color_mm79dkmj",
       "sourceColumn": "color_mm799v1e",
       "urlColumn": "link_mm79b6kx",
-      "classTypeColumn": "color_mm8gngpx",
+      "classTypeColumn": "color_mm8ht1y6",
       "followupsColumn": "color_mm8gfb93"
     },
     "registrations": {
@@ -74,7 +74,7 @@
       "classDayColumn": "text_mm8gkw96",
       "classLocationColumn": "text_mm8gmxsr",
       "classTypeColumn": "text_mm8gvjfd",
-      "followupEmailColumn": "color_mm8gaqs2"
+      "followupEmailColumn": "color_mm8hvdrz"
     },
     "peopleEmailColumn": "email_mm79m5qa",
     "followups": {
