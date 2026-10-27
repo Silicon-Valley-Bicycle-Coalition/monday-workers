@@ -50,6 +50,10 @@ export const ptBR: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'Não foi possível verificar esta carteirinha no momento. Tente novamente em alguns minutos.',
   'error.eventsLoadFailed': 'Não foi possível carregar suas inscrições em eventos agora. Tente novamente em alguns minutos.',
   'error.generic': 'Algo deu errado. Tente entrar novamente.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Temporariamente Indisponível',
+  'unavailable.heading': 'Temporariamente indisponível',
+  'unavailable.body': 'Estamos atualizando nossos sistemas, por isso isto não está disponível agora. Tente novamente daqui a pouco.',
 
   // Portal
   'portal.heading': 'Seu portal do doador',

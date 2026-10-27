@@ -50,6 +50,10 @@ export const fil: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'Hindi namin ma-verify ang card na ito sa ngayon. Pakisubukan ulit sa loob ng ilang minuto.',
   'error.eventsLoadFailed': 'Hindi namin ma-load ang iyong mga pagpaparehistro sa event ngayon. Pakisubukang muli pagkalipas ng ilang minuto.',
   'error.generic': 'May naganap na problema. Pakisubukan mag-log in ulit.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Pansamantalang Hindi Available',
+  'unavailable.heading': 'Pansamantalang hindi available',
+  'unavailable.body': 'Ina-update namin ang aming mga system, kaya hindi ito available ngayon. Pakisubukang muli mamaya.',
 
   // Portal
   'portal.heading': 'Ang iyong member portal',

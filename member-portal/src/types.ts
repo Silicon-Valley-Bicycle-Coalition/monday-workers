@@ -1,4 +1,5 @@
 import type { Locale } from './i18n/locales';
+import type { WriteStamp } from './flags';
 
 export interface MondayColumns {
   donorEmail: string;
@@ -322,12 +323,13 @@ export interface PortalView {
 // Defined here rather than in changeRequests/submitChangeRequest.ts (which re-exports it for
 // that module's own callers) to avoid an import cycle: submitChangeRequest.ts imports
 // MondayClient from monday/client.ts, which itself imports from this file.
-export interface ChangeQueueMessage {
+// `& WriteStamp`: a message enqueued under `off` stays a dry run (src/flags.ts).
+export interface ChangeQueueMessage extends WriteStamp {
   requestId: number;
 }
 
 // See the comment on ChangeQueueMessage above — same import-cycle avoidance.
-export interface LetterSendQueueMessage {
+export interface LetterSendQueueMessage extends WriteStamp {
   sendId: number;
 }
 

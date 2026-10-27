@@ -3,6 +3,8 @@ import type { MondayClient } from '../monday/client';
 import type { Config } from '../types';
 import { FIELD_LABELS, type ChangeQueueMessage } from './submitChangeRequest';
 import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
+import { logDebug, messageDisposition } from '../flags';
+import { dryRunChangeDeps, type BatchSkipContext } from '../writeSwitch';
 
 export interface ProcessChangeBatchDeps {
   store: ChangeRequestStore;
@@ -10,22 +12,49 @@ export interface ProcessChangeBatchDeps {
   config: Config;
 }
 
+// The queue entry point (index.ts): the write switch's mode, read once for the batch, decides per
+// message whether it writes (`on`, unstamped — including messages enqueued before the switch
+// existed), dry-runs against recording proxies (`off`, or stamped dropped), or waits on the queue
+// (`hold`, `unknown`). A dry run leaves the row 'queued': nothing re-enqueues queued rows on its
+// own (the purge keeps them, and only the donor re-submitting the same change re-sends one).
+export async function consumeChangeQueueBatch(
+  messages: QueueMessageLike<ChangeQueueMessage>[],
+  deps: ProcessChangeBatchDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  for (const message of messages) {
+    const disposition = messageDisposition(gate.mode, message.body);
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+    } else if (disposition === 'write') {
+      await handleMessage(message, deps);
+    } else {
+      const ctx = { ...gate, deliveryId: `change-request:${message.body.requestId}` };
+      logDebug(ctx, 'message', message.body);
+      await handleMessage(message, dryRunChangeDeps(deps, ctx));
+    }
+  }
+}
+
+// Every message live — the `write` path above, and the tests that predate the switch.
 export async function processChangeQueueBatch(
   messages: QueueMessageLike<ChangeQueueMessage>[],
   deps: ProcessChangeBatchDeps
 ): Promise<void> {
-  for (const message of messages) {
-    try {
-      await processOne(message.body.requestId, deps);
-      message.ack();
-    } catch (err) {
-      console.error(
-        `member-portal consumer: failed to process change request ${message.body.requestId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
-    }
+  for (const message of messages) await handleMessage(message, deps);
+}
+
+async function handleMessage(message: QueueMessageLike<ChangeQueueMessage>, deps: ProcessChangeBatchDeps): Promise<void> {
+  try {
+    await processOne(message.body.requestId, deps);
+    message.ack();
+  } catch (err) {
+    console.error(
+      `member-portal consumer: failed to process change request ${message.body.requestId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 

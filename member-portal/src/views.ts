@@ -522,6 +522,17 @@ export function errorView(messageKey: TranslationKey, locale: Locale): string {
   `;
 }
 
+// The write switch is off or held (src/writeSwitch.ts): a POST that would write renders this with
+// a 503. A signed-in donor gets a way back to the dashboard, which still works.
+export function unavailableView(locale: Locale, authenticated: boolean): string {
+  const back = authenticated ? `<p><a href="/${locale}/portal">${escapeHtml(t(locale, 'letters.backToPortal'))}</a></p>` : '';
+  return `
+    <h1>${escapeHtml(t(locale, 'unavailable.heading'))}</h1>
+    <p>${escapeHtml(t(locale, 'unavailable.body'))}</p>
+    ${back}
+  `;
+}
+
 function donationRow(donation: PortalView['donors'][number]['donations'][number], locale: Locale): string {
   return `
     <tr>

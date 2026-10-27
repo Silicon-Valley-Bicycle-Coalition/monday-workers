@@ -12,6 +12,8 @@ import type { LetterSendStore } from './db/letterSends';
 import type { CardTokenStore } from './db/cardTokens';
 import { SUPPORTED_LOCALES } from './i18n/locales';
 import { t } from './i18n/t';
+import type { WriteMode } from './flags';
+import type { BatchSkipContext } from './writeSwitch';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -262,8 +264,15 @@ function makeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     letterQueue: { send: vi.fn().mockResolvedValue(undefined) },
     letterWebhookSecret: 'shh',
     cardTokenStore: inMemoryCardTokenStore(),
+    writeGate: gateFor('on'),
     ...overrides,
   };
+}
+
+// The write switch's per-request gate (src/writeSwitch.ts). Every existing test runs live (`on`);
+// the 'write switch' block below covers the other modes.
+function gateFor(mode: WriteMode): () => Promise<BatchSkipContext> {
+  return async () => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
 }
 
 function extractToken(loginUrl: string): string {
@@ -2695,5 +2704,201 @@ describe('security headers', () => {
     const res = await createApp(deps).request('/en/portal', { headers: { Cookie: 'session=x' } });
     expect(res.status).toBe(500);
     expectBaseline(res);
+  });
+});
+
+describe('write switch', () => {
+  const FORM = { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' };
+
+  function emailSender() {
+    return { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+  }
+
+  // Logs in with the switch on, then hands back the same deps with the switch in `mode` — the
+  // session stays valid, as it would across a real flip.
+  async function loggedInUnder(mode: WriteMode, overrides: Partial<AppDeps> = {}) {
+    const sender = emailSender();
+    const deps = makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender, ...overrides });
+    const cookie = await loginAndGetCookie(createApp(deps), sender, 'donor@example.org');
+    return { deps: { ...deps, writeGate: gateFor(mode) }, cookie, sender };
+  }
+
+  it.each<WriteMode>(['hold', 'off', 'unknown'])('POST / under %s renders the unavailable page with 503 and sends no email', async (mode) => {
+    const sender = emailSender();
+    const attemptStore = inMemoryAttemptStore();
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const app = createApp(makeDeps({ monday, emailSender: sender, attemptStore, writeGate: gateFor(mode) }));
+
+    const res = await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: FORM });
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain(t('en', 'unavailable.heading'));
+    expect(sender.sendLoginEmail).not.toHaveBeenCalled();
+    expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
+  });
+
+  it('renders the unavailable page in the request locale', async () => {
+    const app = createApp(makeDeps({ writeGate: gateFor('off') }));
+    const res = await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: { ...FORM, Cookie: 'lang=es' } });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain(t('es', 'unavailable.heading'));
+  });
+
+  it('keeps every GET working under off: the dashboard still renders', async () => {
+    const { deps, cookie } = await loggedInUnder('off');
+    const res = await createApp(deps).request('/en/portal', { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Donor donor-1');
+  });
+
+  it('keeps the login page and the change-request form working under hold', async () => {
+    const { deps, cookie } = await loggedInUnder('hold');
+    const app = createApp(deps);
+    expect((await app.request('/')).status).toBe(200);
+    expect((await app.request('/en/portal/change-request', { headers: { Cookie: cookie } })).status).toBe(200);
+  });
+
+  it.each<WriteMode>(['hold', 'off', 'unknown'])('POST change-request under %s is 503 and creates no row and no message', async (mode) => {
+    const changeStore = fakeChangeStore();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const { deps, cookie } = await loggedInUnder(mode, { changeStore, changeQueue });
+
+    const res = await createApp(deps).request('/en/portal/change-request', {
+      method: 'POST',
+      body: new URLSearchParams({ donorItemId: 'donor-1', field: 'address', newValue: '2 New Ave' }),
+      headers: { ...FORM, Cookie: cookie },
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain(t('en', 'unavailable.heading'));
+    expect(changeStore.createRequest).not.toHaveBeenCalled();
+    expect(changeStore.findRecentByDedupeHash).not.toHaveBeenCalled();
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('POST change-request preferences under off is 503 and creates no row', async () => {
+    const changeStore = fakeChangeStore();
+    const changeQueue = { send: vi.fn().mockResolvedValue(undefined) };
+    const { deps, cookie } = await loggedInUnder('off', { changeStore, changeQueue, config: prefsConfig(), monday: fakeMondayWithPrefs() });
+
+    const res = await createApp(deps).request('/en/portal/change-request/preferences', {
+      method: 'POST',
+      body: new URLSearchParams({ donorItemId: 'donor-1', emailOptOut: 'yes' }),
+      headers: { ...FORM, Cookie: cookie },
+    });
+
+    expect(res.status).toBe(503);
+    expect(changeStore.createRequest).not.toHaveBeenCalled();
+    expect(changeQueue.send).not.toHaveBeenCalled();
+  });
+
+  it('POST card regenerate under off is 503 and leaves the active token alone', async () => {
+    const cardTokenStore = inMemoryCardTokenStore();
+    const { deps, cookie } = await loggedInUnder('off', { cardTokenStore });
+    const app = createApp(deps);
+    await app.request('/en/portal', { headers: { Cookie: cookie } });
+    const before = await cardTokenStore.getActiveToken('donor-1');
+    expect(before).not.toBeNull();
+
+    const res = await app.request('/en/portal/card/donor-1/regenerate', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
+
+    expect(res.status).toBe(503);
+    expect(await cardTokenStore.getActiveToken('donor-1')).toBe(before);
+  });
+
+  it('POST /logout stays live under off', async () => {
+    const sessionStore = inMemorySessionStore();
+    const { deps, cookie } = await loggedInUnder('off', { sessionStore });
+    const app = createApp(deps);
+
+    const res = await app.request('/logout', { method: 'POST', headers: { ...SAME_ORIGIN, Cookie: cookie } });
+
+    expect(res.status).toBe(302);
+    expect((await app.request('/en/portal', { headers: { Cookie: cookie } })).headers.get('location')).toBe('/');
+  });
+
+  it('POST /auth/callback stays live under hold', async () => {
+    const sender = emailSender();
+    const deps = makeDeps({ monday: fakeMondayWithDonations(), emailSender: sender });
+    const live = createApp(deps);
+    await live.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: FORM });
+    const token = extractToken(sender.sendLoginEmail.mock.calls[0]![0].loginUrl);
+
+    const res = await completeLogin(createApp({ ...deps, writeGate: gateFor('hold') }), { token });
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('set-cookie')).toContain('session=');
+  });
+
+  describe('POST /webhooks/monday/letters', () => {
+    const EVENT = { event: { type: 'update_column_value', pulseId: 555, boardId: 1 } };
+
+    function mondayWithGift() {
+      const monday = fakeMonday({});
+      (monday.getMemberPortalData as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: '555', name: 'Jane', membershipStatus: 'Active', membershipTier: 'Champion', totalDonated: '$50.00',
+        donations: [{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }],
+      });
+      return monday;
+    }
+
+    function post(mode: WriteMode, overrides: Partial<AppDeps>, body: unknown = EVENT) {
+      const app = createApp(makeDeps({ monday: mondayWithGift(), writeGate: gateFor(mode), ...overrides }));
+      return app.request('/webhooks/monday/letters?secret=shh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it('under off logs a skip, returns 200 and creates no letter_sends row', async () => {
+      const letterSendStore = fakeLetterSendStore();
+      const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const res = await post('off', { letterSendStore, letterQueue });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, result: 'dropped' });
+      expect(letterSendStore.createQueued).not.toHaveBeenCalled();
+      expect(letterSendStore.findByDonorYear).not.toHaveBeenCalled();
+      expect(letterSendStore.requeue).not.toHaveBeenCalled();
+      expect(letterQueue.send).not.toHaveBeenCalled();
+      const skip = log.mock.calls.map((c) => String(c[0])).find((line) => line.includes('"writeSwitch":"skipped"'));
+      expect(skip).toBeDefined();
+      expect(JSON.parse(skip!)).toMatchObject({ worker: 'member-portal', mode: 'off', operation: 'triggerLetterSend' });
+      log.mockRestore();
+    });
+
+    it('under hold creates the row and enqueues as normal (the queue is paused)', async () => {
+      const letterSendStore = fakeLetterSendStore();
+      const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+
+      const res = await post('hold', { letterSendStore, letterQueue });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, result: 'queued' });
+      expect(letterSendStore.createQueued).toHaveBeenCalledWith(expect.objectContaining({ donorItemId: '555', year: 2025 }));
+      expect(letterQueue.send).toHaveBeenCalledWith({ sendId: 42 });
+    });
+
+    it('under unknown returns 503 and creates no row', async () => {
+      const letterSendStore = fakeLetterSendStore();
+      const letterQueue = { send: vi.fn().mockResolvedValue(undefined) };
+
+      const res = await post('unknown', { letterSendStore, letterQueue });
+
+      expect(res.status).toBe(503);
+      expect(letterSendStore.createQueued).not.toHaveBeenCalled();
+      expect(letterQueue.send).not.toHaveBeenCalled();
+    });
+
+    it('still checks the secret and echoes the challenge under off', async () => {
+      const app = createApp(makeDeps({ writeGate: gateFor('off') }));
+      const bad = await app.request('/webhooks/monday/letters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      expect(bad.status).toBe(401);
+      const res = await post('off', {}, { challenge: 'abc' });
+      expect(await res.json()).toEqual({ challenge: 'abc' });
+    });
   });
 });

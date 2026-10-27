@@ -10,6 +10,8 @@ import { generateToken } from '../crypto/token';
 import { sha256Hex } from '../crypto/hash';
 import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 import { errorText } from '../logSafe';
+import { logDebug, messageDisposition } from '../flags';
+import { dryRunLetterDeps, type BatchSkipContext } from '../writeSwitch';
 
 export interface ProcessLetterSendBatchDeps {
   store: LetterSendStore;
@@ -20,21 +22,54 @@ export interface ProcessLetterSendBatchDeps {
   now: () => Date;
 }
 
+// The queue entry point (index.ts), gated like consumeChangeQueueBatch. A dry run drops every
+// letter_sends write, so the row stays 'queued': the cron never picks it up again (it skips any
+// donor with a row), and only a staff button click — triggerLetterSend's stranded-row re-send —
+// gives it another attempt.
+export async function consumeLetterSendBatch(
+  messages: QueueMessageLike<LetterSendQueueMessage>[],
+  deps: ProcessLetterSendBatchDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  // Loaded on the first message that runs, so a held batch makes no Monday read.
+  let templates: LetterBodyTemplates | undefined;
+  for (const message of messages) {
+    const disposition = messageDisposition(gate.mode, message.body);
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    templates ??= await loadBodyTemplates(deps);
+    if (disposition === 'write') {
+      await handleMessage(message, deps, templates);
+    } else {
+      const ctx = { ...gate, deliveryId: `letter-send:${message.body.sendId}` };
+      logDebug(ctx, 'message', message.body);
+      await handleMessage(message, dryRunLetterDeps(deps, ctx), templates);
+    }
+  }
+}
+
+// Every message live — the `write` path above, and the tests that predate the switch.
 export async function processLetterSendBatch(
   messages: QueueMessageLike<LetterSendQueueMessage>[],
   deps: ProcessLetterSendBatchDeps
 ): Promise<void> {
   const templates = await loadBodyTemplates(deps);
-  for (const message of messages) {
-    try {
-      await processOne(message.body.sendId, deps, templates);
-      message.ack();
-    } catch (err) {
-      console.error(
-        `member-portal consumer: failed to process letter send ${message.body.sendId}: ${errorText(err)}`
-      );
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
-    }
+  for (const message of messages) await handleMessage(message, deps, templates);
+}
+
+async function handleMessage(
+  message: QueueMessageLike<LetterSendQueueMessage>,
+  deps: ProcessLetterSendBatchDeps,
+  templates: LetterBodyTemplates
+): Promise<void> {
+  try {
+    await processOne(message.body.sendId, deps, templates);
+    message.ack();
+  } catch (err) {
+    console.error(`member-portal consumer: failed to process letter send ${message.body.sendId}: ${errorText(err)}`);
+    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 

@@ -49,7 +49,7 @@
     "consumers": [
       {
         "queue": "member-portal-change-requests",
-        "max_retries": 3,
+        "max_retries": 100,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain.
         "max_concurrency": 1,
@@ -57,7 +57,7 @@
       },
       {
         "queue": "member-portal-letter-emails",
-        "max_retries": 3,
+        "max_retries": 100,
         // Same reasoning as the change-requests consumer above.
         "max_concurrency": 1,
         "dead_letter_queue": "member-portal-letter-emails-dlq"
@@ -125,13 +125,13 @@
         "consumers": [
           {
             "queue": "member-portal-change-requests-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "member-portal-change-requests-sandbox-dlq"
           },
           {
             "queue": "member-portal-letter-emails-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "member-portal-letter-emails-sandbox-dlq"
           }

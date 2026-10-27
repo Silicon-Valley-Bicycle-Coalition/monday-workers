@@ -9,14 +9,9 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-// Cloudflare Queues rejects a larger per-message delay.
-export const MAX_RETRY_DELAY_SECONDS = 43_200;
-
-// Exponential backoff for message.retry(): 2, 4, 8 … minutes, capped at 12h. A bare retry()
-// redelivers almost immediately, so during a Monday rate-limit window (60s) a January backlog
-// burned all of max_retries inside the same window and landed in the DLQ (issue #31). An
-// out-of-range attempts count (hand-built or replayed message) is treated as the first attempt.
-export function retryDelaySeconds(attempts: number): number {
-  const n = Number.isFinite(attempts) && attempts >= 1 ? attempts : 1;
-  return Math.min(60 * 2 ** n, MAX_RETRY_DELAY_SECONDS);
-}
+// Backoff for message.retry(): the write switch's shared min(60 × 2^(attempts−1), 3600) seconds,
+// which with wrangler.jsonc's max_retries of 100 covers about four days of Monday or email outage
+// (or a `hold`). A bare retry() redelivers almost immediately, so during a Monday rate-limit
+// window a January backlog burned every attempt inside the same window and landed in the DLQ
+// (issue #31). An out-of-range attempts count is treated as the first attempt.
+export { retryDelaySeconds } from './flags';

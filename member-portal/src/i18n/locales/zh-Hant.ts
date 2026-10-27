@@ -50,6 +50,10 @@ export const zhHant: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '我們目前無法驗證此卡片，請稍後幾分鐘再試。',
   'error.eventsLoadFailed': '目前無法載入您的活動報名記錄。請幾分鐘後再試。',
   'error.generic': '發生問題，請重新登入。',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '暫時無法使用',
+  'unavailable.heading': '暫時無法使用',
+  'unavailable.body': '我們正在更新系統，此功能暫時無法使用。請稍後再試。',
 
   // Portal
   'portal.heading': '您的捐款者入口網站',

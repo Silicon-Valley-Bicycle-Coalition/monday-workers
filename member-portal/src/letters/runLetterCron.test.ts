@@ -3,6 +3,7 @@ import { runLetterCron } from './runLetterCron';
 import type { LetterSendStore } from '../db/letterSends';
 import type { MondayClient } from '../monday/client';
 import type { Config } from '../types';
+import type { WriteMode } from '../flags';
 
 const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
@@ -101,7 +102,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const unconfigured: Config = { ...config, letterCron: { ...config.letterCron, boardId: null } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: unconfigured, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: unconfigured, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'unconfigured' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -111,7 +112,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const unsigned: Config = { ...config, taxLetter: { ...config.taxLetter, ein: 'REPLACE_AFTER_SIGNOFF' } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: unsigned, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: unsigned, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'letters-not-signed-off' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -119,7 +120,7 @@ describe('runLetterCron', () => {
 
   it('skips when the settings board has no settings item', async () => {
     const monday = fakeMonday({ getLetterSettings: vi.fn().mockResolvedValue(null) });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'no-settings' });
     expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
   });
@@ -128,7 +129,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: false, startDate: '2027-01-10', bodyTemplate: '' }),
     });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'auto-send-off' });
     expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
   });
@@ -137,7 +138,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: true, startDate: '', bodyTemplate: '' }),
     });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'before-start-date' });
   });
 
@@ -145,7 +146,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday({
       getLetterSettings: vi.fn().mockResolvedValue({ autoSend: true, startDate: '2027-02-01', bodyTemplate: '' }),
     });
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
     expect(result).toEqual({ kind: 'skipped', reason: 'before-start-date' });
   });
 
@@ -156,7 +157,7 @@ describe('runLetterCron', () => {
     const floored = { ...config, donations: { ...config.donations, historyStartISO: '2026-01-01' } };
     const jan2026 = () => new Date('2026-01-15T10:00:00.000Z');
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now: jan2026 });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now: jan2026, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'year-before-history-floor' });
     expect(monday.listDonorIdsWithDonationsInYear).not.toHaveBeenCalled();
@@ -166,7 +167,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const floored = { ...config, donations: { ...config.donations, historyStartISO: '2026-06-01' } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: floored, now, mode: 'on' });
 
     expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026);
     expect(result).toMatchObject({ kind: 'ran', year: 2026 });
@@ -179,7 +180,7 @@ describe('runLetterCron', () => {
     const store = fakeStore();
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: store, queue, config, now });
+    const result = await runLetterCron({ monday, letterStore: store, queue, config, now, mode: 'on' });
 
     expect(monday.listDonorIdsWithDonationsInYear).toHaveBeenCalledWith(2026);
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 0 });
@@ -191,7 +192,7 @@ describe('runLetterCron', () => {
     const store = fakeStore(new Set(['d1']));
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: store, queue, config, now });
+    const result = await runLetterCron({ monday, letterStore: store, queue, config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 1, triggered: 1, failed: 0, deferred: 0 });
     expect(monday.getMemberPortalData).toHaveBeenCalledTimes(1);
@@ -203,7 +204,7 @@ describe('runLetterCron', () => {
       listDonorIdsWithDonationsInYear: vi.fn().mockResolvedValue(['d1', 'd2', 'd3']),
     });
     const capped: Config = { ...config, letterCron: { ...config.letterCron, maxTriggersPerRun: 2 } };
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: capped, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: capped, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 3, alreadyHandled: 0, triggered: 2, failed: 0, deferred: 1 });
     expect(monday.getMemberPortalData).toHaveBeenCalledTimes(2);
@@ -225,7 +226,7 @@ describe('runLetterCron', () => {
     });
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue, config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue, config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 2, alreadyHandled: 0, triggered: 1, failed: 1, deferred: 0 });
     expect(queue.send).toHaveBeenCalledTimes(1);
@@ -235,7 +236,7 @@ describe('runLetterCron', () => {
     const monday = fakeMonday();
     const noBoard: Config = { ...config, monday: { ...config.monday, donationsBoardId: null } };
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: noBoard, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config: noBoard, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'skipped', reason: 'unconfigured' });
     expect(monday.getLetterSettings).not.toHaveBeenCalled();
@@ -244,7 +245,7 @@ describe('runLetterCron', () => {
   it('returns an error result instead of throwing when the settings read fails', async () => {
     const monday = fakeMonday({ getLetterSettings: vi.fn().mockRejectedValue(new Error('monday: HTTP 500')) });
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 500' });
   });
@@ -258,7 +259,7 @@ describe('runLetterCron', () => {
         .mockRejectedValue(new Error('monday: Letter Settings board 456 has no item named "Letter emails"')),
     });
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
 
     expect(result.kind).toBe('error');
     expect(result).toMatchObject({ message: expect.stringContaining('no item named "Letter emails"') });
@@ -272,7 +273,7 @@ describe('runLetterCron', () => {
       listDonorIdsWithDonationsInYear: vi.fn().mockRejectedValue(new Error('monday: HTTP 429')),
     });
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue: fakeQueue(), config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'error', message: 'monday: HTTP 429' });
   });
@@ -293,9 +294,35 @@ describe('runLetterCron', () => {
     });
     const queue = fakeQueue();
 
-    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue, config, now });
+    const result = await runLetterCron({ monday, letterStore: fakeStore(), queue, config, now, mode: 'on' });
 
     expect(result).toEqual({ kind: 'ran', year: 2026, eligible: 1, alreadyHandled: 0, triggered: 0, failed: 0, deferred: 0 });
     expect(queue.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('runLetterCron (write switch)', () => {
+  // The cron only enqueues, so a dry run would show nothing a skip line doesn't: under every mode
+  // but `on` it does not run at all, and creates no letter_sends row that would later block the
+  // donor (the cron excludes any donor with a row).
+  it.each<WriteMode>(['off', 'hold', 'unknown'])('under %s does not run: no Monday reads, no rows, no messages', async (mode) => {
+    const monday = fakeMonday();
+    const letterStore = fakeStore();
+    const queue = fakeQueue();
+
+    const result = await runLetterCron({ monday, letterStore, queue, config, now, mode });
+
+    expect(result).toEqual({ kind: 'skipped', reason: 'write-switch' });
+    expect(monday.getLetterSettings).not.toHaveBeenCalled();
+    expect(monday.getMemberPortalData).not.toHaveBeenCalled();
+    expect(letterStore.createQueued).not.toHaveBeenCalled();
+    expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it('under on runs and enqueues unstamped messages', async () => {
+    const queue = fakeQueue();
+    const result = await runLetterCron({ monday: fakeMonday(), letterStore: fakeStore(), queue, config, now, mode: 'on' });
+    expect(result).toMatchObject({ kind: 'ran', triggered: 2 });
+    expect(queue.send).toHaveBeenCalledWith({ sendId: 1 });
   });
 });
