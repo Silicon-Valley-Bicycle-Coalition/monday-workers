@@ -11,7 +11,7 @@ import type { MondayClient, MondayItem } from './monday/client';
 import type { ProcessBatchDeps } from './consumer/processBatch';
 import type { FollowupDeps } from './followups/run';
 import type { QueueLike } from './webhook/route';
-import type { MondayBoards } from './types';
+import type { EventRow, MondayBoards } from './types';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
 
 // Everything a skip line needs except the delivery, which is per message.
@@ -36,10 +36,10 @@ const ORDER_STORE_MUTATORS = ['recordDelivery', 'updateStatus'] as const;
 const EVENT_STORE_MUTATORS = ['recordDelivery', 'updateStatus'] as const;
 const ATTENDEE_STORE_MUTATORS = ['recordDelivery', 'updateStatus'] as const;
 
-// The Events item id a dry-run attendee links to when its event has a ledger row but no item yet.
-// Under `on` the event consumer would have written that item first (processAttendee asks for it
-// and retries); a dry run never records one, so without this every dry-run attendee of a new class
-// would request its event and retry on the queue for days instead of logging its registration.
+// The Events item id a dry-run attendee links to when its event has no item yet (or no ledger row
+// at all). Under `on` the event consumer would have written that item first (processAttendee asks
+// for it and retries); a dry run never records one, so without this every dry-run attendee of a new
+// class would request its event and retry on the queue for days instead of logging its registration.
 export const DRY_RUN_EVENT_ITEM_ID = 'dry-run-event';
 
 /**
@@ -81,8 +81,9 @@ export function dryRunOrderStore(store: OrderStore): OrderStore {
 
 /**
  * The events ledger with every write dropped. With `placeholderItem` (an attendee message's dry
- * run), an event row that exists but has no Events item yet — and wasn't 404'd — reads as linked to
- * DRY_RUN_EVENT_ITEM_ID, so the registration write reaches the recording proxy and logs a skip line.
+ * run), an event with no Events item yet — no ledger row, or a row that wasn't 404'd — reads as
+ * linked to DRY_RUN_EVENT_ITEM_ID, so the registration write reaches the recording proxy and logs a
+ * skip line.
  */
 export function dryRunEventStore(store: EventStore, { placeholderItem }: { placeholderItem: boolean } = { placeholderItem: false }): EventStore {
   const readOnly = readOnlyProxy(store, EVENT_STORE_MUTATORS);
@@ -92,8 +93,16 @@ export function dryRunEventStore(store: EventStore, { placeholderItem }: { place
       if (prop !== 'getEvent') return Reflect.get(target, prop, receiver);
       return async (eventId: string) => {
         const row = await target.getEvent(eventId);
+        // No ledger row: the event's own delivery was dropped too (or never came). Live, processAttendee
+        // would record one and request the event; here it reads as a placeholder-linked row instead.
+        if (row === null) {
+          return {
+            eventId, mondayItemId: DRY_RUN_EVENT_ITEM_ID, startsAt: null, endsAt: null, locationKey: null, eventbriteStatus: null,
+            status: 'queued', lastAction: 'attendee.updated', error: null, deliveries: 0, receivedAt: new Date().toISOString(), writtenAt: null,
+          } satisfies EventRow;
+        }
         // A 404'd event stays as it is: processAttendee stops on it, live or not.
-        if (row === null || row.mondayItemId !== null || (row.status === 'failed' && (row.error ?? '').includes(EVENT_NOT_FOUND_ERROR))) return row;
+        if (row.mondayItemId !== null || (row.status === 'failed' && (row.error ?? '').includes(EVENT_NOT_FOUND_ERROR))) return row;
         return { ...row, mondayItemId: DRY_RUN_EVENT_ITEM_ID };
       };
     },

@@ -389,6 +389,24 @@ describe('attendee messages under the write switch', () => {
     }
   });
 
+  it('off, event has no ledger row at all: links the placeholder Events item instead of retrying for days', async () => {
+    const { deps, mondayClient, queue, eventStore } = setup({ evRow: null });
+    const m = msg({ writeStamp: 'dropped' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('on'));
+      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      const [line] = skipLines(log);
+      expect([line!.sink, line!.operation]).toEqual(['Event Registrations', 'createItem']);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('off, Attended with no People match: logs the People create and links its placeholder', async () => {
     const { deps, mondayClient, attendeeStore } = setup({ att: attendee({ checked_in: true }) });
     const m = msg();
