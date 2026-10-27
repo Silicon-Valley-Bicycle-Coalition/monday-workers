@@ -67,8 +67,24 @@ function toOrderRow(record: D1OrderRecord): OrderRow {
 const COLUMNS =
   'order_id, event_id, last_action, status, eventbrite_status, amount, currency, order_created, matched_donor_item_id, monday_item_id, error, deliveries, received_at, written_at';
 
+// D1 caps a statement at 100 bound parameters.
+const KNOWN_IDS_CHUNK = 100;
+
 export class D1OrderStore implements OrderStore {
   constructor(private db: D1Database) {}
+
+  // Which of `orderIds` the ledger has a row for, whatever its status: the missed-order check
+  // (src/missedOrders/check.ts) only asks whether a delivery ever arrived.
+  async knownOrderIds(orderIds: string[]): Promise<Set<string>> {
+    const known = new Set<string>();
+    for (let i = 0; i < orderIds.length; i += KNOWN_IDS_CHUNK) {
+      const chunk = orderIds.slice(i, i + KNOWN_IDS_CHUNK);
+      const placeholders = chunk.map((_, j) => `?${j + 1}`).join(', ');
+      const { results } = await this.db.prepare(`SELECT order_id FROM orders WHERE order_id IN (${placeholders})`).bind(...chunk).all<{ order_id: string }>();
+      for (const row of results) known.add(row.order_id);
+    }
+    return known;
+  }
 
   async recordDelivery(delivery: NewDelivery): Promise<'inserted' | 'updated'> {
     // The pre-SELECT only classifies the result; the primary key is what makes a concurrent

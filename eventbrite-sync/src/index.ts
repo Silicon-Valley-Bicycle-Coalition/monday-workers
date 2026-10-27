@@ -10,6 +10,7 @@ import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
 import { processOrderQueueBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { runFollowups, type FollowupResult } from './followups/run';
+import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
@@ -89,14 +90,21 @@ export default {
   },
 
   // Hourly (wrangler.jsonc triggers): the morning-after class follow-ups. Cheap when idle: one D1
-  // read of events that ended in the last few days, and Monday is touched only for those.
+  // read of events that ended in the last few days, and Monday is touched only for those. Once a
+  // day it also runs the missed-order check (src/missedOrders/check.ts).
   scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     return runScheduled(controller, env, ctx, runFollowups);
   },
 };
 
-// `run` is a parameter so a test can observe the call without module mocking.
-export async function runScheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext, run: typeof runFollowups): Promise<void> {
+// `run` and `check` are parameters so a test can observe the calls without module mocking.
+export async function runScheduled(
+  controller: ScheduledController,
+  env: Env,
+  ctx: ExecutionContext,
+  run: typeof runFollowups,
+  check: typeof checkMissedOrders = checkMissedOrders
+): Promise<void> {
   const config = configFor(env);
   const token = env.MONDAY_API_TOKEN;
   if (token === undefined || token === '') {
@@ -112,5 +120,24 @@ export async function runScheduled(controller: ScheduledController, env: Env, ct
       .then(logFollowupSummary)
       // A sweep-level throw (config, D1) must be logged, not become an unhandled waitUntil rejection.
       .catch((err) => console.error(`eventbrite-sync follow-ups: sweep failed: ${errorMessage(err)}`))
+  );
+
+  const now = new Date(controller.scheduledTime);
+  if (!isCheckHour(now)) return;
+  // Logged, not thrown: the follow-ups above are already under way, and an unset token is
+  // something Workers Issues should show once a day until it's fixed.
+  const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
+  if (eventbriteToken === undefined || eventbriteToken === '') {
+    console.error('eventbrite-sync missed orders: EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); check skipped');
+    return;
+  }
+  ctx.waitUntil(
+    check(now, {
+      lister: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),
+      ledger: new D1OrderStore(env.DB),
+      organizationId: config.eventbrite.organizationId,
+    })
+      .then(logMissedOrders)
+      .catch((err) => console.error(`eventbrite-sync missed orders: check failed: ${errorMessage(err)}`))
   );
 }

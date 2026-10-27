@@ -83,4 +83,13 @@ describe('D1OrderStore', () => {
   it('returns null for an unknown order', async () => {
     expect(await new D1OrderStore(env.DB).getOrder('nope')).toBeNull();
   });
+
+  it('reports which order ids the ledger has, across more than one 100-id chunk', async () => {
+    const store = new D1OrderStore(env.DB);
+    await store.recordDelivery({ orderId: 'k-1', action: 'order.placed', receivedAt: '2026-11-01T00:00:00.000Z' });
+    await store.recordDelivery({ orderId: 'k-150', action: 'order.placed', receivedAt: '2026-11-01T00:00:00.000Z' });
+    const ids = Array.from({ length: 160 }, (_, i) => `k-${i}`);
+    expect(await store.knownOrderIds(ids)).toEqual(new Set(['k-1', 'k-150']));
+    expect(await store.knownOrderIds([])).toEqual(new Set());
+  });
 });

@@ -66,7 +66,7 @@ consumer fetches the order at processing time. That is why out-of-order deliveri
 (whatever Eventbrite says now is what gets written), why a redelivery is enqueued rather than
 deduped (one extra fetch, an idempotent write, never a second item), and why the D1 ledger holds
 **no name, email or payload** — nothing personal at rest, so unlike `funraise-sync` there is no
-retention purge and no cron. See `../README.md`'s Reliability section for why the Queue shape is
+retention purge. (The hourly cron is for the class follow-ups and the daily missed-order check.) See `../README.md`'s Reliability section for why the Queue shape is
 standard across every webhook-driven Worker here.
 
 ## APIs & auth
@@ -228,6 +228,24 @@ Eventbrite") and acked. To find dead orders:
 `select order_id, event_id, error, received_at from orders where error like 'dead-lettered%'`.
 Re-drive by re-running `scripts/backfill-orders.mjs` for the affected event once the cause is
 fixed; adopt-before-create makes it safe for the orders that did land.
+
+## Missed-order check (daily)
+
+Failed writes are loud, but a webhook that was deleted, disabled or repointed fails nothing: orders
+just stop arriving. So at 15:00 UTC (07:00 or 08:00 Pacific), on one of the hourly cron runs,
+`src/missedOrders/check.ts` lists the organization's orders changed in the last 26 hours
+(`GET /organizations/{id}/orders/?status=all_not_deleted&changed_since=…`) and looks each id up in
+the `orders` ledger. Orders changed in the last 30 minutes are skipped as possibly still in
+flight. Any order Eventbrite has that the ledger doesn't gets one `console.error` naming the ids,
+which Workers Issues raises; a clean check logs one info line. A day with no sales is not an alarm.
+It replaces Salesforce's *Today's Eventbrite Orders Report* subscription, which emailed on every
+day with no `eb4sf` orders (svbc-monday-migration #90, `docs/35` §3.6).
+
+It reads with `EVENTBRITE_PRIVATE_TOKEN`; unset, it logs an error and skips. With
+`eventbrite.organizationId` null it uses the token's only organization (`GET /users/me/organizations/`)
+and fails if the token has more than one. To act on an alarm: check the webhook in Eventbrite
+(Account Settings → Developer Links → Webhooks), then re-drive the affected events with
+`scripts/backfill-orders.mjs` below.
 
 ## Backfill: the Oct 22 Summit, and any later gap
 
@@ -438,7 +456,8 @@ no second item). Production repeats the list under the production names at cutov
    the id is set.
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.
 3. **Eventbrite private token and organization id** — which staff account mints the token, and
-   `eventbrite.organizationId` in config (optional but recommended).
+   `eventbrite.organizationId` in config (optional but recommended; without it the missed-order
+   check asks Eventbrite which organization the token belongs to).
 4. **Partial-refund behaviour** — verify `costs.gross` on the first real one (Out of scope).
 
 ## Development

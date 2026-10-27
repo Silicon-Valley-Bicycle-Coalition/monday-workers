@@ -102,4 +102,53 @@ describe('HttpEventbriteClient', () => {
       await expect(down.getAttendee('1', '2')).rejects.toThrow('HTTP 503');
     });
   });
+
+  describe('listOrganizationOrders', () => {
+    it('follows the continuation token across pages with the status and changed_since filters', async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(response(200, { orders: [{ id: '1' }], pagination: { has_more_items: true, continuation: 'abc' } }))
+        .mockResolvedValueOnce(response(200, { orders: [{ id: '2' }], pagination: { has_more_items: false } }));
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
+
+      const orders = await client.listOrganizationOrders('999', '2026-11-01T13:00:00Z');
+
+      expect(orders.map((o) => o.id)).toEqual(['1', '2']);
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/organizations/999/orders/?status=all_not_deleted&changed_since=2026-11-01T13%3A00%3A00Z');
+      expect(fetchImpl.mock.calls[1]![0]).toContain('continuation=abc');
+      expect(fetchImpl.mock.calls[0]![1].headers.Authorization).toBe('Bearer tok');
+    });
+
+    it('refuses a non-numeric organization id', async () => {
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn());
+      await expect(client.listOrganizationOrders('../x', '2026-11-01T13:00:00Z')).rejects.toThrow('non-numeric');
+    });
+
+    it('throws on 404, a token error, or a body with no orders array', async () => {
+      for (const [status, body, message] of [
+        [404, {}, 'HTTP 404'],
+        [403, {}, 'EVENTBRITE_PRIVATE_TOKEN'],
+        [200, { pagination: {} }, '"orders"'],
+      ] as const) {
+        const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(response(status, body)));
+        await expect(client.listOrganizationOrders('999', '2026-11-01T13:00:00Z'), String(status)).rejects.toThrow(message);
+      }
+    });
+
+    it('stops after 20 pages instead of paging forever', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(response(200, { orders: [], pagination: { has_more_items: true, continuation: 'again' } }));
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
+      await expect(client.listOrganizationOrders('999', '2026-11-01T13:00:00Z')).rejects.toThrow('more than 20 pages');
+      expect(fetchImpl).toHaveBeenCalledTimes(20);
+    });
+  });
+
+  describe('listMyOrganizationIds', () => {
+    it("returns the token's organization ids as strings", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(response(200, { organizations: [{ id: '4242' }, { id: 7 }] }));
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
+      expect(await client.listMyOrganizationIds()).toEqual(['4242', '7']);
+      expect(fetchImpl.mock.calls[0]![0]).toBe('https://www.eventbriteapi.com/v3/users/me/organizations/');
+    });
+  });
 });
