@@ -25,7 +25,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const ALLOWED_WRAPPERS = ['memberId', 'redactEmails', 'errorText'];
+export const ALLOWED_WRAPPERS = ['memberId', 'redactEmails', 'errorText', 'redactPayload'];
 const SUPPRESS = /\/\/\s*log-safety:\s*allow\b/;
 const CONSOLE_CALL = /\bconsole\s*\.\s*(?:log|info|warn|error|debug|trace)\s*\(/g;
 const EMAILISH_IDENTIFIER = /[A-Za-z_$][\w$]*/g;
