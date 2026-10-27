@@ -2,7 +2,7 @@ import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
 import { parseHours } from '../membership/volunteer';
 import type { BoardMembership } from '../membership/derive';
-import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig } from '../types';
+import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
 import {
   AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
   type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions,
@@ -47,6 +47,12 @@ export interface RegistrationRecord {
   attendanceLabel: string | null;
   roleLabel: string | null;
   hours: number | null;
+}
+
+export interface RecurringGiftRecord {
+  id: string;
+  statusLabel: string | null;
+  donorItemIds: string[];
 }
 
 export interface HistoricalShiftRecord {
@@ -373,6 +379,29 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const text = (id: string): string | null => byId.get(id)?.text || null;
         return { id: item.id, volunteerItemId: byId.get(c.volunteer)?.linked_item_ids?.[0] ?? null,
           dateISO: text(c.date)?.slice(0, 10) ?? null, hours: parseHours(text(c.hours)), statusLabel: text(c.status) };
+      }),
+    };
+  }
+
+  async pageRecurringGifts(board: RecurringGiftsConfig, cursor: string | null) {
+    const c = board.columns;
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+          }
+        }`,
+        { boardId: [board.boardId], columnIds: [c.donorLink, c.status], cursor },
+      );
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) return { items: [], cursor: null };
+    return {
+      cursor: page.cursor,
+      items: page.items.map((item) => {
+        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
+        return { id: item.id, statusLabel: byId.get(c.status)?.text || null,
+          donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [] };
       }),
     };
   }

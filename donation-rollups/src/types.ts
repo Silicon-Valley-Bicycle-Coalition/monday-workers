@@ -81,7 +81,16 @@ export interface DonationRollupsConfig {
     donorLevel: DonorLevelConfig | null;
     volunteerBoards: VolunteerBoardConfig[];
     historicalVolunteerBoards: HistoricalVolunteerBoardConfig[];
+    recurringGifts: RecurringGiftsConfig | null;
   };
+}
+
+// The Recurring Gifts board the nightly `recurring` duty reads to keep People's Has Active
+// Recurring Gift checkbox current (monday-migration docs/35 §3.1). Null = duty off.
+export interface RecurringGiftsConfig {
+  boardId: number;
+  columns: { donorLink: string; status: string };
+  activeStatusLabel: string;
 }
 
 export interface OwnerColumns {
@@ -102,6 +111,7 @@ export interface OwnerColumns {
   membership?: OwnerMembershipColumns;
   organizationalGiving?: string;   // People boards only — Organizations have no driven-giving concept.
   donorLevel?: string;             // status column; written only when donationRollups.donorLevel is set.
+  hasActiveRecurringGift?: string; // checkbox; People boards only, kept by the `recurring` duty.
 }
 
 // The eight membership columns on a People-type owner board. Absent on Organizations: an

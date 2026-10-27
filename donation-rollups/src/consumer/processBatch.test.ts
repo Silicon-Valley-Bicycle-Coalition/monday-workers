@@ -37,6 +37,7 @@ const config: DonationRollupsConfig = {
     donorLevel: null,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
+    recurringGifts: null,
   },
 };
 
@@ -58,6 +59,7 @@ const membershipEnabled: DonationRollupsConfig = {
     membership: membershipConfig,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
+    recurringGifts: null,
   },
 };
 

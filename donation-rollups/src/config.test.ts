@@ -299,3 +299,30 @@ describe('classification and donor level config', () => {
     expect(() => validateConfig(raw)).toThrow(/leadershipLifetimeCents must be >= majorLifetimeCents/);
   });
 });
+
+describe('validateConfig — recurringGifts block (monday-migration docs/35 §3.1)', () => {
+  const recurringGifts = { boardId: 50, columns: { donorLink: 'rdl', status: 'rst' }, activeStatusLabel: 'Active' };
+  const withFlag = { '2': { ...ownerColumns, membership: membershipColumns, hasActiveRecurringGift: 'rg' }, '3': ownerColumns };
+
+  it('defaults to null (duty off) when omitted', () => {
+    expect(validateConfig(base).donationRollups.recurringGifts).toBeNull();
+  });
+
+  it('accepts the board, its two columns and the Active label, plus the People flag column', () => {
+    const cfg = validateConfig({ ...base, donationRollups: { ...base.donationRollups, recurringGifts, ownerColumnsByBoard: withFlag } });
+    expect(cfg.donationRollups.recurringGifts).toEqual(recurringGifts);
+    expect(cfg.donationRollups.ownerColumnsByBoard['2']!.hasActiveRecurringGift).toBe('rg');
+  });
+
+  it('rejects a recurringGifts block with no owner board carrying the flag column', () => {
+    expect(() => validateConfig({ ...base, donationRollups: { ...base.donationRollups, recurringGifts } }))
+      .toThrow(/hasActiveRecurringGift/);
+  });
+
+  it('rejects a missing column id or label', () => {
+    for (const bad of [{ ...recurringGifts, columns: { donorLink: 'rdl' } }, { ...recurringGifts, activeStatusLabel: '' }]) {
+      expect(() => validateConfig({ ...base, donationRollups: { ...base.donationRollups, recurringGifts: bad,
+        ownerColumnsByBoard: withFlag } })).toThrow(/recurringGifts/);
+    }
+  });
+});

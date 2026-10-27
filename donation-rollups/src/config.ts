@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -98,6 +98,9 @@ function validateOwnerColumns(raw: unknown, boardId: string): OwnerColumns {
   }
   if (columns.donorLevel !== undefined && (typeof columns.donorLevel !== 'string' || columns.donorLevel === '')) {
     throw new Error(`config: donationRollups.ownerColumnsByBoard["${boardId}"].donorLevel must be a Monday column id string or omitted`);
+  }
+  if (columns.hasActiveRecurringGift !== undefined && columns.hasActiveRecurringGift !== null) {
+    columnId(columns.hasActiveRecurringGift, `donationRollups.ownerColumnsByBoard["${boardId}"].hasActiveRecurringGift`);
   }
   const { membership: _raw, ...rest } = columns;
   return { ...(rest as unknown as OwnerColumns), ...(membership ? { membership } : {}) };
@@ -215,6 +218,23 @@ function validateVolunteerBoards(raw: unknown, membershipOn: boolean): Volunteer
   });
 }
 
+function validateRecurringGifts(raw: unknown): RecurringGiftsConfig | null {
+  if (raw === undefined || raw === null) return null;
+  const path = 'donationRollups.recurringGifts';
+  if (typeof raw !== 'object') throw new Error(`config: "${path}" must be an object or null`);
+  const v = raw as Record<string, unknown>;
+  if (typeof v.boardId !== 'number') throw new Error(`config: ${path}.boardId must be a number`);
+  const c = (typeof v.columns === 'object' && v.columns !== null ? v.columns : {}) as Record<string, unknown>;
+  if (typeof v.activeStatusLabel !== 'string' || v.activeStatusLabel === '') {
+    throw new Error(`config: ${path}.activeStatusLabel must be a non-empty label`);
+  }
+  return {
+    boardId: v.boardId,
+    columns: { donorLink: columnId(c.donorLink, `${path}.columns.donorLink`), status: columnId(c.status, `${path}.columns.status`) },
+    activeStatusLabel: v.activeStatusLabel,
+  };
+}
+
 function validateHistoricalVolunteerBoards(raw: unknown, membershipOn: boolean): HistoricalVolunteerBoardConfig[] {
   if (raw === undefined || raw === null) {
     if (membershipOn) throw new Error('config: "donationRollups.historicalVolunteerBoards" is required (may be []) when membership is configured');
@@ -285,6 +305,10 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const volunteerBoards = validateVolunteerBoards(dr.volunteerBoards, membership !== null);
   const historicalVolunteerBoards = validateHistoricalVolunteerBoards(dr.historicalVolunteerBoards, membership !== null);
   const donorLevel = validateDonorLevel(dr.donorLevel);
+  const recurringGifts = validateRecurringGifts(dr.recurringGifts);
+  if (recurringGifts !== null && !Object.values(ownerColumnsByBoard).some((o) => o.hasActiveRecurringGift)) {
+    throw new Error('config: at least one ownerColumnsByBoard entry must have "hasActiveRecurringGift" when donationRollups.recurringGifts is configured');
+  }
   if (membership !== null) {
     donationBoards.forEach((b, i) => {
       for (const key of OPTIONAL_TERM_COLUMNS) {
@@ -304,7 +328,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
-    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards },
+    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards, recurringGifts },
   };
 }
 
