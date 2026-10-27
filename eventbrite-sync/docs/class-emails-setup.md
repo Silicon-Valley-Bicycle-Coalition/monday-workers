@@ -7,7 +7,7 @@ actually sends email lives in Monday and is set up by hand, following this check
 sandbox first, then again on production at cutover.
 
 The email bodies themselves are **not** in this repo. They're in the template doc in the migration
-repo (`docs/35-class-email-templates.md`), one section per class type,
+repo (`docs/36-class-email-templates.md`), one section per class type,
 with a staff-review list at the top. Copy each subject and body from there.
 
 ## 1. Prerequisites
