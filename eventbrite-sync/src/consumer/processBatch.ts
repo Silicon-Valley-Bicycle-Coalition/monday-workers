@@ -10,6 +10,7 @@ import { MondayApiError } from '../monday/graphql';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
+import { describeMessage } from './messages';
 import { processEvent } from './processEvent';
 import { processAttendee } from './processAttendee';
 
@@ -95,12 +96,6 @@ export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQue
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
-}
-
-export function describeMessage(body: WriteQueueMessage): string {
-  if (body.kind === 'event') return `event "${body.eventId}"`;
-  if (body.kind === 'attendee') return `attendee "${body.attendeeId}"`;
-  return `order "${body.orderId}"`;
 }
 
 async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void> {

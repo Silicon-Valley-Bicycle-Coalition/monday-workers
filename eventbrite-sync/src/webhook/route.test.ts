@@ -52,6 +52,14 @@ describe('createApp', () => {
     expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'queued');
   });
 
+  it('records the order row before enqueueing', async () => {
+    const orderStore = fakeOrderStore();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({ eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), orderStore, config, queue: { send }, webhookSecret: SECRET });
+    await post(app, delivery());
+    expect(vi.mocked(orderStore.recordDelivery).mock.invocationCallOrder[0]!).toBeLessThan(send.mock.invocationCallOrder[0]!);
+  });
+
   it('enqueues a redelivery of a known order too — the consumer re-fetches and writes idempotently', async () => {
     const orderStore = fakeOrderStore({ recordDelivery: vi.fn().mockResolvedValue('updated') });
     const send = vi.fn().mockResolvedValue(undefined);
@@ -224,6 +232,14 @@ describe('secretsMatch', () => {
       expect(send).toHaveBeenCalledWith({ kind: 'event', eventId: '1001', action: 'event.published' });
       expect(eventStore.updateStatus).toHaveBeenCalledWith('1001', 'queued');
       expect(attendeeStore.recordDelivery).not.toHaveBeenCalled();
+    });
+
+    it('records the ledger row before enqueueing', async () => {
+      const attendeeStore = fakeAttendeeStore();
+      const send = vi.fn().mockResolvedValue(undefined);
+      const app = createApp({ eventStore: fakeEventStore(), attendeeStore, orderStore: fakeOrderStore(), config, queue: { send }, webhookSecret: SECRET });
+      await postAttendee(app, attendeeDelivery());
+      expect(vi.mocked(attendeeStore.recordDelivery).mock.invocationCallOrder[0]!).toBeLessThan(send.mock.invocationCallOrder[0]!);
     });
 
     it('marks the attendee row failed and returns 500 when the enqueue fails', async () => {

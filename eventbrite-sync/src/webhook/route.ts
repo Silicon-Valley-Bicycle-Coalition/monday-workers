@@ -59,93 +59,83 @@ export function createApp(deps: AppDeps) {
 
   app.get('/health', (c) => c.json({ ok: true }));
 
+  // One path for every route: authenticate, validate, record the ledger row, enqueue, mark queued.
+  // A route supplies only its validator and how to record / mark a verdict's delivery.
+  function route<D>(
+    path: string,
+    validate: (body: unknown) => { kind: 'process'; delivery: D } | { kind: 'ignore'; reason: string },
+    ledger: {
+      noun: string;
+      id: (d: D) => string;
+      message: (d: D) => WriteQueueMessage;
+      record: (d: D, receivedAt: string) => Promise<unknown>;
+      markQueued: (d: D) => Promise<void>;
+      markFailed: (d: D, error: string) => Promise<void>;
+    }
+  ) {
+    app.post(path, async (c) => {
+      const presented = c.req.header(SECRET_HEADER) ?? c.req.query('secret');
+      if (!(await secretsMatch(presented, deps.webhookSecret))) {
+        return c.json({ ok: false }, 401);
+      }
+
+      let verdict;
+      try {
+        verdict = validate(await c.req.json());
+      } catch (err) {
+        // 200, not 4xx: Eventbrite retries non-2xx answers, and a malformed payload won't get
+        // better. This log line is where a payload-shape change becomes visible.
+        const errMsg = errorMessage(err);
+        console.error(`eventbrite-sync webhook: rejected delivery: ${errMsg}`);
+        return c.json({ ok: false, error: errMsg }, 200);
+      }
+      if (verdict.kind === 'ignore') {
+        console.warn(`eventbrite-sync webhook: ignored delivery: ${verdict.reason}`);
+        return c.json({ ok: true, ignored: verdict.reason }, 200);
+      }
+
+      const delivery = verdict.delivery;
+      await ledger.record(delivery, new Date().toISOString());
+
+      // Every delivery is enqueued, redeliveries included: the consumer re-fetches the resource
+      // and writes idempotently, so a duplicate costs one fetch and never a second item.
+      try {
+        await deps.queue.send(ledger.message(delivery));
+        await ledger.markQueued(delivery);
+      } catch (err) {
+        const errMsg = errorMessage(err);
+        console.error(`eventbrite-sync webhook: enqueue failed for ${ledger.noun} "${ledger.id(delivery)}": ${errMsg}`);
+        await ledger.markFailed(delivery, errMsg);
+        // A 5xx gives Eventbrite the chance to redeliver; the keyed upsert makes that safe.
+        return c.json({ ok: false }, 500);
+      }
+
+      return c.json({ ok: true }, 200);
+    });
+  }
+
   // The registered URL. One organization-wide webhook with the three order actions.
-  app.post('/webhooks/eventbrite/order', async (c) => {
-    const presented = c.req.header(SECRET_HEADER) ?? c.req.query('secret');
-    if (!(await secretsMatch(presented, deps.webhookSecret))) {
-      return c.json({ ok: false }, 401);
-    }
-
-    let verdict;
-    try {
-      verdict = validateDelivery(await c.req.json(), deps.config);
-    } catch (err) {
-      // 200, not 4xx: Eventbrite retries non-2xx answers, and a malformed payload won't get
-      // better. This log line is where a payload-shape change becomes visible.
-      const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync webhook: rejected delivery: ${errMsg}`);
-      return c.json({ ok: false, error: errMsg }, 200);
-    }
-    if (verdict.kind === 'ignore') {
-      console.warn(`eventbrite-sync webhook: ignored delivery: ${verdict.reason}`);
-      return c.json({ ok: true, ignored: verdict.reason }, 200);
-    }
-
-    const { orderId, action } = verdict.delivery;
-    await deps.orderStore.recordDelivery({ orderId, action, receivedAt: new Date().toISOString() });
-
-    // Every delivery is enqueued, redeliveries included: the consumer re-fetches the order and
-    // writes idempotently, so a duplicate costs one fetch and never a second item. Swallowing
-    // "duplicates" would need a delivery id Eventbrite doesn't send.
-    try {
-      await deps.queue.send({ orderId, action });
-      await deps.orderStore.updateStatus(orderId, 'queued');
-    } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync webhook: enqueue failed for order "${orderId}": ${errMsg}`);
-      await deps.orderStore.updateStatus(orderId, 'failed', { error: errMsg });
-      // A 5xx gives Eventbrite the chance to redeliver; the keyed upsert makes that safe.
-      return c.json({ ok: false }, 500);
-    }
-
-    return c.json({ ok: true }, 200);
+  route('/webhooks/eventbrite/order', (body) => validateDelivery(body, deps.config), {
+    noun: 'order',
+    id: (d) => d.orderId,
+    message: (d) => ({ orderId: d.orderId, action: d.action }),
+    record: (d, receivedAt) => deps.orderStore.recordDelivery({ orderId: d.orderId, action: d.action, receivedAt }),
+    markQueued: (d) => deps.orderStore.updateStatus(d.orderId, 'queued'),
+    markFailed: (d, error) => deps.orderStore.updateStatus(d.orderId, 'failed', { error }),
   });
 
   // Events and attendees: a second organization-wide webhook, same secret, same pointer-only rules.
-  app.post('/webhooks/eventbrite/attendee', async (c) => {
-    const presented = c.req.header(SECRET_HEADER) ?? c.req.query('secret');
-    if (!(await secretsMatch(presented, deps.webhookSecret))) {
-      return c.json({ ok: false }, 401);
-    }
-
-    let verdict;
-    try {
-      verdict = validateAttendeeDelivery(await c.req.json(), deps.config);
-    } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync webhook: rejected attendee delivery: ${errMsg}`);
-      return c.json({ ok: false, error: errMsg }, 200);
-    }
-    if (verdict.kind === 'ignore') {
-      console.warn(`eventbrite-sync webhook: ignored delivery: ${verdict.reason}`);
-      return c.json({ ok: true, ignored: verdict.reason }, 200);
-    }
-
-    const delivery = verdict.delivery;
-    const receivedAt = new Date().toISOString();
-    const isEvent = delivery.kind === 'event';
-    const id = delivery.kind === 'event' ? delivery.eventId : delivery.attendeeId;
-    const markFailed = (error: string) =>
-      delivery.kind === 'event' ? deps.eventStore.updateStatus(delivery.eventId, 'failed', { error }) : deps.attendeeStore.updateStatus(delivery.attendeeId, 'failed', { error });
-
-    if (delivery.kind === 'event') {
-      await deps.eventStore.recordDelivery({ eventId: delivery.eventId, action: delivery.action, receivedAt });
-    } else {
-      await deps.attendeeStore.recordDelivery({ attendeeId: delivery.attendeeId, eventId: delivery.eventId, action: delivery.action, receivedAt });
-    }
-
-    try {
-      await deps.queue.send(delivery);
-      if (delivery.kind === 'event') await deps.eventStore.updateStatus(delivery.eventId, 'queued');
-      else await deps.attendeeStore.updateStatus(delivery.attendeeId, 'queued');
-    } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync webhook: enqueue failed for ${isEvent ? 'event' : 'attendee'} "${id}": ${errMsg}`);
-      await markFailed(errMsg);
-      return c.json({ ok: false }, 500);
-    }
-
-    return c.json({ ok: true }, 200);
+  route('/webhooks/eventbrite/attendee', (body) => validateAttendeeDelivery(body, deps.config), {
+    noun: 'event/attendee',
+    id: (d) => (d.kind === 'event' ? d.eventId : d.attendeeId),
+    message: (d) => d,
+    record: (d, receivedAt) =>
+      d.kind === 'event'
+        ? deps.eventStore.recordDelivery({ eventId: d.eventId, action: d.action, receivedAt })
+        : deps.attendeeStore.recordDelivery({ attendeeId: d.attendeeId, eventId: d.eventId, action: d.action, receivedAt }),
+    markQueued: (d) => (d.kind === 'event' ? deps.eventStore.updateStatus(d.eventId, 'queued') : deps.attendeeStore.updateStatus(d.attendeeId, 'queued')),
+    markFailed: (d, error) =>
+      d.kind === 'event' ? deps.eventStore.updateStatus(d.eventId, 'failed', { error }) : deps.attendeeStore.updateStatus(d.attendeeId, 'failed', { error }),
   });
 
   return app;

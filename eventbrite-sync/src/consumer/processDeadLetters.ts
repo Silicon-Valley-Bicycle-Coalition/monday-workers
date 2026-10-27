@@ -1,7 +1,8 @@
 import type { OrderStore } from '../db/orders';
 import type { EventStore } from '../db/events';
 import type { AttendeeStore } from '../db/attendees';
-import { describeMessage, type WriteQueueMessage, type QueueMessageLike } from './processBatch';
+import type { WriteQueueMessage, QueueMessageLike } from './processBatch';
+import { describeMessage } from './messages';
 import { errorMessage } from '../util/errorMessage';
 
 // Consumer for eventbrite-sync-writes-dlq, mirroring funraise-sync's processDeadLetters (#25):
@@ -47,6 +48,7 @@ export const DEAD_LETTER_PREFIX = 'dead-lettered after retries: ';
 
 export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMessage>[], deps: DeadLetterDeps): Promise<void> {
   const dead: string[] = [];
+  let orderDead = false;
   for (const message of messages) {
     const ledger = ledgerFor(message.body, deps);
     const label = describeMessage(message.body);
@@ -70,6 +72,7 @@ export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMe
       const prior = row.error ?? '(no recorded error)';
       await ledger.markFailed(prior.startsWith(DEAD_LETTER_PREFIX) ? prior : `${DEAD_LETTER_PREFIX}${prior}`);
       dead.push(label);
+      if (message.body.kind === undefined || message.body.kind === 'order') orderDead = true;
       message.ack();
     } catch (err) {
       console.error(`eventbrite-sync dlq: could not mark ${label} dead-lettered: ${errorMessage(err)}`);
@@ -80,7 +83,7 @@ export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMe
     console.error(
       `eventbrite-sync: ${dead.length} message${dead.length === 1 ? '' : 's'} dead-lettered after exhausting retries — ` +
         `${dead.join(', ')}. Not on the board (or not updated there). See each ledger row's error; ` +
-        `re-drive with scripts/backfill-orders.mjs once the cause is fixed.`
+        (orderDead ? `re-drive orders with scripts/backfill-orders.mjs once the cause is fixed.` : `fix the cause, then redeliver from Eventbrite.`)
     );
   }
 }

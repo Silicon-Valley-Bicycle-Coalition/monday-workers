@@ -153,4 +153,18 @@ describe('processDeadLetters', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('warns and acks an event message with no events row, without marking anything', async () => {
+    const eventStore = fakeEventStore();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = { ...message(), body: { kind: 'event' as const, eventId: 'e-9', action: 'event.updated' } };
+    try {
+      await processDeadLetters([m], { orderStore: store(null), eventStore, attendeeStore: fakeAttendeeStore() });
+      expect(warn).toHaveBeenCalledWith('eventbrite-sync dlq: no events row for "e-9"; nothing to mark');
+      expect(eventStore.updateStatus).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
