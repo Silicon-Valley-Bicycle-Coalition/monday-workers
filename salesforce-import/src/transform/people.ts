@@ -145,9 +145,15 @@ const nameKey = (s: unknown): string => String(s ?? '').toLowerCase().replace(/[
  * would otherwise land on the Organizations board. Rule: not one-to-one, at least one Contact,
  * and every attached Contact's name equals the Account name. Returns accountId → the Contact
  * the Account folds into (first of any same-named duplicates). Live org 2026-09-08: 204.
+ *
+ * An Account with no Contact left (a contact merge moved its only Contact away, 2026-10-26)
+ * folds when every gift on it that names a Primary Contact names the same one, and that
+ * Contact carries the Account's surname and first initial: the gifts' Primary Contact moved to
+ * the survivor, which may spell the first name differently (Rose / Rosie, David / Dave).
  */
 export function personNamedAccountIds(
   accounts: Record<string, unknown>[], contacts: Record<string, unknown>[],
+  gifts: Record<string, unknown>[] = [],
 ): Map<string, string> {
   const byAccount = new Map<string, Record<string, unknown>[]>();
   for (const c of contacts) {
@@ -156,15 +162,34 @@ export function personNamedAccountIds(
     if (!byAccount.has(accountId)) byAccount.set(accountId, []);
     byAccount.get(accountId)!.push(c);
   }
+  const giftContacts = new Map<string, Set<string>>();
+  for (const g of gifts) {
+    const accountId = g['AccountId'] as string | null, contactId = g['npsp__Primary_Contact__c'] as string | null;
+    if (accountId && contactId) (giftContacts.get(accountId) ?? giftContacts.set(accountId, new Set()).get(accountId)!).add(contactId);
+  }
+  const contactById = new Map(contacts.map((c) => [c['Id'] as string, c]));
+  const named = (c: Record<string, unknown>, key: string) =>
+    nameKey(`${c['FirstName'] ?? ''}${c['LastName'] ?? ''}`) === key;
+  // Exactly "First Last" (no comma, ampersand or third word, so no firm names): the surname is
+  // the Contact's and the first name starts with the Contact's initial.
+  const nicknamed = (c: Record<string, unknown>, accountName: string) => {
+    const m = /^([\p{L}'.-]+)\s+([\p{L}'.-]+)$/u.exec(accountName.trim());
+    const first = nameKey(c['FirstName']), last = nameKey(c['LastName']);
+    return !!m && !!first && !!last && nameKey(m[2]) === last && nameKey(m[1])[0] === first[0];
+  };
   const out = new Map<string, string>();
   for (const a of accounts) {
     if (isOneToOneAccount(a)) continue;
-    const key = nameKey(a['Name']);
-    const attached = byAccount.get(a['Id'] as string);
-    if (!key || !attached) continue;
-    if (attached.every((c) => nameKey(`${c['FirstName'] ?? ''}${c['LastName'] ?? ''}`) === key)) {
-      out.set(a['Id'] as string, attached[0]!['Id'] as string);
+    const id = a['Id'] as string, key = nameKey(a['Name']);
+    if (!key) continue;
+    const attached = byAccount.get(id);
+    if (attached) {
+      if (attached.every((c) => named(c, key))) out.set(id, attached[0]!['Id'] as string);
+      continue;
     }
+    const giftNamed = [...(giftContacts.get(id) ?? [])];
+    const sole = giftNamed.length === 1 ? contactById.get(giftNamed[0]!) : undefined;
+    if (sole && (named(sole, key) || nicknamed(sole, String(a['Name'])))) out.set(id, sole['Id'] as string);
   }
   return out;
 }

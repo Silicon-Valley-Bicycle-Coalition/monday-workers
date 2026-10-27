@@ -302,6 +302,44 @@ describe('personNamedAccountIds', () => {
     const m = personNamedAccountIds([org('a1', '')], [contact('c1', '', '', 'a1')]);
     expect(m.size).toBe(0);
   });
+
+  // A contact merge leaves the merged-away Contact's Account behind with no Contact, while its
+  // gifts' Primary Contact moves to the survivor (2026-10-26 production merge: David Erskine,
+  // Rose Mesterhazy). The gifts still say who the Account was.
+  const gift = (AccountId: string, npsp__Primary_Contact__c: string | null) =>
+    ({ AccountId, npsp__Primary_Contact__c });
+
+  it('folds a contact-less Account into the same-named Contact its gifts all name', () => {
+    const m = personNamedAccountIds([org('a1', 'David Erskine')],
+      [contact('c9', 'David', 'Erskine', 'a2')],
+      [gift('a1', 'c9'), gift('a1', 'c9'), gift('a1', null)]);
+    expect(m.get('a1')).toBe('c9');
+  });
+
+  it('accepts a nickname for a contact-less Account: same surname, same first initial', () => {
+    const contacts = [contact('c9', 'Rosie', 'Mesterhazy', 'a2'), contact('c8', 'Mary', 'Erskine', 'a3')];
+    expect(personNamedAccountIds([org('a1', 'Rose Mesterhazy')], contacts, [gift('a1', 'c9')]).get('a1')).toBe('c9');
+    expect(personNamedAccountIds([org('a1', 'David Erskine')], contacts, [gift('a1', 'c8')]).size).toBe(0);
+    expect(personNamedAccountIds([org('a1', 'Mesterhazy Design')], contacts, [gift('a1', 'c9')]).size).toBe(0);
+  });
+
+  it('never nickname-matches a firm name (live org: "Choulos, Choulos & Wyle")', () => {
+    const m = personNamedAccountIds([org('a1', 'Choulos, Choulos & Wyle')],
+      [contact('c1', 'Cynthia', 'Wyle', 'a2')], [gift('a1', 'c1')]);
+    expect(m.size).toBe(0);
+  });
+
+  it('leaves a contact-less Account alone when its gifts name someone else or several people', () => {
+    const contacts = [contact('c1', 'Wei', 'Lin', 'a9'), contact('c2', 'Jason', 'Lin', 'a9')];
+    expect(personNamedAccountIds([org('a1', 'Jason Lin')], contacts, [gift('a1', 'c1')]).size).toBe(0);
+    expect(personNamedAccountIds([org('a1', 'Jason Lin')], contacts,
+      [gift('a1', 'c1'), gift('a1', 'c2')]).size).toBe(0);
+  });
+
+  it('leaves a contact-less Account alone when its gifts name no extracted Contact', () => {
+    const m = personNamedAccountIds([org('a1', 'Nobody Here')], [], [gift('a1', 'c1'), gift('a1', null)]);
+    expect(m.size).toBe(0);
+  });
 });
 
 describe('soleContactAccountIds', () => {
