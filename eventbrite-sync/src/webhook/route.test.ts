@@ -31,7 +31,7 @@ function post(app: ReturnType<typeof createApp>, body: unknown, query = `?secret
 
 describe('createApp', () => {
   it('responds to GET /health with ok: true, unauthenticated', async () => {
-    const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+    const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await app.request('/health');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -40,7 +40,7 @@ describe('createApp', () => {
   it('records the delivery by order id, enqueues it, and marks it queued', async () => {
     const orderStore = fakeOrderStore();
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET });
+    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await post(app, delivery());
 
@@ -54,7 +54,7 @@ describe('createApp', () => {
   it('enqueues a redelivery of a known order too — the consumer re-fetches and writes idempotently', async () => {
     const orderStore = fakeOrderStore({ recordDelivery: vi.fn().mockResolvedValue('updated') });
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET });
+    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await post(app, delivery('order.refunded'));
 
@@ -67,7 +67,7 @@ describe('createApp', () => {
     const send = vi.fn();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET });
+      const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
       const res = await post(app, delivery('event.updated'));
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true, ignored: 'action "event.updated" is not subscribed' });
@@ -83,7 +83,7 @@ describe('createApp', () => {
     const orderStore = fakeOrderStore();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const app = createApp({ orderStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+      const app = createApp({ orderStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
       const res = await post(app, { api_url: 'https://evil.example/v3/orders/1/', config: { action: 'order.placed' } });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: false, error: expect.stringContaining('not an order URL') });
@@ -97,7 +97,7 @@ describe('createApp', () => {
   it('answers 200 with ok: false on a body that is not JSON', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+      const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
       const res = await app.request(`/webhooks/eventbrite/order?secret=${SECRET}`, { method: 'POST', body: 'not json' });
       expect(res.status).toBe(200);
       expect(((await res.json()) as { ok: boolean }).ok).toBe(false);
@@ -111,7 +111,7 @@ describe('createApp', () => {
     const send = vi.fn().mockRejectedValue(new Error('queue unavailable'));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET });
+      const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
       const res = await post(app, delivery());
       expect(res.status).toBe(500);
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: 'queue unavailable' });
@@ -122,7 +122,7 @@ describe('createApp', () => {
 
   it('404s any other path', async () => {
     const orderStore = fakeOrderStore();
-    const app = createApp({ orderStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+    const app = createApp({ orderStore, config, queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await app.request(`/webhooks/eventbrite/attendee?secret=${SECRET}`, { method: 'POST', body: '{}' });
     expect(res.status).toBe(404);
     expect(orderStore.recordDelivery).not.toHaveBeenCalled();
@@ -133,7 +133,7 @@ describe('webhook authentication', () => {
   it('rejects a POST without the shared secret with 401, before touching the store', async () => {
     const orderStore = fakeOrderStore();
     const send = vi.fn();
-    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET });
+    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await post(app, delivery(), '');
     expect(res.status).toBe(401);
     expect(orderStore.recordDelivery).not.toHaveBeenCalled();
@@ -141,14 +141,14 @@ describe('webhook authentication', () => {
   });
 
   it('rejects a wrong secret, and a secret that is only a prefix of the real one', async () => {
-    const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+    const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
     expect((await post(app, delivery(), '?secret=wrong')).status).toBe(401);
     expect((await post(app, delivery(), '?secret=test')).status).toBe(401);
   });
 
   it('fails closed with 401 when no secret is configured, even if the request carries one', async () => {
     const orderStore = fakeOrderStore();
-    const app = createApp({ orderStore, config, queue: { send: vi.fn() }, webhookSecret: undefined });
+    const app = createApp({ orderStore, config, queue: { send: vi.fn() }, webhookSecret: undefined, writeMode: async () => 'on' });
     const res = await post(app, delivery());
     expect(res.status).toBe(401);
     expect(orderStore.recordDelivery).not.toHaveBeenCalled();
@@ -156,16 +156,35 @@ describe('webhook authentication', () => {
 
   it('accepts the secret in the X-Webhook-Secret header with no query param (the backfill script)', async () => {
     const orderStore = fakeOrderStore();
-    const app = createApp({ orderStore, config, queue: { send: vi.fn().mockResolvedValue(undefined) }, webhookSecret: SECRET });
+    const app = createApp({ orderStore, config, queue: { send: vi.fn().mockResolvedValue(undefined) }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await post(app, delivery(), '', { 'X-Webhook-Secret': SECRET });
     expect(res.status).toBe(200);
     expect(orderStore.recordDelivery).toHaveBeenCalled();
   });
 
   it('rejects a wrong header secret with 401', async () => {
-    const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET });
+    const app = createApp({ orderStore: fakeOrderStore(), config, queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await post(app, delivery(), '', { 'X-Webhook-Secret': 'test-secreT' });
     expect(res.status).toBe(401);
+  });
+});
+
+describe('write switch', () => {
+  it.each([
+    ['off', { orderId: '442719216', action: 'order.placed', writeStamp: 'dropped' }],
+    ['on', { orderId: '442719216', action: 'order.placed' }],
+    ['hold', { orderId: '442719216', action: 'order.placed' }],
+  ] as const)('under %s still records the delivery and enqueues, stamping only under off', async (mode, expected) => {
+    const orderStore = fakeOrderStore();
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createApp({ orderStore, config, queue: { send }, webhookSecret: SECRET, writeMode: async () => mode });
+
+    const res = await post(app, delivery());
+
+    expect(res.status).toBe(200);
+    expect(orderStore.recordDelivery).toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith(expected);
+    expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'queued');
   });
 });
 

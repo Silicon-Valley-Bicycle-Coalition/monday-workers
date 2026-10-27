@@ -21,7 +21,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
 
     let captured: OrderQueueMessage | undefined;
     const queue = { send: async (m: OrderQueueMessage) => { captured = m; } };
-    const app = createApp({ orderStore, config, queue, webhookSecret: 'int-secret' });
+    const app = createApp({ orderStore, config, queue, webhookSecret: 'int-secret', writeMode: async () => 'on' as const });
 
     const res = await app.request('/webhooks/eventbrite/order?secret=int-secret', {
       method: 'POST',

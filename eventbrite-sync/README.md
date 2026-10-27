@@ -212,8 +212,8 @@ throws — retry, then DLQ — a gift without a donor is worse than a late one.
 ## Failures and the dead-letter queue
 
 A failed consumer run marks the `orders` row `failed` with the error and retries the message with
-backoff — 1, 4, then 16 minutes (`retryDelaySeconds`, copied from funraise-sync). After
-`max_retries` (3) the message goes to `eventbrite-sync-writes-dlq` (`…-sandbox-dlq` in the
+backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/flags.ts`). After
+`max_retries` (100, about four days) the message goes to `eventbrite-sync-writes-dlq` (`…-sandbox-dlq` in the
 sandbox), which this Worker also consumes (`src/consumer/processDeadLetters.ts`): the row's
 error is prefixed `dead-lettered after retries: ` and the batch logs one `console.error` naming
 the order ids. A 404 from Eventbrite is **not** retried: the row is marked `failed` ("not found in
@@ -320,6 +320,31 @@ order (expect the Donations item with every column in the table above and a Dono
 a refund (expect `Refunded` — once the label exists), and a backfill run for the event (expect
 no second item). Production repeats the list under the production names at cutover (see
 `../docs/production-deploy-checklist.md`), then the Summit backfill.
+
+### The write switch
+
+Every Monday write and ledger update is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `eventbrite-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages queued
+  (they retry); `off` writes nothing and logs one `"writeSwitch":"skipped"` line per would-be
+  write. **A missing key means `off`**, and a KV read error means hold.
+- `eventbrite-sync:log` — `debug` adds redacted payloads to those lines.
+
+Set it with the operator CLI at the repo root, never by hand (`writes hold`/`on` also pauses and
+resumes `eventbrite-sync-writes`):
+
+```sh
+node scripts/flags.mjs eventbrite-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. The webhook still records every delivery under any mode; one ingested while
+`off` is stamped and is never written, even if the switch is `on` by the time it is consumed. The
+dead-letter consumer is D1 bookkeeping and runs in every mode.
 
 ## Open
 

@@ -7,6 +7,9 @@ import { MondayApiError } from '../monday/graphql';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
+import { linkedItemId } from '../util/itemId';
+import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -18,31 +21,40 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-// Retry backoff (funraise-sync #25, same numbers): 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes
-// across wrangler.jsonc's max_retries of 3 — about 21 minutes of cover for a Monday or Eventbrite
-// blip — capped at Queues' 12-hour maximum delay.
 const REQUIRED_WRITE_COLUMNS = ['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
 
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
-
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
-}
-
-export interface OrderQueueMessage {
+// `writeStamp` (flags.ts): set by the route when the write switch was `off` at ingest. A body
+// enqueued before the switch existed has no such key and is live.
+export type OrderQueueMessage = {
   orderId: string;
   // The webhook action that enqueued it — informational; the consumer always re-fetches.
   action: string;
-}
+} & WriteStamp;
 
 export interface ProcessBatchDeps {
   orderStore: OrderStore;
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
+}
+
+/**
+ * The queue() entry point for the write queue: the write switch's per-message decision in front
+ * of processOrderQueueBatch. `write` runs it with the real deps; `dry-run` runs the same code
+ * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
+ * KV read failure) leaves the message on the queue untouched, backing off like any retry.
+ */
+export async function consumeOrderBatch(messages: QueueMessageLike<OrderQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+  for (const message of messages) {
+    const ctx = { ...gate, deliveryId: `order:${message.body.orderId}` };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+  }
 }
 
 export async function processOrderQueueBatch(messages: QueueMessageLike<OrderQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
@@ -61,6 +73,8 @@ export async function processOrderQueueBatch(messages: QueueMessageLike<OrderQue
       } catch (recordErr) {
         console.error(`eventbrite-sync consumer: could not record failure for order "${orderId}": ${errorMessage(recordErr)}`);
       }
+      // Every failure here is retryable, as before; only the delay is shared now — 1 minute
+      // doubling to an hour, across wrangler.jsonc's max_retries of 100 (about four days).
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
@@ -139,7 +153,7 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
 
   const columnValues = { ...mapping.columnValues };
   if (donorItemId !== null) {
-    columnValues[donorLinkColumn] = { item_ids: [Number(donorItemId)] };
+    columnValues[donorLinkColumn] = { item_ids: [linkedItemId(donorItemId)] };
   }
   const facts = definedFacts(mapping.facts);
   const writtenAt = new Date().toISOString();

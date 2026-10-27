@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processOrderQueueBatch, retryDelaySeconds, type QueueMessageLike, type OrderQueueMessage } from './processBatch';
+import { consumeOrderBatch, processOrderQueueBatch, type QueueMessageLike, type OrderQueueMessage } from './processBatch';
 import type { OrderStore } from '../db/orders';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
@@ -7,6 +7,8 @@ import type { OrderRow } from '../types';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { MondayApiError } from '../monday/graphql';
 import { testConfig, testOrder } from '../test/testConfig';
+import type { WriteMode } from '../flags';
+import type { BatchSkipContext } from '../writeSwitch';
 
 const config = testConfig({ thankYouSentColumn: 'tys_col', giftTypeColumn: 'gift_col', fiscalYearColumn: 'fy_col' });
 
@@ -271,7 +273,7 @@ describe('processOrderQueueBatch', () => {
     try {
       await processOrderQueueBatch([message], { orderStore, eventbriteClient, mondayClient: fakeMonday(), config });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: 'eventbrite api: get order 442719216 failed with HTTP 503' });
-      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
       expect(message.ack).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
@@ -331,20 +333,154 @@ describe('processOrderQueueBatch', () => {
   });
 });
 
-describe('retryDelaySeconds', () => {
-  it('backs off 1, 4, 16 minutes by attempt', () => {
-    expect(retryDelaySeconds(1)).toBe(60);
-    expect(retryDelaySeconds(2)).toBe(240);
-    expect(retryDelaySeconds(3)).toBe(960);
+describe('retry delay', () => {
+  it('backs off 1 minute doubling to a one-hour cap: attempt 8 waits 3600 s', async () => {
+    const orderStore = fakeStore(orderRow());
+    const delays: number[] = [];
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const attempts of [1, 2, 3, 8]) {
+        const message = fakeMessage('442719216', attempts);
+        await processOrderQueueBatch([message], { orderStore, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')) }, mondayClient: fakeMonday(), config });
+        delays.push(message.retry.mock.calls[0][0].delaySeconds);
+      }
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect(delays).toEqual([60, 120, 240, 3600]);
+  });
+});
+
+// Write switch (spec 2026-10-26). consumeOrderBatch picks real deps (write), proxied deps
+// (dry-run, then ack) or a delayed retry per message; processOrderQueueBatch is unchanged.
+describe('write switch', () => {
+  const gate = (mode: WriteMode, logLevel: 'normal' | 'debug' = 'normal'): BatchSkipContext => ({
+    worker: 'eventbrite-sync',
+    environment: 'production',
+    mode,
+    logLevel,
+    piiKeys: ['name', 'email'],
   });
 
-  it('treats a missing or bad attempt count as the first attempt', () => {
-    expect(retryDelaySeconds(undefined)).toBe(60);
-    expect(retryDelaySeconds(0)).toBe(60);
-    expect(retryDelaySeconds(Number.NaN)).toBe(60);
+  function setup(row: OrderRow = orderRow()) {
+    const orderStore = fakeStore(row);
+    const mondayClient = fakeMonday();
+    const eventbriteClient = fakeEventbrite(testOrder());
+    return { orderStore, mondayClient, eventbriteClient, deps: { orderStore, eventbriteClient, mondayClient, config } };
+  }
+
+  function skipLines(log: { mock: { calls: unknown[][] } }): Record<string, any>[] {
+    return log.mock.calls.map((c) => String(c[0])).filter((l: string) => l.includes('"writeSwitch":"skipped"')).map((l: string) => JSON.parse(l));
+  }
+
+  async function quietly<T>(fn: (log: { mock: { calls: unknown[][] } }) => Promise<T>): Promise<T> {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      return await fn(log);
+    } finally {
+      log.mockRestore();
+    }
+  }
+
+  it('on: writes with the real deps', async () => {
+    const { deps, mondayClient } = setup();
+    const message = fakeMessage();
+    await consumeOrderBatch([message], deps, gate('on'));
+    expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(message.ack).toHaveBeenCalled();
   });
 
-  it('caps at the Queues maximum of 12 hours', () => {
-    expect(retryDelaySeconds(20)).toBe(12 * 60 * 60);
+  it('an unstamped legacy message (enqueued before this deploy) is live under on', async () => {
+    const { deps, mondayClient, orderStore } = setup({ ...orderRow(), matchedDonorItemId: '7' });
+    const message = { ...fakeMessage(), body: { orderId: '442719216', action: 'order.placed' } };
+    await consumeOrderBatch([message], deps, gate('on'));
+    expect(mondayClient.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.anything());
+    expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'written', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('off: no real Monday write, zero store writes, ack, one skip line per would-be write', async () => {
+    const { deps, mondayClient, orderStore } = setup({ ...orderRow(), matchedDonorItemId: '7' });
+    const message = fakeMessage();
+    const lines = await quietly(async (log) => {
+      await consumeOrderBatch([message], deps, gate('off'));
+      return skipLines(log);
+    });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(orderStore.updateStatus).not.toHaveBeenCalled();
+    expect(orderStore.recordDelivery).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(lines).toContainEqual(expect.objectContaining({
+      writeSwitch: 'skipped', worker: 'eventbrite-sync', mode: 'off', sink: 'Donations', operation: 'createItem', deliveryId: 'order:442719216',
+    }));
+  });
+
+  it('off on an update: changeColumnValues is recorded, not sent', async () => {
+    const { deps, mondayClient, orderStore } = setup({ ...orderRow(), matchedDonorItemId: '7', mondayItemId: 'item-existing' });
+    const lines = await quietly(async (log) => {
+      await consumeOrderBatch([fakeMessage()], deps, gate('off'));
+      return skipLines(log);
+    });
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(orderStore.updateStatus).not.toHaveBeenCalled();
+    expect(lines).toContainEqual(expect.objectContaining({ sink: 'Donations', operation: 'changeColumnValues' }));
+  });
+
+  it('off with no donor match (Review Focus 2): records the People create, never persists matched_donor_item_id, links the Donation to the placeholder', async () => {
+    const { deps, mondayClient, orderStore } = setup();
+    (mondayClient.findItemByColumnValue as any).mockResolvedValue(null);
+    const message = fakeMessage();
+
+    const lines = await quietly(async (log) => {
+      await consumeOrderBatch([message], deps, gate('off', 'debug'));
+      return skipLines(log);
+    });
+
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    // matched_donor_item_id is written only through updateStatus(..., { matchedDonorItemId }): never called.
+    expect(orderStore.updateStatus).not.toHaveBeenCalled();
+    const people = lines.find((l) => l.sink === 'People');
+    const donation = lines.find((l) => l.sink === 'Donations');
+    expect(people).toMatchObject({ operation: 'createItem' });
+    expect(donation).toMatchObject({ operation: 'createItem' });
+    // Debug payload: [boardId, itemName (masked), columnValues]; the link carries the placeholder.
+    const columnValues = (donation!.payload as unknown[])[2] as Record<string, unknown>;
+    expect(columnValues.connect_col).toEqual({ item_ids: ['dry-run-1'] });
+    expect(JSON.stringify(lines)).not.toContain('jane@example.com');
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('on + a dropped stamp: dry-runs exactly as off does', async () => {
+    const { deps, mondayClient, orderStore } = setup({ ...orderRow(), matchedDonorItemId: '7' });
+    const message = { ...fakeMessage(), body: { orderId: '442719216', action: 'order.placed', writeStamp: 'dropped' as const } };
+    const lines = await quietly(async (log) => {
+      await consumeOrderBatch([message], deps, gate('on'));
+      return skipLines(log);
+    });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(orderStore.updateStatus).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    expect(lines).toContainEqual(expect.objectContaining({ sink: 'Donations', mode: 'on' }));
+  });
+
+  it.each(['hold', 'unknown'] as const)('%s: retries after 60 s on attempt 1 without processing', async (mode) => {
+    const { deps, orderStore, eventbriteClient, mondayClient } = setup();
+    const message = fakeMessage('442719216', 1);
+    await consumeOrderBatch([message], deps, gate(mode));
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(orderStore.getOrder).not.toHaveBeenCalled();
+    expect(orderStore.updateStatus).not.toHaveBeenCalled();
+    expect(eventbriteClient.getOrder).not.toHaveBeenCalled();
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+
+  it('hold: attempt 8 retries after 3600 s', async () => {
+    const { deps } = setup();
+    const message = fakeMessage('442719216', 8);
+    await consumeOrderBatch([message], deps, gate('hold'));
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
   });
 });

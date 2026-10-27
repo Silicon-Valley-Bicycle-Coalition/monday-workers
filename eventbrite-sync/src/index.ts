@@ -1,15 +1,21 @@
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
-import { createConfigSelector } from './environment';
+import { createConfigSelector, environmentOf } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
-import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/processBatch';
+import { consumeOrderBatch, type OrderQueueMessage } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
+import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
+import type { BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
+
+// This Worker's name in the FLAGS KV keys (`eventbrite-sync:writes`, `eventbrite-sync:log`) — the
+// directory name, as scripts/flags.mjs expects.
+const WORKER = 'eventbrite-sync';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts.
@@ -22,6 +28,13 @@ const SANDBOX_DEAD_LETTER_QUEUE = 'eventbrite-sync-writes-sandbox-dlq';
 
 export function isDeadLetterBatch(queueName: string): boolean {
   return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE;
+}
+
+// The mode and log level, read once per queue batch (never cached per isolate, so a flip reaches
+// the next batch within the KV edge cache's 30 seconds).
+async function skipContext(env: Env): Promise<BatchSkipContext> {
+  const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
 }
 
 export default {
@@ -42,6 +55,7 @@ export default {
           send: (message: OrderQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
         },
         webhookSecret: env.EVENTBRITE_WEBHOOK_SECRET,
+        writeMode: () => readWriteMode(env, WORKER),
       });
       return app.fetch(request, env, ctx);
     });
@@ -61,11 +75,12 @@ export default {
     if (token === undefined || token === '') {
       throw new Error('EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); cannot fetch orders');
     }
-    await processOrderQueueBatch([...batch.messages], {
+    const gate = await skipContext(env);
+    await consumeOrderBatch([...batch.messages], {
       orderStore,
       eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
-    });
+    }, gate);
   },
 };
