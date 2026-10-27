@@ -24,7 +24,7 @@ export function findDrift(canonical, copies) {
 }
 
 // Drops // and /* */ comments (outside strings) and trailing commas, so JSON.parse can read JSONC.
-function stripJsonc(text) {
+export function stripJsonc(text) {
   let out = '';
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];

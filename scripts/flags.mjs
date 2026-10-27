@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IN_SCOPE, flagsIds } from './check-worker-flags.mjs';
+import { IN_SCOPE, flagsIds, stripJsonc } from './check-worker-flags.mjs';
 
 const ENVS = ['production', 'sandbox'];
 const MODES = ['on', 'hold', 'off'];
@@ -97,6 +97,13 @@ function namespaceId(ids, env) {
   return id;
 }
 
+// The Cloudflare account the Workers deploy to (member-portal's `account_id`).
+export function accountIdIn(wranglerText) {
+  const id = JSON.parse(stripJsonc(wranglerText)).account_id;
+  if (!id) throw new Error(`no account_id in ${WRANGLER_SOURCE}`);
+  return id;
+}
+
 const stepArgs = (step, id) =>
   step.kind === 'kv-put' ? ['kv', 'key', 'put', '--namespace-id', id, '--remote', step.target, step.value]
     : ['queues', step.kind === 'pause' ? 'pause-delivery' : 'resume-delivery', step.target];
@@ -159,17 +166,66 @@ export async function applyCommand({ workers, key, value, env }, ids, runner, { 
   };
 }
 
-const parseBool = (text, label) => {
-  const match = new RegExp(`${label}\\W{0,5}(true|false|yes|no)\\b`, 'i').exec(text);
-  return match ? /^(true|yes)$/i.test(match[1]) : null;
-};
+// Queue state comes from the Cloudflare API, not wrangler: `wrangler queues info` (4.x) prints
+// neither the paused flag nor the backlog. Paused is the queue's `settings.delivery_paused` from the
+// queues list; backlog is the latest `queueBacklogAdaptiveGroups` sample in the last BACKLOG_WINDOW_MS.
+// The analytics dataset records no row for an idle queue, so "no sample" reads as 0 and is flagged.
+// Auth reuses wrangler's own login (`wrangler auth token --json`).
+const API = 'https://api.cloudflare.com/client/v4';
+export const BACKLOG_WINDOW_MS = 15 * 60_000;
 
-export function parseQueueInfo(text) {
-  const backlog = /backlog\D{0,20}(\d+)/i.exec(text);
-  return { paused: parseBool(text, 'paused'), backlog: backlog ? Number(backlog[1]) : null };
+const BACKLOG_QUERY = `query Backlog($account: string!, $queueId: string!, $since: Time!) {
+  viewer { accounts(filter: { accountTag: $account }) {
+    queueBacklogAdaptiveGroups(limit: 1, filter: { queueId: $queueId, datetime_geq: $since }, orderBy: [datetimeMinute_DESC]) {
+      avg { messages }
+      dimensions { datetimeMinute }
+    }
+  } }
+}`;
+
+/**
+ * Returns `(queueName) => Promise<{ paused, backlog, sampled }>` for one status run: one token, one
+ * queues list, one GraphQL call per queue. Anything it can't read comes back as null (`?`).
+ * `fetchImpl` and `now` are for tests.
+ */
+export function apiQueueState({ runner, accountId, fetchImpl = fetch, now = () => Date.now() }) {
+  let listing = null;
+  const load = async () => {
+    const auth = await runner(['auth', 'token', '--json']);
+    if (auth.code !== 0) throw new Error(`wrangler auth token failed: ${(auth.stderr || auth.stdout).trim()}`);
+    const { token } = JSON.parse(auth.stdout);
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+    const queues = new Map();
+    for (let page = 1, pages = 1; page <= pages; page++) {
+      const res = await fetchImpl(`${API}/accounts/${accountId}/queues?per_page=100&page=${page}`, { headers });
+      const body = await res.json();
+      if (!body.success) throw new Error(`queues list failed: ${JSON.stringify(body.errors)}`);
+      for (const q of body.result) queues.set(q.queue_name, q);
+      pages = body.result_info?.total_pages ?? 1;
+    }
+    return { headers, queues };
+  };
+  return async (name) => {
+    try {
+      listing ??= load();
+      const { headers, queues } = await listing;
+      const queue = queues.get(name);
+      if (!queue) return { paused: null, backlog: null, sampled: false, missing: true };
+      const paused = queue.settings?.delivery_paused === true;
+      const variables = { account: accountId, queueId: queue.queue_id, since: new Date(now() - BACKLOG_WINDOW_MS).toISOString() };
+      const res = await fetchImpl(`${API}/graphql`, { method: 'POST', headers, body: JSON.stringify({ query: BACKLOG_QUERY, variables }) });
+      const body = await res.json();
+      const groups = body.errors ? null : body.data?.viewer?.accounts?.[0]?.queueBacklogAdaptiveGroups;
+      if (!Array.isArray(groups)) return { paused, backlog: null, sampled: false };
+      return groups.length ? { paused, backlog: Math.round(groups[0].avg.messages), sampled: true } : { paused, backlog: 0, sampled: false };
+    } catch {
+      listing = null;
+      return { paused: null, backlog: null, sampled: false };
+    }
+  };
 }
 
-export async function readStatus(workers, ids, env, runner) {
+export async function readStatus(workers, ids, env, runner, queueState) {
   const id = namespaceId(ids, env);
   const getKey = async (key) => {
     const result = await runner(['kv', 'key', 'get', '--namespace-id', id, '--remote', key]);
@@ -184,8 +240,7 @@ export async function readStatus(workers, ids, env, runner) {
     const log = rawLog === '?' ? '?' : rawLog === 'debug' ? 'debug' : 'normal';
     const queues = [];
     for (const queue of queuesFor(worker, env)) {
-      const info = await runner(['queues', 'info', queue]);
-      queues.push({ queue, ...(info.code === 0 ? parseQueueInfo(info.stdout) : { paused: null, backlog: null }) });
+      queues.push({ queue, ...(await queueState(queue)) });
     }
     const mismatch = (mode === 'on' || mode === 'off') ? queues.some((q) => q.paused === true)
       : mode === 'hold' ? queues.some((q) => q.paused === false) : false;
@@ -205,7 +260,7 @@ export function formatStatus(rows) {
   const width = Math.max(...rows.map((r) => r.worker.length));
   return rows.map((row) => {
     const queues = row.queues
-      .map((q) => `${q.queue} (${q.paused === null ? '?' : q.paused ? 'paused' : 'delivering'}, backlog ${q.backlog ?? '?'})`)
+      .map((q) => `${q.queue} (${q.missing ? 'missing' : q.paused === null ? '?' : q.paused ? 'paused' : 'delivering'}, backlog ${q.backlog ?? '?'}${q.backlog !== null && q.sampled === false ? ' (no recent sample)' : ''})`)
       .join('; ') || 'no queues';
     return `${row.worker.padEnd(width)}  writes=${row.mode.padEnd(4)}  log=${row.log.padEnd(6)}  ${queues}${row.mismatch ? '  MISMATCH' : ''}`;
   }).join('\n');
@@ -240,7 +295,8 @@ export function wranglerRunner(args, { cwd = WRANGLER_CWD, timeoutMs = WRANGLER_
 
 export async function main(argv, runner = wranglerRunner, options = {}) {
   const parsed = parseArgs(argv);
-  const ids = flagsIds(readFileSync(join(ROOT, WRANGLER_SOURCE), 'utf8'));
+  const wranglerText = readFileSync(join(ROOT, WRANGLER_SOURCE), 'utf8');
+  const ids = flagsIds(wranglerText);
 
   if (parsed.command === 'retention') {
     let failed = 0;
@@ -252,7 +308,8 @@ export async function main(argv, runner = wranglerRunner, options = {}) {
     return failed ? 1 : 0;
   }
   if (parsed.command === 'status') {
-    const rows = await readStatus(IN_SCOPE, ids, parsed.env, runner);
+    const queueState = options.queueState ?? apiQueueState({ runner, accountId: accountIdIn(wranglerText) });
+    const rows = await readStatus(IN_SCOPE, ids, parsed.env, runner, queueState);
     console.log(formatStatus(rows));
     if (statusOk(rows)) return 0;
     console.error('status: a MISMATCH or an unread value (?) — see the rows above');

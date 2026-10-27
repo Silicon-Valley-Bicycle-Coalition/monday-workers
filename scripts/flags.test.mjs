@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { IN_SCOPE } from './check-worker-flags.mjs';
 import {
   QUEUES, queuesFor, dlqsFor, planWrites, parseArgs, applyCommand, readStatus, formatStatus, planRetention, statusOk,
-  wranglerRunner, WRANGLER_CWD, RESUME_WAIT_MS,
+  wranglerRunner, WRANGLER_CWD, RESUME_WAIT_MS, apiQueueState, accountIdIn,
 } from './flags.mjs';
 
 const IDS = { production: 'prod-id', sandbox: 'sbx-id' };
@@ -214,48 +214,45 @@ describe('applyCommand', () => {
 
 describe('status', () => {
   const replies = (args) => {
-    if (args[0] === 'kv') {
-      const key = args[args.length - 1];
-      if (key === 'funraise-sync:writes') return ok('on\n');
-      if (key === 'funraise-sync:log') return ok('debug');
-      if (key === 'mailchimp-sync:writes') return ok('hold');
-      return { code: 1, stdout: '', stderr: 'Value not found' };
-    }
-    if (args[2] === 'funraise-sync-writes') return ok('Queue Name: x\nDelivery Paused: true\nBacklog: 12 messages');
-    if (args[2] === 'mailchimp-sync-outbound') return ok('Delivery Paused: true\nBacklog: 3');
-    if (args[2] === 'mailchimp-sync-inbound') return ok('something unparseable');
-    return ok('Delivery Paused: false');
+    const key = args[args.length - 1];
+    if (key === 'funraise-sync:writes') return ok('on\n');
+    if (key === 'funraise-sync:log') return ok('debug');
+    if (key === 'mailchimp-sync:writes') return ok('hold');
+    return { code: 1, stdout: '', stderr: 'Value not found' };
   };
+  const states = {
+    'funraise-sync-writes': { paused: true, backlog: 12, sampled: true },
+    'mailchimp-sync-outbound': { paused: true, backlog: 3, sampled: true },
+    'mailchimp-sync-inbound': { paused: null, backlog: null, sampled: false },
+  };
+  const queueState = (map = states, fallback = { paused: false, backlog: 0, sampled: false }) => async (queue) => map[queue] ?? fallback;
+
   it('never writes, and marks an on-but-paused queue as a MISMATCH', async () => {
     const { calls, runner } = recorder(() => false, replies);
-    const rows = await readStatus(['funraise-sync', 'mailchimp-sync'], IDS, 'production', runner);
+    const rows = await readStatus(['funraise-sync', 'mailchimp-sync'], IDS, 'production', runner, queueState());
     assert.ok(calls.every((c) => !/ put | pause-delivery | resume-delivery | update /.test(` ${c} `)));
     const funraise = rows[0];
     assert.equal(funraise.mode, 'on');
     assert.equal(funraise.log, 'debug');
-    assert.deepEqual(funraise.queues, [{ queue: 'funraise-sync-writes', paused: true, backlog: 12 }]);
+    assert.deepEqual(funraise.queues, [{ queue: 'funraise-sync-writes', paused: true, backlog: 12, sampled: true }]);
     assert.equal(funraise.mismatch, true);
     const mailchimp = rows[1];
     assert.equal(mailchimp.mode, 'hold');
     assert.equal(mailchimp.mismatch, false);
-    assert.deepEqual(mailchimp.queues[1], { queue: 'mailchimp-sync-inbound', paused: null, backlog: null });
+    assert.deepEqual(mailchimp.queues[1], { queue: 'mailchimp-sync-inbound', paused: null, backlog: null, sampled: false });
   });
   it('hold with a delivering queue is a mismatch; a missing key reads as off, log as normal', async () => {
-    const { runner } = recorder(() => false, (args) => (args[0] === 'kv'
-      ? (args[args.length - 1].endsWith(':writes') ? ok('hold') : { code: 1, stdout: '', stderr: 'Value not found' })
-      : ok('Delivery Paused: false')));
-    const [row] = await readStatus(['funraise-sync'], IDS, 'production', runner);
+    const { runner } = recorder(() => false, (args) => (args[args.length - 1].endsWith(':writes') ? ok('hold') : { code: 1, stdout: '', stderr: 'Value not found' }));
+    const [row] = await readStatus(['funraise-sync'], IDS, 'production', runner, queueState({}));
     assert.equal(row.mismatch, true);
     assert.equal(row.log, 'normal');
-    const [unset] = await readStatus(['funraise-sync'], IDS, 'production', recorder(() => false, (args) => (args[0] === 'kv' ? { code: 1, stdout: '', stderr: 'Value not found' } : ok('Delivery Paused: false'))).runner);
+    const [unset] = await readStatus(['funraise-sync'], IDS, 'production', recorder(() => false, () => ({ code: 1, stdout: '', stderr: 'Value not found' })).runner, queueState({}));
     assert.equal(unset.mode, 'off');
     assert.equal(unset.mismatch, false);
   });
   it('shows ? for a log key that could not be read, not normal', async () => {
-    const { runner } = recorder(() => false, (args) => (args[0] === 'kv'
-      ? (args[args.length - 1].endsWith(':writes') ? ok('on') : { code: 1, stdout: '', stderr: 'Authentication error' })
-      : ok('Delivery Paused: false\nBacklog: 0')));
-    const [row] = await readStatus(['funraise-sync'], IDS, 'production', runner);
+    const { runner } = recorder(() => false, (args) => (args[args.length - 1].endsWith(':writes') ? ok('on') : { code: 1, stdout: '', stderr: 'Authentication error' }));
+    const [row] = await readStatus(['funraise-sync'], IDS, 'production', runner, queueState({}));
     assert.equal(row.log, '?');
     assert.equal(statusOk([row]), false);
   });
@@ -268,15 +265,75 @@ describe('status', () => {
     assert.equal(statusOk([{ ...good, queues: [{ queue: 'a-q', paused: null, backlog: 0 }] }]), false);
     assert.equal(statusOk([{ ...good, queues: [{ queue: 'a-q', paused: false, backlog: null }] }]), false);
   });
-  it('shows ? for unparseable queue state and MISMATCH in the table', () => {
+  it('shows ?, missing, unsampled backlog and MISMATCH in the table', () => {
     const text = formatStatus([
       { worker: 'a', mode: 'on', log: 'normal', queues: [{ queue: 'a-q', paused: null, backlog: null }], mismatch: false },
-      { worker: 'b', mode: 'on', log: 'debug', queues: [{ queue: 'b-q', paused: true, backlog: 2 }], mismatch: true },
+      { worker: 'b', mode: 'on', log: 'debug', queues: [{ queue: 'b-q', paused: true, backlog: 2, sampled: true }], mismatch: true },
+      { worker: 'c', mode: 'off', log: 'normal', queues: [{ queue: 'c-q', paused: false, backlog: 0, sampled: false }, { queue: 'c-r', paused: null, backlog: null, missing: true }], mismatch: false },
     ]);
     assert.match(text, /a-q \(\?, backlog \?\)/);
     assert.match(text, /b-q \(paused, backlog 2\)/);
+    assert.match(text, /c-q \(delivering, backlog 0 \(no recent sample\)\)/);
+    assert.match(text, /c-r \(missing, backlog \?\)/);
     assert.match(text, /b .*MISMATCH/);
     assert.doesNotMatch(text, /a .*MISMATCH/);
+  });
+});
+
+describe('apiQueueState', () => {
+  const auth = async (args) => (args.join(' ') === 'auth token --json' ? ok(JSON.stringify({ type: 'oauth', token: 'tok' })) : { code: 1, stdout: '', stderr: 'unexpected' });
+  const json = (body) => ({ json: async () => body });
+  function fakeFetch({ pages = [[{ queue_name: 'q-a', queue_id: 'id-a', settings: { delivery_paused: true } }, { queue_name: 'q-b', queue_id: 'id-b', settings: {} }]], backlog = { 'id-a': [{ avg: { messages: 7.4 } }], 'id-b': [] }, graphqlErrors = null } = {}) {
+    const calls = [];
+    const impl = async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.includes('/graphql')) {
+        if (graphqlErrors) return json({ data: null, errors: graphqlErrors });
+        const { variables } = JSON.parse(init.body);
+        return json({ data: { viewer: { accounts: [{ queueBacklogAdaptiveGroups: backlog[variables.queueId] }] } } });
+      }
+      const page = Number(new URL(url).searchParams.get('page'));
+      return json({ success: true, result: pages[page - 1], result_info: { total_pages: pages.length } });
+    };
+    return { calls, impl };
+  }
+
+  it('reads paused from settings and backlog from the latest sample; no sample reads as 0, unsampled', async () => {
+    const { calls, impl } = fakeFetch();
+    const state = apiQueueState({ runner: auth, accountId: 'acct', fetchImpl: impl, now: () => Date.parse('2026-10-27T12:00:00Z') });
+    assert.deepEqual(await state('q-a'), { paused: true, backlog: 7, sampled: true });
+    assert.deepEqual(await state('q-b'), { paused: false, backlog: 0, sampled: false });
+    assert.equal(calls.filter((c) => c.url.includes('/queues?')).length, 1, 'the queue list is fetched once per run');
+    const gql = JSON.parse(calls.find((c) => c.url.includes('/graphql')).init.body);
+    assert.deepEqual(gql.variables, { account: 'acct', queueId: 'id-a', since: '2026-10-27T11:45:00.000Z' });
+    assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
+    assert.match(calls[0].url, /\/accounts\/acct\/queues\?/);
+  });
+  it('follows every page of the queue list', async () => {
+    const { impl } = fakeFetch({ pages: [[{ queue_name: 'q-a', queue_id: 'id-a', settings: {} }], [{ queue_name: 'q-z', queue_id: 'id-z', settings: { delivery_paused: true } }]], backlog: { 'id-z': [] } });
+    const state = apiQueueState({ runner: auth, accountId: 'acct', fetchImpl: impl });
+    assert.equal((await state('q-z')).paused, true);
+  });
+  it('a queue that is not in the account reads as missing', async () => {
+    const state = apiQueueState({ runner: auth, accountId: 'acct', fetchImpl: fakeFetch().impl });
+    assert.deepEqual(await state('nope'), { paused: null, backlog: null, sampled: false, missing: true });
+  });
+  it('a GraphQL error leaves the backlog unread (?), keeping paused', async () => {
+    const state = apiQueueState({ runner: auth, accountId: 'acct', fetchImpl: fakeFetch({ graphqlErrors: [{ message: 'bad' }] }).impl });
+    assert.deepEqual(await state('q-a'), { paused: true, backlog: null, sampled: false });
+  });
+  it('a failed token or list call reads as ? rather than throwing', async () => {
+    const noAuth = apiQueueState({ runner: async () => ({ code: 1, stdout: '', stderr: 'not logged in' }), accountId: 'acct', fetchImpl: fakeFetch().impl });
+    assert.deepEqual(await noAuth('q-a'), { paused: null, backlog: null, sampled: false });
+    const badList = apiQueueState({ runner: auth, accountId: 'acct', fetchImpl: async () => json({ success: false, errors: [{ code: 10000 }] }) });
+    assert.deepEqual(await badList('q-a'), { paused: null, backlog: null, sampled: false });
+  });
+});
+
+describe('accountIdIn', () => {
+  it('reads account_id from wrangler.jsonc, comments and all', () => {
+    assert.equal(accountIdIn('{\n  // c\n  "account_id": "abc", // SVBC\n  "name": "x"\n}'), 'abc');
+    assert.throws(() => accountIdIn('{ "name": "x" }'), /account_id/);
   });
 });
 
