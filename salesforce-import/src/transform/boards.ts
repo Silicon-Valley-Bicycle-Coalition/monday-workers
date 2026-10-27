@@ -148,9 +148,14 @@ export function eventbriteAttendeeToPayload(
   };
 }
 
-export function campaignToPayload(c: Record<string, unknown>, keepSinceISO: string): ItemPayload | null {
+// Active, recently ended, or referenced by a migrated gift. The last was added 2026-10-26
+// (monday-migration docs/24): inactive campaigns with no EndDate — the Bike to the Future
+// homepages, peer-to-peer pages — were dropped however recent, leaving 3,752 Campaign links
+// dangling.
+export function campaignToPayload(c: Record<string, unknown>, keepSinceISO: string,
+  referenced: ReadonlySet<string> = new Set()): ItemPayload | null {
   const recent = typeof c['EndDate'] === 'string' && c['EndDate'] >= keepSinceISO;
-  if (c['IsActive'] !== true && !recent) return null;
+  if (c['IsActive'] !== true && !recent && !referenced.has(c['Id'] as string)) return null;
   return {
     board: 'campaigns', sfId: c['Id'] as string, name: (c['Name'] as string) ?? '(campaign)',
     columns: { 'Type': ((c['RecordType'] as { Name?: string } | null)?.Name ?? '') as string,

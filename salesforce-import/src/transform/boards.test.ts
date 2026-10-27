@@ -195,6 +195,13 @@ describe('campaignToPayload', () => {
     expect(campaignToPayload({ Id: 'k2', Name: 'Now', IsActive: true, ...prov }, since)).not.toBeNull();
     expect(campaignToPayload({ Id: 'k3', Name: 'Recent', IsActive: false, EndDate: '2023-01-01', ...prov }, since)).not.toBeNull();
   });
+  it('keeps any campaign a migrated gift references, however old (decided 2026-10-26)', () => {
+    const referenced = new Set(['k1', 'k5']);
+    expect(campaignToPayload({ Id: 'k1', Name: 'Old', IsActive: false, EndDate: '2012-01-01', ...prov }, since, referenced)).not.toBeNull();
+    // No EndDate and inactive: dropped before, however recent — the Bike to the Future pages.
+    expect(campaignToPayload({ Id: 'k5', Name: 'Bike to the Future 2025', IsActive: false, ...prov }, since, referenced)).not.toBeNull();
+    expect(campaignToPayload({ Id: 'k6', Name: 'Unused', IsActive: false, ...prov }, since, referenced)).toBeNull();
+  });
   it('sets Salesforce Owner from Campaign.Owner', () => {
     const p = campaignToPayload({ Id: 'k4', Name: 'Now', IsActive: true, Owner: { Name: 'Jessica Waite' }, ...prov }, since)!;
     expect(p.columns['Salesforce Owner']).toBe('Jessica Waite');

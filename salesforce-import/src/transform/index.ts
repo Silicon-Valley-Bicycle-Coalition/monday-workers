@@ -12,6 +12,7 @@ import { parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
+  soleContactAccountIds,
   type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
@@ -270,9 +271,27 @@ export async function runTransform(args: string[]): Promise<number> {
     if (att) attributedRegs.set(r['Id'] as string, att);
   }
   const attRollups = attributionRollups(opportunities, attributedOpps, affiliationIndex);
+
+  // Gifts whose donor falls through to a One-to-One Account (no Primary Contact, no Funraise
+  // donor) credit its sole migrated Contact; the rest load donor-less and go to review
+  // (decided 2026-10-26, monday-migration docs/24). Built from boardOf, so inclusion is unchanged.
+  const personAccounts = soleContactAccountIds(accounts, contacts, new Set(boardOf.keys()));
+  const donorAlias = new Map([...personNamed, ...personAccounts.alias]);
+  const personAccountIds = new Set(accounts.filter(isOneToOneAccount).map((a) => a['Id'] as string));
+  let personAccountLinked = 0;
+  const personAccountRows: string[] = [];
+  const notePersonAccountGift = (accountId: string | null, sfId: unknown, amount: unknown, dateISO: unknown) => {
+    if (!accountId || placeholderDonorSfIds.has(accountId)) return;
+    if (personAccounts.alias.has(accountId)) { personAccountLinked++; return; }
+    const reason = personAccounts.unresolved.get(accountId);
+    if (reason) {
+      personAccountRows.push([sfId, accountId, accountById.get(accountId)?.['Name'] ?? '', reason, amount ?? '',
+        String(dateISO ?? '').slice(0, 10)].map(csvField).join(','));
+    }
+  };
   // Personal / organization rollups follow the Donor link, which follows attribution — so
   // they are computed only now that attributedOpps exists (see donations.ts giftDonorSfId).
-  const rollups = { map: donorRollups(opportunities, cnpUnique, personNamed, { orgAccountIds, attributed: attributedOpps },
+  const rollups = { map: donorRollups(opportunities, cnpUnique, donorAlias, { orgAccountIds, attributed: attributedOpps },
     cfg.eventbriteIntegrationUserName), cnpUnique, overlap: cnp.length - cnpUnique.length };
 
   const payloads: ItemPayload[] = [];
@@ -354,7 +373,10 @@ export async function runTransform(args: string[]): Promise<number> {
   }
   const ebOrders = eventbriteOrderIdsByOpportunity(ordersExist ? await load('eb4sf_orders') : []);
   for (const o of opportunities) {
-    payloads.push(opportunityToPayload(o, { termCols, donorAlias: personNamed, orgAccountIds, placeholderDonorSfIds,
+    if (!o['npsp__Primary_Contact__c'] && !o['funraise__fr_Donor__c']) {
+      notePersonAccountGift(o['AccountId'] as string | null, o['Id'], o['Amount'], o['CloseDate']);
+    }
+    payloads.push(opportunityToPayload(o, { termCols, donorAlias, orgAccountIds, placeholderDonorSfIds, personAccountIds,
       actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string),
       eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName,
       eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null }));
@@ -363,7 +385,13 @@ export async function runTransform(args: string[]): Promise<number> {
     warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +
       'each keeps the lowest order id, so eventbrite-sync creates a separate item for the others');
   }
-  for (const t of rollups.cnpUnique) payloads.push(cnpToPayload(t, personNamed));
+  for (const t of rollups.cnpUnique) {
+    if (!t['CnP_PaaS__Contact__c']) {
+      notePersonAccountGift(t['CnP_PaaS__Account__c'] as string | null, t['Id'], t['CnP_PaaS__TotalCharged__c'],
+        t['CnP_PaaS__TransactionDate__c']);
+    }
+    payloads.push(cnpToPayload(t, donorAlias, personAccountIds));
+  }
 
   const pledgeCols = pledgeColumnsBySubscription(pledges);
   for (const s of subscriptions) {
@@ -385,7 +413,8 @@ export async function runTransform(args: string[]): Promise<number> {
     const p = eventbriteAttendeeToPayload(a, ebEventById.get(a['eb4sf__Eventbrite_Event__c'] as string));
     if (p) payloads.push(p);
   }
-  for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO); if (p) payloads.push(p); }
+  const giftCampaignIds = new Set(opportunities.map((o) => o['CampaignId'] as string | null).filter((x): x is string => !!x));
+  for (const k of campaigns) { const p = campaignToPayload(k, cfg.peopleActiveSinceISO, giftCampaignIds); if (p) payloads.push(p); }
   for (const v of volunteerHours) payloads.push(volunteerHoursToPayload(v));
   // Activities: person-linked Tasks only, newest-first, capped under the board ceiling
   // (decided 2026-08-22 after the real slice measured 53k). EmailMessages carry no contact
@@ -415,6 +444,32 @@ export async function runTransform(args: string[]): Promise<number> {
     .map(([board, n]) => board === 'donations'
       ? `donations peak active projected at ${plan.peakActive} items (> 10,000)`
       : `${board} projected at ${n} items (> 10,000)`);
+
+  // Skipped links: a link whose target isn't a payload is dropped at load ("targets not
+  // migrated"). 18,623 surfaced only in the loader's closing line in the 2026-10-09 rehearsal
+  // (monday-migration docs/24), so any not expected by design now fails the transform.
+  const migratedSfIds = new Set(payloads.map((p) => p.sfId));
+  const expectedSkips: Record<string, string> = {
+    'event-registrations → Attendee': 'registrants who never checked in are not People (decision D)',
+    'donations → Soft Credit': 'soft credits naming a contact who is not a Person',
+  };
+  const skipped = new Map<string, { count: number; first: string }>();
+  for (const p of payloads) {
+    for (const l of p.links ?? []) {
+      const missing = l.targetSfIds.find((t) => !migratedSfIds.has(t));
+      if (!missing) continue;
+      const key = `${p.board} → ${l.column}`;
+      const s = skipped.get(key);
+      if (s) s.count++; else skipped.set(key, { count: 1, first: `${p.sfId} → ${missing}` });
+    }
+  }
+  const skippedLinkViolations: string[] = [];
+  for (const [key, { count, first }] of skipped) {
+    if (expectedSkips[key]) warnings.push(`links: ${count} ${key} links skip unmigrated targets — ${expectedSkips[key]}`);
+    else skippedLinkViolations.push(`${key}: ${count} links (first: ${first})`);
+  }
+  warnings.push(`donations: ${personAccountLinked} gifts on One-to-One accounts linked to their sole Person; ` +
+    `${personAccountRows.length} left without a Donor (see data/review/unlinked-person-account-gifts.csv)`);
 
   if (personNamed.size > 0) {
     warnings.push(`people: ${personNamed.size} person-named account${personNamed.size === 1 ? '' : 's'} ` +
@@ -455,6 +510,8 @@ export async function runTransform(args: string[]): Promise<number> {
     ['contactSfId,name,email,domain,candidateAffiliations', ...emailReviewRows].join('\n') + '\n', 'utf8');
   await writeFile(dataPath('review', 'unaffiliated-org-gifts.csv'),
     ['opportunitySfId,contactSfId,orgSfId,orgName,amount,closeDate', ...unaffiliatedRows].join('\n') + '\n', 'utf8');
+  await writeFile(dataPath('review', 'unlinked-person-account-gifts.csv'),
+    ['opportunitySfId,accountSfId,accountName,reason,amount,closeDate', ...personAccountRows].join('\n') + '\n', 'utf8');
   warnings.push(`emails: ${emailStats.work} work, ${emailStats.household} household, ${emailStats.review} review, ` +
     `${emailStats.swapped} swapped` + (emailStats.review > 0 ? ' — see data/review/email-classification.csv' : ''));
   warnings.push(`attribution: ${attributedOpps.size} gifts and ${attributedRegs.size} registrations attributed; ` +
@@ -464,6 +521,7 @@ export async function runTransform(args: string[]): Promise<number> {
     payloadCounts,
     assertions: [
       { name: 'board-ceiling', violations: ceilingViolations },
+      { name: 'skipped-links', violations: skippedLinkViolations },
     ],
     warnings,
   };

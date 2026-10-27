@@ -153,6 +153,34 @@ export function personNamedAccountIds(
   return out;
 }
 
+export type PersonAccountGap = 'sole contact not migrated' | 'no contact' | 'several contacts';
+
+/**
+ * One-to-One Individual Accounts never become items, so a gift whose donor falls through to one
+ * (no Primary Contact, no Funraise donor) would load with a dangling Donor link — 11,113 gifts in
+ * the 2026-10-09 rehearsal (monday-migration docs/24). Decided 2026-10-26: an Account whose only
+ * Contact is a migrated Person aliases to that Person; the rest are `unresolved`, with the reason,
+ * for the review file. Built after inclusion, so it never makes anyone a Person.
+ */
+export function soleContactAccountIds(
+  accounts: Record<string, unknown>[], contacts: Record<string, unknown>[], migrated: ReadonlySet<string>,
+): { alias: Map<string, string>; unresolved: Map<string, PersonAccountGap> } {
+  const byAccount = new Map<string, string[]>();
+  for (const c of contacts) {
+    const accountId = c['AccountId'] as string | null;
+    if (accountId) (byAccount.get(accountId) ?? byAccount.set(accountId, []).get(accountId)!).push(c['Id'] as string);
+  }
+  const alias = new Map<string, string>(), unresolved = new Map<string, PersonAccountGap>();
+  for (const a of accounts) {
+    if (!isOneToOneAccount(a)) continue;
+    const id = a['Id'] as string, attached = byAccount.get(id) ?? [];
+    if (attached.length === 1 && migrated.has(attached[0]!)) alias.set(id, attached[0]!);
+    else unresolved.set(id, attached.length === 0 ? 'no contact'
+      : attached.length === 1 ? 'sole contact not migrated' : 'several contacts');
+  }
+  return { alias, unresolved };
+}
+
 export function accountToPayload(a: Record<string, unknown>, geo?: GeoResult): ItemPayload | null {
   if (isOneToOneAccount(a)) return null;
   return {
