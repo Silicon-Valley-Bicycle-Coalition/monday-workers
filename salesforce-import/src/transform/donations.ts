@@ -248,6 +248,8 @@ export function opportunityToPayload(o: Record<string, unknown>, deps: Opportuni
       'Check/Reference Number': text(o['Check_Reference_Number__c']),
       'In-Kind Value': o['Retail_Value__c'] != null ? String(o['Retail_Value__c']) : '',
       'In-Kind Category': text(o['In_Kind_Category__c']),
+      // A multi-select picklist (e.g. "2023-2024 BTWD;2024 Summit"), kept as readable text.
+      'Sponsorship Cycle': text(o['Sponsorship_Cycle__c']).split(';').map((v) => v.trim()).filter(Boolean).join('; '),
       ...(deps.termCols.get(o['Id'] as string) ?? {}),
       ...attribution.columns,
       ...salesforceDebug(o),

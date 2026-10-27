@@ -2,13 +2,14 @@ import type { GiftsStore } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
-import type { RegistrationRecord, HistoricalShiftRecord } from '../monday/client';
+import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord } from '../monday/client';
 import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage, VolunteerBoardConfig,
-  HistoricalVolunteerBoardConfig } from '../types';
+  HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
 import { currentFiscalYear, localDateParts } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
 import { runClassify } from './classify';
 import { runMembership, type MembershipDetail } from './membership';
+import { runRecurring } from './recurring';
 import { formatCents, parseAmountCents } from '../money';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
@@ -35,6 +36,7 @@ export interface CustodianMondayClient {
   pageRegistrations(board: VolunteerBoardConfig, cursor: string | null): Promise<{ items: RegistrationRecord[]; cursor: string | null }>;
   pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
   getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
+  pageRecurringGifts(board: RecurringGiftsConfig, cursor: string | null): Promise<{ items: RecurringGiftRecord[]; cursor: string | null }>;
 }
 
 export interface CustodianDeps {
@@ -50,7 +52,7 @@ export interface CustodianDeps {
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
 
-export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership'] as const;
+export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership', 'recurring'] as const;
 export interface DutyOptions { all?: boolean; since?: string }
 export type Duty = (typeof DUTIES)[number];
 
@@ -71,7 +73,9 @@ export function dutiesForDate(
   now: Date, fiscalYear: FiscalYearConfig, lastRuns: { duty: string; report: unknown }[] = [],
 ): Duty[] {
   const { year, month, day } = localDateParts(now, fiscalYear.timeZone);
-  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership']; // requeue: fix 5; classify: chartable labels; membership: 13-month anniversaries — all nightly
+  // requeue: fix 5; classify: chartable labels; membership: 13-month anniversaries; recurring: Has
+  // Active Recurring Gift — all nightly
+  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership', 'recurring'];
   if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1) duties.push('capacity');
   if (month === fiscalYear.startMonth && day === 1) duties.push('sweep');
   if (month === fiscalYear.startMonth && day === 15) duties.push('archive');
@@ -94,6 +98,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
       : duty === 'sweep' ? await runSweep(deps)
       : duty === 'requeue' ? await runRequeue(deps, now)
       : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
+      : duty === 'recurring' ? await runRecurring(deps)
       : duty === 'membership' ? await runMembership(deps, now, { all: opts.all ?? false, since: opts.since ?? null },
           ((await deps.gifts.lastRuns()).find((r) => r.duty === 'membership')?.report as { detail?: MembershipDetail } | undefined)?.detail ?? null)
       : await runReconcile(deps);

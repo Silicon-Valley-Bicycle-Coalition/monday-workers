@@ -26,6 +26,19 @@ export function subscriptionToPayload(s: Record<string, unknown>): ItemPayload |
   };
 }
 
+// Contacts with an Active Funraise subscription: seeds People's Has Active Recurring Gift, which
+// donation-rollups keeps current from the Recurring Gifts board after cutover. Status and donor
+// are the same fields subscriptionToPayload maps to Status and the Donor link.
+export function activeRecurringDonors(subscriptions: Record<string, unknown>[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of subscriptions) {
+    if (s['Name'] === 'Redacted' || s['funraise__Status__c'] !== 'Active') continue;
+    const donor = s['funraise__Supporter__c'];
+    if (typeof donor === 'string' && donor) out.add(donor);
+  }
+  return out;
+}
+
 export function pledgeColumnsBySubscription(pledges: Record<string, unknown>[]): Map<string, Record<string, unknown>> {
   const out = new Map<string, Record<string, unknown>>();
   for (const p of pledges) {

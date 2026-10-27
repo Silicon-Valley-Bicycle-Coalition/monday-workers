@@ -30,6 +30,7 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
       donorLevel: null,
       volunteerBoards: [],
       historicalVolunteerBoards: [],
+      recurringGifts: null,
     },
   };
 }
@@ -78,6 +79,7 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     async pageRegistrations() { return { items: [], cursor: null }; },
     async pageHistoricalShifts() { return { items: [], cursor: null }; },
     async getItemsBoardIds() { return new Map(); },
+    async pageRecurringGifts() { return { items: [], cursor: null }; },
   };
 }
 
@@ -118,17 +120,17 @@ describe('dutiesForDate', () => {
 
   it('takes its calendar from config: sweep on day 1 and archive on day 15 of the fiscal start month', () => {
     const april = { startMonth: 4, timeZone: 'America/Los_Angeles' };
-    expect(dutiesForDate(new Date('2026-04-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
-    expect(dutiesForDate(new Date('2026-04-15T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'archive']);
-    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+    expect(dutiesForDate(new Date('2026-04-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'sweep']);
+    expect(dutiesForDate(new Date('2026-04-15T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'archive']);
+    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), april)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring']);
   });
 
   it('reads "today" in the configured time zone, not UTC', () => {
     // 01:00 UTC July 1 is still June 30 in Pacific time; 01:00 UTC July 2 is July 1 there.
-    expect(dutiesForDate(new Date('2026-07-01T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership']);
-    expect(dutiesForDate(new Date('2026-07-02T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
+    expect(dutiesForDate(new Date('2026-07-01T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring']);
+    expect(dutiesForDate(new Date('2026-07-02T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'sweep']);
     // 01:00 UTC Tuesday 2026-08-04 is Monday evening in Pacific time.
-    expect(dutiesForDate(new Date('2026-08-04T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'capacity']);
+    expect(dutiesForDate(new Date('2026-08-04T01:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'capacity']);
   });
 
   it('membership runs nightly', () => {
@@ -137,10 +139,10 @@ describe('dutiesForDate', () => {
 
   it('reconciles daily, checks capacity Mondays, sweeps July 1, archives July 15', () => {
     // requeue (fix 5) rides every night with reconcile.
-    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership']); // a Wednesday
-    expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'capacity']); // a Monday
-    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
-    expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'archive']);
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring']); // a Wednesday
+    expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'capacity']); // a Monday
+    expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'sweep']);
+    expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'archive']);
   });
 
   it('continues an incomplete sweep on subsequent days while its last run reports remaining > 0', async () => {
@@ -148,7 +150,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
       report: { ok: true, summary: 'sliced', detail: { enqueued: 3500, remaining: 900, cursor: 'o3500' } } });
     expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'sweep']);
   });
 
   it('does not re-run a sweep whose last run completed (remaining === 0)', async () => {
@@ -156,7 +158,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-07-01T09:00:00Z', ok: true,
       report: { ok: true, summary: 'done', detail: { enqueued: 900, remaining: 0, cursor: 'o4400' } } });
     expect(dutiesForDate(new Date('2026-07-02T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring']);
   });
 
   it('only the MOST RECENT run of a duty counts — an old incomplete run superseded by a complete one stays finished', async () => {
@@ -166,7 +168,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'archive', ranAt: '2026-07-16T09:00:00Z', ok: true,
       report: { ok: true, summary: 'done', detail: { remaining: 0 } } });
     expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring']);
   });
 
   it('never doubles a duty its start date already scheduled', async () => {
@@ -174,7 +176,7 @@ describe('dutiesForDate', () => {
     await gifts.recordRun({ duty: 'sweep', ranAt: '2026-06-30T09:00:00Z', ok: true,
       report: { ok: true, summary: 'sliced', detail: { remaining: 10 } } });
     expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'sweep']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'sweep']);
   });
 
   it('archive continues daily until complete, and summaries materialize on the run that hits remaining 0', async () => {
@@ -192,7 +194,7 @@ describe('dutiesForDate', () => {
 
     // July 16: the daily cron sees the incomplete run and continues it.
     expect(dutiesForDate(new Date('2026-07-16T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'archive']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'archive']);
     d.now = new Date('2026-08-02T00:00:00Z'); // a later ran_at, so lastRuns sees THIS run as most recent
     const second = await runDuty('archive', d);
     expect((second.detail as { remaining: number }).remaining).toBe(0);
@@ -200,7 +202,7 @@ describe('dutiesForDate', () => {
 
     // July 17: complete — archive drops back out of the schedule.
     expect(dutiesForDate(new Date('2026-07-17T09:00:00Z'), FY, await gifts.lastRuns()))
-      .toEqual(['reconcile', 'requeue', 'classify', 'membership']);
+      .toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring']);
   });
 });
 

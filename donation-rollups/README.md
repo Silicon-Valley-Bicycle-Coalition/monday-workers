@@ -595,6 +595,13 @@ and `GET /custodian/status` (last run per duty, from `custodian_runs`):
   verification" above).
 * **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board
   (see "Chartable gift labels" below). Capped per run; re-run until `detail.remaining` is `0`.
+* **recurring** (nightly) — keeps People's **Has Active Recurring Gift** checkbox in step with the
+  Recurring Gifts board, which the Postal appeal list filters on (monday-migration docs/35 §3.1).
+  Recurring Gifts isn't a Donations board, so no webhook reaches this Worker when a subscription
+  starts or lapses; each night it reads every Recurring Gifts item (Status + Donor) and every
+  flagged People board, and writes only the cells that disagree, at most 500 a run (the rest
+  next night). Off until `donationRollups.recurringGifts` is configured. `salesforce-import`
+  seeds the column at migration, so the first night writes little.
 
 **Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
@@ -834,6 +841,12 @@ sandbox gets rebuilt before cutover:
   `columns` (`volunteer`, `date`, `hours`, `status`) and `countedStatusLabels` (`["Completed"]`).
   Required (may be `[]`) whenever `membership` is on. Read once by the `membership` duty's
   `load-volunteers` phase; **no webhook** — it is record-keeping.
+* `donationRollups.recurringGifts` — `null` or omitted keeps the `recurring` duty off. Otherwise
+  `{ boardId, columns: { donorLink, status }, activeStatusLabel }`: the Recurring Gifts board, its
+  Donor connect column and Status column, and the label that means active (`"Active"`). At least
+  one `ownerColumnsByBoard` entry then needs `hasActiveRecurringGift`: the People board's
+  **Has Active Recurring Gift** checkbox column id (People and People (Historical); Organizations
+  has none). No webhook.
 * `affiliations` — `null` until the Affiliations board exists (every affiliation-model behavior is off); otherwise `{ boardId, columns: { personLink, attributedGiving, attributedGiftCount, lastAttributedGift } }` — the Person connect column and the three rollup columns on the Affiliations board (`scripts/setup-affiliation-columns.mjs` prints the block). When set, every `donationBoards[]` entry must have `columns.actingForLink` (the Donations board's "Acting for" connect column).
 * `donationRollups.ownerColumnsByBoard["<board id>"].organizationalGiving` — optional, People boards only; an owner board without it (Organizations, or a People board before the setup script has run) is skipped with a `console.warn` naming the board — the consumer never retries over it, and reconcile leg 6 skips those persons.
 

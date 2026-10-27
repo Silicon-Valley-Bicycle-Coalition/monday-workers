@@ -7,8 +7,8 @@ import { GeoCache } from '../geocode/cache.js';
 import { mergeableEnrichment, type MergeableEnrichment } from '../enrich/address.js';
 import type { EnrichmentRow } from '../enrich/index.js';
 import { normalizeAddress } from '../geocode/normalize.js';
-import { collapseEmail, setStaffMatcher } from './fields.js';
-import { parseMondayUsers, staffMatcher } from './staff.js';
+import { collapseEmail, setOwnerMatcher, setStaffMatcher } from './fields.js';
+import { exactStaffMatcher, parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
@@ -18,9 +18,9 @@ import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
   eventbriteOrderIdsByOpportunity, foldFeeCoverage } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
-import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload, registrationToPayload,
-  eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload, volunteerHoursToPayload,
-  taskToPayload } from './boards.js';
+import { activeRecurringDonors, subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
+  registrationToPayload, eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload,
+  volunteerHoursToPayload, taskToPayload } from './boards.js';
 import { DEFAULT_CONSUMER_DOMAINS, websiteDomain } from './emailKind.js';
 import { assignEmails, parseEmailKindOverrides, type AffiliationRef, type EmailOverride } from './emails.js';
 import { affiliationToPayload, affiliationStatus } from './affiliations.js';
@@ -69,9 +69,11 @@ export async function runTransform(args: string[]): Promise<number> {
   // Salesforce Debug column tag audit names that are still on staff with their
   // Monday email; former staff stay verbatim.
   const staffPath = dataPath('enrich', 'monday-users.csv');
-  setStaffMatcher(existsSync(staffPath)
-    ? staffMatcher(parseMondayUsers(readFileSync(staffPath, 'utf8')))
-    : null);
+  const staff = existsSync(staffPath) ? parseMondayUsers(readFileSync(staffPath, 'utf8')) : null;
+  setStaffMatcher(staff ? staffMatcher(staff) : null);
+  // Without the export, Relationship Owner loads empty on everyone.
+  setOwnerMatcher(staff ? exactStaffMatcher(staff) : null);
+  if (!staff) console.warn('transform: data/enrich/monday-users.csv not found — Relationship Owner stays empty');
 
   // Places enrichment (optional artifact): exact matches plus human-approved sfIds
   // fill blank org Website/Address; enriched addresses also resolve geo.
@@ -297,6 +299,7 @@ export async function runTransform(args: string[]): Promise<number> {
   const payloads: ItemPayload[] = [];
   const includedContactIds = new Set<string>();
 
+  const activeRecurring = activeRecurringDonors(subscriptions);
   for (const c of sortedContacts) {
     const id = c['Id'] as string;
     const board = boardOf.get(id);
@@ -324,6 +327,8 @@ export async function runTransform(args: string[]): Promise<number> {
     ] };
     const orgGiving = attRollups.organizationalGivingByContact.get(id);
     if (orgGiving !== undefined) p.columns['Organizational Giving'] = String(orgGiving);
+    // Always declared, so load creates the column the Postal appeal list filters on.
+    p.columns['Has Active Recurring Gift'] = activeRecurring.has(id) ? { checked: 'true' } : null;
     const r = rollups.map.get(id);
     payloads.push(r ? applyRollups(p, r) : p);
   }

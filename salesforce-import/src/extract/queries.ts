@@ -17,12 +17,14 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Account` },
     // Finance class/revenue code, payment method, check number, in-kind value/category and the
     // Funraise fee-coverage fields: added by the 2026-10-26 Opportunity audit (monday-migration
-    // docs/32) — all in active use, none extracted before.
+    // docs/32) — all in active use, none extracted before. Sponsorship_Cycle__c: the report
+    // triage (monday-migration docs/35 §3.2) — 3,988 opportunities, still reported on by cycle.
     { name: 'opportunities', paginate: true, soql: `SELECT Id, Name, Amount, CloseDate, StageName, RecordType.Name,
         AccountId, npsp__Primary_Contact__c, CampaignId, funraise__fr_ID__c, funraise__fr_Donor__c,
         funraise__Subscription__c, funraise__Funraise_Pledge__c, CnP_PaaS__CnP_OrderNumber__c, dtd__company__c,
         Finance_Class__c, Finance_Revenue_Code__c, Payment_Method__c, Check_Reference_Number__c,
         Retail_Value__c, In_Kind_Category__c, Funraise_Fee_Match_Opportunity__c, Funraise_Fee_Match_Amount__c,
+        Sponsorship_Cycle__c,
         Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Opportunity` },
     // Descoped 2026-09-23 (issue #23): Opportunity Amount/CloseDate is the gift of record — it's
     // what NPSP's rollups summed and what Donations carries. 41,870 of 48,022 gifts have payments,

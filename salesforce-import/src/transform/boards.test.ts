@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
+import { activeRecurringDonors, subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
   registrationToPayload, eventbriteEventToPayload, eventbriteAttendeeToPayload,
   campaignToPayload, volunteerHoursToPayload, taskToPayload } from './boards.js';
 
@@ -16,6 +16,18 @@ describe('subscriptionToPayload', () => {
   });
   it('never re-materializes the Redacted subscription', () => {
     expect(subscriptionToPayload({ Id: 's2', Name: 'Redacted', ...prov })).toBeNull();
+  });
+});
+
+describe('activeRecurringDonors', () => {
+  it('collects the supporters of Active subscriptions, skipping Redacted ones', () => {
+    const s = activeRecurringDonors([
+      { Id: 's1', Name: 'Sub', funraise__Supporter__c: 'c1', funraise__Status__c: 'Active' },
+      { Id: 's2', Name: 'Sub', funraise__Supporter__c: 'c2', funraise__Status__c: 'Canceled' },
+      { Id: 's3', Name: 'Redacted', funraise__Supporter__c: 'c3', funraise__Status__c: 'Active' },
+      { Id: 's4', Name: 'Sub', funraise__Supporter__c: null, funraise__Status__c: 'Active' },
+    ]);
+    expect([...s]).toEqual(['c1']);
   });
 });
 

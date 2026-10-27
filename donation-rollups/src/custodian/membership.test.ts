@@ -28,7 +28,7 @@ function config(): DonationRollupsConfig {
       membership: { fromISO: '2026-10-16', eligibleGiftTypes: ['Donation'], minAmountCents: 100, termMonths: 13, lifetimeThresholdCents: 100000,
         statusLabels: { active: 'Active', lapsed: 'Lapsed' }, tierLabels: { member: 'Member', lifetime: 'Lifetime' },
         typeLabels: { new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal', lifetime: 'Lifetime' } },
-      donorLevel: null, volunteerBoards: [VOL_BOARD], historicalVolunteerBoards: [HIST_BOARD],
+      donorLevel: null, volunteerBoards: [VOL_BOARD], historicalVolunteerBoards: [HIST_BOARD], recurringGifts: null,
     },
   };
 }
@@ -56,6 +56,7 @@ function fakeClient(f: Fake): CustodianMondayClient {
     async pageRegistrations() { return { items: (f.registrations ?? []).map((r) => ({ state: 'active' as const, ...r })), cursor: null }; },
     async pageHistoricalShifts() { return { items: f.shifts ?? [], cursor: null }; },
     async getItemsBoardIds(ids) { return new Map(ids.flatMap((id) => (f.boardOf?.[id] ? [[id, f.boardOf[id]!] as [string, string]] : []))); },
+    async pageRecurringGifts() { return { items: [], cursor: null }; },
   };
 }
 function deps(f: Fake, sent: RecomputeQueueMessage[], now = new Date('2027-12-03T10:00:00Z')): CustodianDeps {

@@ -61,8 +61,31 @@ describe('BOARD_SPECS views', () => {
     const v = BOARD_SPECS['people-live']!.views!.find((x) => x.name === 'Postal appeal list')!;
     const rules = v.filter!.rules.map((r) => `${r.columnTitle} ${r.operator}`);
     expect(rules).toEqual(expect.arrayContaining(
-      ['Address is_not_empty', 'Do Not Solicit is_empty', 'Do Not Mail is_empty', 'Gift Count greater_than']));
+      ['Address is_not_empty', 'Do Not Solicit is_empty', 'Do Not Mail is_empty', 'Gift Count greater_than',
+        'Has Active Recurring Gift is_empty']));
     expect(rules.some((r) => r.startsWith('Personal Email'))).toBe(false);
+  });
+});
+
+describe('report-triage views (docs/35 §3.4, §3.5)', () => {
+  const view = (name: string) => BOARD_SPECS['people-live']!.views!.find((x) => x.name === name)!;
+
+  it('the board donor call list needs a phone and suppresses Do Not Solicit', () => {
+    const rules = view('Board donor call list').filter!.rules.map((r) => `${r.columnTitle} ${r.operator}`);
+    expect(rules).toEqual(expect.arrayContaining(['Phone is_not_empty', 'Do Not Solicit is_empty',
+      'Last Gift Date within_the_last']));
+  });
+
+  it('the 990 view reads the last-fiscal-year rollup', () => {
+    expect(view('Gave last fiscal year (990)').filter!.rules[0]).toMatchObject(
+      { columnTitle: 'Last Year Amount', operator: 'greater_than' });
+  });
+
+  it('donor portfolios group by Relationship Owner, which both People boards describe', () => {
+    expect(view('Donor portfolios').groupBy).toEqual({ columnTitle: 'Relationship Owner' });
+    for (const b of ['people-live', 'people-historical']) {
+      expect(BOARD_SPECS[b]!.columnDescriptions!['Relationship Owner'], b).toBeTruthy();
+    }
   });
 });
 

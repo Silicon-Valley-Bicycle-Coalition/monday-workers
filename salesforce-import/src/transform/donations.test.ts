@@ -316,10 +316,16 @@ describe('audited Opportunity columns (docs/32)', () => {
     });
   });
 
+  it('carries Sponsorship Cycle, joining a multi-select with "; " (docs/35 §3.2)', () => {
+    const p = opportunityToPayload({ ...base, Sponsorship_Cycle__c: '2023-2024 BTWD;2024 Summit ' },
+      { termCols: new Map() });
+    expect(p.columns['Sponsorship Cycle']).toBe('2023-2024 BTWD; 2024 Summit');
+  });
+
   it('declares every audited column blank when Salesforce has nothing, so load still creates it', () => {
     const p = opportunityToPayload(base, { termCols: new Map() });
     for (const col of ['Fee Covered', 'Finance Class', 'Revenue Code', 'Payment Method', 'Check/Reference Number',
-      'In-Kind Value', 'In-Kind Category']) {
+      'In-Kind Value', 'In-Kind Category', 'Sponsorship Cycle']) {
       expect(p.columns[col], col).toBe('');
     }
   });
