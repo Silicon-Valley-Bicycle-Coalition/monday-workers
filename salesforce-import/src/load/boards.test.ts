@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { formatColumnValue } from './columnValues.js';
 import { ensureBoards, COLUMN_TYPES, CONNECT_COLUMNS, CONNECT_TARGETS, CURRENCY_COLUMNS } from './boards.js';
 import { MondayClient } from './monday.js';
 import { loadConfig } from '../config.js';
@@ -15,6 +16,13 @@ function scriptedClient(script: { match: RegExp; data: unknown }[]): MondayClien
   }) as typeof fetch;
   return new MondayClient({ apiUrl: 'https://x', token: 't', fetchFn, sleepFn: async () => {} });
 }
+
+describe('COLUMN_TYPES', () => {
+  it('loads the event-registrations Attendee Email as a real Email column, formatted for Monday', () => {
+    expect(COLUMN_TYPES['Attendee Email']).toBe('email');
+    expect(formatColumnValue(COLUMN_TYPES['Attendee Email']!, 'ada@svbc.org')).toEqual({ email: 'ada@svbc.org', text: 'ada@svbc.org' });
+  });
+});
 
 describe('ensureBoards', () => {
   beforeEach(() => { process.chdir(mkdtempSync(join(tmpdir(), 'sfimp-'))); });

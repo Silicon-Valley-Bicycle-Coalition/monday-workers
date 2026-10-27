@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { listOrdersUrl, parseOrdersPage, planBackfill, readArg, checkTarget, sendDelivery } from './backfill-orders-lib.mjs';
+import { listOrdersUrl, parseOrdersPage, planBackfill, readArg, checkTarget, sendDelivery, listAttendeesUrl, parseAttendeesPage, planAttendeeBackfill } from './backfill-orders-lib.mjs';
 import { validateDelivery } from '../src/webhook/validate';
+import { validateAttendeeDelivery } from '../src/webhook/validateAttendee';
 import { testConfig } from '../src/test/testConfig';
 
 const API = 'https://www.eventbriteapi.com/v3';
@@ -125,5 +126,53 @@ describe('sendDelivery', () => {
     expect((await sendDelivery(async () => (n++, reply(401, 'no')), 'u', 's', {}, { sleep: noSleep })).ok).toBe(false);
     expect(n).toBe(1);
     expect((await sendDelivery(async () => reply(200, '{"ok":true,"ignored":"x"}'), 'u', 's', {}, { sleep: noSleep })).ok).toBe(false);
+  });
+});
+
+describe('listAttendeesUrl', () => {
+  it('lists an event’s attendees, with the continuation token when paging', () => {
+    expect(listAttendeesUrl(API, '17937020110')).toBe('https://www.eventbriteapi.com/v3/events/17937020110/attendees/');
+    expect(listAttendeesUrl(API, '17937020110', { continuation: 'abc' })).toBe(
+      'https://www.eventbriteapi.com/v3/events/17937020110/attendees/?continuation=abc'
+    );
+  });
+
+  it('refuses a non-numeric event id', () => {
+    expect(() => listAttendeesUrl(API, '../users/me')).toThrow('must be numeric');
+  });
+});
+
+describe('parseAttendeesPage', () => {
+  it('returns attendee ids and the continuation token while has_more_items is true', () => {
+    const page = parseAttendeesPage({ pagination: { has_more_items: true, continuation: 'tok' }, attendees: [{ id: '1', profile: { email: 'x@y.z' } }] });
+    expect(page).toEqual({ attendees: [{ id: '1' }], continuation: 'tok' });
+  });
+
+  it('ends paging when has_more_items is false, whatever the token says', () => {
+    expect(parseAttendeesPage({ pagination: { has_more_items: false, continuation: 'tok' }, attendees: [] }).continuation).toBeNull();
+    expect(parseAttendeesPage({ attendees: [] }).continuation).toBeNull();
+  });
+
+  it('throws on a response without an attendees array', () => {
+    expect(() => parseAttendeesPage({ error: 'NOT_AUTHORIZED' })).toThrow('no "attendees" array');
+  });
+});
+
+describe('planAttendeeBackfill', () => {
+  const plan = planAttendeeBackfill([{ id: '30' }, { id: '4' }, { id: 'x' }], { apiUrl: API, eventId: '17937020110' });
+
+  it('puts the event delivery first, then attendees sorted by id, skipping non-numeric ids', () => {
+    expect(plan.deliveries.map((d) => d.label)).toEqual(['event 17937020110', 'attendee 4', 'attendee 30']);
+    expect(plan.skipped).toEqual([{ attendeeId: 'x', reason: 'no numeric id' }]);
+  });
+
+  it('builds deliveries the attendee route accepts, ids only', () => {
+    const config = testConfig();
+    const verdicts = plan.deliveries.map((d) => validateAttendeeDelivery(d.delivery, config));
+    expect(verdicts).toEqual([
+      { kind: 'process', delivery: { kind: 'event', eventId: '17937020110', action: 'event.updated' } },
+      { kind: 'process', delivery: { kind: 'attendee', eventId: '17937020110', attendeeId: '4', action: 'attendee.updated' } },
+      { kind: 'process', delivery: { kind: 'attendee', eventId: '17937020110', attendeeId: '30', action: 'attendee.updated' } },
+    ]);
   });
 });

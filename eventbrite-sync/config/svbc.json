@@ -3,7 +3,9 @@
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
       "donations:live": null,
-      "people-live": null
+      "people-live": null,
+      "events": null,
+      "event-registrations": null
     }
   },
   "eventbrite": {
@@ -29,5 +31,56 @@
     "fiscalYearColumn": "REPLACE_WITH_COLUMN_ID",
     "donorEmailColumn": "REPLACE_WITH_COLUMN_ID",
     "donorLinkColumn": "REPLACE_WITH_COLUMN_ID"
+  },
+  "attendeeSync": {
+    "actions": [
+      "attendee.updated",
+      "attendee.checked_in",
+      "attendee.checked_out",
+      "event.created",
+      "event.published",
+      "event.updated",
+      "event.unpublished"
+    ],
+    "programByOrganizer": {},
+    "volunteerPrograms": [
+      "Volunteering"
+    ],
+    "events": {
+      "eventbriteIdColumn": "REPLACE_WITH_COLUMN_ID",
+      "dateColumn": "REPLACE_WITH_COLUMN_ID",
+      "endColumn": "REPLACE_WITH_COLUMN_ID",
+      "venueColumn": "REPLACE_WITH_COLUMN_ID",
+      "addressColumn": "REPLACE_WITH_COLUMN_ID",
+      "cityColumn": "REPLACE_WITH_COLUMN_ID",
+      "programColumn": "REPLACE_WITH_COLUMN_ID",
+      "eventStatusColumn": "REPLACE_WITH_COLUMN_ID",
+      "sourceColumn": "REPLACE_WITH_COLUMN_ID",
+      "urlColumn": "REPLACE_WITH_COLUMN_ID",
+      "classTypeColumn": "REPLACE_WITH_COLUMN_ID",
+      "followupsColumn": "REPLACE_WITH_COLUMN_ID"
+    },
+    "registrations": {
+      "attendeeIdColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeNameColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeEmailColumn": "REPLACE_WITH_COLUMN_ID",
+      "firstNameColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendanceColumn": "REPLACE_WITH_COLUMN_ID",
+      "sourceColumn": "REPLACE_WITH_COLUMN_ID",
+      "roleColumn": "REPLACE_WITH_COLUMN_ID",
+      "eventLinkColumn": "REPLACE_WITH_COLUMN_ID",
+      "attendeeLinkColumn": "REPLACE_WITH_COLUMN_ID",
+      "classDateColumn": "REPLACE_WITH_COLUMN_ID",
+      "classDayColumn": "REPLACE_WITH_COLUMN_ID",
+      "classLocationColumn": "REPLACE_WITH_COLUMN_ID",
+      "classTypeColumn": "REPLACE_WITH_COLUMN_ID",
+      "followupEmailColumn": "REPLACE_WITH_COLUMN_ID"
+    },
+    "peopleEmailColumn": "REPLACE_WITH_COLUMN_ID",
+    "followups": {
+      "maxAgeDays": 3,
+      "sendHourLocal": 8,
+      "notifyUserId": null
+    }
   }
 }

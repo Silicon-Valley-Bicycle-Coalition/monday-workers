@@ -32,7 +32,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',
   'Next Payment': 'date', 'Designation': 'text', 'Company Match': 'checkbox', 'Match Employer': 'text',
   'Pledge Amount': 'numbers', 'Received Amount': 'numbers',
-  'Attendee Name': 'text', 'Attendee Email': 'text', 'Ticket Amount': 'numbers',
+  'Attendee Name': 'text', 'Attendee Email': 'email', 'Ticket Amount': 'numbers',
   'Deductible Amount': 'numbers', 'Ticket Type': 'text', 'Eventbrite Attendee ID': 'text',
   'Source': 'status', 'Attendance': 'status', 'Role': 'status', 'Event Status': 'status', 'Program': 'status',
   'Venue': 'text', 'Tickets Sold': 'numbers', 'Eventbrite ID': 'text', 'Eventbrite URL': 'link',

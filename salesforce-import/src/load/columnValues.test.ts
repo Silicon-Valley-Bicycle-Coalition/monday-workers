@@ -21,6 +21,11 @@ describe('formatColumnValue', () => {
     expect(formatColumnValue('email', 'ada@svbc.org')).toEqual({ email: 'ada@svbc.org', text: 'ada@svbc.org' });
   });
 
+  it('sends an empty email as no value, never { email: \'\' }', () => {
+    expect(formatColumnValue('email', '')).toBeNull();
+    expect(formatColumnValue('email', '  ')).toBeNull();
+  });
+
   it('passes through text, numbers, status, and date values unchanged', () => {
     expect(formatColumnValue('text', 'hello')).toBe('hello');
     expect(formatColumnValue('numbers', '1500')).toBe('1500');

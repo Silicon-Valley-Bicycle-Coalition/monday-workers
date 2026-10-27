@@ -8,6 +8,10 @@
 ID` column's id in config (see "Prerequisite column"), an Eventbrite private token, D1 and queue
 provisioning, the three secrets, and the webhook registration. The `Refunded` Status label it
 shares with `funraise-sync` is also still missing from the board.
+**Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
+[`docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md`](../docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md);
+see "Attendee feed and class emails" below). Rehearsed in the sandbox only; production still needs
+the items in "Open".
 **Priority:** Post-cutover (2026-10-23). Bike Summit 2026 (Oct 22) now sells out *before*
 cutover, so `eb4sf` puts its orders in Salesforce and `salesforce-import` carries them over as
 Event Ticket gifts with their order ids; this Worker takes every order after that, and the
@@ -24,10 +28,13 @@ with Status `Received` and Gift Type `Event Ticket`** — the same labels `funra
 a paid Funraise ticket — linked to the buyer on People by email. Nothing does this today, and
 `eb4sf` retires with Salesforce. This Worker is the replacement.
 
-What it is not: an attendee or registration feed. One order is one gift, however many tickets it
-holds, and the Event Registrations board is a separate, documented follow-up (see "Out of
-scope"). `svbc-calendars`, the other Eventbrite consumer in this repo, reads the public event
-feed for the website and never sees orders.
+The orders feed is one half. One order is one gift, however many tickets it holds; the buyer is
+the donor. The other half (2026-10-26) is an **attendee feed**: a second webhook keeps the Events
+and Event Registrations boards in step with Eventbrite, and an hourly job sets the morning-after
+**Follow-up Email** label that fires the Bike Education thank-you and missed-you emails from
+Monday (see "Attendee feed and class emails"). The Worker itself never sends email.
+`svbc-calendars`, the other Eventbrite consumer in this repo, reads the public event feed for the
+website and never sees orders or attendees.
 
 ## Data flow
 
@@ -262,13 +269,107 @@ An order refunded before the Worker ever saw it has no item to reverse, so it is
 message at a time, so a few hundred orders take a few minutes; then check the board and
 `select status, count(*) from orders where event_id = '<id>' group by status`.
 
+## Attendee feed and class emails
+
+Replaces the Salesforce `eb4sf` Campaigns Bike Education sent class emails from (migration repo
+issue #62). Eventbrite is the source of who registered and who checked in; Monday sends the mail.
+
+```
+Eventbrite (SaaS)
+  │  second webhook: attendee.updated, attendee.checked_in, attendee.checked_out,
+  │  event.created, event.published, event.updated, event.unpublished   (attendeeSync.actions)
+  ▼
+Worker   POST /webhooks/eventbrite/attendee   (same shared secret: X-Webhook-Secret or ?secret=)
+  │  ledger rows in D1 (migration 0002_attendees.sql: `events` and `attendees`, ids and status
+  │  only, no personal data), then the same queue → consumer fetches the attendee or event fresh
+  ▼
+Events board (one item per Eventbrite event, program from the organizer name)
+Event Registrations board (one item per attendee: Attendance, Class Type/Date/Day/Location, People link)
+  ▲
+Hourly cron  0 * * * *  → follow-up job sets Event Registrations → Follow-up Email
+  ▼
+Monday automation (label → Sequence enrollment) → email from learn@
+```
+
+As with orders, the delivery is only a pointer; what is written comes from the Worker's own fetch.
+The **program** is resolved from the organizer name suffix (same rule as `salesforce-import`);
+`attendeeSync.programByOrganizer` is an optional override by organizer id. Attendance is never
+downgraded (a check-in is not undone by a later `attendee.updated`), and the People link is set
+only once the attendee is Attended and never overwrites a link staff set. Item names follow
+Eventbrite: rename a class or attendee there, since a rename in Monday is overwritten by the next
+delivery.
+
+### Prerequisites
+
+* Config `attendeeSync` ids for the Events and Event Registrations columns, `peopleEmailColumn`,
+  and `followups.notifyUserId` (the Bike Education coordinator's Monday user id, for the Held
+  notice). Production ships
+  `REPLACE_WITH_COLUMN_ID` / `null` until set.
+* `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
+  creates missing columns, so a production board already loaded with a text column needs it
+  converted.
+* The Monday-side setup (Mass email templates, Sequences, automations, the Class reminders view,
+  `learn@`) is [`docs/class-emails-setup.md`](docs/class-emails-setup.md). Sequences only work on
+  boards in a monday CRM workspace, so production Events and Event Registrations must live in one.
+* Register the second webhook (below).
+
+### Registering it
+
+Same dashboard route as the order webhook: Payload URL
+`https://<worker-host>/webhooks/eventbrite/attendee?secret=<EVENTBRITE_WEBHOOK_SECRET>`, Event =
+*All events*, Actions = the list in `attendeeSync.actions` in config. Sandbox keeps its own.
+
+### Follow-up rules
+
+The cron looks at Events that have **Class Type** set and **Follow-ups** blank, are in this
+Worker's own `events` ledger, are past **08:00 Pacific the day after End**, ended no more than
+`followups.maxAgeDays` (3) days ago, and are not canceled. For each:
+
+* Nobody **Attended** (no check-ins at all): the event is set to **Held** and `notifyUserId` is
+  notified. Clearing Held re-runs it, but only within the 3 days.
+* **Attended** registrations get `Thank-you: <class type>`. **Registered** ones get
+  `Missed-you: <class type>` and Attendance becomes **No Show**. Canceled, No Show and
+  registrations with no email get nothing.
+* One label per email address per class (a shared address gets one email, thank-you wins). A retry
+  skips addresses already labelled.
+* A class with no registrations (or whose registrations are all deleted or archived in Monday)
+  is skipped; a deleted or archived registration gets nothing. Registrations added by hand in
+  Monday (not via Eventbrite) get no follow-up.
+* Just before a missed-you is written, that registration's Attendance is read again; anyone
+  checked in since the run started gets nothing rather than a missed-you.
+* After labelling, the event's **Follow-ups** is set to **Sent**: that is the run-once guard.
+* The label is `Thank-you: ` / `Missed-you: ` plus the Class Type text, so a Class Type with no
+  matching Follow-up Email label makes Monday reject the write: the event logs `failed` every hour
+  (nothing sent, Follow-ups stays blank) until the label is added — the setup checklist covers
+  adding both labels for every Class Type.
+
+**Only events in this Worker's own ledger can send, but any of them can.** A class migrated from
+Salesforce, or created in Monday by hand, is never in the ledger and never emails. A class that
+*is* in the ledger — because a webhook arrived, or because `backfill-attendees.mjs` or a
+redelivery put it there — sends as soon as it is within the window above with Class Type set and
+Follow-ups blank, even if it was already emailed by hand. So at cutover, after any backfill, set
+**Follow-ups = Sent** on every class that ended in the last 3 days and was already emailed by hand
+(the setup checklist's cutover step).
+The hourly summary line is `eventbrite-sync follow-ups: sent N, held N, skipped N, failed N`; a
+sweep that throws logs `sweep failed`.
+
+**Accepted risk: partial check-in.** If staff check in only some of the people who came, the rest
+get a missed-you. The Held case covers nobody checked in; partial check-in cannot be detected.
+Staff should finish check-in before 08:00 the next morning.
+
+### Backfill
+
+`scripts/backfill-attendees.mjs` replays an event's attendees to the deployed Worker, as the order
+backfill does: flags `--event-id`, `--worker-url`, `--env`, `--pause-ms`, `--dry-run`. Use it for a
+class that predates the webhook. A backfilled class that ended more than 3 days ago is never
+emailed; one that ended within 3 days **will** be once its Class Type is set and Follow-ups is
+blank — see "Follow-up rules" above, and set Follow-ups = Sent first if it was already emailed by
+hand.
+
 ## Out of scope (follow-ups)
 
-* **Event Registrations linkage.** The plan assigns Event Registrations to an Eventbrite-fed
-  Worker that upserts attendees by `Eventbrite Attendee ID` (which `salesforce-import` already
-  stamps). That is the `attendees` expansion, the `attendee.*` actions and a second board — its
-  own design. This Worker keeps `event_id` on the ledger row as the hook; until then a ticket's
-  Donations item has no link to its registration.
+* **Order ↔ registration link.** A ticket's Donations item still has no link to its Event
+  Registrations item; the attendee feed keys on `Eventbrite Attendee ID`, orders on the order id.
 * **Per-attendee gifts.** One order = one item; the buyer is the donor.
 * **Partial refunds.** An order with some attendees refunded stays `placed`; it is written as
   `Received` with whatever `gross` Eventbrite now reports. Whether that `gross` reflects the
@@ -289,8 +390,10 @@ chosen by `ENVIRONMENT`, `src/environment.ts`): `npm run deploy:sandbox` deploys
 outbound sink to lock; `config/split.test.ts` fails if the two configs share an id or
 `env.sandbox` shares a resource with the top level. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`. Local development against
-the sandbox is `npm run dev:sandbox`. **Neither environment is provisioned**: both `database_id`
-values in `wrangler.jsonc` are placeholders until `wrangler d1 create` runs.
+the sandbox is `npm run dev:sandbox`. The sandbox D1 now exists (created
+2026-10-26; migrations 0001–0002 applied, `svbc-eventbrite-sync-sandbox` deployed). Production is
+not provisioned: its `database_id` in `wrangler.jsonc` is a placeholder until `wrangler d1 create`
+runs.
 
 **Workers Builds:** connect `svbc-eventbrite-sync-sandbox` to this repo with root directory
 `/eventbrite-sync` and deploy command `npx wrangler deploy --env sandbox`, as for the other
@@ -298,7 +401,7 @@ Workers; `.gitlab-ci.yml`'s `deploy-sandbox:eventbrite-sync` job is the gated fa
 
 ## Deploy
 
-Nothing has been run yet; this is the order (sandbox first, `--env sandbox` on every command,
+Production has not been run; the sandbox has (2026-10-26, D1 `svbc-eventbrite-sync-sandbox` with migrations 0001–0002). This is the order (sandbox first, `--env sandbox` on every command,
 then production at cutover without it):
 
 ```sh
@@ -323,6 +426,13 @@ no second item). Production repeats the list under the production names at cutov
 
 ## Open
 
+0. **Production class emails (attendee feed).** Connect `learn@` in Emails & Activities; the Bike
+   Education coordinator's `notifyUserId`; production column ids; the `Attendee Email` Email-column conversion; Sequences
+   and automations per the setup checklist, every Thank-you Sequence created **paused** until the
+   Bike Education coordinator refreshes the dated upcoming-classes list and the Bike to Wherever Days line;
+   register the attendee webhook; after any backfill, set Follow-ups = Sent on recent classes
+   already emailed by hand (setup checklist Step 5); name an owner. Known limits: no Class Time column (reminders
+   carry a `[start time]` note), and Spanish class day/date render in English.
 1. **The `Eventbrite Order ID` column id** in config — the column arrives with the next sandbox
    load and the production cutover load; see "Prerequisite column". Nothing can be written until
    the id is set.
