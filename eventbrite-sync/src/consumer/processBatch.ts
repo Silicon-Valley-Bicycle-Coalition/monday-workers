@@ -1,4 +1,7 @@
 import type { OrderStore } from '../db/orders';
+import type { EventStore } from '../db/events';
+import type { AttendeeStore } from '../db/attendees';
+import type { QueueLike } from '../webhook/route';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
@@ -7,6 +10,8 @@ import { MondayApiError } from '../monday/graphql';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
+import { processEvent } from './processEvent';
+import { processAttendee } from './processAttendee';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -33,37 +38,69 @@ export function retryDelaySeconds(attempts: number | undefined): number {
 }
 
 export interface OrderQueueMessage {
+  // Absent on messages queued before event/attendee messages existed: no kind means order.
+  kind?: 'order';
   orderId: string;
   // The webhook action that enqueued it — informational; the consumer always re-fetches.
   action: string;
 }
 
+export interface EventQueueMessage {
+  kind: 'event';
+  eventId: string;
+  action: string;
+}
+
+export interface AttendeeQueueMessage {
+  kind: 'attendee';
+  eventId: string;
+  attendeeId: string;
+  action: string;
+}
+
+export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
+
 export interface ProcessBatchDeps {
   orderStore: OrderStore;
+  eventStore: EventStore;
+  attendeeStore: AttendeeStore;
+  // For fanning an event out into per-attendee messages.
+  queue: QueueLike;
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
 }
 
-export async function processOrderQueueBatch(messages: QueueMessageLike<OrderQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
+export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
   for (const message of messages) {
-    const { orderId } = message.body;
+    const body = message.body;
+    const label = describeMessage(body);
     try {
-      await processOne(orderId, deps);
+      if (body.kind === 'event') await processEvent(body, deps);
+      else if (body.kind === 'attendee') await processAttendee(body, deps);
+      else await processOne(body.orderId, deps);
       message.ack();
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync consumer: failed to process order "${orderId}": ${errMsg}`);
+      console.error(`eventbrite-sync consumer: failed to process ${label}: ${errMsg}`);
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
       try {
-        await deps.orderStore.updateStatus(orderId, 'failed', { error: errMsg });
+        if (body.kind === 'event') await deps.eventStore.updateStatus(body.eventId, 'failed', { error: errMsg });
+        else if (body.kind === 'attendee') await deps.attendeeStore.updateStatus(body.attendeeId, 'failed', { error: errMsg });
+        else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
       } catch (recordErr) {
-        console.error(`eventbrite-sync consumer: could not record failure for order "${orderId}": ${errorMessage(recordErr)}`);
+        console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);
       }
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
+}
+
+export function describeMessage(body: WriteQueueMessage): string {
+  if (body.kind === 'event') return `event "${body.eventId}"`;
+  if (body.kind === 'attendee') return `attendee "${body.attendeeId}"`;
+  return `order "${body.orderId}"`;
 }
 
 async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void> {

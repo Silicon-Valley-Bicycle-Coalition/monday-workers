@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { processDeadLetters, DEAD_LETTER_PREFIX } from './processDeadLetters';
 import type { OrderStore } from '../db/orders';
 import type { OrderRow } from '../types';
@@ -44,10 +45,10 @@ describe('processDeadLetters', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = message();
     try {
-      await processDeadLetters([m], { orderStore });
+      await processDeadLetters([m], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('o-1', 'failed', { error: `${DEAD_LETTER_PREFIX}monday API: status label "Refunded" not found` });
       expect(m.ack).toHaveBeenCalled();
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('1 order dead-lettered'));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('1 message dead-lettered'));
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('o-1'));
     } finally {
       errorSpy.mockRestore();
@@ -58,7 +59,7 @@ describe('processDeadLetters', () => {
     const orderStore = store(row({ error: `${DEAD_LETTER_PREFIX}boom` }));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await processDeadLetters([message()], { orderStore });
+      await processDeadLetters([message()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('o-1', 'failed', { error: `${DEAD_LETTER_PREFIX}boom` });
     } finally {
       errorSpy.mockRestore();
@@ -71,7 +72,7 @@ describe('processDeadLetters', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const m = message();
     try {
-      await processDeadLetters([m], { orderStore });
+      await processDeadLetters([m], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
       expect(orderStore.updateStatus).not.toHaveBeenCalled();
       expect(m.ack).toHaveBeenCalled();
       expect(errorSpy).not.toHaveBeenCalled();
@@ -86,7 +87,7 @@ describe('processDeadLetters', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const m = message();
     try {
-      await processDeadLetters([m], { orderStore });
+      await processDeadLetters([m], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
       expect(orderStore.updateStatus).not.toHaveBeenCalled();
       expect(m.ack).toHaveBeenCalled();
     } finally {
@@ -98,7 +99,7 @@ describe('processDeadLetters', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const m = message('gone');
     try {
-      await processDeadLetters([m], { orderStore: store(null) });
+      await processDeadLetters([m], { orderStore: store(null), eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
       expect(m.ack).toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('gone'));
     } finally {
@@ -112,9 +113,42 @@ describe('processDeadLetters', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = message();
     try {
-      await processDeadLetters([m], { orderStore });
+      await processDeadLetters([m], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore() });
       expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
       expect(m.ack).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('marks the events ledger for an event message', async () => {
+    const orderStore = store(null);
+    const eventStore = fakeEventStore({ getEvent: vi.fn().mockResolvedValue({ eventId: 'e-1', status: 'failed', error: 'boom', receivedAt: '2026-10-06T10:00:00.000Z', writtenAt: null }) });
+    const attendeeStore = fakeAttendeeStore();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = { ...message(), body: { kind: 'event' as const, eventId: 'e-1', action: 'event.updated' } };
+    try {
+      await processDeadLetters([m], { orderStore, eventStore, attendeeStore });
+      expect(eventStore.updateStatus).toHaveBeenCalledWith('e-1', 'failed', { error: `${DEAD_LETTER_PREFIX}boom` });
+      expect(attendeeStore.updateStatus).not.toHaveBeenCalled();
+      expect(orderStore.updateStatus).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('marks the attendees ledger for an attendee message', async () => {
+    const orderStore = store(null);
+    const eventStore = fakeEventStore();
+    const attendeeStore = fakeAttendeeStore({ getAttendee: vi.fn().mockResolvedValue({ attendeeId: 'a-1', status: 'failed', error: null, receivedAt: '2026-10-06T10:00:00.000Z', writtenAt: null }) });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = { ...message(), body: { kind: 'attendee' as const, eventId: 'e-1', attendeeId: 'a-1', action: 'attendee.updated' } };
+    try {
+      await processDeadLetters([m], { orderStore, eventStore, attendeeStore });
+      expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a-1', 'failed', { error: `${DEAD_LETTER_PREFIX}(no recorded error)` });
+      expect(eventStore.updateStatus).not.toHaveBeenCalled();
+      expect(orderStore.updateStatus).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
     }

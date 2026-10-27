@@ -4,9 +4,11 @@ import { createConfigSelector } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
+import { D1EventStore } from './db/events';
+import { D1AttendeeStore } from './db/attendees';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
-import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/processBatch';
+import { processOrderQueueBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env } from './types';
@@ -37,9 +39,11 @@ export default {
 
       const app = createApp({
         orderStore: new D1OrderStore(env.DB),
+        eventStore: new D1EventStore(env.DB),
+        attendeeStore: new D1AttendeeStore(env.DB),
         config,
         queue: {
-          send: (message: OrderQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
+          send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
         },
         webhookSecret: env.EVENTBRITE_WEBHOOK_SECRET,
       });
@@ -48,11 +52,13 @@ export default {
   },
 
   // Both the write queue and its dead-letter queue are consumed here; wrangler.jsonc names them.
-  async queue(batch: MessageBatch<OrderQueueMessage>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<WriteQueueMessage>, env: Env): Promise<void> {
     const config = configFor(env);
     const orderStore = new D1OrderStore(env.DB);
+    const eventStore = new D1EventStore(env.DB);
+    const attendeeStore = new D1AttendeeStore(env.DB);
     if (isDeadLetterBatch(batch.queue)) {
-      await processDeadLetters([...batch.messages], { orderStore });
+      await processDeadLetters([...batch.messages], { orderStore, eventStore, attendeeStore });
       return;
     }
     // An unset token fails every message (retry, then DLQ) rather than being skipped silently:
@@ -63,6 +69,9 @@ export default {
     }
     await processOrderQueueBatch([...batch.messages], {
       orderStore,
+      eventStore,
+      attendeeStore,
+      queue: { send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined) },
       eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,

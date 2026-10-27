@@ -1,4 +1,4 @@
-import type { OrderQueueMessage } from './consumer/processBatch';
+import type { WriteQueueMessage } from './consumer/processBatch';
 
 // Ledger statuses. 'received'/'queued' are the route's; the consumer ends a row at 'written'
 // (a Donations item exists for it), 'skipped' (not giving: unmapped status or a free order — see
@@ -169,7 +169,7 @@ export interface EventbriteSyncConfig {
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
 // only secrets and the narrowed queue message type are declared here.
 export interface Env extends Cloudflare.Env {
-  WRITE_QUEUE: Queue<OrderQueueMessage>;
+  WRITE_QUEUE: Queue<WriteQueueMessage>;
   MONDAY_API_TOKEN: string;
   // Eventbrite private token (`wrangler secret put EVENTBRITE_PRIVATE_TOKEN`), sent as
   // `Authorization: Bearer` on every order fetch. Optional in the type because secrets aren't

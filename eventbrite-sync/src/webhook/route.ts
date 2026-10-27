@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 import type { OrderStore } from '../db/orders';
+import type { EventStore } from '../db/events';
+import type { AttendeeStore } from '../db/attendees';
 import type { EventbriteSyncConfig } from '../types';
 import { validateDelivery } from './validate';
+import { validateAttendeeDelivery } from './validateAttendee';
 import { errorMessage } from '../util/errorMessage';
-import type { OrderQueueMessage } from '../consumer/processBatch';
+import type { WriteQueueMessage } from '../consumer/processBatch';
 
 // Header form of the shared secret, for callers that can set one (scripts/backfill-orders.mjs,
 // a hand replay). Eventbrite itself cannot: its webhook form takes only a target URL and the
@@ -31,11 +34,13 @@ export async function secretsMatch(presented: string | undefined, expected: stri
 }
 
 export interface QueueLike {
-  send(message: OrderQueueMessage): Promise<void>;
+  send(message: WriteQueueMessage): Promise<void>;
 }
 
 export interface AppDeps {
   orderStore: OrderStore;
+  eventStore: EventStore;
+  attendeeStore: AttendeeStore;
   config: EventbriteSyncConfig;
   queue: QueueLike;
   // Eventbrite documents no signature or verification handshake for webhook deliveries, so
@@ -90,6 +95,53 @@ export function createApp(deps: AppDeps) {
       console.error(`eventbrite-sync webhook: enqueue failed for order "${orderId}": ${errMsg}`);
       await deps.orderStore.updateStatus(orderId, 'failed', { error: errMsg });
       // A 5xx gives Eventbrite the chance to redeliver; the keyed upsert makes that safe.
+      return c.json({ ok: false }, 500);
+    }
+
+    return c.json({ ok: true }, 200);
+  });
+
+  // Events and attendees: a second organization-wide webhook, same secret, same pointer-only rules.
+  app.post('/webhooks/eventbrite/attendee', async (c) => {
+    const presented = c.req.header(SECRET_HEADER) ?? c.req.query('secret');
+    if (!(await secretsMatch(presented, deps.webhookSecret))) {
+      return c.json({ ok: false }, 401);
+    }
+
+    let verdict;
+    try {
+      verdict = validateAttendeeDelivery(await c.req.json(), deps.config);
+    } catch (err) {
+      const errMsg = errorMessage(err);
+      console.error(`eventbrite-sync webhook: rejected attendee delivery: ${errMsg}`);
+      return c.json({ ok: false, error: errMsg }, 200);
+    }
+    if (verdict.kind === 'ignore') {
+      console.warn(`eventbrite-sync webhook: ignored delivery: ${verdict.reason}`);
+      return c.json({ ok: true, ignored: verdict.reason }, 200);
+    }
+
+    const delivery = verdict.delivery;
+    const receivedAt = new Date().toISOString();
+    const isEvent = delivery.kind === 'event';
+    const id = delivery.kind === 'event' ? delivery.eventId : delivery.attendeeId;
+    const markFailed = (error: string) =>
+      delivery.kind === 'event' ? deps.eventStore.updateStatus(delivery.eventId, 'failed', { error }) : deps.attendeeStore.updateStatus(delivery.attendeeId, 'failed', { error });
+
+    if (delivery.kind === 'event') {
+      await deps.eventStore.recordDelivery({ eventId: delivery.eventId, action: delivery.action, receivedAt });
+    } else {
+      await deps.attendeeStore.recordDelivery({ attendeeId: delivery.attendeeId, eventId: delivery.eventId, action: delivery.action, receivedAt });
+    }
+
+    try {
+      await deps.queue.send(delivery);
+      if (delivery.kind === 'event') await deps.eventStore.updateStatus(delivery.eventId, 'queued');
+      else await deps.attendeeStore.updateStatus(delivery.attendeeId, 'queued');
+    } catch (err) {
+      const errMsg = errorMessage(err);
+      console.error(`eventbrite-sync webhook: enqueue failed for ${isEvent ? 'event' : 'attendee'} "${id}": ${errMsg}`);
+      await markFailed(errMsg);
       return c.json({ ok: false }, 500);
     }
 

@@ -2,6 +2,8 @@ import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
 import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
+import { D1EventStore } from './db/events';
+import { D1AttendeeStore } from './db/attendees';
 import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/processBatch';
 import type { EventbriteClient } from './eventbrite/client';
 import type { MondayClient } from './monday/client';
@@ -21,7 +23,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
 
     let captured: OrderQueueMessage | undefined;
     const queue = { send: async (m: OrderQueueMessage) => { captured = m; } };
-    const app = createApp({ orderStore, config, queue, webhookSecret: 'int-secret' });
+    const app = createApp({ orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), config, queue, webhookSecret: 'int-secret' });
 
     const res = await app.request('/webhooks/eventbrite/order?secret=int-secret', {
       method: 'POST',
@@ -49,7 +51,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
 
     const ack = vi.fn();
     const retry = vi.fn();
-    await processOrderQueueBatch([{ body: captured!, ack, retry }], { orderStore, eventbriteClient, mondayClient, config });
+    await processOrderQueueBatch([{ body: captured!, ack, retry }], { orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), queue, eventbriteClient, mondayClient, config });
     expect(ack).toHaveBeenCalled();
     expect(retry).not.toHaveBeenCalled();
 
@@ -90,7 +92,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
     expect(captured).toEqual({ orderId: '442719216', action: 'order.refunded' });
     expect((await orderStore.getOrder('442719216'))?.deliveries).toBe(2);
 
-    await processOrderQueueBatch([{ body: captured!, ack: vi.fn(), retry: vi.fn() }], { orderStore, eventbriteClient, mondayClient, config });
+    await processOrderQueueBatch([{ body: captured!, ack: vi.fn(), retry: vi.fn() }], { orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), queue, eventbriteClient, mondayClient, config });
 
     expect(mondayClient.createItem).toHaveBeenCalledTimes(1);
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(
