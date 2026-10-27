@@ -1,0 +1,56 @@
+{
+  "name": "svbc-report-digests",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "workers_dev": true,
+  // Reuses mail.bikesiliconvalley.org, already onboarded to Cloudflare Email Sending for
+  // member-portal — no new domain onboarding needed for this Worker.
+  "send_email": [{ "name": "EMAIL" }],
+  // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". The only
+  // HTTP surface is the authenticated POST /digests/run operator route.
+  "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2091", "simple": { "limit": 60, "period": 60 } }],
+  // The largest digest (the fiscal year by gift size) pages one fiscal year of Donations, a few
+  // thousand items, through JSON.parse. Still far under Workers Paid's 30 s default.
+  "limits": { "cpu_ms": 500 },
+  // Hourly; src/schedule.ts sends each digest when the Pacific hour and day match its schedule in
+  // config, so daylight saving needs no second cron. A missed hour is not caught up — rerun a
+  // digest with POST /digests/run.
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-report-digests-sandbox
+  // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
+  // Rule: inbound data only, no outbound data — the EMAIL binding below may only deliver to the
+  // one sink address, enforced by Cloudflare (E_RECIPIENT_NOT_ALLOWED otherwise); the code layer
+  // in src/email/sandboxBinding.ts rewrites recipients to the same address. Same convention as
+  // member-portal — see docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
+  // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
+  // (MONDAY_API_TOKEN, DIGESTS_SECRET).
+  "env": {
+    "sandbox": {
+      "vars": {
+        "ENVIRONMENT": "sandbox",
+        // Must equal allowed_destination_addresses[0] below — config/split.test.ts checks.
+        "SANDBOX_EMAIL_SINK": "sandbox@bikesiliconvalley.org"
+      },
+      "workers_dev": true,
+      "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["sandbox@bikesiliconvalley.org"] }],
+      "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2092", "simple": { "limit": 60, "period": 60 } }],
+      "limits": { "cpu_ms": 500 },
+      "triggers": {
+        "crons": ["0 * * * *"]
+      },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
+  }
+}
