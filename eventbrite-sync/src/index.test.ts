@@ -60,6 +60,7 @@ describe('scheduled (hourly follow-ups)', () => {
     await runScheduled(controller, withToken, ctx, run);
     await Promise.all(waited);
     expect(run.mock.calls[0]![0]).toEqual(new Date(scheduledTime));
+    expect(Object.keys(run.mock.calls[0]![1]).sort()).toEqual(['attendeeStore', 'config', 'eventStore', 'mondayClient']);
     expect(log).toHaveBeenCalledWith('eventbrite-sync follow-ups: sent 2, held 1, skipped 0, failed 0');
   });
 
@@ -72,8 +73,20 @@ describe('scheduled (hourly follow-ups)', () => {
     expect(error).toHaveBeenCalledWith('eventbrite-sync follow-ups: sent 0, held 0, skipped 0, failed 2 (9001, 9002)');
   });
 
+  it('logs a sweep that throws and does not reject the waitUntil promise', async () => {
+    const run = vi.fn<typeof runFollowups>().mockRejectedValue(new Error('D1 unavailable'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { ctx, waited } = context();
+    await runScheduled(controller, withToken, ctx, run);
+    await expect(Promise.all(waited)).resolves.toBeDefined();
+    expect(error).toHaveBeenCalledWith('eventbrite-sync follow-ups: sweep failed: D1 unavailable');
+  });
+
   it('throws naming MONDAY_API_TOKEN when it is unset, and runs nothing', async () => {
     const { ctx } = context();
+    const run = vi.fn<typeof runFollowups>();
+    await expect(runScheduled(controller, { ...env, MONDAY_API_TOKEN: undefined } as unknown as Env, ctx, run)).rejects.toThrow('MONDAY_API_TOKEN');
+    expect(run).not.toHaveBeenCalled();
     await expect(worker.scheduled(controller, { ...env, MONDAY_API_TOKEN: undefined } as unknown as Env, ctx)).rejects.toThrow('MONDAY_API_TOKEN');
   });
 

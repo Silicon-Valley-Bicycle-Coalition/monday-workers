@@ -10,6 +10,7 @@ import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
 import { processOrderQueueBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { runFollowups, type FollowupResult } from './followups/run';
+import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env } from './types';
@@ -107,6 +108,9 @@ export async function runScheduled(controller: ScheduledController, env: Env, ct
       attendeeStore: new D1AttendeeStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, token),
       config,
-    }).then(logFollowupSummary)
+    })
+      .then(logFollowupSummary)
+      // A sweep-level throw (config, D1) must be logged, not become an unhandled waitUntil rejection.
+      .catch((err) => console.error(`eventbrite-sync follow-ups: sweep failed: ${errorMessage(err)}`))
   );
 }
