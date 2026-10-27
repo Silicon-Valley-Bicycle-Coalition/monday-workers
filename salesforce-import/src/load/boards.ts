@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import type { Config } from '../config.js';
 import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
+import { statusLabelDefaults } from '../configure/labels.js';
 import { SF_ID_COLUMN } from './lookup.js';
 
 // 'Fiscal Year Ending' is deliberately 'text', not 'numbers': Monday renders every numbers
@@ -82,10 +83,10 @@ export const STATUS_LABELS: Record<string, string[]> = {
 // code. Only the Donations board computes "Status" itself (StageName mapped to exactly
 // Received/Failed/Pending in transform/donations.ts), so that one is closed and scoped by
 // board key rather than title alone.
-const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
+export const DONATION_STATUS_LABELS = ['Received', 'Received (Historical)', 'Failed', 'Pending'];
 // The design spec adds a 'Draft' state for affiliations a later Worker proposes and staff have
 // not yet confirmed, alongside the two settled states.
-const AFFILIATION_STATUS_LABELS = ['Current', 'Former', 'Draft'];
+export const AFFILIATION_STATUS_LABELS = ['Current', 'Former', 'Draft'];
 
 function statusLabelsFor(key: string, title: string): string[] | undefined {
   if (title === 'Status' && key === 'donations') return DONATION_STATUS_LABELS;
@@ -245,7 +246,7 @@ export async function ensureBoards(
         defaults = CURRENCY_DEFAULTS;
       } else {
         const labels = statusLabelsFor(key, title);
-        if (labels) defaults = JSON.stringify({ labels: Object.fromEntries(labels.map((label, i) => [i, label])) });
+        if (labels) defaults = statusLabelDefaults(labels);
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(
