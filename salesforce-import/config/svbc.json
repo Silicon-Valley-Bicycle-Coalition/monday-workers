@@ -19,7 +19,7 @@
     "apiUrl": "https://api.monday.com/v2",
     "accountUrl": "https://bikesiliconvalley.monday.com",
     "boardSuffix": "",
-    "workspaceId": null,
+    "workspaceId": 18201685,
     "boards": {
       "donations": null,
       "activities": null,
