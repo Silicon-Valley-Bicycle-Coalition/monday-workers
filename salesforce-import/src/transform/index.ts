@@ -95,8 +95,9 @@ export async function runTransform(args: string[]): Promise<number> {
   // Person/organization split. One-to-one Accounts are People by NPSP's own stamp; blank-type
   // Accounts named after their sole Contact are People NPSP never stamped (Account-first imports,
   // Click & Pledge) and fold into that Contact — no Organization item, and anything booked
-  // against the Account (gifts, links) re-points at the person.
-  const personNamed = personNamedAccountIds(accounts, contacts);
+  // against the Account (gifts, links) re-points at the person. One a contact merge left with no
+  // Contact folds into the same-named Contact its gifts name.
+  const personNamed = personNamedAccountIds(accounts, contacts, opportunities);
   const orgAccountIds = new Set(accounts
     .filter((a) => !isOneToOneAccount(a) && !personNamed.has(a['Id'] as string))
     .map((a) => a['Id'] as string));
@@ -482,7 +483,7 @@ export async function runTransform(args: string[]): Promise<number> {
 
   if (personNamed.size > 0) {
     warnings.push(`people: ${personNamed.size} person-named account${personNamed.size === 1 ? '' : 's'} ` +
-      `(blank NPSP type, sole Contact shares the name) folded into their Contact instead of Organizations`);
+      `(blank NPSP type, named after its sole Contact) folded into their Contact instead of Organizations`);
   }
   const softCreditTargets = [...softCredits.values()].flat();
   const softCreditUnmigrated = softCreditTargets.filter((id) => !boardOf.has(id)).length;
