@@ -50,7 +50,15 @@ export async function consumeOutboundBatch(
     } else {
       const dry = dryRunOutboundDeps(deps, { ...gate, deliveryId: message.body.donorItemId });
       // The one pending write a dry run makes, so a row can never look like work in flight.
-      await dry.pendingStore.updateStatus(message.body.donorItemId, 'dropped');
+      try {
+        await dry.pendingStore.updateStatus(message.body.donorItemId, 'dropped');
+      } catch (err) {
+        // A D1 failure must not escape the batch (every unacked message would redeliver at once):
+        // back this one off like any other failure and rehearse it next time.
+        console.error(`mailchimp-sync outbound consumer: could not record dropped status for donor ${message.body.donorItemId}: ${errorText(err)}`);
+        message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
+        continue;
+      }
       await handleMessage(message, dry);
     }
   }

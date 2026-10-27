@@ -42,7 +42,15 @@ export async function consumeInboundBatch(
     } else {
       // The message body carries an address; the skip lines name the member by hash instead.
       const dry = dryRunInboundDeps(deps, { ...gate, deliveryId: redactEmails(message.body.email) });
-      await dry.pendingStore.updateStatus(message.body.email, 'dropped');
+      try {
+        await dry.pendingStore.updateStatus(message.body.email, 'dropped');
+      } catch (err) {
+        // A D1 failure must not escape the batch (every unacked message would redeliver at once):
+        // back this one off like any other failure and rehearse it next time.
+        console.error(`mailchimp-sync inbound consumer: could not record dropped status for member ${memberId(message.body.email)}: ${errorText(err)}`);
+        message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
+        continue;
+      }
       await handleMessage(message, dry);
     }
   }

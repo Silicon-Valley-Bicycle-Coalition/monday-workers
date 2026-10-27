@@ -318,3 +318,41 @@ describe('scheduled reconcile', () => {
     expect(reconcile).toHaveBeenCalledWith(deps);
   });
 });
+
+describe('a failing dropped-status write', () => {
+  it('outbound: retries that message at the backoff, runs no dry-run body, and still handles the next one', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = outboundDeps();
+    deps.pendingStore = {
+      upsertPending: vi.fn(),
+      updateStatus: vi.fn().mockRejectedValueOnce(new Error('D1 unavailable')).mockResolvedValue(undefined),
+    };
+    const first = outMsg({ donorItemId: '1' }, 2);
+    const second = outMsg({ donorItemId: '2' });
+    await consumeOutboundBatch([first, second], deps, gate('off'));
+    expect(first.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+    expect(first.ack).not.toHaveBeenCalled();
+    expect(deps.mondayClient.getDonorById).toHaveBeenCalledTimes(1);
+    expect(second.ack).toHaveBeenCalledOnce();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record dropped status'));
+  });
+
+  it('inbound: retries that message at the backoff, runs no dry-run body, and still handles the next one', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const deps = inboundDeps();
+    deps.pendingStore = {
+      upsertPending: vi.fn(),
+      updateStatus: vi.fn().mockRejectedValueOnce(new Error('D1 unavailable')).mockResolvedValue(undefined),
+    };
+    const first = inMsg({ email: EMAIL }, 3);
+    const second = inMsg({ email: 'other@example.com' });
+    await consumeInboundBatch([first, second], deps, gate('off'));
+    expect(first.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(first.ack).not.toHaveBeenCalled();
+    expect(deps.mailchimpClient.getMemberInterests).toHaveBeenCalledTimes(1);
+    expect(second.ack).toHaveBeenCalledOnce();
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('@');
+  });
+});
