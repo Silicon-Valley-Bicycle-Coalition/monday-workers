@@ -109,7 +109,7 @@ describe('processEvent', () => {
     const { deps, eventStore, mondayClient } = setup({ row: eventRow({ mondayItemId: 'item-9' }), monday: { changeColumnValues: vi.fn().mockRejectedValue(gone) } });
     await processEvent(message, deps);
     expect(mondayClient.createItem).not.toHaveBeenCalled();
-    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'failed', expect.objectContaining({ error: expect.stringContaining('item-9') }));
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'failed', { error: expect.stringContaining('item-9') });
   });
 
   it('rethrows other Monday errors for retry', async () => {

@@ -32,12 +32,10 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
   }
 
   let mondayItemId = row.mondayItemId;
-  let adopted = false;
   if (mondayItemId === null) {
     const existing = await mondayClient.findItemByColumnValue(boardId, eventbriteIdColumn, eventId);
     if (existing) {
       mondayItemId = existing.id;
-      adopted = true;
     }
   }
 
@@ -55,10 +53,11 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     } catch (err) {
       if (!isItemGone(err)) throw err;
       // Staff deleted (or archived) the Events item. Recreating it would resurrect an event
-      // someone removed on purpose, so record it and stop, for a human.
+      // someone removed on purpose, so record it and stop, for a human. Only the error is
+      // written: the last written start/location stay as the baseline for a later replay.
       const reason = `Events item ${mondayItemId} was deleted or archived; nothing written`;
       console.warn(`eventbrite-sync consumer: event "${eventId}": ${reason}`);
-      await eventStore.updateStatus(eventId, 'failed', { ...facts, error: reason });
+      await eventStore.updateStatus(eventId, 'failed', { error: reason });
       return;
     }
   } else {
