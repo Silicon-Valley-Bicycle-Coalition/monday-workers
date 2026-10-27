@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { HttpMondayClient, MondayRateLimitError } from './client';
+import { HttpMondayClient, MondayRateLimitError, statusLabel } from './client';
 import { AmbiguousWriteError, MONDAY_API_VERSION } from './graphql';
 
 const COLUMNS = { amount: 'amount_1', date: 'date_1', fiscalYear: null, status: 'status_1' };
@@ -348,5 +348,33 @@ describe('HttpMondayClient transport', () => {
     const err = await new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP).getItemBoardId('1').catch((e) => e);
     expect(err).toBeInstanceOf(MondayRateLimitError);
     expect(err).toMatchObject({ retryInSeconds: 12, retryAfterSeconds: 12, code: 'COMPLEXITY_BUDGET_EXHAUSTED', daily: false });
+  });
+});
+
+describe('status columns read by stored value (label id 5)', () => {
+  it('statusLabel is null for an empty value, unparseable JSON, or no numeric index', () => {
+    expect(statusLabel('Other Program Revenue', null)).toBeNull();
+    expect(statusLabel('Other Program Revenue', '')).toBeNull();
+    expect(statusLabel('Other Program Revenue', 'not json')).toBeNull();
+    expect(statusLabel('Other Program Revenue', '{}')).toBeNull();
+    expect(statusLabel('Other Program Revenue', '{"index":"5"}')).toBeNull();
+    expect(statusLabel('Other Program Revenue', '{"index":5,"post_id":null}')).toBe('Other Program Revenue');
+    expect(statusLabel('', '{"index":1}')).toBeNull();
+  });
+  it('pageItemsColumnsText asks for and returns each raw value', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: 'g1', column_values: [
+      { id: 'fs', text: 'Other Program Revenue', value: null }, { id: 'gs', text: '< $100', value: '{"index":2}' }] }] } }] } });
+    const page = await client.pageItemsColumnsText(1, ['fs', 'gs', 'fq'], null);
+    expect(page.items[0]!.values).toEqual(new Map([['fs', null], ['gs', '{"index":2}'], ['fq', null]]));
+    expect(page.items[0]!.text.get('fs')).toBe('Other Program Revenue');
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { query: string };
+    expect(body.query).toMatch(/\{ id text value \}/);
+  });
+  it('pageRecurringGifts reads a blank status as null even when its text is the id-5 label', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'r1', column_values: [{ id: 'donor', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'st', text: 'Active', value: null }] },
+      { id: 'r2', column_values: [{ id: 'donor', text: 'Bo', linked_item_ids: ['p2'] }, { id: 'st', text: 'Active', value: '{"index":5}' }] }] } }] } });
+    const page = await client.pageRecurringGifts({ boardId: 9, columns: { donorLink: 'donor', status: 'st' }, activeStatusLabel: 'Active' }, null);
+    expect(page.items.map((i) => i.statusLabel)).toEqual([null, 'Active']);
   });
 });

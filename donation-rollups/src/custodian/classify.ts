@@ -1,6 +1,6 @@
 import { classifyGift, type GiftClassification } from '../rollups/classify';
 import { parseAmountCents } from '../money';
-import { MondayRateLimitError } from '../monday/client';
+import { MondayRateLimitError, statusLabel, type ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, ClassificationColumns } from '../types';
 import type { DutyReport } from './custodian';
 
@@ -12,7 +12,7 @@ import type { DutyReport } from './custodian';
 
 export interface ClassifyClient {
   pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
-    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }>;
+    Promise<{ items: ItemColumns[]; cursor: string | null }>;
   changeColumnValues(boardId: number, itemId: string, values: Record<string, unknown>,
     opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
 }
@@ -22,10 +22,12 @@ const FAILED_IDS_IN_REPORT = 20;
 
 const KEYS = ['fundingStream', 'giftSize', 'fiscalQuarter', 'giftFiscalYear'] as const;
 
-function diff(want: GiftClassification, cols: ClassificationColumns, have: Map<string, string | null>): Record<string, unknown> {
+// All four are status columns, so they're compared by stored value — a blank cell's text can be
+// a real label (label id 5), which would skip a write the gift needs.
+function diff(want: GiftClassification, cols: ClassificationColumns, have: ItemColumns): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of KEYS) {
-    const current = have.get(cols[key]) ?? '';
+    const current = statusLabel(have.text.get(cols[key]), have.values.get(cols[key])) ?? '';
     if (current !== want[key]) out[cols[key]] = want[key] === '' ? '' : { label: want[key] };
   }
   return out;
@@ -50,7 +52,7 @@ export async function runClassify(client: ClassifyClient, config: DonationRollup
           dateISO: item.text.get(board.columns.date) ?? null,
           giftType: board.columns.giftType ? item.text.get(board.columns.giftType) ?? null : null,
         }, config.fiscalYear.startMonth);
-        const values = diff(want, cl, item.text);
+        const values = diff(want, cl, item);
         if (Object.keys(values).length === 0) continue;
         changed++;
         if (written + failed.length < CLASSIFY_WRITES_PER_RUN) {

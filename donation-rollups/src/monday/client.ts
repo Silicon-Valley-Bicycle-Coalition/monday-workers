@@ -38,6 +38,10 @@ export interface AffiliationSummary {
 
 export type ItemState = 'active' | 'archived' | 'deleted';
 
+// One item's requested columns from pageItemsColumnsText: text ('' reads as null) and the raw
+// stored value JSON (null for an empty cell).
+export interface ItemColumns { id: string; text: Map<string, string | null>; values: Map<string, string | null> }
+
 export interface RegistrationRecord {
   id: string;
   // An item items(ids:) no longer returns at all is read as null, not 'deleted'.
@@ -163,7 +167,23 @@ function rateLimitErrorFrom(err: unknown): MondayRateLimitError | null {
   return new MondayRateLimitError(err.message, retryInSeconds, err.code === 'DAILY_LIMIT_EXCEEDED', err);
 }
 
-interface ColumnValue { id: string; text: string | null; linked_item_ids?: string[] }
+interface ColumnValue { id: string; text: string | null; value?: string | null; linked_item_ids?: string[] }
+
+// A status cell's label, or null when the cell is empty. Read status columns with this, never
+// by text alone: Monday returns label id 5's text for an EMPTY status cell, so a column with a
+// real label at id 5 reads every blank cell as that label (sandbox rehearsal 2026-10-27). The
+// stored value is null, or JSON without a numeric `index`, when the cell is empty.
+export function statusLabel(text: string | null | undefined, value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value.trim() === '') return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { index?: unknown }).index !== 'number') return null;
+  return text === null || text === undefined || text.trim() === '' ? null : text;
+}
 
 export class HttpMondayClient implements DonationRollupsMondayClient {
   private readonly transports = new Map<string, MondayGraphQL>();
@@ -389,7 +409,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
         { boardId: [board.boardId], columnIds: [c.donorLink, c.status], cursor },
@@ -400,7 +420,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       cursor: page.cursor,
       items: page.items.map((item) => {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
-        return { id: item.id, statusLabel: byId.get(c.status)?.text || null,
+        const status = byId.get(c.status);
+        return { id: item.id, statusLabel: statusLabel(status?.text, status?.value),
           donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [] };
       }),
     };
@@ -463,13 +484,15 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     return out;
   }
 
+  // Each column's text and raw stored value (null for an empty cell); read status columns
+  // through statusLabel(text, value), not text alone.
   async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
-    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }> {
+    Promise<{ items: ItemColumns[]; cursor: string | null }> {
     const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value } } }
           }
         }`,
         { boardId: [boardId], columnIds, cursor },
@@ -480,8 +503,12 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       cursor: page.cursor,
       items: page.items.map((item) => {
         const text = new Map<string, string | null>(columnIds.map((id) => [id, null]));
-        for (const cv of item.column_values) text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
-        return { id: item.id, text };
+        const values = new Map<string, string | null>(columnIds.map((id) => [id, null]));
+        for (const cv of item.column_values) {
+          text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
+          values.set(cv.id, cv.value ?? null);
+        }
+        return { id: item.id, text, values };
       }),
     };
   }
