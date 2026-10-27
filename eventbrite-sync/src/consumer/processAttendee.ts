@@ -64,14 +64,17 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   };
 
   let currentAttendance: string | null = null;
+  let linkAlreadySet = false;
   if (mondayItemId !== null) {
-    const [current] = await mondayClient.getItems(boardId, [mondayItemId], [cols.attendanceColumn]);
+    const [current] = await mondayClient.getItems(boardId, [mondayItemId], [cols.attendanceColumn, cols.attendeeLinkColumn]);
     if (current === undefined) {
       // Staff deleted the item: recreating it would resurrect a registration removed on purpose.
       await markGone(mondayItemId);
       return;
     }
     currentAttendance = current.columns[cols.attendanceColumn]?.trim() || null;
+    // A link already on the item may be a staff relink: never match over it or overwrite it.
+    linkAlreadySet = (current.columns[cols.attendeeLinkColumn] ?? '').trim() !== '';
   }
 
   const attendance = mergeAttendance(currentAttendance, attendanceFromEventbrite(attendee));
@@ -80,8 +83,10 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
 
   // People only once they have actually attended (spec decision D). Cached on the ledger so retries
   // and later updates don't match again; a match failure throws, as for donors.
-  let personItemId = row.matchedPersonItemId;
-  if (attendance === 'Attended' && personItemId === null) {
+  // On an existing item with a blank link the cache may be stale (staff cleared it), so match afresh.
+  let personItemId: string | null = mondayItemId !== null ? null : row.matchedPersonItemId;
+  const wantsLink = attendance === 'Attended' && !linkAlreadySet;
+  if (wantsLink && personItemId === null) {
     const peopleBoardId = config.monday.boards['people-live'];
     if (peopleBoardId === null) {
       throw new Error('config: monday.boards["people-live"] is not configured');
@@ -94,7 +99,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
       await attendeeStore.updateStatus(attendeeId, 'queued', { matchedPersonItemId: personItemId });
     }
   }
-  if (attendance === 'Attended' && personItemId !== null) {
+  if (wantsLink && personItemId !== null) {
     columnValues[cols.attendeeLinkColumn] = { item_ids: [Number(personItemId)] };
   }
 

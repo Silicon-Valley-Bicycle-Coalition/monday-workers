@@ -117,7 +117,7 @@ describe('processAttendee', () => {
       monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', columns: { att_attendance_col: 'No Show' } }]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
     });
     await processAttendee(message, deps);
-    expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col']);
+    expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col', 'att_person_col']);
     const [board, id, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect([board, id]).toEqual([333, 'reg-9']);
     expect(values.att_attendance_col).toBe('Attended');
@@ -145,12 +145,53 @@ describe('processAttendee', () => {
     expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
   });
 
-  it('reuses a cached People match without searching', async () => {
-    const { deps, mondayClient } = setup({ ...existing, att: attendee({ checked_in: true }), current: 'Registered' });
-    (deps.attendeeStore.getAttendee as ReturnType<typeof vi.fn>).mockResolvedValue(attendeeRow({ mondayItemId: 'reg-9', matchedPersonItemId: '888' }));
+  it('reuses a cached People match on the create path without searching', async () => {
+    const { deps, mondayClient } = setup({ row: attendeeRow({ matchedPersonItemId: '888' }), att: attendee({ checked_in: true }) });
+    await processAttendee(message, deps);
+    expect(mondayClient.findItemByColumnValue).toHaveBeenCalledTimes(1); // adopt lookup only
+    expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].att_person_col).toEqual({ item_ids: [888] });
+  });
+
+  it('existing item with a link already set + check-in: link not written, matchPerson not called', async () => {
+    const { deps, mondayClient } = setup({
+      row: attendeeRow({ mondayItemId: 'reg-9', matchedPersonItemId: '888' }), att: attendee({ checked_in: true }),
+      monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', columns: { att_attendance_col: 'Registered', att_person_col: 'Staff Chosen' } }]) },
+    });
     await processAttendee(message, deps);
     expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
-    expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2].att_person_col).toEqual({ item_ids: [888] });
+    const values = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2];
+    expect(values.att_attendance_col).toBe('Attended');
+    expect(values.att_person_col).toBeUndefined();
+  });
+
+  it('existing item with a blank link + check-in: matches afresh over a stale cache and writes the link', async () => {
+    const { deps, mondayClient } = setup({
+      row: attendeeRow({ mondayItemId: 'reg-9', matchedPersonItemId: '888' }), att: attendee({ checked_in: true }),
+      monday: {
+        getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', columns: { att_attendance_col: 'Registered', att_person_col: '' } }]),
+        findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }),
+      },
+    });
+    await processAttendee(message, deps);
+    expect(mondayClient.findItemByColumnValue).toHaveBeenCalledWith(42, 'people_email_col', 'pat@example.com');
+    expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2].att_person_col).toEqual({ item_ids: [777] });
+  });
+
+  it('writes Canceled for a cancelled attendee currently Registered, with no People lookup', async () => {
+    const { deps, mondayClient } = setup({ ...existing, att: attendee({ cancelled: true }), current: 'Registered' });
+    await processAttendee(message, deps);
+    const values = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2];
+    expect(values.att_attendance_col).toBe('Canceled');
+    expect(values.att_person_col).toBeUndefined();
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+
+  it('marks an event 404 from Eventbrite failed without throwing', async () => {
+    const { deps, attendeeStore, eventbriteClient, mondayClient } = setup();
+    (eventbriteClient.getEvent as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await processAttendee(message, deps);
+    expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a1', 'failed', { error: 'event not found in Eventbrite (HTTP 404)' });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
   });
 
   it('adopts an existing item by the attendee id column and reads its Attendance', async () => {
