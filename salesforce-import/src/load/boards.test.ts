@@ -180,7 +180,7 @@ describe('ensureBoards', () => {
     expect(JSON.parse(defaultsByTitle['Event Status']!).labels).toEqual(
       { 0: 'Upcoming', 1: 'Completed', 2: 'Canceled', 3: 'Draft' });
     expect(JSON.parse(defaultsByTitle['Program']!).labels).toEqual(
-      { 0: 'Public', 1: 'Volunteering', 2: 'Bike Parking', 3: 'Group Rides', 4: 'Private', 5: 'Fundraiser' });
+      { 0: 'Public', 1: 'Volunteering', 2: 'Bike Parking', 3: 'Group Rides', 4: 'Private', 6: 'Fundraiser' });
     expect(JSON.parse(defaultsByTitle['Attendance']!).labels).toEqual(
       { 0: 'Registered', 1: 'Attended', 2: 'No Show', 3: 'Canceled' });
     expect(JSON.parse(defaultsByTitle['Role']!).labels).toEqual({ 0: 'Participant', 1: 'Volunteer' });

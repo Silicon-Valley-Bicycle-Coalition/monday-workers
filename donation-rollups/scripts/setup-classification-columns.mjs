@@ -14,7 +14,9 @@ if (!token || !/^\d+$/.test(boardId ?? '')) {
   console.error('usage: MONDAY_API_TOKEN=... node scripts/setup-classification-columns.mjs <donationsBoardId>');
   process.exit(1);
 }
-const labels = (list) => JSON.stringify({ labels: Object.fromEntries(list.map((l, i) => [i, l])) });
+// Keyed 0..4, 6..n: Monday shows label id 5's text for an EMPTY status cell, so a real label there
+// makes every unclassified gift read as that label (and classify's text diff then skips it).
+const labels = (list) => JSON.stringify({ labels: Object.fromEntries(list.map((l, i) => [i < 5 ? i : i + 1, l])) });
 const FIELDS = {
   fundingStream: { title: 'Funding Stream', defaults: labels(['Individual Giving', 'Membership', 'Sponsorships', 'Grants & Contracts', 'Matching Donations', 'Other Program Revenue']) },
   giftSize: { title: 'Gift Size', defaults: labels(['< $100', '$100–249', '$250–999', '$1k–4.9k', '$5k+']) },
