@@ -9,6 +9,7 @@ import { D1AttendeeStore } from './db/attendees';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
 import { processOrderQueueBatch, type WriteQueueMessage } from './consumer/processBatch';
+import { runFollowups, type FollowupResult } from './followups/run';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env } from './types';
@@ -24,6 +25,14 @@ const SANDBOX_DEAD_LETTER_QUEUE = 'eventbrite-sync-writes-sandbox-dlq';
 
 export function isDeadLetterBatch(queueName: string): boolean {
   return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE;
+}
+
+// One line per sweep for Workers Logs. A failed event is an error (its Follow-ups stays blank, so
+// the next hourly run retries it); a clean sweep is just info.
+export function logFollowupSummary(result: FollowupResult): void {
+  const counts = `sent ${result.sent.length}, held ${result.held.length}, skipped ${result.skipped.length}, failed ${result.failed.length}`;
+  if (result.failed.length > 0) console.error(`eventbrite-sync follow-ups: ${counts} (${result.failed.join(', ')})`);
+  else console.log(`eventbrite-sync follow-ups: ${counts}`);
 }
 
 export default {
@@ -77,4 +86,27 @@ export default {
       config,
     });
   },
+
+  // Hourly (wrangler.jsonc triggers): the morning-after class follow-ups. Cheap when idle: one D1
+  // read of events that ended in the last few days, and Monday is touched only for those.
+  scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    return runScheduled(controller, env, ctx, runFollowups);
+  },
 };
+
+// `run` is a parameter so a test can observe the call without module mocking.
+export async function runScheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext, run: typeof runFollowups): Promise<void> {
+  const config = configFor(env);
+  const token = env.MONDAY_API_TOKEN;
+  if (token === undefined || token === '') {
+    throw new Error('MONDAY_API_TOKEN is not set (wrangler secret put MONDAY_API_TOKEN); cannot run class follow-ups');
+  }
+  ctx.waitUntil(
+    run(new Date(controller.scheduledTime), {
+      eventStore: new D1EventStore(env.DB),
+      attendeeStore: new D1AttendeeStore(env.DB),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, token),
+      config,
+    }).then(logFollowupSummary)
+  );
+}

@@ -177,9 +177,9 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(sb.namespace_id).not.toBe(prod.namespace_id);
   });
 
-  it('has no cron triggers in either environment — nothing is stored that needs purging', () => {
-    expect(wrangler.triggers).toBeUndefined();
-    expect(sandboxEnv.triggers).toBeUndefined();
+  it('runs the follow-up sweep hourly in both environments (wrangler does not inherit triggers)', () => {
+    expect((wrangler.triggers as Json | undefined)?.crons).toEqual(['0 * * * *']);
+    expect((sandboxEnv.triggers as Json | undefined)?.crons).toEqual(['0 * * * *']);
   });
 
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {

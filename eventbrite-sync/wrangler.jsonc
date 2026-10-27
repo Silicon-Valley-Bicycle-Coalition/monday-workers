@@ -38,6 +38,9 @@
       }
     ]
   },
+  // Hourly sweep for the morning-after class follow-ups (src/followups/run.ts). The 08:00 Pacific
+  // send time is decided in code, so this just has to fire every hour, DST included.
+  "triggers": { "crons": ["0 * * * *"] },
   // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits". 60/min/IP
   // is generous against real Eventbrite volume (tens of orders a day at a Summit peak) while
   // blunting a flood against the webhook route. The shared-secret check runs first in the route
@@ -60,6 +63,8 @@
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
+      // Triggers are not inheritable either.
+      "triggers": { "crons": ["0 * * * *"] },
       "d1_databases": [
         {
           "binding": "DB",
