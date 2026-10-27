@@ -61,10 +61,15 @@ node scripts/flags.mjs status --env production
 node scripts/flags.mjs donation-rollups writes off --env production
 ```
 
-Subscribe its webhooks after the load, as before.
+Subscribe its webhooks after the load, as before; flip it `on` only after they are subscribed.
 
 ## During the hold
 
+- `member-portal` is donor-visibly unavailable under `hold`, `unknown` and `off`: login,
+  change-request and card-regenerate POSTs render a 503 "temporarily unavailable" page, while
+  reads still work. Holding `all` therefore takes donor login offline for the whole hold. Trade-off:
+  announce the outage to donors beforehand, or hold Workers individually instead of `all` (for
+  example leaving `member-portal` `on` if its boards stay readable during the load).
 - `bp-feedback-notify` has no queue: under `hold` it returns 503 and only Monday's own retries
   apply, so a feedback request fired mid-migration may need re-triggering by hand. The two
   `benevity-import` routes also return 503 under `hold`.
@@ -105,5 +110,6 @@ flip. Recover them by hand if wanted:
   manual redrive.
 - `benevity-import`: reports uploaded during the off period need a re-upload or the Retry action.
 - `email-log`: rows close out `failed`, so a staff re-send is logged.
-- `member-portal`: under `off` no `letter_sends` rows are created; change requests or letters
-  dropped while `off` need a staff re-click or a donor re-submit.
+- `member-portal`: change requests are refused with 503 under `off` (the donor re-submits); the
+  letters webhook logs and returns 200 with no `letter_sends` row (staff re-click); a message
+  queued under `hold` but consumed under `off` stays `queued`.

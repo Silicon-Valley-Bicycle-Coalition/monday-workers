@@ -198,8 +198,10 @@ placeholders (`REPLACE_WITH_FLAGS_KV_ID`, `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`) un
 are created. Runbook: `docs/runbooks/migration-hold.md`.
 
 - **Cursor invariant exception under `off`:** a cron-polled Worker's D1 cursor normally advances
-  only after a confirmed Monday write; under `off` nothing is written, so crons skip without
-  advancing cursors (and `hold`/`unknown` skip the same way). Work ingested under `off` is stamped
+  only after a confirmed Monday write; under `off` a poller dry-runs and its cursor
+  **advances**, so what it would have written is skipped for good, deliberately; recompute and
+  maintenance crons compute and log but don't write. Under `hold`/`unknown` crons skip and cursors
+  stay put, so the first `on` run walks everything since the hold began. Work ingested under `off` is stamped
   `dropped` on the queue message and stays a dry run if consumed after a flip to `on`; an
   unstamped message (enqueued before the switch existed) is live. Dry-run chained writes persist no
   placeholder ids. Leave `hold` with `on`; `hold` to `off` drops held messages.
@@ -208,7 +210,7 @@ are created. Runbook: `docs/runbooks/migration-hold.md`.
   at 43,200 s), `max_retries: 100` on main queues (~4 days), DLQ consumers unchanged; queue and DLQ
   retention 14 days, set by `flags.mjs retention` rather than `wrangler.jsonc`. Retryable/terminal
   classification stays per Worker.
-- `bp-feedback-notify` has no queue (503 under `hold`); `benevity-import` routes 503 under
+- `bp-feedback-notify` has no queue (503 under `hold`/`unknown`); `benevity-import` routes 503 under
   `hold`/`unknown`; `monday-backup` skips the run unless `on`.
 
 **One Monday GraphQL transport, copied, not shared (#35):** `monday-backup/src/monday/graphql.ts`

@@ -176,8 +176,8 @@ the migration procedure: [`docs/runbooks/migration-hold.md`](docs/runbooks/migra
 | Mode | Behaviour |
 |---|---|
 | `on` | Write normally. |
-| `hold` | Write nothing and keep the work: queue consumers retry, the Worker's main queues are paused, crons skip (their cursors do not advance). Leaving `hold` with `on` writes everything that queued up. |
-| `off` | Write nothing, log what would have been written (dry run). Work ingested under `off` is stamped `dropped` and is **never** written later, even after a flip to `on`. |
+| `hold` | `member-portal` is donor-visibly unavailable under `hold`, `unknown` and `off`: login, change-request and card-regenerate POSTs render a 503 "temporarily unavailable" page (reads still work). Write nothing and keep the work: queue consumers retry, the Worker's main queues are paused, crons skip (their cursors do not advance). Leaving `hold` with `on` writes everything that queued up. |
+| `off` | Write nothing, log what would have been written (dry run). Pollers' cursors advance, so what they would have fetched is skipped for good. Work ingested under `off` is stamped `dropped` and is **never** written later, even after a flip to `on`. |
 
 **Keys** (KV namespace `svbc-worker-flags` in production, `svbc-worker-flags-sandbox` in the
 sandbox; both bound as `FLAGS`): `<worker>:writes` is `on`, `hold` or `off`; `<worker>:log` set to
