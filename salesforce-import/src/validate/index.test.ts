@@ -42,6 +42,23 @@ describe('runValidate', () => {
     expect(readFileSync(dataPath('validate', 'sample.csv'), 'utf8')).toContain('a1');
   });
 
+  it('writes reviewer links, an archived flag and blank result/note columns into sample.csv', async () => {
+    await seed({ funraiseOpportunities: 1, funraiseTotalAmountCents: 1010,
+      subscriptionsAll: 0, eventRegistrations: 1, eventbriteAttendees: 2, organizations: 1 });
+    const cfg = await readJson<Record<string, unknown> & { monday: Record<string, unknown> }>('config/svbc.json');
+    await writeJson('config/svbc.json', { ...cfg, salesforceInstanceUrl: 'https://sf.example/',
+      monday: { ...cfg.monday, accountUrl: 'https://acct.monday.com' } });
+    await writeJson(dataPath('load', 'boards.json'), { donations: { boardId: 77, columns: {} } });
+    const l = new Ledger(); await l.load();
+    await l.recordArchive('o1');
+    await runValidate([]);
+    const rows = readFileSync(dataPath('validate', 'sample.csv'), 'utf8').trim().split('\n');
+    expect(rows[0]).toBe('category,board,sfId,mondayItemId,name,archived,mondayUrl,salesforceUrl,result,note');
+    expect(rows).toContain('donations,donations,o1,2,"Gift",yes,https://acct.monday.com/boards/77/pulses/2,https://sf.example/o1,,');
+    // No boards.json entry for organizations → Monday link blank, Salesforce link still there.
+    expect(rows).toContain('organizations,organizations,a1,1,"Acme",,,https://sf.example/a1,,');
+  });
+
   it('fails on a reconciliation mismatch, printing both figures', async () => {
     await seed({ funraiseOpportunities: 99, funraiseTotalAmountCents: 1010,
       subscriptionsAll: 0, eventRegistrations: 1, eventbriteAttendees: 2, organizations: 1 });
