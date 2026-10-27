@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Feeds one Eventbrite event and its attendees through the deployed Worker's attendee route as if
-// Eventbrite had delivered them — the one-off to seed the Events and Attendance boards for an
+// Eventbrite had delivered them — the one-off to seed the Events and Event Registrations boards for an
 // event that existed before the attendee webhook, and the re-drive after a dead-letter. Like
 // backfill-orders.mjs nothing here writes to D1 or Monday: each delivery is a pointer the
 // consumer fetches and writes itself, and adopt-before-create makes a re-run a no-op.
@@ -87,5 +87,5 @@ for (const d of deliveries) {
   }
   await sleep(pauseMs);
 }
-log(`done: ${ok} enqueued, ${failed} not. Check the Events and Attendance boards in ~30 minutes.`);
+log(`done: ${ok} enqueued, ${failed} not. Check the Events and Event Registrations boards in ~30 minutes.`);
 process.exit(failed > 0 ? 1 : 0);

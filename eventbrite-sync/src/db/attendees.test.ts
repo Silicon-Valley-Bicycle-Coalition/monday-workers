@@ -61,4 +61,13 @@ describe('D1AttendeeStore', () => {
     expect(rows.map((r) => r.attendeeId).sort()).toEqual(['l-1', 'l-2']);
     expect(await store.listByEvent('none')).toEqual([]);
   });
+
+  it('lists by received_at, then attendee_id', async () => {
+    const store = new D1AttendeeStore(env.DB);
+    const later = '2026-10-20T01:00:00.000Z';
+    await store.recordDelivery({ attendeeId: 'o-2', eventId: 'E3', action: 'attendee.updated', receivedAt: '2026-10-20T00:00:00.000Z' });
+    await store.recordDelivery({ attendeeId: 'o-1', eventId: 'E3', action: 'attendee.updated', receivedAt: later });
+    await store.recordDelivery({ attendeeId: 'o-0', eventId: 'E3', action: 'attendee.updated', receivedAt: later });
+    expect((await store.listByEvent('E3')).map((r) => r.attendeeId)).toEqual(['o-2', 'o-0', 'o-1']);
+  });
 });

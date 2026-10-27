@@ -97,6 +97,22 @@ describe('processEvent', () => {
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.any(Object));
   });
 
+  it('renames an existing Events item to the Eventbrite name; a create names it via item_name only', async () => {
+    const existing = setup({ row: eventRow({ mondayItemId: 'item-9' }), event: event({ name: { text: 'Adult Learn to Ride (Spanish)' } }) });
+    await processEvent(message, existing.deps);
+    expect(existing.mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ name: 'Adult Learn to Ride (Spanish)' }));
+
+    const created = setup();
+    await processEvent(message, created.deps);
+    expect(vi.mocked(created.mondayClient.createItem).mock.calls[0]![2]).not.toHaveProperty('name');
+  });
+
+  it('keeps the existing Events item name when Eventbrite has no event name', async () => {
+    const { deps, mondayClient } = setup({ row: eventRow({ mondayItemId: 'item-9' }), event: event({ name: { text: ' ' } }) });
+    await processEvent(message, deps);
+    expect(vi.mocked(mondayClient.changeColumnValues).mock.calls[0]![2]).not.toHaveProperty('name');
+  });
+
   it('marks a 404 from Eventbrite failed without throwing', async () => {
     const { deps, eventStore, mondayClient } = setup({ event: null });
     await processEvent(message, deps);

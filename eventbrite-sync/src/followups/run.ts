@@ -37,8 +37,14 @@ export async function runFollowups(now: Date, deps: FollowupDeps): Promise<Follo
   const { config } = deps;
   const { followups } = config.attendeeSync;
   const b = config.monday.boards;
-  if (b.events === null || b['event-registrations'] === null || b['people-live'] === null) {
-    throw new Error('eventbrite-sync follow-ups: the events, event-registrations and people-live boards must all be configured');
+  // Before the attendee feed is set up (production until its boards exist) there is nothing to
+  // follow up: a quiet no-op rather than an error every hour.
+  if (b.events === null || b['event-registrations'] === null) {
+    console.warn('eventbrite-sync follow-ups: the events and event-registrations boards are not configured; nothing to do');
+    return { sent: [], held: [], skipped: [], failed: [] };
+  }
+  if (b['people-live'] === null) {
+    throw new Error('eventbrite-sync follow-ups: the people-live board must be configured alongside events and event-registrations');
   }
   const boards: Boards = { events: b.events, registrations: b['event-registrations'], people: b['people-live'] };
 
@@ -75,8 +81,10 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
   const followupsState = (eventItem.columns[ev.followupsColumn] ?? '').trim();
   if (classType === '' || followupsState !== '') return 'skipped';
 
-  // Attendance comes from Monday, not Eventbrite, so staff corrections count. Ledger order is the
-  // "first seen" order for the one-email-per-address rule.
+  // Attendance comes from Monday, not Eventbrite, so staff corrections count. Ledger order
+  // (received_at, then attendee_id — listByEvent) is the "first registration" order for the
+  // one-email-per-address rule. received_at is the latest delivery, so a redelivered attendee
+  // moves later; that only changes which of two same-address registrations is picked.
   const itemIds = [...new Set((await deps.attendeeStore.listByEvent(row.eventId)).map((a) => a.mondayItemId).filter((id): id is string => id !== null))];
   const fetched = itemIds.length === 0
     ? []
@@ -134,6 +142,26 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
       if (match.donorItemId !== null) values[rc.attendeeLinkColumn] = { item_ids: [Number(match.donorItemId)] };
     }
     columnValuesById.set(write.itemId, values);
+  }
+
+  // Staff may check someone in while this run is planning (a late check-in the morning after).
+  // Re-read Attendance for the missed-you writes, in one batched call, just before writing them,
+  // so a now-Attended attendee isn't marked No Show and sent a missed-you.
+  const noShowIds = plan.writes.filter((w) => w.noShow).map((w) => w.itemId);
+  if (noShowIds.length > 0) {
+    const reread = new Map(
+      (await mondayClient.getItems(boards.registrations, noShowIds, [rc.attendanceColumn])).filter(isActive).map((item) => [item.id, item])
+    );
+    for (const itemId of noShowIds) {
+      const item = reread.get(itemId);
+      if (item === undefined) {
+        console.warn(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} is gone; skipped its missed-you`);
+        columnValuesById.delete(itemId);
+      } else if ((item.columns[rc.attendanceColumn] ?? '').trim() === 'Attended') {
+        console.log(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} was checked in since planning; skipped its missed-you`);
+        columnValuesById.delete(itemId);
+      }
+    }
   }
 
   // Registrations first, Follow-ups Sent last: a crash part-way leaves Follow-ups blank and the

@@ -10,7 +10,8 @@ import { errorMessage } from '../util/errorMessage';
 // the consumer recorded) and the batch logs ONE console.error naming every order — visible in
 // Workers Logs — instead of expiring from the DLQ unseen. Nothing is re-driven from here: fix the
 // cause (the missing column, a bad token, the missing Status label), then re-run
-// scripts/backfill-orders.mjs for the affected event, which goes through the normal path.
+// scripts/backfill-orders.mjs (orders) or scripts/backfill-attendees.mjs (events and attendees)
+// for the affected event, which goes through the normal path.
 //
 // A dead message is only evidence about the row as of the moment it was sent, so a row written
 // at or after that moment, or replaced by a newer delivery since, is left alone.
@@ -49,6 +50,7 @@ export const DEAD_LETTER_PREFIX = 'dead-lettered after retries: ';
 export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMessage>[], deps: DeadLetterDeps): Promise<void> {
   const dead: string[] = [];
   let orderDead = false;
+  let attendeeDead = false;
   for (const message of messages) {
     const ledger = ledgerFor(message.body, deps);
     const label = describeMessage(message.body);
@@ -73,6 +75,7 @@ export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMe
       await ledger.markFailed(prior.startsWith(DEAD_LETTER_PREFIX) ? prior : `${DEAD_LETTER_PREFIX}${prior}`);
       dead.push(label);
       if (message.body.kind === undefined || message.body.kind === 'order') orderDead = true;
+      else attendeeDead = true;
       message.ack();
     } catch (err) {
       console.error(`eventbrite-sync dlq: could not mark ${label} dead-lettered: ${errorMessage(err)}`);
@@ -83,7 +86,9 @@ export async function processDeadLetters(messages: QueueMessageLike<WriteQueueMe
     console.error(
       `eventbrite-sync: ${dead.length} message${dead.length === 1 ? '' : 's'} dead-lettered after exhausting retries — ` +
         `${dead.join(', ')}. Not on the board (or not updated there). See each ledger row's error; ` +
-        (orderDead ? `re-drive orders with scripts/backfill-orders.mjs once the cause is fixed.` : `fix the cause, then redeliver from Eventbrite.`)
+        `once the cause is fixed, re-drive ` +
+        [orderDead && 'orders with scripts/backfill-orders.mjs', attendeeDead && 'events and attendees with scripts/backfill-attendees.mjs'].filter(Boolean).join(' and ') +
+        '.'
     );
   }
 }

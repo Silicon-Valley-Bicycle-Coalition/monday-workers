@@ -3,6 +3,10 @@ import { mapEvent } from '../mapping/event';
 import { isItemGone } from '../monday/itemGone';
 import type { EventQueueMessage, ProcessBatchDeps } from './processBatch';
 
+// The events row's error when Eventbrite 404s the event. processAttendee reads it to stop asking
+// for an event that will never come.
+export const EVENT_NOT_FOUND_ERROR = 'event not found in Eventbrite (HTTP 404)';
+
 // Fetch the event from Eventbrite (never trust the delivery), upsert its Events board item, and,
 // when the class moved, fan out one attendee message per registration so their copied class
 // date, day and location are corrected.
@@ -27,7 +31,7 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
   const event = await eventbriteClient.getEvent(eventId);
   if (event === null) {
     console.warn(`eventbrite-sync consumer: event "${eventId}" not found in Eventbrite (HTTP 404); marking failed without retry`);
-    await eventStore.updateStatus(eventId, 'failed', { error: 'event not found in Eventbrite (HTTP 404)' });
+    await eventStore.updateStatus(eventId, 'failed', { error: EVENT_NOT_FOUND_ERROR });
     return;
   }
 
@@ -49,7 +53,10 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
 
   if (mondayItemId !== null) {
     try {
-      await mondayClient.changeColumnValues(boardId, mondayItemId, mapping.columnValues);
+      // `name` is the item name: keeps it in step when the class is renamed in Eventbrite (only a
+      // real name, never the "Eventbrite event <id>" fallback). A create names it via item_name.
+      const rename = (event.name?.text ?? '').trim() !== '' ? { name: mapping.itemName } : {};
+      await mondayClient.changeColumnValues(boardId, mondayItemId, { ...mapping.columnValues, ...rename });
     } catch (err) {
       if (!isItemGone(err)) throw err;
       // Staff deleted (or archived) the Events item. Recreating it would resurrect an event

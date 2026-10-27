@@ -429,4 +429,62 @@ describe('runFollowups', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('501'));
     warn.mockRestore();
   });
+
+  it('re-reads Attendance before a missed-you and skips one checked in since', async () => {
+    const regs: Record<string, FakeReg> = {
+      '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat' },
+      '502': { name: 'Lee', attendance: 'Registered', email: 'lee@example.com' },
+      '503': { name: 'Sam', attendance: 'Registered', email: 'sam@example.com' },
+    };
+    const monday = fakeMonday({ '9001': { name: 'Class', classType: 'Commute', followups: '' } }, regs);
+    // Staff check Lee in between the planning read and the writes.
+    const read = monday.getItems;
+    let regReads = 0;
+    monday.getItems = vi.fn(async (boardId: number, ids: string[], columnIds: string[]) => {
+      if (boardId === REGS && ++regReads === 2) regs['502']!.attendance = 'Attended';
+      return read(boardId, ids, columnIds);
+    });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const d = deps([eventRow('ev1', '9001')], { ev1: ['501', '502', '503'].map((id, i) => attendeeRow(`a${i}`, 'ev1', id)) }, monday);
+
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
+    // One batched re-read of just the missed-you ids, Attendance only.
+    expect(monday.getItems).toHaveBeenNthCalledWith(3, REGS, ['502', '503'], [rc.attendanceColumn]);
+    expect(vi.mocked(monday.changeColumnValues).mock.calls).toEqual([
+      [REGS, '501', { [rc.followupEmailColumn]: 'Thank-you: Commute', [rc.classTypeColumn]: 'Commute' }],
+      [REGS, '503', { [rc.followupEmailColumn]: 'Missed-you: Commute', [rc.classTypeColumn]: 'Commute', [rc.attendanceColumn]: 'No Show' }],
+      [EVENTS, '9001', { [ev.followupsColumn]: 'Sent' }],
+    ]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('502'));
+    log.mockRestore();
+  });
+
+  it('does not re-read when there is no missed-you to write', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat' } }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    await runFollowups(NOW, d);
+    expect(monday.getItems).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['events', 'event-registrations'] as const)('returns an empty result with one warning when the %s board is not configured', async (board) => {
+    const config = testConfig();
+    config.monday.boards[board] = null;
+    const monday = fakeMonday({}, {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const d = deps([eventRow('ev1', '9001')], {}, monday, config);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: [], failed: [] });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(d.eventStore.listEndedBetween).not.toHaveBeenCalled();
+    expect(monday.getItems).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('still throws when the attendee boards are set but people-live is not', async () => {
+    const config = testConfig();
+    config.monday.boards['people-live'] = null;
+    await expect(runFollowups(NOW, deps([], {}, fakeMonday({}, {}), config))).rejects.toThrow('people-live');
+  });
 });

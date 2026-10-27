@@ -167,4 +167,21 @@ describe('processDeadLetters', () => {
       warn.mockRestore();
     }
   });
+
+  it('points event and attendee dead letters at backfill-attendees.mjs, and orders at backfill-orders.mjs', async () => {
+    const eventStore = fakeEventStore({ getEvent: vi.fn().mockResolvedValue({ eventId: 'e-1', status: 'failed', error: 'boom', receivedAt: '2026-10-06T10:00:00.000Z', writtenAt: null }) });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const ev = { ...message(), body: { kind: 'event' as const, eventId: 'e-1', action: 'event.updated' } };
+      await processDeadLetters([ev], { orderStore: store(null), eventStore, attendeeStore: fakeAttendeeStore() });
+      expect(errorSpy).toHaveBeenLastCalledWith(expect.stringContaining('scripts/backfill-attendees.mjs'));
+      expect(errorSpy).toHaveBeenLastCalledWith(expect.not.stringContaining('backfill-orders.mjs'));
+
+      const ev2 = { ...message(), body: { kind: 'event' as const, eventId: 'e-1', action: 'event.updated' } };
+      await processDeadLetters([message(), ev2], { orderStore: store(row()), eventStore, attendeeStore: fakeAttendeeStore() });
+      expect(errorSpy).toHaveBeenLastCalledWith(expect.stringMatching(/backfill-orders\.mjs.*backfill-attendees\.mjs/));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });

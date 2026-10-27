@@ -231,6 +231,45 @@ describe('processAttendee', () => {
     expect(mondayClient.createItem).not.toHaveBeenCalled();
   });
 
+  it('marks the attendee failed without retry, and requests nothing, when the event 404d in Eventbrite', async () => {
+    const { deps, eventStore, attendeeStore, queue, mondayClient, eventbriteClient } = setup({
+      evRow: eventRow({ mondayItemId: null, status: 'failed', error: 'event not found in Eventbrite (HTTP 404)' }),
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await processAttendee(message, deps);
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+    expect(eventbriteClient.getAttendee).not.toHaveBeenCalled();
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a1', 'failed', { error: expect.stringMatching(/event 9001 not found in Eventbrite \(HTTP 404\)/) });
+    warn.mockRestore();
+  });
+
+  it('still requests the event when its row failed for another reason', async () => {
+    const { deps, queue } = setup({ evRow: eventRow({ mondayItemId: null, status: 'failed', error: 'monday API: 500' }) });
+    await expect(processAttendee(message, deps)).rejects.toThrow(/9001/);
+    expect(queue.send).toHaveBeenCalledWith({ kind: 'event', eventId: '9001', action: 'attendee.updated' });
+  });
+
+  it('renames an existing registration item to the Eventbrite name', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered', att: attendee({ profile: { name: 'Patricia Rider', first_name: 'Patricia', email: 'pat@example.com' } }) });
+    await processAttendee(message, deps);
+    const values = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2];
+    expect(values.name).toBe('Patricia Rider');
+  });
+
+  it('keeps the existing item name when Eventbrite has no attendee name', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered', att: attendee({ profile: { email: 'pat@example.com' } }) });
+    await processAttendee(message, deps);
+    expect((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2]).not.toHaveProperty('name');
+  });
+
+  it('does not put the item name in a create\'s column values', async () => {
+    const { deps, mondayClient } = setup();
+    await processAttendee(message, deps);
+    expect((mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]![2].name).toBeUndefined();
+  });
+
   it('does the same when there is no events row at all', async () => {
     const { deps, eventStore, queue } = setup({ evRow: null });
     await expect(processAttendee(message, deps)).rejects.toThrow(/9001/);

@@ -72,10 +72,10 @@ export default {
       return;
     }
     // An unset token fails every message (retry, then DLQ) rather than being skipped silently:
-    // these are gifts, and the dead-letter line names the cause.
+    // these are gifts and registrations, and the dead-letter line names the cause.
     const token = env.EVENTBRITE_PRIVATE_TOKEN;
     if (token === undefined || token === '') {
-      throw new Error('EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); cannot fetch orders');
+      throw new Error('EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); cannot fetch from Eventbrite');
     }
     await processOrderQueueBatch([...batch.messages], {
       orderStore,

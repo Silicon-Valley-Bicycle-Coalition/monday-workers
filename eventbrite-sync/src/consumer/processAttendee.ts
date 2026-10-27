@@ -5,6 +5,7 @@ import { matchPerson } from '../matching/people';
 import { isActive } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
+import { EVENT_NOT_FOUND_ERROR } from './processEvent';
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
 // item. Attendance is the one column staff also edit, so it is read back from Monday and merged:
@@ -31,6 +32,14 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   // the event consumer writes it, and the retry finds it. recordDelivery first, because it is the
   // upsert that guarantees the ledger row processEvent requires.
   const eventRow = await eventStore.getEvent(eventId);
+  if (eventRow !== null && eventRow.mondayItemId === null && eventRow.status === 'failed' && (eventRow.error ?? '').includes(EVENT_NOT_FOUND_ERROR)) {
+    // Eventbrite 404d the event itself: asking again would just 404 again, and this attendee would
+    // retry its way to the dead-letter queue. Stop here, for a human.
+    const reason = `event ${eventId} not found in Eventbrite (HTTP 404); attendee not written`;
+    console.warn(`eventbrite-sync consumer: attendee "${attendeeId}": ${reason}; marking failed without retry`);
+    await attendeeStore.updateStatus(attendeeId, 'failed', { error: reason });
+    return;
+  }
   if (eventRow === null || eventRow.mondayItemId === null) {
     await eventStore.recordDelivery({ eventId, action: 'attendee.updated', receivedAt: new Date().toISOString() });
     await queue.send({ kind: 'event', eventId, action: 'attendee.updated' });
@@ -46,7 +55,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   const event = await eventbriteClient.getEvent(eventId);
   if (event === null) {
     console.warn(`eventbrite-sync consumer: event "${eventId}" not found in Eventbrite (HTTP 404); marking attendee "${attendeeId}" failed without retry`);
-    await attendeeStore.updateStatus(attendeeId, 'failed', { error: 'event not found in Eventbrite (HTTP 404)' });
+    await attendeeStore.updateStatus(attendeeId, 'failed', { error: EVENT_NOT_FOUND_ERROR });
     return;
   }
 
@@ -110,7 +119,10 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   const person = personItemId === null ? {} : { matchedPersonItemId: personItemId };
   if (mondayItemId !== null) {
     try {
-      await mondayClient.changeColumnValues(boardId, mondayItemId, columnValues);
+      // `name` is the item name: keeps it in step with the attendee's name in Eventbrite — only a
+      // real one, never the "Eventbrite attendee <id>" fallback over a name staff typed in.
+      const rename = cols.attendeeNameColumn in mapping.columnValues ? { name: mapping.itemName } : {};
+      await mondayClient.changeColumnValues(boardId, mondayItemId, { ...columnValues, ...rename });
     } catch (err) {
       if (!isItemGone(err)) throw err;
       await markGone(mondayItemId);

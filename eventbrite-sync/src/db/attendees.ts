@@ -99,8 +99,10 @@ export class D1AttendeeStore implements AttendeeStore {
     return record === null ? null : toAttendeeRow(record);
   }
 
+  // In delivery order (received_at, which each redelivery moves forward), attendee_id breaking ties:
+  // the follow-up job's "first registration for an address" order.
   async listByEvent(eventId: string): Promise<AttendeeRow[]> {
-    const { results } = await this.db.prepare(`SELECT ${COLUMNS} FROM attendees WHERE event_id = ?1 ORDER BY attendee_id`).bind(eventId).all<D1AttendeeRecord>();
+    const { results } = await this.db.prepare(`SELECT ${COLUMNS} FROM attendees WHERE event_id = ?1 ORDER BY received_at, attendee_id`).bind(eventId).all<D1AttendeeRecord>();
     return results.map(toAttendeeRow);
   }
 }
