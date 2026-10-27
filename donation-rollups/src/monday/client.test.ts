@@ -7,13 +7,18 @@ const COLUMNS = { amount: 'amount_1', date: 'date_1', fiscalYear: null, status: 
 // The transport's retries don't really wait in tests.
 const NO_SLEEP = { sleepFn: async () => {} };
 
-// Shapes one GraphQL items response the way getDonationsByIds reads it back.
-function itemsResponse(items: { id: string; cells: Record<string, string | null> }[]) {
+// A cell's stored value as Monday returns it: a status label's index, null when the cell is empty.
+const valueOf = (text: string | null): string | null => (text ? '{"index":1}' : null);
+
+// Shapes one GraphQL items response the way getDonationsByIds reads it back. `values`
+// overrides a cell's stored value — e.g. null under a status cell whose text is the id-5 label.
+function itemsResponse(items: { id: string; cells: Record<string, string | null>; values?: Record<string, string | null> }[]) {
   return {
     data: {
       items: items.map((i) => ({
         id: i.id,
-        column_values: Object.entries(i.cells).map(([id, text]) => ({ id, text })),
+        column_values: Object.entries(i.cells).map(([id, text]) =>
+          ({ id, text, value: i.values && id in i.values ? i.values[id] : valueOf(text) })),
       })),
     },
   };
@@ -166,7 +171,7 @@ const VOL_BOARD = { boardId: 7, columns: { attendee: 'att', event: 'ev', attenda
 
 describe('registrations and events', () => {
   const regResponse = (cells: Record<string, string | null>, links: Record<string, string[]>, state = 'active') => ({ data: { items: [{ id: 'r1', state, column_values:
-    Object.entries(cells).map(([id, text]) => ({ id, text, ...(links[id] ? { linked_item_ids: links[id] } : {}) })) }] } });
+    Object.entries(cells).map(([id, text]) => ({ id, text, value: valueOf(text), ...(links[id] ? { linked_item_ids: links[id] } : {}) })) }] } });
   it('getRegistration reads links, labels and hours; blank hours is null', async () => {
     const client = clientReturning(regResponse({ att: 'Ada', ev: 'Bike Party', atd: 'Attended', role: 'Volunteer', hrs: '' }, { att: ['p1'], ev: ['e1'] }));
     expect(await client.getRegistration('r1', VOL_BOARD)).toEqual({ id: 'r1', state: 'active', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null });
@@ -189,13 +194,13 @@ describe('registrations and events', () => {
   it('pageRegistrations returns the page and cursor with the same record shape, state included', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: 'next', items: [{ id: 'r1', state: 'archived', column_values: [
       { id: 'att', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'ev', text: 'X', linked_item_ids: ['e1'] },
-      { id: 'atd', text: 'Attended' }, { id: 'role', text: 'Volunteer' }, { id: 'hrs', text: '3' }] }] } }] } });
+      { id: 'atd', text: 'Attended', value: '{"index":1}' }, { id: 'role', text: 'Volunteer', value: '{"index":2}' }, { id: 'hrs', text: '3' }] }] } }] } });
     expect(await client.pageRegistrations(VOL_BOARD, null)).toEqual({ cursor: 'next',
       items: [{ id: 'r1', state: 'archived', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: 3 }] });
   });
   it('pageHistoricalShifts reads Volunteer link, Date, Hours and Status', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: 'v1', column_values: [
-      { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed' }] }] } }] } });
+      { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed', value: '{"index":1}' }] }] } }] } });
     expect(await client.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'] }, null))
       .toEqual({ cursor: null, items: [{ id: 'v1', volunteerItemId: 'p1', dateISO: '2019-06-01', hours: 2, statusLabel: 'Completed' }] });
   });
@@ -376,5 +381,30 @@ describe('status columns read by stored value (label id 5)', () => {
       { id: 'r2', column_values: [{ id: 'donor', text: 'Bo', linked_item_ids: ['p2'] }, { id: 'st', text: 'Active', value: '{"index":5}' }] }] } }] } });
     const page = await client.pageRecurringGifts({ boardId: 9, columns: { donorLink: 'donor', status: 'st' }, activeStatusLabel: 'Active' }, null);
     expect(page.items.map((i) => i.statusLabel)).toEqual([null, 'Active']);
+  });
+  it('getDonationsByIds reads a blank Status as blank even when its text is the id-5 label', async () => {
+    const client = clientReturning(itemsResponse([
+      { id: 'blank', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' }, values: { status_1: null } },
+      { id: 'set', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' }, values: { status_1: '{"index":5}' } },
+    ]));
+    expect((await client.getDonationsByIds(['blank', 'set'], COLUMNS, 7)).map((d) => [d.id, d.status]))
+      .toEqual([['blank', ''], ['set', 'Received']]);
+  });
+  it('getOwnerMembership reads blank Status, Tier and Member Type as null even with id-5 text', async () => {
+    const OWNER = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil', currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
+    const client = clientReturning(itemsResponse([{ id: 'o1',
+      cells: { ms: 'Lapsed', mt: 'Lifetime', mtype: 'Lapsed renewal', msince: '2015-01-01' },
+      values: { ms: null, mt: '{}', mtype: null } }]));
+    expect(await client.getOwnerMembership('o1', OWNER))
+      .toMatchObject({ statusLabel: null, tierLabel: null, memberTypeLabel: null, since: '2015-01-01' });
+  });
+  it('registrations and historical shifts read blank status cells as null even with id-5 text', async () => {
+    const reg = clientReturning({ data: { items: [{ id: 'r1', state: 'active', column_values: [
+      { id: 'att', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'atd', text: 'Attended', value: null }, { id: 'role', text: 'Volunteer', value: null }] }] } });
+    expect(await reg.getRegistration('r1', VOL_BOARD)).toMatchObject({ attendanceLabel: null, roleLabel: null });
+    const shifts = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: 'v1', column_values: [
+      { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed', value: null }] }] } }] } });
+    expect((await shifts.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'] }, null)).items[0]!.statusLabel)
+      .toBeNull();
   });
 });
