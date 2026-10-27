@@ -5,6 +5,8 @@
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
 // only secrets are declared here.
 export interface Env extends Cloudflare.Env {
+  // Write-switch flags KV (src/flags.ts).
+  FLAGS: KVNamespace;
   MONDAY_API_TOKEN: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
