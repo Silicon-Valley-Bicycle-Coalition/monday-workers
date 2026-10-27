@@ -52,8 +52,8 @@ export interface Env {
   MONDAY_API_TOKEN: string;
   // Shared secret for the /reclassify/* routes (?secret=…); unset = routes disabled.
   RECLASSIFY_SECRET?: string;
-  // "false" enables Monday writes. Unset or anything else = dry run (src/dryRun.ts).
-  DRY_RUN?: string;
+  // Write switch (`people-reclassification:writes` = on | hold | off), see src/flags.ts.
+  FLAGS: KVNamespace;
   REQUEST_RATE_LIMITER: RateLimit;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;

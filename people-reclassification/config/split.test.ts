@@ -57,9 +57,16 @@ describe('config split: board ids', () => {
 });
 
 describe('wrangler.jsonc env.sandbox', () => {
-  it('sets ENVIRONMENT only under env.sandbox, and DRY_RUN to "true" in both environments', () => {
-    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox', DRY_RUN: 'true' });
-    expect(wrangler.vars).toEqual({ DRY_RUN: 'true' });
+  it('sets ENVIRONMENT only under env.sandbox, and carries no DRY_RUN in either environment', () => {
+    expect(sandboxEnv.vars).toEqual({ ENVIRONMENT: 'sandbox' });
+    expect(wrangler.vars).toBeUndefined();
+    expect(wranglerText).not.toContain('DRY_RUN');
+  });
+
+  it('has its own FLAGS KV namespace, never production’s', () => {
+    const prodKv = (wrangler.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    const sbKv = (sandboxEnv.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    expect(sbKv.id).not.toBe(prodKv.id);
   });
 
   it('has its own D1 database, never production’s', () => {

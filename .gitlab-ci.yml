@@ -78,8 +78,7 @@ monday-graphql-copies:
 
 # The write switch (off/hold/on) lives in one module, member-portal/src/flags.ts. Every in-scope
 # Worker carries a byte-identical copy and the same FLAGS KV namespace ids; edit the canonical file,
-# then copy it over the others. Not yet --strict: Workers still without the module are reported as
-# pending until every one carries it.
+# then copy it over the others. --strict: a Worker without the module fails the job.
 worker-flags-copies:
   stage: test
   rules:
@@ -89,7 +88,7 @@ worker-flags-copies:
         - scripts/check-worker-flags.mjs
         - .gitlab-ci.yml
   script:
-    - node scripts/check-worker-flags.mjs
+    - node scripts/check-worker-flags.mjs --strict
     # Loaded through Node's strip-only type support, so it must not need a TypeScript compile step.
     - node --input-type=module -e "await import('./member-portal/src/flags.ts')"
 
