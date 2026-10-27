@@ -380,14 +380,14 @@ describe('retryDelaySeconds', () => {
       }
     });
 
-    it('routes an attendee message to processAttendee (a stub for now: retried, attendee ledger marked failed)', async () => {
+    it('routes an attendee message to processAttendee (no attendees row: retried, attendee ledger marked failed)', async () => {
       const orderStore = fakeStore(null);
       const attendeeStore = fakeAttendeeStore();
       const message = { body: { kind: 'attendee' as const, eventId: 'e-1', attendeeId: 'a-1', action: 'attendee.updated' }, attempts: 2, ack: vi.fn(), retry: vi.fn() };
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       try {
         await processOrderQueueBatch([message], deps(orderStore, fakeEventStore(), attendeeStore));
-        expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a-1', 'failed', { error: 'not implemented' });
+        expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a-1', 'failed', { error: expect.stringContaining('no attendees row for "a-1"') });
         expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
       } finally {
         errorSpy.mockRestore();
