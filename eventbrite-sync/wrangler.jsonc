@@ -69,8 +69,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-eventbrite-sync-sandbox",
-          // Not yet created. `wrangler d1 create svbc-eventbrite-sync-sandbox` and paste the id.
-          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          "database_id": "b105e491-c9ef-49c4-ae0b-fe846214aa2f",
           "migrations_dir": "migrations"
         }
       ],
