@@ -1,4 +1,6 @@
-# UAT script: Eventbrite ticket orders
+# UAT script: Eventbrite ticket orders and class emails
+
+**Class emails (attendee feed): see the last two sections.** Orders below are unchanged.
 
 **Status 2026-10-19: nothing to test yet.** The integration is built but not running anywhere.
 Before it can be switched on in the sandbox, the next sandbox load needs to create the
@@ -54,3 +56,47 @@ create Event Registrations items; that is a separate, later integration.
 
 Everything above. The Worker is code-complete but not deployed; see `eventbrite-sync/README.md`
 "Deploy" for what has to happen first.
+
+## Class emails: try it (sandbox)
+
+For Kendra. Everything here uses a test class and **staff email addresses only**; never register a
+real attendee. The Worker only sets a label; Monday sends the email from `learn@`.
+
+1. **Set up the class.** On the sandbox Events board, find the test class (it appears when the
+   Eventbrite event is created or updated) and set **Class Type**.
+2. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
+   should appear on Event Registrations with Attendance **Registered**, the class date, day,
+   location and type filled in.
+3. **Send a reminder.** Open the **Class reminders** view, filter to the test class, select all,
+   open Mass email, pick `Reminder: <class type>`, fill the `[ … ]` notes and send. Check the
+   email lands in the staff inboxes.
+4. **Check in some.** In Eventbrite check in two of the three. Attendance should change to
+   **Attended** for those two. The third stays Registered.
+5. **Morning after.** After 08:00 Pacific the day after the class ends (the job runs hourly, so
+   allow until the next hour), the two checked-in rows get Follow-up Email `Thank-you: <class
+   type>`, the third gets `Missed-you: <class type>` and its Attendance becomes **No Show**. The
+   matching emails arrive from `learn@`. The test event's Follow-ups cell may stay blank; it is
+   only used for Held.
+6. **Held.** Repeat with a second test class and check in nobody. The event's **Follow-ups**
+   should turn to **Held** and you should get a Monday notification. Check someone in, then
+   clear Held: the follow-ups run on the next hourly pass. (Only within 3 days of the class end.)
+
+## Class emails: look at
+
+- Do the Thank-you and Missed-you texts read right, and are the bold, links and merged names
+  correct?
+- A person who checks in only some of a group: the others get a missed-you (known, see below).
+
+## Class emails: don't report these
+
+- Partial check-in sends a missed-you to anyone not checked in. Check everyone in before 08:00
+  the next morning.
+- A hand-added registration (not through Eventbrite) gets no follow-up.
+- Reminders show a `[start time]` note: there is no Class Time column yet.
+- Spanish class day and date appear in English.
+- Thank-you Sequences are created paused until the upcoming-classes list is refreshed.
+- A class that ended more than 3 days ago never emails, even if Held is cleared.
+
+## Sandbox rehearsal, 2026-10-26
+
+Results recorded below once the rehearsal runs.
