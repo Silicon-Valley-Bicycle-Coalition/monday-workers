@@ -1,0 +1,26 @@
+{
+  "name": "report-digests",
+  "version": "0.1.0",
+  "description": "Scheduled email digests of Monday board views, replacing SVBC's Salesforce report subscriptions: unmatched gifts, membership renewals, recent gifts with wealth screening, the fiscal year by gift size, and last week's gifts.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "dev:sandbox": "wrangler dev --env sandbox",
+    "deploy": "wrangler deploy",
+    "deploy:sandbox": "wrangler deploy --env sandbox",
+    "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.0.0",
+    "@cloudflare/workers-types": "^5.20260822.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.145.0"
+  }
+}

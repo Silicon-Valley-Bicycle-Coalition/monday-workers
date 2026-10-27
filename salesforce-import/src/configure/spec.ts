@@ -244,6 +244,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
           { columnTitle: 'Member Until', operator: 'within_the_next', compareValue: ['DAYS', 60], color: 'amber' },
           { columnTitle: 'Membership Status', labelValues: ['Lapsed'], color: 'red' },
         ] },
+      // Emailed on the 1st and 15th by the report-digests Worker (monday-migration docs/35 §3.6).
+      { name: 'Renewals this month and next', tag: 'Worklist',
+        columns: ['Member Until', 'Membership Status', 'Membership Tier', 'Personal Email', 'Phone'],
+        filter: { rules: [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }] },
+        sort: [{ columnTitle: 'Member Until' }],
+        coloring: [{ columnTitle: 'Membership Status', labelValues: ['Lapsed'], color: 'red' }] },
       { name: 'Active members', tag: 'Reference',
         columns: ['Personal Email', 'Household Email', 'Membership Tier', 'Member Since', 'Member Until'],
         filter: { rules: [{ columnTitle: 'Membership Status', operator: 'any_of', labelValues: ['Active'] }] }, sort: [{ columnTitle: 'Name' }] },
@@ -382,6 +388,14 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Recent gifts', tag: 'Report',
         columns: ['Donor', 'Amount', 'Date', 'Funding Stream', 'Gift Type', 'Thank You Sent', 'Acknowledgment Tier'],
         groupBy: { columnTitle: 'Gift Fiscal Year', direction: 'desc' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      // These two are emailed weekly by the report-digests Worker (monday-migration docs/35 §3.6);
+      // its 60-day email adds each donor's Windfall columns from People.
+      { name: 'Gifts, last 7 days', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Funding Stream', 'Status'],
+        filter: { rules: [{ columnTitle: 'Date', operator: 'within_the_last', compareValue: ['DAYS', 7] }] },
+        sort: [{ columnTitle: 'Date', direction: 'desc' }] },
+      { name: 'Gifts, last 60 days', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Type', 'Funding Stream', 'Status'],
+        filter: { rules: [{ columnTitle: 'Date', operator: 'within_the_last', compareValue: ['DAYS', 60] }] },
+        sort: [{ columnTitle: 'Amount', direction: 'desc' }] },
       { name: 'Revenue by funding stream', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Gift Fiscal Year', 'Gift Type'],
         groupBy: { columnTitle: 'Funding Stream' }, sort: [{ columnTitle: 'Date', direction: 'desc' }] },
       { name: 'By gift size', tag: 'Report', columns: ['Donor', 'Amount', 'Date', 'Funding Stream'],

@@ -158,3 +158,21 @@ describe('withReceivedRule', () => {
     expect(received(elsewhere!)).toBe(0);
   });
 });
+
+describe('report-subscription views (docs/35 §3.6)', () => {
+  // report-digests links its emails to these views by name (its config/*.json "view" values), so a
+  // rename here must be made there too.
+  const view = (board: string, name: string) => BOARD_SPECS[board]!.views!.find((x) => x.name === name);
+
+  it('has every view the report-digests emails link to', () => {
+    for (const [board, name] of [['donations', 'Needs a donor'], ['donations', 'By gift size'], ['donations', 'Gifts, last 7 days'],
+      ['donations', 'Gifts, last 60 days'], ['people-live', 'Renewals this month and next']]) {
+      expect(view(board!, name!), `${board} / ${name}`).toBeDefined();
+    }
+  });
+
+  it('the renewals view spans this calendar month and next', () => {
+    expect(view('people-live', 'Renewals this month and next')!.filter!.rules).toEqual(
+      [{ columnTitle: 'Member Until', operator: 'any_of', compareValue: ['THIS_MONTH', 'ONE_MONTH_FROM_NOW'] }]);
+  });
+});
