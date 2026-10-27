@@ -16,6 +16,18 @@ describe('opportunityToPayload', () => {
     expect(p.links).toContainEqual({ column: 'Donor', targetSfIds: ['c1'] });
   });
 
+  it('drops a Donor that still resolves to a One-to-One Account instead of leaving it dangling', () => {
+    const gift = { ...base, npsp__Primary_Contact__c: null, AccountId: 'a-ind' };
+    const personAccountIds = new Set(['a-ind']);
+    expect(opportunityToPayload(gift, { termCols: new Map(), personAccountIds }).links)
+      .not.toContainEqual(expect.objectContaining({ column: 'Donor' }));
+    // Unresolved, not anonymous — staff resolve it from the review file.
+    expect(opportunityToPayload(gift, { termCols: new Map(), personAccountIds }).columns['Anonymous Donor']).toBeNull();
+    // …but the sole-contact alias, when there is one, wins.
+    expect(opportunityToPayload(gift, { termCols: new Map(), personAccountIds,
+      donorAlias: new Map([['a-ind', 'c9']]) }).links).toContainEqual({ column: 'Donor', targetSfIds: ['c9'] });
+  });
+
   it('computes Fiscal Year Ending (July–June) from CloseDate', () => {
     const p = opportunityToPayload({ ...base, CloseDate: '2025-12-31' }, { termCols: new Map() });
     expect(p.columns['Fiscal Year Ending']).toBe('2026');

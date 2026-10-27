@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds,
+import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds, soleContactAccountIds,
   type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
 import { setStaffMatcher } from './fields.js';
@@ -269,5 +269,34 @@ describe('personNamedAccountIds', () => {
   it('never matches on empty names', () => {
     const m = personNamedAccountIds([org('a1', '')], [contact('c1', '', '', 'a1')]);
     expect(m.size).toBe(0);
+  });
+});
+
+describe('soleContactAccountIds', () => {
+  // One-to-One Individual Accounts never become items, so a gift whose only donor is one would
+  // otherwise load with a dangling Donor link — 11,113 gifts in the 2026-10-09 rehearsal
+  // (monday-migration docs/24). Decided 2026-10-26: Donor is the Account's sole migrated Contact.
+  const ind = (Id: string) => ({ Id, Name: `${Id} Household`, npe01__SYSTEM_AccountType__c: 'One-to-One Individual' });
+  const contact = (Id: string, AccountId: string) => ({ Id, FirstName: 'F', LastName: Id, AccountId });
+
+  it('maps a One-to-One Account to its sole Contact when that Contact is migrated', () => {
+    const r = soleContactAccountIds([ind('a1')], [contact('c1', 'a1')], new Set(['c1']));
+    expect(r.alias).toEqual(new Map([['a1', 'c1']]));
+    expect(r.unresolved.size).toBe(0);
+  });
+
+  it('leaves the rest unresolved, with the reason staff review needs', () => {
+    const r = soleContactAccountIds([ind('a1'), ind('a2'), ind('a3')],
+      [contact('c1', 'a1'), contact('c2', 'a3'), contact('c3', 'a3')], new Set(['c2']));
+    expect(r.alias.size).toBe(0);
+    expect(r.unresolved).toEqual(new Map([
+      ['a1', 'sole contact not migrated'], ['a2', 'no contact'], ['a3', 'several contacts']]));
+  });
+
+  it('ignores Accounts that are not One-to-One Individual', () => {
+    const r = soleContactAccountIds([{ Id: 'a1', Name: 'Acme', npe01__SYSTEM_AccountType__c: null }],
+      [contact('c1', 'a1')], new Set(['c1']));
+    expect(r.alias.size).toBe(0);
+    expect(r.unresolved.size).toBe(0);
   });
 });
