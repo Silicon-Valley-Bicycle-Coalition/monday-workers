@@ -56,6 +56,14 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(get(wrangler, 'observability.issues.enabled')).toBe(true);
   });
 
+  it('has its own FLAGS KV namespace, never production’s', () => {
+    const prodKv = (wrangler.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    const sbKv = (sandboxEnv.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    expect(prodKv.id).toBeTruthy();
+    expect(sbKv.id).toBeTruthy();
+    expect(sbKv.id).not.toBe(prodKv.id);
+  });
+
   it('derives its own name', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-report-digests');

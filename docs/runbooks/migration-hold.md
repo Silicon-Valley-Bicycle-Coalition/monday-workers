@@ -5,7 +5,7 @@ root. Never run `hold` to `off` to leave a hold: it drops the held messages.
 
 ## Prerequisites
 
-The FLAGS KV namespaces must exist and their ids be in all 11 `wrangler.jsonc` files; they are
+The FLAGS KV namespaces must exist and their ids be in all 12 in-scope `wrangler.jsonc` files; they are
 placeholders (`REPLACE_WITH_FLAGS_KV_ID`, `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`) until then, and
 `flags.mjs` refuses to run on placeholders.
 

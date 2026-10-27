@@ -184,8 +184,9 @@ environment to another Worker, copy `member-portal`'s `environment.ts`, split te
 `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 **Write switch (off / hold / on), per Worker, in the shared `FLAGS` KV namespace** (`<worker>:writes`;
-missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). All 11
-migration/integration Workers carry it (`svbc-calendars` excluded). `member-portal/src/flags.ts` is
+missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). All 12
+migration/integration Workers carry it — the eleven listed in the spec plus `report-digests`
+(`svbc-calendars` excluded). `member-portal/src/flags.ts` is
 canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the CI
 job `worker-flags-copies` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
 FLAGS KV ids match across `wrangler.jsonc` files). Same rule as `graphql.ts`: edit the canonical
@@ -211,7 +212,8 @@ are created. Runbook: `docs/runbooks/migration-hold.md`.
   retention 14 days, set by `flags.mjs retention` rather than `wrangler.jsonc`. Retryable/terminal
   classification stays per Worker.
 - `bp-feedback-notify` has no queue (503 under `hold`/`unknown`); `benevity-import` routes 503 under
-  `hold`/`unknown`; `monday-backup` skips the run unless `on`.
+  `hold`/`unknown`; `monday-backup` skips the run unless `on`; `report-digests` dry-runs its sends
+  under `off` and skips the hour under `hold`/`unknown` (no catch-up; resend by hand).
 
 **One Monday GraphQL transport, copied, not shared (#35):** `monday-backup/src/monday/graphql.ts`
 is the canonical transport (429/Retry-After, complexity budget, 5xx, timeouts, non-idempotent

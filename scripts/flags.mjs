@@ -27,7 +27,7 @@ const USAGE = `usage:
   flags.mjs retention --env <production|sandbox>`;
 
 // Main queues per Worker (production names).
-const QUEUES = {
+export const QUEUES = {
   'benevity-import': ['benevity-import-writes'],
   'bp-feedback-notify': [],
   'donation-rollups': ['donation-rollups-recompute'],
@@ -39,6 +39,7 @@ const QUEUES = {
   'monday-backup': [],
   'people-reclassification': [],
   'quickbooks-sync': ['quickbooks-sync-writes'],
+  'report-digests': [],
 };
 
 export const queuesFor = (worker, env) =>

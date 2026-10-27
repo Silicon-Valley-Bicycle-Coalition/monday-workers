@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { IN_SCOPE } from './check-worker-flags.mjs';
 import {
-  queuesFor, dlqsFor, planWrites, parseArgs, applyCommand, readStatus, formatStatus, planRetention,
+  QUEUES, queuesFor, dlqsFor, planWrites, parseArgs, applyCommand, readStatus, formatStatus, planRetention,
 } from './flags.mjs';
 
 const IDS = { production: 'prod-id', sandbox: 'sbx-id' };
@@ -24,9 +24,11 @@ describe('queue maps', () => {
     assert.deepEqual(dlqsFor('funraise-sync', 'sandbox'), ['funraise-sync-writes-sandbox-dlq']);
     assert.deepEqual(dlqsFor('funraise-sync', 'production'), ['funraise-sync-writes-dlq']);
     assert.deepEqual(queuesFor('bp-feedback-notify', 'production'), []);
+    assert.deepEqual(queuesFor('report-digests', 'production'), []);
   });
-  it('covers every in-scope worker', () => {
-    for (const worker of IN_SCOPE) assert.ok(Array.isArray(queuesFor(worker, 'production')), worker);
+  it('covers every in-scope worker, and only those', () => {
+    for (const worker of IN_SCOPE) assert.ok(Object.hasOwn(QUEUES, worker), worker);
+    assert.deepEqual(Object.keys(QUEUES).sort(), [...IN_SCOPE].sort());
   });
 });
 
