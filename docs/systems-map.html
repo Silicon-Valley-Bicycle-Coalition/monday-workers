@@ -170,7 +170,7 @@
 
 <h1>SVBC Systems Map</h1>
 <p class="lede">How Silicon Valley Bicycle Coalition's Monday.com CRM and its Cloudflare Workers fit together once Salesforce retires in October 2026. Monday.com becomes the single system of record; every Worker either feeds it once, keeps it current, or reads from it.</p>
-<div class="meta">as of 2026-10-20 &middot; production cutover weekend 2026-10-23 to 25 &middot; most Workers run in the sandbox environment, none against production boards yet &mdash; see status table</div>
+<div class="meta">as of 2026-10-26 &middot; production cutover weekend 2026-10-23 to 25 &middot; most Workers run in the sandbox environment, none against production boards yet &mdash; see status table</div>
 
 <div class="legend">
   <span class="item"><span class="swatch" style="background:var(--orange)"></span>Cloudflare Worker</span>
@@ -414,7 +414,7 @@
           <rect x="0" y="0" width="80" height="16" rx="8"/>
           <text x="40" y="11.5" text-anchor="middle">CRON</text>
         </g>
-        <text x="440" y="966" text-anchor="middle" class="dim" font-size="10px">rolling 7-year window, D1 ledger, dry-run by default</text>
+        <text x="440" y="966" text-anchor="middle" class="dim" font-size="10px">rolling 7-year window, D1 ledger, dry-run until the write switch is on</text>
 
         <line x1="560" y1="939" x2="694" y2="939" marker-end="url(#arrow)"/>
         <text x="627" y="931" text-anchor="middle" class="arrow-label">move People &harr; Historical</text>
@@ -592,6 +592,7 @@
 
 <h2>What's actually live today</h2>
 <p class="lede" style="margin-bottom:6px;">Built does not mean deployed, and sandbox does not mean production. Every migration Worker carries a <span class="mono" style="font-size:0.85em">sandbox</span> Wrangler environment (its own name, D1, queues, secrets, and a <span class="mono" style="font-size:0.85em">config/sandbox.json</span>) that targets the "(sandbox v3)" boards and can only email <span class="mono" style="font-size:0.85em">sandbox@bikesiliconvalley.org</span>. Only <span class="mono" style="font-size:0.85em">svbc-calendars</span> exists in production; the migration Workers' first production deploy is the cutover checklist.</p>
+<p class="lede" style="margin-bottom:6px;"><strong>Write mode.</strong> Orthogonal to the state below, each of the eleven Workers that write has a <span class="mono" style="font-size:0.85em">&lt;worker&gt;:writes</span> mode in a shared Workers KV namespace: <span class="mono" style="font-size:0.85em">on</span> (write), <span class="mono" style="font-size:0.85em">hold</span> (write nothing, keep work queued, queues paused) or <span class="mono" style="font-size:0.85em">off</span> (write nothing, log the dry run; a missing key reads as <span class="mono" style="font-size:0.85em">off</span>). Built on <span class="mono" style="font-size:0.85em">main</span> but not yet deployed: the KV namespaces are not created, so the ids are placeholders. Set with <span class="mono" style="font-size:0.85em">scripts/flags.mjs</span>; see <span class="mono" style="font-size:0.85em">docs/runbooks/migration-hold.md</span>.</p>
 <table class="status">
   <thead>
     <tr><th>Worker</th><th>State</th><th>Blocking on</th></tr>
@@ -608,7 +609,7 @@
     <tr><td class="worker">quickbooks-sync</td><td><span class="pill pill-sandbox">sandbox</span></td><td>deployed, D1/queues/boards provisioned (2026-09-29) but has processed nothing: needs an Intuit sandbox company, dev keys and a seeded OAuth token pair; production ids at cutover</td></tr>
     <tr><td class="worker">monday-backup</td><td><span class="pill pill-sandbox">sandbox</span></td><td>deployed since 2026-09-22 but has never completed a backup: Drive destination folder, Google service account on the Shared Drive, Slack secret; production D1 exists (2026-10-08), production also needs a backup integration user</td></tr>
     <tr><td class="worker">eventbrite-sync</td><td><span class="pill pill-pending">built</span></td><td>not deployed anywhere (2026-10-06): private token, D1/queues/secrets, webhook registration, the shared Refunded label; the Eventbrite Order ID column now comes from the cutover load (2026-10-19), which also carries the Oct 22 Bike Summit orders</td></tr>
-    <tr><td class="worker">people-reclassification</td><td><span class="pill pill-pending">built</span></td><td>not deployed anywhere (2026-10-09), every write dry-run until DRY_RUN is "false": D1, board ids, and the one-item live check that connect columns survive a board move</td></tr>
+    <tr><td class="worker">people-reclassification</td><td><span class="pill pill-pending">built</span></td><td>not deployed anywhere (2026-10-09), every write dry-run until its write switch is <span class="mono">on</span>: D1, board ids, and the one-item live check that connect columns survive a board move</td></tr>
   </tbody>
 </table>
 

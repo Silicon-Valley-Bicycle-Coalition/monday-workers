@@ -136,8 +136,8 @@ means ingestion and matching can be *tested* independently, not that a failed *w
 [Cloudflare Queue](https://developers.cloudflare.com/queues/) between "event ingested into D1" and
 "written to Monday." The webhook handler writes the deduped event to D1 as before, then enqueues a
 message referencing it. A separate queue consumer does the actual Monday write. On failure,
-Cloudflare Queues retries automatically (3 attempts by default, configurable, with delay/backoff)
-and, once retries are exhausted, routes the message to a
+Cloudflare Queues retries automatically and, once retries are exhausted (see "Outage retry" below
+for this repo's policy), routes the message to a
 [Dead Letter Queue](https://developers.cloudflare.com/queues/configuration/dead-letter-queues/)
 instead of silently discarding it — so a persistent failure becomes a visible backlog someone can
 inspect and replay, not a donation that quietly never reached Monday.
@@ -165,6 +165,85 @@ wrong tool for a run that happens once and is already validated by repeated sand
 Migration Method). What it needs instead: retry-with-backoff on individual Monday API writes
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
+
+## Write switch: off / hold / on
+
+Every Worker that writes to Monday (or sends email) reads a per-Worker mode from a shared
+Workers KV namespace, `FLAGS`, so a migration or an incident can stop writes in seconds without a
+deploy. Design: [`docs/superpowers/specs/2026-10-26-write-switch-design.md`](docs/superpowers/specs/2026-10-26-write-switch-design.md);
+the migration procedure: [`docs/runbooks/migration-hold.md`](docs/runbooks/migration-hold.md).
+
+| Mode | Behaviour |
+|---|---|
+| `on` | Write normally. |
+| `hold` | Write nothing and keep the work: queue consumers retry, the Worker's main queues are paused, crons skip (their cursors do not advance). Leaving `hold` with `on` writes everything that queued up. |
+| `off` | Write nothing, log what would have been written (dry run). Work ingested under `off` is stamped `dropped` and is **never** written later, even after a flip to `on`. |
+
+**Keys** (KV namespace `svbc-worker-flags` in production, `svbc-worker-flags-sandbox` in the
+sandbox; both bound as `FLAGS`): `<worker>:writes` is `on`, `hold` or `off`; `<worker>:log` set to
+`debug` adds redacted payloads (names, emails, phones and addresses masked, free text as length
+only) to the skip lines. `<worker>` is the directory name. **A missing key, or any other value,
+reads as `off`; a KV read error is `unknown` and behaves like `hold`** (never write, retry, crons
+skip). Reads are edge-cached for 30 s, so a flip takes up to that long to reach a warm location.
+`bp-feedback-notify` has no queue: under `hold`/`unknown` it returns 503 and only Monday's own
+retries apply, so a request fired mid-migration may need re-triggering by hand.
+
+**Set `on` before deploying.** Because a missing key is `off`, set `<worker>:writes on` for every
+Worker that should keep writing *before* deploying the build that reads the switch (otherwise, for
+example, `member-portal` login returns 503).
+
+**Operator CLI** (`scripts/flags.mjs`, shells out to `npx wrangler`; run from the repo root):
+
+```sh
+node scripts/flags.mjs member-portal writes hold --env production
+```
+
+```sh
+node scripts/flags.mjs all writes on --env production
+```
+
+```sh
+node scripts/flags.mjs funraise-sync log debug --env sandbox
+```
+
+```sh
+node scripts/flags.mjs status --env production
+```
+
+```sh
+node scripts/flags.mjs retention --env production
+```
+
+`writes` writes the KV key first, then pauses (`hold`) or resumes (`on`/`off`) the Worker's main
+queues, so a consumer never sees a delivered message while KV still says `hold`; DLQs are never
+paused. If the KV write succeeds but the queue step fails, the command exits non-zero and says
+KV and the queue disagree; `status` then marks the row `MISMATCH`. `status` prints, per Worker,
+the mode, log level, and each queue's paused/delivering state and backlog (`?` where wrangler's
+output could not be parsed). `retention` sets 14-day message retention (1,209,600 s) on every main
+queue and DLQ; it is operational, not in `wrangler.jsonc`. Leave `hold` with `on`, not `off`:
+`hold` to `off` drops what was held.
+
+**Outage retry.** Main-queue consumers retry with a delay of `min(60 x 2^(attempts-1), 3600)`
+seconds (1 minute doubling to 1 hour), raised to any longer hint (`Retry-After`, midnight for a
+daily limit; hinted waits capped at 12 h), with `max_retries: 100` (about 4 days) before the DLQ.
+Combined with 14-day retention, a multi-day Monday outage or a long `hold` queues up instead of
+dead-lettering. Error classification (retryable vs terminal) is unchanged per Worker.
+
+**KV namespaces are not created yet.** The ids in every in-scope `wrangler.jsonc` are the
+placeholders `REPLACE_WITH_FLAGS_KV_ID` (top level) and `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`
+(`env.sandbox`), and `flags.mjs` refuses to run on them. Before any deploy:
+
+```sh
+npx wrangler kv namespace create svbc-worker-flags
+```
+
+```sh
+npx wrangler kv namespace create svbc-worker-flags-sandbox
+```
+
+Paste the ids into all 11 `wrangler.jsonc` files; `node scripts/check-worker-flags.mjs --strict`
+(CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is
+byte-identical to the canonical `member-portal/src/flags.ts`.
 
 ## Reliability: traffic and cost limits
 
