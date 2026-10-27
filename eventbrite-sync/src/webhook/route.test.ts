@@ -253,6 +253,23 @@ describe('secretsMatch', () => {
       expect(attendeeStore.recordDelivery).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['off', { writeStamp: 'dropped' }],
+      ['hold', {}],
+      ['on', {}],
+    ] as const)('under %s records and enqueues event and attendee messages, stamping only under off', async (mode, stamp) => {
+      const eventStore = fakeEventStore();
+      const attendeeStore = fakeAttendeeStore();
+      const send = vi.fn().mockResolvedValue(undefined);
+      const app = createApp({ eventStore, attendeeStore, orderStore: fakeOrderStore(), config, queue: { send }, webhookSecret: SECRET, writeMode: async () => mode });
+      expect((await postAttendee(app, attendeeDelivery())).status).toBe(200);
+      expect((await postAttendee(app, attendeeDelivery('event.published', '/events/1001/'))).status).toBe(200);
+      expect(attendeeStore.recordDelivery).toHaveBeenCalled();
+      expect(eventStore.recordDelivery).toHaveBeenCalled();
+      expect(send).toHaveBeenNthCalledWith(1, { kind: 'attendee', eventId: '1001', attendeeId: '2002', action: 'attendee.updated', ...stamp });
+      expect(send).toHaveBeenNthCalledWith(2, { kind: 'event', eventId: '1001', action: 'event.published', ...stamp });
+    });
+
     it('records the ledger row before enqueueing', async () => {
       const attendeeStore = fakeAttendeeStore();
       const send = vi.fn().mockResolvedValue(undefined);

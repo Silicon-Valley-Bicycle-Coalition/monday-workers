@@ -6,6 +6,7 @@ import { mondayItem } from '../test/mondayItem';
 import { testConfig } from '../test/testConfig';
 import type { AttendeeRow, EventbriteSyncConfig, EventRow } from '../types';
 import { runFollowups } from './run';
+import { followupDepsFor } from '../writeSwitch';
 
 // Board ids from testConfig: events 222, event-registrations 333, people-live 42.
 const EVENTS = 222;
@@ -543,5 +544,67 @@ describe('runFollowups', () => {
     const config = testConfig();
     config.monday.boards['people-live'] = null;
     await expect(runFollowups(NOW, deps([], {}, fakeMonday({}, {}), config))).rejects.toThrow('people-live');
+  });
+});
+
+// Write switch (spec 2026-10-26): under `off` the sweep runs against followupDepsFor's dry-run deps —
+// it plans and logs every write, and none reaches Monday.
+describe('runFollowups under a write-switch dry run', () => {
+  const ctx = { worker: 'eventbrite-sync', environment: 'production', mode: 'off' as const, logLevel: 'normal' as const, deliveryId: 'followups:test', piiKeys: ['name', 'email'] };
+
+  function skipLines(log: { mock: { calls: unknown[][] } }): Record<string, any>[] {
+    return log.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"writeSwitch":"skipped"')).map((l) => JSON.parse(l));
+  }
+
+  it('logs the registration writes, the People create and Follow-ups Sent; writes nothing', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      { '501': { name: 'Pat Rider', attendance: 'Attended', email: 'pat@example.com' } }
+    );
+    const live = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const result = await runFollowups(NOW, followupDepsFor('dry-run', live, ctx));
+      expect(result).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
+      expect(monday.createItem).not.toHaveBeenCalled();
+      expect(monday.changeColumnValues).not.toHaveBeenCalled();
+      expect(live.eventStore.updateStatus).not.toHaveBeenCalled();
+      const lines = skipLines(log);
+      expect(lines.map((l) => [l.sink, l.operation])).toEqual([
+        ['People', 'createItem'],
+        ['Event Registrations', 'changeColumnValues'],
+        ['Events', 'changeColumnValues'],
+      ]);
+      expect(lines.every((l) => l.mode === 'off' && l.deliveryId === 'followups:test')).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('a held class logs Held and the bell notification instead of sending them', async () => {
+    const config = testConfig();
+    config.attendeeSync.followups.notifyUserId = 555;
+    const monday = fakeMonday(
+      { '9001': { name: 'Learn to Ride Oct 24', classType: 'Learn to Ride', followups: '' } },
+      { '501': { name: 'Pat', attendance: 'Registered', email: 'pat@example.com' } }
+    );
+    const live = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday, config);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(await runFollowups(NOW, followupDepsFor('dry-run', live, ctx))).toEqual({ sent: [], held: ['ev1'], skipped: [], failed: [] });
+      expect(monday.changeColumnValues).not.toHaveBeenCalled();
+      expect(monday.notify).not.toHaveBeenCalled();
+      expect(skipLines(log).map((l) => [l.sink, l.operation])).toEqual([
+        ['Events', 'changeColumnValues'],
+        ['Monday notification', 'notify'],
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('run passes the live deps through untouched', () => {
+    const live = deps([], {}, fakeMonday({}, {}));
+    expect(followupDepsFor('run', live, ctx)).toBe(live);
   });
 });

@@ -80,7 +80,7 @@ export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMes
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       continue;
     }
-    await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+    await processOrderQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx, message.body.kind ?? 'order'));
   }
 }
 

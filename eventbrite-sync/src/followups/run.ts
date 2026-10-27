@@ -5,6 +5,7 @@ import { isActive, statusText, type MondayClient } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { errorMessage } from '../util/errorMessage';
+import { linkedItemId } from '../util/itemId';
 import { isDue, planFollowups, type Registration } from './plan';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -140,7 +141,7 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
         email: (item.columns[rc.attendeeEmailColumn] ?? '').trim(), // the address the planner deduped on
         name: item.name,
       });
-      if (match.donorItemId !== null) values[rc.attendeeLinkColumn] = { item_ids: [Number(match.donorItemId)] };
+      if (match.donorItemId !== null) values[rc.attendeeLinkColumn] = { item_ids: [linkedItemId(match.donorItemId)] };
     }
     columnValuesById.set(write.itemId, values);
   }

@@ -6,6 +6,8 @@ import { isActive, statusText } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
 import { EVENT_NOT_FOUND_ERROR } from './processEvent';
+import { stampOf } from './messages';
+import { linkedItemId } from '../util/itemId';
 
 // Fetch the attendee from Eventbrite (never trust the delivery) and upsert its Event Registrations
 // item. Attendance is the one column staff also edit, so it is read back from Monday and merged:
@@ -42,7 +44,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   }
   if (eventRow === null || eventRow.mondayItemId === null) {
     await eventStore.recordDelivery({ eventId, action: 'attendee.updated', receivedAt: new Date().toISOString() });
-    await queue.send({ kind: 'event', eventId, action: 'attendee.updated' });
+    await queue.send({ kind: 'event', eventId, action: 'attendee.updated', ...stampOf(message) });
     throw new Error(`eventbrite-sync consumer: event "${eventId}" has no Events item yet; requested it, will retry attendee "${attendeeId}"`);
   }
 
@@ -92,7 +94,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
 
   const attendance = mergeAttendance(currentAttendance, attendanceFromEventbrite(attendee));
   const mapping = mapAttendee(attendee, mapEvent(event, config), config, attendance);
-  const columnValues = { ...mapping.columnValues, [cols.eventLinkColumn]: { item_ids: [Number(eventRow.mondayItemId)] } };
+  const columnValues = { ...mapping.columnValues, [cols.eventLinkColumn]: { item_ids: [linkedItemId(eventRow.mondayItemId)] } };
 
   // People only once they have actually attended (spec decision D). Cached on the ledger so retries
   // and later updates don't match again; a match failure throws, as for donors.
@@ -113,7 +115,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     }
   }
   if (wantsLink && personItemId !== null) {
-    columnValues[cols.attendeeLinkColumn] = { item_ids: [Number(personItemId)] };
+    columnValues[cols.attendeeLinkColumn] = { item_ids: [linkedItemId(personItemId)] };
   }
 
   const writtenAt = new Date().toISOString();

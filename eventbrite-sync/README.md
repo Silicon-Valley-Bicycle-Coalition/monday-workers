@@ -467,6 +467,30 @@ dry-runs everything. The webhook still records every delivery under any mode; on
 `off` is stamped and is never written, even if the switch is `on` by the time it is consumed. The
 dead-letter consumer is D1 bookkeeping and runs in every mode.
 
+Orders, events and attendees share the one write queue and the same gate. What each mode does
+beyond the table above:
+
+- **Queue messages (order, event, attendee).** Under `off` (or a `dropped` stamp) the consumer runs
+  the same fetch → map → match path against recording deps: each Donations, People, Events and
+  Event Registrations write is a skip line, no ledger row changes, and the consumer's own sends
+  (an event's attendee fan-out, an attendee's request for its event) are logged as `Write queue`
+  skips, not sent. A message the consumer does send live carries its parent's stamp. A dry-run
+  attendee whose event has a ledger row but no Events item yet (a dry run never records one) links
+  the placeholder `dry-run-event` rather than retrying until its event is written.
+- **The hourly follow-up sweep** (`runFollowups`). `on` runs it; `off` runs it against a recording
+  Monday client — every Follow-up Email, Attendance, People link, Follow-ups `Sent`/`Held` and the
+  Held bell notification is a skip line, nothing reaches Monday, so no Sequence fires. It has no
+  cursor: its run-once guard is the event's Follow-ups column, which a dry run never sets, so a
+  due class is logged again every hour until it ages out of `maxAgeDays`. `hold` or an unreadable
+  switch skips the run with one `eventbrite-sync scheduled: write mode is …` line.
+- **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
+  runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with the
+  sweep (the same line). Its 26-hour lookback does not reach back over a long hold, so after a
+  multi-day `hold` compare the orders ledger against Eventbrite by hand (or run
+  `scripts/backfill-orders.mjs --dry-run` per event) for the held days.
+- No path re-enqueues "stuck" ledger rows automatically, so a row ingested under `off` is never
+  resurrected later; re-driving stays the backfill scripts' job.
+
 ## Open
 
 0. **Production class emails (attendee feed).** Connect `learn@` in Emails & Activities; the Bike

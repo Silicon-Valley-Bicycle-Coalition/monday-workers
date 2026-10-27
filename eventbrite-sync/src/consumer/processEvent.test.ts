@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processEvent } from './processEvent';
+import { consumeWriteBatch } from './processBatch';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
@@ -186,5 +187,77 @@ describe('processEvent', () => {
       await expect(processEvent(message, deps)).rejects.toThrow('queue down');
       expect(eventStore.updateStatus).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Write switch (spec 2026-10-26): event messages go through consumeWriteBatch like orders.
+describe('event messages under the write switch', () => {
+  // setup() builds only what this consumer reaches; the dry-run deps also wrap the orders ledger.
+  const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
+  const gate = (mode: 'on' | 'off' | 'hold' | 'unknown') => ({ worker: 'eventbrite-sync', environment: 'production', mode, logLevel: 'normal' as const, piiKeys: ['name', 'email'] });
+  const moved = { mondayItemId: 'item-9', startsAt: '2026-10-24T02:00:00.000Z', locationKey: 'mitchell park, 600 e meadow dr, palo alto, ca 94306', status: 'written' as const };
+  const msg = (stamp: { writeStamp?: 'dropped' } = {}) => ({ body: { ...message, ...stamp }, attempts: 1, ack: vi.fn(), retry: vi.fn() });
+
+  function skipLines(log: { mock: { calls: unknown[][] } }): Record<string, any>[] {
+    return log.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"writeSwitch":"skipped"')).map((l) => JSON.parse(l));
+  }
+
+  it('off: logs the Events write and each attendee fan-out; writes, sends and records nothing, then acks', async () => {
+    const { deps, mondayClient, eventStore, queue } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1'), attendeeRow('a2')] });
+    const m = msg();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('off'));
+      expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(eventStore.updateStatus).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+      expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([
+        ['Events', 'changeColumnValues', 'event:9001'],
+        ['Write queue', 'send', 'event:9001'],
+        ['Write queue', 'send', 'event:9001'],
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('a dropped-stamped event message is a dry run even under on', async () => {
+    const { deps, mondayClient } = setup();
+    const m = msg({ writeStamp: 'dropped' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('on'));
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(skipLines(log).map((l) => [l.sink, l.operation])).toEqual([['Events', 'createItem']]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it.each(['hold', 'unknown'] as const)('%s: retries with the backoff, processing nothing', async (mode) => {
+    const { deps, eventbriteClient, eventStore } = setup();
+    const m = msg();
+    await consumeWriteBatch([m], full(deps), gate(mode));
+    expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(m.ack).not.toHaveBeenCalled();
+    expect(eventStore.getEvent).not.toHaveBeenCalled();
+    expect(eventbriteClient.getEvent).not.toHaveBeenCalled();
+  });
+
+  it('on: writes and fans out unstamped attendee messages, as before', async () => {
+    const { deps, mondayClient, queue } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
+    const m = msg();
+    await consumeWriteBatch([m], full(deps), gate('on'));
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledTimes(1);
+    expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated' });
+    expect(m.ack).toHaveBeenCalled();
+  });
+
+  it('a fan-out sent on behalf of a dropped event carries its stamp', async () => {
+    const { deps, queue } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
+    await processEvent({ ...message, writeStamp: 'dropped' }, deps);
+    expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated', writeStamp: 'dropped' });
   });
 });
