@@ -39,11 +39,12 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
     expect(JSON.stringify(afterRoute)).not.toContain('jane@example.com');
 
     // The consumer fetches the order itself; the delivery carried only the pointer.
-    const eventbriteClient: EventbriteClient = { getOrder: vi.fn().mockResolvedValue(testOrder()) };
+    const eventbriteClient: EventbriteClient = { getOrder: vi.fn().mockResolvedValue(testOrder()), getEvent: vi.fn(), getAttendee: vi.fn() };
     const mondayClient: MondayClient = {
       findItemByColumnValue: vi.fn().mockImplementation(async (boardId: number) => (boardId === 555666 ? { id: '9001' } : null)),
       createItem: vi.fn().mockResolvedValue({ id: 'monday-item-int-1' }),
       changeColumnValues: vi.fn().mockResolvedValue(undefined),
+      getItems: vi.fn(), notify: vi.fn(),
     };
 
     const ack = vi.fn();

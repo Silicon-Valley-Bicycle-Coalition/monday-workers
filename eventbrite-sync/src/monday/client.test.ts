@@ -141,4 +141,47 @@ describe('HttpMondayClient transport (#35)', () => {
     await expect(newClient().createItem(1, 'x', {})).resolves.toEqual({ id: '9' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  describe('getItems', () => {
+    it('reads item names and column text', async () => {
+      const fetchMock = mockFetchOnce({
+        data: { items: [{ id: '1', name: 'Jane', column_values: [{ id: 'status', text: 'Registered' }, { id: 'blank', text: null }] }] },
+      });
+
+      const items = await newClient().getItems(999, ['1'], ['status', 'blank']);
+
+      expect(items).toEqual([{ id: '1', name: 'Jane', columns: { status: 'Registered', blank: '' } }]);
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+      expect(body.query).toContain('items(ids:');
+      expect(body.query).toContain('column_values(ids:');
+      expect(body.variables).toEqual({ ids: ['1'], columnIds: ['status', 'blank'] });
+    });
+
+    it('batches 230 ids into 3 requests and returns nothing for no ids', async () => {
+      const fetchMock = mockFetchOnce({ data: { items: [] } });
+      const ids = Array.from({ length: 230 }, (_, i) => String(i + 1));
+
+      await newClient().getItems(999, ids, ['status']);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const sizes = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body as string).variables.ids.length);
+      expect(sizes).toEqual([100, 100, 30]);
+
+      fetchMock.mockClear();
+      expect(await newClient().getItems(999, [], ['status'])).toEqual([]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('notify', () => {
+    it('creates a Project notification for the user on the item', async () => {
+      const fetchMock = mockFetchOnce({ data: { create_notification: { text: 'hi' } } });
+
+      await newClient().notify(42, '777', 'Follow-up held');
+
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+      expect(body.query).toContain('create_notification');
+      expect(body.query).toContain('target_type: Project');
+      expect(body.variables).toEqual({ userId: 42, itemId: '777', text: 'Follow-up held' });
+    });
+  });
 });

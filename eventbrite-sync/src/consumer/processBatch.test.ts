@@ -39,7 +39,7 @@ function fakeStore(row: OrderRow | null): OrderStore {
 }
 
 function fakeEventbrite(order: ReturnType<typeof testOrder> | null): EventbriteClient {
-  return { getOrder: vi.fn().mockResolvedValue(order) };
+  return { getOrder: vi.fn().mockResolvedValue(order), getEvent: vi.fn(), getAttendee: vi.fn() };
 }
 
 // Donor lookup on People (42) hits by default; the adopt lookup on Donations (111) misses.
@@ -48,6 +48,7 @@ function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
     findItemByColumnValue: vi.fn().mockImplementation(async (boardId: number) => (boardId === 42 ? { id: '55' } : null)),
     createItem: vi.fn().mockResolvedValue({ id: 'item-1' }),
     changeColumnValues: vi.fn().mockResolvedValue(undefined),
+    getItems: vi.fn(), notify: vi.fn(),
     ...overrides,
   };
 }
@@ -265,7 +266,7 @@ describe('processOrderQueueBatch', () => {
 
   it('marks the row failed and retries with backoff on an Eventbrite failure', async () => {
     const orderStore = fakeStore(orderRow());
-    const eventbriteClient: EventbriteClient = { getOrder: vi.fn().mockRejectedValue(new Error('eventbrite api: get order 442719216 failed with HTTP 503')) };
+    const eventbriteClient: EventbriteClient = { getOrder: vi.fn().mockRejectedValue(new Error('eventbrite api: get order 442719216 failed with HTTP 503')), getEvent: vi.fn(), getAttendee: vi.fn() };
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage('442719216', 2);
     try {
@@ -322,7 +323,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage();
     try {
-      await processOrderQueueBatch([message], { orderStore, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')) }, mondayClient: fakeMonday(), config });
+      await processOrderQueueBatch([message], { orderStore, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')), getEvent: vi.fn(), getAttendee: vi.fn() }, mondayClient: fakeMonday(), config });
       expect(message.retry).toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
     } finally {
