@@ -464,7 +464,7 @@ membership keys and stamps are compared away).
 
   ```json
   "membership": {
-    "fromISO": "2026-10-23",
+    "fromISO": "2026-10-30",
     "eligibleGiftTypes": ["Donation"],
     "minAmountCents": 100,
     "termMonths": 13,
