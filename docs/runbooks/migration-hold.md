@@ -19,19 +19,20 @@ The in-scope Workers, in three groups that this runbook treats differently:
 
 CI deploys the sandbox Workers from `main`, and a missing key reads as `off`, so the order is:
 
-1. Create the namespaces (live account changes; confirm before running):
+1. Create the namespaces (live account changes; confirm before running). Done for SVBC on
+   2026-10-27 (`FLAGS`, `sandbox-FLAGS`); a fork runs:
 
 ```sh
-npx wrangler kv namespace create svbc-worker-flags
+npx wrangler kv namespace create FLAGS
 ```
 
 ```sh
-npx wrangler kv namespace create svbc-worker-flags-sandbox
+npx wrangler kv namespace create sandbox-FLAGS
 ```
 
 2. Fill the two ids into every in-scope `wrangler.jsonc` in your working copy, uncommitted
-   (`flags.mjs` reads them from `member-portal/wrangler.jsonc` and refuses the placeholders
-   `REPLACE_WITH_FLAGS_KV_ID` / `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`), and check them:
+   (`flags.mjs` reads them from `member-portal/wrangler.jsonc` and refuses placeholder ids that
+   start with `REPLACE_WITH`), and check them:
 
 ```sh
 node scripts/check-worker-flags.mjs --strict
@@ -67,9 +68,12 @@ done
 node scripts/flags.mjs status --env production
 ```
 
-`status` exits non-zero on any `MISMATCH` or `?` (a value it could not read). It parses
-`wrangler queues info` and `kv key get` output, which is unverified against real wrangler: on
-first use, confirm it against the dashboard.
+`status` exits non-zero on any `MISMATCH` or `?` (a value it could not read), and on a queue that
+reads `missing` (not created; deploy the Worker). Keys come from `wrangler kv key get`; queue state
+comes from the Cloudflare API under wrangler's own login, because `wrangler queues info` shows
+neither: paused from the queue's settings, backlog from the latest Queues analytics sample in the
+last 15 minutes. An idle queue has no samples, shown as `backlog 0 (no recent sample)`, and the
+analytics lag a minute or two, so a backlog that just started may read 0 at first.
 
 ## Before the load
 

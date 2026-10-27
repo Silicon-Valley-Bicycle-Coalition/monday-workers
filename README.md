@@ -184,8 +184,8 @@ In scope, twelve Workers: `benevity-import`, `bp-feedback-notify`, `donation-rol
 | `hold` | `member-portal` is donor-visibly unavailable under `hold`, `unknown` and `off`: login, change-request and card-regenerate POSTs render a 503 "temporarily unavailable" page (reads still work). Write nothing and keep the work: queue consumers retry, the Worker's main queues are paused, crons skip (their cursors do not advance). Leaving `hold` with `on` writes everything that queued up. |
 | `off` | Write nothing, log what would have been written (dry run). Pollers' cursors advance, so what they would have fetched is skipped for good. Work ingested under `off` is stamped `dropped` and is **never** written later, even after a flip to `on`. |
 
-**Keys** (KV namespace `svbc-worker-flags` in production, `svbc-worker-flags-sandbox` in the
-sandbox; both bound as `FLAGS`): `<worker>:writes` is `on`, `hold` or `off`; `<worker>:log` set to
+**Keys** (KV namespace `FLAGS` in production, `sandbox-FLAGS` in the sandbox; both bound as
+`FLAGS`): `<worker>:writes` is `on`, `hold` or `off`; `<worker>:log` set to
 `debug` adds redacted payloads (names, emails, phones and addresses masked, free text as length
 only) to the skip lines. `<worker>` is the directory name. **A missing key, or any other value,
 reads as `off`; a KV read error is `unknown` and behaves like `hold`** (never write, retry, crons
@@ -250,20 +250,11 @@ daily limit; hinted waits capped at 12 h), with `max_retries: 100` (about 4 days
 Combined with 14-day retention, a multi-day Monday outage or a long `hold` queues up instead of
 dead-lettering. Error classification (retryable vs terminal) is unchanged per Worker.
 
-**KV namespaces are not created yet.** The ids in every in-scope `wrangler.jsonc` are the
-placeholders `REPLACE_WITH_FLAGS_KV_ID` (top level) and `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`
-(`env.sandbox`), and `flags.mjs` refuses to run on them. Before any deploy:
-
-```sh
-npx wrangler kv namespace create svbc-worker-flags
-```
-
-```sh
-npx wrangler kv namespace create svbc-worker-flags-sandbox
-```
-
-Paste the ids into all 12 in-scope `wrangler.jsonc` files; `node scripts/check-worker-flags.mjs --strict`
-(CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is
+**KV namespaces** were created 2026-10-27: `FLAGS` (`1dec1f10ebcc41e7a464179ba2b37628`) and
+`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 12 in-scope `wrangler.jsonc` files carry
+both ids (forks: create your own with `npx wrangler kv namespace create FLAGS` and
+`npx wrangler kv namespace create sandbox-FLAGS`, and replace them);
+`node scripts/check-worker-flags.mjs --strict` (CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is
 byte-identical to the canonical `member-portal/src/flags.ts`.
 
 ## Reliability: traffic and cost limits

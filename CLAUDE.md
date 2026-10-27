@@ -194,9 +194,9 @@ file, copy it over the rest, never edit a copy; it must stay strip-only TypeScri
 namespaces, constructor parameter properties). Operator CLI: `scripts/flags.mjs` (`<worker|all>
 writes on|hold|off`, `log debug|normal`, `status`, `retention`, all with `--env`). Reads are
 `cacheTtl: 30`, once per request/batch/cron run. Set `<worker>:writes on` **before** deploying a
-build that reads the switch, or a Worker that should write defaults to `off`. KV ids are still
-placeholders (`REPLACE_WITH_FLAGS_KV_ID`, `REPLACE_WITH_SANDBOX_FLAGS_KV_ID`) until the namespaces
-are created. Runbook: `docs/runbooks/migration-hold.md`.
+build that reads the switch, or a Worker that should write defaults to `off`. Namespaces: `FLAGS`
+and `sandbox-FLAGS` (created 2026-10-27). `status` reads queue paused/backlog from the Cloudflare
+API, since `wrangler queues info` prints neither. Runbook: `docs/runbooks/migration-hold.md`.
 
 - **Cursor invariant exception under `off`:** a cron-polled Worker's D1 cursor normally advances
   only after a confirmed Monday write; under `off` a poller dry-runs and its cursor

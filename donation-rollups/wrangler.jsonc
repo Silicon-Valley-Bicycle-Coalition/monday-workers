@@ -51,10 +51,10 @@
       }
     ]
   },
-  // Write-switch flags (scripts/flags.mjs). Ids are placeholders until the rollout creates the
-  // namespaces (`wrangler kv namespace create svbc-worker-flags`); every in-scope Worker carries
-  // the same two ids, which scripts/check-worker-flags.mjs verifies.
-  "kv_namespaces": [{ "binding": "FLAGS", "id": "REPLACE_WITH_FLAGS_KV_ID" }],
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP
   // covers /custodian/* and every Monday webhook call that fails the secret check, blunting a
   // flood before it reaches D1. Verified webhook deliveries are exempt (issue #27): a bulk edit
@@ -112,8 +112,8 @@
           }
         ]
       },
-      // Filled at rollout with `wrangler kv namespace create svbc-worker-flags-sandbox`.
-      "kv_namespaces": [{ "binding": "FLAGS", "id": "REPLACE_WITH_SANDBOX_FLAGS_KV_ID" }],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2022", "simple": { "limit": 60, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
       "triggers": {
