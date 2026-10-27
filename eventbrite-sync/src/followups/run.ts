@@ -19,6 +19,8 @@ export interface FollowupResult {
   sent: string[];
   held: string[];
   skipped: string[];
+  // Threw part-way; Follow-ups stays blank, so the next hourly run retries them.
+  failed: string[];
 }
 
 interface Boards {
@@ -42,7 +44,7 @@ export async function runFollowups(now: Date, deps: FollowupDeps): Promise<Follo
   const from = new Date(now.getTime() - followups.maxAgeDays * DAY_MS).toISOString();
   const rows = await deps.eventStore.listEndedBetween(from, now.toISOString());
 
-  const result: FollowupResult = { sent: [], held: [], skipped: [] };
+  const result: FollowupResult = { sent: [], held: [], skipped: [], failed: [] };
   for (const row of rows) {
     if (!isDue(row, now, followups)) continue;
     try {
@@ -51,12 +53,13 @@ export async function runFollowups(now: Date, deps: FollowupDeps): Promise<Follo
     } catch (err) {
       // Follow-ups stays blank, so the next hourly run retries this event.
       console.error(`eventbrite-sync follow-ups: event "${row.eventId}" failed: ${errorMessage(err)}`);
+      result.failed.push(row.eventId);
     }
   }
   return result;
 }
 
-async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Promise<keyof FollowupResult> {
+async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Promise<'sent' | 'held' | 'skipped'> {
   const { mondayClient, config } = deps;
   const ev = config.attendeeSync.events;
   const rc = config.attendeeSync.registrations;
@@ -79,6 +82,10 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
     : await mondayClient.getItems(boards.registrations, itemIds, [rc.attendanceColumn, rc.attendeeEmailColumn, rc.attendeeLinkColumn, rc.followupEmailColumn]);
   const byId = new Map(fetched.map((item) => [item.id, item]));
   const items = itemIds.map((id) => byId.get(id)).filter((item) => item !== undefined);
+
+  // No registrations to judge (none in the ledger, or all gone from Monday): nothing to send and
+  // nothing to hold — Held would page staff about a class nobody signed up for.
+  if (items.length === 0) return 'skipped';
 
   const regs: Registration[] = items.map((item) => ({
     itemId: item.id,
@@ -117,7 +124,7 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
     } else if ((item.columns[rc.attendeeLinkColumn] ?? '').trim() === '') {
       // A Monday edit to Attended links the attendee to People here (spec: Event Registrations items).
       const match = await matchPerson(mondayClient, boards.people, config.attendeeSync.peopleEmailColumn, {
-        email: item.columns[rc.attendeeEmailColumn],
+        email: (item.columns[rc.attendeeEmailColumn] ?? '').trim(), // the address the planner deduped on
         name: item.name,
       });
       if (match.donorItemId !== null) values[rc.attendeeLinkColumn] = { item_ids: [Number(match.donorItemId)] };

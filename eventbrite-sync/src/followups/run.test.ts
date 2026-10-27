@@ -135,7 +135,7 @@ describe('runFollowups', () => {
 
     const result = await runFollowups(NOW, d);
 
-    expect(result).toEqual({ sent: ['ev1'], held: [], skipped: [] });
+    expect(result).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
     const calls = vi.mocked(monday.changeColumnValues).mock.calls;
     expect(calls).toEqual([
       [REGS, '501', { [rc.followupEmailColumn]: 'Thank-you: Learn to Ride', [rc.classTypeColumn]: 'Learn to Ride', [rc.attendeeLinkColumn]: { item_ids: [8001] } }],
@@ -152,10 +152,11 @@ describe('runFollowups', () => {
   it('creates a Person named after the registration when none matches', async () => {
     const monday = fakeMonday(
       { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
-      { '501': { name: 'Pat Rider', attendance: 'Attended', email: 'pat@example.com' } }
+      { '501': { name: 'Pat Rider', attendance: 'Attended', email: '  pat@example.com ' } }
     );
     const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
     await runFollowups(NOW, d);
+    expect(monday.findItemByColumnValue).toHaveBeenCalledWith(PEOPLE, cfg.attendeeSync.peopleEmailColumn, 'pat@example.com');
     expect(monday.createItem).toHaveBeenCalledWith(PEOPLE, 'Pat Rider', { [cfg.attendeeSync.peopleEmailColumn]: { email: 'pat@example.com', text: 'pat@example.com' } });
     expect(vi.mocked(monday.changeColumnValues).mock.calls[0]).toEqual([
       REGS,
@@ -170,7 +171,7 @@ describe('runFollowups', () => {
       { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com' } }
     );
     const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
     expect(monday.changeColumnValues).not.toHaveBeenCalled();
     expect(monday.notify).not.toHaveBeenCalled();
   });
@@ -178,7 +179,7 @@ describe('runFollowups', () => {
   it('skips an event whose Follow-ups is Held', async () => {
     const monday = fakeMonday({ '9001': { name: 'Class', classType: 'Commute', followups: 'Held' } }, {});
     const d = deps([eventRow('ev1', '9001')], {}, monday);
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
     expect(monday.changeColumnValues).not.toHaveBeenCalled();
   });
 
@@ -188,14 +189,14 @@ describe('runFollowups', () => {
       { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com' } }
     );
     const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
     expect(monday.changeColumnValues).not.toHaveBeenCalled();
     expect(d.attendeeStore.listByEvent).not.toHaveBeenCalled();
   });
 
   it('skips an event whose Monday item is gone', async () => {
     const d = deps([eventRow('ev1', '9001')], {}, fakeMonday({}, {}));
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
   });
 
   it('ignores events that are not due yet or are canceled, without reading Monday', async () => {
@@ -205,8 +206,28 @@ describe('runFollowups', () => {
       {},
       monday
     );
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: [] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: [], failed: [] });
     expect(monday.getItems).not.toHaveBeenCalled();
+  });
+
+  it('skips a class with no registrations in the ledger: no Held, no notify', async () => {
+    const config = testConfig();
+    config.attendeeSync.followups.notifyUserId = 555;
+    const monday = fakeMonday({ '9001': { name: 'Class', classType: 'Commute', followups: '' } }, {});
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', null)] }, monday, config);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
+    expect(monday.changeColumnValues).not.toHaveBeenCalled();
+    expect(monday.notify).not.toHaveBeenCalled();
+  });
+
+  it('skips a class whose registrations are all gone from Monday: no Held, no notify', async () => {
+    const config = testConfig();
+    config.attendeeSync.followups.notifyUserId = 555;
+    const monday = fakeMonday({ '9001': { name: 'Class', classType: 'Commute', followups: '' } }, {});
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday, config);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
+    expect(monday.changeColumnValues).not.toHaveBeenCalled();
+    expect(monday.notify).not.toHaveBeenCalled();
   });
 
   it('holds when nobody is Attended: Follow-ups Held, no registration writes, one notification', async () => {
@@ -221,7 +242,7 @@ describe('runFollowups', () => {
     );
     const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501'), attendeeRow('a2', 'ev1', '502')] }, monday, config);
 
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: ['ev1'], skipped: [] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: ['ev1'], skipped: [], failed: [] });
     expect(vi.mocked(monday.changeColumnValues).mock.calls).toEqual([[EVENTS, '9001', { [ev.followupsColumn]: 'Held' }]]);
     expect(monday.notify).toHaveBeenCalledTimes(1);
     expect(monday.notify).toHaveBeenCalledWith(
@@ -237,7 +258,7 @@ describe('runFollowups', () => {
       { '501': { name: 'Pat', attendance: 'Registered', email: 'pat@example.com' } }
     );
     const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: ['ev1'], skipped: [] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: ['ev1'], skipped: [], failed: [] });
     expect(monday.notify).not.toHaveBeenCalled();
   });
 
@@ -263,7 +284,7 @@ describe('runFollowups', () => {
       monday
     );
 
-    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev2'], held: [], skipped: [] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev2'], held: [], skipped: [], failed: ['ev1'] });
     // The failed event never got Follow-ups Sent, so the next hourly run retries it.
     expect(write.mock.calls.some(([board, id]) => board === EVENTS && id === '9001')).toBe(false);
     expect(write).toHaveBeenCalledWith(EVENTS, '9002', { [ev.followupsColumn]: 'Sent' });
@@ -283,7 +304,7 @@ describe('runFollowups', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501'), attendeeRow('a2', 'ev1', '502')] }, monday);
 
-    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: [] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: [], failed: ['ev1'] });
     expect(monday.changeColumnValues).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith(expect.stringContaining('ev1'));
     error.mockRestore();
@@ -304,7 +325,7 @@ describe('runFollowups', () => {
       { ev1: ['501', '502', '503', '504'].map((id, i) => attendeeRow(`a${i}`, 'ev1', id)) },
       monday
     );
-    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [] });
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
     expect(vi.mocked(monday.changeColumnValues).mock.calls).toEqual([
       [REGS, '504', { [rc.followupEmailColumn]: 'Missed-you: Commute', [rc.classTypeColumn]: 'Commute', [rc.attendanceColumn]: 'No Show' }],
       [EVENTS, '9001', { [ev.followupsColumn]: 'Sent' }],
