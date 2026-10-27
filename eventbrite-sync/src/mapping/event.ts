@@ -64,7 +64,7 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig): 
   if (endDate !== null) columnValues[cols.endColumn] = { date: endDate };
   const venueName = nonEmpty(venue?.name);
   if (venueName !== null) columnValues[cols.venueColumn] = venueName;
-  const address = nonEmpty(venue?.address?.address_1);
+  const address = nonEmpty(venue?.address?.localized_address_display);
   if (address !== null) columnValues[cols.addressColumn] = address;
   const city = nonEmpty(venue?.address?.city);
   if (city !== null) columnValues[cols.cityColumn] = city;

@@ -39,7 +39,7 @@ describe('mapEvent', () => {
       ev_date_col: { date: '2026-10-30' },
       ev_end_col: { date: '2026-10-30' },
       ev_venue_col: 'Mitchell Park',
-      ev_address_col: '600 E Meadow Dr',
+      ev_address_col: '600 E Meadow Dr, Palo Alto, CA 94306',
       ev_city_col: 'Palo Alto',
       ev_program_col: 'Public',
       ev_status_col: 'Upcoming',
