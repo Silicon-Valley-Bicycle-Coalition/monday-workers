@@ -13,7 +13,10 @@ const config = {
 } as unknown as DonationRollupsConfig;
 
 type Row = Record<string, string | null>;
-function fakeClient(rows: Row[], pageSize = 2) {
+// A status cell's stored value: Monday stores the label's index, and null when the cell is empty.
+const SET = '{"index":1}';
+// `values` overrides a cell's stored value; by default a cell with text is a set label.
+function fakeClient(rows: Row[], pageSize = 2, values: Record<string, Row> = {}) {
   const writes: { boardId: number; itemId: string; values: Record<string, unknown>; opts?: unknown }[] = [];
   const reads: number[] = [];
   const client: ClassifyClient = {
@@ -22,7 +25,8 @@ function fakeClient(rows: Row[], pageSize = 2) {
       const start = cursor === null ? 0 : Number(cursor);
       const slice = rows.slice(start, start + pageSize);
       return {
-        items: slice.map((r) => ({ id: r.id!, text: new Map(columnIds.map((c) => [c, r[c] ?? null])) })),
+        items: slice.map((r) => ({ id: r.id!, text: new Map(columnIds.map((c) => [c, r[c] ?? null])),
+          values: new Map(columnIds.map((c) => [c, c in (values[r.id!] ?? {}) ? values[r.id!]![c]! : r[c] ? SET : null])) })),
         cursor: start + pageSize < rows.length ? String(start + pageSize) : null,
       };
     },
@@ -47,6 +51,33 @@ describe('runClassify', () => {
     ]);
     await runClassify(client, config);
     expect(writes).toEqual([{ boardId: 100, itemId: '2', opts: { createLabelsIfMissing: true }, values: { gs: { label: '< $100' } } }]);
+  });
+
+  it('writes a blank status cell whose text reads as the label at id 5', async () => {
+    // Monday returns label id 5's text for an EMPTY status cell. With "Membership" at id 5 on
+    // Funding Stream, a blank gift's text already says "Membership" — only the value shows it's empty.
+    const { client, writes } = fakeClient(
+      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$250–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
+      2, { '1': { fs: null } });
+    await runClassify(client, config);
+    expect(writes).toEqual([{ boardId: 100, itemId: '1', opts: { createLabelsIfMissing: true }, values: { fs: { label: 'Membership' } } }]);
+  });
+
+  it('treats a stored value without a numeric index as blank', async () => {
+    const { client, writes } = fakeClient(
+      [{ id: '1', am: '250', dt: '2025-10-01', gt: 'Membership', fs: 'Membership', gs: '$250–999', fq: 'FY26 Q2', gfy: 'FY2026' }],
+      2, { '1': { fs: '{}', gs: '' } });
+    await runClassify(client, config);
+    expect(writes[0]!.values).toEqual({ fs: { label: 'Membership' }, gs: { label: '$250–999' } });
+  });
+
+  it("doesn't clear a blank cell whose text reads as a label", async () => {
+    // No amount or date: Gift Size, Fiscal Quarter and Gift Fiscal Year should stay blank, and
+    // already are — only Funding Stream (from the blank Gift Type) is written.
+    const { client, writes } = fakeClient([{ id: '1', am: null, dt: null, gt: null, fs: 'Other', gs: 'Other', fq: 'Other', gfy: 'Other' }],
+      2, { '1': { fs: null, gs: null, fq: null, gfy: null } });
+    await runClassify(client, config);
+    expect(writes[0]!.values).toEqual({ fs: { label: 'Individual Giving' } });
   });
 
   it('clears a label that should now be blank (amount removed)', async () => {

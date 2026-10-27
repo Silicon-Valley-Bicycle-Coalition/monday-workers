@@ -45,7 +45,8 @@ function fakeClient(f: Fake): CustodianMondayClient {
   return {
     async archiveItem() {}, async listWorkspaceBoards() { return []; }, async createUpdate() {}, async createItem() { return 'x'; }, async changeColumnValues() {},
     async pageItemsColumnsText(boardId, columnIds) {
-      const items = (f.pages?.[String(boardId)] ?? []).map((i) => ({ id: i.id, text: new Map(columnIds.map((c) => [c, i.text[c] ?? null])) }));
+      const items = (f.pages?.[String(boardId)] ?? []).map((i) => ({ id: i.id, text: new Map(columnIds.map((c) => [c, i.text[c] ?? null])),
+        values: new Map(columnIds.map((c) => [c, null])) }));
       return { items, cursor: null };
     },
     async getItemsColumnsText(ids, columnIds) {

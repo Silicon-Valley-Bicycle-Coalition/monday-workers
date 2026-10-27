@@ -2,7 +2,7 @@ import type { GiftsStore } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
-import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord } from '../monday/client';
+import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord, ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage, VolunteerBoardConfig,
   HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
 import { currentFiscalYear, localDateParts } from '../rollups/compute';
@@ -32,7 +32,7 @@ export interface CustodianMondayClient {
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>,
     opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
   pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
-    Promise<{ items: { id: string; text: Map<string, string | null> }[]; cursor: string | null }>;
+    Promise<{ items: ItemColumns[]; cursor: string | null }>;
   pageRegistrations(board: VolunteerBoardConfig, cursor: string | null): Promise<{ items: RegistrationRecord[]; cursor: string | null }>;
   pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
   getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
