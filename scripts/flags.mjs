@@ -174,18 +174,20 @@ export async function applyCommand({ workers, key, value, env }, ids, runner, { 
 const API = 'https://api.cloudflare.com/client/v4';
 export const BACKLOG_WINDOW_MS = 15 * 60_000;
 
-const BACKLOG_QUERY = `query Backlog($account: string!, $queueId: string!, $since: Time!) {
+// One query per status run for every queue (per-queue queries got rate-limited part-way through):
+// rows come newest first, so the first row seen for a queue is its latest sample.
+const BACKLOG_QUERY = `query Backlog($account: string!, $queueIds: [string!], $since: Time!) {
   viewer { accounts(filter: { accountTag: $account }) {
-    queueBacklogAdaptiveGroups(limit: 1, filter: { queueId: $queueId, datetime_geq: $since }, orderBy: [datetimeMinute_DESC]) {
+    queueBacklogAdaptiveGroups(limit: 10000, filter: { queueId_in: $queueIds, datetime_geq: $since }, orderBy: [datetimeMinute_DESC]) {
       avg { messages }
-      dimensions { datetimeMinute }
+      dimensions { queueId datetimeMinute }
     }
   } }
 }`;
 
 /**
  * Returns `(queueName) => Promise<{ paused, backlog, sampled }>` for one status run: one token, one
- * queues list, one GraphQL call per queue. Anything it can't read comes back as null (`?`).
+ * queues list, one GraphQL call for every queue's backlog. Anything it can't read comes back as null (`?`).
  * `fetchImpl` and `now` are for tests.
  */
 export function apiQueueState({ runner, accountId, fetchImpl = fetch, now = () => Date.now() }) {
@@ -203,21 +205,27 @@ export function apiQueueState({ runner, accountId, fetchImpl = fetch, now = () =
       for (const q of body.result) queues.set(q.queue_name, q);
       pages = body.result_info?.total_pages ?? 1;
     }
-    return { headers, queues };
+    const variables = { account: accountId, queueIds: [...queues.values()].map((q) => q.queue_id), since: new Date(now() - BACKLOG_WINDOW_MS).toISOString() };
+    const res = await fetchImpl(`${API}/graphql`, { method: 'POST', headers, body: JSON.stringify({ query: BACKLOG_QUERY, variables }) });
+    const body = await res.json();
+    const groups = body.errors ? null : body.data?.viewer?.accounts?.[0]?.queueBacklogAdaptiveGroups;
+    // null: the backlog couldn't be read at all (every queue shows `?`).
+    let backlogs = null;
+    if (Array.isArray(groups)) {
+      backlogs = new Map();
+      for (const g of groups) if (!backlogs.has(g.dimensions.queueId)) backlogs.set(g.dimensions.queueId, Math.round(g.avg.messages));
+    }
+    return { queues, backlogs };
   };
   return async (name) => {
     try {
       listing ??= load();
-      const { headers, queues } = await listing;
+      const { queues, backlogs } = await listing;
       const queue = queues.get(name);
       if (!queue) return { paused: null, backlog: null, sampled: false, missing: true };
       const paused = queue.settings?.delivery_paused === true;
-      const variables = { account: accountId, queueId: queue.queue_id, since: new Date(now() - BACKLOG_WINDOW_MS).toISOString() };
-      const res = await fetchImpl(`${API}/graphql`, { method: 'POST', headers, body: JSON.stringify({ query: BACKLOG_QUERY, variables }) });
-      const body = await res.json();
-      const groups = body.errors ? null : body.data?.viewer?.accounts?.[0]?.queueBacklogAdaptiveGroups;
-      if (!Array.isArray(groups)) return { paused, backlog: null, sampled: false };
-      return groups.length ? { paused, backlog: Math.round(groups[0].avg.messages), sampled: true } : { paused, backlog: 0, sampled: false };
+      if (backlogs === null) return { paused, backlog: null, sampled: false };
+      return backlogs.has(queue.queue_id) ? { paused, backlog: backlogs.get(queue.queue_id), sampled: true } : { paused, backlog: 0, sampled: false };
     } catch {
       listing = null;
       return { paused: null, backlog: null, sampled: false };

@@ -283,14 +283,15 @@ describe('status', () => {
 describe('apiQueueState', () => {
   const auth = async (args) => (args.join(' ') === 'auth token --json' ? ok(JSON.stringify({ type: 'oauth', token: 'tok' })) : { code: 1, stdout: '', stderr: 'unexpected' });
   const json = (body) => ({ json: async () => body });
-  function fakeFetch({ pages = [[{ queue_name: 'q-a', queue_id: 'id-a', settings: { delivery_paused: true } }, { queue_name: 'q-b', queue_id: 'id-b', settings: {} }]], backlog = { 'id-a': [{ avg: { messages: 7.4 } }], 'id-b': [] }, graphqlErrors = null } = {}) {
+  function fakeFetch({ pages = [[{ queue_name: 'q-a', queue_id: 'id-a', settings: { delivery_paused: true } }, { queue_name: 'q-b', queue_id: 'id-b', settings: {} }]], backlog = { 'id-a': [{ avg: { messages: 7.4 } }, { avg: { messages: 2 } }], 'id-b': [] }, graphqlErrors = null } = {}) {
     const calls = [];
     const impl = async (url, init = {}) => {
       calls.push({ url, init });
       if (url.includes('/graphql')) {
         if (graphqlErrors) return json({ data: null, errors: graphqlErrors });
         const { variables } = JSON.parse(init.body);
-        return json({ data: { viewer: { accounts: [{ queueBacklogAdaptiveGroups: backlog[variables.queueId] }] } } });
+        const rows = variables.queueIds.flatMap((queueId) => (backlog[queueId] ?? []).map((row) => ({ ...row, dimensions: { queueId } })));
+        return json({ data: { viewer: { accounts: [{ queueBacklogAdaptiveGroups: rows }] } } });
       }
       const page = Number(new URL(url).searchParams.get('page'));
       return json({ success: true, result: pages[page - 1], result_info: { total_pages: pages.length } });
@@ -298,14 +299,15 @@ describe('apiQueueState', () => {
     return { calls, impl };
   }
 
-  it('reads paused from settings and backlog from the latest sample; no sample reads as 0, unsampled', async () => {
+  it('reads paused from settings and backlog from the newest sample; no sample reads as 0, unsampled', async () => {
     const { calls, impl } = fakeFetch();
     const state = apiQueueState({ runner: auth, accountId: 'acct', fetchImpl: impl, now: () => Date.parse('2026-10-27T12:00:00Z') });
     assert.deepEqual(await state('q-a'), { paused: true, backlog: 7, sampled: true });
     assert.deepEqual(await state('q-b'), { paused: false, backlog: 0, sampled: false });
     assert.equal(calls.filter((c) => c.url.includes('/queues?')).length, 1, 'the queue list is fetched once per run');
-    const gql = JSON.parse(calls.find((c) => c.url.includes('/graphql')).init.body);
-    assert.deepEqual(gql.variables, { account: 'acct', queueId: 'id-a', since: '2026-10-27T11:45:00.000Z' });
+    const gqlCalls = calls.filter((c) => c.url.includes('/graphql'));
+    assert.equal(gqlCalls.length, 1, 'one backlog query for every queue');
+    assert.deepEqual(JSON.parse(gqlCalls[0].init.body).variables, { account: 'acct', queueIds: ['id-a', 'id-b'], since: '2026-10-27T11:45:00.000Z' });
     assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
     assert.match(calls[0].url, /\/accounts\/acct\/queues\?/);
   });
