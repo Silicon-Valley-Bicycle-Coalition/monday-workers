@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { MondayClient, MondayItemColumns } from '../monday/client';
 import { MondayApiError } from '../monday/graphql';
 import { fakeAttendeeStore, fakeEventStore } from '../test/fakeStores';
+import { mondayItem } from '../test/mondayItem';
 import { testConfig } from '../test/testConfig';
 import type { AttendeeRow, EventbriteSyncConfig, EventRow } from '../types';
 import { runFollowups } from './run';
@@ -50,6 +51,8 @@ interface FakeEvent {
   classType: string;
   followups: string;
   state?: string;
+  // Raw stored values by column id, overriding the default (non-blank text → set, blank → null).
+  values?: Record<string, string | null>;
 }
 interface FakeReg {
   name: string;
@@ -58,6 +61,12 @@ interface FakeReg {
   link?: string;
   followup?: string;
   state?: string;
+  values?: Record<string, string | null>;
+}
+
+function pick(id: string, name: string, all: Record<string, string>, columnIds: string[], f: { state?: string; values?: Record<string, string | null> }) {
+  const values = Object.fromEntries(Object.entries(f.values ?? {}).filter(([c]) => columnIds.includes(c)));
+  return mondayItem(id, name, Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])), { state: f.state, values });
 }
 
 // An in-memory Monday holding Events and Event Registrations items, keyed by item id.
@@ -71,7 +80,7 @@ function fakeMonday(events: Record<string, FakeEvent>, regs: Record<string, Fake
       if (boardId === EVENTS && events[id]) {
         const e = events[id];
         const all: Record<string, string> = { [ev.classTypeColumn]: e.classType, [ev.followupsColumn]: e.followups };
-        out.push({ id, name: e.name, state: e.state ?? 'active', columns: Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])) });
+        out.push(pick(id, e.name, all, columnIds, e));
       } else if (boardId === REGS && regs[id]) {
         const r = regs[id];
         const all: Record<string, string> = {
@@ -80,7 +89,7 @@ function fakeMonday(events: Record<string, FakeEvent>, regs: Record<string, Fake
           [rc.attendeeLinkColumn]: r.link ?? '',
           [rc.followupEmailColumn]: r.followup ?? '',
         };
-        out.push({ id, name: r.name, state: r.state ?? 'active', columns: Object.fromEntries(columnIds.map((c) => [c, all[c] ?? ''])) });
+        out.push(pick(id, r.name, all, columnIds, r));
       }
     }
     return out;
@@ -195,6 +204,54 @@ describe('runFollowups', () => {
     expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
     expect(monday.changeColumnValues).not.toHaveBeenCalled();
     expect(d.attendeeStore.listByEvent).not.toHaveBeenCalled();
+  });
+
+  // Monday returns label id 5's text for an EMPTY status cell; only the null value says it's blank.
+  it('skips an event whose Class Type reads as a label but has no stored value', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Bike Commuting (online)', followups: '', values: { [ev.classTypeColumn]: null } } },
+      { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com' } }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: [], skipped: ['ev1'], failed: [] });
+    expect(monday.changeColumnValues).not.toHaveBeenCalled();
+  });
+
+  it('treats Follow-ups text with no stored value as blank', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: 'Sent', values: { [ev.followupsColumn]: null } } },
+      { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat' } }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
+  });
+
+  it('labels a registration whose Follow-up Email reads as a label but has no stored value', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      {
+        '501': {
+          name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat',
+          followup: 'Thank-you: Bike Commuting (online)', values: { [rc.followupEmailColumn]: null },
+        },
+      }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    expect(await runFollowups(NOW, d)).toEqual({ sent: ['ev1'], held: [], skipped: [], failed: [] });
+    expect(vi.mocked(monday.changeColumnValues).mock.calls).toEqual([
+      [REGS, '501', { [rc.followupEmailColumn]: 'Thank-you: Commute', [rc.classTypeColumn]: 'Commute' }],
+      [EVENTS, '9001', { [ev.followupsColumn]: 'Sent' }],
+    ]);
+  });
+
+  it('treats Attendance text with no stored value as blank, not Attended', async () => {
+    const monday = fakeMonday(
+      { '9001': { name: 'Class', classType: 'Commute', followups: '' } },
+      { '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat', values: { [rc.attendanceColumn]: null } } }
+    );
+    const d = deps([eventRow('ev1', '9001')], { ev1: [attendeeRow('a1', 'ev1', '501')] }, monday);
+    // Nobody checked in: held, no thank-you.
+    expect(await runFollowups(NOW, d)).toEqual({ sent: [], held: ['ev1'], skipped: [], failed: [] });
   });
 
   it('skips an event whose Monday item is gone', async () => {

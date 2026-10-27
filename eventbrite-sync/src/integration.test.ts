@@ -8,6 +8,7 @@ import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/proce
 import { runFollowups } from './followups/run';
 import type { EventbriteClient } from './eventbrite/client';
 import type { MondayClient } from './monday/client';
+import { mondayItem } from './test/mondayItem';
 import { testConfig, testOrder } from './test/testConfig';
 
 const config = testConfig({ thankYouSentColumn: 'tys_col', giftTypeColumn: 'gift_col', fiscalYearColumn: 'fy_col' }, { 'donations:live': 8845443596, 'people-live': 555666 });
@@ -149,7 +150,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
       changeColumnValues: vi.fn().mockImplementation(async (_board: number, id: string, values: Record<string, unknown>) => {
         Object.assign(items.get(id)!.columns, flat(values));
       }),
-      getItems: vi.fn().mockImplementation(async (_board: number, ids: string[]) => ids.filter((id) => items.has(id)).map((id) => ({ id, name: items.get(id)!.name, state: 'active', columns: items.get(id)!.columns }))),
+      getItems: vi.fn().mockImplementation(async (_board: number, ids: string[]) => ids.filter((id) => items.has(id)).map((id) => mondayItem(id, items.get(id)!.name, items.get(id)!.columns))),
       notify: vi.fn().mockResolvedValue(undefined),
     };
     const eventbriteClient: EventbriteClient = {

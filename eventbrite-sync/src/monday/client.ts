@@ -8,7 +8,9 @@ export interface MondayClient {
   findItemByColumnValue(boardId: number, columnId: string, value: string): Promise<MondayItem | null>;
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<MondayItem>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>): Promise<void>;
-  // Item names, state and the `text` of the requested columns (blank text -> ''). items(ids:) also
+  // Item names, state, and the `text` (blank -> '') and raw stored `value` (JSON string, or null when
+  // the cell is empty) of the requested columns. Read a status column with statusText, never its
+  // text: Monday shows label id 5's text for an EMPTY status cell. items(ids:) also
   // returns archived and deleted items, so callers must check `state === 'active'` (isActive) rather
   // than treat an omitted id as the only way an item can be gone; an id Monday has purged is omitted.
   getItems(boardId: number, itemIds: string[], columnIds: string[]): Promise<MondayItemColumns[]>;
@@ -21,7 +23,26 @@ export interface MondayItemColumns {
   name: string;
   // Monday's item state: 'active', 'archived' or 'deleted'.
   state: string;
+  // Each requested column's text — for text-like columns (email, names, link text).
   columns: Record<string, string>;
+  // Each requested column's raw stored value: a JSON string, or null for an empty cell.
+  values: Record<string, string | null>;
+}
+
+// A status cell's label, or '' when the cell is empty. Monday's `text` for an EMPTY status cell is
+// label id 5's text (its empty-cell default), so a real label at id 5 makes every blank cell read
+// as labelled; only the stored value tells them apart — null, or no numeric label index, is blank.
+export function statusText(item: MondayItemColumns, columnId: string): string {
+  const raw = item.values[columnId];
+  if (raw === null || raw === undefined || raw.trim() === '') return '';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return '';
+  }
+  if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { index?: unknown }).index !== 'number') return '';
+  return (item.columns[columnId] ?? '').trim();
 }
 
 export function isActive(item: MondayItemColumns | undefined): item is MondayItemColumns {
@@ -88,7 +109,7 @@ export class HttpMondayClient implements MondayClient {
     const result: MondayItemColumns[] = [];
     for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
       const data = await this.transport.request<{
-        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null }[] }[] | null;
+        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[] | null;
       }>(
         // limit: without it items(ids:) returns at most 25 (Monday's default page size).
         `query ($ids: [ID!], $columnIds: [String!]) {
@@ -96,7 +117,7 @@ export class HttpMondayClient implements MondayClient {
             id
             name
             state
-            column_values(ids: $columnIds) { id text }
+            column_values(ids: $columnIds) { id text value }
           }
         }`,
         { ids: itemIds.slice(i, i + ITEMS_BATCH_SIZE), columnIds }
@@ -107,6 +128,7 @@ export class HttpMondayClient implements MondayClient {
           name: item.name,
           state: item.state,
           columns: Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? ''])),
+          values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
         });
       }
     }

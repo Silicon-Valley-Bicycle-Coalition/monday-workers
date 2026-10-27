@@ -31,6 +31,13 @@ with a staff-review list at the top. Copy each subject and body from there.
       text must match the Class Type exactly — the Worker builds it from Class Type, and a Class
       Type without its two labels makes Monday reject the write: that class logs `failed` every
       hour, sending nothing, until the labels exist.
+- [ ] **No real label sits at label id 5** on Events → Class Type and Follow-ups, or on Event
+      Registrations → Follow-up Email and Attendance. Monday shows label id 5's text for an
+      *empty* status cell, so a real label there makes every blank cell read as labelled — to
+      staff, filters and reports, and to any tool reading cell text (the Worker reads stored
+      values, so it isn't fooled, but nothing else is protected). When building each column,
+      create a blank or placeholder label first (or move the real one off id 5), then check with
+      `get_board_info`: on each of these columns `labels[].id === 5` must be blank or absent.
 - [ ] The registration columns the bodies insert exist and are filled by the Worker: First Name,
       Class Day, Class Date, Class Location as each registration arrives, and Class Type, which the
       morning follow-up run copies from the event.

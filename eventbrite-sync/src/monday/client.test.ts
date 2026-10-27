@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { HttpMondayClient } from './client';
+import { HttpMondayClient, statusText } from './client';
+import { mondayItem } from '../test/mondayItem';
 import { AmbiguousWriteError, MONDAY_API_VERSION } from './graphql';
 
 // No real waits between the transport's retries.
@@ -143,20 +144,28 @@ describe('HttpMondayClient transport (#35)', () => {
   });
 
   describe('getItems', () => {
-    it('reads item names and column text', async () => {
+    it('reads item names, column text and raw values', async () => {
       const fetchMock = mockFetchOnce({
-        data: { items: [{ id: '1', name: 'Jane', state: 'active', column_values: [{ id: 'status', text: 'Registered' }, { id: 'blank', text: null }] }] },
+        data: { items: [{ id: '1', name: 'Jane', state: 'active', column_values: [
+          { id: 'status', text: 'Registered', value: '{"index":1}' },
+          { id: 'blank', text: null, value: null },
+          { id: 'default', text: 'Bike Commuting (online)', value: null },
+        ] }] },
       });
 
-      const items = await newClient().getItems(999, ['1'], ['status', 'blank']);
+      const items = await newClient().getItems(999, ['1'], ['status', 'blank', 'default']);
 
-      expect(items).toEqual([{ id: '1', name: 'Jane', state: 'active', columns: { status: 'Registered', blank: '' } }]);
+      expect(items).toEqual([{
+        id: '1', name: 'Jane', state: 'active',
+        columns: { status: 'Registered', blank: '', default: 'Bike Commuting (online)' },
+        values: { status: '{"index":1}', blank: null, default: null },
+      }]);
       const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
       // Without a limit items(ids:) returns at most 25 items (Monday's default page size).
       expect(body.query).toMatch(/items\(ids: \$ids, limit: 100\)/);
       expect(body.query).toMatch(/\bstate\b/);
-      expect(body.query).toContain('column_values(ids:');
-      expect(body.variables).toEqual({ ids: ['1'], columnIds: ['status', 'blank'] });
+      expect(body.query).toMatch(/column_values\(ids: \$columnIds\) \{ id text value \}/);
+      expect(body.variables).toEqual({ ids: ['1'], columnIds: ['status', 'blank', 'default'] });
     });
 
     it('passes archived and deleted items through with their state', async () => {
@@ -198,5 +207,29 @@ describe('HttpMondayClient transport (#35)', () => {
       expect(body.query).toContain('target_type: Project');
       expect(body.variables).toEqual({ userId: 42, itemId: '777', text: 'Follow-up held' });
     });
+  });
+});
+
+// Monday returns label id 5's text for an EMPTY status cell (value null), so a status reads as
+// set only when its stored value carries a label index.
+describe('statusText', () => {
+  it('returns the trimmed label of a set status', () => {
+    expect(statusText(mondayItem('1', 'A', { s: ' Attended ' }), 's')).toBe('Attended');
+    expect(statusText(mondayItem('1', 'A', { s: 'Held' }, { values: { s: '{"index":0,"post_id":null}' } }), 's')).toBe('Held');
+  });
+
+  it('returns blank when the value is null or empty, even with label text', () => {
+    expect(statusText(mondayItem('1', 'A', { s: 'Bike Commuting (online)' }, { values: { s: null } }), 's')).toBe('');
+    expect(statusText(mondayItem('1', 'A', { s: 'Bike Commuting (online)' }, { values: { s: '' } }), 's')).toBe('');
+  });
+
+  it('returns blank when the stored value has no label index', () => {
+    for (const v of ['{}', '{"index":null}', '{"index":"5"}', 'null', 'not json', '5']) {
+      expect(statusText(mondayItem('1', 'A', { s: 'Learn to Ride' }, { values: { s: v } }), 's')).toBe('');
+    }
+  });
+
+  it('returns blank for a column that was not read', () => {
+    expect(statusText(mondayItem('1', 'A', {}), 's')).toBe('');
   });
 });

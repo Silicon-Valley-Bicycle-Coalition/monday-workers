@@ -2,7 +2,7 @@ import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { attendanceFromEventbrite, mapAttendee, mergeAttendance } from '../mapping/attendee';
 import { mapEvent } from '../mapping/event';
 import { matchPerson } from '../matching/people';
-import { isActive } from '../monday/client';
+import { isActive, statusText } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
 import { EVENT_NOT_FOUND_ERROR } from './processEvent';
@@ -84,7 +84,8 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
       await markGone(mondayItemId);
       return;
     }
-    currentAttendance = current.columns[cols.attendanceColumn]?.trim() || null;
+    // By stored value, not text: an empty status cell's text is label id 5's (statusText).
+    currentAttendance = statusText(current, cols.attendanceColumn) || null;
     // A link already on the item may be a staff relink: never match over it or overwrite it.
     linkAlreadySet = (current.columns[cols.attendeeLinkColumn] ?? '').trim() !== '';
   }

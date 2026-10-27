@@ -6,6 +6,7 @@ import { MondayApiError } from '../monday/graphql';
 import type { ProcessBatchDeps } from './processBatch';
 import type { EventbriteAttendee, EventbriteEvent } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
+import { mondayItem } from '../test/mondayItem';
 import type { AttendeeRow, EventRow } from '../types';
 
 const config = testConfig();
@@ -58,7 +59,7 @@ function setup(opts: { att?: EventbriteAttendee | null; evRow?: EventRow | null;
   const queue = { send: vi.fn().mockImplementation(async () => { calls.push('send'); }) };
   const monday = opts.monday ?? {};
   if (opts.current !== undefined && monday.getItems === undefined) {
-    monday.getItems = vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state: 'active', columns: { att_attendance_col: opts.current } }]);
+    monday.getItems = vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: opts.current })]);
   }
   const mondayClient = fakeMonday(monday);
   const eventbriteClient = {
@@ -114,7 +115,7 @@ describe('processAttendee', () => {
   it('current No Show + incoming checked in becomes Attended and linked', async () => {
     const { deps, mondayClient } = setup({
       ...existing, att: attendee({ checked_in: true }), current: 'No Show',
-      monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state: 'active', columns: { att_attendance_col: 'No Show' } }]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'No Show' })]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
     });
     await processAttendee(message, deps);
     expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col', 'att_person_col']);
@@ -125,10 +126,22 @@ describe('processAttendee', () => {
     expect(mondayClient.createItem).not.toHaveBeenCalled();
   });
 
+  // Monday returns label id 5's text for an EMPTY status cell; only the null value says it's blank.
+  it('treats Attendance text with no stored value as no current Attendance', async () => {
+    const { deps, mondayClient } = setup({
+      ...existing,
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Attended' }, { values: { att_attendance_col: null } })]) },
+    });
+    await processAttendee(message, deps);
+    const values = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2];
+    expect(values.att_attendance_col).toBe('Registered');
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+
   it('current Attended + incoming not checked in stays Attended (and linked)', async () => {
     const { deps, mondayClient } = setup({
       ...existing, current: 'Attended',
-      monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state: 'active', columns: { att_attendance_col: 'Attended' } }]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Attended' })]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
     });
     await processAttendee(message, deps);
     const values = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]![2];
@@ -155,7 +168,7 @@ describe('processAttendee', () => {
   it('existing item with a link already set + check-in: link not written, matchPerson not called', async () => {
     const { deps, mondayClient } = setup({
       row: attendeeRow({ mondayItemId: 'reg-9', matchedPersonItemId: '888' }), att: attendee({ checked_in: true }),
-      monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state: 'active', columns: { att_attendance_col: 'Registered', att_person_col: 'Staff Chosen' } }]) },
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered', att_person_col: 'Staff Chosen' })]) },
     });
     await processAttendee(message, deps);
     expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
@@ -168,7 +181,7 @@ describe('processAttendee', () => {
     const { deps, mondayClient } = setup({
       row: attendeeRow({ mondayItemId: 'reg-9', matchedPersonItemId: '888' }), att: attendee({ checked_in: true }),
       monday: {
-        getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state: 'active', columns: { att_attendance_col: 'Registered', att_person_col: '' } }]),
+        getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered', att_person_col: '' })]),
         findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }),
       },
     });
@@ -198,7 +211,7 @@ describe('processAttendee', () => {
     const { deps, mondayClient } = setup({
       monday: {
         findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'staff-3' }),
-        getItems: vi.fn().mockResolvedValue([{ id: 'staff-3', name: 'Pat', state: 'active', columns: { att_attendance_col: 'No Show' } }]),
+        getItems: vi.fn().mockResolvedValue([mondayItem('staff-3', 'Pat', { att_attendance_col: 'No Show' })]),
       },
     });
     await processAttendee(message, deps);
@@ -288,7 +301,7 @@ describe('processAttendee', () => {
     const gone = new MondayApiError('Item not found', { code: 'ItemNotFound' });
     const { deps, attendeeStore, mondayClient } = setup({
       ...existing,
-      monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state: 'active', columns: { att_attendance_col: 'Registered' } }]), changeColumnValues: vi.fn().mockRejectedValue(gone) },
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered' })]), changeColumnValues: vi.fn().mockRejectedValue(gone) },
     });
     await processAttendee(message, deps);
     expect(mondayClient.createItem).not.toHaveBeenCalled();
@@ -306,7 +319,7 @@ describe('processAttendee', () => {
   it.each(['archived', 'deleted'])('treats a cached item Monday returns as %s like a deleted one: failed, no write, no recreate', async (state) => {
     const { deps, attendeeStore, mondayClient } = setup({
       ...existing,
-      monday: { getItems: vi.fn().mockResolvedValue([{ id: 'reg-9', name: 'Pat', state, columns: { att_attendance_col: 'Registered' } }]) },
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered' }, { state })]) },
     });
     await processAttendee(message, deps);
     expect(mondayClient.createItem).not.toHaveBeenCalled();

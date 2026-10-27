@@ -1,7 +1,7 @@
 import type { AttendeeStore } from '../db/attendees';
 import type { EventStore } from '../db/events';
 import { matchPerson } from '../matching/people';
-import { isActive, type MondayClient } from '../monday/client';
+import { isActive, statusText, type MondayClient } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
 import type { EventbriteSyncConfig, EventRow } from '../types';
 import { errorMessage } from '../util/errorMessage';
@@ -77,8 +77,9 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
     console.warn(`eventbrite-sync follow-ups: event "${row.eventId}" has no active Events item ${eventItemId} on Monday (deleted or archived); skipped`);
     return 'skipped';
   }
-  const classType = (eventItem.columns[ev.classTypeColumn] ?? '').trim();
-  const followupsState = (eventItem.columns[ev.followupsColumn] ?? '').trim();
+  // Status cells by stored value, not text: an empty cell's text is label id 5's (statusText).
+  const classType = statusText(eventItem, ev.classTypeColumn);
+  const followupsState = statusText(eventItem, ev.followupsColumn);
   if (classType === '' || followupsState !== '') return 'skipped';
 
   // Attendance comes from Monday, not Eventbrite, so staff corrections count. Ledger order
@@ -101,9 +102,9 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
 
   const regs: Registration[] = items.map((item) => ({
     itemId: item.id,
-    attendance: (item.columns[rc.attendanceColumn] ?? '').trim(),
+    attendance: statusText(item, rc.attendanceColumn),
     email: (item.columns[rc.attendeeEmailColumn] ?? '').trim(),
-    followupEmail: item.columns[rc.followupEmailColumn] ?? '',
+    followupEmail: statusText(item, rc.followupEmailColumn),
   }));
   const plan = planFollowups(regs, classType);
 
@@ -157,7 +158,7 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
       if (item === undefined) {
         console.warn(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} is gone; skipped its missed-you`);
         columnValuesById.delete(itemId);
-      } else if ((item.columns[rc.attendanceColumn] ?? '').trim() !== 'Registered') {
+      } else if (statusText(item, rc.attendanceColumn) !== 'Registered') {
         console.log(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} is no longer Registered; skipped its missed-you`);
         columnValuesById.delete(itemId);
       }
