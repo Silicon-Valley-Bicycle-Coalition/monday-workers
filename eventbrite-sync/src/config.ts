@@ -1,6 +1,6 @@
 import type { EventbriteSyncConfig } from './types';
 
-const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live'] as const;
+const REQUIRED_BOARD_KEYS = ['donations:live', 'people-live', 'events', 'event-registrations'] as const;
 
 // The placeholder config/svbc.json ships with, and config/sandbox.json's orderIdColumn carries
 // until the Eventbrite Order ID column exists (README "Prerequisite column"). Validation accepts
@@ -16,6 +16,16 @@ const NULLABLE_COLUMN_KEYS = {
   giftTypeColumn: 'the Gift Type stamp',
   fiscalYearColumn: 'the Fiscal Year Ending stamp',
 } as const;
+
+const ATTENDEE_EVENT_COLUMN_KEYS = [
+  'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'classTypeColumn', 'followupsColumn',
+] as const;
+const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
+  'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
+  'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
+  'classLocationColumn', 'classTypeColumn', 'followupEmailColumn',
+] as const;
 
 const AMOUNT_SOURCES = ['gross', 'base_price'] as const;
 
@@ -93,5 +103,51 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
     throw new Error('config: "eventbriteSync.itemNameTemplate" must be a non-empty template such as "{buyer} - {event}"');
   }
 
+  validateAttendeeSync(cfg.attendeeSync);
+
   return cfg as unknown as EventbriteSyncConfig;
+}
+
+function requireColumns(group: unknown, path: string, keys: readonly string[]): void {
+  if (!isObject(group)) {
+    throw new Error(`config: missing required key "${path}"`);
+  }
+  for (const key of keys) {
+    if (!isNonEmptyString(group[key])) {
+      throw new Error(`config: "${path}.${key}" must be a Monday column id string`);
+    }
+  }
+}
+
+function validateAttendeeSync(raw: unknown): void {
+  if (!isObject(raw)) {
+    throw new Error('config: missing required key "attendeeSync"');
+  }
+  const a = raw;
+  if (!Array.isArray(a.actions) || a.actions.length === 0 || a.actions.some((x) => !/^[a-z_]+\.[a-z_]+$/.test(String(x)))) {
+    throw new Error('config: "attendeeSync.actions" must be a non-empty array of webhook actions such as "attendee.updated"');
+  }
+  if (!isObject(a.programByOrganizer) || Object.values(a.programByOrganizer).some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.programByOrganizer" must map Eventbrite organizer ids to Program labels');
+  }
+  if (!Array.isArray(a.volunteerPrograms) || a.volunteerPrograms.some((v) => !isNonEmptyString(v))) {
+    throw new Error('config: "attendeeSync.volunteerPrograms" must be an array of Program labels');
+  }
+  requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
+  requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
+  requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
+
+  if (!isObject(a.followups)) {
+    throw new Error('config: missing required key "attendeeSync.followups"');
+  }
+  const f = a.followups;
+  if (typeof f.maxAgeDays !== 'number' || !Number.isFinite(f.maxAgeDays) || f.maxAgeDays <= 0) {
+    throw new Error('config: "attendeeSync.followups.maxAgeDays" must be a positive number of days');
+  }
+  if (typeof f.sendHourLocal !== 'number' || !Number.isInteger(f.sendHourLocal) || f.sendHourLocal < 0 || f.sendHourLocal > 23) {
+    throw new Error('config: "attendeeSync.followups.sendHourLocal" must be an integer hour from 0 to 23');
+  }
+  if (f.notifyUserId !== null && (typeof f.notifyUserId !== 'number' || !Number.isInteger(f.notifyUserId))) {
+    throw new Error('config: "attendeeSync.followups.notifyUserId" must be a Monday user id number, or null to skip the notification');
+  }
 }

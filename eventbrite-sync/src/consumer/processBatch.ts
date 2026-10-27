@@ -1,15 +1,21 @@
 import type { OrderStore } from '../db/orders';
+import type { EventStore } from '../db/events';
+import type { AttendeeStore } from '../db/attendees';
+import type { QueueLike } from '../webhook/route';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
-import { MondayApiError } from '../monday/graphql';
+import { isItemGone } from '../monday/itemGone';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
 import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { describeMessage, messageDeliveryId } from './messages';
+import { processEvent } from './processEvent';
+import { processAttendee } from './processAttendee';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -23,16 +29,37 @@ export interface QueueMessageLike<T> {
 
 const REQUIRED_WRITE_COLUMNS = ['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
 
-// `writeStamp` (flags.ts): set by the route when the write switch was `off` at ingest. A body
+// `writeStamp` (flags.ts): set by the producer when the write switch was `off` at ingest. A body
 // enqueued before the switch existed has no such key and is live.
 export type OrderQueueMessage = {
+  // Absent on messages queued before event/attendee messages existed: no kind means order.
+  kind?: 'order';
   orderId: string;
   // The webhook action that enqueued it — informational; the consumer always re-fetches.
   action: string;
 } & WriteStamp;
 
+export type EventQueueMessage = {
+  kind: 'event';
+  eventId: string;
+  action: string;
+} & WriteStamp;
+
+export type AttendeeQueueMessage = {
+  kind: 'attendee';
+  eventId: string;
+  attendeeId: string;
+  action: string;
+} & WriteStamp;
+
+export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
+
 export interface ProcessBatchDeps {
   orderStore: OrderStore;
+  eventStore: EventStore;
+  attendeeStore: AttendeeStore;
+  // For fanning an event out into per-attendee messages.
+  queue: QueueLike;
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
@@ -40,13 +67,13 @@ export interface ProcessBatchDeps {
 
 /**
  * The queue() entry point for the write queue: the write switch's per-message decision in front
- * of processOrderQueueBatch. `write` runs it with the real deps; `dry-run` runs the same code
+ * of processOrderQueueBatch, for every message kind. `write` runs it with the real deps; `dry-run` runs the same code
  * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
  * KV read failure) leaves the message on the queue untouched, backing off like any retry.
  */
-export async function consumeOrderBatch(messages: QueueMessageLike<OrderQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
+export async function consumeWriteBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps, gate: BatchSkipContext): Promise<void> {
   for (const message of messages) {
-    const ctx = { ...gate, deliveryId: `order:${message.body.orderId}` };
+    const ctx = { ...gate, deliveryId: messageDeliveryId(message.body) };
     const disposition = messageDisposition(gate.mode, message.body);
     logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
     if (disposition === 'retry') {
@@ -57,21 +84,26 @@ export async function consumeOrderBatch(messages: QueueMessageLike<OrderQueueMes
   }
 }
 
-export async function processOrderQueueBatch(messages: QueueMessageLike<OrderQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
+export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQueueMessage>[], deps: ProcessBatchDeps): Promise<void> {
   for (const message of messages) {
-    const { orderId } = message.body;
+    const body = message.body;
+    const label = describeMessage(body);
     try {
-      await processOne(orderId, deps);
+      if (body.kind === 'event') await processEvent(body, deps);
+      else if (body.kind === 'attendee') await processAttendee(body, deps);
+      else await processOne(body.orderId, deps);
       message.ack();
     } catch (err) {
       const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync consumer: failed to process order "${orderId}": ${errMsg}`);
+      console.error(`eventbrite-sync consumer: failed to process ${label}: ${errMsg}`);
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
       try {
-        await deps.orderStore.updateStatus(orderId, 'failed', { error: errMsg });
+        if (body.kind === 'event') await deps.eventStore.updateStatus(body.eventId, 'failed', { error: errMsg });
+        else if (body.kind === 'attendee') await deps.attendeeStore.updateStatus(body.attendeeId, 'failed', { error: errMsg });
+        else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
       } catch (recordErr) {
-        console.error(`eventbrite-sync consumer: could not record failure for order "${orderId}": ${errorMessage(recordErr)}`);
+        console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);
       }
       // Every failure here is retryable, as before; only the delay is shared now — 1 minute
       // doubling to an hour, across wrangler.jsonc's max_retries of 100 (about four days).
@@ -179,14 +211,6 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
 
   const item = await mondayClient.createItem(boardId, mapping.itemName, { ...columnValues, ...mapping.firstWriteValues });
   await orderStore.updateStatus(orderId, 'written', { ...facts, mondayItemId: item.id, writtenAt });
-}
-
-// Monday's answer to a write against an item that no longer exists. The exact code is not yet
-// confirmed against the live API (the code and message patterns below are Monday's documented
-// names), so a miss here just falls back to the ordinary retry-then-dead-letter path.
-function isItemGone(err: unknown): boolean {
-  if (!(err instanceof MondayApiError)) return false;
-  return /ItemNotFound|InvalidItemId/i.test(err.code ?? '') || /item.{0,20}not found|inactive item/i.test(err.message);
 }
 
 // The ledger's COALESCE keeps an old value on null, so only hand over facts that exist.

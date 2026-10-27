@@ -110,3 +110,49 @@ export async function sendDelivery(fetchFn, url, secret, delivery, { attempts = 
   }
   return last;
 }
+
+// Attendee backfill (scripts/backfill-attendees.mjs): `GET /v3/events/{event_id}/attendees/`
+// pages with the same `pagination.continuation` / `has_more_items` contract as orders.
+export function listAttendeesUrl(apiUrl, eventId, { continuation = null } = {}) {
+  if (!/^\d+$/.test(String(eventId))) throw new Error(`backfill-attendees: event id must be numeric, got "${eventId}"`);
+  const url = new URL(`${apiUrl}/events/${eventId}/attendees/`);
+  if (continuation) url.searchParams.set('continuation', continuation);
+  return url.toString();
+}
+
+// One page → { attendees: [{ id }], continuation }. Only ids are kept: the deliveries are
+// pointers and nothing personal (name, email) should ever leave this function.
+export function parseAttendeesPage(body) {
+  if (typeof body !== 'object' || body === null || !Array.isArray(body.attendees)) {
+    throw new Error('backfill-attendees: list response has no "attendees" array');
+  }
+  const pagination = body.pagination ?? {};
+  const more = pagination.has_more_items === true && typeof pagination.continuation === 'string' && pagination.continuation !== '';
+  return { attendees: body.attendees.map((a) => ({ id: String(a?.id ?? '') })), continuation: more ? pagination.continuation : null };
+}
+
+// The event delivery first (so the consumer has the event row before its attendees), then one
+// attendee delivery per attendee sorted by id. Built from the configured API base, never from a
+// resource_uri.
+export function planAttendeeBackfill(attendees, { apiUrl, eventId }) {
+  const deliveries = [
+    {
+      label: `event ${eventId}`,
+      delivery: { api_url: `${apiUrl}/events/${eventId}/`, config: { action: 'event.updated', endpoint_url: 'scripts/backfill-attendees.mjs' } },
+    },
+  ];
+  const skipped = [];
+  const sorted = [...attendees].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+  for (const attendee of sorted) {
+    const id = String(attendee.id ?? '');
+    if (!/^\d+$/.test(id)) {
+      skipped.push({ attendeeId: id || '(no id)', reason: 'no numeric id' });
+      continue;
+    }
+    deliveries.push({
+      label: `attendee ${id}`,
+      delivery: { api_url: `${apiUrl}/events/${eventId}/attendees/${id}/`, config: { action: 'attendee.updated', endpoint_url: 'scripts/backfill-attendees.mjs' } },
+    });
+  }
+  return { deliveries, skipped };
+}

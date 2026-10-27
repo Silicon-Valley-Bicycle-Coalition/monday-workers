@@ -11,6 +11,20 @@ export interface InclusionInput {
   // after peopleActiveSinceISO — attending a recent class or shift is current engagement.
   registrantIds: Set<string>; recentRegistrantIds: Set<string>; volunteerIds: Set<string>;
   affiliatedIds: Set<string>; recentActivityIds: Set<string>;
+  // On a staff volunteer roster (data/enrich/roster-contacts.txt, from the board-linking survey's
+  // Volunteer Roster rows): included and live with no gift or check-in, so the roster's Person
+  // links resolve (monday-migration docs/29 §6; decided 2026-10-26, svbc-monday-migration#83).
+  rosterIds?: Set<string>;
+}
+
+/**
+ * Contact ids listed in roster-contacts.txt, one per line (15 or 18 characters; blank lines and
+ * `#` comments ignored), resolved to the extract's 18-character ids. Ids not in the extract are
+ * dropped: the Contact was merged or deleted after the survey.
+ */
+export function rosterContactIds(text: string, contacts: Record<string, unknown>[]): Set<string> {
+  const listed = new Set(text.split('\n').map((l) => l.replace(/#.*/, '').trim().slice(0, 15)).filter(Boolean));
+  return new Set(contacts.map((c) => c['Id'] as string).filter((id) => listed.has(id.slice(0, 15))));
 }
 
 export function classifyContact(
@@ -20,9 +34,9 @@ export function classifyContact(
   const member = inc.memberSummaries.get(id);
   const included = member !== undefined || !!c['funraise__fr_ID__c'] ||
     inc.donorIds.has(id) || inc.registrantIds.has(id) ||
-    inc.volunteerIds.has(id) || inc.affiliatedIds.has(id);
+    inc.volunteerIds.has(id) || inc.affiliatedIds.has(id) || !!inc.rosterIds?.has(id);
   if (!included) return null;
-  const live = !!c['funraise__fr_ID__c'] ||
+  const live = !!c['funraise__fr_ID__c'] || !!inc.rosterIds?.has(id) ||
     inc.recentDonorIds.has(id) || inc.recentActivityIds.has(id) || inc.recentRegistrantIds.has(id) ||
     (member !== undefined && (member.status === 'Active' ||
       (member.untilISO !== null && member.untilISO >= activeSinceISO)));

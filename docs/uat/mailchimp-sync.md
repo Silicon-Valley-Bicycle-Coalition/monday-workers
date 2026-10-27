@@ -6,8 +6,8 @@ contains no real subscribers' inboxes in any sense that matters: nothing sends e
 ## What it does
 
 Keeps each donor's Mailchimp contact in step with their Monday record, so newsletter segments and
-the membership email journeys (welcome series, renewal reminders at 6, 4, and 2 weeks) can key off
-real membership dates. When a person's membership, address, or Do Not Solicit flag changes on
+the membership email journeys (welcome series, renewal reminders 4 weeks and 2 weeks before
+expiration and on the day itself) can key off real membership dates. When a person's membership, address, or Do Not Solicit flag changes on
 People, the matching Mailchimp contact's merge fields and tags update within seconds to minutes.
 When someone changes their interests or unsubscribes in Mailchimp, their **Mailchimp Campaigns**
 column on People updates to match.

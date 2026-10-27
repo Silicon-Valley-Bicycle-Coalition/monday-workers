@@ -50,7 +50,8 @@ Not Solicit; biggest last gift first) · **Gave last fiscal year (990)** (each d
 last closed fiscal year) · **Donor portfolios** (grouped by Relationship Owner) · **Members** (everyone with
 a membership status, sorted by Member Until; amber within 60 days, red when lapsed) · **Active
 members** (the Board Elections export) · **By city** · **Stakeholders** · **By campaign** ·
-**Do Not Solicit** · **DNS reason missing** (Worklist, red).
+**Do Not Solicit** · **DNS reason missing** (Worklist, red) · **Renewals this month and next**
+(Worklist: Member Until this calendar month or next, red when lapsed; emailed on the 1st and 15th).
 
 **Try it:**
 
@@ -157,7 +158,9 @@ previous fiscal year (July to June) active and everything older archived in plac
 **Tabs:** **Recent gifts** (opens here; grouped by Gift Fiscal Year, newest first) · **Revenue
 by funding stream** (Report; each group's footer sums Amount) · **By gift size** · **By fiscal
 quarter** · **Major gifts to thank** (Worklist, red) · **Unacknowledged** · **Membership
-payments** · **Matching gifts** · **Needs a donor** (Worklist) · **Failed and pending**.
+payments** · **Matching gifts** · **Needs a donor** (Worklist) · **Failed and pending** · **Gifts,
+last 7 days** · **Gifts, last 60 days** (largest first). These two, plus Needs a donor and By gift
+size, are also emailed weekly by the report-digests integration.
 
 Four columns are set automatically overnight so views and dashboards can group and chart:
 **Funding Stream** (Individual Giving, Membership, Sponsorships, Grants & Contracts, Matching

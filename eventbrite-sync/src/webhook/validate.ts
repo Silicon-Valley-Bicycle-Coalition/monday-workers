@@ -19,16 +19,16 @@ export type DeliveryVerdict =
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
- * Eventbrite's documented delivery is `{ "api_url": "https://www.eventbriteapi.com/v3/orders/
- * <id>/", "config": { "action": "order.placed", "user_id": "…", "webhook_id": "…",
- * "endpoint_url": "…" } }` (Webhooks guide; the Webhook object in the API blueprint). Throws on
- * anything that isn't that shape, so the route can log it and answer 200 without retrying.
- *
- * `api_url` must be exactly `<eventbrite.apiUrl>/orders/<digits>/` — host and path, no query,
- * no other resource. The order id is the only thing taken from it; the URL itself is never
- * fetched, so a forged delivery can at most name a real order id.
+ * The part of a delivery both webhook routes share: the payload is an object with a non-empty
+ * `config.action` in `actions`, from the configured organization (when it says), with an
+ * `api_url` string. Throws on a malformed payload; returns `ignore` for an unsubscribed action
+ * or another organization. The caller parses `apiUrl` for its own resource.
  */
-export function validateDelivery(body: unknown, config: EventbriteSyncConfig): DeliveryVerdict {
+export function checkEnvelope(
+  body: unknown,
+  config: EventbriteSyncConfig,
+  actions: string[]
+): { kind: 'ok'; action: string; organizationId: string | null; apiUrl: string } | { kind: 'ignore'; reason: string } {
   if (!isObject(body)) {
     throw new Error('eventbrite webhook: payload must be a JSON object');
   }
@@ -36,7 +36,7 @@ export function validateDelivery(body: unknown, config: EventbriteSyncConfig): D
     throw new Error('eventbrite webhook: payload missing "config.action"');
   }
   const action = body.config.action;
-  if (!config.eventbrite.actions.includes(action)) {
+  if (!actions.includes(action)) {
     return { kind: 'ignore', reason: `action "${action}" is not subscribed` };
   }
 
@@ -49,17 +49,35 @@ export function validateDelivery(body: unknown, config: EventbriteSyncConfig): D
   if (typeof body.api_url !== 'string' || body.api_url === '') {
     throw new Error('eventbrite webhook: payload missing "api_url"');
   }
-  const orderId = orderIdFromApiUrl(body.api_url, config.eventbrite.apiUrl);
+  return { kind: 'ok', action, organizationId, apiUrl: body.api_url };
+}
+
+/**
+ * Eventbrite's documented delivery is `{ "api_url": "https://www.eventbriteapi.com/v3/orders/
+ * <id>/", "config": { "action": "order.placed", "user_id": "…", "webhook_id": "…",
+ * "endpoint_url": "…" } }` (Webhooks guide; the Webhook object in the API blueprint). Throws on
+ * anything that isn't that shape, so the route can log it and answer 200 without retrying.
+ *
+ * `api_url` must be exactly `<eventbrite.apiUrl>/orders/<digits>/` — host and path, no query,
+ * no other resource. The order id is the only thing taken from it; the URL itself is never
+ * fetched, so a forged delivery can at most name a real order id.
+ */
+export function validateDelivery(body: unknown, config: EventbriteSyncConfig): DeliveryVerdict {
+  const envelope = checkEnvelope(body, config, config.eventbrite.actions);
+  if (envelope.kind === 'ignore') return envelope;
+  const orderId = orderIdFromApiUrl(envelope.apiUrl, config.eventbrite.apiUrl);
   if (orderId === null) {
     throw new Error(`eventbrite webhook: "api_url" is not an order URL under ${config.eventbrite.apiUrl}/orders/`);
   }
-  return { kind: 'process', delivery: { orderId, action, organizationId } };
+  return { kind: 'process', delivery: { orderId, action: envelope.action, organizationId: envelope.organizationId } };
 }
 
-// `<apiUrl>/orders/<digits>/` and nothing else (a trailing slash is how Eventbrite writes
-// every resource_uri; a missing one is tolerated). Compared as strings after a URL parse so
-// `https://www.eventbriteapi.com.evil.example/…` and `…/orders/1/../../users/me/` both fail.
-export function orderIdFromApiUrl(apiUrl: string, baseUrl: string): string | null {
+/**
+ * The path after `<baseUrl>/<resource>/` for an `api_url` that is a plain URL under the base
+ * (no query, hash or credentials), or null. Compared as strings after a URL parse so
+ * `https://www.eventbriteapi.com.evil.example/…` and `…/orders/1/../../users/me/` both fail.
+ */
+export function apiUrlRemainder(apiUrl: string, baseUrl: string, resource: string): string | null {
   let url: URL;
   try {
     url = new URL(apiUrl);
@@ -67,10 +85,15 @@ export function orderIdFromApiUrl(apiUrl: string, baseUrl: string): string | nul
     return null;
   }
   if (url.search !== '' || url.hash !== '' || url.username !== '' || url.password !== '') return null;
-  const prefix = `${baseUrl}/orders/`;
+  const prefix = `${baseUrl}/${resource}/`;
   const normalized = `${url.origin}${url.pathname}`;
-  if (!normalized.startsWith(prefix)) return null;
-  const rest = normalized.slice(prefix.length);
-  const match = /^(\d+)\/?$/.exec(rest);
+  return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : null;
+}
+
+// `<apiUrl>/orders/<digits>/` and nothing else (a trailing slash is how Eventbrite writes
+// every resource_uri; a missing one is tolerated).
+export function orderIdFromApiUrl(apiUrl: string, baseUrl: string): string | null {
+  const rest = apiUrlRemainder(apiUrl, baseUrl, 'orders');
+  const match = rest === null ? null : /^(\d+)\/?$/.exec(rest);
   return match === null ? null : match[1]!;
 }

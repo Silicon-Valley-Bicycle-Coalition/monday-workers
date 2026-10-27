@@ -17,6 +17,8 @@ export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
 const SINK_NAMES: Record<keyof MondayBoards, string> = {
   'donations:live': 'Donations',
   'people-live': 'People',
+  events: 'Events',
+  'event-registrations': 'Event Registrations',
 };
 
 // The ledger writes a dry run must not make: a placeholder item id stored here (matched_donor_item_id
@@ -47,8 +49,12 @@ export function dryRunMondayClient(client: MondayClient, boards: MondayBoards, c
     }
     return proxy;
   };
+  const notifications = recordingProxy(client, 'Monday notification', { notify: undefined }, ctx);
   return {
     findItemByColumnValue: (boardId, columnId, value) => client.findItemByColumnValue(boardId, columnId, value),
+    getItems: (boardId, itemIds, columnIds) => client.getItems(boardId, itemIds, columnIds),
+    // A bell notification is a Monday write too, logged under its own sink.
+    notify: (userId, itemId, text) => notifications.notify(userId, itemId, text),
     createItem: (boardId, itemName, columnValues) => sinkFor(boardId).createItem(boardId, itemName, columnValues),
     changeColumnValues: (boardId, itemId, columnValues) => sinkFor(boardId).changeColumnValues(boardId, itemId, columnValues),
   };

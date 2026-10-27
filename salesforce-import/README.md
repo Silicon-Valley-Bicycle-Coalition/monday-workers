@@ -53,6 +53,9 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 #   Put Monday's admin user export at data/enrich/monday-users.csv first: without it, People's
 #   Relationship Owner loads empty (it is seeded only for owners whose name exactly matches a
 #   current Monday staff member; load looks each one's Monday user id up by email).
+#   Optional: data/enrich/roster-contacts.txt, one Salesforce Contact id per line (# comments ok),
+#   adds staff-rostered volunteers to People (live) with no gift or check-in; generated from the
+#   board-linking survey's Volunteer Roster rows (private planning repo, docs/29).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only (sequential by default;
                                     #   --batched is opt-in, sandbox-only until its rehearsal passes)
@@ -402,7 +405,8 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   the verified archive-behavior facts, and what maintains the rollups post-migration.
   **(2) The People inclusion rule is written:** any contact with a
   real relationship — ever a donor, member, event registrant (Funraise, or checked in via Eventbrite), volunteer, Funraise supporter, or
-  org-affiliated (~12–15k of 50,086) — split as People (live, active since ~2019) + People
+  org-affiliated, or on the staff Volunteer Roster (`data/enrich/roster-contacts.txt`, added
+  2026-10-19 so the roster's Person links resolve) (~12–15k of 50,086) — split as People (live, active since ~2019) + People
   (Historical). Email-list-only contacts stay in Mailchimp (the consent system of record) and the
   backup archive, not Monday. Original sizing queries:
   `docs/11-salesforce-import-design.md` (private planning repo).
