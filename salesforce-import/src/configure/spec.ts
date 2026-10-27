@@ -87,6 +87,23 @@ const POSTAL_DESCRIPTIONS = {
   'Do Not Mail': 'Leave this person off postal mailings. Email consent is separate (the Consent columns).',
   'Do Not Mail Reason': 'Opt out all mail, or Undeliverable (the address needs fixing).',
 } as const;
+// People boards only. Windfall wealth screening, loaded once from Salesforce (monday-migration
+// docs/09); SVBC's subscription has ended, so nothing refreshes these.
+const WINDFALL_FROZEN = 'From Windfall wealth screening, frozen at migration — the subscription has ended and nothing updates it.';
+const WINDFALL_DESCRIPTIONS = {
+  'Net Worth': `Windfall's estimated net worth. ${WINDFALL_FROZEN}`,
+  'Net Worth Low': `Lower bound of Windfall's net-worth estimate. ${WINDFALL_FROZEN}`,
+  'Net Worth High': `Upper bound of Windfall's net-worth estimate. ${WINDFALL_FROZEN}`,
+  'Net Worth Date': `When Windfall last calculated Net Worth. ${WINDFALL_FROZEN}`,
+  'Philanthropic Giver': `Windfall found charitable giving elsewhere. ${WINDFALL_FROZEN}`,
+  'Job Title': `Windfall's employment match. ${WINDFALL_FROZEN} Structured employment lives on Affiliations.`,
+  'Windfall Company': `Windfall's employment match; may differ from Employer Name. ${WINDFALL_FROZEN}`,
+  'LinkedIn': `Windfall's LinkedIn match. ${WINDFALL_FROZEN}`,
+  'Windfall ID': `The person's record in Windfall. ${WINDFALL_FROZEN}`,
+  'Windfall Priority': "Salesforce's Windfall Priority Score at migration: 1, plus 50 if Net Worth tops $10M, " +
+    'plus gifts closed in the prior year. Frozen; for current giving use the rollup columns.',
+  'Windfall Profile': `Remaining Windfall detail (employment, giving focus, property and life-event flags). ${WINDFALL_FROZEN}`,
+} as const;
 const ROLLUP_DESCRIPTION = 'Computed automatically from Donations by the donation-rollups integration. Edits are overwritten.';
 const DONOR_LEVEL_DESCRIPTION = 'Leadership ($5,000+ lifetime), Major ($500+ lifetime or a single gift of $200+), or Donor. ' +
   ROLLUP_DESCRIPTION;
@@ -100,7 +117,7 @@ const DNS_COLUMN: ColumnSpec = { title: 'DNS Reason Status', type: 'status', lab
 export const PLUMBING = [
   'Salesforce Debug', 'Salesforce Owner', 'Lat', 'Lng', 'Gift Ledger (JSON)', 'Funraise ID',
   'Funraise Event ID', 'Eventbrite ID', 'Eventbrite Attendee ID', 'Benevity Transaction ID',
-  'Eventbrite Order ID',
+  'Eventbrite Order ID', 'Windfall ID',
 ] as const;
 
 const dnsViews = (contactColumn: string): ViewSpec[] => [
@@ -129,7 +146,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       DNS_COLUMN,
     ],
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
@@ -209,6 +226,10 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'City' } },
       { name: 'Stakeholders', tag: 'Reference', columns: ['Stakeholder Type', 'Organization', 'City', 'Zip', 'Personal Email'],
         filter: { rules: [{ columnTitle: 'Stakeholder Type', operator: 'any_of', labelValues: ['City or Agency Staff', 'Elected Official'] }] } },
+      { name: 'Wealth screening', tag: 'Report',
+        columns: ['Net Worth', 'Philanthropic Giver', 'Job Title', 'Windfall Company', 'LinkedIn', 'Lifetime Giving', 'Donor Level'],
+        filter: { rules: [{ columnTitle: 'Net Worth', operator: 'is_not_empty' }, NOT_DNS] },
+        sort: [{ columnTitle: 'Net Worth', direction: 'desc' }] },
       { name: 'By campaign', tag: 'Reference', columns: ['Campaign', 'Personal Email', 'City'],
         filter: { rules: [{ columnTitle: 'Campaign', operator: 'is_not_empty' }] }, sort: [{ columnTitle: 'Campaign' }] },
       ...DNS_VIEWS,
@@ -224,7 +245,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     groupTitle: 'People',
     columns: [DNS_COLUMN],
     columnDescriptions: {
-      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS,
+      ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
       'Household Email': 'A shared household address, possibly used by more than one person. Its ' +
         'consent is tracked separately in Household Email Consent.',
