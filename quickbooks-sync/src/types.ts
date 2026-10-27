@@ -1,3 +1,4 @@
+import type { WriteStamp } from './flags';
 export type EntityType = 'customer' | 'invoice' | 'product';
 export type SyncStatus = 'received' | 'fetched' | 'queued' | 'written' | 'failed';
 
@@ -77,9 +78,13 @@ export interface QuickbooksSyncConfig {
   };
 }
 
-export type QueueMessage =
+// The optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were
+// `off` stays a dry run even if the mode is `on` by the time it is consumed.
+export type QueueMessage = (
   | { direction: 'qb-to-monday'; eventId: string }
-  | { direction: 'monday-to-qb'; eventId: string };
+  | { direction: 'monday-to-qb'; eventId: string }
+) &
+  WriteStamp;
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);

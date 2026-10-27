@@ -67,6 +67,7 @@ describe('createQbWebhookApp', () => {
       queue,
       verifierToken,
       connectedRealmId: async () => connectedRealmId,
+      writeMode: async () => 'on',
     });
   }
 
@@ -289,5 +290,38 @@ describe('createQbWebhookApp', () => {
     expect(res.status).toBe(503);
     expect(eventStore.insertEvent).not.toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+});
+
+// The write switch (src/flags.ts): ingest runs in every mode; under `off` the queued message is
+// stamped so the consumer dry-runs it even if the mode is flipped to `on` first.
+describe('createQbWebhookApp — write switch', () => {
+  async function postWithMode(mode: 'on' | 'hold' | 'off' | 'unknown') {
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createQbWebhookApp({
+      qbEventStore: fakeEventStore(),
+      queue,
+      verifierToken,
+      connectedRealmId: async () => '123',
+      writeMode: async () => mode,
+    });
+    const { body, signature } = await signedBody(notificationPayload);
+    const res = await app.request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': signature } });
+    return { res, queue };
+  }
+
+  it("stamps the message 'dropped' under off", async () => {
+    const { res, queue } = await postWithMode('off');
+    expect(res.status).toBe(200);
+    expect(queue.send).toHaveBeenCalledWith({
+      direction: 'qb-to-monday',
+      eventId: '123:Customer:60:2026-08-22T00:00:00.000Z',
+      writeStamp: 'dropped',
+    });
+  });
+
+  it.each(['on', 'hold', 'unknown'] as const)('leaves the message unstamped under %s', async (mode) => {
+    const { queue } = await postWithMode(mode);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'qb-to-monday', eventId: '123:Customer:60:2026-08-22T00:00:00.000Z' });
   });
 });

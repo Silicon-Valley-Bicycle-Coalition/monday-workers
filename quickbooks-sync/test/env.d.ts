@@ -1,7 +1,8 @@
 declare namespace Cloudflare {
   interface Env {
     DB: D1Database;
-    SYNC_QUEUE: Queue<{ direction: 'qb-to-monday' | 'monday-to-qb'; eventId: string }>;
+    SYNC_QUEUE: Queue<{ direction: 'qb-to-monday' | 'monday-to-qb'; eventId: string; writeStamp?: 'dropped' }>;
+    FLAGS: KVNamespace;
     MONDAY_API_TOKEN: string;
     QB_CLIENT_ID: string;
     QB_CLIENT_SECRET: string;

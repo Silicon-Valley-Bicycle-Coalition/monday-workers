@@ -64,6 +64,7 @@ describe('createMondayWebhookApp', () => {
       queue: { send: vi.fn() },
       config,
       mondayWebhookSecret: SECRET,
+      writeMode: async () => 'on',
     });
 
     const res = await app.request(WEBHOOK_URL, {
@@ -85,6 +86,7 @@ describe('createMondayWebhookApp', () => {
       queue,
       config,
       mondayWebhookSecret: SECRET,
+      writeMode: async () => 'on',
     });
 
     const res = await app.request('/webhooks/monday', {
@@ -107,6 +109,7 @@ describe('createMondayWebhookApp', () => {
       queue,
       config,
       mondayWebhookSecret: SECRET,
+      writeMode: async () => 'on',
     });
 
     const res = await app.request('/webhooks/monday?secret=wrong', {
@@ -132,6 +135,7 @@ describe('createMondayWebhookApp', () => {
         queue,
         config,
         mondayWebhookSecret: missingSecret as unknown as string,
+        writeMode: async () => 'on',
       });
 
       const res = await app.request(`/webhooks/monday?secret=${missingSecret ?? ''}`, {
@@ -155,6 +159,7 @@ describe('createMondayWebhookApp', () => {
       queue: { send: vi.fn() },
       config,
       mondayWebhookSecret: SECRET,
+      writeMode: async () => 'on',
     });
 
     const res = await app.request('/webhooks/monday?secret=wrong', {
@@ -175,6 +180,7 @@ describe('createMondayWebhookApp', () => {
       queue: { send: vi.fn() },
       config,
       mondayWebhookSecret: SECRET,
+      writeMode: async () => 'on',
     });
 
     const res = await app.request(WEBHOOK_URL, {
@@ -199,7 +205,7 @@ describe('createMondayWebhookApp', () => {
       }),
     });
     const queue = { send: vi.fn() };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore, queue, config, mondayWebhookSecret: SECRET });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore, queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
@@ -215,7 +221,7 @@ describe('createMondayWebhookApp', () => {
   it('dedupes and enqueues a genuinely new Customer item', async () => {
     const mondayEventStore = fakeMondayEventStore();
     const queue = { send: vi.fn().mockResolvedValue(undefined) };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
@@ -240,7 +246,7 @@ describe('createMondayWebhookApp', () => {
       getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'queued' })),
     });
     const queue = { send: vi.fn() };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
@@ -261,7 +267,7 @@ describe('createMondayWebhookApp', () => {
         getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status })),
       });
       const queue = { send: vi.fn().mockResolvedValue(undefined) };
-      const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+      const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
       const res = await app.request(WEBHOOK_URL, {
         method: 'POST',
@@ -282,7 +288,7 @@ describe('createMondayWebhookApp', () => {
     // QuickBooks.
     const mondayEventStore = fakeMondayEventStore();
     const queue = { send: vi.fn().mockRejectedValue(new Error('queue unavailable')) };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
@@ -306,7 +312,7 @@ describe('createMondayWebhookApp', () => {
       getEvent: vi.fn().mockResolvedValue(mondayEventRow({ status: 'failed', error: 'queue unavailable' })),
     });
     const queue = { send: vi.fn().mockResolvedValue(undefined) };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
@@ -323,7 +329,7 @@ describe('createMondayWebhookApp', () => {
   it('returns a recorded error at HTTP 200 for a malformed JSON body instead of crashing', async () => {
     const mondayEventStore = fakeMondayEventStore();
     const queue = { send: vi.fn() };
-    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET });
+    const app = createMondayWebhookApp({ mondayEventStore, mapStore: fakeMapStore(), queue, config, mondayWebhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await app.request(WEBHOOK_URL, {
       method: 'POST',
@@ -337,5 +343,38 @@ describe('createMondayWebhookApp', () => {
     expect(typeof json.error).toBe('string');
     expect(mondayEventStore.insertEvent).not.toHaveBeenCalled();
     expect(queue.send).not.toHaveBeenCalled();
+  });
+});
+
+// The write switch (src/flags.ts): ingest runs in every mode; under `off` the queued message is
+// stamped so the consumer dry-runs it even if the mode is flipped to `on` first.
+describe('createMondayWebhookApp — write switch', () => {
+  async function postWithMode(mode: 'on' | 'hold' | 'off' | 'unknown') {
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const app = createMondayWebhookApp({
+      mondayEventStore: fakeMondayEventStore(),
+      mapStore: fakeMapStore(),
+      queue,
+      config,
+      mondayWebhookSecret: SECRET,
+      writeMode: async () => mode,
+    });
+    const res = await app.request(WEBHOOK_URL, {
+      method: 'POST',
+      body: JSON.stringify({ event: { pulseId: 1, boardId: 789 } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return { res, queue };
+  }
+
+  it("stamps the message 'dropped' under off", async () => {
+    const { res, queue } = await postWithMode('off');
+    expect(res.status).toBe(200);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'monday-to-qb', eventId: '1', writeStamp: 'dropped' });
+  });
+
+  it.each(['on', 'hold', 'unknown'] as const)('leaves the message unstamped under %s', async (mode) => {
+    const { queue } = await postWithMode(mode);
+    expect(queue.send).toHaveBeenCalledWith({ direction: 'monday-to-qb', eventId: '1' });
   });
 });
