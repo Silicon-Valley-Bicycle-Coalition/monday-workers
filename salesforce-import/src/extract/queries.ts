@@ -1,4 +1,5 @@
 import type { Config } from '../config.js';
+import { WINDFALL_FIELDS } from '../transform/windfall.js';
 
 export function buildExtracts(cfg: Config): { name: string; soql: string; backupOnly?: boolean; paginate?: boolean }[] {
   return [
@@ -8,6 +9,7 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         npe01__HomeEmail__c, npe01__WorkEmail__c, npe01__AlternateEmail__c, npe01__Preferred_Email__c,
         Account.Do_Not_Solicit__c, Account.Do_Not_Solicit_What__c, Employer__c, dtd__company__c, funraise__fr_ID__c, Elected__c,
         Do_Not_Mail__c, Do_Not_Mail_Reason__c, Deceased__c, npsp__Deceased__c,
+        ${WINDFALL_FIELDS.join(', ')},
         Account.Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Contact` },
     { name: 'accounts', paginate: true, soql: `SELECT Id, Name, npe01__SYSTEM_AccountType__c, Type, Type_2__c, Industry,
         BillingStreet, BillingCity, BillingState, BillingPostalCode, Website, Phone,

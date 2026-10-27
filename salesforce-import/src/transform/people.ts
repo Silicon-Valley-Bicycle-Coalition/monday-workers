@@ -1,6 +1,7 @@
 import type { GeoResult } from '../geocode/cache.js';
 import type { ItemPayload } from './types.js';
 import type { MemberSummary } from './membership.js';
+import { windfallColumns } from './windfall.js';
 import { collapseEmail, consentColumns, dateCol, funraiseSupporterLink, ownerAttribution, salesforceDebug } from './fields.js';
 
 export interface InclusionInput {
@@ -84,6 +85,7 @@ export function contactToPayload(
     // lookup, empty on every record (plan: Benevity in Integrations). Kept as a fallback only.
     'Employer Name': (c['Employer__c'] ?? c['dtd__company__c'] ?? '') as string,
     ...consentColumns(personal, household, deps.consent),
+    ...windfallColumns(c),
     ...salesforceDebug(c),
   };
   // A shared household address is one Mailchimp contact; this flag says whose merge fields it
