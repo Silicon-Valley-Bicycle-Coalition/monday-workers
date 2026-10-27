@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createApp, secretsMatch, type AppDeps } from './route';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
@@ -65,6 +65,10 @@ function twoRowReport(): string {
     .replace('Net Total Payment,50.00', 'Net Total Payment,80.00');
 }
 
+function gateFor(mode: 'on' | 'hold' | 'off' | 'unknown') {
+  return { worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] } as const;
+}
+
 const UPLOAD_EVENT = { event: { pulseId: 1, columnId: 'file_col', value: { files: [{ assetId: 'a1' }] } } };
 
 function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
@@ -111,6 +115,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     webhookSecret: SECRET,
     fetchCsv: vi.fn().mockResolvedValue(validReport()),
     now: () => '2026-09-15T00:00:00Z',
+    gate: async () => gateFor('on'),
     ...overrides,
   };
 }
@@ -756,5 +761,112 @@ describe('secretsMatch', () => {
     expect(await secretsMatch(undefined, 's3cret')).toBe(false);
     expect(await secretsMatch('', '')).toBe(false);
     expect(await secretsMatch('anything', undefined)).toBe(false);
+  });
+});
+
+// The write switch (src/flags.ts): hold/unknown refuse before any store or Monday call; off runs
+// the upload route against recording deps and answers the retry route with a skip.
+describe('write switch', () => {
+  const RETRY = { column: 'retry_col', labels: { retry: 'Retry', queued: 'Queued', done: 'Done', needsReview: 'Needs review' } };
+  const retryEvent = { event: { pulseId: 4242, columnId: 'retry_col', value: { label: { index: 1, text: 'Retry' } } } };
+  const postRetry = (app: ReturnType<typeof createApp>, body: unknown) =>
+    app.request(`/webhooks/monday/benevity-retry?secret=${SECRET}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+
+  function reviewReport(): string {
+    // Totals don't match, so the block is held for review and a worklist item is created.
+    return validReport().replace('Total Donations (Gross),50.00', 'Total Donations (Gross),60.00');
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(['hold', 'unknown'] as const)('answers the upload route 503 under %s, before any store or Monday call', async (mode) => {
+    const deps = fakeDeps({ gate: async () => gateFor(mode) });
+    const res = await post(createApp(deps), UPLOAD_EVENT);
+    expect(res.status).toBe(503);
+    expect(deps.uploadStore.getUploadByAssetId).not.toHaveBeenCalled();
+    expect(deps.uploadStore.createUpload).not.toHaveBeenCalled();
+    expect(deps.mondayClient.fetchAsset).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+  });
+
+  it.each(['hold', 'unknown'] as const)('answers the retry route 503 under %s, before any store or Monday call', async (mode) => {
+    const deps = fakeDeps({ gate: async () => gateFor(mode) });
+    deps.config.benevityImport.uploadsBoard.retry = RETRY;
+    const res = await postRetry(createApp(deps), retryEvent);
+    expect(res.status).toBe(503);
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+  });
+
+  it.each(['hold', 'off'] as const)('still echoes the subscribe challenge under %s', async (mode) => {
+    const deps = fakeDeps({ gate: async () => gateFor(mode) });
+    const app = createApp(deps);
+    const upload = await post(app, { challenge: 'xyz' });
+    expect(upload.status).toBe(200);
+    expect(await upload.json()).toEqual({ challenge: 'xyz' });
+    expect(await (await postRetry(app, { challenge: 'abc' })).json()).toEqual({ challenge: 'abc' });
+  });
+
+  it('under off records the rows and stamps the messages, but does not call Monday writes or claim the worklist item', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = fakeDeps({ gate: async () => gateFor('off') });
+    (deps.fetchCsv as ReturnType<typeof vi.fn>).mockResolvedValue(twoRowReport());
+    const res = await post(createApp(deps), UPLOAD_EVENT);
+    expect(res.status).toBe(200);
+    expect(deps.rowStore.upsertRow).toHaveBeenCalledTimes(2);
+    expect(deps.uploadStore.markParsed).toHaveBeenCalled();
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([
+      { transactionId: 'TXN001', writeStamp: 'dropped' },
+      { transactionId: 'TXN002', writeStamp: 'dropped' },
+    ]);
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it('under off logs the worklist createItem instead of calling it, never claims or archives', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = fakeDeps({ gate: async () => gateFor('off') });
+    (deps.fetchCsv as ReturnType<typeof vi.fn>).mockResolvedValue(reviewReport());
+    const res = await post(createApp(deps), UPLOAD_EVENT);
+    expect(res.status).toBe(200);
+    expect(deps.mondayClient.createItem).not.toHaveBeenCalled();
+    expect(deps.mondayClient.archiveItem).not.toHaveBeenCalled();
+    expect(deps.disbursementStore.claimWorklistItemId).not.toHaveBeenCalled();
+    // The review block's rows are still recorded, and nothing is enqueued.
+    expect(deps.rowStore.upsertRow).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs-review' }));
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    const lines = (log.mock.calls as unknown[][]).map((c) => JSON.parse(String(c[0])) as Record<string, unknown>).filter((l) => l.writeSwitch === 'skipped');
+    expect(lines).toEqual([expect.objectContaining({ sink: 'Monday', operation: 'createItem', mode: 'off' })]);
+    log.mockRestore();
+  });
+
+  it('under on stamps nothing and calls the real writes', async () => {
+    const deps = fakeDeps();
+    (deps.fetchCsv as ReturnType<typeof vi.fn>).mockResolvedValue(reviewReport());
+    await post(createApp(deps), UPLOAD_EVENT);
+    expect(deps.mondayClient.createItem).toHaveBeenCalledTimes(1);
+    expect(deps.disbursementStore.claimWorklistItemId).toHaveBeenCalledTimes(1);
+
+    const sent = fakeDeps();
+    await post(createApp(sent), UPLOAD_EVENT);
+    expect(sent.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001' }]);
+  });
+
+  it('under off the retry route logs a skip and returns 200, doing nothing', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = fakeDeps({ gate: async () => gateFor('off') });
+    deps.config.benevityImport.uploadsBoard.retry = RETRY;
+    const res = await postRetry(createApp(deps), retryEvent);
+    expect(res.status).toBe(200);
+    expect(deps.rowStore.getRowByWorklistItemId).not.toHaveBeenCalled();
+    expect(deps.rowStore.requeueRow).not.toHaveBeenCalled();
+    expect(deps.rowStore.requeueDisbursementRows).not.toHaveBeenCalled();
+    expect(deps.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(deps.queue.sendBatch).not.toHaveBeenCalled();
+    const lines = (log.mock.calls as unknown[][]).map((c) => JSON.parse(String(c[0])) as Record<string, unknown>).filter((l) => l.writeSwitch === 'skipped');
+    expect(lines).toHaveLength(1);
+    log.mockRestore();
   });
 });

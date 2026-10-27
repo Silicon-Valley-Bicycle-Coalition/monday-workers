@@ -1,14 +1,16 @@
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
 import { validateConfig } from './config';
-import { createConfigSelector } from './environment';
+import { createConfigSelector, environmentOf } from './environment';
+import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
+import type { BatchSkipContext } from './writeSwitch';
 import { createApp } from './webhook/route';
 import { D1UploadStore } from './db/uploads';
 import { D1DisbursementStore } from './db/disbursements';
 import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
-import { processBenevityQueueBatch, type BenevityQueueMessage } from './consumer/processBatch';
+import { consumeBenevityBatch, type BenevityQueueMessage } from './consumer/processBatch';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env, BenevityImportConfig } from './types';
 
@@ -19,6 +21,15 @@ const configFor = createConfigSelector<BenevityImportConfig>({
   sandbox: sandboxConfig,
   validate: validateConfig,
 });
+
+const WORKER = 'benevity-import';
+
+// The mode and log level, read once per request / queue batch (never cached per isolate, so a
+// flip reaches the next one within the KV edge cache's 30 seconds).
+async function skipContext(env: Env): Promise<BatchSkipContext> {
+  const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
+}
 
 async function fetchCsv(url: string): Promise<string> {
   const response = await fetch(url);
@@ -45,6 +56,7 @@ export default {
         disbursementStore: new D1DisbursementStore(env.DB),
         rowStore: new D1RowStore(env.DB),
         config,
+        gate: () => skipContext(env),
         queue: {
           sendBatch: (messages: BenevityQueueMessage[]) =>
             env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
@@ -59,17 +71,18 @@ export default {
 
   async queue(batch: MessageBatch<BenevityQueueMessage>, env: Env): Promise<void> {
     const config = configFor(env);
-    await processBenevityQueueBatch([...batch.messages], {
+    const gate = await skipContext(env);
+    await consumeBenevityBatch([...batch.messages], {
       rowStore: new D1RowStore(env.DB),
       disbursementStore: new D1DisbursementStore(env.DB),
       aliasStore: new D1AliasStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
       now: () => new Date().toISOString(),
-    });
+    }, gate);
   },
 
-  // Daily PII retention pass: raw Benevity rows are kept only for replay/debugging, so they're
+  // Daily PII retention pass (D1 only, no Monday write, so the write switch does not gate it): raw Benevity rows are kept only for replay/debugging, so they're
   // emptied once the write has been in Monday long enough (or, for rows that never resolved,
   // after the longer unresolved-row window). Same shape as funraise-sync's scheduled handler.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {

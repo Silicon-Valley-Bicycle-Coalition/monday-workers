@@ -10,6 +10,8 @@ import { annotateWorklistItem, blockWorklistKey, ensureWorklistItem, setWorklist
 import { errorMessage } from '../util/errorMessage';
 import type { BenevityQueueMessage } from '../consumer/processBatch';
 import { sendInBatches, type BatchSender } from '../util/sendBatch';
+import { logSkip } from '../flags';
+import { dryRunAppDeps, type BatchSkipContext } from '../writeSwitch';
 
 // Queue producer surface the route needs. Rows are sent with sendBatch (chunked to Queues' 100
 // messages / 256 KB per call, see util/sendBatch.ts) rather than one send() per row, so a large
@@ -41,6 +43,10 @@ export interface AppDeps {
   rowStore: RowStore;
   config: BenevityImportConfig;
   queue: QueueLike;
+  // The write switch's mode and log level (flags.ts), read once per accepted request. The
+  // challenge echo is answered before it; `hold`/`unknown` then answer 503 before any store or
+  // Monday call, and `off` runs the upload route against recording deps (writeSwitch.ts).
+  gate: () => Promise<BatchSkipContext>;
   // Shared secret required as `?secret=...` on the registered Monday webhook URL
   // (`wrangler secret put BENEVITY_WEBHOOK_SECRET`). Fails closed when unset.
   webhookSecret: string | undefined;
@@ -59,6 +65,9 @@ export function createApp(deps: AppDeps) {
     const body = await readMondayWebhook(c, deps);
     if (body instanceof Response) return body;
 
+    const gate = await deps.gate();
+    if (gate.mode !== 'on' && gate.mode !== 'off') return writesHeld(c);
+
     let event;
     try {
       event = validateUploadEvent(body);
@@ -74,9 +83,10 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: true, ignored: true }, 200);
     }
 
+    const live = gate.mode === 'on' ? deps : dryRunAppDeps(deps, { ...gate, deliveryId: `item:${event.itemId}` });
     for (const assetId of event.assetIds) {
       try {
-        await ingestAsset(assetId, deps);
+        await ingestAsset(assetId, live);
       } catch (err) {
         console.error(`benevity webhook: failed to ingest asset "${assetId}": ${errorMessage(err)}`);
         return c.json({ ok: false }, 500);
@@ -98,6 +108,9 @@ export function createApp(deps: AppDeps) {
     const body = await readMondayWebhook(c, deps);
     if (body instanceof Response) return body;
 
+    const gate = await deps.gate();
+    if (gate.mode !== 'on' && gate.mode !== 'off') return writesHeld(c);
+
     const retry = deps.config.benevityImport.uploadsBoard.retry;
     if (!retry) {
       return c.json({ ok: true, ignored: true }, 200);
@@ -114,6 +127,13 @@ export function createApp(deps: AppDeps) {
     // own Queued/Done/Needs review writes, which fire this same webhook — is ignored.
     if (event.columnId !== retry.column || event.label !== retry.labels.retry) {
       return c.json({ ok: true, ignored: true }, 200);
+    }
+
+    if (gate.mode === 'off') {
+      // A replay is all writes (worklist labels, requeues, queue sends), so there is nothing to
+      // dry-run: say so and leave the item at Retry for when writes are on.
+      logSkip({ ...gate, deliveryId: `item:${event.itemId}` }, 'benevity-retry', 'replayWorklistItem', { itemId: event.itemId });
+      return c.json({ ok: true, skipped: true }, 200);
     }
 
     let result: ReplayResult;
@@ -339,6 +359,12 @@ function skippedReason(block: ParsedBlock, cutoff: string, retryConfigured: bool
       ? ' If it was never keyed into Salesforce, set Retry to import it; otherwise leave it as it is.'
       : ' If it was never keyed into Salesforce, it is missing from the CRM: enter it by hand from the report, or ask engineering to re-queue it.')
   );
+}
+
+// Under `hold` (or a KV read failure) the webhook is not accepted: 503 makes Monday redeliver
+// once writes are back on, rather than the delivery being absorbed with nothing done.
+function writesHeld(c: Context): Response {
+  return c.json({ ok: false, error: 'writes are on hold' }, 503);
 }
 
 // Shared front half of every Monday webhook route: shared-secret check (fails closed when

@@ -439,6 +439,43 @@ dashboard refuses two connections on one root directory, fall back to the
 `deploy-sandbox:benevity-import` job in `../.gitlab-ci.yml` — same command, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
 
+## Deploying: the write switch
+
+Every Monday write (worklist items and labels, Donations and the archive of a duplicate item) and
+every row-status write is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `benevity-import:writes` — `on` writes normally; `hold` writes nothing; `off` writes nothing
+  and logs one `"writeSwitch":"skipped"` line per would-be Monday write. **A missing key means
+  `off`**, and a KV read error means hold.
+- `benevity-import:log` — `debug` adds redacted payloads to those lines.
+
+Unlike the other migration Workers, **both webhook routes write to Monday themselves**, so the
+switch covers them directly (the subscribe challenge is always echoed):
+
+- `hold`/`unknown`: `/webhooks/monday/benevity-upload` and `/webhooks/monday/benevity-retry` answer
+  **503** before any D1 or Monday call, so Monday redelivers once writes are back on.
+- `off`: the upload route still records uploads, disbursements and rows (so a re-upload isn't
+  mistaken for new) and enqueues each row, stamped `dropped`; its worklist `createItem` / label
+  changes / archive are logged, not made, and the worklist item id is not saved. The retry route
+  logs a skip and returns 200 (the item stays at Retry).
+- Queue consumer: `off` (or a `dropped` stamp, even if the mode is `on` by then) logs the Monday
+  writes and skips `updateStatus` / `requeue*` / `claimWorklistItemId`; `hold` retries at 1 minute
+  doubling to an hour (`max_retries` is 100, about four days). A message queued before this
+  build has no stamp and is written under `on`. The daily `raw_row` purge is D1-only and runs in
+  every mode.
+
+Set it with the operator CLI at the repo root, never by hand:
+
+```sh
+node scripts/flags.mjs benevity-import writes on --env sandbox     # or --env production
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything.
+
 ## Related changes elsewhere
 
 * **Donations board:** provision a new `Benevity Disbursement Date` column before this Worker's
