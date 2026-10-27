@@ -295,7 +295,9 @@ As with orders, the delivery is only a pointer; what is written comes from the W
 The **program** is resolved from the organizer name suffix (same rule as `salesforce-import`);
 `attendeeSync.programByOrganizer` is an optional override by organizer id. Attendance is never
 downgraded (a check-in is not undone by a later `attendee.updated`), and the People link is set
-only once the attendee is Attended and never overwrites a link staff set.
+only once the attendee is Attended and never overwrites a link staff set. Item names follow
+Eventbrite: rename a class or attendee there, since a rename in Monday is overwritten by the next
+delivery.
 
 ### Prerequisites
 

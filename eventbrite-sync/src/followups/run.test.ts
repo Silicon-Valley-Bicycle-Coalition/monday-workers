@@ -430,18 +430,18 @@ describe('runFollowups', () => {
     warn.mockRestore();
   });
 
-  it('re-reads Attendance before a missed-you and skips one checked in since', async () => {
+  it.each(['Attended', 'Canceled', 'No Show'])('re-reads Attendance before a missed-you and skips one now %s', async (now) => {
     const regs: Record<string, FakeReg> = {
       '501': { name: 'Pat', attendance: 'Attended', email: 'pat@example.com', link: 'Pat' },
       '502': { name: 'Lee', attendance: 'Registered', email: 'lee@example.com' },
       '503': { name: 'Sam', attendance: 'Registered', email: 'sam@example.com' },
     };
     const monday = fakeMonday({ '9001': { name: 'Class', classType: 'Commute', followups: '' } }, regs);
-    // Staff check Lee in between the planning read and the writes.
+    // Staff change Lee's Attendance between the planning read and the writes.
     const read = monday.getItems;
     let regReads = 0;
     monday.getItems = vi.fn(async (boardId: number, ids: string[], columnIds: string[]) => {
-      if (boardId === REGS && ++regReads === 2) regs['502']!.attendance = 'Attended';
+      if (boardId === REGS && ++regReads === 2) regs['502']!.attendance = now;
       return read(boardId, ids, columnIds);
     });
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});

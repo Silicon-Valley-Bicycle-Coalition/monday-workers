@@ -146,7 +146,7 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
 
   // Staff may check someone in while this run is planning (a late check-in the morning after).
   // Re-read Attendance for the missed-you writes, in one batched call, just before writing them,
-  // so a now-Attended attendee isn't marked No Show and sent a missed-you.
+  // so only one still Registered is marked No Show and sent a missed-you (the planner's own rule).
   const noShowIds = plan.writes.filter((w) => w.noShow).map((w) => w.itemId);
   if (noShowIds.length > 0) {
     const reread = new Map(
@@ -157,8 +157,8 @@ async function runEvent(row: EventRow, boards: Boards, deps: FollowupDeps): Prom
       if (item === undefined) {
         console.warn(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} is gone; skipped its missed-you`);
         columnValuesById.delete(itemId);
-      } else if ((item.columns[rc.attendanceColumn] ?? '').trim() === 'Attended') {
-        console.log(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} was checked in since planning; skipped its missed-you`);
+      } else if ((item.columns[rc.attendanceColumn] ?? '').trim() !== 'Registered') {
+        console.log(`eventbrite-sync follow-ups: event "${row.eventId}": Event Registrations item ${itemId} is no longer Registered; skipped its missed-you`);
         columnValuesById.delete(itemId);
       }
     }
