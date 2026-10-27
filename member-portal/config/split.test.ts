@@ -129,6 +129,13 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect((wrangler.vars as Json | undefined)?.SANDBOX_EMAIL_SINK).toBeUndefined();
   });
 
+  it('binds FLAGS to a different KV namespace than production', () => {
+    const flagsId = (scope: Json) => (scope.kv_namespaces as { binding: string; id: string }[]).find((ns) => ns.binding === 'FLAGS')?.id;
+    expect(flagsId(wrangler)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
+  });
+
   it('uses its own rate-limit namespace', () => {
     const prodLimiter = (wrangler.ratelimits as Json[])[0]!;
     const sbLimiter = (sandboxEnv.ratelimits as Json[])[0]!;
