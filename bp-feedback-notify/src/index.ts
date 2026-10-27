@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { configFor, type EnvironmentBindings } from './environment';
+import { configFor, environmentOf, type EnvironmentBindings } from './environment';
 import { CloudflareEmailSender } from './email/cloudflareEmail';
 import { sandboxEmailBinding } from './email/sandboxBinding';
 import { InvalidWebhookPayloadError, parseFeedbackWebhookPayload } from './webhook';
@@ -7,6 +7,7 @@ import { timingSafeEqual } from './timingSafeEqual';
 import { checkRequestRateLimit } from './rateLimit';
 import { writeSendStatus } from './sendStatus';
 import { redactEmails } from './redactEmails';
+import { DEFAULT_PII_KEYS, logSkip, readLogLevel, readWriteMode, redactPayload } from './flags';
 import production from '../config/production.json';
 import sandbox from '../config/sandbox.json';
 
@@ -18,7 +19,11 @@ export interface Env extends EnvironmentBindings {
   MONDAY_API_TOKEN?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
+  // Write-switch flags KV (src/flags.ts); a missing binding reads as mode `unknown`.
+  FLAGS?: KVNamespace;
 }
+
+const WORKER = 'bp-feedback-notify';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -68,6 +73,24 @@ app.post('/webhook/bp-feedback', async (c) => {
       return c.text(`bad request: ${error.message}`, 400);
     }
     throw error;
+  }
+
+  // Challenge and auth are above; the write switch gates everything that sends. Read once.
+  const mode = await readWriteMode(c.env, WORKER);
+  if (mode === 'hold' || mode === 'unknown') {
+    // Nothing is queued here, so a 503 is the only way to keep the request alive: monday retries.
+    console.log(JSON.stringify({ event: 'bp-feedback-held', worker: WORKER, mode, itemId: payload.itemId }));
+    return c.text('writes are held', 503);
+  }
+  if (mode === 'off') {
+    const logLevel = await readLogLevel(c.env, WORKER);
+    logSkip(
+      { worker: WORKER, environment: environmentOf(c.env), mode, logLevel, deliveryId: String(payload.itemId), piiKeys: DEFAULT_PII_KEYS },
+      'Feedback email',
+      'sendFeedbackRequestEmail',
+      redactPayload(payload, DEFAULT_PII_KEYS),
+    );
+    return c.json({ sent: false, skipped: true, itemId: payload.itemId });
   }
 
   const config = configFor(c.env, production, sandbox);

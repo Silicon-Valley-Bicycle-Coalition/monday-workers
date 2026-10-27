@@ -58,3 +58,13 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect((wrangler.vars as Json | undefined)?.SANDBOX_EMAIL_SINK).toBeUndefined();
   });
 });
+
+describe('wrangler.jsonc FLAGS binding', () => {
+  const flagsId = (w: Json) => ((w.kv_namespaces as { binding: string; id: string }[] | undefined) ?? []).find((n) => n.binding === 'FLAGS')?.id;
+
+  it('binds FLAGS in production and sandbox to different namespaces', () => {
+    expect(flagsId(wrangler)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
+  });
+});
