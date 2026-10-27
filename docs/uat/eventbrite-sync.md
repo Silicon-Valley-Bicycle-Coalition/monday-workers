@@ -59,14 +59,15 @@ Everything above. The Worker is code-complete but not deployed; see `eventbrite-
 
 ## Class emails: try it (sandbox)
 
-For Kendra. Everything here uses a test class and **staff email addresses only**; never register a
+For the Bike Education coordinator. Everything here uses a test class and **staff email addresses only**; never register a
 real attendee. The Worker only sets a label; Monday sends the email from `learn@`.
 
 1. **Set up the class.** On the sandbox Events board, find the test class (it appears when the
    Eventbrite event is created or updated) and set **Class Type**.
 2. **Register.** Register 3 staff addresses on the test event in Eventbrite. Within a minute each
-   should appear on Event Registrations with Attendance **Registered**, the class date, day,
-   location and type filled in.
+   should appear on Event Registrations with Attendance **Registered** and the class date, day and
+   location filled in. Class Type stays blank on the registrations until the morning follow-up run
+   copies it from the event (step 5).
 3. **Send a reminder.** Open the **Class reminders** view, filter to the test class, select all,
    open Mass email, pick `Reminder: <class type>`, fill the `[ … ]` notes and send. Check the
    email lands in the staff inboxes.
@@ -74,9 +75,10 @@ real attendee. The Worker only sets a label; Monday sends the email from `learn@
    **Attended** for those two. The third stays Registered.
 5. **Morning after.** After 08:00 Pacific the day after the class ends (the job runs hourly, so
    allow until the next hour), the two checked-in rows get Follow-up Email `Thank-you: <class
-   type>`, the third gets `Missed-you: <class type>` and its Attendance becomes **No Show**. The
-   matching emails arrive from `learn@`. The test event's Follow-ups cell may stay blank; it is
-   only used for Held.
+   type>`, the third gets `Missed-you: <class type>` and its Attendance becomes **No Show**, and
+   all three get the event's Class Type. The matching emails arrive from `learn@`. The test
+   event's **Follow-ups** then turns to **Sent** — that is what stops the class being emailed
+   twice.
 6. **Held.** Repeat with a second test class and check in nobody. The event's **Follow-ups**
    should turn to **Held** and you should get a Monday notification. Check someone in, then
    clear Held: the follow-ups run on the next hourly pass. (Only within 3 days of the class end.)

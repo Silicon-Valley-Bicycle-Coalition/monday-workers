@@ -300,7 +300,8 @@ only once the attendee is Attended and never overwrites a link staff set.
 ### Prerequisites
 
 * Config `attendeeSync` ids for the Events and Event Registrations columns, `peopleEmailColumn`,
-  and `followups.notifyUserId` (Kendra's Monday user id, for the Held notice). Production ships
+  and `followups.notifyUserId` (the Bike Education coordinator's Monday user id, for the Held
+  notice). Production ships
   `REPLACE_WITH_COLUMN_ID` / `null` until set.
 * `Attendee Email` must be an **Email** column on Event Registrations. `salesforce-import` only
   creates missing columns, so a production board already loaded with a text column needs it
@@ -329,9 +330,24 @@ Worker's own `events` ledger, are past **08:00 Pacific the day after End**, ende
   registrations with no email get nothing.
 * One label per email address per class (a shared address gets one email, thank-you wins). A retry
   skips addresses already labelled.
-* A class with no registrations is skipped. Registrations added by hand in Monday (not via
-  Eventbrite) get no follow-up. Labelling a past or migrated class never sends anything.
+* A class with no registrations (or whose registrations are all deleted or archived in Monday)
+  is skipped; a deleted or archived registration gets nothing. Registrations added by hand in
+  Monday (not via Eventbrite) get no follow-up.
+* Just before a missed-you is written, that registration's Attendance is read again; anyone
+  checked in since the run started gets nothing rather than a missed-you.
+* After labelling, the event's **Follow-ups** is set to **Sent**: that is the run-once guard.
+* The label is `Thank-you: ` / `Missed-you: ` plus the Class Type text, so a Class Type with no
+  matching Follow-up Email label makes Monday reject the write: the event logs `failed` every hour
+  (nothing sent, Follow-ups stays blank) until the label is added — the setup checklist covers
+  adding both labels for every Class Type.
 
+**Only events in this Worker's own ledger can send, but any of them can.** A class migrated from
+Salesforce, or created in Monday by hand, is never in the ledger and never emails. A class that
+*is* in the ledger — because a webhook arrived, or because `backfill-attendees.mjs` or a
+redelivery put it there — sends as soon as it is within the window above with Class Type set and
+Follow-ups blank, even if it was already emailed by hand. So at cutover, after any backfill, set
+**Follow-ups = Sent** on every class that ended in the last 3 days and was already emailed by hand
+(the setup checklist's cutover step).
 The hourly summary line is `eventbrite-sync follow-ups: sent N, held N, skipped N, failed N`; a
 sweep that throws logs `sweep failed`.
 
@@ -343,7 +359,10 @@ Staff should finish check-in before 08:00 the next morning.
 
 `scripts/backfill-attendees.mjs` replays an event's attendees to the deployed Worker, as the order
 backfill does: flags `--event-id`, `--worker-url`, `--env`, `--pause-ms`, `--dry-run`. Use it for a
-class that predates the webhook. Backfilled past classes are never emailed.
+class that predates the webhook. A backfilled class that ended more than 3 days ago is never
+emailed; one that ended within 3 days **will** be once its Class Type is set and Follow-ups is
+blank — see "Follow-up rules" above, and set Follow-ups = Sent first if it was already emailed by
+hand.
 
 ## Out of scope (follow-ups)
 
@@ -405,11 +424,12 @@ no second item). Production repeats the list under the production names at cutov
 
 ## Open
 
-0. **Production class emails (attendee feed).** Connect `learn@` in Emails & Activities; Kendra's
-   `notifyUserId`; production column ids; the `Attendee Email` Email-column conversion; Sequences
+0. **Production class emails (attendee feed).** Connect `learn@` in Emails & Activities; the Bike
+   Education coordinator's `notifyUserId`; production column ids; the `Attendee Email` Email-column conversion; Sequences
    and automations per the setup checklist, every Thank-you Sequence created **paused** until the
    Bike Education coordinator refreshes the dated upcoming-classes list and the Bike to Wherever Days line;
-   register the attendee webhook; name an owner. Known limits: no Class Time column (reminders
+   register the attendee webhook; after any backfill, set Follow-ups = Sent on recent classes
+   already emailed by hand (setup checklist Step 5); name an owner. Known limits: no Class Time column (reminders
    carry a `[start time]` note), and Spanish class day/date render in English.
 1. **The `Eventbrite Order ID` column id** in config — the column arrives with the next sandbox
    load and the production cutover load; see "Prerequisite column". Nothing can be written until

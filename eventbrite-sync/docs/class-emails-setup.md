@@ -28,9 +28,12 @@ with a staff-review list at the top. Copy each subject and body from there.
       Bike Maintenance (SVBE), Learn to Ride, Bike Security & Theft Prevention, Winter Biking.
 - [ ] **Follow-up Email labels** exist on Event Registrations: `Thank-you: <class type>` and
       `Missed-you: <class type>` for every Class Type label (24 for the starting 12). The label
-      text must match the Class Type exactly — the Worker builds it from Class Type.
+      text must match the Class Type exactly — the Worker builds it from Class Type, and a Class
+      Type without its two labels makes Monday reject the write: that class logs `failed` every
+      hour, sending nothing, until the labels exist.
 - [ ] The registration columns the bodies insert exist and are filled by the Worker: First Name,
-      Class Day, Class Date, Class Location (and Class Type).
+      Class Day, Class Date, Class Location as each registration arrives, and Class Type, which the
+      morning follow-up run copies from the event.
 
 Adding a class type later means adding its Class Type label, both Follow-up Email labels, its
 templates, two Sequences and two automations — all of Steps 2–4 for that one type.
@@ -83,10 +86,23 @@ For each Follow-up Email label, one automation on Event Registrations:
 - [ ] Exactly **one automation per label** — 24 for the starting 12 types. A second automation on
       the same label would enroll twice; a missing one silently sends nothing.
 - [ ] The trigger is "changes to" that specific label, not "changes" plus a condition. After
-      creating them, read them back with `list_automations` (Step 6) rather than trusting the
+      creating them, read them back with `list_automations` (Step 7) rather than trusting the
       builder's summary.
 
-## 5. "Class reminders" view
+## 5. Cutover: mark classes already emailed by hand
+
+Only events in the Worker's own ledger can send, but every one of them can: a class that ended in
+the last 3 days and reached the ledger through a webhook, `scripts/backfill-attendees.mjs` or a
+redelivery **will** be emailed the next morning if its Class Type is set and Follow-ups is blank —
+even if staff already emailed it by hand from Salesforce or Monday.
+
+- [ ] After the attendee webhook is registered and after **any** backfill, set **Follow-ups =
+      Sent** on every Events item for a class that ended in the last 3 days and was already
+      emailed by hand. (Classes that ended earlier, and classes migrated from Salesforce that the
+      Worker never saw, never send.)
+- [ ] Repeat for any later backfill or redelivery of a recent class.
+
+## 6. "Class reminders" view
 
 On Event Registrations, a table view **Class reminders**:
 
@@ -104,7 +120,7 @@ view once in the UI to confirm the date filter reads "Class Date is on or after 
 not pinned to the creation date). At cutover, create the same view on the production board with
 that board's column ids.
 
-## 6. Verify
+## 7. Verify
 
 With the monday MCP, on the board the Sequences are connected to:
 
@@ -131,5 +147,7 @@ late and then **clear Held** to re-run the follow-ups for that class.
 
 Clearing Held only re-runs follow-ups for a class that **ended no more than 3 days ago**
 (`attendeeSync.followups.maxAgeDays` in the Worker config). After that, clearing Held does nothing:
-the Worker deliberately never emails about an old class. Labelling a past or migrated class never
-sends anything either.
+the Worker deliberately never emails about an old class. A class migrated from Salesforce, or
+created in Monday by hand, is not in the Worker's ledger and never sends. A recent class that *is*
+in the ledger (webhook, backfill, redelivery) does send once Class Type is set and Follow-ups is
+blank — see Step 5.
