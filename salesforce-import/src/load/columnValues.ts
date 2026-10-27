@@ -27,7 +27,8 @@ export function formatColumnValue(type: string, value: unknown): unknown {
     return { phone: digits, countryShortName: 'US' };
   }
   if (type === 'email') {
-    const email = String(value);
+    const email = String(value).trim();
+    if (email === '') return null;
     return { email, text: email };
   }
   return value;
