@@ -915,6 +915,45 @@ dashboard refuses two connections on one root directory, fall back to the
 `deploy-sandbox:donation-rollups` job in `../.gitlab-ci.yml` — same command, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
 
+## Deploying: the write switch
+
+Every Monday write (owner rollups, gift term stamps, affiliation totals, gift-history
+descriptions, archive, Annual Giving Summary items, alerts), every fan-out enqueue onto
+`donation-rollups-recompute`, and every D1 projection write is gated by the shared write switch
+(spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`).
+It is read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
+namespaces exist):
+
+- `donation-rollups:writes` — `on` writes normally; `hold` writes nothing, keeps recompute
+  messages on the queue (retrying at 1 minute doubling to an hour), skips the daily custodian
+  run and answers `POST /custodian/run/:duty` with 409; `off` recomputes and runs duties against
+  recording proxies, logging one `"writeSwitch":"skipped"` line per would-be write and acking.
+  **A missing key means `off`**, and a KV read error means hold.
+- `donation-rollups:log` — `debug` adds redacted payloads to those lines.
+
+Under `off` nothing in D1 moves except ingest: the webhook still records its pending row and
+enqueues (stamped, so that message is never written even if the switch is `on` by the time it's
+consumed), but the ledger, links, summaries and `custodian_runs` are not refreshed — so no duty
+cursor advances, and a sliced sweep/archive resumes where the last live run stopped. Pending rows
+a dry run consumed stay `queued`; once writes are `on`, the nightly requeue re-enqueues those
+older than 24 hours as live recomputes (and reports ATTENTION once). A message already queued
+before this build has no stamp and is written under `on`. The dead-letter consumer runs in every
+mode. Set the switch with the operator CLI at the repo root, never by hand — `writes hold`/`on`
+also pauses and resumes `donation-rollups-recompute`:
+
+```sh
+node scripts/flags.mjs donation-rollups writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. **During a production load** (salesforce-import), keep rollups `off` — or
+its Monday webhooks unsubscribed, as today — until the load finishes: every imported gift fires a
+webhook, and under `on` each one is a full owner recompute. Recompute retries now back off 1
+minute doubling to an hour across `max_retries: 100` (about four days) before the DLQ; a D1 or
+Monday daily limit still defers to midnight UTC.
+
 ## Not yet done
 
 * ~~Webhook cutover to the v2 board~~ **Done 2026-08-31**: secret rotated, Worker redeployed,

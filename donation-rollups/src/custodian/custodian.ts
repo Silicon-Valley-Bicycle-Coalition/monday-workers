@@ -11,6 +11,8 @@ import { runClassify } from './classify';
 import { runMembership, type MembershipDetail } from './membership';
 import { runRecurring } from './recurring';
 import { formatCents, parseAmountCents } from '../money';
+import { runDisposition } from '../flags';
+import { custodianDepsFor, type BatchSkipContext } from '../writeSwitch';
 
 // The custodian (docs/20 §5.3 in the private planning repo): the four recurring duties that
 // keep the archive-in-place Donations board and its projections healthy. Each duty is pure
@@ -86,6 +88,26 @@ export function dutiesForDate(
     if ((last?.detail?.remaining ?? 0) > 0) duties.push(duty);
   }
   return duties;
+}
+
+// The daily cron (index.ts scheduled()). The write switch's mode, read once for the run, decides
+// whether today's duties run live (`on`), run against recording proxies (`off` — Monday writes,
+// queue sends and D1 bookkeeping, recordRun included, become skip lines, so no cursor moves), or
+// don't run at all (`hold`, `unknown` — one log line; a sliced duty continues on the first live
+// run, since nothing was recorded).
+export async function runScheduled(deps: CustodianDeps, gate: BatchSkipContext): Promise<void> {
+  const disposition = runDisposition(gate.mode);
+  if (disposition === 'skip') {
+    console.warn(`donation-rollups custodian: write mode is "${gate.mode}"; skipping today's duties, nothing recorded`);
+    return;
+  }
+  const now = deps.now ?? new Date();
+  const d = custodianDepsFor(disposition, deps, { ...gate, deliveryId: `custodian:${now.toISOString()}` });
+  const label = disposition === 'dry-run' ? ' (dry run)' : '';
+  for (const duty of dutiesForDate(now, d.config.fiscalYear, await d.gifts.lastRuns())) {
+    const report = await runDuty(duty, d);
+    console.log(`custodian ${duty}${label}: ${report.ok ? 'ok' : 'ATTENTION'} — ${report.summary}`);
+  }
 }
 
 export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions = {}): Promise<DutyReport> {

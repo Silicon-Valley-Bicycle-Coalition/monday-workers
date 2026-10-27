@@ -15,24 +15,8 @@ export function isD1QuotaError(err: unknown): boolean {
   return QUOTA_TEXT.test(text);
 }
 
-// Monday rate-limit / complexity-budget errors (issue #27): an immediate retry lands in the same
-// exhausted budget, so three of them DLQ the message within seconds. Back off from a minute,
-// doubling per delivery attempt (Cloudflare's Message.attempts, 1 on first delivery), and never
-// retry sooner than Monday's own retry_in_seconds hint says the budget resets.
-export function rateLimitRetryDelaySeconds(retryInSeconds: number | undefined, attempts: number | undefined): number {
-  const attempt = Number.isFinite(attempts) && attempts! >= 1 ? Math.floor(attempts!) : 1;
-  const backoff = MIN_DELAY_SECONDS * 2 ** Math.min(attempt - 1, 16);
-  const hint = retryInSeconds !== undefined && Number.isFinite(retryInSeconds) ? Math.ceil(retryInSeconds) : 0;
-  return Math.min(MAX_QUEUE_DELAY_SECONDS, Math.max(backoff, hint));
-}
-
-// Any other transient failure (a Monday 5xx, a D1 blip): the same 60 s, 120 s, 240 s backoff
-// without a server hint (#35). A bare retry() redelivers almost at once, so a short outage
-// would burn every attempt and dead-letter the message in seconds.
-export function transientRetryDelaySeconds(attempts: number | undefined): number {
-  return rateLimitRetryDelaySeconds(undefined, attempts);
-}
-
+// The retry delay itself — for these midnight deferrals, Monday rate limits and every other
+// transient failure — is flags.ts's shared retryDelaySeconds; secondsUntilMidnightUTC is its hint.
 export function secondsUntilMidnightUTC(now: Date): number {
   const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   const seconds = Math.ceil((nextMidnight - now.getTime()) / 1000);

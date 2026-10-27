@@ -28,11 +28,12 @@
         // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
         // the Free plan's 50-subrequest cap.
         "max_batch_size": 2,
-        // Every retry is delayed (src/consumer/quota.ts): a D1 daily-quota error defers to
-        // midnight UTC (capped at Queues' 12h), which with midnight up to 24h away can use two of
-        // these three; a Monday rate-limit error waits 60s/120s/240s by attempt, or Monday's
-        // retry hint if longer; any other transient error takes the same 60s/120s/240s (#35).
-        "max_retries": 3,
+        // Every retry is delayed (retryDelaySeconds in src/flags.ts): 1 minute doubling to an
+        // hour, so 100 retries ride out about four days of Monday outage (or a write-switch
+        // `hold` the queue pause missed) before the DLQ. A D1 daily-quota error, or Monday's
+        // daily limit, defers to midnight UTC (capped at Queues' 12h); a Monday rate limit waits
+        // at least its retry hint.
+        "max_retries": 100,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
         "max_concurrency": 1,
@@ -50,6 +51,10 @@
       }
     ]
   },
+  // Write-switch flags (scripts/flags.mjs). Ids are placeholders until the rollout creates the
+  // namespaces (`wrangler kv namespace create svbc-worker-flags`); every in-scope Worker carries
+  // the same two ids, which scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "REPLACE_WITH_FLAGS_KV_ID" }],
   // Traffic/cost guardrails — see README "Reliability: traffic and cost limits". 60/min/IP
   // covers /custodian/* and every Monday webhook call that fails the secret check, blunting a
   // flood before it reaches D1. Verified webhook deliveries are exempt (issue #27): a bulk edit
@@ -95,7 +100,7 @@
           {
             "queue": "donation-rollups-recompute-sandbox",
             "max_batch_size": 2,
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "donation-rollups-recompute-sandbox-dlq"
           },
@@ -107,6 +112,8 @@
           }
         ]
       },
+      // Filled at rollout with `wrangler kv namespace create svbc-worker-flags-sandbox`.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "REPLACE_WITH_SANDBOX_FLAGS_KV_ID" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2022", "simple": { "limit": 60, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
       "triggers": {

@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
-import { processRecomputeBatch, rollupToColumnValues, affectedAffiliations, type ProcessBatchDeps } from './processBatch';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { processRecomputeBatch, consumeRecomputeBatch, rollupToColumnValues, affectedAffiliations, type ProcessBatchDeps } from './processBatch';
+import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
+import type { BatchSkipContext } from '../writeSwitch';
 import type { PendingStore } from '../db/pending';
 import type { DonationLinksStore } from '../db/links';
 import type { GiftsStore } from '../db/gifts';
@@ -977,7 +979,6 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-3', expect.anything());
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "3"'));
-    warn.mockRestore();
 
     const gone = setup({ monday: { getAffiliationSummary: vi.fn().mockResolvedValue(null) } });
     const message = fakeMessage('dn1');
@@ -1016,7 +1017,6 @@ describe('consumer phase 2 — affiliation rollups', () => {
       recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), giftsStore, affiliationsStore, mondayClient, config: configWithAffiliations, now: new Date('2026-01-01') });
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(2, 'p-shared', { og: '500.00' });
     expect(mondayClient.changeColumnValues).not.toHaveBeenCalledWith(3, 'p-shared', expect.anything());
-    warn.mockRestore();
   });
 
   it('gift-history description gains a "Driven for organizations" section when the owner drives affiliated giving', async () => {
@@ -1058,7 +1058,6 @@ describe('consumer phase 2 — affiliation rollups', () => {
     // write — it still lands, just without the "Driven for organizations" section.
     expect(mondayClient.setItemDescription).toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('driven-for-organizations skipped'));
-    warn.mockRestore();
   });
 
   it('a phase-2 Monday failure retries the message (owner write is idempotent)', async () => {
@@ -1265,5 +1264,135 @@ describe('registration messages (kind: registration)', () => {
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
     expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('r1', 'failed', expect.objectContaining({ error: expect.stringContaining('volunteerBoards') }));
+  });
+});
+
+// The write switch (spec 2026-10-26): the mode is read once per batch (index.ts) and decides per
+// message whether the recompute writes, dry-runs against recording proxies, or waits on the queue.
+describe('write switch (consumeRecomputeBatch)', () => {
+  // Every console spy below is restored here, even when an assertion fails first.
+  afterEach(() => { vi.restoreAllMocks(); });
+  const gate = (mode: WriteMode): BatchSkipContext =>
+    ({ worker: 'donation-rollups', environment: 'production', mode, logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS });
+
+  // A donation that moved here from another owner: a live run re-points its link, enqueues the
+  // owner it left, refreshes the ledger, writes the owner and records the recompute — every kind
+  // of write this consumer makes, so a dry run has every one of them to drop.
+  function setup(over: { now?: Date; linksStore?: DonationLinksStore } = {}) {
+    const pendingStore = fakePendingStore();
+    const linksStore = over.linksStore ?? fakeLinksStore({
+      upsertLink: vi.fn().mockResolvedValue({ changed: true, updatedAt: '2026-01-01T00:00:00Z', previousOwner: { ownerItemId: 'donor-0', ownerBoardId: '3' } }),
+      getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-0', ownerBoardId: '3' }),
+    });
+    const giftsStore = fakeGiftsStore();
+    const recomputesStore = fakeRecomputesStore();
+    const affiliationsStore = fakeAffiliationsStore();
+    const volunteerStore = fakeVolunteerStore();
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+    const mondayClient = fakeMondayClient({
+      getDonationsByIds: vi.fn().mockResolvedValue([{ id: 'dn1', amountCents: 5000, dateISO: '2026-01-15', fiscalYear: 2026, status: 'Received' }]),
+    });
+    const deps: ProcessBatchDeps = { pendingStore, linksStore, giftsStore, recomputesStore, affiliationsStore, volunteerStore,
+      mondayClient, config: configWithAlert, queue, now: over.now ?? new Date('2026-01-01') };
+    return { deps, pendingStore, linksStore, giftsStore, recomputesStore, affiliationsStore, volunteerStore, queue, mondayClient };
+  }
+
+  function expectNoWrites(s: ReturnType<typeof setup>) {
+    expect(s.mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(s.mondayClient.setItemDescription).not.toHaveBeenCalled();
+    expect(s.mondayClient.createUpdate).not.toHaveBeenCalled();
+    expect(s.queue.send).not.toHaveBeenCalled();
+    for (const fn of [s.pendingStore.upsertPending, s.pendingStore.updateStatus, s.linksStore.upsertLink, s.linksStore.deleteLink,
+      s.linksStore.bulkUpsert, s.giftsStore.refreshFacts, s.giftsStore.markRemoved, s.recomputesStore.record,
+      s.affiliationsStore.upsert, s.volunteerStore.upsert, s.volunteerStore.markRemoved]) {
+      expect(fn).not.toHaveBeenCalled();
+    }
+  }
+
+  it('off: recomputes with no Monday write, no store write and no fan-out enqueue, logs what it skipped, and acks', async () => {
+    const s = setup();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const message = fakeMessage('dn1');
+    await consumeRecomputeBatch([message], s.deps, gate('off'));
+
+    expectNoWrites(s);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    // It still read the way a live run would.
+    expect(s.mondayClient.getDonationsByIds).toHaveBeenCalled();
+    const skipped = log.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('"writeSwitch":"skipped"'))
+      .map((line) => JSON.parse(line) as { sink: string; operation: string; deliveryId: string });
+    expect(skipped.map((l) => `${l.sink}.${l.operation}`)).toEqual(expect.arrayContaining([
+      'RECOMPUTE_QUEUE.send', 'Monday.changeColumnValues', 'Monday.setItemDescription',
+    ]));
+    expect(skipped[0]!.deliveryId).toBe('donation:dn1');
+  });
+
+  it('a message stamped dropped dry-runs even under on', async () => {
+    const s = setup();
+    const message = { ...fakeMessage('dn1'), body: { donationItemId: 'dn1', donationBoardId: '1', writeStamp: 'dropped' as const } };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await consumeRecomputeBatch([message], s.deps, gate('on'));
+    expectNoWrites(s);
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it.each([['hold'], ['unknown']] as const)('%s: leaves the message on the queue at the shared backoff, touching nothing', async (mode) => {
+    const s = setup();
+    const message = fakeMessage('dn1');
+    await consumeRecomputeBatch([message], s.deps, gate(mode));
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(s.mondayClient.getDonorLinkForDonation).not.toHaveBeenCalled();
+    expectNoWrites(s);
+  });
+
+  it('hold backs off by attempt, capped at an hour', async () => {
+    const s = setup();
+    const fourth = { ...fakeMessage('dn1'), attempts: 4 };
+    const late = { ...fakeMessage('dn2'), attempts: 30 };
+    await consumeRecomputeBatch([fourth, late], s.deps, gate('hold'));
+    expect(fourth.retry).toHaveBeenCalledWith({ delaySeconds: 480 });
+    expect(late.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
+  });
+
+  it('an unstamped message enqueued before the switch existed is written under on', async () => {
+    const s = setup();
+    const message = fakeMessage('dn1'); // no writeStamp field at all
+    await consumeRecomputeBatch([message], s.deps, gate('on'));
+    expect(s.mondayClient.changeColumnValues).toHaveBeenCalled();
+    expect(s.linksStore.upsertLink).toHaveBeenCalled();
+    expect(s.queue.send).toHaveBeenCalledWith({ donationItemId: 'dn1', donationBoardId: '1', ownerItemId: 'donor-0', ownerBoardId: '3' });
+    expect(s.recomputesStore.record).toHaveBeenCalled();
+    expect(s.pendingStore.updateStatus).toHaveBeenCalledWith('dn1', 'written', expect.anything());
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('a D1 quota error under on keeps its midnight-UTC delay as the retry hint, past the one-hour backoff cap', async () => {
+    const s = setup({ now: new Date('2026-10-26T14:00:00Z') });
+    (s.giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("D1_ERROR: Your account has exceeded D1's free tier daily row write limit."));
+    const message = fakeMessage('dn1');
+    const next = fakeMessage('dn2');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await consumeRecomputeBatch([message, next], s.deps, gate('on'));
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 10 * 3600 });
+    expect(next.retry).toHaveBeenCalledWith({ delaySeconds: 10 * 3600 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('off: a registration message dry-runs the volunteer upsert too', async () => {
+    const s = setup();
+    const reg = { body: { kind: 'registration' as const, donationItemId: 'r1', donationBoardId: '7' }, ack: vi.fn(), retry: vi.fn() };
+    const cfg: DonationRollupsConfig = { ...membershipEnabled, donationRollups: { ...membershipEnabled.donationRollups,
+      volunteerBoards: [{ boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: null },
+        eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] }] } };
+    (s.mondayClient.getRegistration as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { id: 'r1', state: 'active', attendeeItemId: 'p1', eventItemId: 'e1', attendanceLabel: 'Attended', roleLabel: 'Volunteer', hours: null });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await consumeRecomputeBatch([reg], { ...s.deps, config: cfg }, gate('off'));
+    expect(s.mondayClient.getRegistration).toHaveBeenCalled();
+    expectNoWrites(s);
+    expect(reg.ack).toHaveBeenCalled();
   });
 });

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createApp } from './route';
 import type { PendingStore } from '../db/pending';
+import type { WriteMode } from '../flags';
+
+const ON = async (): Promise<WriteMode> => 'on';
 
 // Mirrors config.donationRollups.donationBoards, the way index.ts derives it.
 const BOARD_IDS = new Set(['1', '18427756119']);
@@ -26,20 +29,20 @@ function post(app: ReturnType<typeof createApp>, body: unknown, query = '?secret
 describe('webhook secret', () => {
   it('rejects a request missing the configured secret with 401, before touching the body', async () => {
     const send = vi.fn();
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 1, boardId: 1 } }, '');
     expect(res.status).toBe(401);
     expect(send).not.toHaveBeenCalled();
   });
 
   it('rejects the wrong secret too', async () => {
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     const res = await post(app, { challenge: 'abc' }, '?secret=wrong');
     expect(res.status).toBe(401);
   });
 
   it('accepts the correct secret, including for the challenge handshake', async () => {
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     const res = await post(app, { challenge: 'abc' }, '?secret=shh');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ challenge: 'abc' });
@@ -50,7 +53,7 @@ describe('webhook secret', () => {
   it.each([[undefined], ['']])('fails closed when the configured secret is %j', async (webhookSecret) => {
     const send = vi.fn();
     const pendingStore = fakePendingStore();
-    const app = createApp({ pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret });
+    const app = createApp({ writeMode: ON, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret });
     for (const query of ['', '?secret=', '?secret=anything']) {
       expect((await post(app, { challenge: 'abc' }, query)).status).toBe(401);
       expect((await post(app, { event: { type: 'create_pulse', pulseId: 1, boardId: 1 } }, query)).status).toBe(401);
@@ -60,7 +63,7 @@ describe('webhook secret', () => {
   });
 
   it('rejects a secret that only shares a prefix with the configured one', async () => {
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     expect((await post(app, { challenge: 'abc' }, '?secret=sh')).status).toBe(401);
     expect((await post(app, { challenge: 'abc' }, '?secret=shhh')).status).toBe(401);
   });
@@ -68,7 +71,7 @@ describe('webhook secret', () => {
 
 describe('POST /webhooks/monday/donations', () => {
   it('echoes the challenge verbatim during webhook-subscription verification', async () => {
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send: vi.fn() }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     const res = await post(app, { challenge: 'abc123' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ challenge: 'abc123' });
@@ -77,7 +80,7 @@ describe('POST /webhooks/monday/donations', () => {
   it('upserts and enqueues a valid event, keyed on the donation item id', async () => {
     const pendingStore = fakePendingStore();
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
 
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 555, boardId: 18427756119 } });
 
@@ -91,7 +94,7 @@ describe('POST /webhooks/monday/donations', () => {
 
   it('rejects a malformed event body with 200 (no useful retry) and does not enqueue', async () => {
     const send = vi.fn();
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     const res = await post(app, { event: { type: 'create_pulse' } }); // no pulseId
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: false });
@@ -101,7 +104,7 @@ describe('POST /webhooks/monday/donations', () => {
   it('returns 500 and marks failed when enqueue throws, so Monday redelivers', async () => {
     const pendingStore = fakePendingStore();
     const send = vi.fn().mockRejectedValue(new Error('queue down'));
-    const app = createApp({ pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
 
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 1, boardId: 1 } });
 
@@ -117,7 +120,7 @@ describe('board allowlist', () => {
     // disables the subscription, and nothing enters the queue to churn toward the DLQ.
     const pendingStore = fakePendingStore();
     const send = vi.fn();
-    const app = createApp({ pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
 
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 9, boardId: 99999 } });
 
@@ -129,7 +132,7 @@ describe('board allowlist', () => {
 
   it('still enqueues events from every configured board', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createApp({ pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
+    const app = createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' });
     for (const boardId of [1, 18427756119]) {
       const res = await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId } });
       expect(res.status).toBe(200);
@@ -142,7 +145,7 @@ describe('board allowlist', () => {
 describe('classification columns', () => {
   const IGNORED = new Set(['1:fs', '1:gs']);
   const app = (send = vi.fn()) => ({ send,
-    app: createApp({ pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: IGNORED, webhookSecret: 'shh' }) });
+    app: createApp({ writeMode: ON, pendingStore: fakePendingStore(), queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: IGNORED, webhookSecret: 'shh' }) });
 
   it("acknowledges and drops the classify duty's own writes", async () => {
     const { app: a, send } = app();
@@ -174,7 +177,7 @@ describe('classification columns', () => {
 describe('Event Registrations webhooks', () => {
   const REG = new Map([['7', new Set(['att', 'ev', 'atd', 'role', 'hrs'])]]);
   function regApp(send = vi.fn(), pendingStore = fakePendingStore()) {
-    return { app: createApp({ pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: REG, ignoredColumnIds: new Set(), webhookSecret: 'shh' }), send, pendingStore };
+    return { app: createApp({ writeMode: ON, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: REG, ignoredColumnIds: new Set(), webhookSecret: 'shh' }), send, pendingStore };
   }
   it('enqueues a registration message for create_pulse and records kind on the pending row', async () => {
     const { app, send, pendingStore } = regApp();
@@ -201,5 +204,37 @@ describe('Event Registrations webhooks', () => {
     const res = await post(app, { event: { type: 'create_pulse', pulseId: 1, boardId: 999 } });
     expect(await res.json()).toMatchObject({ ok: true, ignored: expect.any(String) });
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// The write switch (spec 2026-10-26): ingest stays live in every mode — the pending row and the
+// enqueue are this Worker's own bookkeeping — but a message enqueued under `off` is stamped, so
+// the consumer dry-runs it even if writes are back `on` by the time it's consumed.
+describe('write switch', () => {
+  function switchApp(mode: WriteMode, send = vi.fn().mockResolvedValue(undefined), pendingStore = fakePendingStore()) {
+    const writeMode = vi.fn(async () => mode);
+    return { app: createApp({ writeMode, pendingStore, queue: { send }, donationBoardIds: BOARD_IDS, registrationBoards: new Map(), ignoredColumnIds: new Set(), webhookSecret: 'shh' }), send, pendingStore, writeMode };
+  }
+
+  it('stamps the message dropped under off, and still records and enqueues it', async () => {
+    const { app, send, pendingStore } = switchApp('off');
+    const res = await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId: 1 } });
+    expect(res.status).toBe(200);
+    expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1', writeStamp: 'dropped' });
+    expect(pendingStore.upsertPending).toHaveBeenCalledOnce();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('5', 'queued');
+  });
+
+  it.each([['on'], ['hold'], ['unknown']] as const)('leaves the message unstamped under %s', async (mode) => {
+    const { app, send } = switchApp(mode);
+    await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId: 1 } });
+    expect(send).toHaveBeenCalledWith({ donationItemId: '5', donationBoardId: '1' });
+  });
+
+  it('reads the mode only for a delivery it enqueues — not for the handshake or an ignored board', async () => {
+    const { app, writeMode } = switchApp('off');
+    await post(app, { challenge: 'abc' });
+    await post(app, { event: { type: 'create_pulse', pulseId: 5, boardId: 999 } });
+    expect(writeMode).not.toHaveBeenCalled();
   });
 });
