@@ -364,7 +364,7 @@ describe('retryDelaySeconds', () => {
       expect(message.ack).toHaveBeenCalled();
     });
 
-    it('routes an event message to processEvent (a stub for now: retried, event ledger marked failed)', async () => {
+    it('routes an event message to processEvent (no events row: retried, event ledger marked failed)', async () => {
       const orderStore = fakeStore(null);
       const eventStore = fakeEventStore();
       const message = { body: { kind: 'event' as const, eventId: 'e-1', action: 'event.updated' }, attempts: 1, ack: vi.fn(), retry: vi.fn() };
@@ -372,7 +372,7 @@ describe('retryDelaySeconds', () => {
       try {
         await processOrderQueueBatch([message], deps(orderStore, eventStore));
         expect(orderStore.getOrder).not.toHaveBeenCalled();
-        expect(eventStore.updateStatus).toHaveBeenCalledWith('e-1', 'failed', { error: 'not implemented' });
+        expect(eventStore.updateStatus).toHaveBeenCalledWith('e-1', 'failed', { error: expect.stringContaining('no events row for "e-1"') });
         expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
         expect(message.ack).not.toHaveBeenCalled();
       } finally {

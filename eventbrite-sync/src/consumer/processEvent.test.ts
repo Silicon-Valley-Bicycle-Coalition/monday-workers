@@ -1,0 +1,174 @@
+import { describe, it, expect, vi } from 'vitest';
+import { processEvent } from './processEvent';
+import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
+import { testConfig } from '../test/testConfig';
+import { MondayApiError } from '../monday/graphql';
+import type { ProcessBatchDeps } from './processBatch';
+import type { EventbriteEvent } from '../eventbrite/client';
+import type { MondayClient } from '../monday/client';
+import type { AttendeeRow, EventRow } from '../types';
+
+const config = testConfig();
+
+function event(overrides: Partial<EventbriteEvent> = {}): EventbriteEvent {
+  return {
+    id: '9001',
+    name: { text: 'Adult Learn to Ride' },
+    start: { utc: '2026-10-31T02:00:00Z', timezone: 'America/Los_Angeles' },
+    end: { utc: '2026-10-31T04:00:00Z' },
+    status: 'live',
+    url: 'https://www.eventbrite.com/e/9001',
+    organizer_id: 'org-public',
+    organizer: { name: 'Silicon Valley Bicycle Coalition' },
+    online_event: false,
+    venue: { name: 'Mitchell Park', address: { address_1: '600 E Meadow Dr', city: 'Palo Alto', localized_address_display: '600 E Meadow Dr, Palo Alto, CA 94306' } },
+    ...overrides,
+  };
+}
+
+function eventRow(overrides: Partial<EventRow> = {}): EventRow {
+  return {
+    eventId: '9001', mondayItemId: null, startsAt: null, endsAt: null, locationKey: null, eventbriteStatus: null,
+    status: 'received', lastAction: 'event.created', error: null, deliveries: 1, receivedAt: '2026-10-20T00:00:00.000Z', writtenAt: null,
+    ...overrides,
+  };
+}
+
+function attendeeRow(attendeeId: string): AttendeeRow {
+  return {
+    attendeeId, eventId: '9001', mondayItemId: null, matchedPersonItemId: null, status: 'written', lastAction: 'attendee.updated',
+    error: null, deliveries: 1, receivedAt: '2026-10-20T00:00:00.000Z', writtenAt: null,
+  };
+}
+
+function fakeMonday(overrides: Partial<MondayClient> = {}): MondayClient {
+  return {
+    findItemByColumnValue: vi.fn().mockResolvedValue(null),
+    createItem: vi.fn().mockResolvedValue({ id: 'item-1' }),
+    changeColumnValues: vi.fn().mockResolvedValue(undefined),
+    getItems: vi.fn(), notify: vi.fn(),
+    ...overrides,
+  };
+}
+
+function setup(opts: { row?: EventRow | null; event?: EventbriteEvent | null; monday?: Partial<MondayClient>; attendees?: AttendeeRow[]; config?: typeof config } = {}) {
+  const row = opts.row === undefined ? eventRow() : opts.row;
+  const eventStore = fakeEventStore({ getEvent: vi.fn().mockResolvedValue(row) });
+  const attendeeStore = fakeAttendeeStore({ listByEvent: vi.fn().mockResolvedValue(opts.attendees ?? []) });
+  const queue = { send: vi.fn().mockResolvedValue(undefined) };
+  const mondayClient = fakeMonday(opts.monday);
+  const eventbriteClient = { getOrder: vi.fn(), getEvent: vi.fn().mockResolvedValue(opts.event === undefined ? event() : opts.event), getAttendee: vi.fn() };
+  const deps = { eventStore, attendeeStore, queue, mondayClient, eventbriteClient, config: opts.config ?? config } as unknown as ProcessBatchDeps;
+  return { deps, eventStore, attendeeStore, queue, mondayClient, eventbriteClient };
+}
+
+const message = { kind: 'event' as const, eventId: '9001', action: 'event.updated' };
+
+describe('processEvent', () => {
+  it('creates an Events item for a new event and records the written facts', async () => {
+    const { deps, mondayClient, eventStore, queue } = setup();
+    await processEvent(message, deps);
+    expect(mondayClient.findItemByColumnValue).toHaveBeenCalledWith(222, 'ev_id_col', '9001');
+    expect(mondayClient.createItem).toHaveBeenCalledWith(222, 'Adult Learn to Ride', expect.objectContaining({ ev_id_col: '9001' }));
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.objectContaining({
+      mondayItemId: 'item-1',
+      startsAt: '2026-10-31T02:00:00.000Z',
+      endsAt: '2026-10-31T04:00:00.000Z',
+      locationKey: 'mitchell park, 600 e meadow dr, palo alto, ca 94306',
+      eventbriteStatus: 'live',
+      writtenAt: expect.any(String),
+    }));
+    expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it('adopts an existing item found by the Eventbrite id column: changes values, never creates', async () => {
+    const { deps, mondayClient, eventStore } = setup({ monday: { findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'staff-7' }) } });
+    await processEvent(message, deps);
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'staff-7', expect.objectContaining({ ev_id_col: '9001' }));
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.objectContaining({ mondayItemId: 'staff-7' }));
+  });
+
+  it('uses the ledger item id without a board lookup', async () => {
+    const { deps, mondayClient } = setup({ row: eventRow({ mondayItemId: 'item-9' }) });
+    await processEvent(message, deps);
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.any(Object));
+  });
+
+  it('marks a 404 from Eventbrite failed without throwing', async () => {
+    const { deps, eventStore, mondayClient } = setup({ event: null });
+    await processEvent(message, deps);
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'failed', { error: 'event not found in Eventbrite (HTTP 404)' });
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+  });
+
+  it('marks a deleted item failed and does not recreate it', async () => {
+    const gone = new MondayApiError('Item not found', { code: 'ItemNotFound' });
+    const { deps, eventStore, mondayClient } = setup({ row: eventRow({ mondayItemId: 'item-9' }), monday: { changeColumnValues: vi.fn().mockRejectedValue(gone) } });
+    await processEvent(message, deps);
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'failed', expect.objectContaining({ error: expect.stringContaining('item-9') }));
+  });
+
+  it('rethrows other Monday errors for retry', async () => {
+    const { deps } = setup({ row: eventRow({ mondayItemId: 'item-9' }), monday: { changeColumnValues: vi.fn().mockRejectedValue(new Error('boom')) } });
+    await expect(processEvent(message, deps)).rejects.toThrow('boom');
+  });
+
+  it('throws when there is no events row', async () => {
+    const { deps } = setup({ row: null });
+    await expect(processEvent(message, deps)).rejects.toThrow(/no events row/);
+  });
+
+  it('throws when the Events board is unconfigured', async () => {
+    const { deps } = setup({ config: testConfig({}, { events: null }) });
+    await expect(processEvent(message, deps)).rejects.toThrow(/boards\["events"\]/);
+  });
+
+  describe('fan-out on reschedule or move', () => {
+    const written = { mondayItemId: 'item-9', startsAt: '2026-10-31T02:00:00.000Z', locationKey: 'mitchell park, 600 e meadow dr, palo alto, ca 94306', status: 'written' as const };
+
+    it('enqueues one attendee message per registration when the start changed', async () => {
+      const { deps, queue, eventStore } = setup({
+        row: eventRow({ ...written, startsAt: '2026-10-24T02:00:00.000Z' }),
+        attendees: [attendeeRow('a1'), attendeeRow('a2')],
+      });
+      await processEvent(message, deps);
+      expect(queue.send).toHaveBeenCalledTimes(2);
+      expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated' });
+      expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a2', action: 'event.updated' });
+      expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.any(Object));
+    });
+
+    it('enqueues when the location changed', async () => {
+      const { deps, queue } = setup({ row: eventRow({ ...written, locationKey: 'somewhere else' }), attendees: [attendeeRow('a1')] });
+      await processEvent(message, deps);
+      expect(queue.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('enqueues nothing when start and location are unchanged', async () => {
+      const { deps, queue } = setup({ row: eventRow(written), attendees: [attendeeRow('a1')] });
+      await processEvent(message, deps);
+      expect(queue.send).not.toHaveBeenCalled();
+    });
+
+    it('enqueues nothing on the first write, when there is no previous start or location', async () => {
+      const { deps, queue, attendeeStore } = setup({ attendees: [attendeeRow('a1')] });
+      await processEvent(message, deps);
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(attendeeStore.listByEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not mark the row written when the fan-out fails, so the retry fans out again', async () => {
+      const { deps, eventStore, queue } = setup({
+        row: eventRow({ ...written, startsAt: '2026-10-24T02:00:00.000Z' }),
+        attendees: [attendeeRow('a1')],
+      });
+      queue.send.mockRejectedValue(new Error('queue down'));
+      await expect(processEvent(message, deps)).rejects.toThrow('queue down');
+      expect(eventStore.updateStatus).not.toHaveBeenCalled();
+    });
+  });
+});
