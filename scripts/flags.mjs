@@ -7,8 +7,11 @@
 //   node scripts/flags.mjs retention --env <production|sandbox>
 //
 // Order matters: KV is written first, then the Worker's main queues are paused (hold) or resumed
-// (on/off), so a consumer never sees a delivered message while KV still says `hold`. DLQs are
-// never paused. The FLAGS namespace ids are read from member-portal/wrangler.jsonc.
+// (on/off), so a consumer never sees a delivered message while KV still says `hold`. Before a
+// resume for `on` it waits out the KV edge cache (RESUME_WAIT_MS), so a consumer reading a cached
+// `hold` doesn't bounce the first resumed batch back into retries. DLQs are never paused. The FLAGS
+// namespace ids are read from member-portal/wrangler.jsonc; wrangler runs from member-portal/, so
+// its pinned local wrangler is the one used.
 import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -20,6 +23,11 @@ const MODES = ['on', 'hold', 'off'];
 const LOG_LEVELS = ['debug', 'normal'];
 const RETENTION_SECS = 1209600; // 14 days
 const WRANGLER_SOURCE = 'member-portal/wrangler.jsonc';
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+export const WRANGLER_CWD = join(ROOT, 'member-portal');
+// Twice the FLAGS reads' cacheTtl (30 s): a flip has reached every warm location by then.
+export const RESUME_WAIT_MS = 60_000;
+export const WRANGLER_TIMEOUT_MS = 120_000;
 const USAGE = `usage:
   flags.mjs <worker|all> writes <on|hold|off> --env <production|sandbox>
   flags.mjs <worker|all> log <debug|normal> --env <production|sandbox>
@@ -93,33 +101,62 @@ const stepArgs = (step, id) =>
   step.kind === 'kv-put' ? ['kv', 'key', 'put', '--namespace-id', id, '--remote', step.target, step.value]
     : ['queues', step.kind === 'pause' ? 'pause-delivery' : 'resume-delivery', step.target];
 
-// Runs `set` commands worker by worker, stopping at the first failure.
-export async function applyCommand({ workers, key, value, env }, ids, runner) {
+// A wrangler reply that means the queue isn't there. It is a failure, never a skip: the Worker's
+// queues exist once it has been deployed, and the runbook creates them before any key is set.
+const QUEUE_MISSING = /not found|does not exist|no such queue/i;
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Runs a `set` command for every Worker in turn. A Worker whose step fails stops there (the rest of
+ * its steps are not run), but the next Worker still runs; the result lists every failure. Options:
+ * `sleep` and `resumeWaitMs` (tests pass 0) and `log` for the wait notice.
+ */
+export async function applyCommand({ workers, key, value, env }, ids, runner, { sleep = defaultSleep, resumeWaitMs = RESUME_WAIT_MS, log = console.log } = {}) {
   const id = namespaceId(ids, env);
   const done = [];
+  const failures = [];
   for (const worker of workers) {
     const steps = key === 'writes'
       ? planWrites(worker, value, env)
       : [{ kind: 'kv-put', target: `${worker}:log`, value }];
     let kvWritten = false;
+    let waited = false;
+    let failed = false;
     for (const step of steps) {
+      if (step.kind === 'resume' && value === 'on' && kvWritten && !waited) {
+        log(`${worker}: waiting ${Math.round(resumeWaitMs / 1000)} s for ${worker}:writes on to reach every KV cache before resuming its queues`);
+        await sleep(resumeWaitMs);
+        waited = true;
+      }
       const result = await runner(stepArgs(step, id));
-      if (result.code !== 0) {
-        const detail = (result.stderr || result.stdout).trim();
+      const output = `${result.stdout ?? ''} ${result.stderr ?? ''}`;
+      const queueMissing = step.kind !== 'kv-put' && QUEUE_MISSING.test(output);
+      if (result.code !== 0 || queueMissing) {
+        const detail = (result.stderr || result.stdout || '').trim();
+        const cause = queueMissing ? `queue ${step.target} does not exist — create it (deploy the Worker) first` : detail;
         const mismatch = kvWritten
           ? ` ${worker}:${key} is now ${value} but ${step.kind} of ${step.target} failed, so KV and the queue disagree — fix and rerun, then check \`flags.mjs status --env ${env}\`.`
           : '';
-        return {
-          ok: false,
-          done,
-          message: `${worker}: ${step.kind} ${step.target} failed (${detail}).${mismatch}${done.length ? ` Done before the failure: ${done.join(', ')}.` : ''}`,
-        };
+        failures.push({ worker, step: step.kind, target: step.target, message: `${worker}: ${step.kind} ${step.target} failed (${cause}).${mismatch}` });
+        failed = true;
+        break;
       }
       if (step.kind === 'kv-put') kvWritten = true;
     }
-    done.push(worker);
+    if (!failed) done.push(worker);
   }
-  return { ok: true, done, message: `${key} ${value} applied to ${done.join(', ')} (${env})` };
+  if (failures.length === 0) return { ok: true, done, failures, message: `${key} ${value} applied to ${done.join(', ')} (${env})` };
+  return {
+    ok: false,
+    done,
+    failures,
+    message: [
+      `${failures.length} of ${workers.length} Worker${workers.length === 1 ? '' : 's'} failed:`,
+      ...failures.map((f) => `  ${f.message}`),
+      done.length ? `Applied: ${done.join(', ')}.` : 'Applied to none.',
+    ].join('\n'),
+  };
 }
 
 const parseBool = (text, label) => {
@@ -143,7 +180,8 @@ export async function readStatus(workers, ids, env, runner) {
   for (const worker of workers) {
     const raw = await getKey(`${worker}:writes`);
     const mode = raw === '?' ? '?' : MODES.includes(raw) ? raw : 'off';
-    const log = (await getKey(`${worker}:log`)) === 'debug' ? 'debug' : 'normal';
+    const rawLog = await getKey(`${worker}:log`);
+    const log = rawLog === '?' ? '?' : rawLog === 'debug' ? 'debug' : 'normal';
     const queues = [];
     for (const queue of queuesFor(worker, env)) {
       const info = await runner(['queues', 'info', queue]);
@@ -156,6 +194,13 @@ export async function readStatus(workers, ids, env, runner) {
   return rows;
 }
 
+// True when every row agrees with its queues and every value was read: `status` exits non-zero
+// on a MISMATCH or any `?`.
+export function statusOk(rows) {
+  return rows.every((row) => !row.mismatch && row.mode !== '?' && row.log !== '?'
+    && row.queues.every((q) => q.paused !== null && q.backlog !== null));
+}
+
 export function formatStatus(rows) {
   const width = Math.max(...rows.map((r) => r.worker.length));
   return rows.map((row) => {
@@ -166,23 +211,36 @@ export function formatStatus(rows) {
   }).join('\n');
 }
 
-// Real runner: shells out to `npx wrangler …` and never throws.
-export function wranglerRunner(args) {
+// Real runner: shells out to `npx wrangler …` from member-portal/ (its pinned wrangler) and never
+// throws. A call that runs past `timeoutMs` is killed and reported as code 1, "timed out".
+// `command` is for tests.
+export function wranglerRunner(args, { cwd = WRANGLER_CWD, timeoutMs = WRANGLER_TIMEOUT_MS, command = ['npx', 'wrangler'] } = {}) {
   return new Promise((resolve) => {
-    const child = spawn('npx', ['wrangler', ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const [bin, ...pre] = command;
+    const child = spawn(bin, [...pre, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish({ code: 1, stdout, stderr: `${stderr}wrangler ${args.join(' ')} timed out after ${Math.round(timeoutMs / 1000)} s` });
+    }, timeoutMs);
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', (error) => resolve({ code: 1, stdout, stderr: String(error) }));
-    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on('error', (error) => finish({ code: 1, stdout, stderr: String(error) }));
+    child.on('close', (code) => finish({ code: code ?? 1, stdout, stderr }));
   });
 }
 
-export async function main(argv, runner = wranglerRunner) {
+export async function main(argv, runner = wranglerRunner, options = {}) {
   const parsed = parseArgs(argv);
-  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const ids = flagsIds(readFileSync(join(root, WRANGLER_SOURCE), 'utf8'));
+  const ids = flagsIds(readFileSync(join(ROOT, WRANGLER_SOURCE), 'utf8'));
 
   if (parsed.command === 'retention') {
     let failed = 0;
@@ -194,10 +252,13 @@ export async function main(argv, runner = wranglerRunner) {
     return failed ? 1 : 0;
   }
   if (parsed.command === 'status') {
-    console.log(formatStatus(await readStatus(IN_SCOPE, ids, parsed.env, runner)));
-    return 0;
+    const rows = await readStatus(IN_SCOPE, ids, parsed.env, runner);
+    console.log(formatStatus(rows));
+    if (statusOk(rows)) return 0;
+    console.error('status: a MISMATCH or an unread value (?) — see the rows above');
+    return 1;
   }
-  const result = await applyCommand(parsed, ids, runner);
+  const result = await applyCommand(parsed, ids, runner, options);
   (result.ok ? console.log : console.error)(result.message);
   return result.ok ? 0 : 1;
 }

@@ -221,10 +221,16 @@ node scripts/flags.mjs retention --env production
 
 `writes` writes the KV key first, then pauses (`hold`) or resumes (`on`/`off`) the Worker's main
 queues, so a consumer never sees a delivered message while KV still says `hold`; DLQs are never
-paused. If the KV write succeeds but the queue step fails, the command exits non-zero and says
-KV and the queue disagree; `status` then marks the row `MISMATCH`. `status` prints, per Worker,
-the mode, log level, and each queue's paused/delivering state and backlog (`?` where wrangler's
-output could not be parsed). `retention` sets 14-day message retention (1,209,600 s) on every main
+paused. For `on` it waits 60 s between the KV write and the resume (printing a one-line notice),
+so the flip has reached every KV edge cache first. If the KV write succeeds but the queue step
+fails, the command exits non-zero and says KV and the queue disagree; `status` then marks the row
+`MISMATCH`. A queue wrangler reports missing is a failure, never a skip: create a Worker's queues
+(deploy it once) before setting its key. `all` runs every Worker even after one fails, then lists
+each failure (Worker, step, and any KV/queue mismatch) and exits non-zero. wrangler runs from
+`member-portal/` (its pinned version), with a 120 s timeout per call. `status` prints, per Worker,
+the mode, log level, and each queue's paused/delivering state and backlog (`?` where a value could
+not be read or wrangler's output could not be parsed), and exits non-zero on any `MISMATCH` or
+`?`. `retention` sets 14-day message retention (1,209,600 s) on every main
 queue and DLQ; it is operational, not in `wrangler.jsonc`. Leave `hold` with `on`, not `off`:
 `hold` to `off` drops what was held.
 
