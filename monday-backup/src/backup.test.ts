@@ -85,7 +85,7 @@ function fakeRunStore(): SnapshotRunStore & { finishes: RunResult[]; failures: s
   };
 }
 
-const config: BackupConfig = { destinationParentFolderId: 'parent-1', excludeBoardIds: [] };
+const config: BackupConfig = { destinationParentFolderId: 'parent-1', excludeBoardIds: [], apiUsageAlerts: false };
 
 function board(id: string, name = `Board ${id}`, workspaceId: string | null = 'ws-1'): BoardSummary {
   return { id, name, workspaceId };
@@ -251,7 +251,7 @@ describe('runBackup', () => {
           },
         }),
         drive: fake.drive,
-        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: ['98'] },
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: ['98'], apiUsageAlerts: false },
       }),
     );
     expect(fake.filenames()).toEqual(['board-1.jsonl', 'board-2.jsonl', 'board-99.jsonl', 'manifest.json']);
@@ -387,7 +387,7 @@ describe('runBackup', () => {
       deps({
         monday: fakeMonday({ listBoards: async () => [board('1'), board('2')] }),
         drive: fake.drive,
-        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: ['2'] },
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: ['2'], apiUsageAlerts: false },
       }),
     );
     expect(fake.filenames()).toEqual(['board-1.jsonl', 'manifest.json']);
@@ -399,7 +399,7 @@ describe('runBackup', () => {
       deps({
         monday: fakeMonday({ listBoards: async () => [board('1', 'Board 1', 'ws-1'), board('2', 'Board 2', 'ws-2')] }),
         drive: fake.drive,
-        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'] },
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'], apiUsageAlerts: false },
       }),
     );
     expect(fake.filenames()).toEqual(['board-1.jsonl', 'manifest.json']); // board 2 (ws-2) filtered out
@@ -411,7 +411,7 @@ describe('runBackup', () => {
       deps({
         monday: fakeMonday({ listBoards: async () => [board('1', 'Board 1', 'ws-1'), board('2', 'Board 2', null)] }),
         drive: fake.drive,
-        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'] },
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'], apiUsageAlerts: false },
       }),
     );
     expect(fake.filenames()).toEqual(['board-1.jsonl', 'manifest.json']);
@@ -423,7 +423,7 @@ describe('runBackup', () => {
       deps({
         monday: fakeMonday({ listDocs: async () => [doc('d1', 'Doc 1', 'ws-1'), doc('d2', 'Doc 2', 'ws-2')] }),
         drive: fake.drive,
-        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'] },
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: ['ws-1'], apiUsageAlerts: false },
       }),
     );
     expect(fake.filenames()).toEqual(['doc-d1.jsonl', 'manifest.json']); // doc d2 (ws-2) filtered out
@@ -438,7 +438,7 @@ describe('runBackup', () => {
           listDocs: async () => [doc('d1', 'Doc 1', 'ws-1'), doc('d2', 'Doc 2', null)],
         }),
         drive: fake.drive,
-        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: [] },
+        config: { destinationParentFolderId: 'parent-1', excludeBoardIds: [], workspaceIds: [], apiUsageAlerts: false },
       }),
     );
     expect(fake.filenames()).toEqual(['board-1.jsonl', 'board-2.jsonl', 'doc-d1.jsonl', 'doc-d2.jsonl', 'manifest.json']);

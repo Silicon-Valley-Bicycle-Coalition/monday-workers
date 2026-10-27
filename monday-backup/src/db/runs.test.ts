@@ -115,4 +115,12 @@ describe('D1SnapshotRunStore watchdog queries', () => {
     await store.recordStaleAlert('2026-08-25T09:00:00.000Z');
     expect(await store.lastStaleAlertAt()).toBe('2026-08-25T09:00:00.000Z');
   });
+
+  it('round-trips the last usage alert, null until one is recorded', async () => {
+    const store = new D1SnapshotRunStore(env.DB);
+    expect(await store.lastUsageAlert()).toBeNull();
+    await store.recordUsageAlert('2026-10-27', 50);
+    await store.recordUsageAlert('2026-10-27', 80);
+    expect(await store.lastUsageAlert()).toEqual({ day: '2026-10-27', level: 80 });
+  });
 });
