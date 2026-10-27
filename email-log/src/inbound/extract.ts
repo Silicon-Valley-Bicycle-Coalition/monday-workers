@@ -3,8 +3,9 @@ import type { EmailLogConfig } from '../types';
 import { bodyText, rawText } from './body';
 import type { DedupeSource } from './dedupe';
 import { parseForwardBlock } from './forwardBlock';
+import type { WriteStamp } from '../flags';
 
-export interface LogQueueMessage {
+export interface LogQueueMessage extends WriteStamp {
   messageIdHash: string;
   kind: 'bcc' | 'forward';
   staffEmail: string;

@@ -1,6 +1,6 @@
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
-import { processLogBatch, type ConsumerDeps } from './consumer/processBatch';
+import { consumeLogBatch, type ConsumerDeps } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { D1LoggedMessageStore } from './db/loggedMessages';
 import { CloudflareReplySender } from './email/reply';
@@ -10,11 +10,22 @@ import { createConfigSelector, environmentOf } from './environment';
 import { handleEmail } from './inbound/handleEmail';
 import type { LogQueueMessage } from './inbound/extract';
 import { HttpMondayClient } from './monday/client';
+import { readLogLevel, readWriteMode } from './flags';
+import { EMAIL_LOG_PII_KEYS, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts.
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
+
+const WORKER = 'email-log';
+
+// The write switch's mode and log level, read once per queue batch (never cached per isolate, so a
+// flip reaches the next batch within the KV edge cache's 30 s).
+async function skipContext(env: Env): Promise<BatchSkipContext> {
+  const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: EMAIL_LOG_PII_KEYS };
+}
 
 // Queue names from wrangler.jsonc, matched exactly: the sandbox DLQ ("…-sandbox-dlq") doesn't end
 // in "-sandbox", so stripping a suffix can't route it.
@@ -49,6 +60,7 @@ export default {
       store: new D1LoggedMessageStore(env.DB),
       queue: env.WRITE_QUEUE,
       now: () => new Date(),
+      writeMode: () => readWriteMode(env, WORKER),
     });
   },
 
@@ -64,6 +76,6 @@ export default {
       now: () => new Date(),
     };
     if (consumer === 'dead-letter') await processDeadLetters([...batch.messages], deps);
-    else await processLogBatch([...batch.messages], deps);
+    else await consumeLogBatch([...batch.messages], deps, await skipContext(env));
   },
 };

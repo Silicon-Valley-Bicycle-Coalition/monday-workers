@@ -1,9 +1,11 @@
 import { env } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { D1LoggedMessageStore } from '../db/loggedMessages';
+import { DROPPED_ERROR } from '../writeSwitch';
 import { testConfig } from '../test/testConfig';
 import type { EmailLogConfig } from '../types';
 import { handleEmail } from './handleEmail';
+import type { WriteMode } from '../flags';
 import bccNew from '../../test/fixtures/gmail-bcc-new.eml?raw';
 import dkimFail from '../../test/fixtures/dkim-fail.eml?raw';
 import forward from '../../test/fixtures/gmail-forward.eml?raw';
@@ -43,10 +45,13 @@ describe('handleEmail', () => {
     store: new D1LoggedMessageStore(env.DB),
     queue: { send } as unknown as Queue<never>,
     now: () => NOW,
+    writeMode: async (): Promise<WriteMode> => mode,
   });
+  let mode: WriteMode;
   let logSpy: MockInstance<typeof console.log>;
 
   beforeEach(async () => {
+    mode = 'on';
     send.mockReset().mockResolvedValue(undefined);
     await env.DB.prepare('DELETE FROM logged_messages').run();
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -108,6 +113,44 @@ describe('handleEmail', () => {
     const { body } = send.mock.calls[0]![0] as { body: string };
     expect(body.length).toBeLessThanOrEqual(config.mail.bodyMaxChars);
     expect(body.endsWith('… [truncated]')).toBe(true);
+  });
+
+  it('stamps nothing under on, hold and unknown', async () => {
+    for (const m of ['on', 'hold', 'unknown'] as const) {
+      mode = m;
+      send.mockClear();
+      await env.DB.prepare('DELETE FROM logged_messages').run();
+      await handleEmail(fakeMessage(bccNew).message, deps());
+      expect(send.mock.calls[0]![0]).not.toHaveProperty('writeStamp');
+      const row = await env.DB.prepare('SELECT status FROM logged_messages').first<{ status: string }>();
+      expect(row?.status).toBe('queued');
+    }
+  });
+
+  it('under off claims the row, enqueues a message stamped dropped, and closes the row out as failed so a re-send is not a duplicate', async () => {
+    mode = 'off';
+    await handleEmail(fakeMessage(bccNew).message, deps());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({ kind: 'bcc', writeStamp: 'dropped' });
+    const row = await env.DB.prepare('SELECT status, error FROM logged_messages').first<{ status: string; error: string }>();
+    expect(row).toEqual({ status: 'failed', error: DROPPED_ERROR });
+    // Staff re-send once the switch is on: claimed again and enqueued live.
+    mode = 'on';
+    await handleEmail(fakeMessage(bccNew).message, deps());
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1]![0]).not.toHaveProperty('writeStamp');
+  });
+
+  it('a failure closing the row out under off is logged, not thrown: the dropped message is already queued', async () => {
+    mode = 'off';
+    const store = new D1LoggedMessageStore(env.DB);
+    vi.spyOn(store, 'markFailed').mockRejectedValueOnce(new Error('D1 unavailable'));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await handleEmail(fakeMessage(bccNew).message, { ...deps(), store });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(String(errSpy.mock.calls[0]![0])).toContain('D1 unavailable');
+    errSpy.mockRestore();
   });
 
   it('marks the ledger failed and rethrows when the queue send fails', async () => {

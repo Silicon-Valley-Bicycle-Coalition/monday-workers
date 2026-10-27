@@ -5,12 +5,16 @@ import { authenticateSender } from './authenticate';
 import { messageIdHash } from './dedupe';
 import { extract, type LogQueueMessage } from './extract';
 import { errorText } from '../logSafe';
+import { stampFor, type WriteMode } from '../flags';
+import { DROPPED_ERROR } from '../writeSwitch';
 
 export interface HandleEmailDeps {
   config: EmailLogConfig;
   store: LoggedMessageStore;
   queue: Queue<LogQueueMessage>;
   now: () => Date;
+  // The write switch's mode, read once per message (src/flags.ts). Stamps the queued message.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // One structured line per message. Never an address, subject or body: only the outcome, a reason
@@ -59,8 +63,10 @@ export async function handleEmail(message: ForwardableEmailMessage, deps: Handle
     return;
   }
 
+  let mode: WriteMode;
   try {
-    await deps.queue.send({ ...extracted.message, messageIdHash: hash, staffEmail: auth.staffEmail });
+    mode = await deps.writeMode();
+    await deps.queue.send({ ...extracted.message, messageIdHash: hash, staffEmail: auth.staffEmail, ...stampFor(mode) });
   } catch (err) {
     // Rethrowing makes Email Routing answer with a temporary failure, so the sender's server retries.
     // A D1 error here must not replace the queue error: the row then stays 'queued' and a retry
@@ -71,6 +77,17 @@ export async function handleEmail(message: ForwardableEmailMessage, deps: Handle
       console.error(`email-log inbound: ${id} could not mark the row failed: ${errorText(markErr)}`);
     }
     throw err;
+  }
+  if (mode === 'off') {
+    // The message is stamped dropped, so it will never be written. Close the row out as failed
+    // (claim() re-opens only those) so a staff re-send once the switch is on is logged rather than
+    // swallowed as a duplicate. The consumer repeats this when it dry-runs the message, so a
+    // failure here is only logged.
+    try {
+      await deps.store.markFailed(hash, DROPPED_ERROR);
+    } catch (err) {
+      console.error(`email-log inbound: ${id} could not mark the dropped row: ${errorText(err)}`);
+    }
   }
   log('queued', { id, kind });
 }

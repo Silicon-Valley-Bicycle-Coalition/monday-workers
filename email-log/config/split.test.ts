@@ -98,6 +98,14 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect((wrangler.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
   });
 
+  it('has its own FLAGS KV namespace, never production’s', () => {
+    const prodKv = (wrangler.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    const sbKv = (sandboxEnv.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    expect(prodKv.id).toBeTruthy();
+    expect(sbKv.id).toBeTruthy();
+    expect(sbKv.id).not.toBe(prodKv.id);
+  });
+
   it('keeps the SANDBOX_EMAIL_SINK var equal to the only address the send_email binding allows', () => {
     const sink = (sandboxEnv.vars as Json).SANDBOX_EMAIL_SINK;
     const binding = (sandboxEnv.send_email as { allowed_destination_addresses?: string[] }[])[0]!;

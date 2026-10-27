@@ -8,6 +8,8 @@ import { buildActivity } from '../mapping/activity';
 import { matchAddresses } from '../matching/people';
 import type { MondayClient } from '../monday/client';
 import type { EmailLogConfig } from '../types';
+import { logDebug, messageDisposition, retryDelaySeconds } from '../flags';
+import { DROPPED_ERROR, dryRunDeps, type BatchSkipContext } from '../writeSwitch';
 
 // Copied from eventbrite-sync/src/consumer/processBatch.ts.
 export interface QueueMessageLike<T> {
@@ -18,18 +20,6 @@ export interface QueueMessageLike<T> {
   timestamp?: Date;
   ack(): void;
   retry(options?: { delaySeconds?: number }): void;
-}
-
-// Retry backoff (funraise-sync #25, same numbers): 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes
-// across wrangler.jsonc's max_retries of 3 — about 21 minutes of cover for a Monday blip — capped
-// at Queues' 12-hour maximum delay.
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
-
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export interface ConsumerDeps {
@@ -60,24 +50,58 @@ function activitiesBoard(config: EmailLogConfig): number {
 // Messages run one at a time: Monday's complexity budget is per-minute, and wrangler.jsonc's
 // max_concurrency of 1 already serializes batches.
 export async function processLogBatch(messages: QueueMessageLike<LogQueueMessage>[], deps: ConsumerDeps): Promise<void> {
+  for (const message of messages) await handleMessage(message, deps);
+}
+
+// The queue entry point for the write queue (index.ts): the write switch's mode, read once for the
+// batch, decides per message whether it writes (`on`, unstamped), dry-runs against recording
+// proxies (`off`, or stamped dropped by the inbound handler), or waits on the queue (`hold`,
+// `unknown`).
+export async function consumeLogBatch(messages: QueueMessageLike<LogQueueMessage>[], deps: ConsumerDeps, gate: BatchSkipContext): Promise<void> {
   for (const message of messages) {
-    const hash = message.body.messageIdHash;
-    try {
-      await processOne(message.body, deps);
-      message.ack();
-    } catch (err) {
-      const error = errorText(err);
-      console.error(`email-log consumer: ${shortId(hash)} failed (attempt ${message.attempts ?? 1}): ${error}`);
-      // Bookkeeping only: a D1 error here must not take the retry decision down with it. Never
-      // markFailed here: the message is still live in the queue, and a 'failed' row would let a
-      // redelivered inbound copy claim and enqueue a second one. Only the DLQ sets 'failed'.
-      try {
-        await deps.store.recordError(hash, error);
-      } catch (recordErr) {
-        console.error(`email-log consumer: ${shortId(hash)} could not record the failure: ${errorText(recordErr)}`);
-      }
+    const disposition = messageDisposition(gate.mode, message.body);
+    if (disposition === 'retry') {
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+    } else if (disposition === 'write') {
+      await handleMessage(message, deps);
+    } else {
+      const hash = message.body.messageIdHash;
+      const ctx = { ...gate, deliveryId: shortId(hash) };
+      // The one ledger write a dry run makes: close the row out as failed (dropped) so a staff
+      // re-send after the switch is on is claimed and logged, not swallowed as a duplicate. A
+      // 'logged' row is never downgraded (markFailed's own guard).
+      try {
+        await deps.store.markFailed(hash, DROPPED_ERROR);
+      } catch (err) {
+        // A D1 failure must not escape the batch (every unacked message would redeliver at once):
+        // back this one off like any other failure and rehearse it next time.
+        console.error(`email-log consumer: ${shortId(hash)} could not record the dropped status: ${errorText(err)}`);
+        message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+        continue;
+      }
+      logDebug(ctx, 'message', message.body);
+      await handleMessage(message, dryRunDeps(deps, ctx));
     }
+  }
+}
+
+async function handleMessage(message: QueueMessageLike<LogQueueMessage>, deps: ConsumerDeps): Promise<void> {
+  const hash = message.body.messageIdHash;
+  try {
+    await processOne(message.body, deps);
+    message.ack();
+  } catch (err) {
+    const error = errorText(err);
+    console.error(`email-log consumer: ${shortId(hash)} failed (attempt ${message.attempts ?? 1}): ${error}`);
+    // Bookkeeping only: a D1 error here must not take the retry decision down with it. Never
+    // markFailed here: the message is still live in the queue, and a 'failed' row would let a
+    // redelivered inbound copy claim and enqueue a second one. Only the DLQ sets 'failed'.
+    try {
+      await deps.store.recordError(hash, error);
+    } catch (recordErr) {
+      console.error(`email-log consumer: ${shortId(hash)} could not record the failure: ${errorText(recordErr)}`);
+    }
+    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 
