@@ -8,6 +8,8 @@ import type { QueueMessageLike } from './outbound';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
 import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client';
 import { errorText, memberId, redactEmails } from '../logSafe';
+import { messageDisposition, retryDelaySeconds as baseRetryDelaySeconds } from '../flags';
+import { dryRunInboundDeps, type BatchSkipContext } from '../writeSwitch';
 
 export interface InboundConsumerDeps {
   pendingStore: PendingInboundStore;
@@ -21,29 +23,53 @@ export async function processInboundBatch(
   messages: readonly QueueMessageLike<InboundSyncMessage>[],
   deps: InboundConsumerDeps,
 ): Promise<void> {
+  for (const message of messages) await handleMessage(message, deps);
+}
+
+// The queue entry point (index.ts); same dispositions as consumeOutboundBatch. A dry run's inline
+// reconcile (below) uses the proxied deps, so it takes its message's disposition.
+export async function consumeInboundBatch(
+  messages: readonly QueueMessageLike<InboundSyncMessage>[],
+  deps: InboundConsumerDeps,
+  gate: BatchSkipContext,
+): Promise<void> {
   for (const message of messages) {
-    const { email } = message.body;
+    const disposition = messageDisposition(gate.mode, message.body);
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: baseRetryDelaySeconds(message.attempts) });
+    } else if (disposition === 'write') {
+      await handleMessage(message, deps);
+    } else {
+      // The message body carries an address; the skip lines name the member by hash instead.
+      const dry = dryRunInboundDeps(deps, { ...gate, deliveryId: redactEmails(message.body.email) });
+      await dry.pendingStore.updateStatus(message.body.email, 'dropped');
+      await handleMessage(message, dry);
+    }
+  }
+}
+
+async function handleMessage(message: QueueMessageLike<InboundSyncMessage>, deps: InboundConsumerDeps): Promise<void> {
+  const { email } = message.body;
+  try {
+    await processOne(email, deps);
+    message.ack();
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`mailchimp-sync inbound consumer: failed to process member ${memberId(email)}: ${redactEmails(errMsg)}`);
+    if (err instanceof MailchimpAuthError) console.error(credentialsRejectedLog('inbound'));
+    // Recording the failure is bookkeeping; a D1 error here must not skip the delayed retry.
     try {
-      await processOne(email, deps);
+      await deps.pendingStore.updateStatus(email, 'failed', errMsg);
+    } catch (recordErr) {
+      console.error(`mailchimp-sync inbound consumer: could not record failure for member ${memberId(email)}: ${errorText(recordErr)}`);
+    }
+    // Same rule as the outbound consumer: a permanent (non-auth 4xx) Mailchimp error fails
+    // identically on every retry, so ack it — the row keeps the error. MailchimpAuthError is a
+    // MailchimpTransientError, never permanent, so a rejected key still retries and dead-letters.
+    if (err instanceof MailchimpPermanentError) {
       message.ack();
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`mailchimp-sync inbound consumer: failed to process member ${memberId(email)}: ${redactEmails(errMsg)}`);
-      if (err instanceof MailchimpAuthError) console.error(credentialsRejectedLog('inbound'));
-      // Recording the failure is bookkeeping; a D1 error here must not skip the delayed retry.
-      try {
-        await deps.pendingStore.updateStatus(email, 'failed', errMsg);
-      } catch (recordErr) {
-        console.error(`mailchimp-sync inbound consumer: could not record failure for member ${memberId(email)}: ${errorText(recordErr)}`);
-      }
-      // Same rule as the outbound consumer: a permanent (non-auth 4xx) Mailchimp error fails
-      // identically on every retry, so ack it — the row keeps the error. MailchimpAuthError is a
-      // MailchimpTransientError, never permanent, so a rejected key still retries and dead-letters.
-      if (err instanceof MailchimpPermanentError) {
-        message.ack();
-      } else {
-        message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
-      }
+    } else {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts, err) });
     }
   }
 }

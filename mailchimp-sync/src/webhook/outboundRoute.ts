@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { PendingOutboundStore } from '../db/pendingOutbound';
 import { validateMondayWebhookBody } from './validateMonday';
 import type { Config, OutboundSyncMessage } from '../types';
+import { stampFor, type WriteMode } from '../flags';
 
 export interface OutboundQueueLike {
   send(message: OutboundSyncMessage): Promise<void>;
@@ -18,6 +19,10 @@ export interface OutboundAppDeps {
   // consumer writes to config.monday.columns.mailchimpCampaigns on this same Donors board,
   // which would otherwise re-trigger this webhook and risk a feedback loop with Mailchimp.
   config: Config;
+  // The write switch (flags.ts readWriteMode), read once per delivery that gets enqueued. Ingest
+  // is never gated: under `off` the message is stamped dropped, so the consumer dry-runs it even if
+  // writes are back `on` by the time it is consumed.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // Ingest-and-enqueue only — resolving the Donor's current columns and writing to
@@ -65,9 +70,10 @@ export function createOutboundApp(deps: OutboundAppDeps) {
 
     await deps.pendingStore.upsertPending(donorEvent.donorItemId, new Date().toISOString());
 
+    const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ donorItemId: donorEvent.donorItemId });
-      await deps.pendingStore.updateStatus(donorEvent.donorItemId, 'queued');
+      await deps.queue.send({ donorItemId: donorEvent.donorItemId, ...stamp });
+      await deps.pendingStore.updateStatus(donorEvent.donorItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`mailchimp-sync outbound webhook: enqueue failed for donor "${donorEvent.donorItemId}": ${errMsg}`);

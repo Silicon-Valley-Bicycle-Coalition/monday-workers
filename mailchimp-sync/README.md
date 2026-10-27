@@ -337,6 +337,41 @@ dashboard refuses two connections on one root directory, fall back to the
 `deploy-sandbox:mailchimp-sync` job in `../.gitlab-ci.yml` — same command, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so it stays inert until that variable is set.
 
+## Deploying: the write switch
+
+Every Mailchimp write (`updateMember`, `unsubscribeMember`), every Monday write (the connect
+column, Campaigns-board create/rename/archive) and every D1 bookkeeping write a consumer or the
+daily reconcile cron makes is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`),
+read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
+namespaces exist):
+
+- `mailchimp-sync:writes` — `on` writes normally; `hold` writes nothing, keeps messages on the
+  queues (retrying at 1 minute doubling to an hour) and skips the reconcile cron; `off` runs the
+  consumers and the cron against recording proxies, logging one `"writeSwitch":"skipped"` line
+  per would-be write and acking. **A missing key means `off`**; a KV read error behaves like
+  hold. Inbound skip lines name the member by `<member HASH>`, never the address.
+- `mailchimp-sync:log` — `debug` adds redacted payloads to those lines.
+
+Both webhooks keep ingesting in every mode: under `off` the message is stamped dropped (so it is
+never written even if the switch is `on` by the time it is consumed) and its pending row is
+recorded `dropped`, as is any row a dry run consumes. Nothing re-enqueues pending rows
+automatically (the only replay path is the manual `scripts/redrive-dead-lettered.mjs`, which
+selects dead-lettered `failed` rows), so a `dropped` row is never revived. A message queued before
+this build has no stamp and is written under `on`. The dead-letter consumers and their Slack alert
+run in every mode. Both main queues now retry 100 times (1 minute doubling to an hour, raised to a
+Retry-After; about four days) before dead-lettering. Set the switch with the operator CLI at the
+repo root, never by hand — `writes hold`/`on` also pauses and resumes the queues:
+
+```sh
+node scripts/flags.mjs mailchimp-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything.
+
 ## Local development
 
 - `npm install` — install dependencies

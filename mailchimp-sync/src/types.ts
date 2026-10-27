@@ -1,3 +1,5 @@
+import type { WriteStamp } from './flags';
+
 export interface MailchimpMergeFieldsConfig {
   memberSince: string;
   memberUntil: string;
@@ -64,21 +66,24 @@ export interface Env {
   SLACK_WEBHOOK_URL?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
+  // The write switch (src/flags.ts): holds `mailchimp-sync:writes` and `mailchimp-sync:log`.
+  FLAGS?: KVNamespace;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }
 
-export interface OutboundSyncMessage {
+export interface OutboundSyncMessage extends WriteStamp {
   donorItemId: string;
 }
 
-export interface InboundSyncMessage {
+export interface InboundSyncMessage extends WriteStamp {
   email: string;
 }
 
 // 'skipped' = processed to completion but no Monday write happened (e.g. no Donor
 // item matches the email) — distinct from 'written' so misses stay countable.
-export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed';
+// 'dropped' = ingested while writes were `off`: closed out so nothing can revive it as live work.
+export type PendingStatus = 'received' | 'queued' | 'written' | 'skipped' | 'failed' | 'dropped';
 
 // One pending_outbound_syncs / pending_inbound_syncs row as the dead-letter consumer reads it
 // (src/consumer/deadLetters.ts) — the key column is left out because the caller already has it.

@@ -121,6 +121,14 @@ describe('wrangler.jsonc env.sandbox', () => {
     }
   });
 
+  it('has its own FLAGS KV namespace, never production’s', () => {
+    const prodKv = (wrangler.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    const sbKv = (sandboxEnv.kv_namespaces as Json[]).find((k) => k.binding === 'FLAGS')!;
+    expect(prodKv.id).toBeTruthy();
+    expect(sbKv.id).toBeTruthy();
+    expect(sbKv.id).not.toBe(prodKv.id);
+  });
+
   it('has its own D1 database, never production’s', () => {
     const prodDb = (wrangler.d1_databases as Json[])[0]!;
     const sbDb = (sandboxEnv.d1_databases as Json[])[0]!;

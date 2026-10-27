@@ -250,8 +250,8 @@ describe('processInboundBatch', () => {
     }
 
     it('backs off exponentially by delivery attempt', async () => {
-      expect(await retryFor(new Error('x'), 2)).toHaveBeenCalledWith({ delaySeconds: 240 });
-      expect(await retryFor(new Error('x'), 3)).toHaveBeenCalledWith({ delaySeconds: 960 });
+      expect(await retryFor(new Error('x'), 2)).toHaveBeenCalledWith({ delaySeconds: 120 });
+      expect(await retryFor(new Error('x'), 3)).toHaveBeenCalledWith({ delaySeconds: 240 });
     });
 
     it("waits at least Monday's retry_in_seconds", async () => {
@@ -290,7 +290,7 @@ describe('processInboundBatch', () => {
     it('still retries with backoff when recording the failure in D1 throws', async () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
-      expect(await retryFor(new Error('monday down'), 2, pendingStore)).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(await retryFor(new Error('monday down'), 2, pendingStore)).toHaveBeenCalledWith({ delaySeconds: 120 });
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
       errorSpy.mockRestore();
     });
