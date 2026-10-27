@@ -12,7 +12,7 @@ import { exactStaffMatcher, parseMondayUsers, staffMatcher } from './staff.js';
 import type { ItemPayload, TransformReport } from './types.js';
 import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './membership.js';
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
-  soleContactAccountIds,
+  rosterContactIds, soleContactAccountIds,
   type InclusionInput } from './people.js';
 import { donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
@@ -148,6 +148,10 @@ export async function runTransform(args: string[]): Promise<number> {
     affiliatedIds: new Set(affiliations.map((a) => a['npe5__Contact__c'] as string).filter(Boolean)),
     recentActivityIds: new Set(tasksRecent.map((t) => t['WhoId'] as string).filter(Boolean)),
   };
+  // Rostered volunteers (optional artifact): Contact ids from the board-linking survey's Volunteer
+  // Roster rows count toward inclusion, so the roster's Person links resolve at cutover.
+  const rosterPath = dataPath('enrich', 'roster-contacts.txt');
+  if (existsSync(rosterPath)) inc.rosterIds = rosterContactIds(readFileSync(rosterPath, 'utf8'), contacts);
 
   // ---- Affiliations: one item per person-at-organization tenure (spec: affiliation model) ----
   const orgAffiliations = affiliations.filter((a) =>

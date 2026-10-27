@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds, soleContactAccountIds,
+import { classifyContact, contactToPayload, accountToPayload, personNamedAccountIds, rosterContactIds,
+  soleContactAccountIds,
   type InclusionInput } from './people.js';
 import type { MemberSummary } from './membership.js';
 import { setOwnerMatcher, setStaffMatcher } from './fields.js';
@@ -37,6 +38,23 @@ describe('classifyContact', () => {
     inc.memberSummaries.set('c2', { status: 'Lapsed', tier: 'Member', sinceISO: '2001-01-01', untilISO: '2002-01-01' });
     expect(classifyContact({ Id: 'c1' }, inc, SINCE)).toBe('people-live');
     expect(classifyContact({ Id: 'c2' }, inc, SINCE)).toBe('people-historical');
+  });
+  it('includes rostered volunteers as live, with no gift or check-in', () => {
+    const inc = emptyInc(); inc.rosterIds = new Set(['c1']);
+    expect(classifyContact({ Id: 'c1' }, inc, SINCE)).toBe('people-live');
+    expect(classifyContact({ Id: 'c2' }, inc, SINCE)).toBeNull();
+  });
+});
+
+describe('rosterContactIds', () => {
+  const contacts = [{ Id: '003i000000AbCdEAAV' }, { Id: '003i000000XyZwQAAV' }];
+  it('resolves 15- and 18-character ids to the extract\'s 18-character Contact ids', () => {
+    expect(rosterContactIds('003i000000AbCdE\n003i000000XyZwQAAV\n', contacts))
+      .toEqual(new Set(['003i000000AbCdEAAV', '003i000000XyZwQAAV']));
+  });
+  it('skips blank lines, # comments and ids not in the extract', () => {
+    expect(rosterContactIds('# Volunteer Roster\n\n003i000000AbCdE  # Ada\n003i000000NoNeXAAV\n', contacts))
+      .toEqual(new Set(['003i000000AbCdEAAV']));
   });
 });
 
