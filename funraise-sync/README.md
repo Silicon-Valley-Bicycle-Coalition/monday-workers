@@ -461,10 +461,13 @@ It pages through the Donations board (`monday.boards["donations:live"]`, Funrais
 item. Archived items aren't returned by the API, so it shares adopt-before-create's blind spot —
 which is why the consumer flags old gifts instead of creating them.
 
-**Open (not decided):** which control pauses the Funraise → Salesforce sync after Gate C is not
-written down anywhere (svbc-monday-migration docs/23). Funraise's managed package has no
-documented off switch in this repo; someone with Funraise/Salesforce admin access has to name the
-control and the runbook has to say who flips it and when.
+**Pausing Funraise → Salesforce after Gate C:** Funraise's managed package has no off switch inside
+Salesforce (no custom setting, no scheduled job). Funraise's servers push each record over the
+Salesforce API through the `Funraise` connected app, on one staff user's OAuth token. Pause it in
+Salesforce Setup → Connected Apps OAuth Usage → `Funraise` → **Block** (Unblock reverses it), and
+disconnect later by revoking that token. Who flips it and when, and how to confirm the paused
+state, are in the private runbook (svbc-monday-migration `docs/23`, Salesforce after Gate C,
+step 4).
 
 ## Resetting for new board ids
 
