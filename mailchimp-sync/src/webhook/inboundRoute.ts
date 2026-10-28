@@ -4,6 +4,7 @@ import { validateMailchimpWebhookBody } from './validateMailchimp';
 import type { InboundSyncMessage } from '../types';
 import { memberId, redactEmails } from '../logSafe';
 import { stampFor, type WriteMode } from '../flags';
+import { secretsMatch } from '../secret';
 
 export interface InboundQueueLike {
   send(message: InboundSyncMessage): Promise<void>;
@@ -27,7 +28,7 @@ export function createInboundApp(deps: InboundAppDeps) {
   app.get('/webhooks/mailchimp/audience', (c) => c.json({ ok: true }));
 
   app.post('/webhooks/mailchimp/audience', async (c) => {
-    if (!deps.webhookSecret || c.req.query('secret') !== deps.webhookSecret) {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 
