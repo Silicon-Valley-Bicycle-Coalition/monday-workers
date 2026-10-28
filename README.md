@@ -381,6 +381,12 @@ it:** if Cloudflare refuses two connections on one root directory, `.gitlab-ci.y
 `deploy-sandbox:<worker>` jobs are the fallback — same deploy command, run on `main`, gated on a
 `CLOUDFLARE_API_TOKEN` CI variable so they stay inert until that variable is actually set (so
 turning on the fallback never risks a double deploy alongside a working dashboard connection).
+When adding it (#58): mark it **Protected, Masked and Hidden** — Protected is what keeps it out of
+merge-request pipelines, which run unreviewed branch code — and mint it in Cloudflare with only
+*Workers Scripts: Edit* (plus D1/Queues/KV edit only if a deploy needs them) on SVBC's account,
+never a broad account token. Keep `main` protected (Maintainers only) and leave **Run pipelines in
+the parent project for fork MRs** off. The deploy jobs declare a `sandbox` environment, so a
+maintainer can also require approval under Settings > CI/CD > Protected environments.
 
 **Current state (verified 2026-09-28) — merging deploys only `svbc-calendars`.** All eight
 provisioned sandbox Workers were last hand-deployed from `main` on 2026-10-09 (none had pending D1
