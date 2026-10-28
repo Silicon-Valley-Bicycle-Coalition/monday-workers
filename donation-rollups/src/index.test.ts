@@ -41,7 +41,7 @@ function donationsWebhook(pulseId: number, secret: string | null = SECRET) {
   return new Request(`http://worker.test/webhooks/monday/donations${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event: { type: 'create_pulse', pulseId, boardId: 18431577310 } }),
+    body: JSON.stringify({ event: { type: 'create_pulse', pulseId, boardId: 18437342657 } }),
   });
 }
 
@@ -66,7 +66,7 @@ describe('request-time config selection', () => {
     const res = await worker.fetch(donationsWebhook(910002), envFor({}), ctx);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, ignored: expect.stringContaining('18431577310') });
+    expect(await res.json()).toMatchObject({ ok: true, ignored: expect.stringContaining('18437342657') });
     const row = await env.DB.prepare(`SELECT status FROM pending_recomputes WHERE donation_item_id = '910002'`).first();
     expect(row).toBeNull();
   });

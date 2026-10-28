@@ -3,152 +3,200 @@
     "apiUrl": "https://api.monday.com/v2",
     "accountUrl": "https://bikesiliconvalley.monday.com"
   },
-  "fiscalYear": { "startMonth": 7, "timeZone": "America/Los_Angeles" },
+  "fiscalYear": {
+    "startMonth": 7,
+    "timeZone": "America/Los_Angeles"
+  },
   "donationRollups": {
     "receivedStatusLabel": "Received",
     "donationBoards": [
       {
-        "boardId": 18431577310,
+        "boardId": 18437342657,
         "columns": {
-          "donorLink": "board_relation_mm795r2d",
-          "amount": "numeric_mm79nz8b",
-          "date": "date_mm7938jk",
-          "status": "color_mm79q3b3",
-          "fiscalYear": "text_mm7973ah",
-          "giftType": "text_mm79fzs3",
-          "termStart": "date_mm79pwsn",
-          "termEnd": "date_mm79g18g",
-          "membershipType": "text_mm79h753",
-          "actingForLink": "board_relation_mm79313",
+          "donorLink": "board_relation_mm8hhdk7",
+          "amount": "numeric_mm8hn1b2",
+          "date": "date_mm8hfsvm",
+          "status": "color_mm8hshet",
+          "fiscalYear": "text_mm8hpk76",
+          "giftType": "text_mm8h238c",
+          "termStart": "date_mm8hr9xt",
+          "termEnd": "date_mm8hkz47",
+          "membershipType": "text_mm8hgq4f",
+          "actingForLink": "board_relation_mm8h44js",
           "classification": {
-            "fundingStream": "color_mm7nwk15",
-            "giftSize": "color_mm7n36b1",
-            "fiscalQuarter": "color_mm7nwr75",
-            "giftFiscalYear": "color_mm7narkn"
+            "fundingStream": "color_mm8jx65t",
+            "giftSize": "color_mm8j5vap",
+            "fiscalQuarter": "color_mm8jqpx0",
+            "giftFiscalYear": "color_mm8j5her"
           }
         }
       }
     ],
     "ownerColumnsByBoard": {
-      "18431577220": {
-        "giftLedgerJson": "text_mm7daf59",
-        "lifetimeGiving": "numeric_mm79zsgp",
-        "giftCount": "numeric_mm796zp8",
-        "firstGift": "date_mm79tspy",
-        "thisYearAmount": "numeric_mm7d27t9",
-        "thisYearCount": "numeric_mm7d6msd",
-        "lastYearAmount": "numeric_mm7dwgqp",
-        "lastYearCount": "numeric_mm7dmngs",
-        "largestGift": "numeric_mm7dbfp3",
-        "smallestGift": "numeric_mm7d49vj",
-        "averageGift": "numeric_mm7da5p0",
-        "lastGiftDate": "date_mm7dkxka",
-        "lastGiftAmount": "numeric_mm7dajjw",
-        "donorLevel": "color_mm7n1mar",
-        "organizationalGiving": "numeric_mm79238a",
+      "18437342592": {
+        "giftLedgerJson": "text_mm8jkdvz",
+        "lifetimeGiving": "numeric_mm8h8f3t",
+        "giftCount": "numeric_mm8he4fz",
+        "firstGift": "date_mm8hg0j7",
+        "thisYearAmount": "numeric_mm8j96vf",
+        "thisYearCount": "numeric_mm8jnnz6",
+        "lastYearAmount": "numeric_mm8jesr3",
+        "lastYearCount": "numeric_mm8jrh5y",
+        "largestGift": "numeric_mm8jc1kg",
+        "smallestGift": "numeric_mm8j5dsz",
+        "averageGift": "numeric_mm8jdtsc",
+        "lastGiftDate": "date_mm8jhwag",
+        "lastGiftAmount": "numeric_mm8j2c4e",
+        "donorLevel": "color_mm8jzyzz",
+        "organizationalGiving": "numeric_mm8hwhmz",
         "membership": {
-          "status": "color_mm79yw6p",
-          "tier": "color_mm79baj4",
-          "since": "date_mm79y9fa",
-          "until": "date_mm79p82j",
-          "currentTermStart": "date_mm80ztb3",
-          "memberType": "color_mm80zk1q",
-          "lapseCount": "numeric_mm801yx0",
-          "lastLapsed": "date_mm80h0px"
+          "status": "color_mm8h207g",
+          "tier": "color_mm8hg8eh",
+          "since": "date_mm8h79b2",
+          "until": "date_mm8hx0b7",
+          "currentTermStart": "date_mm8j1t0r",
+          "memberType": "color_mm8jp69c",
+          "lapseCount": "numeric_mm8jqb5e",
+          "lastLapsed": "date_mm8jf03y"
         }
       },
-      "18431577228": {
-        "giftLedgerJson": "text_mm7dhpt",
-        "lifetimeGiving": "numeric_mm79v949",
-        "giftCount": "numeric_mm79y3wt",
-        "firstGift": "date_mm79jt8a",
-        "thisYearAmount": "numeric_mm7d2q7q",
-        "thisYearCount": "numeric_mm7dcvja",
-        "lastYearAmount": "numeric_mm7dpmep",
-        "lastYearCount": "numeric_mm7dmsyj",
-        "largestGift": "numeric_mm7dg705",
-        "smallestGift": "numeric_mm7de5g5",
-        "averageGift": "numeric_mm7d5zw9",
-        "lastGiftDate": "date_mm7dqtfe",
-        "lastGiftAmount": "numeric_mm7dsznf",
+      "18437342607": {
+        "giftLedgerJson": "text_mm8jepqy",
+        "lifetimeGiving": "numeric_mm8hc2f5",
+        "giftCount": "numeric_mm8h28k7",
+        "firstGift": "date_mm8h87ye",
+        "thisYearAmount": "numeric_mm8jb2wk",
+        "thisYearCount": "numeric_mm8jk1g5",
+        "lastYearAmount": "numeric_mm8j8gpt",
+        "lastYearCount": "numeric_mm8jfwmg",
+        "largestGift": "numeric_mm8j6sqk",
+        "smallestGift": "numeric_mm8jg85j",
+        "averageGift": "numeric_mm8jkv9w",
+        "lastGiftDate": "date_mm8j6vne",
+        "lastGiftAmount": "numeric_mm8jyxtc",
+        "donorLevel": "color_mm8j5gdr",
+        "organizationalGiving": "numeric_mm8jewwg",
         "membership": {
-          "status": "color_mm799gd3",
-          "tier": "color_mm798xgf",
-          "since": "date_mm79x5wg",
-          "until": "date_mm79zek4",
-          "currentTermStart": "date_mm80gwy0",
-          "memberType": "color_mm80pyg6",
-          "lapseCount": "numeric_mm80v5j3",
-          "lastLapsed": "date_mm801bc6"
+          "status": "color_mm8hm432",
+          "tier": "color_mm8h70wm",
+          "since": "date_mm8hpxph",
+          "until": "date_mm8hz9j9",
+          "currentTermStart": "date_mm8jtxd2",
+          "memberType": "color_mm8jrb2q",
+          "lapseCount": "numeric_mm8jdtew",
+          "lastLapsed": "date_mm8jn8te"
         }
       },
-      "18431577213": {
-        "giftLedgerJson": "text_mm7dqxc",
-        "lifetimeGiving": "numeric_mm79jake",
-        "giftCount": "numeric_mm793dvd",
-        "firstGift": "date_mm79qzrw",
-        "thisYearAmount": "numeric_mm7das9k",
-        "thisYearCount": "numeric_mm7d4e4c",
-        "lastYearAmount": "numeric_mm7d38va",
-        "lastYearCount": "numeric_mm7d9rmr",
-        "largestGift": "numeric_mm7d3nkk",
-        "smallestGift": "numeric_mm7d1kby",
-        "averageGift": "numeric_mm7dre01",
-        "lastGiftDate": "date_mm7dejcm",
-        "lastGiftAmount": "numeric_mm7dzftz",
-        "donorLevel": "color_mm7nn4pr"
+      "18437342579": {
+        "giftLedgerJson": "text_mm8j9adj",
+        "lifetimeGiving": "numeric_mm8hsgv5",
+        "giftCount": "numeric_mm8hpncm",
+        "firstGift": "date_mm8h7x55",
+        "thisYearAmount": "numeric_mm8j6xr7",
+        "thisYearCount": "numeric_mm8j93te",
+        "lastYearAmount": "numeric_mm8jyymd",
+        "lastYearCount": "numeric_mm8jp0rg",
+        "largestGift": "numeric_mm8j2c63",
+        "smallestGift": "numeric_mm8jrc40",
+        "averageGift": "numeric_mm8jvs32",
+        "lastGiftDate": "date_mm8j4sfg",
+        "lastGiftAmount": "numeric_mm8jyb6b",
+        "donorLevel": "color_mm8jfxxv"
       }
     },
     "donorLevel": {
       "leadershipLifetimeCents": 500000,
       "majorLifetimeCents": 50000,
       "majorLargestCents": 20000,
-      "labels": { "leadership": "Leadership", "major": "Major", "donor": "Donor" }
+      "labels": {
+        "leadership": "Leadership",
+        "major": "Major",
+        "donor": "Donor"
+      }
     },
     "membership": {
       "fromISO": "2026-10-01",
-      "eligibleGiftTypes": ["Donation"],
+      "eligibleGiftTypes": [
+        "Donation"
+      ],
       "minAmountCents": 100,
       "termMonths": 13,
       "lifetimeThresholdCents": 100000,
-      "statusLabels": { "active": "Active", "lapsed": "Lapsed" },
-      "tierLabels": { "member": "Member", "lifetime": "Lifetime" },
-      "typeLabels": { "new": "New", "continuing": "Continuing", "lapsedRenewal": "Lapsed renewal", "lifetime": "Lifetime" }
+      "statusLabels": {
+        "active": "Active",
+        "lapsed": "Lapsed"
+      },
+      "tierLabels": {
+        "member": "Member",
+        "lifetime": "Lifetime"
+      },
+      "typeLabels": {
+        "new": "New",
+        "continuing": "Continuing",
+        "lapsedRenewal": "Lapsed renewal",
+        "lifetime": "Lifetime"
+      }
     },
-    "volunteerBoards": [{
-      "boardId": 18431577302,
-      "columns": { "attendee": "board_relation_mm794v4j", "event": "board_relation_mm79jqs7", "attendance": "color_mm79pht5", "role": "color_mm79smj", "hours": "numeric_mm80asy5" },
-      "eventBoard": { "boardId": 18431577282, "columns": { "start": "date_mm79ek6s" } },
-      "volunteerRoleLabels": ["Volunteer"],
-      "countedAttendanceLabels": ["Attended"]
-    }],
-    "historicalVolunteerBoards": [{
-      "boardId": 18431577321,
-      "columns": { "volunteer": "board_relation_mm79gsmx", "date": "date_mm79agc0", "hours": "numeric_mm794ggj", "status": "color_mm79bhta" },
-      "countedStatusLabels": ["Completed"]
-    }]
+    "volunteerBoards": [
+      {
+        "boardId": 18437342649,
+        "columns": {
+          "attendee": "board_relation_mm8hntry",
+          "event": "board_relation_mm8hn2w",
+          "attendance": "color_mm8hbkcq",
+          "role": "color_mm8h1vf4",
+          "hours": "numeric_mm8jp64x"
+        },
+        "eventBoard": {
+          "boardId": 18437342639,
+          "columns": {
+            "start": "date_mm8hmx37"
+          }
+        },
+        "volunteerRoleLabels": [
+          "Volunteer"
+        ],
+        "countedAttendanceLabels": [
+          "Attended"
+        ]
+      }
+    ],
+    "historicalVolunteerBoards": [
+      {
+        "boardId": 18437342662,
+        "columns": {
+          "volunteer": "board_relation_mm8hymp1",
+          "date": "date_mm8h5rf2",
+          "hours": "numeric_mm8hrcbb",
+          "status": "color_mm8hc3n7"
+        },
+        "countedStatusLabels": [
+          "Completed"
+        ]
+      }
+    ]
   },
   "custodian": {
     "activeFiscalYears": 2,
-    "workspaceId": 17141226,
+    "workspaceId": 18210301,
     "capacityAlertPct": 80,
     "alertItemId": 12887692259,
-    "annualSummaryBoardId": 18431966690,
+    "annualSummaryBoardId": 18437530607,
     "annualSummaryColumns": {
-      "fiscalYear": "text_mm7dse66",
-      "total": "numeric_mm7dpzbw",
-      "giftCount": "numeric_mm7dga07",
-      "byType": "long_text_mm7dxdqa",
-      "restatedAt": "date_mm7dvf3f"
+      "fiscalYear": "text_mm8jc9v3",
+      "total": "numeric_mm8jt8zb",
+      "giftCount": "numeric_mm8jv5tt",
+      "byType": "long_text_mm8jbvnv",
+      "restatedAt": "date_mm8jd09f"
     }
   },
   "affiliations": {
-    "boardId": 18431577240,
+    "boardId": 18437342615,
     "columns": {
-      "personLink": "board_relation_mm794eac",
-      "attributedGiving": "numeric_mm79ym3t",
-      "attributedGiftCount": "numeric_mm796s2x",
-      "lastAttributedGift": "date_mm79bzkq"
+      "attributedGiving": "numeric_mm8htx9k",
+      "attributedGiftCount": "numeric_mm8hn5vv",
+      "lastAttributedGift": "date_mm8hy6jg",
+      "personLink": "board_relation_mm8hvr9x"
     }
   }
 }

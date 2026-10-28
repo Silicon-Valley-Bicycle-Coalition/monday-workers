@@ -252,7 +252,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 
   // The gift moved here from another owner (issue #26): that owner's totals still include it.
   // Queued rather than recomputed inline — a second full recompute in this invocation would
-  // blow the per-invocation subrequest budget max_batch_size=2 is tuned for. Queued *before* the
+  // blow the per-invocation subrequest budget max_batch_size is sized for. Queued *before* the
   // inline recompute: the link row already says the new owner, so if that recompute throws and
   // the retry finds the link unchanged, the previous owner would otherwise never be queued.
   if (link.previousOwner !== undefined) {
