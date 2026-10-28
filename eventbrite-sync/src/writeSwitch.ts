@@ -8,9 +8,8 @@ import type { OrderStore } from './db/orders';
 import type { EventStore } from './db/events';
 import type { AttendeeStore } from './db/attendees';
 import type { MondayClient, MondayItem } from './monday/client';
-import type { ProcessBatchDeps } from './consumer/processBatch';
+import type { ConsumerQueue, ProcessBatchDeps } from './consumer/processBatch';
 import type { FollowupDeps } from './followups/run';
-import type { QueueLike } from './webhook/route';
 import type { EventRow, MondayBoards } from './types';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
 
@@ -115,8 +114,8 @@ export function dryRunAttendeeStore(store: AttendeeStore): AttendeeStore {
 
 // The consumer's own sends (an event fanning out to its attendees, an attendee asking for its
 // event) are recorded, not sent: under a dry run nothing downstream would be written either.
-export function dryRunQueue(queue: QueueLike, ctx: SkipContext): QueueLike {
-  return recordingProxy(queue, 'Write queue', { send: undefined }, ctx);
+export function dryRunQueue(queue: ConsumerQueue, ctx: SkipContext): ConsumerQueue {
+  return recordingProxy(queue, 'Write queue', { send: undefined, sendBatch: undefined }, ctx);
 }
 
 export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext, kind: 'order' | 'event' | 'attendee' = 'order'): ProcessBatchDeps {

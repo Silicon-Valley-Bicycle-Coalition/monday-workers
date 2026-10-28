@@ -480,7 +480,7 @@ beyond the table above:
 - **Queue messages (order, event, attendee).** Under `off` (or a `dropped` stamp) the consumer runs
   the same fetch → map → match path against recording deps: each Donations, People, Events and
   Event Registrations write is a skip line, no ledger row changes, and the consumer's own sends
-  (an event's attendee fan-out, an attendee's request for its event) are logged as `Write queue`
+  (an event's attendee fan-out, one `sendBatch` per 100, an attendee's request for its event) are logged as `Write queue`
   skips, not sent. A message the consumer does send live carries its parent's stamp. A dry-run
   attendee whose event has a ledger row but no Events item yet (a dry run never records one) links
   the placeholder `dry-run-event` rather than retrying until its event is written.

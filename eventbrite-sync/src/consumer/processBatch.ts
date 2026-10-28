@@ -2,6 +2,7 @@ import type { OrderStore } from '../db/orders';
 import type { EventStore } from '../db/events';
 import type { AttendeeStore } from '../db/attendees';
 import type { QueueLike } from '../webhook/route';
+import type { BatchSender } from '../util/sendBatch';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
@@ -59,12 +60,14 @@ export type AttendeeQueueMessage = {
 
 export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
 
+export type ConsumerQueue = QueueLike & BatchSender<WriteQueueMessage>;
+
 export interface ProcessBatchDeps {
   orderStore: OrderStore;
   eventStore: EventStore;
   attendeeStore: AttendeeStore;
-  // For fanning an event out into per-attendee messages.
-  queue: QueueLike;
+  // send: an attendee asking for its event. sendBatch: an event fanning out to its attendees.
+  queue: ConsumerQueue;
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
