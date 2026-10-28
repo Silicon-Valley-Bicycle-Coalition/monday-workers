@@ -12,6 +12,8 @@ const report = (over: Partial<PassReport> = {}): PassReport => ({
   moved: 0, failed: 0, ambiguous: 0, settled: 0, remaining: 0, warnings: [], error: null, ...over,
 });
 
+const AUTH = { Authorization: 'Bearer s3cret' };
+
 function app(over: Partial<RoutesDeps> = {}) {
   const deps: RoutesDeps = {
     runPass: vi.fn(async (opts) => report({ dryRun: opts.dryRun, runId: opts.runId })),
@@ -28,34 +30,42 @@ describe('/reclassify routes', () => {
   it('rejects a missing or wrong secret, and every request when no secret is configured', async () => {
     const { app: a } = app();
     expect((await a.request('/reclassify/status')).status).toBe(401);
-    expect((await a.request('/reclassify/run?secret=nope', { method: 'POST' })).status).toBe(401);
+    expect((await a.request('/reclassify/run', { method: 'POST', headers: { Authorization: 'Bearer nope' } })).status).toBe(401);
+    expect((await a.request('/reclassify/run', { method: 'POST', headers: { Authorization: 's3cret' } })).status).toBe(401);
     const { app: b, deps } = app({ secret: undefined });
-    expect((await b.request('/reclassify/run?secret=s3cret', { method: 'POST' })).status).toBe(401);
+    expect((await b.request('/reclassify/run', { method: 'POST', headers: AUTH })).status).toBe(401);
+    expect(deps.runPass).not.toHaveBeenCalled();
+  });
+
+  it('no longer accepts the secret in the query string (#64)', async () => {
+    const { app: a, deps } = app();
+    expect((await a.request('/reclassify/status?secret=s3cret')).status).toBe(401);
+    expect((await a.request('/reclassify/run?secret=s3cret', { method: 'POST' })).status).toBe(401);
     expect(deps.runPass).not.toHaveBeenCalled();
   });
 
   it('status reports the write mode and recent runs', async () => {
     const { app: a } = app({ mode: async () => 'hold' });
-    const res = await a.request('/reclassify/status?secret=s3cret');
+    const res = await a.request('/reclassify/status', { headers: AUTH });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, mode: 'hold', runs: [] });
   });
 
   it('run with no dryRun param follows the mode: off is a dry pass, on is live, and names the run after the clock', async () => {
     const { app: a, deps } = app({ mode: async () => 'off' });
-    const res = await a.request('/reclassify/run?secret=s3cret', { method: 'POST' });
+    const res = await a.request('/reclassify/run', { method: 'POST', headers: AUTH });
     expect(res.status).toBe(200);
     expect(deps.runPass).toHaveBeenCalledWith({ dryRun: true, runId: 'http-2026-10-09T17-00-00-123Z' });
     expect(await res.json()).toMatchObject({ ok: true, dryRun: true });
     const { app: b, deps: live } = app({ mode: async () => 'on' });
-    await b.request('/reclassify/run?secret=s3cret', { method: 'POST' });
+    await b.request('/reclassify/run', { method: 'POST', headers: AUTH });
     expect(live.runPass).toHaveBeenCalledWith(expect.objectContaining({ dryRun: false }));
   });
 
   it('run with no dryRun param is refused with 409 under hold and unknown', async () => {
     for (const mode of ['hold', 'unknown'] as const) {
       const { app: a, deps } = app({ mode: async () => mode });
-      expect((await a.request('/reclassify/run?secret=s3cret', { method: 'POST' })).status).toBe(409);
+      expect((await a.request('/reclassify/run', { method: 'POST', headers: AUTH })).status).toBe(409);
       expect(deps.runPass).not.toHaveBeenCalled();
     }
   });
@@ -63,27 +73,29 @@ describe('/reclassify routes', () => {
   it('dryRun=true forces a dry pass in on, off and hold, but not when the mode is unknown', async () => {
     for (const mode of ['on', 'off', 'hold'] as const) {
       const { app: a, deps } = app({ mode: async () => mode });
-      expect((await a.request('/reclassify/run?secret=s3cret&dryRun=true', { method: 'POST' })).status).toBe(200);
+      expect((await a.request('/reclassify/run?dryRun=true', { method: 'POST', headers: AUTH })).status).toBe(200);
       expect(deps.runPass).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
     }
     const { app: u, deps } = app({ mode: async () => 'unknown' });
-    expect((await u.request('/reclassify/run?secret=s3cret&dryRun=true', { method: 'POST' })).status).toBe(503);
+    expect((await u.request('/reclassify/run?dryRun=true', { method: 'POST', headers: AUTH })).status).toBe(503);
     expect(deps.runPass).not.toHaveBeenCalled();
   });
 
   it('dryRun=false is no longer accepted, in any mode; other values are 400 too', async () => {
     const { app: a, deps } = app({ mode: async () => 'on' });
-    const res = await a.request('/reclassify/run?secret=s3cret&dryRun=false', { method: 'POST' });
+    const res = await a.request('/reclassify/run?dryRun=false', { method: 'POST', headers: AUTH });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ ok: false, error: 'dryRun=false is no longer accepted; use scripts/flags.mjs' });
-    expect((await a.request('/reclassify/run?secret=s3cret&dryRun=yes', { method: 'POST' })).status).toBe(400);
+    expect((await a.request('/reclassify/run?dryRun=yes', { method: 'POST', headers: AUTH })).status).toBe(400);
     expect(deps.runPass).not.toHaveBeenCalled();
   });
 
-  it('a pass that stopped early or was skipped reports ok: false', async () => {
+  it('a pass that stopped early reports ok: false; a skipped one (lease held, run recorded) is a 409', async () => {
     const { app: a } = app({ runPass: async () => report({ error: 'stopped' }) });
-    expect(await (await a.request('/reclassify/run?secret=s3cret', { method: 'POST' })).json()).toMatchObject({ ok: false, error: 'stopped' });
-    const { app: b } = app({ runPass: async () => ({ skipped: 'already' }) });
-    expect(await (await b.request('/reclassify/run?secret=s3cret', { method: 'POST' })).json()).toEqual({ ok: false, skipped: 'already' });
+    expect(await (await a.request('/reclassify/run', { method: 'POST', headers: AUTH })).json()).toMatchObject({ ok: false, error: 'stopped' });
+    const { app: b } = app({ runPass: async () => ({ skipped: 'another pass is running' }) });
+    const res = await b.request('/reclassify/run', { method: 'POST', headers: AUTH });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, skipped: 'another pass is running' });
   });
 });

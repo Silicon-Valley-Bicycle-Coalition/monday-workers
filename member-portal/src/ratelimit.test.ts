@@ -3,66 +3,49 @@ import { checkLoginRateLimit } from './ratelimit';
 import type { IpRateLimiter } from './ratelimit';
 import type { LoginAttemptStore } from './db/loginAttempts';
 
-function fakeAttemptStore(recentCount: number): LoginAttemptStore {
-  return {
-    recordAttempt: vi.fn().mockResolvedValue(undefined),
-    countRecentAttempts: vi.fn().mockResolvedValue(recentCount),
-  };
+function fakeAttemptStore(reserves: boolean): LoginAttemptStore {
+  return { tryReserve: vi.fn().mockResolvedValue(reserves) };
 }
 
 function fakeIpLimiter(success: boolean): IpRateLimiter {
   return { limit: vi.fn().mockResolvedValue({ success }) };
 }
 
-const config = { emailWindowSeconds: 900, emailMaxAttempts: 5 };
+const config = { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10 };
 const now = new Date('2026-08-22T00:30:00.000Z');
 
 describe('checkLoginRateLimit', () => {
-  it('allows the request when both the IP and email are under their limits', async () => {
-    const attemptStore = fakeAttemptStore(2);
-    const ipLimiter = fakeIpLimiter(true);
+  it('allows the request when the IP passes and the address has room, passing every limit through', async () => {
+    const attemptStore = fakeAttemptStore(true);
 
-    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
+    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter: fakeIpLimiter(true), attemptStore, config }, now);
 
     expect(allowed).toBe(true);
-    expect(attemptStore.recordAttempt).toHaveBeenCalledWith('donor@example.org', now.toISOString());
+    expect(attemptStore.tryReserve).toHaveBeenCalledWith('donor@example.org', now, {
+      cooldownSeconds: 60,
+      windowSeconds: 900,
+      maxInWindow: 5,
+      maxPerDay: 10,
+    });
   });
 
-  it('denies the request when the IP limiter reports failure', async () => {
-    const attemptStore = fakeAttemptStore(0);
-    const ipLimiter = fakeIpLimiter(false);
-
-    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
+  it('denies the request when the address has no room left', async () => {
+    const allowed = await checkLoginRateLimit(
+      '1.2.3.4',
+      'donor@example.org',
+      { ipLimiter: fakeIpLimiter(true), attemptStore: fakeAttemptStore(false), config },
+      now
+    );
 
     expect(allowed).toBe(false);
-  });
-
-  it('denies the request once the email has reached its attempt ceiling', async () => {
-    const attemptStore = fakeAttemptStore(5);
-    const ipLimiter = fakeIpLimiter(true);
-
-    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
-
-    expect(allowed).toBe(false);
-  });
-
-  it('still records the attempt when denied by the email ceiling (IP limiter passed)', async () => {
-    const attemptStore = fakeAttemptStore(5);
-    const ipLimiter = fakeIpLimiter(true);
-
-    await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
-
-    expect(attemptStore.recordAttempt).toHaveBeenCalledTimes(1);
   });
 
   it('does not touch D1 at all when the IP limiter denies the request', async () => {
-    const attemptStore = fakeAttemptStore(0);
-    const ipLimiter = fakeIpLimiter(false);
+    const attemptStore = fakeAttemptStore(true);
 
-    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter, attemptStore, config }, now);
+    const allowed = await checkLoginRateLimit('1.2.3.4', 'donor@example.org', { ipLimiter: fakeIpLimiter(false), attemptStore, config }, now);
 
     expect(allowed).toBe(false);
-    expect(attemptStore.countRecentAttempts).not.toHaveBeenCalled();
-    expect(attemptStore.recordAttempt).not.toHaveBeenCalled();
+    expect(attemptStore.tryReserve).not.toHaveBeenCalled();
   });
 });

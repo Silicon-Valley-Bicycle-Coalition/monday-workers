@@ -21,6 +21,7 @@ const config: QuickbooksSyncConfig = {
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName' },
     customerQbIdColumn: 'qb_id_col',
+    currency: 'USD',
   },
 };
 
@@ -353,6 +354,45 @@ describe('processSyncQueueBatch — qb-to-monday', () => {
       text_col: '1001',
       numeric_col: 250,
       connect_col: { item_ids: [111] },
+    });
+  });
+
+  describe('currency (#76)', () => {
+    async function syncInvoice(record: Record<string, unknown>) {
+      const qbEventStore = fakeQbEventStore({ getEvent: vi.fn().mockResolvedValue(qbEventRow({ entityType: 'invoice', qbId: 'inv-1' })) });
+      const mondayClient = fakeMondayClient({ createItem: vi.fn().mockResolvedValue({ id: 'inv-item-1' }) });
+      const message = fakeMessage({ direction: 'qb-to-monday', eventId: 'evt-1' });
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await processSyncQueueBatch([message], {
+          qbEventStore,
+          mondayEventStore: fakeMondayEventStore(),
+          mapStore: fakeMapStore(),
+          mondayClient,
+          quickBooksClient: fakeQuickBooksClient({ getEntity: vi.fn().mockResolvedValue(record) }),
+          config,
+        });
+      } finally {
+        error.mockRestore();
+      }
+      return { qbEventStore, mondayClient, message };
+    }
+
+    it('fails an invoice in another currency terminally, writing nothing to Monday', async () => {
+      const { qbEventStore, mondayClient, message } = await syncInvoice({ DocNumber: '1001', TotalAmt: 250, CurrencyRef: { value: 'CAD', name: 'Canadian Dollar' } });
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+      expect(qbEventStore.updateStatus).toHaveBeenCalledWith('evt-1', 'failed', { error: expect.stringMatching(new RegExp(`^${TERMINAL_PREFIX}QuickBooks invoice inv-1 is in CAD, not USD`)) });
+      expect(message.ack).toHaveBeenCalled();
+      expect(message.retry).not.toHaveBeenCalled();
+    });
+
+    it('writes a record in the home currency, or with no CurrencyRef at all', async () => {
+      for (const record of [{ DocNumber: '1001', TotalAmt: 250, CurrencyRef: { value: 'USD' } }, { DocNumber: '1001', TotalAmt: 250 }]) {
+        const { mondayClient, message } = await syncInvoice(record);
+        expect(mondayClient.createItem).toHaveBeenCalledWith(222, '1001', { text_col: '1001', numeric_col: 250 });
+        expect(message.ack).toHaveBeenCalled();
+      }
     });
   });
 

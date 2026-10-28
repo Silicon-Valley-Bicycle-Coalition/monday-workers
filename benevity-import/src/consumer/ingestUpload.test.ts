@@ -88,6 +88,7 @@ function fakeDeps(overrides: Partial<IngestDeps> = {}): IngestDeps {
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
+    listDeadLetteredWithoutWorklistItem: vi.fn().mockResolvedValue([]),
   };
   const mondayClient: MondayClient = {
     findItemsByColumnValue: vi.fn().mockResolvedValue([]),

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import app, { type Env } from './index';
 
 // The real write-back is unit-tested in sendStatus.test.ts; here it's a spy so a test can make it
@@ -6,7 +6,18 @@ import app, { type Env } from './index';
 const { writeSendStatus } = vi.hoisted(() => ({ writeSendStatus: vi.fn(async () => {}) }));
 vi.mock('./sendStatus', () => ({ writeSendStatus }));
 
+// The board read is unit-tested in feedbackItem.test.ts; here it answers with the item's own
+// address and event name, which differ from anything a request body claims.
+const BOARD_ITEM = { kind: 'ok', eventName: 'Fall Festival', organizerEmail: 'organizer@example.org' } as const;
+const { readFeedbackItem } = vi.hoisted(() => ({ readFeedbackItem: vi.fn() }));
+vi.mock('./feedbackItem', () => ({ readFeedbackItem }));
+beforeEach(() => {
+  readFeedbackItem.mockReset();
+  readFeedbackItem.mockResolvedValue(BOARD_ITEM);
+});
+
 const SECRET = 'test-secret';
+const TOKEN = 'test-monday-token';
 
 function fakeCtx() {
   return { waitUntil: vi.fn(), passThroughOnException: vi.fn(), props: {} } as unknown as ExecutionContext & {
@@ -17,6 +28,7 @@ function fakeCtx() {
 function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
     WEBHOOK_SECRET: SECRET,
+    MONDAY_API_TOKEN: TOKEN,
     EMAIL: { send: vi.fn().mockResolvedValue({ messageId: 'test-id' }) },
     REQUEST_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) },
     // Existing behavior is tested under `on`; the write-switch block below overrides it.
@@ -25,12 +37,14 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
   };
 }
 
+// What monday's automation sends today. Only itemId is trusted; the rest must be ignored (#66).
 const VALID_BODY = {
   itemId: 13089808285,
   itemName: 'Test Event',
   organizerEmail: 'organizer@example.org',
   eventName: 'Fall Festival',
 };
+const SPOOFED_BODY = { itemId: VALID_BODY.itemId, organizerEmail: 'victim@example.com', eventName: 'Free money\r\nBcc: everyone@example.com' };
 
 function post(body: unknown, headers: Record<string, string> = { 'X-Webhook-Secret': SECRET }, query = '') {
   return new Request(`http://worker/webhook/bp-feedback${query}`, {
@@ -85,9 +99,90 @@ describe('POST /webhook/bp-feedback', () => {
 
   it('rejects an invalid payload with 400 and does not send', async () => {
     const env = fakeEnv();
-    const res = await app.request(post({ ...VALID_BODY, organizerEmail: 'not-an-email' }), undefined, env, fakeCtx());
+    const res = await app.request(post({ ...VALID_BODY, itemId: 'not-a-number' }), undefined, env, fakeCtx());
     expect(res.status).toBe(400);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(readFeedbackItem).not.toHaveBeenCalled();
+  });
+
+  it('reads the recipient and event name from the board, ignoring the ones in the body (#66)', async () => {
+    const env = fakeEnv();
+    const res = await app.request(post(SPOOFED_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(200);
+    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), TOKEN, VALID_BODY.itemId);
+    const sent = (env.EMAIL.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sent.to).toBe('organizer@example.org');
+    expect(sent.subject).toContain('Fall Festival');
+    expect(JSON.stringify(sent)).not.toContain('victim@example.com');
+    expect(JSON.stringify(sent)).not.toContain('Free money');
+  });
+
+  it('keeps a CR/LF in the board\'s event name out of the Subject', async () => {
+    readFeedbackItem.mockResolvedValue({ ...BOARD_ITEM, eventName: 'Fall Festival\r\nBcc: everyone@example.com' });
+    const env = fakeEnv();
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(200);
+    const sent = (env.EMAIL.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sent.subject).not.toMatch(/[\r\n]/);
+    expect(sent.subject).toContain('Fall Festival Bcc: everyone@example.com');
+  });
+
+  it.each(['not-found', 'wrong-board'] as const)('%s: 404, no send, no status write-back', async (kind) => {
+    readFeedbackItem.mockResolvedValue({ kind });
+    writeSendStatus.mockClear();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = fakeEnv();
+    const ctx = fakeCtx();
+
+    const res = await app.request(post(VALID_BODY), undefined, env, ctx);
+
+    expect(res.status).toBe(404);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-item-refused'));
+    errorSpy.mockRestore();
+  });
+
+  it('no address on the item: 422, no send, writes Failed back', async () => {
+    readFeedbackItem.mockResolvedValue({ kind: 'no-email' });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = fakeEnv();
+    const ctx = fakeCtx();
+
+    const res = await app.request(post(VALID_BODY), undefined, env, ctx);
+
+    expect(res.status).toBe(422);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).toHaveBeenLastCalledWith(null, TOKEN, VALID_BODY.itemId, 'failed');
+    expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
+  });
+
+  it('a failed board read: 502 so monday retries, and no send', async () => {
+    readFeedbackItem.mockRejectedValue(new Error('HTTP 503'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = fakeEnv();
+
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(502);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('bp-feedback-item-read-failed'));
+    errorSpy.mockRestore();
+  });
+
+  it('fails closed without MONDAY_API_TOKEN: 500, no read, no send', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const env = fakeEnv({ MONDAY_API_TOKEN: undefined });
+
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(500);
+    expect(readFeedbackItem).not.toHaveBeenCalled();
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('sends the feedback email straight to the organizer in production', async () => {
@@ -155,7 +250,7 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(VALID_BODY), undefined, fakeEnv({ EMAIL: { send } }), ctx);
 
     expect(res.status).toBe(status);
-    expect(writeSendStatus).toHaveBeenLastCalledWith(null, undefined, VALID_BODY.itemId, outcome);
+    expect(writeSendStatus).toHaveBeenLastCalledWith(null, TOKEN, VALID_BODY.itemId, outcome);
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
     expect(ctx.waitUntil.mock.calls[0]![0]).toBe(writeSendStatus.mock.results.at(-1)!.value);
     errorSpy.mockRestore();
@@ -206,6 +301,7 @@ describe('write switch (FLAGS)', () => {
     const res = await app.request(post(VALID_BODY), undefined, env, ctx);
     expect(res.status).toBe(200);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(readFeedbackItem).not.toHaveBeenCalled();
     expect(writeSendStatus).not.toHaveBeenCalled();
     expect(ctx.waitUntil).not.toHaveBeenCalled();
     const lines = logSpy.mock.calls.map(([l]) => String(l));
@@ -235,6 +331,7 @@ describe('write switch (FLAGS)', () => {
     const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
     expect(res.status).toBe(503);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(readFeedbackItem).not.toHaveBeenCalled();
     expect(writeSendStatus).not.toHaveBeenCalled();
   });
 

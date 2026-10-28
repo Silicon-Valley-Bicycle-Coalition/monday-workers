@@ -502,15 +502,40 @@ export function checkEmailView(locale: Locale): string {
 // execute JS must not be able to complete the login. `lang` is only emitted when it's a
 // supported locale (the caller validates), so nothing attacker-shaped is reflected besides the
 // escaped token.
-export function confirmLoginView(token: string, lang: Locale | null, locale: Locale): string {
+// Issue #61: new links carry the token in the URL fragment, which the browser never sends, so
+// this copies it into the confirm form and drops it from the address bar and history. It only
+// fills the form, never submits it: mail scanners that run a page's JS would otherwise burn the
+// single-use token (issue #31). With no token in the fragment it swaps in the invalid-link copy.
+// Served under a CSP pinning this exact text by hash (routes.ts), so edit it freely but only here.
+export const CONFIRM_LOGIN_SCRIPT = `(function () {
+  var match = /(?:^#|&)token=([^&]+)/.exec(location.hash);
+  if (match) {
+    document.getElementById('confirm-token').value = match[1];
+    history.replaceState(null, '', location.pathname + location.search);
+  } else {
+    document.getElementById('confirm-login').hidden = true;
+    document.getElementById('confirm-invalid').hidden = false;
+  }
+})();`;
+
+// token is null for a fragment link (CONFIRM_LOGIN_SCRIPT fills it in), or the token from a
+// legacy ?token= link, sent before issue #61, which renders as before with no script.
+export function confirmLoginView(token: string | null, lang: Locale | null, locale: Locale): string {
   const langField = lang === null ? '' : `\n      <input type="hidden" name="lang" value="${escapeHtml(lang)}" />`;
-  return `
+  const form = `
     <h1>${escapeHtml(t(locale, 'confirmLogin.heading'))}</h1>
     <p>${escapeHtml(t(locale, 'confirmLogin.body'))}</p>
     <form action="/auth/callback" method="post">
-      <input type="hidden" name="token" value="${escapeHtml(token)}" />${langField}
+      <input type="hidden" name="token" value="${escapeHtml(token ?? '')}"${token === null ? ' id="confirm-token"' : ''} />${langField}
       <button type="submit">${escapeHtml(t(locale, 'confirmLogin.submit'))}</button>
     </form>
+  `;
+  if (token !== null) return form;
+  // Without JS the form posts an empty token, which the POST answers with the invalid-link page.
+  return `
+    <div id="confirm-login">${form}</div>
+    <div id="confirm-invalid" hidden>${errorView('error.invalidLink', locale)}</div>
+    <script>${CONFIRM_LOGIN_SCRIPT}</script>
   `;
 }
 

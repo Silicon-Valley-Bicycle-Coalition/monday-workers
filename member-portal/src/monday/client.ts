@@ -36,6 +36,7 @@ const MAX_ATTEMPTS = 1;
 interface MondayColumnValue {
   id: string;
   text: string | null;
+  value?: string | null; // raw JSON; requested only where noted
   checked?: boolean; // CheckboxValue fragment
   linked_item_ids?: string[]; // BoardRelationValue fragment
 }
@@ -48,6 +49,24 @@ interface MondayItem {
 
 function columnText(item: MondayItem, columnId: string): string {
   return (item.column_values ?? []).find((c) => c.id === columnId)?.text ?? '';
+}
+
+// The address on a donor's email column. An email column's value is {"email","text"} JSON, where
+// text is a display label that can differ from the address; a plain text column's value is a JSON
+// string. Falls back to the column's text when value is absent or unparseable.
+function columnEmail(item: MondayItem, columnId: string): string {
+  const column = (item.column_values ?? []).find((c) => c.id === columnId);
+  if (!column) return '';
+  try {
+    const parsed: unknown = column.value ? JSON.parse(column.value) : null;
+    if (typeof parsed === 'string') return parsed;
+    if (parsed !== null && typeof parsed === 'object' && typeof (parsed as { email?: unknown }).email === 'string') {
+      return (parsed as { email: string }).email;
+    }
+  } catch {
+    // fall through to text
+  }
+  return column.text ?? '';
 }
 
 // Monday checkbox columns render as text "v" when checked and "" (or an absent column_value)
@@ -150,10 +169,10 @@ export class HttpMondayClient implements MondayClient {
     // preferredLanguage is a gated/optional column, same convention as membershipExpiry in
     // getMemberPortalData below: only request it once it's been configured with a real column id,
     // so the literal placeholder never ships to Monday's API.
-    const languageFragment =
-      this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID'
-        ? `column_values(ids: ["${this.columns.preferredLanguage}"]) { id text }`
-        : '';
+    const columnIds = [this.columns.donorEmail];
+    if (this.columns.preferredLanguage !== 'REPLACE_WITH_COLUMN_ID') {
+      columnIds.push(this.columns.preferredLanguage);
+    }
     const query = `
       query ($boardId: ID!, $email: CompareValue) {
         boards(ids: [$boardId]) {
@@ -163,7 +182,7 @@ export class HttpMondayClient implements MondayClient {
               rules: [{ column_id: "${this.columns.donorEmail}", compare_value: [$email], operator: any_of }]
             }
           ) {
-            items { id name ${languageFragment} }
+            items { id name column_values(ids: ${JSON.stringify(columnIds)}) { id text value } }
           }
         }
       }
@@ -173,11 +192,17 @@ export class HttpMondayClient implements MondayClient {
       email,
     });
     const items = data.boards[0]?.items_page.items ?? [];
-    return items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      preferredLanguage: columnText(item, this.columns.preferredLanguage),
-    }));
+    // Monday's filter is not an exact-address match we can rely on (issue #62): keep only items
+    // whose address equals the submitted one, ignoring case and surrounding whitespace, so a login
+    // link never goes out for a donor record holding some other address.
+    const wanted = email.trim().toLowerCase();
+    return items
+      .filter((item) => columnEmail(item, this.columns.donorEmail).trim().toLowerCase() === wanted)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        preferredLanguage: columnText(item, this.columns.preferredLanguage),
+      }));
   }
 
   async getMemberPortalData(donorItemId: string, options: { includeDonations?: boolean } = {}): Promise<MemberPortalData> {

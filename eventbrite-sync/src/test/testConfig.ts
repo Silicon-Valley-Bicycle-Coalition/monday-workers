@@ -24,6 +24,7 @@ export function testConfig(
       statusColumn: 'status_col',
       dateColumn: 'date_col',
       amountSource: 'gross',
+      currency: 'USD',
       skipFreeOrders: true,
       statusLabelMap: { placed: 'Received', refunded: 'Refunded' },
       itemNameTemplate: '{buyer} - {event}',

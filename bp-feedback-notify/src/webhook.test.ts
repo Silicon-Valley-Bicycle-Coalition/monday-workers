@@ -1,16 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseFeedbackWebhookPayload, InvalidWebhookPayloadError } from './webhook';
 
-const VALID = {
-  itemId: 13089808285,
-  itemName: 'Test Event',
-  organizerEmail: 'organizer@example.org',
-  eventName: 'Fall Festival',
-};
-
 describe('parseFeedbackWebhookPayload', () => {
-  it('accepts a valid payload', () => {
-    expect(parseFeedbackWebhookPayload(VALID)).toEqual(VALID);
+  it('keeps only the item id, dropping any recipient or event name the caller sent (#66)', () => {
+    const body = { itemId: 13089808285, itemName: 'Test Event', organizerEmail: 'victim@example.com', eventName: 'Spoofed' };
+    expect(parseFeedbackWebhookPayload(body)).toEqual({ itemId: 13089808285 });
   });
 
   it.each([
@@ -21,21 +15,14 @@ describe('parseFeedbackWebhookPayload', () => {
     expect(() => parseFeedbackWebhookPayload(body)).toThrow(InvalidWebhookPayloadError);
   });
 
-  it.each(['itemName', 'eventName', 'organizerEmail'] as const)('rejects a missing "%s"', (field) => {
-    const rest: Record<string, unknown> = { ...VALID };
-    delete rest[field];
-    expect(() => parseFeedbackWebhookPayload(rest)).toThrow(InvalidWebhookPayloadError);
-  });
-
-  it('rejects a non-numeric itemId', () => {
-    expect(() => parseFeedbackWebhookPayload({ ...VALID, itemId: '13089808285' })).toThrow(InvalidWebhookPayloadError);
-  });
-
-  it.each(['not-an-email', 'missing-at-sign.example.org', 'no-domain@'])('rejects an invalid organizerEmail "%s"', (email) => {
-    expect(() => parseFeedbackWebhookPayload({ ...VALID, organizerEmail: email })).toThrow(InvalidWebhookPayloadError);
-  });
-
-  it('rejects a blank eventName', () => {
-    expect(() => parseFeedbackWebhookPayload({ ...VALID, eventName: '   ' })).toThrow(InvalidWebhookPayloadError);
+  it.each([
+    ['missing', undefined],
+    ['a string', '13089808285'],
+    ['fractional', 1.5],
+    ['zero', 0],
+    ['negative', -1],
+    ['unsafe', Number.MAX_SAFE_INTEGER + 1],
+  ])('rejects an itemId that is %s', (_label, itemId) => {
+    expect(() => parseFeedbackWebhookPayload({ itemId })).toThrow(InvalidWebhookPayloadError);
   });
 });

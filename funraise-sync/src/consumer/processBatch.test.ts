@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { consumeFunraiseBatch, processFunraiseQueueBatch, type QueueMessageLike, type FunraiseQueueMessage } from './processBatch';
+import { consumeFunraiseBatch, processFunraiseQueueBatch, TERMINAL_PREFIX, type QueueMessageLike, type FunraiseQueueMessage } from './processBatch';
+import { MondayApiError } from '../monday/graphql';
 import type { SubscriptionStore } from '../db/subscriptions';
 import type { FunraiseClient } from '../funraise/client';
 import type { WriteMode } from '../flags';
@@ -599,6 +600,63 @@ describe('retry backoff', () => {
     await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
 
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+  });
+});
+
+// #75: a Monday rejection of the write itself (a 4xx, a column value it won't take) fails the same
+// way on every retry, so it is recorded and acked instead of retried for four days into the DLQ.
+describe('terminal failures', () => {
+  const rejectingMonday = (err: Error): MondayClient => ({
+    findItemByColumnValue: vi.fn().mockResolvedValue(null),
+    createItem: vi.fn().mockRejectedValue(err),
+    changeColumnValues: vi.fn(),
+  });
+
+  it('records a rejected column value as not retried and acks the message', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const message = { ...fakeMessage(), attempts: 1 };
+
+    await processFunraiseQueueBatch([message], {
+      eventStore,
+      mondayClient: rejectingMonday(new MondayApiError('monday API: invalid value', { httpStatus: 200, code: 'ColumnValueException' })),
+      config,
+    });
+
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'failed', {
+      error: `${TERMINAL_PREFIX}monday API: invalid value`,
+    });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  it('still retries a rejected token (HTTP 401) — fixing the secret heals the backlog', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const message = { ...fakeMessage(), attempts: 1 };
+
+    await processFunraiseQueueBatch([message], {
+      eventStore,
+      mondayClient: rejectingMonday(new MondayApiError('monday API: HTTP 401', { httpStatus: 401 })),
+      config,
+    });
+
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'failed', { error: 'monday API: HTTP 401' });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('retries a terminal failure it could not record, so it is not lost silently', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    (eventStore.updateStatusByEntity as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('D1_ERROR: overloaded'));
+    const message = { ...fakeMessage(), attempts: 1 };
+
+    await processFunraiseQueueBatch([message], {
+      eventStore,
+      mondayClient: rejectingMonday(new MondayApiError('monday API: HTTP 400', { httpStatus: 400 })),
+      config,
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
   });
 });
 

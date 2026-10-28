@@ -40,6 +40,7 @@
       "name": "DisplayName",
       "email_column_id": "PrimaryEmailAddr.Address"
     },
-    "customerQbIdColumn": null
+    "customerQbIdColumn": null,
+    "currency": "USD"
   }
 }

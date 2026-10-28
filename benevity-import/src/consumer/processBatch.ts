@@ -77,7 +77,8 @@ export async function processBenevityQueueBatch(
       const errMsg = errorMessage(err);
       console.error(`benevity consumer: failed to process "${transactionId}": ${errMsg}`);
       // Left at 'ingested' (its only possible pre-write status here) so the queue's own
-      // retry+DLQ handles it — this is an unexpected/transient failure, not a business
+      // retry+DLQ handles it (once retries run out, src/consumer/deadLetters.ts puts it on the
+      // worklist) — this is an unexpected/transient failure, not a business
       // decision, so it must not read as 'needs-review' on the board. Recording it is
       // bookkeeping: a D1 error here must not take the retry decision down with it (the throw
       // would fail the whole batch and retry every message in it immediately).

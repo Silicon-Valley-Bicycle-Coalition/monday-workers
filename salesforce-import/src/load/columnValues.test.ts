@@ -8,9 +8,9 @@ describe('formatColumnValue', () => {
   });
 
   it('wraps phone values in {phone, countryShortName}, stripping punctuation and extensions', () => {
-    expect(formatColumnValue('phone', '(408) 555-0150 ext.22')).toEqual({ phone: '4085550150', countryShortName: 'US' });
-    expect(formatColumnValue('phone', '+1 408-555-0150')).toEqual({ phone: '14085550150', countryShortName: 'US' });
-    expect(formatColumnValue('phone', '408.555.0150 x5')).toEqual({ phone: '4085550150', countryShortName: 'US' });
+    expect(formatColumnValue('phone', '(408) 555-0100 ext.22')).toEqual({ phone: '4085550100', countryShortName: 'US' });
+    expect(formatColumnValue('phone', '+1 408-555-0100')).toEqual({ phone: '14085550100', countryShortName: 'US' });
+    expect(formatColumnValue('phone', '408.555.0100 x5')).toEqual({ phone: '4085550100', countryShortName: 'US' });
   });
 
   it('returns null for a phone with no digits, so the column is skipped', () => {
@@ -43,7 +43,7 @@ describe('formatColumnValue passthrough of pre-formatted objects', () => {
 
   it('passes through pre-wrapped link and phone objects unchanged', () => {
     const link = { url: 'https://svbc.org', text: 'svbc.org' };
-    const phone = { phone: '4085550150', countryShortName: 'US' };
+    const phone = { phone: '4085550100', countryShortName: 'US' };
     expect(formatColumnValue('link', link)).toBe(link);
     expect(formatColumnValue('phone', phone)).toBe(phone);
   });
@@ -51,19 +51,19 @@ describe('formatColumnValue passthrough of pre-formatted objects', () => {
 
 describe('formatColumnValue phone extension edge cases', () => {
   it('strips a spelled-out "extension" with hyphenated digits', () => {
-    expect(formatColumnValue('phone', '(408) 555-0133 extension 258-0103'))
-      .toEqual({ phone: '4085550133', countryShortName: 'US' });
+    expect(formatColumnValue('phone', '(408) 555-0101 extension 555-0102'))
+      .toEqual({ phone: '4085550101', countryShortName: 'US' });
   });
 });
 
 describe('formatColumnValue multi-number phone fields', () => {
   it('keeps only the first number when the field holds two', () => {
-    expect(formatColumnValue('phone', '(650) 555-0113 or (650)555-0110'))
-      .toEqual({ phone: '6505550113', countryShortName: 'US' });
+    expect(formatColumnValue('phone', '(650) 555-0103 or (650)555-0104'))
+      .toEqual({ phone: '6505550103', countryShortName: 'US' });
   });
 
   it('keeps the leading 1 when the first number has a country prefix', () => {
-    expect(formatColumnValue('phone', '1-650-555-0113 / 650-555-0110'))
-      .toEqual({ phone: '16505550113', countryShortName: 'US' });
+    expect(formatColumnValue('phone', '1-650-555-0103 / 650-555-0104'))
+      .toEqual({ phone: '16505550103', countryShortName: 'US' });
   });
 });

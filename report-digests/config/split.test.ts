@@ -33,6 +33,12 @@ describe('config split', () => {
     for (const id of Object.values(production.boards)) expect(isPlaceholder(id) || !sandboxIds.has(id), String(id)).toBe(true);
   });
 
+  // #70: digests carry Windfall wealth-screening data, and production's EMAIL binding has no
+  // platform allowlist, so this list is the only thing between a Monday guest and that data.
+  it('production emails digests only to the staff domain', () => {
+    expect(production.recipientDomains).toEqual(['bikesiliconvalley.org']);
+  });
+
   it('fromName differs between production and sandbox', () => {
     expect(production.fromName).not.toBe(sandbox.fromName);
   });

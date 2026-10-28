@@ -24,7 +24,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
     const orderStore = new D1OrderStore(env.DB);
 
     let captured: OrderQueueMessage | undefined;
-    const queue = { send: async (m: OrderQueueMessage) => { captured = m; } };
+    const queue = { send: async (m: OrderQueueMessage) => { captured = m; }, sendBatch: async () => {} };
     const app = createApp({ orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), config, queue, webhookSecret: 'int-secret', writeMode: async () => 'on' as const });
 
     const res = await app.request('/webhooks/eventbrite/order?secret=int-secret', {
@@ -118,7 +118,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
     const cfg = testConfig({}, { 'people-live': 555666 });
 
     const sent: unknown[] = [];
-    const queue = { send: async (m: unknown) => { sent.push(m); } };
+    const queue = { send: async (m: unknown) => { sent.push(m); }, sendBatch: async (ms: unknown[]) => { sent.push(...ms); } };
     const app = createApp({ orderStore, eventStore, attendeeStore, config: cfg, queue: queue as never, webhookSecret: 'int-secret', writeMode: async () => 'on' as const });
     const post = (apiUrl: string, action: string) =>
       app.request('/webhooks/eventbrite/attendee?secret=int-secret', {

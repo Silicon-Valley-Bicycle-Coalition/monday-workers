@@ -46,4 +46,12 @@ describe('validateConfig', () => {
     c.timeZone = 'America/Nowhere';
     expect(() => validateConfig(c)).toThrow();
   });
+
+  it('requires recipientDomains as bare lowercase domains', () => {
+    for (const bad of [undefined, [], ['@bikesiliconvalley.org'], ['BikeSiliconValley.org'], ['bikesiliconvalley'], [''], 'bikesiliconvalley.org']) {
+      const c = clone();
+      c.recipientDomains = bad;
+      expect(() => validateConfig(c), JSON.stringify(bad)).toThrow(/recipientDomains/);
+    }
+  });
 });

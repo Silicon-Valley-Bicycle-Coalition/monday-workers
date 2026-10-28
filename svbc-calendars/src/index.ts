@@ -14,8 +14,6 @@ import type { Env } from './types';
 
 const config = validateConfig(rawConfig);
 
-const ALLOWED_ORIGINS: string[] = ['https://www.bikesiliconvalley.org', 'https://bikesiliconvalley.org', 'http://localhost'];
-
 // The listing page is served from committees.bikesiliconvalley.org, but this Worker also answers
 // on events.bikesiliconvalley.org — hardcode the canonical domain for subscribe links rather than
 // reflecting whatever host the request came in on, since staff paste these links into permanent
@@ -41,14 +39,15 @@ function parsePageSize(raw: string | null): number {
   return Math.min(Math.max(parsed, 1), MAX_PAGE_SIZE);
 }
 
-function handleCORS(request: Request, response: Response): Response {
-  const origin = request.headers.get('Origin') || '';
+/**
+ * Every route is public, unauthenticated, read-only data, so CORS is a plain `*`. An origin
+ * allowlist bought nothing here: it fell back to `*` for any other origin anyway, and reflecting
+ * the request's Origin into responses stored in caches.default without `Vary: Origin` would serve
+ * one site's reflected header to the next. (#72)
+ */
+function handleCORS(_request: Request, response: Response): Response {
   const headers = new Headers(response.headers);
-  if (origin === '' || !ALLOWED_ORIGINS.includes(origin)) {
-    headers.set('Access-Control-Allow-Origin', '*');
-  } else {
-    headers.set('Access-Control-Allow-Origin', origin);
-  }
+  headers.set('Access-Control-Allow-Origin', '*');
   headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   headers.set('Access-Control-Allow-Headers', 'Content-Type');
   headers.set('Access-Control-Max-Age', '86400');
@@ -123,9 +122,14 @@ async function handleCalendarListing(env: Env): Promise<Response> {
 // /status.json is deliberately never cached (no withCache wrapping) — its whole purpose is
 // reflecting current per-source health, and caching it for the same ~24h TTL as the calendar
 // routes would hide a fresh failure from anyone checking it for up to a day.
+// lastError is left out: it's raw upstream error text (URLs, response bodies), which stays in KV,
+// the Worker logs and the Slack alert rather than on a public endpoint (#72).
 async function handleStatus(env: Env): Promise<Response> {
   const statuses = await getAllSourceStatuses(env.CALENDAR_KV, config.sources.map((s) => s.id));
-  return new Response(JSON.stringify(statuses, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const publicStatuses = Object.fromEntries(
+    Object.entries(statuses).map(([id, { consecutiveFailures, lastSuccessAt }]) => [id, { consecutiveFailures, lastSuccessAt }])
+  );
+  return new Response(JSON.stringify(publicStatuses, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
 
 export default {

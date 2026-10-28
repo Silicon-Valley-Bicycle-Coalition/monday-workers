@@ -132,3 +132,26 @@ describe('rate limiter exemption for verified Monday webhooks (issue #27)', () =
     expect(res.status).toBe(429);
   });
 });
+
+describe('custodian secret (issue #63)', () => {
+  const CUSTODIAN = 'custodian-secret';
+  const status = (headers: Record<string, string> = {}, query = '') =>
+    new Request(`http://worker.test/custodian/status${query}`, { headers });
+
+  it('authorizes /custodian/* with CUSTODIAN_SECRET as a Bearer token', async () => {
+    const res = await worker.fetch(status({ Authorization: `Bearer ${CUSTODIAN}` }),
+      envFor({ ENVIRONMENT: 'sandbox', CUSTODIAN_SECRET: CUSTODIAN }), ctx);
+    expect(res.status).toBe(200);
+  });
+
+  it('no longer accepts the webhook secret, in the header or the URL', async () => {
+    const e = envFor({ ENVIRONMENT: 'sandbox', CUSTODIAN_SECRET: CUSTODIAN });
+    expect((await worker.fetch(status({ Authorization: `Bearer ${SECRET}` }), e, ctx)).status).toBe(401);
+    expect((await worker.fetch(status({}, `?secret=${SECRET}`), e, ctx)).status).toBe(401);
+  });
+
+  it('fails closed when CUSTODIAN_SECRET is unset, even with the webhook secret set', async () => {
+    const res = await worker.fetch(status({ Authorization: `Bearer ${SECRET}` }), envFor({ ENVIRONMENT: 'sandbox' }), ctx);
+    expect(res.status).toBe(401);
+  });
+});

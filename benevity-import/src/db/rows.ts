@@ -45,6 +45,9 @@ export const PURGED_RAW_ROW = '{}';
 // D1 binds at most 100 parameters per statement: 5 per row in a multi-row INSERT, 1 per id in an IN list.
 const INSERT_ROWS_PER_STATEMENT = 20;
 const IDS_PER_SELECT = 100;
+// Stamped on a row's error when its queue message exhausted every retry (#60,
+// src/consumer/deadLetters.ts), ahead of the last error the consumer recorded.
+export const DEAD_LETTER_PREFIX = 'dead-lettered after retries: ';
 
 export interface RowStore {
   // Inserts each row unless its Transaction ID is already known, and returns every given row's
@@ -64,6 +67,9 @@ export interface RowStore {
   requeueRow(transactionId: string): Promise<RequeueResult>;
   requeueDisbursementRows(disbursementId: number): Promise<RequeueResult>;
   updateStatus(transactionId: string, status: RowStatus, patch?: RowStatusPatch): Promise<void>;
+  // Dead-lettered rows (#60) whose worklist item was never posted — Monday was down, or writes
+  // weren't `on`, when the dead letter arrived — oldest first, for the daily sweep to post.
+  listDeadLetteredWithoutWorklistItem(limit: number): Promise<DonationRowRecord[]>;
   purgeWrittenRawRows(writtenBefore: string): Promise<number>;
   purgeUnresolvedRawRows(ingestedBefore: string): Promise<number>;
 }
@@ -206,6 +212,20 @@ export class D1RowStore implements RowStore {
         patch.worklistItemId ?? null
       )
       .run();
+  }
+
+  async listDeadLetteredWithoutWorklistItem(limit: number): Promise<DonationRowRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT ${ROW_COLUMNS} FROM rows
+         WHERE status = 'needs-review' AND worklist_item_id IS NULL
+           AND substr(error, 1, length(?1)) = ?1
+         ORDER BY ingested_at, transaction_id
+         LIMIT ?2`
+      )
+      .bind(DEAD_LETTER_PREFIX, limit)
+      .all<D1RowRecord>();
+    return result.results.map(toRow);
   }
 
   async purgeWrittenRawRows(writtenBefore: string): Promise<number> {

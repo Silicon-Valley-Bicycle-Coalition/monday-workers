@@ -2,7 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/quickbooks-sync.md`](../docs/uat/quickbooks-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
+**Status: postponed indefinitely (decided 2026-10-28).** SVBC isn't shipping this at migration.
+The sandbox write switch is `off` (production was never turned on) and CI no longer deploys the
+sandbox Worker on merge; nothing below is scheduled. Before resuming, re-read "Sandbox environment"
+and the deploy checklist history, then set `quickbooks-sync:writes` deliberately.
+
+**Status before postponement:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
 Marketplace app (both carry an ongoing cost this avoids). 133 tests passing across 19 files;
 webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. The
 sandbox environment's Cloudflare side (D1, queues, `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`) is
@@ -10,7 +15,7 @@ provisioned and verified (2026-09-22), and the Intuit app-review question is res
 still not connected to a real QuickBooks company — that needs an Intuit developer account and app
 credentials, a staff/admin task (see "Sandbox environment" and "Open question" below), which
 hasn't happened yet.
-**Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
+**Priority:** Postponed indefinitely — nothing here affects Salesforce cutover readiness.
 **Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
 
@@ -98,6 +103,13 @@ Found`), or a Monday item no longer exists / has no name / carries a QuickBooks 
 elsewhere, the consumer records `not retried: <Intuit's code, message and detail>` on the row and
 acks the message — no retries, no DLQ.
 
+**Foreign-currency records (#76)** are terminal too. Monday's amount columns hold the home
+currency (`config` `quickbooksSync.currency`, `"USD"`), so with multicurrency on, a QuickBooks
+→ Monday record whose `CurrencyRef` names any other currency (an invoice's `TotalAmt`/`Balance`, a
+customer's `Balance`) fails `not retried: QuickBooks invoice … is in CAD, not USD` before anything
+is written. Enter it in Monday by hand; a redrive fails the same way. A record with no
+`CurrencyRef` (Items) is taken as home currency.
+
 To find rows needing attention: `wrangler d1 execute <db> --remote --command "SELECT event_id,
 error FROM monday_events WHERE status = 'failed'"` (same for `qb_events`); the error says whether
 it was dead-lettered or not retried. Fix the cause first — for a Monday → QuickBooks create, that
@@ -175,6 +187,15 @@ set). Register the webhook subscription on the Customers board as
 `https://<worker>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>`, and **re-register the
 subscription whenever the secret rotates** — an existing subscription keeps the old URL and will
 be rejected.
+
+Monday can't send a custom header, so the secret has to ride in the URL, and that is an accepted
+trade-off: the full request URL, secret included, is recorded in this Worker's Workers Logs
+invocation records, readable by anyone with dashboard log access to it. Keep that access limited
+to people who could read the secret anyway, never log `c.req.url` here, and rotate the secret (new
+`wrangler secret put` + re-register the subscription) if logs are ever shared. See the root
+README's "Webhook secrets in the URL" for who holds log access. The Intuit route
+(`/webhooks/quickbooks`) doesn't have this exposure: Intuit signs each delivery with
+`QB_WEBHOOK_VERIFIER_TOKEN`, which never appears in a URL.
 
 ## Sandbox environment — inbound only, no outbound data
 

@@ -95,6 +95,9 @@ export interface EventbriteSyncConfig {
     // Which Eventbrite cost the Amount is: `gross` (what the buyer paid, fees and tax included —
     // SVBC's choice, spec decision 6) or `base_price` (organizer revenue net of Eventbrite fees).
     amountSource: AmountSource;
+    // The currency the Donations Amount column is in (ISO 4217, "USD"). An order whose cost is in
+    // any other currency is not written: it is recorded failed for a human, never as dollars.
+    currency: string;
     // A free order (amount 0) with no Donations item yet is not giving: mark it skipped. An
     // order already on the board is always updated regardless.
     skipFreeOrders: boolean;

@@ -8,8 +8,10 @@ export interface CustodianAppDeps {
   // custodianDepsFor) — never called when the mode says skip.
   runDuty(duty: Duty, opts: DutyOptions, disposition: 'run' | 'dry-run'): Promise<DutyReport>;
   lastRuns(): Promise<unknown>;
-  // Same shared-secret convention as the webhook route (?secret=...), checked the same
-  // constant-time, fail-closed way: an unset/empty secret disables these routes entirely.
+  // CUSTODIAN_SECRET, presented as `Authorization: Bearer <secret>` (issue #63) — its own
+  // secret, not the webhook's: that one rides in Monday's webhook URL, so in Monday's config and
+  // request logs. Checked the same constant-time, fail-closed way: an unset/empty secret
+  // disables these routes entirely.
   secret?: string;
   // The write switch (flags.ts readWriteMode), read once per duty request — the same mode the
   // cron obeys, so `hold` can't be sidestepped by triggering a duty by hand.
@@ -24,15 +26,19 @@ export function createCustodianApp(deps: CustodianAppDeps) {
 
   // Fail closed: an unset or empty secret must mean "nobody is authorized" — these routes
   // trigger real Monday writes (archive) and queue floods (sweep).
-  const authorized = (secret: string | undefined) => secretsMatch(secret, deps.secret);
+  // Only the Bearer scheme counts; a ?secret= query parameter is ignored, never a fallback.
+  const authorized = (header: string | undefined) => {
+    const presented = header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined;
+    return secretsMatch(presented, deps.secret);
+  };
 
   app.get('/custodian/status', async (c) => {
-    if (!(await authorized(c.req.query('secret')))) return c.json({ ok: false }, 401);
+    if (!(await authorized(c.req.header('Authorization')))) return c.json({ ok: false }, 401);
     return c.json({ ok: true, lastRuns: await deps.lastRuns() });
   });
 
   app.post('/custodian/run/:duty', async (c) => {
-    if (!(await authorized(c.req.query('secret')))) return c.json({ ok: false }, 401);
+    if (!(await authorized(c.req.header('Authorization')))) return c.json({ ok: false }, 401);
     const duty = c.req.param('duty');
     if (!(DUTIES as readonly string[]).includes(duty)) {
       return c.json({ ok: false, error: `unknown duty "${duty}" — one of: ${DUTIES.join(', ')}` }, 400);

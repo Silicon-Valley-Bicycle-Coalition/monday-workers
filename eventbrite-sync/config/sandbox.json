@@ -19,6 +19,7 @@
     "statusColumn": "color_mm79q3b3",
     "dateColumn": "date_mm7938jk",
     "amountSource": "gross",
+    "currency": "USD",
     "skipFreeOrders": true,
     "statusLabelMap": {
       "placed": "Received",

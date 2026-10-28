@@ -7,6 +7,9 @@
   "fromAddress": "noreply@mail.bikesiliconvalley.org",
   "fromName": "SVBC Monday reports (sandbox)",
   "logoUrl": "https://member.sandbox.bikesiliconvalley.org/email/logo.png",
+  "recipientDomains": [
+    "bikesiliconvalley.org"
+  ],
   "boards": {
     "donations": 18431577310,
     "people": 18431577220
