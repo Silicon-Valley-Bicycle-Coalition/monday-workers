@@ -77,6 +77,7 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
+    listDeadLetteredWithoutWorklistItem: vi.fn(),
   };
   const disbursementStore: DisbursementStore = {
     findOrCreate: vi.fn(),

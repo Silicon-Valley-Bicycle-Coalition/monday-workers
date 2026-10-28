@@ -95,6 +95,7 @@ function fakeDeps(overrides: Partial<AppDeps> = {}): AppDeps {
     updateStatus: vi.fn(),
     purgeWrittenRawRows: vi.fn(),
     purgeUnresolvedRawRows: vi.fn(),
+    listDeadLetteredWithoutWorklistItem: vi.fn(),
   };
   const mondayClient: MondayClient = {
     findItemsByColumnValue: vi.fn().mockResolvedValue([]),
