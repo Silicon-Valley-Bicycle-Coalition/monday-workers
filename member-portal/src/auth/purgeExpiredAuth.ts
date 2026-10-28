@@ -14,7 +14,7 @@ export interface PurgeExpiredAuthResult {
   magicLinkTokens: number | null;
 }
 
-// Daily retention purge for the auth tables (issue #31): login_attempts kept every submitted
+// Daily retention purge for the auth tables (issue #31): login_attempts kept a row per submitted
 // email forever, and expired sessions/magic-link tokens were never deleted. Each table is purged
 // independently — scheduled() runs this ahead of the letter cron, so a D1 error on one table must
 // not skip the rest.

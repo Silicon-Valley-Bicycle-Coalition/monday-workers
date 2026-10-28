@@ -210,12 +210,18 @@ export interface Config {
     sessionTtlHours: number;
     portalBaseUrl: string;
   };
+  // Per-address login-email limits (issue #62), on top of the per-IP limiter. Only requests these
+  // let through are recorded in login_attempts, so a denied request never extends a lockout.
   rateLimit: {
+    // Minimum gap between two login emails to one address.
+    emailCooldownSeconds: number;
     emailWindowSeconds: number;
+    // Login emails allowed per address per emailWindowSeconds.
     emailMaxAttempts: number;
-    // How long login_attempts rows (every submitted email, donor or not) survive the daily
-    // purge. Only rows inside emailWindowSeconds are ever read, so this just needs to exceed
-    // that window (validated); the slack is for debugging abuse after the fact.
+    // Login emails allowed per address per rolling 24 hours.
+    emailDailyMax: number;
+    // How long login_attempts rows (hashed addresses, donor or not) survive the daily purge.
+    // The daily cap reads back 24 hours, so this must be at least that (validated).
     attemptRetentionHours: number;
   };
   taxLetter: TaxLetterConfig;
