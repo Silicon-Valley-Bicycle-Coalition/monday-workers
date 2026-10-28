@@ -14,8 +14,42 @@ import type { BenevityQueueMessage } from './processBatch';
 // outright: marked 'error' and acked, like a file that fails to parse.
 export const MAX_REPORT_LENGTH = 2 * 1024 * 1024;
 
-// Thrown by fetchCsv when the response says it is over MAX_REPORT_LENGTH before the body is read.
+// Thrown by readReportText (fetchCsv) once a response passes MAX_REPORT_LENGTH bytes.
 export class ReportTooLargeError extends Error {}
+
+/**
+ * The body of a report response as text, never holding more than MAX_REPORT_LENGTH bytes of it.
+ * Content-Length is only a fast path: a response without one (or a chunked one) is counted as it
+ * streams, and cancelled the moment it passes the cap, before anything is decoded.
+ */
+export async function readReportText(response: Response): Promise<string> {
+  const declared = Number(response.headers.get('Content-Length'));
+  if (declared > MAX_REPORT_LENGTH) {
+    await response.body?.cancel();
+    throw new ReportTooLargeError(`Content-Length ${declared}`);
+  }
+  if (response.body === null) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_REPORT_LENGTH) {
+      await reader.cancel();
+      throw new ReportTooLargeError(`over ${MAX_REPORT_LENGTH} bytes`);
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
 
 export interface IngestDeps {
   mondayClient: MondayClient;

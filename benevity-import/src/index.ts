@@ -11,7 +11,7 @@ import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
 import { consumeBenevityBatch, type BenevityQueueMessage } from './consumer/processBatch';
-import { MAX_REPORT_LENGTH, ReportTooLargeError } from './consumer/ingestUpload';
+import { readReportText } from './consumer/ingestUpload';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env, BenevityImportConfig } from './types';
 
@@ -37,14 +37,8 @@ async function fetchCsv(url: string): Promise<string> {
   if (!response.ok) {
     throw new Error(`benevity report fetch: HTTP ${response.status}`);
   }
-  // Refused before the body is read when the response says it is too large; ingestUpload checks
-  // the text's length too, for a response that doesn't say.
-  const length = Number(response.headers.get('Content-Length'));
-  if (length > MAX_REPORT_LENGTH) {
-    await response.body?.cancel();
-    throw new ReportTooLargeError(`Content-Length ${length}`);
-  }
-  return response.text();
+  // Capped at MAX_REPORT_LENGTH bytes while it streams, whatever Content-Length says (or omits).
+  return readReportText(response);
 }
 
 function writeQueue(env: Env) {

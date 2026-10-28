@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ingestUpload, MAX_REPORT_LENGTH, type IngestDeps } from './ingestUpload';
+import { ingestUpload, MAX_REPORT_LENGTH, readReportText, ReportTooLargeError, type IngestDeps } from './ingestUpload';
 import type { MondayClient } from '../monday/client';
 import type { UploadStore } from '../db/uploads';
 import type { DisbursementStore } from '../db/disbursements';
@@ -504,5 +504,44 @@ describe('ingestUpload', () => {
     await expect(ingestUpload('a1', deps)).rejects.toThrow('D1 write failed');
     expect(deps.uploadStore.markError).toHaveBeenCalledWith(1);
     expect(deps.uploadStore.markParsed).not.toHaveBeenCalled();
+  });
+});
+
+describe('readReportText', () => {
+  // A body with no Content-Length, delivered in chunks, counting how much of it was ever pulled.
+  function streamed(chunks: Uint8Array[]) {
+    let pulled = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = chunks[pulled++];
+        if (next === undefined) controller.close();
+        else controller.enqueue(next);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return { response: new Response(body), pulled: () => pulled, cancelled: () => cancelled };
+  }
+
+  it('stops reading and cancels a body with no Content-Length as soon as it passes the cap', async () => {
+    const chunk = new Uint8Array(512 * 1024);
+    const { response, pulled, cancelled } = streamed(Array.from({ length: 100 }, () => chunk)); // 50 MB offered
+    await expect(readReportText(response)).rejects.toBeInstanceOf(ReportTooLargeError);
+    expect(pulled()).toBeLessThanOrEqual(Math.ceil(MAX_REPORT_LENGTH / chunk.byteLength) + 2);
+    expect(cancelled()).toBe(true);
+  });
+
+  it('refuses up front when Content-Length is over the cap', async () => {
+    const response = new Response('small', { headers: { 'Content-Length': String(MAX_REPORT_LENGTH + 1) } });
+    await expect(readReportText(response)).rejects.toThrow('Content-Length');
+  });
+
+  it('decodes a body under the cap, including a multi-byte character split across chunks', async () => {
+    const bytes = new TextEncoder().encode('Company,Café\n');
+    const split = bytes.indexOf(0xc3) + 1; // between the two bytes of "é"
+    const { response } = streamed([bytes.slice(0, split), bytes.slice(split)]);
+    expect(await readReportText(response)).toBe('Company,Café\n');
   });
 });
