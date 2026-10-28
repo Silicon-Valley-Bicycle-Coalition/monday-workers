@@ -224,12 +224,24 @@ describe('processOutboundBatch', () => {
       expect(d.mailchimpClient.updateMember).toHaveBeenCalledWith('a@b.com', expect.any(Object), expect.not.arrayContaining(['do-not-solicit']), expect.arrayContaining(['do-not-solicit']));
     });
 
-    it('does nothing more for a confirmed contact who is not in the audience', async () => {
-      const d = deps(donor({ doNotSolicit: true, dnsReasonStatus: 'Confirmed' }), { updateResult: 'not-in-audience' });
+    it('does nothing more for a confirmed contact who is not in the audience, and leaves the log open for a later join', async () => {
+      const d = deps(donor({ doNotSolicit: true, dnsReasonStatus: 'Confirmed' }), { updateResult: 'not-in-audience', unsubscribeResult: 'not-in-audience' });
       await processOutboundBatch([fakeMessage('1')], d);
 
-      expect(d.mailchimpClient.unsubscribeMember).not.toHaveBeenCalled();
+      expect(d.dnsLog.record).not.toHaveBeenCalled();
       expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('1', 'skipped', expect.any(String));
+    });
+
+    it('still unsubscribes a confirmed contact when the merge-field update fails permanently', async () => {
+      const d = deps(donor({ doNotSolicit: true, dnsReasonStatus: 'Confirmed' }));
+      (d.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mockRejectedValue(new MailchimpPermanentError('invalid merge field'));
+      const message = fakeMessage('1');
+      await processOutboundBatch([message], d);
+
+      expect(d.mailchimpClient.unsubscribeMember).toHaveBeenCalledWith('a@b.com');
+      expect(d.dnsLog.record).toHaveBeenCalledWith('a@b.com', '1', 'unsubscribed', expect.any(String));
+      expect(d.pendingStore.updateStatus).toHaveBeenCalledWith('1', 'failed', expect.any(String));
+      expect(message.ack).toHaveBeenCalled();
     });
 
     it('retries without logging when the unsubscribe fails transiently', async () => {

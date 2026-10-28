@@ -195,7 +195,10 @@ Two steps, so a mis-clicked checkbox can't silently lose a subscriber:
    Mailchimp status to `unsubscribed` (`unsubscribeMember`: looks the member up first; an
    already-unsubscribed or cleaned address needs no write) and records it in the D1
    `dns_unsubscribes` table — email, Monday item, result, timestamp. That row is the audit trail,
-   and it stops later column changes on the same person from calling Mailchimp again.
+   and it stops later column changes on the same person from calling Mailchimp again. The
+   unsubscribe runs before the merge-field and tag update, so a permanent error in that update
+   can't skip it. An address not in the audience isn't logged, so if the person joins later
+   their next column change still unsubscribes them.
 
 Deliberate limits:
 * **Never resubscribes.** Unchecking the box, or moving the status off Confirmed, removes the
