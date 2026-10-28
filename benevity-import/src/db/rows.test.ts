@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1UploadStore } from './uploads';
 import { D1DisbursementStore } from './disbursements';
-import { D1RowStore } from './rows';
+import { D1RowStore, DEAD_LETTER_PREFIX } from './rows';
 import { applyMigrations } from '../../test/apply-migrations';
 
 describe('D1RowStore', () => {
@@ -188,5 +188,24 @@ describe('D1RowStore', () => {
     const purged = await store.purgeUnresolvedRawRows('2026-01-01T00:00:00Z');
     expect(purged).toBe(1);
     expect((await store.getRow('STALE'))?.rawRow).toBe('{}');
+  });
+
+  it('lists dead-lettered needs-review rows that have no worklist item yet, oldest first (#60)', async () => {
+    const store = new D1RowStore(env.DB);
+    const add = (transactionId: string, ingestedAt: string) =>
+      store.upsertRow({ transactionId, disbursementId, rawRow: '{}', status: 'ingested', ingestedAt });
+    await add('DL-NEW', '2026-09-16T00:00:00Z');
+    await add('DL-OLD', '2026-09-15T00:00:00Z');
+    await add('DL-POSTED', '2026-09-15T00:00:00Z');
+    await add('REVIEW', '2026-09-15T00:00:00Z');
+    await add('STILL-INGESTED', '2026-09-15T00:00:00Z');
+    await store.updateStatus('DL-NEW', 'needs-review', { error: `${DEAD_LETTER_PREFIX}boom` });
+    await store.updateStatus('DL-OLD', 'needs-review', { error: `${DEAD_LETTER_PREFIX}boom` });
+    await store.updateStatus('DL-POSTED', 'needs-review', { error: `${DEAD_LETTER_PREFIX}boom`, worklistItemId: '900' });
+    await store.updateStatus('REVIEW', 'needs-review', { error: 'no match' });
+    await store.updateStatus('STILL-INGESTED', 'ingested', { error: `${DEAD_LETTER_PREFIX}boom` });
+
+    expect((await store.listDeadLetteredWithoutWorklistItem(10)).map((r) => r.transactionId)).toEqual(['DL-OLD', 'DL-NEW']);
+    expect((await store.listDeadLetteredWithoutWorklistItem(1)).map((r) => r.transactionId)).toEqual(['DL-OLD']);
   });
 });

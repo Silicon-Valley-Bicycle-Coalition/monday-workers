@@ -62,7 +62,8 @@ Cloudflare Queue → consumer Worker, per row
   │  3. split the row: employee gift (if any) and company match (if any) → two Donations items
   │  4. write to Monday; stamp each item with the Transaction ID before marking the row done
   │  unresolved company or ambiguous person → write nothing, add a worklist item, mark
-  │  the row `needs-review`; retries + DLQ on API failure as in every webhook Worker here
+  │  the row `needs-review`; retries + DLQ on API failure as in every webhook Worker here, and
+  │  a gift that exhausts its retries lands on the worklist too (see Dead letters)
   ▼
 Donations board (+ Matched By → Organizations, Donor → People)
 Worklist: a group on the Benevity Uploads board, one item per row needing a human
@@ -244,6 +245,39 @@ Retry is safe to repeat: a row already written isn't re-run (the item just goes 
 duplicate Retry doesn't create duplicate Donations items. **Re-uploading the same report is not
 a retry** — rows and disbursements the Worker has already seen are skipped, so only new rows in
 the file are imported.
+
+## Dead letters
+
+A gift whose Monday write keeps failing is retried for about four days (`max_retries: 100`,
+backing off to an hour), then dead-lettered to `benevity-import-writes-dlq`
+(`benevity-import-writes-sandbox-dlq` in sandbox). This Worker consumes both (#60,
+`src/consumer/deadLetters.ts`), so a dead gift is never silently lost — which matters here more
+than elsewhere, because re-uploading the report is a no-op for a row already recorded. Each dead
+message:
+
+* marks its row `needs-review`, with `dead-lettered after retries: ` in front of the last error
+  the consumer recorded (never doubled) — in D1 first, so it's on record even while Monday is
+  the thing that's down;
+* raises a worklist item for it, reason **"Couldn't write this gift to Monday…"** with the last
+  error, at **Needs review** (a row replayed from the worklist that died again reuses its item).
+  Staff fix the cause and set **Retry**, exactly as for any other worklist item;
+* leaves a row that is no longer `ingested` (written, held for review, or skipped since the
+  message was sent) alone, and acks a body with no Transaction ID;
+* always acks. Only a D1 failure retries the dead message (60 s, at most `max_retries: 2`, no
+  further DLQ).
+
+Posting the worklist item is a Monday write, so it happens only while writes are `on`, and a
+failed post is logged rather than retried. The **daily cron** (after the `raw_row` purge, and
+only under `on`) posts the item for every dead-lettered row still missing one, 25 a run — so a
+gift that dead-letters during a Monday outage or a `hold` reaches the worklist once both are
+over. Each batch that marked anything logs **one** `console.error` naming the Transaction IDs.
+
+To find dead-lettered rows directly:
+
+```sh
+npx wrangler d1 execute svbc-benevity-import --remote --command \
+  "SELECT transaction_id, worklist_item_id, error FROM rows WHERE error LIKE 'dead-lettered after retries: %'"
+```
 
 ## Idempotency and the migrated history
 
@@ -480,6 +514,9 @@ switch covers them directly (the subscribe challenge is always echoed):
   doubling to an hour (`max_retries` is 100, about four days). A message queued before this
   build has no stamp and is written under `on`. The daily `raw_row` purge is D1-only and runs in
   every mode.
+- Dead-letter consumer: marks the row in D1 in every mode (a record of what happened, not a
+  Monday write); posts its worklist item only under `on`. The daily dead-letter sweep runs only
+  under `on`. See Dead letters.
 
 Set it with the operator CLI at the repo root, never by hand:
 
