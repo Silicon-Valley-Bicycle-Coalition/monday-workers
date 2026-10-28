@@ -371,7 +371,15 @@ FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https:/
 FUNRAISE_WEBHOOK_SECRET=... node scripts/redrive-failed.mjs --worker-url https://<worker-host> [--env sandbox]
 ```
 
-It reads `failed` rows older than an hour from the remote D1 and POSTs each stored payload back
+A failure no retry can fix (#75, `src/errors.ts`) skips the four days: a Monday 4xx, or a 200
+whose error code says Monday rejected the request itself (a column value it won't take, a
+column, board or item id that doesn't exist). The row is marked `failed` with the error prefixed
+`not retried: `, one `console.error` line names the transaction, and the message is acked. A
+rejected token (401/403), `UserUnauthorizedException` (also Monday's answer for a deleted
+board), rate limits and 5xx still retry, since fixing the secret or the config heals the whole
+backlog. The same re-drive picks up both kinds of `failed` row.
+
+`redrive-failed.mjs` reads `failed` rows older than an hour from the remote D1 and POSTs each stored payload back
 as the envelope it arrived in (secret in the `X-Webhook-Secret` header); the route's
 duplicate-recovery path re-enqueues it, so the write happens on the normal path. Rows whose
 payload the retention purge has emptied (`unresolvedPayloadRetentionDays`) are listed for
