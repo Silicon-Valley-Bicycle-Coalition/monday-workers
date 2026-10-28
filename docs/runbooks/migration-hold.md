@@ -73,7 +73,10 @@ reads `missing` (not created; deploy the Worker). Keys come from `wrangler kv ke
 comes from the Cloudflare API under wrangler's own login, because `wrangler queues info` shows
 neither: paused from the queue's settings, backlog from the latest Queues analytics sample in the
 last 15 minutes. An idle queue has no samples, shown as `backlog 0 (no recent sample)`, and the
-analytics lag a minute or two, so a backlog that just started may read 0 at first.
+analytics lag a minute or two, so a backlog that just started may read 0 at first. A **paused**
+queue may not be sampled at all: in the 2026-10-28 funraise-sync rehearsal it read
+`backlog 0 (no recent sample)` with 11 messages held. During a hold, count what's held from each
+Worker's D1 ledger (`status = 'queued'`) rather than trusting the backlog column.
 
 ## Before the load
 
