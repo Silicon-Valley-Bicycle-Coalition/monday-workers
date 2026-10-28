@@ -176,6 +176,15 @@ set). Register the webhook subscription on the Customers board as
 subscription whenever the secret rotates** — an existing subscription keeps the old URL and will
 be rejected.
 
+Monday can't send a custom header, so the secret has to ride in the URL, and that is an accepted
+trade-off: the full request URL, secret included, is recorded in this Worker's Workers Logs
+invocation records, readable by anyone with dashboard log access to it. Keep that access limited
+to people who could read the secret anyway, never log `c.req.url` here, and rotate the secret (new
+`wrangler secret put` + re-register the subscription) if logs are ever shared. See the root
+README's "Webhook secrets in the URL" for who holds log access. The Intuit route
+(`/webhooks/quickbooks`) doesn't have this exposure: Intuit signs each delivery with
+`QB_WEBHOOK_VERIFIER_TOKEN`, which never appears in a URL.
+
 ## Sandbox environment — inbound only, no outbound data
 
 `npm run deploy:sandbox` deploys `svbc-quickbooks-sync-sandbox` (`wrangler.jsonc` `env.sandbox`)
