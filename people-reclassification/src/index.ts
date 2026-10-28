@@ -65,7 +65,7 @@ export default {
     const decision = decideCron({
       todayISO: todayInZone(new Date(), config.window.timeZone),
       liveItemsCount: live.itemsCount, liveItemsLimit: live.itemsLimit ?? config.thresholds.itemsLimit,
-      lastRun: await deps.ledger.lastRun(), config,
+      lastRun: await deps.ledger.lastRun({ skipPreviews: true }), config,
     });
     if (decision === null) {
       console.log(`reclassify cron: no pass due (People at ${live.itemsCount}/${live.itemsLimit ?? config.thresholds.itemsLimit})`);
