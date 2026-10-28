@@ -30,8 +30,6 @@ export interface RowStatusPatch {
   writtenAt?: string;
 }
 
-export type UpsertRowResult = 'inserted' | 'duplicate';
-
 export interface RequeueResult {
   requeued: string[];
   purged: number;
@@ -44,12 +42,17 @@ const PENDING_OR_SKIPPED_STATUSES = `'needs-review', 'ingested', 'skipped'`;
 // What purgeWrittenRawRows/purgeUnresolvedRawRows leave in raw_row.
 export const PURGED_RAW_ROW = '{}';
 
+// D1 binds at most 100 parameters per statement: 5 per row in a multi-row INSERT, 1 per id in an IN list.
+const INSERT_ROWS_PER_STATEMENT = 20;
+const IDS_PER_SELECT = 100;
 // Stamped on a row's error when its queue message exhausted every retry (#60,
 // src/consumer/deadLetters.ts), ahead of the last error the consumer recorded.
 export const DEAD_LETTER_PREFIX = 'dead-lettered after retries: ';
 
 export interface RowStore {
-  upsertRow(row: NewRow): Promise<UpsertRowResult>;
+  // Inserts each row unless its Transaction ID is already known, and returns every given row's
+  // status afterwards — 'ingested' for a new row, whatever an earlier upload left for a known one.
+  upsertRows(rows: NewRow[]): Promise<Map<string, RowStatus>>;
   getRow(transactionId: string): Promise<DonationRowRecord | null>;
   getRowByWorklistItemId(worklistItemId: string): Promise<DonationRowRecord | null>;
   // Replay (#34): moves the given rows from 'needs-review' back to 'ingested' (clearing the
@@ -107,17 +110,36 @@ export class D1RowStore implements RowStore {
 
   // Transaction ID is globally unique (PRIMARY KEY), so ON CONFLICT DO NOTHING is enough to make
   // a re-upload of an overlapping file a no-op for rows already known — never overwrites an
-  // in-flight or completed row's status.
-  async upsertRow(row: NewRow): Promise<UpsertRowResult> {
-    const result = await this.db
-      .prepare(
-        `INSERT INTO rows (transaction_id, disbursement_id, status, raw_row, ingested_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT (transaction_id) DO NOTHING`
-      )
-      .bind(row.transactionId, row.disbursementId, row.status, row.rawRow, row.ingestedAt)
-      .run();
-    return result.meta.changes === 0 ? 'duplicate' : 'inserted';
+  // in-flight or completed row's status. One db.batch() for the whole block: multi-row INSERTs,
+  // then the SELECTs that read every row's status back, in one round trip and one transaction.
+  async upsertRows(rows: NewRow[]): Promise<Map<string, RowStatus>> {
+    const statuses = new Map<string, RowStatus>();
+    if (rows.length === 0) return statuses;
+    const statements: D1PreparedStatement[] = [];
+    for (const chunk of chunked(rows, INSERT_ROWS_PER_STATEMENT)) {
+      const values = chunk.map((_, i) => `(?${i * 5 + 1}, ?${i * 5 + 2}, ?${i * 5 + 3}, ?${i * 5 + 4}, ?${i * 5 + 5})`);
+      statements.push(
+        this.db
+          .prepare(
+            `INSERT INTO rows (transaction_id, disbursement_id, status, raw_row, ingested_at)
+             VALUES ${values.join(', ')}
+             ON CONFLICT (transaction_id) DO NOTHING`
+          )
+          .bind(...chunk.flatMap((row) => [row.transactionId, row.disbursementId, row.status, row.rawRow, row.ingestedAt]))
+      );
+    }
+    const selects = chunked(rows.map((row) => row.transactionId), IDS_PER_SELECT).map((ids) =>
+      this.db
+        .prepare(`SELECT transaction_id, status FROM rows WHERE transaction_id IN (${ids.map((_, i) => `?${i + 1}`).join(', ')})`)
+        .bind(...ids)
+    );
+    const results = await this.db.batch([...statements, ...selects]);
+    for (const result of results.slice(statements.length)) {
+      for (const record of result.results as { transaction_id: string; status: RowStatus }[]) {
+        statuses.set(record.transaction_id, record.status);
+      }
+    }
+    return statuses;
   }
 
   async getRow(transactionId: string): Promise<DonationRowRecord | null> {
@@ -227,4 +249,10 @@ export class D1RowStore implements RowStore {
       .run();
     return result.meta.changes;
   }
+}
+
+function chunked<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
 }

@@ -11,6 +11,7 @@ import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
 import { consumeBenevityBatch, type BenevityQueueMessage } from './consumer/processBatch';
+import { readReportText } from './consumer/ingestUpload';
 import { processDeadLetters, sweepDeadLetteredRows } from './consumer/deadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env, BenevityImportConfig } from './types';
@@ -39,7 +40,15 @@ async function fetchCsv(url: string): Promise<string> {
   if (!response.ok) {
     throw new Error(`benevity report fetch: HTTP ${response.status}`);
   }
-  return response.text();
+  // Capped at MAX_REPORT_LENGTH bytes while it streams, whatever Content-Length says (or omits).
+  return readReportText(response);
+}
+
+function writeQueue(env: Env) {
+  return {
+    sendBatch: (messages: BenevityQueueMessage[]) =>
+      env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
+  };
 }
 
 export default {
@@ -60,12 +69,8 @@ export default {
         rowStore: new D1RowStore(env.DB),
         config,
         gate: () => skipContext(env),
-        queue: {
-          sendBatch: (messages: BenevityQueueMessage[]) =>
-            env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
-        },
+        queue: writeQueue(env),
         webhookSecret: env.BENEVITY_WEBHOOK_SECRET,
-        fetchCsv,
         now: () => new Date().toISOString(),
       });
       return app.fetch(request, env, ctx);
@@ -86,6 +91,7 @@ export default {
     if (isDeadLetterQueue) {
       await processDeadLetters([...batch.messages], {
         rowStore: new D1RowStore(env.DB),
+        uploadStore: new D1UploadStore(env.DB),
         mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
         config,
         writesOn: (await readWriteMode(env, WORKER)) === 'on',
@@ -95,11 +101,14 @@ export default {
 
     const gate = await skipContext(env);
     await consumeBenevityBatch([...batch.messages], {
+      uploadStore: new D1UploadStore(env.DB),
       rowStore: new D1RowStore(env.DB),
       disbursementStore: new D1DisbursementStore(env.DB),
       aliasStore: new D1AliasStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
+      queue: writeQueue(env),
+      fetchCsv,
       now: () => new Date().toISOString(),
     }, gate);
   },

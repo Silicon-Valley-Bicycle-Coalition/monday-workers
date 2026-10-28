@@ -56,7 +56,7 @@ describe('worker entry point', () => {
     ).disbursement.id;
     const rows = new D1RowStore(env.DB);
     const transactionId = `TXN-${queue}`;
-    await rows.upsertRow({ transactionId, disbursementId, rawRow: '{}', status: 'ingested', ingestedAt: '2026-09-15T00:00:00Z' });
+    await rows.upsertRows([{ transactionId, disbursementId, rawRow: '{}', status: 'ingested', ingestedAt: '2026-09-15T00:00:00Z' }]);
     await rows.updateStatus(transactionId, 'ingested', { error: 'monday: HTTP 503' });
     vi.spyOn(console, 'error').mockImplementation(() => {});
 

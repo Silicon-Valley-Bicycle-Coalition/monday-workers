@@ -3,6 +3,7 @@ import { processDeadLetters, sweepDeadLetteredRows, deadLetterReason, SWEEP_LIMI
 import type { BenevityQueueMessage, QueueMessageLike } from './processBatch';
 import { DEAD_LETTER_PREFIX, type DonationRowRecord, type RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
+import type { UploadStore } from '../db/uploads';
 import type { ParsedRow } from '../parse/report';
 
 function fakeConfig(): BenevityImportConfig {
@@ -67,7 +68,7 @@ function message(body: unknown): QueueMessageLike<BenevityQueueMessage> {
 
 function fakeDeps(overrides: Partial<DeadLetterDeps> = {}) {
   const rowStore = {
-    upsertRow: vi.fn(),
+    upsertRows: vi.fn(),
     getRow: vi.fn().mockResolvedValue(row()),
     getRowByWorklistItemId: vi.fn(),
     requeueRow: vi.fn(),
@@ -86,8 +87,14 @@ function fakeDeps(overrides: Partial<DeadLetterDeps> = {}) {
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
   };
-  const deps = { rowStore, mondayClient: mondayClient as never, config: fakeConfig(), writesOn: true, ...overrides };
-  return { deps, rowStore, mondayClient };
+  const uploadStore = {
+    createUpload: vi.fn(),
+    getUploadByAssetId: vi.fn().mockResolvedValue({ id: 3, mondayAssetId: 'a1', uploadedAt: 't', status: 'parsing', blockCount: 0 }),
+    markParsed: vi.fn(),
+    markError: vi.fn().mockResolvedValue(undefined),
+  } satisfies UploadStore;
+  const deps = { rowStore, uploadStore, mondayClient: mondayClient as never, config: fakeConfig(), writesOn: true, ...overrides };
+  return { deps, rowStore, uploadStore, mondayClient };
 }
 
 const stamped = `${DEAD_LETTER_PREFIX}monday: HTTP 503`;
@@ -124,7 +131,7 @@ describe('processDeadLetters', () => {
     expect(rowStore.updateStatus).toHaveBeenNthCalledWith(2, 'TXN001', 'needs-review', { error: stamped, worklistItemId: '901' });
     expect(msg.ack).toHaveBeenCalled();
     expect(msg.retry).not.toHaveBeenCalled();
-    expect(summary).toEqual({ marked: ['TXN001'], awaitingWorklist: [] });
+    expect(summary).toEqual({ marked: ['TXN001'], uploads: [], awaitingWorklist: [] });
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('1 gift dead-lettered'));
   });
 
@@ -152,7 +159,7 @@ describe('processDeadLetters', () => {
     expect(rowStore.updateStatus).toHaveBeenCalledTimes(1);
     expect(msg.ack).toHaveBeenCalled();
     expect(msg.retry).not.toHaveBeenCalled();
-    expect(summary).toEqual({ marked: ['TXN001'], awaitingWorklist: ['TXN001'] });
+    expect(summary).toEqual({ marked: ['TXN001'], uploads: [], awaitingWorklist: ['TXN001'] });
   });
 
   it('re-reports on the item a replayed row already has instead of posting another', async () => {
@@ -271,5 +278,45 @@ describe('sweepDeadLetteredRows', () => {
     expect(result).toEqual({ posted: ['TXN002'], failed: ['TXN001'] });
     expect(rowStore.updateStatus).toHaveBeenCalledTimes(1);
     expect(rowStore.updateStatus).toHaveBeenCalledWith('TXN002', 'needs-review', { error: stamped, worklistItemId: '902' });
+  });
+});
+
+// #74: the write queue also carries uploaded reports to ingest, and one can die too.
+describe('processDeadLetters — upload messages', () => {
+  const upload = (assetId: unknown): QueueMessageLike<BenevityQueueMessage> =>
+    ({ body: { assetId } as BenevityQueueMessage, ack: vi.fn(), retry: vi.fn() });
+
+  it('marks a dead upload errored and reports the asset, without touching rows or Monday', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { deps, rowStore, uploadStore, mondayClient } = fakeDeps();
+    const message = upload('a1');
+    const summary = await processDeadLetters([message], deps);
+    expect(uploadStore.markError).toHaveBeenCalledWith(3);
+    expect(summary).toEqual({ marked: [], uploads: ['a1'], awaitingWorklist: [] });
+    expect(message.ack).toHaveBeenCalled();
+    expect(rowStore.getRow).not.toHaveBeenCalled();
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(err.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(/asset "a1".*upload the same file again/);
+    err.mockRestore();
+  });
+
+  it('leaves an upload that has since finished as it is', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { deps, uploadStore } = fakeDeps();
+    uploadStore.getUploadByAssetId.mockResolvedValue({ id: 3, mondayAssetId: 'a1', uploadedAt: 't', status: 'parsed', blockCount: 1 });
+    await processDeadLetters([upload('a1')], deps);
+    expect(uploadStore.markError).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('retries when D1 is down, rather than losing the record', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { deps, uploadStore } = fakeDeps();
+    uploadStore.getUploadByAssetId.mockRejectedValue(new Error('D1 down'));
+    const message = upload('a1');
+    await processDeadLetters([message], deps);
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 });

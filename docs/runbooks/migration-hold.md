@@ -188,7 +188,13 @@ flip. Recover them by hand if wanted:
 
 - `quickbooks-sync`: events stay queued; QuickBooks redelivery would be a duplicate, so use a
   manual redrive.
-- `benevity-import`: reports uploaded during the off period need a re-upload or the Retry action.
+- `benevity-import`: a report uploaded during the off period is recorded (its rows sit in D1 at
+  `ingested`) but never written, and no worklist item is posted for it, so the Retry action has
+  nothing to act on. Once writes are `on`, upload the same report file again as a new file on the
+  Benevity Uploads board: the Worker re-sends every row still at `ingested`, unstamped, and posts
+  any block worklist item it needs. Which reports: the `uploads` rows with `uploaded_at` inside the
+  off window (`wrangler d1 execute svbc-benevity-import --remote --command "SELECT monday_asset_id,
+  uploaded_at FROM uploads WHERE uploaded_at >= '<off start>'"`). See `benevity-import/README.md`.
 - `email-log`: rows close out `failed`, so a staff re-send is logged.
 - `member-portal`: change requests are refused with 503 under `off` (the donor re-submits); the
   letters webhook logs and returns 200 with no `letter_sends` row (staff re-click); a message

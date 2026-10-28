@@ -3,6 +3,7 @@ import { consumeBenevityBatch, processBenevityQueueBatch, type QueueMessageLike,
 import type { RowStore, DonationRowRecord } from '../db/rows';
 import type { DisbursementStore } from '../db/disbursements';
 import type { AliasStore } from '../db/aliases';
+import type { UploadStore } from '../db/uploads';
 import type { BenevityImportConfig } from '../types';
 import type { ParsedRow } from '../parse/report';
 
@@ -69,7 +70,7 @@ function message(transactionId: string, attempts?: number, writeStamp?: 'dropped
 
 function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
   const rowStore: RowStore = {
-    upsertRow: vi.fn(),
+    upsertRows: vi.fn(),
     getRow: vi.fn(),
     getRowByWorklistItemId: vi.fn(),
     requeueRow: vi.fn(),
@@ -98,12 +99,21 @@ function fakeDeps(overrides: Partial<ProcessBatchDeps> = {}): ProcessBatchDeps {
     archiveItem: vi.fn(),
     fetchAsset: vi.fn(),
   };
+  const uploadStore: UploadStore = {
+    createUpload: vi.fn(),
+    getUploadByAssetId: vi.fn().mockResolvedValue(null),
+    markParsed: vi.fn(),
+    markError: vi.fn(),
+  };
   return {
+    uploadStore,
     rowStore,
     disbursementStore,
     aliasStore,
     mondayClient: mondayClient as never,
     config: fakeConfig(),
+    queue: { sendBatch: vi.fn().mockResolvedValue(undefined) },
+    fetchCsv: vi.fn(),
     now: () => '2026-09-15T00:00:00Z',
     ...overrides,
   };
@@ -466,3 +476,89 @@ describe('consumeBenevityBatch — write switch', () => {
     err.mockRestore();
   });
 });
+
+// Upload messages (#74): the webhook only records and enqueues a report; the consumer ingests it.
+// ingestUpload itself is covered in ingestUpload.test.ts — these cover the dispatch around it.
+describe('consumeBenevityBatch — upload messages', () => {
+  const gate = (mode: 'on' | 'off' | 'hold') =>
+    ({ worker: 'benevity-import', environment: 'sandbox', mode, logLevel: 'normal', piiKeys: ['name', 'email'] }) as const;
+
+  function uploadMessage(writeStamp?: 'dropped', attempts?: number): QueueMessageLike<BenevityQueueMessage> {
+    return { body: { assetId: 'a1', ...(writeStamp ? { writeStamp } : {}) }, ...(attempts === undefined ? {} : { attempts }), ack: vi.fn(), retry: vi.fn() };
+  }
+
+  // An already-parsed upload: ingestUpload returns at once, so these tests see only the dispatch.
+  function parsedDeps() {
+    const deps = fakeDeps();
+    (deps.uploadStore.getUploadByAssetId as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 't', status: 'parsed', blockCount: 1 });
+    return deps;
+  }
+
+  it('ingests the upload and acks, without treating it as a row', async () => {
+    const deps = parsedDeps();
+    const msg = uploadMessage();
+    await consumeBenevityBatch([msg], deps, gate('on'));
+    expect(deps.uploadStore.getUploadByAssetId).toHaveBeenCalledWith('a1');
+    expect(deps.rowStore.getRow).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalled();
+  });
+
+  it('retries on the shared backoff when ingesting fails, and leaves no row status behind', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = fakeDeps();
+    (deps.mondayClient.fetchAsset as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 500'));
+    const msg = uploadMessage(undefined, 3);
+    await consumeBenevityBatch([msg], deps, gate('on'));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(deps.rowStore.updateStatus).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('under hold retries without touching the upload', async () => {
+    const deps = parsedDeps();
+    const msg = uploadMessage(undefined, 1);
+    await consumeBenevityBatch([msg], deps, gate('hold'));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(deps.uploadStore.getUploadByAssetId).not.toHaveBeenCalled();
+  });
+
+  it('a dropped upload stays a dry run under on: its rows are stamped dropped and no worklist item is posted', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const deps = fakeDeps();
+    (deps.uploadStore.createUpload as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, mondayAssetId: 'a1', uploadedAt: 't', status: 'parsing', blockCount: 0 });
+    (deps.mondayClient.fetchAsset as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'a1', name: 'r.csv', publicUrl: 'https://files.monday.com/a1' });
+    (deps.fetchCsv as ReturnType<typeof vi.fn>).mockResolvedValue(REPORT);
+    (deps.disbursementStore.findOrCreate as ReturnType<typeof vi.fn>).mockImplementation(async (input) => ({ disbursement: { id: 10, worklistItemId: null, ...input }, created: true }));
+    (deps.rowStore.upsertRows as ReturnType<typeof vi.fn>).mockResolvedValue(new Map([['TXN001', 'ingested']]));
+    const msg = uploadMessage('dropped');
+
+    await consumeBenevityBatch([msg], deps, gate('on'));
+
+    expect(deps.queue.sendBatch).toHaveBeenCalledWith([{ transactionId: 'TXN001', writeStamp: 'dropped' }]);
+    expect(deps.uploadStore.markParsed).toHaveBeenCalledWith(1, 1); // still recorded as seen
+    expect(msg.ack).toHaveBeenCalled();
+    log.mockRestore();
+  });
+});
+
+const REPORT = [
+  'Donations Report,',
+  '"#---",',
+  'Charity Name,SVBC',
+  'Charity ID,123',
+  'Period Ending,Tue 16 Mar 2026 0:00:00',
+  'Currency,USD',
+  'Payment Method,EFT',
+  'Disbursement ID,ABC123',
+  'Note,',
+  '"#---",',
+  '',
+  'Company,Project,Donation Date,Donor First Name,Donor Last Name,Email,Address,City,State/Province,Postal Code,Activity,Comment,Transaction ID,Donation Frequency,Currency,Project Remote ID,Source,Reason,Total Donation to be Acknowledged,Match Amount,Cause Support Fee,Merchant Fee,Fee Comment',
+  '"Acme, Inc.",Project,2026-03-06T00:00:00Z,Jordan,Rivera,jordan@acme.example,x,x,x,94043,,,TXN001,One Time,USD,,BlueSnap,User Donation,50.00,0.00,0.00,0.00,',
+  'Totals,,,,,,,,,,,,,,,,,,50.00,0.00,0.00,0.00',
+  'Total Donations (Gross),50.00',
+  'Check Fee,0.00',
+  'Net Total Payment,50.00',
+  '',
+].join('\n');

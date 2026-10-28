@@ -1,4 +1,5 @@
 import type { MondayClient } from '../monday/client';
+import type { UploadStore } from '../db/uploads';
 import { DEAD_LETTER_PREFIX, type DonationRowRecord, type RowStore } from '../db/rows';
 import type { BenevityImportConfig } from '../types';
 import type { ParsedRow } from '../parse/report';
@@ -33,6 +34,7 @@ export const SWEEP_LIMIT = 25;
 
 export interface DeadLetterDeps {
   rowStore: RowStore;
+  uploadStore: UploadStore;
   mondayClient: MondayClient;
   config: BenevityImportConfig;
   // Whether the worklist item may be posted now — the write switch is `on`.
@@ -42,6 +44,8 @@ export interface DeadLetterDeps {
 export interface DeadLetterSummary {
   // Transaction IDs marked dead-lettered in this batch.
   marked: string[];
+  // Monday asset ids of uploaded reports that never finished ingesting (#74), marked 'error'.
+  uploads: string[];
   // Of those, the ones whose worklist item is still to be posted (by the daily sweep).
   awaitingWorklist: string[];
 }
@@ -50,12 +54,17 @@ export async function processDeadLetters(
   messages: readonly QueueMessageLike<BenevityQueueMessage>[],
   deps: DeadLetterDeps
 ): Promise<DeadLetterSummary> {
-  const summary: DeadLetterSummary = { marked: [], awaitingWorklist: [] };
+  const summary: DeadLetterSummary = { marked: [], uploads: [], awaitingWorklist: [] };
   for (const message of messages) {
+    const assetId = (message.body as { assetId?: unknown } | null)?.assetId;
+    if (typeof assetId === 'string' && assetId.trim() !== '') {
+      await processDeadUpload(assetId, message, deps, summary);
+      continue;
+    }
     // A body without a Transaction ID can't be marked; ack it on its own. Throwing would fail
     // the whole batch, and after the DLQ consumer's retries the good letters in it would be
     // dropped unmarked.
-    const transactionId = (message.body as Partial<BenevityQueueMessage> | null)?.transactionId;
+    const transactionId = (message.body as { transactionId?: unknown } | null)?.transactionId;
     if (typeof transactionId !== 'string' || transactionId.trim() === '') {
       console.error('benevity-import dlq: malformed dead letter (no transactionId); acking without marking anything');
       message.ack();
@@ -107,13 +116,41 @@ export async function processDeadLetters(
   return summary;
 }
 
+// An upload message (#74) that exhausted its retries: the report never finished ingesting — its
+// asset kept failing to fetch, or a block kept failing in D1. There is no row to mark and nothing
+// for a staff Retry to act on, so the upload is marked 'error' (where an earlier attempt may have
+// left it 'parsing') and the asset is reported. Rows from any blocks it did finish are already
+// queued on their own. The fix is a re-upload of the same file once the cause is gone: the new
+// asset resumes from the disbursements and rows already recorded.
+async function processDeadUpload(
+  assetId: string,
+  message: QueueMessageLike<BenevityQueueMessage>,
+  deps: DeadLetterDeps,
+  summary: DeadLetterSummary
+): Promise<void> {
+  try {
+    const upload = await deps.uploadStore.getUploadByAssetId(assetId);
+    if (upload !== null && upload.status !== 'parsed') await deps.uploadStore.markError(upload.id);
+  } catch (err) {
+    console.error(`benevity-import dlq: could not mark asset "${assetId}" errored: ${errorMessage(err)}`);
+    message.retry({ delaySeconds: D1_RETRY_DELAY_SECONDS });
+    return;
+  }
+  summary.uploads.push(assetId);
+  message.ack();
+  console.error(
+    `benevity-import dlq: uploaded report (Monday asset "${assetId}") failed to ingest on every retry for about four days; ` +
+      'marked error. Fix the cause, then upload the same file again on the Benevity Uploads board.'
+  );
+}
+
 /**
  * The daily cron's pass (#60): posts the worklist item for every dead-lettered row that doesn't
  * have one yet, up to SWEEP_LIMIT. The caller runs it only while writes are `on`. One row's
  * failure doesn't stop the rest; it is tried again tomorrow.
  */
 export async function sweepDeadLetteredRows(
-  deps: Omit<DeadLetterDeps, 'writesOn'>
+  deps: Omit<DeadLetterDeps, 'writesOn' | 'uploadStore'>
 ): Promise<{ posted: string[]; failed: string[] }> {
   const rows = await deps.rowStore.listDeadLetteredWithoutWorklistItem(SWEEP_LIMIT);
   const posted: string[] = [];

@@ -1,12 +1,11 @@
-// benevity-import's side of the write switch (src/flags.ts, spec 2026-10-26): the dry-run versions
-// of the webhook routes' and the consumer's deps. The business logic runs unchanged against them;
+// benevity-import's side of the write switch (src/flags.ts, spec 2026-10-26): the dry-run version of
+// the consumer's deps (the upload route only stamps what it enqueues; the retry route skips). The business logic runs unchanged against them;
 // only the last step — the Monday write, or the D1 bookkeeping that records it — is swapped out.
 import { readOnlyProxy, recordingProxy, stampFor, type SkipContext } from './flags';
 import type { DisbursementStore } from './db/disbursements';
 import type { RowStore } from './db/rows';
 import type { MondayClient, MondayItem } from './monday/client';
 import type { ProcessBatchDeps } from './consumer/processBatch';
-import type { AppDeps } from './webhook/route';
 
 // Everything a skip line needs except the delivery, which is per request (or per message).
 export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
@@ -49,23 +48,15 @@ export function dryRunRowStore(store: RowStore): RowStore {
 }
 
 /**
- * The upload route's deps under `off`. Uploads, disbursements and rows are still recorded (seen
- * data, so a re-upload isn't mistaken for new), Monday writes are logged, and every message sent
- * to the queue is stamped `dropped` so the consumer dry-runs it even if the mode is `on` by then.
+ * The consumer's deps under `off` (or for a `dropped` message). Ingesting a report still records
+ * the upload, its disbursements and rows (seen data, so a re-upload isn't mistaken for new), Monday
+ * writes are logged, and every row it enqueues is stamped `dropped` so it stays a dry run too.
  */
-export function dryRunAppDeps(deps: AppDeps, ctx: SkipContext): AppDeps {
+export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext): ProcessBatchDeps {
   const stamp = stampFor('off');
   return {
     ...deps,
-    mondayClient: dryRunMondayClient(deps.mondayClient, ctx),
-    disbursementStore: dryRunDisbursementStore(deps.disbursementStore),
     queue: { sendBatch: (messages) => deps.queue.sendBatch(messages.map((m) => ({ ...m, ...stamp }))) },
-  };
-}
-
-export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext): ProcessBatchDeps {
-  return {
-    ...deps,
     rowStore: dryRunRowStore(deps.rowStore),
     disbursementStore: dryRunDisbursementStore(deps.disbursementStore),
     mondayClient: dryRunMondayClient(deps.mondayClient, ctx),
