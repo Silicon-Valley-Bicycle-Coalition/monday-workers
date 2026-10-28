@@ -29,6 +29,10 @@ describe('config split: sinks', () => {
     expect(sandbox.feedbackFormUrl).not.toBe(production.feedbackFormUrl);
   });
 
+  it('production and sandbox read items from different boards', () => {
+    expect(sandbox.board.boardId).not.toBe(production.board.boardId);
+  });
+
   it('status write-back never targets the same board from both environments', () => {
     const boardOf = (c: { sendStatus: unknown }) => (c.sendStatus as { boardId?: string } | null)?.boardId;
     // Latent until both are configured (both ship null).
