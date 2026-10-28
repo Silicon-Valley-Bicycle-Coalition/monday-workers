@@ -232,7 +232,8 @@ reason gives its row count, donation-date range and gross total. Nothing is wron
 already keyed that disbursement into Salesforce — leave the item, or delete it. If it was
 **never** keyed into Salesforce, it is missing from the CRM: set Retry, and every row of it is
 imported like any other. Only do that when you're sure — the migrated history has no Transaction
-IDs, so importing a disbursement that *was* keyed double-counts it.
+IDs, so importing a disbursement that *was* keyed double-counts it. If only some of its rows
+were keyed, don't Retry (it imports every row): enter the missing gifts by hand.
 
 A Retry the Worker can't carry out puts the item back to **Needs review** with the reason in
 its Reason column instead of leaving it at Retry. The main case: a row's Benevity details are
@@ -276,9 +277,14 @@ several disbursements:
   can't tell a Benevity row the import already carried from a new one. Config
   `benevityImport.minDisbursementDate` is the cutoff: a disbursement whose **Period Ending** is
   before it is skipped whole (its rows recorded `skipped`, nothing written), on the assumption
-  that staff keyed it into Salesforce and it was migrated. **Set it to the day after the Period
-  Ending of the last disbursement keyed into Salesforce** — confirm that at the data freeze; the
-  freeze date itself is only right if nothing was left unkeyed.
+  that staff keyed it into Salesforce and it was migrated. **Set it to the data freeze date.**
+  Staff can only key a disbursement that has already been paid out, so every disbursement keyed
+  before the freeze has a Period Ending before it, and none can be imported twice. Erring later
+  is the safe direction: a cutoff that is too late skips a disbursement nobody keyed, and that
+  shows up on the worklist (below) to be checked and retried; a cutoff that is too early imports
+  one that was keyed, and that double-count is silent. Expect one or two skipped disbursements
+  around the freeze; check each against the migrated Donations (Matched By, dates, amounts)
+  before setting Retry.
   The gate is deliberately *not* a row's Donation Date (#40): Benevity pays out weeks after the
   gift, so the first disbursement after the freeze is mostly rows dated before it, and none of
   those were ever keyed (staff key from the disbursement report, which didn't exist yet). Within

@@ -25,7 +25,7 @@ function config(over: Partial<ReclassificationConfig> = {}): ReclassificationCon
     perpetual: { lifetimeTierLabel: 'Lifetime', funraiseLinked: true },
     eventRegistrations: {
       boardId: REGS, columns: { attendee: 'Attendee', event: 'Event', attendance: 'Attendance', source: 'Source' },
-      countedAttendanceLabels: ['Attended'], countedRegisteredSources: ['Funraise'], events: { boardId: EVENTS, startColumn: 'Start' },
+      countedAttendanceLabels: ['Attended'], countedRegisteredSources: ['Funraise'], events: { boardId: EVENTS, startColumn: 'Date' },
     },
     volunteers: { boardId: VOLS, columns: { volunteer: 'Volunteer', date: 'Date' } },
     thresholds: { itemsLimit: 10000, liveTriggerPct: 85, historicalWarnPct: 80 },
@@ -83,7 +83,7 @@ function fakeClient(state: FakeState): ReclassificationMondayClient {
   const schemas: Record<number, BoardSchema> = {
     [LIVE]: schema(LIVE, 'People', peopleColumns('l'), state.liveCount ?? state.live.length),
     [HIST]: schema(HIST, 'People (Historical)', state.historicalColumns ?? peopleColumns('h'), state.historicalCount ?? state.historical.length),
-    [EVENTS]: schema(EVENTS, 'Events', [{ id: 'date_start', title: 'Start', type: 'date' }], 0),
+    [EVENTS]: schema(EVENTS, 'Events', [{ id: 'date_start', title: 'Date', type: 'date' }], 0),
     [REGS]: schema(REGS, 'Event Registrations', [
       { id: 'br_att', title: 'Attendee', type: 'board_relation' }, { id: 'br_ev', title: 'Event', type: 'board_relation' },
       { id: 'color_at', title: 'Attendance', type: 'status' }, { id: 'color_src', title: 'Source', type: 'status' },

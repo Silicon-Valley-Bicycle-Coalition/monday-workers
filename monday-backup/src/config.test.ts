@@ -4,7 +4,7 @@ import { validateConfig } from './config';
 describe('validateConfig', () => {
   it('accepts a minimal valid config', () => {
     const config = validateConfig({ destinationParentFolderId: 'folder-123' });
-    expect(config).toEqual({ destinationParentFolderId: 'folder-123', excludeBoardIds: [] });
+    expect(config).toEqual({ destinationParentFolderId: 'folder-123', excludeBoardIds: [], apiUsageAlerts: false });
   });
 
   it('carries through excludeBoardIds when present', () => {
@@ -59,5 +59,13 @@ describe('validateConfig', () => {
 
   it('rejects a non-object config', () => {
     expect(() => validateConfig(null)).toThrow(/expected an object/);
+  });
+
+  it('carries through apiUsageAlerts when present', () => {
+    expect(validateConfig({ destinationParentFolderId: 'f', apiUsageAlerts: true }).apiUsageAlerts).toBe(true);
+  });
+
+  it('rejects a non-boolean apiUsageAlerts', () => {
+    expect(() => validateConfig({ destinationParentFolderId: 'f', apiUsageAlerts: 'yes' })).toThrow(/apiUsageAlerts must be a boolean/);
   });
 });

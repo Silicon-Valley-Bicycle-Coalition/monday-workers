@@ -1,4 +1,5 @@
 {
   "destinationParentFolderId": "REPLACE_WITH_DRIVE_FOLDER_ID",
-  "excludeBoardIds": []
+  "excludeBoardIds": [],
+  "apiUsageAlerts": true
 }

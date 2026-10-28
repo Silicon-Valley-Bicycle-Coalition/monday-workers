@@ -34,8 +34,10 @@ export async function runEnrich(
   const accounts = await readNdjson<Record<string, unknown>>(dataPath('extract', 'accounts.ndjson'));
   const contactsPath = dataPath('extract', 'contacts.ndjson');
   const contacts = existsSync(contactsPath) ? await readNdjson<Record<string, unknown>>(contactsPath) : [];
+  const giftsPath = dataPath('extract', 'opportunities.ndjson');
+  const gifts = existsSync(giftsPath) ? await readNdjson<Record<string, unknown>>(giftsPath) : [];
   // Same person/org split as transform — a person-named Account is never an org to look up.
-  const personNamed = personNamedAccountIds(accounts, contacts);
+  const personNamed = personNamedAccountIds(accounts, contacts, gifts);
   const path = dataPath('enrich', 'organizations.ndjson');
   const done = new Set<string>();
   if (existsSync(path)) {

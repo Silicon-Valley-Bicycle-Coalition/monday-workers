@@ -59,7 +59,7 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only (sequential by default;
                                     #   --batched is opt-in, sandbox-only until its rehearsal passes)
-npm run cli -- validate             # reconciliation + data/validate/sample.csv for the admin
+npm run cli -- validate             # reconciliation + data/validate/sample.csv (with review links) for the admin
 npm run cli -- validate --live      # also reads every board back from Monday (see below)
 npm run cli -- reconcile            # go/no-go gate: extract vs Monday, per fiscal year and per board
 npm run cli -- configure --dry-run  # UI-layer setup: descriptions, groups, columns, saved views

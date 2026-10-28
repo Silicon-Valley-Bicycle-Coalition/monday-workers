@@ -28,7 +28,11 @@ export interface Config {
   // inlineLinks (relations to already-loaded targets written inside create_item), and the pause
   // before a recovery lookup. Optional — src/load/options.ts has the defaults; CLI flags override.
   load?: LoadConfig;
-  monday: { apiUrl: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
+  // Browser bases for the validate sample sheet's per-row links (#13): the Monday account
+  // (https://<account>.monday.com) and the Salesforce My Domain (https://<domain>.my.salesforce.com).
+  // Optional — the link columns stay blank without them.
+  salesforceInstanceUrl?: string;
+  monday: { apiUrl: string; accountUrl?: string; boardSuffix: string; workspaceId?: number | null; boards: Record<string, number | null> };
   localNews: { rules: { cities: string[]; url: string; name: string }[]; defaultUrl: string; defaultName: string };
   reconciliation: Record<string, number>;
 }

@@ -46,7 +46,7 @@ POST /reclassify/run?secret=…  ──►   the same pass, on demand (follows t
   2. read both People boards' schemas; resolve every column by TITLE; build the move mapping;
      refuse the pass if the boards disagree on any value-bearing column
   3. page People + People (Historical): Last Gift Date, Member Until, Membership Tier, Funraise Profile
-     page Events (Start) and Event Registrations (Attendee, Event, Attendance, Source)
+     page Events (Date) and Event Registrations (Attendee, Event, Attendance, Source)
      page Volunteers (Volunteer, Date)
   4. classify every person (src/classify.ts) — live / historical / no evidence
   5. plan: aged-out live people → Historical (longest-lapsed first); reactivated Historical
@@ -72,7 +72,7 @@ date is read in `window.timeZone`):
 | Current member | People `Member Until` after today | Live (a placeholder term decades out counts too — the analysis folded those 127 into the always-live bucket) |
 | Last gift | People `Last Gift Date` — donation-rollups' rollup, kept current on **both** boards | Activity date |
 | Membership term end | People `Member Until` on or before today | Activity date |
-| Event registration | Event Registrations → the linked Event's `Start`, counted when `Attendance` ∈ `countedAttendanceLabels` (`Attended`) **or** `Source` ∈ `countedRegisteredSources` (`Funraise`) — the import's "a Funraise registration is a paid ticket; an Eventbrite registration counts only once checked in" rule (decision 2026-09-08) | Activity date |
+| Event registration | Event Registrations → the linked Event's `Date`, counted when `Attendance` ∈ `countedAttendanceLabels` (`Attended`) **or** `Source` ∈ `countedRegisteredSources` (`Funraise`) — the import's "a Funraise registration is a paid ticket; an Eventbrite registration counts only once checked in" rule (decision 2026-09-08) | Activity date |
 | Volunteer hours | Volunteers `Date`, via the `Volunteer` link | Activity date (optional source; `volunteers: null` turns it off) |
 
 Latest activity = the max of the activity dates; dates after today are ignored as data-entry
@@ -165,19 +165,21 @@ and cannot be listed in the mapping. So:
 Boards by id, columns **by title** — resolved at the start of every pass, so no column id lives
 in config and a renamed column fails the pass loudly rather than reading blanks.
 
-| Config | Sandbox (`config/sandbox.json`, CRM Sandbox v3) | Production (`config/svbc.json`) |
+| Config | Sandbox (`config/sandbox.json`, CRM Sandbox v4) | Production (`config/svbc.json`) |
 |---|---|---|
-| `boards.live` | People `18431577220` | `0` until cutover |
-| `boards.historical` | People (Historical) `18431577228` | `0` |
-| `eventRegistrations` / `.events` | Event Registrations `18431577302` / Events `18431577282` | `0` / `0` |
-| `volunteers` | Volunteers `18431577321` | `0` |
+| `boards.live` | People `18437342592` | `0` until cutover |
+| `boards.historical` | People (Historical) `18437342607` | `0` |
+| `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `0` / `0` |
+| `volunteers` | Volunteers `18437342662` | `0` |
 | `alerts.itRequests` | `null` (log only — IT Requests is a production board) | `8846215481`, `Type` = `IT Support`, 30-day cooldown |
 
 Column titles (`peopleColumns`, the registrations and volunteers `columns` blocks) are the ones
 the import and donation-rollups create: `Last Gift Date`, `Member Until`, `Membership Tier`,
-`Funraise Profile`, `Attendee`, `Event`, `Attendance`, `Source`, `Start`, `Volunteer`, `Date`.
-Verify `Start` and `Date` against the live sandbox boards before the first run — they are the
-import's titles, read from its column spec, not from the boards.
+`Funraise Profile`, `Attendee`, `Event`, `Attendance`, `Source`, `Date` (Events), `Volunteer`,
+`Date` (Volunteers). Checked against the CRM Sandbox v4 boards 2026-10-28: all present with the
+expected types, and the two People boards' columns agree. The Events start date is titled
+`Date`, not `Start` — `Start` is the Campaigns and Affiliations column — so the config's
+original `startColumn: "Start"` would have failed every pass at the Events schema read.
 
 Other config: `window` (`years: 7`, `timeZone`), `thresholds` (`itemsLimit: 10000`,
 `liveTriggerPct: 85`, `historicalWarnPct: 80`), `run` (`maxMovesPerRun: 400` — with the
@@ -234,9 +236,8 @@ Nothing below has been done.
 * **Move behaviour is unverified live** — connect-column survival, `columns_mapping` acceptance
   for every column type the boards carry, and whether Monday fires donation-rollups' webhooks on
   a move (it shouldn't; the Donations board is untouched). Step 5 of Deploy is that check.
-* **People (Historical) at 81% already** (sandbox, 2026-08-24). This Worker warns and refuses
+* **People (Historical) at 81% already** (sandbox, 2026-08-24; v4 at 80.5%, 2026-10-28). This Worker warns and refuses
   to overfill it, but the era split the plan's item 4 asks for is a separate design.
-* **Events `Start` / Volunteers `Date` titles** need confirming against the sandbox boards.
 * **Activities board** as an activity source (staff touches) — deliberately out; revisit if
   staff expect a recent call to keep someone live.
 
