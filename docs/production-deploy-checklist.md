@@ -83,7 +83,8 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] Funraise production API key.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys
         (`mailchimp-sync/README.md`, "Prerequisites before this can run against real data").
-  - [ ] Google service account + destination Drive folder for `monday-backup`; Slack webhook.
+  - [ ] Google service account + destination Drive folder for `monday-backup` (account added to the
+    Shared Drive as **Contributor**, not Content manager — #67); Slack webhook.
   - [ ] Intuit production app: self-assessment questionnaire, production keys
         (`quickbooks-sync/README.md`). Likely lags cutover — fine, it's non-blocking.
 

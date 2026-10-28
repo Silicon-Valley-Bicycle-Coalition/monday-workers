@@ -5,6 +5,9 @@ import { signServiceAccountJwt, type ServiceAccountCredentials } from './jwt';
 // existing children of a folder the service account didn't necessarily create itself
 // (the service account is a member of the destination Shared Drive — see README's "APIs & auth").
 // Narrow this to `drive.file` if SVBC's Drive setup moves to domain-wide delegation instead.
+// The scope is broad, but the account's Shared Drive role is what bounds it: as a Contributor it
+// can list, create folders and upload, and Drive refuses it any trash, move or delete (issue #67).
+// Nothing here needs more — abort() cancels an upload *session*, never a file.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_ORIGIN = 'https://www.googleapis.com';
