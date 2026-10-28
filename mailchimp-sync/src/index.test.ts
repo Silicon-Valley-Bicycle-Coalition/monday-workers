@@ -3,6 +3,11 @@ import { env as testEnv } from 'cloudflare:test';
 import worker from './index';
 import type { Env, InboundSyncMessage, OutboundSyncMessage } from './types';
 
+// A stand-in FLAGS namespace: `mailchimp-sync:writes` reads as `mode`.
+function flags(mode: string): KVNamespace {
+  return { get: vi.fn(async (key: string) => (key === 'mailchimp-sync:writes' ? mode : null)) } as unknown as KVNamespace;
+}
+
 function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
     DB: testEnv.DB,
@@ -15,6 +20,7 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
     // Real local-simulated binding (see wrangler.jsonc's ratelimits) — never exceeded by these
     // tests' request volume.
     REQUEST_RATE_LIMITER: testEnv.REQUEST_RATE_LIMITER,
+    FLAGS: flags('on'),
     ...overrides,
   };
 }
@@ -117,6 +123,30 @@ describe('queue dispatch', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('holds an outbound message on the queue (retry at 60 s) while writes are on hold', async () => {
+    const env = fakeEnv({ FLAGS: flags('hold') });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const message = { ...fakeMessage<OutboundSyncMessage>({ donorItemId: '1' }), attempts: 1 };
+      const batch = { queue: 'mailchimp-sync-outbound', messages: [message] } as unknown as MessageBatch<unknown>;
+      await worker.queue(batch, env);
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+      expect(message.ack).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('treats a missing FLAGS namespace as unknown: retries, never writes', async () => {
+    const env = fakeEnv({ FLAGS: undefined });
+    const message = { ...fakeMessage<InboundSyncMessage>({ email: 'a@b.com' }), attempts: 1 };
+    const batch = { queue: 'mailchimp-sync-inbound', messages: [message] } as unknown as MessageBatch<unknown>;
+    await worker.queue(batch, env);
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
   });
 
   it('throws on an unrecognized queue name instead of silently routing to inbound', async () => {

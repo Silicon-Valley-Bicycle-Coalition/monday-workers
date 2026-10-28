@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { processLogBatch, retryDelaySeconds } from './processBatch';
+import { processLogBatch } from './processBatch';
+import { retryDelaySeconds } from '../flags';
 import { PLACEHOLDER_COLUMN_ID } from '../config';
 import type { LogQueueMessage } from '../inbound/extract';
 import { MondayApiError } from '../monday/graphql';
@@ -52,10 +53,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe('retryDelaySeconds', () => {
-  it('backs off 1, 4 and 16 minutes', () => {
-    expect([1, 2, 3].map(retryDelaySeconds)).toEqual([60, 240, 960]);
-    expect(retryDelaySeconds(undefined)).toBe(60);
+describe('retry backoff', () => {
+  it('a failed attempt backs off on the shared curve: 1 min doubling to an hour', async () => {
+    for (const [attempts, delay] of [[1, 60], [2, 120], [7, 3600], [8, 3600]] as const) {
+      const { monday, reply, deps } = await setup(PAT);
+      monday.createItem.mockRejectedValueOnce(new Error('boom'));
+      const msg = fakeMessage(logMessage(), attempts);
+      await processLogBatch([msg], deps);
+      expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: delay });
+      expect(reply.sendUnmatched).not.toHaveBeenCalled();
+    }
   });
 });
 

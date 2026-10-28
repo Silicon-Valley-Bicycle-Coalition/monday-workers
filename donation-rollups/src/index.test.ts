@@ -30,8 +30,10 @@ const SECRET = 'test-secret';
 
 function envFor(extra: Record<string, unknown>) {
   // The real D1 (migrations applied by test/apply-migrations.ts); a no-op queue so the route's
-  // enqueue succeeds without a real Queue binding; the webhook secret every request below presents.
-  return { ...env, RECOMPUTE_QUEUE: { send: async () => undefined }, MONDAY_WEBHOOK_SECRET: SECRET, ...extra } as unknown as import('./types').Env;
+  // enqueue succeeds without a real Queue binding; the webhook secret every request below presents;
+  // writes `on` (a FLAGS stand-in — the local KV has no key, which reads as `off`).
+  return { ...env, RECOMPUTE_QUEUE: { send: async () => undefined }, MONDAY_WEBHOOK_SECRET: SECRET,
+    FLAGS: { get: async () => 'on' }, ...extra } as unknown as import('./types').Env;
 }
 
 function donationsWebhook(pulseId: number, secret: string | null = SECRET) {
@@ -51,6 +53,13 @@ describe('request-time config selection', () => {
     expect(await res.json()).toEqual({ ok: true });
     const row = await env.DB.prepare(`SELECT status FROM pending_recomputes WHERE donation_item_id = '910001'`).first<{ status: string }>();
     expect(row?.status).toBe('queued');
+  });
+
+  it('with no write-switch key in the real FLAGS KV (reads as off), records the row dropped, not queued', async () => {
+    const res = await worker.fetch(donationsWebhook(910008), envFor({ ENVIRONMENT: 'sandbox', FLAGS: env.FLAGS }), ctx);
+    expect(res.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT status FROM pending_recomputes WHERE donation_item_id = '910008'`).first<{ status: string }>();
+    expect(row?.status).toBe('dropped');
   });
 
   it('ignores the same event in production, whose config/svbc.json holds only the placeholder board', async () => {

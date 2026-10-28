@@ -7,6 +7,7 @@ import { validateDelivery } from './validate';
 import { validateAttendeeDelivery } from './validateAttendee';
 import { errorMessage } from '../util/errorMessage';
 import type { WriteQueueMessage } from '../consumer/processBatch';
+import { stampFor, type WriteMode } from '../flags';
 
 // Header form of the shared secret, for callers that can set one (scripts/backfill-orders.mjs,
 // a hand replay). Eventbrite itself cannot: its webhook form takes only a target URL and the
@@ -49,6 +50,9 @@ export interface AppDeps {
   // POST. Fails closed: when unset, every delivery is rejected with 401 rather than accepted
   // blind — this endpoint ends up writing the live Donations board.
   webhookSecret: string | undefined;
+  // The write switch's mode (flags.ts readWriteMode), read once per accepted delivery. Ingest runs
+  // in every mode; under `off` the message is stamped so the consumer dry-runs it.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // The handler only authenticates, validates, records, and enqueues. The Eventbrite fetch, donor
@@ -100,7 +104,8 @@ export function createApp(deps: AppDeps) {
       // Every delivery is enqueued, redeliveries included: the consumer re-fetches the resource
       // and writes idempotently, so a duplicate costs one fetch and never a second item.
       try {
-        await deps.queue.send(ledger.message(delivery));
+        const mode = await deps.writeMode();
+        await deps.queue.send({ ...ledger.message(delivery), ...stampFor(mode) });
         await ledger.markQueued(delivery);
       } catch (err) {
         const errMsg = errorMessage(err);

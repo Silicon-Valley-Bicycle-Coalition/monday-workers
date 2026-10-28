@@ -1,6 +1,6 @@
 import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
-import { createConfigSelector } from './environment';
+import { createConfigSelector, environmentOf } from './environment';
 import { validateConfig } from './config';
 import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
@@ -8,13 +8,19 @@ import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
-import { processOrderQueueBatch, type WriteQueueMessage } from './consumer/processBatch';
+import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { runFollowups, type FollowupResult } from './followups/run';
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
+import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition } from './flags';
+import { followupDepsFor, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
+
+// This Worker's name in the FLAGS KV keys (`eventbrite-sync:writes`, `eventbrite-sync:log`) — the
+// directory name, as scripts/flags.mjs expects.
+const WORKER = 'eventbrite-sync';
 
 // One config per environment, chosen at request time from env.ENVIRONMENT and validated once
 // per isolate — see src/environment.ts and config/split.test.ts.
@@ -27,6 +33,13 @@ const SANDBOX_DEAD_LETTER_QUEUE = 'eventbrite-sync-writes-sandbox-dlq';
 
 export function isDeadLetterBatch(queueName: string): boolean {
   return queueName === DEAD_LETTER_QUEUE || queueName === SANDBOX_DEAD_LETTER_QUEUE;
+}
+
+// The mode and log level, read once per queue batch (never cached per isolate, so a flip reaches
+// the next batch within the KV edge cache's 30 seconds).
+async function skipContext(env: Env): Promise<BatchSkipContext> {
+  const [mode, logLevel] = await Promise.all([readWriteMode(env, WORKER), readLogLevel(env, WORKER)]);
+  return { worker: WORKER, environment: environmentOf(env), mode, logLevel, piiKeys: DEFAULT_PII_KEYS };
 }
 
 // One line per sweep for Workers Logs. A failed event is an error (its Follow-ups stays blank, so
@@ -57,6 +70,7 @@ export default {
           send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
         },
         webhookSecret: env.EVENTBRITE_WEBHOOK_SECRET,
+        writeMode: () => readWriteMode(env, WORKER),
       });
       return app.fetch(request, env, ctx);
     });
@@ -78,7 +92,8 @@ export default {
     if (token === undefined || token === '') {
       throw new Error('EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); cannot fetch from Eventbrite');
     }
-    await processOrderQueueBatch([...batch.messages], {
+    const gate = await skipContext(env);
+    await consumeWriteBatch([...batch.messages], {
       orderStore,
       eventStore,
       attendeeStore,
@@ -86,7 +101,7 @@ export default {
       eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
-    });
+    }, gate);
   },
 
   // Hourly (wrangler.jsonc triggers): the morning-after class follow-ups. Cheap when idle: one D1
@@ -110,20 +125,31 @@ export async function runScheduled(
   if (token === undefined || token === '') {
     throw new Error('MONDAY_API_TOKEN is not set (wrangler secret put MONDAY_API_TOKEN); cannot run class follow-ups');
   }
+  const now = new Date(controller.scheduledTime);
+  // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them,
+  // `off` dry-runs them (every Monday write and notification logged, none made), `hold` or an
+  // unreadable switch skips them with one line each.
+  const gate = await skipContext(env);
+  const disposition = runDisposition(gate.mode);
+  const isCheck = isCheckHour(now);
+  if (disposition === 'skip') {
+    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping the class follow-ups${isCheck ? ' and the missed-order check' : ''}`);
+    return;
+  }
+  const liveDeps = {
+    eventStore: new D1EventStore(env.DB),
+    attendeeStore: new D1AttendeeStore(env.DB),
+    mondayClient: new HttpMondayClient(config.monday.apiUrl, token),
+    config,
+  };
   ctx.waitUntil(
-    run(new Date(controller.scheduledTime), {
-      eventStore: new D1EventStore(env.DB),
-      attendeeStore: new D1AttendeeStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, token),
-      config,
-    })
+    run(now, followupDepsFor(disposition, liveDeps, { ...gate, deliveryId: `followups:${now.toISOString()}` }))
       .then(logFollowupSummary)
       // A sweep-level throw (config, D1) must be logged, not become an unhandled waitUntil rejection.
       .catch((err) => console.error(`eventbrite-sync follow-ups: sweep failed: ${errorMessage(err)}`))
   );
 
-  const now = new Date(controller.scheduledTime);
-  if (!isCheckHour(now)) return;
+  if (!isCheck) return;
   // Logged, not thrown: the follow-ups above are already under way, and an unset token is
   // something Workers Issues should show once a day until it's fixed.
   const eventbriteToken = env.EVENTBRITE_PRIVATE_TOKEN;
@@ -131,6 +157,8 @@ export async function runScheduled(
     console.error('eventbrite-sync missed orders: EVENTBRITE_PRIVATE_TOKEN is not set (wrangler secret put EVENTBRITE_PRIVATE_TOKEN); check skipped');
     return;
   }
+  // The check reads Eventbrite and the orders ledger and only logs: it has no sink and no cursor,
+  // so its dry run is the live run.
   ctx.waitUntil(
     check(now, {
       lister: new HttpEventbriteClient(config.eventbrite.apiUrl, eventbriteToken),

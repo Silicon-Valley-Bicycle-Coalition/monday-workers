@@ -141,6 +141,16 @@ appears in this Worker's Cloudflare access logs (Logpush, `wrangler tail`) on ev
 Restrict who can read those logs the same way you'd restrict who holds `WEBHOOK_SECRET` itself,
 and rotate the secret if that access ever widens.
 
+## Write switch
+
+The `FLAGS` KV key `bp-feedback-notify:writes` (`on` | `hold` | `off`; missing or unrecognized means
+`off`) gates the send. The challenge echo is always live. `off` logs a masked skip line and answers
+200 without sending or writing status back. `hold`, or a KV read error, answers **503**: this Worker
+has no queue, so Monday's own webhook retries are the only retry. Monday gives up after its retry
+window, so a feedback request fired mid-migration may need re-triggering by hand once the key is
+back to `on`. Set the key with `node scripts/flags.mjs`; `<worker>:log` = `debug` adds masked
+payloads to skip lines.
+
 ## Sandbox environment
 
 Same convention as `member-portal`: `wrangler deploy --env sandbox` deploys

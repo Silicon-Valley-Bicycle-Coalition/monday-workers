@@ -50,6 +50,10 @@ export const ja: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '現在、この会員証を確認できませんでした。数分後に再度お試しください。',
   'error.eventsLoadFailed': '現在、イベント参加登録を読み込めません。数分後にもう一度お試しください。',
   'error.generic': 'エラーが発生しました。もう一度ログインしてください。',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '一時的にご利用いただけません',
+  'unavailable.heading': '一時的にご利用いただけません',
+  'unavailable.body': 'システムを更新中のため、現在この機能はご利用いただけません。しばらくしてからもう一度お試しください。',
 
   // Portal
   'portal.heading': '寄付者ポータル',

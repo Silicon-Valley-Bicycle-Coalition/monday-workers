@@ -4,6 +4,7 @@ import worker, { isDeadLetterBatch, runScheduled } from './index';
 import type { Env } from './types';
 import type { runFollowups } from './followups/run';
 import type { checkMissedOrders } from './missedOrders/check';
+import { HttpMondayClient } from './monday/client';
 
 describe('isDeadLetterBatch', () => {
   it('recognizes the production and sandbox dead-letter queues', () => {
@@ -150,6 +151,58 @@ describe('scheduled (hourly follow-ups)', () => {
       expect(run).toHaveBeenCalled();
       expect(check).not.toHaveBeenCalled();
       expect(error.mock.calls[0]![0]).toContain('EVENTBRITE_PRIVATE_TOKEN is not set');
+    });
+  });
+
+  // Write switch (spec 2026-10-26): read once per cron run; both jobs follow runDisposition.
+  describe('write switch', () => {
+    const checkController = { scheduledTime: Date.parse('2026-11-02T15:00:00Z'), cron: '0 * * * *' } as unknown as ScheduledController;
+    const flags = (get: () => Promise<string | null>) => ({ ...withToken, EVENTBRITE_PRIVATE_TOKEN: 'eb-token', FLAGS: { get } }) as unknown as Env;
+    const idle = () => vi.fn<typeof runFollowups>().mockResolvedValue({ sent: [], held: [], skipped: [], failed: [] });
+    const quietCheck = () => vi.fn<typeof checkMissedOrders>().mockResolvedValue({ organizationId: '1', checked: 0, missing: [] });
+
+    it('on: runs the follow-ups with the live Monday client, and the check', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const run = idle();
+      const check = quietCheck();
+      const { ctx, waited } = context();
+      await runScheduled(checkController, flags(async () => 'on'), ctx, run, check);
+      await Promise.all(waited);
+      expect(run.mock.calls[0]![1].mondayClient).toBeInstanceOf(HttpMondayClient);
+      expect(check).toHaveBeenCalled();
+    });
+
+    it('off: dry-runs the follow-ups (recording Monday client) and still runs the read-only check', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const run = idle();
+      const check = quietCheck();
+      const { ctx, waited } = context();
+      await runScheduled(checkController, flags(async () => 'off'), ctx, run, check);
+      await Promise.all(waited);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run.mock.calls[0]![1].mondayClient).not.toBeInstanceOf(HttpMondayClient);
+      expect(check).toHaveBeenCalled();
+    });
+
+    const kvDown = async (): Promise<string | null> => {
+      throw new Error('KV down');
+    };
+    const holdKey = async (): Promise<string | null> => 'hold';
+    it.each([
+      ['hold', holdKey],
+      ['unknown', kvDown],
+    ] as const)('%s: skips both jobs with one line', async (mode, get) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const run = idle();
+      const check = quietCheck();
+      const { ctx, waited } = context();
+      await runScheduled(checkController, flags(get), ctx, run, check);
+      await Promise.all(waited);
+      expect(waited).toHaveLength(0);
+      expect(run).not.toHaveBeenCalled();
+      expect(check).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(`eventbrite-sync scheduled: write mode is "${mode}"; skipping the class follow-ups and the missed-order check`);
     });
   });
 });

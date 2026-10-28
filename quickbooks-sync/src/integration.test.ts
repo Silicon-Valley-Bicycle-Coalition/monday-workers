@@ -130,7 +130,7 @@ describe('integration: QuickBooks → D1 → queue → consumer → Monday', () 
     const quickBooksClient = fakeQuickBooksClient();
     const mondayClient = fakeMondayClient();
 
-    const app = createQbWebhookApp({ qbEventStore, queue, verifierToken, connectedRealmId: async () => '123' });
+    const app = createQbWebhookApp({ qbEventStore, queue, verifierToken, connectedRealmId: async () => '123', writeMode: async () => 'on' });
     const body = JSON.stringify(qbNotification);
     const res = await app.request('/webhooks/quickbooks', {
       method: 'POST',
@@ -195,7 +195,7 @@ describe('integration: Monday → D1 → queue → consumer → QuickBooks', () 
       queue: ReturnType<typeof fakeQueue>;
     }
   ) {
-    const app = createMondayWebhookApp({ ...deps, config, mondayWebhookSecret: 'integration-secret' });
+    const app = createMondayWebhookApp({ ...deps, config, mondayWebhookSecret: 'integration-secret', writeMode: async () => 'on' });
     return app.request('/webhooks/monday?secret=integration-secret', {
       method: 'POST',
       body: JSON.stringify({
@@ -309,8 +309,8 @@ describe('integration: create loop (QuickBooks-created item echoed back by Monda
       createCustomer: vi.fn(),
     });
     const mondayClient = fakeMondayClient();
-    const qbApp = createQbWebhookApp({ qbEventStore, queue: qbQueue, verifierToken, connectedRealmId: async () => realmId });
-    const mondayApp = createMondayWebhookApp({ mondayEventStore, mapStore, queue: mondayQueue, config, mondayWebhookSecret: 's' });
+    const qbApp = createQbWebhookApp({ qbEventStore, queue: qbQueue, verifierToken, connectedRealmId: async () => realmId, writeMode: async () => 'on' });
+    const mondayApp = createMondayWebhookApp({ mondayEventStore, mapStore, queue: mondayQueue, config, mondayWebhookSecret: 's', writeMode: async () => 'on' });
     const consumerDeps: Parameters<typeof processSyncQueueBatch>[1] = { qbEventStore, mondayEventStore, mapStore, mondayClient, quickBooksClient, config };
     // Monday's create_pulse for an item, and a consumer run for it.
     const echo = async (itemId: string, deps = consumerDeps) => {

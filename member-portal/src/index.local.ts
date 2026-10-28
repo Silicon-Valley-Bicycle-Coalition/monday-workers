@@ -12,6 +12,7 @@ import { processChangeQueueBatch } from './changeRequests/processBatch';
 import { processLetterSendBatch } from './letters/processLetterSendBatch';
 import { D1LetterSendStore } from './db/letterSends';
 import type { ChangeQueueMessage, LetterSendQueueMessage } from './types';
+import { MEMBER_PORTAL_PII_KEYS, WORKER, type BatchSkipContext } from './writeSwitch';
 
 // Local-preview-only entrypoint — see README's "Local preview with dummy data" section.
 // Mirrors src/index.ts but swaps every external dependency (Monday's API, Cloudflare Email
@@ -32,6 +33,9 @@ const noopIpLimiter = { limit: async () => ({ success: true }) };
 // Not a real secret — this Worker only ever runs on localhost with dummy data.
 const LOCAL_LETTER_WEBHOOK_SECRET = 'local-preview-secret';
 
+// No FLAGS binding here: every sink is already a fake, so the write switch is pinned `on`.
+const LOCAL_GATE: BatchSkipContext = { worker: WORKER, environment: 'production', mode: 'on', logLevel: 'normal', piiKeys: MEMBER_PORTAL_PII_KEYS };
+
 function buildApp(env: LocalEnv) {
   const config = validateConfig(rawConfig);
   return createApp({
@@ -49,6 +53,7 @@ function buildApp(env: LocalEnv) {
     letterQueue: { send: (message) => env.LETTER_SEND_QUEUE.send(message).then(() => undefined) },
     letterWebhookSecret: LOCAL_LETTER_WEBHOOK_SECRET,
     cardTokenStore: new D1CardTokenStore(env.DB),
+    writeGate: async () => LOCAL_GATE,
   });
 }
 

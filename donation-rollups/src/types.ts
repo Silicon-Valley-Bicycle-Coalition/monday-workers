@@ -1,3 +1,5 @@
+import type { WriteStamp } from './flags';
+
 // One entry per Donations *era* board — salesforce-import splits donation history across
 // several boards to stay under Monday's 10k-item ceiling (a "live" current-era board plus
 // several dated historical ones), and each is an independently created board with its own
@@ -164,7 +166,10 @@ export interface DonorLevelConfig {
   labels: { leadership: string; major: string; donor: string };
 }
 
-export type PendingStatus = 'received' | 'queued' | 'written' | 'failed';
+// 'dropped': consumed (or enqueued) under the write switch's `off` — a dry run, never to be
+// written later. Terminal like 'written', so the nightly requeue (listStuck) never picks it up;
+// a later delivery for the same item resets it to 'received' (upsertPending).
+export type PendingStatus = 'received' | 'queued' | 'written' | 'failed' | 'dropped';
 
 export type RecomputeKind = 'donation' | 'registration';
 
@@ -190,9 +195,13 @@ export interface Env {
   REQUEST_RATE_LIMITER: RateLimit;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
+  // The write switch's KV namespace (src/flags.ts). Unbound reads as `unknown`: nothing writes.
+  FLAGS?: KVNamespace;
 }
 
-export interface RecomputeQueueMessage {
+// writeStamp (flags.ts): 'dropped' on a message the webhook enqueued while writes were `off`, so
+// the consumer dry-runs it whatever the mode is by then. Absent = live.
+export interface RecomputeQueueMessage extends WriteStamp {
   kind?: RecomputeKind;
   // donationItemId is the triggering item: a Donations item for kind 'donation' (the default), an
   // Event Registrations item for kind 'registration'. The name predates registrations.

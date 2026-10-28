@@ -50,6 +50,10 @@ export const ko: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '지금은 이 카드를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.',
   'error.eventsLoadFailed': '지금은 이벤트 참가 신청 내역을 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.',
   'error.generic': '문제가 발생했습니다. 다시 로그인해 주세요.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '일시적으로 이용할 수 없음',
+  'unavailable.heading': '일시적으로 이용할 수 없습니다',
+  'unavailable.body': '시스템을 업데이트하고 있어 지금은 이 기능을 이용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
 
   // Portal
   'portal.heading': '기부자 포털',

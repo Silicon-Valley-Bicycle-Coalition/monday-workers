@@ -223,7 +223,8 @@ staff note (significant touches only) in the staff guide.
 
 ## Failures and alerts
 
-* A failed consumer attempt retries after 1, 4 and 16 minutes, then goes to the dead-letter queue.
+* A failed consumer attempt retries on the shared backoff (1 minute doubling to an hour) up to 100
+  times, about four days, then goes to the dead-letter queue.
   The dead-letter consumer marks the row `failed`, tells the staff member to try again, and raises
   a `dead-letter` IT Requests item. Nothing is re-driven from the queue: the staff member
   re-sends.
@@ -233,6 +234,43 @@ staff note (significant touches only) in the staff guide.
 * Each alert kind has a per-kind cooldown (`alerts.itRequests.cooldownDays`), tracked in D1.
 * Logs carry an outcome and the first 12 hex chars of the hash as a correlation id, never an
   address, subject or body (`node ../scripts/check-log-safety.mjs`).
+
+## Deploying: the write switch
+
+Every Monday create (the Activity item and the IT Requests alerts), every staff reply
+(`sendUnmatched`, `sendNoAddress`, `sendNotLogged` from the main consumer) and every D1 write the
+consumer makes (`markLogged`, `recordError`, `recordAlert`) is gated by the shared write switch
+(spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`; the dry-run deps are `src/writeSwitch.ts`),
+read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are placeholders until the
+namespaces exist):
+
+- `email-log:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the queue
+  (retrying at 1 minute doubling to an hour); `off` runs the consumer against recording proxies,
+  logging one `"writeSwitch":"skipped"` line per would-be write and acking. **A missing key means
+  `off`**; a KV read error behaves like hold.
+- `email-log:log` — `debug` adds redacted payloads to those lines (names, addresses and subjects
+  masked, body as a length).
+
+The inbound `email()` handler keeps authenticating, deduping and enqueuing in every mode (and
+`setReject` for oversize or unauthenticated mail stays live). Under `off` it stamps the message
+dropped, so it is never written even if the switch is `on` by the time it is consumed, and closes
+the ledger row out as `failed` (error `dropped: write switch off`) — `claim` re-opens only
+`failed` rows, so the staff member's re-send after the switch is on is logged instead of being
+swallowed as a duplicate. A dry run does the same for a message it consumes. Nothing re-enqueues
+ledger rows automatically (no cron), so a dropped row is never revived. A message queued before
+this build has no stamp and is written under `on`. The dead-letter consumer, its staff reply and
+its IT alert run in every mode. The main queue retries 100 times before dead-lettering. Set the
+switch with the operator CLI at the repo root, never by hand — `writes hold`/`on` also pauses and
+resumes the queue:
+
+```sh
+node scripts/flags.mjs email-log writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything.
 
 ## Known limits and threat model
 

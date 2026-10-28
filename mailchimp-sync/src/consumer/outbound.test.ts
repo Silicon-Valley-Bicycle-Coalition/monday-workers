@@ -261,7 +261,7 @@ describe('processOutboundBatch', () => {
     }
 
     it('backs off exponentially by delivery attempt', async () => {
-      for (const [attempts, delaySeconds] of [[1, 60], [2, 240], [3, 960]] as const) {
+      for (const [attempts, delaySeconds] of [[1, 60], [2, 120], [3, 240]] as const) {
         const message = fakeMessage('6', attempts);
         await processOutboundBatch([message], depsFailingWith(new Error('503')));
         expect(message.retry).toHaveBeenCalledWith({ delaySeconds });
@@ -289,7 +289,7 @@ describe('processOutboundBatch', () => {
       const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn().mockRejectedValue(new Error('D1 unavailable')) };
       const message = fakeMessage('6', 2);
       await processOutboundBatch([message], depsFailingWith(new Error('503'), pendingStore));
-      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+      expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
       expect(message.ack).not.toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
       errorSpy.mockRestore();
@@ -301,7 +301,7 @@ describe('processOutboundBatch', () => {
         const message = fakeMessage('6', 2);
         await processOutboundBatch([message], depsFailingWith(new MailchimpAuthError(`mailchimp updateMember: HTTP ${status}`)));
         expect(message.ack).not.toHaveBeenCalled();
-        expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+        expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
       }
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('MAILCHIMP CREDENTIALS REJECTED'));
       errorSpy.mockRestore();

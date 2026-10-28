@@ -55,6 +55,10 @@ export const en = {
   'error.pledgesLoadFailed': 'We could not load your pledges right now. Please try again in a few minutes.',
   'error.changeRequestLoadFailed': 'We could not load your contact details right now. Please try again in a few minutes.',
   'error.generic': 'Something went wrong. Please try logging in again.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Temporarily Unavailable',
+  'unavailable.heading': 'Temporarily unavailable',
+  'unavailable.body': 'We’re updating our systems, so this isn’t available right now. Please try again in a little while.',
 
   // Portal
   'portal.heading': 'Your member portal',

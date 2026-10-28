@@ -50,6 +50,10 @@ export const zhHans: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': '我们暂时无法验证此卡片，请几分钟后再试。',
   'error.eventsLoadFailed': '目前无法加载您的活动报名记录。请几分钟后再试。',
   'error.generic': '出现问题，请重新登录。',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': '暂时无法使用',
+  'unavailable.heading': '暂时无法使用',
+  'unavailable.body': '我们正在更新系统，此功能暂时无法使用。请稍后再试。',
 
   // Portal
   'portal.heading': '您的捐赠者门户',

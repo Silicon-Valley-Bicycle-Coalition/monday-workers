@@ -85,8 +85,8 @@ Update, Void, Emailed) sync as updates.
 
 ## Dead letters and redrive
 
-A consumer failure retries with backoff (1, 4, 16 minutes — `retryDelaySeconds` in
-`src/consumer/processBatch.ts`); after three retries the message lands in
+A consumer failure retries with backoff (1 minute doubling to an hour — `retryDelaySeconds` in
+`src/flags.ts`); after 100 retries (about four days) the message lands in
 `quickbooks-sync-writes-dlq` (`-sandbox-dlq` in the sandbox). The Worker consumes that queue too
 (`src/consumer/processDeadLetters.ts`): the row in `qb_events` / `monday_events` keeps
 `status = 'failed'` and its last error gains the prefix `dead-lettered after retries: `, and each
@@ -255,6 +255,36 @@ whether or not they are listed in the QuickBooks app store."* Whoever sets up th
 account and app credentials (staff prerequisite, above) should budget for that questionnaire —
 it's a one-time step, not a lightweight skip, but also not the multi-week review this question
 was worried it might be.
+
+## Deploying: the write switch
+
+Every Monday write, QuickBooks Customer create and ledger update is gated by the shared write
+switch (spec `../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`,
+a byte-identical copy of `member-portal/src/flags.ts`). It is read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `quickbooks-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
+  queue (retrying at 1 minute doubling to an hour); `off` writes nothing and logs one
+  `"writeSwitch":"skipped"` line per would-be write (Monday create / change, QuickBooks
+  `createCustomer`) and acks. **A missing key means `off`**, and a KV read error means hold.
+- `quickbooks-sync:log` — `debug` adds redacted payloads to those lines.
+
+Reads stay live in every mode, including QuickBooks `getEntity` (so the OAuth token refresh
+keeps working). Under `off` the consumer also drops its D1 bookkeeping — event status, the map
+(`qb_monday_map`), and `markCreateSent` — so no placeholder id survives the flip back to `on`.
+Set it with the operator CLI at the repo root, never by hand — `writes hold`/`on` also pauses and
+resumes `quickbooks-sync-writes`:
+
+```sh
+node scripts/flags.mjs quickbooks-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. Both webhooks still record every delivery under any mode; one ingested
+while `off` is stamped and is never written, even if the switch is `on` by the time it's
+consumed. A message already queued before this build has no stamp and is written under `on`. The
+dead-letter consumer is D1 bookkeeping and runs in every mode.
 
 ## Development
 

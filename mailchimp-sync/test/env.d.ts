@@ -10,5 +10,6 @@ declare namespace Cloudflare {
     SLACK_WEBHOOK_URL?: string;
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
     ENVIRONMENT?: string;
+    FLAGS: KVNamespace;
   }
 }

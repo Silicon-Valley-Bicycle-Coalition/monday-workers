@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { env, reset } from 'cloudflare:test';
 import { createApp, type AppDeps } from './webhook/route';
-import { processBenevityQueueBatch, type BenevityQueueMessage } from './consumer/processBatch';
+import { consumeBenevityBatch, processBenevityQueueBatch, type BenevityQueueMessage } from './consumer/processBatch';
 import { D1UploadStore } from './db/uploads';
 import { D1DisbursementStore } from './db/disbursements';
 import { D1RowStore } from './db/rows';
@@ -11,6 +11,7 @@ import type { BenevityImportConfig } from './types';
 import { applyMigrations } from '../test/apply-migrations';
 
 const SECRET = 'test-secret';
+const ON = { worker: 'benevity-import', environment: 'sandbox', mode: 'on', logLevel: 'normal', piiKeys: [] } as const;
 
 function fakeConfig(): BenevityImportConfig {
   return {
@@ -102,6 +103,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => validReport(),
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     };
     const app = createApp(routeDeps);
 
@@ -152,6 +154,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => validReport(),
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     };
     const app = createApp(routeDeps);
     await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
@@ -191,6 +194,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => mismatched,
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     });
     for (const assetId of ['a1', 'a2']) {
       const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
@@ -238,6 +242,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => validReport(),
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     });
     await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
       method: 'POST',
@@ -307,6 +312,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => validReport(),
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     });
     const consumerDeps = {
       rowStore: new D1RowStore(env.DB),
@@ -379,6 +385,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => validReport(),
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     });
     const rows = new D1RowStore(env.DB);
 
@@ -424,6 +431,49 @@ describe('benevity-import integration', () => {
     expect(creates.sort()).toEqual([111, 111, 777]);
   });
 
+  it('a row ingested under off is stamped, and stays unwritten even when the consumer runs under on', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const config = fakeConfig();
+    const app = createApp({
+      mondayClient,
+      uploadStore: new D1UploadStore(env.DB),
+      disbursementStore: new D1DisbursementStore(env.DB),
+      rowStore: new D1RowStore(env.DB),
+      config,
+      queue: { sendBatch: async (ms) => { sentMessages.push(...ms); } },
+      webhookSecret: SECRET,
+      fetchCsv: async () => validReport(),
+      now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ({ ...ON, mode: 'off' }),
+    });
+    const res = await app.request(`/webhooks/monday/benevity-upload?secret=${SECRET}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: { pulseId: 1, columnId: 'file_c', value: { files: [{ assetId: 'a1' }] } } }),
+    });
+    expect(res.status).toBe(200);
+    expect(sentMessages).toEqual([{ transactionId: 'TXN001', writeStamp: 'dropped' }]);
+    expect((await new D1RowStore(env.DB).getRow('TXN001'))?.status).toBe('ingested');
+
+    const msg = { body: sentMessages[0]!, ack: vi.fn(), retry: vi.fn() };
+    await consumeBenevityBatch(
+      [msg],
+      {
+        rowStore: new D1RowStore(env.DB),
+        disbursementStore: new D1DisbursementStore(env.DB),
+        aliasStore: new D1AliasStore(env.DB),
+        mondayClient,
+        config,
+        now: () => '2026-09-15T01:00:00Z',
+      },
+      ON
+    );
+    expect(msg.ack).toHaveBeenCalled();
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect((await new D1RowStore(env.DB).getRow('TXN001'))?.status).toBe('ingested');
+    log.mockRestore();
+  });
+
   it('rejects webhook requests without the correct secret', async () => {
     const config = fakeConfig();
     const routeDeps: AppDeps = {
@@ -436,6 +486,7 @@ describe('benevity-import integration', () => {
       webhookSecret: SECRET,
       fetchCsv: async () => validReport(),
       now: () => '2026-09-15T00:00:00Z',
+      gate: async () => ON,
     };
     const app = createApp(routeDeps);
 

@@ -2,7 +2,8 @@ import type { PendingStore } from '../db/pending';
 import type { DonationRollupsMondayClient } from '../monday/client';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 import type { QueueMessageLike } from './processBatch';
-import { isD1QuotaError, secondsUntilMidnightUTC, transientRetryDelaySeconds } from './quota';
+import { isD1QuotaError, secondsUntilMidnightUTC } from './quota';
+import { retryDelaySeconds } from '../flags';
 
 // Consumer for donation-rollups-recompute-dlq (README "operational findings, 2026-09-17",
 // fix 5). Until this existed the DLQ had no consumer: the 09-03/09-09 messages that exhausted
@@ -61,7 +62,7 @@ export async function processDeadLetters(
         quotaDelaySeconds = secondsUntilMidnightUTC(deps.now ?? new Date());
         message.retry({ delaySeconds: quotaDelaySeconds });
       } else {
-        message.retry({ delaySeconds: transientRetryDelaySeconds(message.attempts) });
+        message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
       }
     }
   }

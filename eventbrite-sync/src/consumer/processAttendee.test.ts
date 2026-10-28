@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processAttendee } from './processAttendee';
+import { consumeWriteBatch } from './processBatch';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
@@ -339,5 +340,116 @@ describe('processAttendee', () => {
   it('rethrows other Monday errors for retry', async () => {
     const { deps } = setup({ monday: { createItem: vi.fn().mockRejectedValue(new Error('boom')) } });
     await expect(processAttendee(message, deps)).rejects.toThrow('boom');
+  });
+});
+
+// Write switch (spec 2026-10-26): attendee messages go through consumeWriteBatch like orders.
+describe('attendee messages under the write switch', () => {
+  // setup() builds only what this consumer reaches; the dry-run deps also wrap the orders ledger.
+  const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
+  const gate = (mode: 'on' | 'off' | 'hold' | 'unknown') => ({ worker: 'eventbrite-sync', environment: 'production', mode, logLevel: 'normal' as const, piiKeys: ['name', 'email'] });
+  const msg = (stamp: { writeStamp?: 'dropped' } = {}) => ({ body: { ...message, ...stamp }, attempts: 1, ack: vi.fn(), retry: vi.fn() });
+
+  function skipLines(log: { mock: { calls: unknown[][] } }): Record<string, any>[] {
+    return log.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"writeSwitch":"skipped"')).map((l) => JSON.parse(l));
+  }
+
+  it('off: logs the registration create; writes and records nothing, then acks', async () => {
+    const { deps, mondayClient, attendeeStore, eventStore, queue } = setup();
+    const m = msg();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('off'));
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(attendeeStore.updateStatus).not.toHaveBeenCalled();
+      expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+      expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([['Event Registrations', 'createItem', 'attendee:a1']]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('off, event not written yet (a dry run never records one): links the placeholder Events item instead of retrying for days', async () => {
+    const { deps, mondayClient, queue, eventStore } = setup({ evRow: eventRow({ mondayItemId: null, status: 'queued' }) });
+    const m = msg({ writeStamp: 'dropped' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('on'));
+      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      const [line] = skipLines(log);
+      expect([line!.sink, line!.operation]).toEqual(['Event Registrations', 'createItem']);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('off, event has no ledger row at all: links the placeholder Events item instead of retrying for days', async () => {
+    const { deps, mondayClient, queue, eventStore } = setup({ evRow: null });
+    const m = msg({ writeStamp: 'dropped' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('on'));
+      expect(m.retry).not.toHaveBeenCalled();
+      expect(m.ack).toHaveBeenCalled();
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      const [line] = skipLines(log);
+      expect([line!.sink, line!.operation]).toEqual(['Event Registrations', 'createItem']);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('off, Attended with no People match: logs the People create and links its placeholder', async () => {
+    const { deps, mondayClient, attendeeStore } = setup({ att: attendee({ checked_in: true }) });
+    const m = msg();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), { ...gate('off'), logLevel: 'debug' });
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      // No placeholder person id reaches the ledger.
+      expect(attendeeStore.updateStatus).not.toHaveBeenCalled();
+      const lines = skipLines(log);
+      expect(lines.map((l) => l.sink)).toEqual(['People', 'Event Registrations']);
+      expect(JSON.stringify(lines[1]!.payload)).toContain('"item_ids":["dry-run-1"]');
+      expect(JSON.stringify(lines)).not.toContain('pat@example.com');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it.each(['hold', 'unknown'] as const)('%s: retries with the backoff, processing nothing', async (mode) => {
+    const { deps, attendeeStore } = setup();
+    const m = msg();
+    await consumeWriteBatch([m], full(deps), gate(mode));
+    expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(attendeeStore.getAttendee).not.toHaveBeenCalled();
+  });
+
+  it('on: an event with no item yet is requested live and the attendee retried, as before', async () => {
+    const { deps, queue, eventStore } = setup({ evRow: eventRow({ mondayItemId: null, status: 'queued' }) });
+    const m = msg();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await consumeWriteBatch([m], full(deps), gate('on'));
+      expect(eventStore.recordDelivery).toHaveBeenCalled();
+      expect(queue.send).toHaveBeenCalledWith({ kind: 'event', eventId: '9001', action: 'attendee.updated' });
+      expect(m.retry).toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("the event request sent on behalf of a dropped attendee carries its stamp", async () => {
+    const { deps, queue } = setup({ evRow: null });
+    await expect(processAttendee({ ...message, writeStamp: 'dropped' }, deps)).rejects.toThrow('no Events item yet');
+    expect(queue.send).toHaveBeenCalledWith({ kind: 'event', eventId: '9001', action: 'attendee.updated', writeStamp: 'dropped' });
   });
 });

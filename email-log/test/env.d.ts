@@ -7,5 +7,6 @@ declare namespace Cloudflare {
     TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
     ENVIRONMENT?: string;
     SANDBOX_EMAIL_SINK?: string;
+    FLAGS: KVNamespace;
   }
 }

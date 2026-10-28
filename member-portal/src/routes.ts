@@ -21,7 +21,7 @@ import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
-import { checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView } from './views';
+import { checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
 import { sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
@@ -64,6 +64,8 @@ import { decodeFavicon } from './assets/favicon';
 import { decodeEmailLogoPng } from './assets/emailLogo';
 import { securityHeaders } from './securityHeaders';
 import { errorText } from './logSafe';
+import { logSkip } from './flags';
+import { stampedQueue, type BatchSkipContext } from './writeSwitch';
 
 export interface AppDeps {
   monday: MondayClient;
@@ -80,6 +82,9 @@ export interface AppDeps {
   letterQueue: { send(message: LetterSendQueueMessage): Promise<void> };
   letterWebhookSecret: string;
   cardTokenStore: CardTokenStore;
+  // The write switch for this request (src/writeSwitch.ts), read from KV at most once and only by
+  // a route that writes.
+  writeGate: () => Promise<BatchSkipContext>;
 }
 
 const SESSION_COOKIE = 'session';
@@ -122,6 +127,11 @@ function resolvePathLocale(c: Context): Locale {
 // a prefix: every authenticated route starts with a wildcard `:locale` segment, so a "/webhooks/"
 // prefix exemption also matched /webhooks/portal/change-request (issue #32 review).
 const CSRF_EXEMPT = new Set(['POST /webhooks/monday/letters']);
+
+// A POST that writes, under any mode but `on`: a friendly page, 503 so nothing caches it.
+function unavailable(c: Context, locale: Locale, authenticated: boolean) {
+  return c.html(page(t(locale, 'title.unavailable') + ' — ' + t(locale, 'site.title'), unavailableView(locale, authenticated), locale, { authenticated }), 503);
+}
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
@@ -275,6 +285,8 @@ export function createApp(deps: AppDeps) {
 
   app.post('/', async (c) => {
     const locale = detectLocale(c);
+    // Every email gets the same page, so the enumeration guard below holds under the switch too.
+    if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, false);
     const body = await c.req.parseBody();
     const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     // A malformed email (fails the plausibility check) is treated exactly like an empty one —
@@ -616,6 +628,9 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
+    // Before the rate limiters and the dedupe lookup: no change_requests row, no message.
+    const { mode } = await deps.writeGate();
+    if (mode !== 'on') return unavailable(c, locale, true);
 
     // Same limiter binding as login, but a distinct key prefix so the two budgets don't
     // interfere. No enumeration concern here (the caller is already authenticated), so a plain
@@ -646,7 +661,7 @@ export function createApp(deps: AppDeps) {
     const result = await submitChangeRequest(donorItemIds, input, {
       monday: deps.monday,
       store: deps.changeStore,
-      queue: deps.changeQueue,
+      queue: stampedQueue(deps.changeQueue, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
@@ -662,6 +677,8 @@ export function createApp(deps: AppDeps) {
     if (!changeRequestsEnabled(deps.config)) {
       return c.html(page(t(locale, 'title.changeRequest') + ' — ' + t(locale, 'site.title'), changeRequestsUnavailableView(locale), locale, { authenticated: true }));
     }
+    const { mode } = await deps.writeGate();
+    if (mode !== 'on') return unavailable(c, locale, true);
 
     // Same limiter keys as the free-text change-request POST above — the two forms share one
     // abuse budget since they feed the same staff queue.
@@ -694,7 +711,7 @@ export function createApp(deps: AppDeps) {
     const result = await submitPreferences(donorItemIds, input, {
       monday: deps.monday,
       store: deps.changeStore,
-      queue: deps.changeQueue,
+      queue: stampedQueue(deps.changeQueue, mode),
       dedupeWindowHours: deps.config.changeRequests.dedupeWindowHours,
       now: deps.now,
     });
@@ -788,6 +805,8 @@ export function createApp(deps: AppDeps) {
     if (!donorItemIds.includes(donorItemId)) {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.cardNotFound', locale), locale, { authenticated: true }), 404);
     }
+    // The card the dashboard already shows stays valid; only a new one waits for the switch.
+    if ((await deps.writeGate()).mode !== 'on') return unavailable(c, locale, true);
 
     const now = deps.now().toISOString();
     try {
@@ -918,12 +937,25 @@ export function createApp(deps: AppDeps) {
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
+    // `off`: no letter_sends row — a 'queued' row that is never sent would block this donor's
+    // letter for good (the cron skips any donor with a row). `hold`: as normal; the queue is
+    // paused and sends once the switch is on. `unknown` (KV error): 503, so Monday retries.
+    const gate = await deps.writeGate();
+    if (gate.mode === 'unknown') {
+      console.error(`member-portal webhook: write switch unreadable; letter-send for donor "${event.donorItemId}" refused (503)`);
+      return c.json({ ok: false }, 503);
+    }
+    if (gate.mode === 'off') {
+      logSkip({ ...gate, deliveryId: `letter-webhook:${event.donorItemId}` }, 'LetterQueue', 'triggerLetterSend', [{ donorItemId: event.donorItemId }]);
+      return c.json({ ok: true, result: 'dropped' }, 200);
+    }
+
     let result;
     try {
       result = await triggerLetterSend(event.donorItemId, {
         monday: deps.monday,
         store: deps.letterSendStore,
-        queue: deps.letterQueue,
+        queue: stampedQueue(deps.letterQueue, gate.mode),
         now: deps.now,
       });
     } catch (err) {

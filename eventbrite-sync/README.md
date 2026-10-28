@@ -56,7 +56,7 @@ Cloudflare Queue → consumer (one at a time)
   │  3. donor: cached on the row, else People lookup by email, else create
   │  4. write: ledger item → update; else adopt by Eventbrite Order ID → update; else create
   │     with the first-write stamps (Thank You Sent, Gift Type, Fiscal Year Ending)
-  │  failure → retry with backoff (1, 4, 16 min) → dead-letter consumer marks the row and logs
+  │  failure → retry with backoff (1 min doubling to 1 h, 100 tries) → dead-letter consumer marks the row and logs
   ▼
 Donations board (+ Donor link to People; ids in config/sandbox.json, svbc.json for production)
 ```
@@ -219,8 +219,8 @@ throws — retry, then DLQ — a gift without a donor is worse than a late one.
 ## Failures and the dead-letter queue
 
 A failed consumer run marks the `orders` row `failed` with the error and retries the message with
-backoff — 1, 4, then 16 minutes (`retryDelaySeconds`, copied from funraise-sync). After
-`max_retries` (3) the message goes to `eventbrite-sync-writes-dlq` (`…-sandbox-dlq` in the
+backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/flags.ts`). After
+`max_retries` (100, about four days) the message goes to `eventbrite-sync-writes-dlq` (`…-sandbox-dlq` in the
 sandbox), which this Worker also consumes (`src/consumer/processDeadLetters.ts`): the row's
 error is prefixed `dead-lettered after retries: ` and the batch logs one `console.error` naming
 the order ids. A 404 from Eventbrite is **not** retried: the row is marked `failed` ("not found in
@@ -441,6 +441,55 @@ order (expect the Donations item with every column in the table above and a Dono
 a refund (expect `Refunded` — once the label exists), and a backfill run for the event (expect
 no second item). Production repeats the list under the production names at cutover (see
 `../docs/production-deploy-checklist.md`), then the Summit backfill.
+
+### The write switch
+
+Every Monday write and ledger update is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `eventbrite-sync:writes` — `on` writes normally; `hold` writes nothing and keeps messages queued
+  (they retry); `off` writes nothing and logs one `"writeSwitch":"skipped"` line per would-be
+  write. **A missing key means `off`**, and a KV read error means hold.
+- `eventbrite-sync:log` — `debug` adds redacted payloads to those lines.
+
+Set it with the operator CLI at the repo root, never by hand (`writes hold`/`on` also pauses and
+resumes `eventbrite-sync-writes`):
+
+```sh
+node scripts/flags.mjs eventbrite-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. The webhook still records every delivery under any mode; one ingested while
+`off` is stamped and is never written, even if the switch is `on` by the time it is consumed. The
+dead-letter consumer is D1 bookkeeping and runs in every mode.
+
+Orders, events and attendees share the one write queue and the same gate. What each mode does
+beyond the table above:
+
+- **Queue messages (order, event, attendee).** Under `off` (or a `dropped` stamp) the consumer runs
+  the same fetch → map → match path against recording deps: each Donations, People, Events and
+  Event Registrations write is a skip line, no ledger row changes, and the consumer's own sends
+  (an event's attendee fan-out, an attendee's request for its event) are logged as `Write queue`
+  skips, not sent. A message the consumer does send live carries its parent's stamp. A dry-run
+  attendee whose event has a ledger row but no Events item yet (a dry run never records one) links
+  the placeholder `dry-run-event` rather than retrying until its event is written.
+- **The hourly follow-up sweep** (`runFollowups`). `on` runs it; `off` runs it against a recording
+  Monday client — every Follow-up Email, Attendance, People link, Follow-ups `Sent`/`Held` and the
+  Held bell notification is a skip line, nothing reaches Monday, so no Sequence fires. It has no
+  cursor: its run-once guard is the event's Follow-ups column, which a dry run never sets, so a
+  due class is logged again every hour until it ages out of `maxAgeDays`. `hold` or an unreadable
+  switch skips the run with one `eventbrite-sync scheduled: write mode is …` line.
+- **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
+  runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with the
+  sweep (the same line). Its 26-hour lookback does not reach back over a long hold, so after a
+  multi-day `hold` compare the orders ledger against Eventbrite by hand (or run
+  `scripts/backfill-orders.mjs --dry-run` per event) for the held days.
+- No path re-enqueues "stuck" ledger rows automatically, so a row ingested under `off` is never
+  resurrected later; re-driving stays the backfill scripts' job.
 
 ## Open
 

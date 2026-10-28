@@ -6,5 +6,6 @@ declare namespace Cloudflare {
     REQUEST_RATE_LIMITER: RateLimit;
     ENVIRONMENT?: string;
     SANDBOX_EMAIL_SINK?: string;
+    FLAGS: KVNamespace;
   }
 }

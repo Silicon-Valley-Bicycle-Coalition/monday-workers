@@ -4,6 +4,7 @@ import type { MondayClient } from '../monday/client';
 import type { FunraiseSyncConfig } from '../types';
 import { matchDonor } from '../matching/donors';
 import { mapSubscriptionToColumns, subscriptionItemName } from './map';
+import { linkedItemId } from '../util/itemId';
 
 export interface UpsertSubscriptionDeps {
   subscriptionStore: SubscriptionStore;
@@ -97,7 +98,7 @@ export async function upsertSubscription(
     donorItemId = match.donorItemId;
   }
   if (poll.columns.donor && donorItemId !== null) {
-    columnValues[poll.columns.donor] = { item_ids: [Number(donorItemId)] };
+    columnValues[poll.columns.donor] = { item_ids: [linkedItemId(donorItemId)] };
   }
 
   const record = async (mondayItemId: string, action: UpsertAction): Promise<UpsertSubscriptionResult> => {

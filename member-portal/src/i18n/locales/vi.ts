@@ -50,6 +50,10 @@ export const vi: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'Hiện chúng tôi không thể xác minh thẻ này. Vui lòng thử lại sau vài phút.',
   'error.eventsLoadFailed': 'Hiện không thể tải các đăng ký sự kiện của bạn. Vui lòng thử lại sau vài phút.',
   'error.generic': 'Đã xảy ra lỗi. Vui lòng thử đăng nhập lại.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'Tạm Thời Không Khả Dụng',
+  'unavailable.heading': 'Tạm thời không khả dụng',
+  'unavailable.body': 'Chúng tôi đang cập nhật hệ thống nên chức năng này tạm thời chưa dùng được. Vui lòng thử lại sau ít phút.',
 
   // Portal
   'portal.heading': 'Cổng thông tin nhà tài trợ của bạn',

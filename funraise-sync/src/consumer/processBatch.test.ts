@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processFunraiseQueueBatch, retryDelaySeconds, type QueueMessageLike, type FunraiseQueueMessage } from './processBatch';
+import { consumeFunraiseBatch, processFunraiseQueueBatch, type QueueMessageLike, type FunraiseQueueMessage } from './processBatch';
+import type { SubscriptionStore } from '../db/subscriptions';
+import type { FunraiseClient } from '../funraise/client';
+import type { WriteMode } from '../flags';
+import type { BatchSkipContext } from '../writeSwitch';
 import type { EventStore } from '../db/events';
 import type { MondayClient } from '../monday/client';
 import type { EventRow, FunraiseSyncConfig } from '../types';
@@ -553,19 +557,10 @@ describe('Fiscal Year Ending (derived column, decision 2026-09-17)', () => {
 });
 
 // #25: retries were immediate, so a Monday outage of more than a few seconds burned all three
-// attempts at once and dead-lettered the gift. They now back off by attempt number.
+// attempts at once and dead-lettered the gift. They now back off by attempt number, with the
+// shared write-switch delay (1 min doubling, capped at 1 h; flags.ts retryDelaySeconds) across
+// max_retries 100 — about four days of cover.
 describe('retry backoff', () => {
-  it("grows by attempt: 1 min, 4 min, 16 min, capped at Queues' 12 h maximum", () => {
-    expect(retryDelaySeconds(1)).toBe(60);
-    expect(retryDelaySeconds(2)).toBe(240);
-    expect(retryDelaySeconds(3)).toBe(960);
-    expect(retryDelaySeconds(20)).toBe(43200);
-  });
-
-  it('treats a missing or nonsensical attempt count as the first attempt', () => {
-    expect(retryDelaySeconds(undefined)).toBe(60);
-    expect(retryDelaySeconds(0)).toBe(60);
-  });
 
   it('retries a failed message with the delay for its attempt number', async () => {
     const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
@@ -578,7 +573,21 @@ describe('retry backoff', () => {
 
     await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
 
-    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+  });
+
+  it('caps the delay at an hour once a retryable Monday failure reaches attempt 8', async () => {
+    const eventStore = fakeStore(eventRow({ matchedDonorItemId: '7' }));
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn(),
+      createItem: vi.fn().mockRejectedValue(new Error('monday API: HTTP 503')),
+      changeColumnValues: vi.fn(),
+    };
+    const message = { ...fakeMessage(), attempts: 8 };
+
+    await processFunraiseQueueBatch([message], { eventStore, mondayClient, config });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 3600 });
   });
 
   it('still retries the message (with backoff) when recording the failure in D1 also fails', async () => {
@@ -688,5 +697,198 @@ describe('archived-gift check (oldestActiveFiscalYear)', () => {
     );
 
     expect(mondayClient.createItem).toHaveBeenCalled();
+  });
+});
+
+// Write switch (spec 2026-10-26). `consumeFunraiseBatch` picks real deps (write), proxied deps
+// (dry-run, then ack) or a delayed retry per message; processFunraiseQueueBatch is unchanged.
+describe('write switch', () => {
+  const switchConfig = testConfig({ entityIdColumn: 'entity_col', recurringGiftLinkColumn: 'rg_link_col' });
+
+  const gate = (mode: WriteMode, logLevel: 'normal' | 'debug' = 'normal'): BatchSkipContext => ({
+    worker: 'funraise-sync',
+    environment: 'production',
+    mode,
+    logLevel,
+    piiKeys: ['name', 'email'],
+  });
+
+  function subscriptionStore(): SubscriptionStore {
+    return {
+      getByFunraiseId: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      getCursor: vi.fn().mockResolvedValue(0),
+      setCursor: vi.fn(),
+      claimCreate: vi.fn().mockResolvedValue(true),
+      releaseCreate: vi.fn(),
+    };
+  }
+
+  function funraise(): FunraiseClient {
+    return {
+      listSubscriptionsUpdatedAfter: vi.fn(),
+      listSubscriptionsAtUpdtime: vi.fn(),
+      getSubscription: vi.fn().mockResolvedValue({ id: 26, name: 'Sub 26', status: 'Active', frequency: 'Monthly', sourceAmount: 25, updtime: 5, supporter: { id: 9, name: 'Ada', email: 'a@b.org' } }),
+    };
+  }
+
+  // Every lookup misses: no donor match, no orphan, no existing Recurring Gift — the full chain.
+  function missingMonday(): MondayClient {
+    return {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem: vi.fn().mockResolvedValue({ id: 'real-1' }),
+      changeColumnValues: vi.fn(),
+    };
+  }
+
+  const installment = JSON.stringify({ amount: 100, subscription: { id: 26 }, donor: { contactId: 'fr-1', email: 'a@b.org', name: 'Ada' } });
+
+  function setup(rowOverrides: Partial<EventRow> = {}) {
+    const eventStore = fakeStore(eventRow(rowOverrides));
+    const subs = subscriptionStore();
+    const mondayClient = missingMonday();
+    const deps = { eventStore, mondayClient, config: switchConfig, subscriptionStore: subs, funraiseClient: funraise() };
+    const mutatorCalls = () =>
+      [eventStore.upsertEvent, eventStore.updateStatusByEntity, subs.upsert, subs.setCursor, subs.claimCreate, subs.releaseCreate]
+        .reduce((total, fn) => total + (fn as ReturnType<typeof vi.fn>).mock.calls.length, 0);
+    return { eventStore, subs, mondayClient, deps, mutatorCalls };
+  }
+
+  function skipLines(log: ReturnType<typeof vi.spyOn>): Record<string, unknown>[] {
+    return log.mock.calls
+      .map((call: unknown[]) => call[0])
+      .filter((line: unknown): line is string => typeof line === 'string' && line.includes('"writeSwitch":"skipped"'))
+      .map((line: string) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  async function quietly<T>(fn: (log: ReturnType<typeof vi.spyOn>) => Promise<T>): Promise<T> {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      return await fn(log);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+    }
+  }
+
+  it('off: writes nothing to Monday or D1, logs the skipped Donations create, and acks', async () => {
+    const { deps, mondayClient, mutatorCalls } = setup({ matchedDonorItemId: '7' });
+    const message = fakeMessage();
+
+    const lines = await quietly(async (log) => {
+      await consumeFunraiseBatch([message], deps, gate('off'));
+      return skipLines(log);
+    });
+
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(mutatorCalls()).toBe(0);
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(lines).toContainEqual(expect.objectContaining({
+      writeSwitch: 'skipped', worker: 'funraise-sync', mode: 'off', sink: 'Donations', operation: 'createItem', deliveryId: 'transaction:txn-1',
+    }));
+  });
+
+  it('off with no donor match (Review Focus 2): records the People create, persists no placeholder id, links the Donation to it', async () => {
+    const { deps, eventStore, mondayClient } = setup();
+    const message = fakeMessage();
+
+    const lines = await quietly(async (log) => {
+      await consumeFunraiseBatch([message], deps, gate('off', 'debug'));
+      return skipLines(log);
+    });
+
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    // matched_donor_item_id is written only through updateStatusByEntity('matched'): never called.
+    expect(eventStore.updateStatusByEntity).not.toHaveBeenCalled();
+    const people = lines.find((l) => l.sink === 'People');
+    const donation = lines.find((l) => l.sink === 'Donations');
+    expect(people).toMatchObject({ operation: 'createItem' });
+    expect(donation).toMatchObject({ operation: 'createItem' });
+    // Debug payload: [boardId, itemName (masked), columnValues]; the link carries the placeholder.
+    const columnValues = (donation!.payload as unknown[])[2] as Record<string, unknown>;
+    expect(columnValues.connect_col).toEqual({ item_ids: ['dry-run-1'] });
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('off on an installment (Review Focus 3): the Recurring Gifts create still logs a skip line', async () => {
+    const { deps, subs, mondayClient } = setup({ matchedDonorItemId: '7', rawPayload: installment });
+
+    const lines = await quietly(async (log) => {
+      await consumeFunraiseBatch([fakeMessage()], deps, gate('off'));
+      return skipLines(log);
+    });
+
+    expect(lines).toContainEqual(expect.objectContaining({ sink: 'Recurring Gifts', operation: 'createItem' }));
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(subs.upsert).not.toHaveBeenCalled();
+    expect(subs.claimCreate).not.toHaveBeenCalled();
+  });
+
+  it('on + a dropped stamp: dry-runs exactly as off does', async () => {
+    const { deps, mondayClient, mutatorCalls } = setup({ matchedDonorItemId: '7' });
+    const message = { ...fakeMessage(), body: { entityType: 'transaction' as const, entityId: 'txn-1', writeStamp: 'dropped' as const } };
+
+    const lines = await quietly(async (log) => {
+      await consumeFunraiseBatch([message], deps, gate('on'));
+      return skipLines(log);
+    });
+
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(mutatorCalls()).toBe(0);
+    expect(message.ack).toHaveBeenCalled();
+    expect(lines).toContainEqual(expect.objectContaining({ sink: 'Donations', mode: 'on' }));
+  });
+
+  it.each(['hold', 'unknown'] as const)('%s: retries after 60 s on attempt 1 without processing', async (mode) => {
+    const { deps, eventStore, mondayClient } = setup();
+    const message = { ...fakeMessage(), attempts: 1 };
+
+    await consumeFunraiseBatch([message], deps, gate(mode));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(eventStore.getEventByEntity).not.toHaveBeenCalled();
+    expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
+  });
+
+  it('hold: backs off by attempt like any other retry', async () => {
+    const { deps } = setup();
+    const message = { ...fakeMessage(), attempts: 4 };
+
+    await consumeFunraiseBatch([message], deps, gate('hold'));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 480 });
+  });
+
+  it('on + an unstamped message enqueued before the switch existed (Review Focus 1): writes', async () => {
+    const { deps, eventStore, mondayClient } = setup({ matchedDonorItemId: '7' });
+    // The pre-deploy body shape: no writeStamp key at all.
+    const message = { body: { entityType: 'transaction', entityId: 'txn-1' } as FunraiseQueueMessage, ack: vi.fn(), retry: vi.fn() };
+
+    await consumeFunraiseBatch([message], deps, gate('on'));
+
+    expect(mondayClient.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({ connect_col: { item_ids: [7] } }));
+    expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-1', 'written', expect.objectContaining({ mondayItemId: 'real-1' }));
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('off: a failing read still retries with backoff, and records nothing', async () => {
+    const { deps, mondayClient, mutatorCalls } = setup();
+    (mondayClient.findItemByColumnValue as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('monday API: HTTP 503'));
+    const message = { ...fakeMessage(), attempts: 2 };
+
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await consumeFunraiseBatch([message], deps, gate('off'));
+    } finally {
+      errors.mockRestore();
+    }
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
+    expect(mutatorCalls()).toBe(0);
   });
 });

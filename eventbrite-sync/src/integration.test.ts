@@ -25,7 +25,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
 
     let captured: OrderQueueMessage | undefined;
     const queue = { send: async (m: OrderQueueMessage) => { captured = m; } };
-    const app = createApp({ orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), config, queue, webhookSecret: 'int-secret' });
+    const app = createApp({ orderStore, eventStore: new D1EventStore(env.DB), attendeeStore: new D1AttendeeStore(env.DB), config, queue, webhookSecret: 'int-secret', writeMode: async () => 'on' as const });
 
     const res = await app.request('/webhooks/eventbrite/order?secret=int-secret', {
       method: 'POST',
@@ -119,7 +119,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
 
     const sent: unknown[] = [];
     const queue = { send: async (m: unknown) => { sent.push(m); } };
-    const app = createApp({ orderStore, eventStore, attendeeStore, config: cfg, queue: queue as never, webhookSecret: 'int-secret' });
+    const app = createApp({ orderStore, eventStore, attendeeStore, config: cfg, queue: queue as never, webhookSecret: 'int-secret', writeMode: async () => 'on' as const });
     const post = (apiUrl: string, action: string) =>
       app.request('/webhooks/eventbrite/attendee?secret=int-secret', {
         method: 'POST',

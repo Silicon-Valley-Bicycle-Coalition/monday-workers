@@ -9,10 +9,12 @@ import { isWithheld, resolvePerson } from '../matching/people';
 import { splitRowIntoGifts } from '../mapping/giftSplit';
 import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
+import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
+import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
 
-export interface BenevityQueueMessage {
-  transactionId: string;
-}
+// The optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were
+// `off` stays a dry run even if the mode is `on` by the time it is consumed.
+export type BenevityQueueMessage = { transactionId: string } & WriteStamp;
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -22,18 +24,6 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-// Retry backoff (#34): an immediate retry let a Monday blip of a few seconds burn every attempt
-// and dead-letter the row. 60 s x 4^(attempt-1) gives 1, 4 and 16 minutes across wrangler.jsonc's
-// max_retries of 3, capped at Queues' 12-hour maximum delay. Same schedule as funraise-sync.
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
-
-export function retryDelaySeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
-}
-
 export interface ProcessBatchDeps {
   rowStore: RowStore;
   disbursementStore: DisbursementStore;
@@ -41,6 +31,29 @@ export interface ProcessBatchDeps {
   mondayClient: MondayClient;
   config: BenevityImportConfig;
   now: () => string;
+}
+
+/**
+ * The queue() entry point for the write queue: the write switch's per-message decision in front
+ * of processBenevityQueueBatch. `write` runs it with the real deps; `dry-run` runs the same code
+ * against recording/read-only deps (src/writeSwitch.ts), which then acks; `retry` (`hold`, or a
+ * KV read failure) leaves the message on the queue untouched, backing off like any retry.
+ */
+export async function consumeBenevityBatch(
+  messages: QueueMessageLike<BenevityQueueMessage>[],
+  deps: ProcessBatchDeps,
+  gate: BatchSkipContext
+): Promise<void> {
+  for (const message of messages) {
+    const ctx = { ...gate, deliveryId: message.body.transactionId };
+    const disposition = messageDisposition(gate.mode, message.body);
+    logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
+    if (disposition === 'retry') {
+      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      continue;
+    }
+    await processBenevityQueueBatch([message], disposition === 'write' ? deps : dryRunConsumerDeps(deps, ctx));
+  }
 }
 
 export async function processBenevityQueueBatch(

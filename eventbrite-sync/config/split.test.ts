@@ -163,6 +163,21 @@ describe('wrangler.jsonc env.sandbox', () => {
     }
   });
 
+  it('binds FLAGS to a different KV namespace than production', () => {
+    const flagsId = (scope: Json) => (scope.kv_namespaces as { binding: string; id: string }[] | undefined)?.find((ns) => ns.binding === 'FLAGS')?.id;
+    expect(flagsId(wrangler)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
+  });
+
+  it('gives the write consumer about four days of retries (max_retries 100) in both environments; the DLQ consumer is unchanged', () => {
+    for (const queues of [wrangler.queues as Json, sandboxEnv.queues as Json]) {
+      const consumers = queues.consumers as { max_retries: number; dead_letter_queue?: string }[];
+      expect(consumers.find((c) => c.dead_letter_queue !== undefined)!.max_retries).toBe(100);
+      expect(consumers.find((c) => c.dead_letter_queue === undefined)!.max_retries).toBe(2);
+    }
+  });
+
   it('has its own D1 database, never production’s', () => {
     const prodDb = (wrangler.d1_databases as Json[])[0]!;
     const sbDb = (sandboxEnv.d1_databases as Json[])[0]!;

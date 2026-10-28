@@ -4,6 +4,7 @@ import { validateWebhookBody } from './validate';
 import type { RecomputeKind, RecomputeQueueMessage } from '../types';
 import { secretsMatch } from '../secret';
 import { MONDAY_WEBHOOK_PATH } from '../rateLimit'; // one path, so the limiter exemption can't drift from the route
+import { stampFor, type WriteMode } from '../flags';
 
 export interface QueueLike {
   send(message: RecomputeQueueMessage): Promise<void>;
@@ -32,6 +33,11 @@ export interface AppDeps {
   // here in constant time. Fails closed (issue #27): undefined/empty rejects every request,
   // including the subscription handshake — set MONDAY_WEBHOOK_SECRET in .dev.vars for local dev.
   webhookSecret?: string;
+  // The write switch (flags.ts readWriteMode), read once per delivery that gets enqueued. Ingest
+  // runs in every mode — the pending row and the enqueue are this Worker's own bookkeeping, and
+  // `hold` keeps the queue paused — but a message enqueued under `off` is stamped dropped, so the
+  // consumer dry-runs it even if writes are back `on` by the time it is consumed.
+  writeMode: () => Promise<WriteMode>;
 }
 
 // Ingest-and-enqueue only, same division of labor as every other webhook-driven
@@ -91,9 +97,12 @@ export function createApp(deps: AppDeps) {
       kind,
     });
 
+    const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ ...(kind === 'registration' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId });
-      await deps.pendingStore.updateStatus(donationEvent.donationItemId, 'queued');
+      await deps.queue.send({ ...(kind === 'registration' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId, ...stamp });
+      // A delivery stamped dropped is a dry run from the start: recorded as 'dropped', not
+      // 'queued', so the nightly requeue never re-sends it as a live recompute later.
+      await deps.pendingStore.updateStatus(donationEvent.donationItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups webhook: enqueue failed for donation "${donationEvent.donationItemId}": ${errMsg}`);

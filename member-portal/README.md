@@ -699,6 +699,44 @@ before any real ones exist.
 stanza to *exist*. Copy `"impact": { "statementsByYear": {} }` from this repo's
 `config/svbc.json` before deploying v8 code over an older config; the feature then stays off.
 
+## Deploying: the write switch
+
+Every write the portal makes on a donor's behalf is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`; this Worker holds the canonical
+`src/flags.ts`, and its gating is `src/writeSwitch.ts`), read from the `FLAGS` KV namespace
+(`wrangler.jsonc`; the ids are placeholders until the namespaces exist):
+
+- `member-portal:writes` — `on` writes normally; `hold` writes nothing and keeps messages on the
+  queues (retrying at 1 minute doubling to an hour); `off` runs both consumers against recording
+  proxies, logging one `"writeSwitch":"skipped"` line per would-be Monday create or email and
+  acking. **A missing key means `off`**; a KV read error behaves like hold (queues not paused).
+- `member-portal:log` — `debug` adds redacted payloads to those lines (names, contact details,
+  old/new values and login links masked).
+
+| Path | `on` | `hold` | `off` | KV error |
+|---|---|---|---|---|
+| `POST /` (login link), both change-request POSTs, card regenerate | live | 503 "temporarily unavailable" page | 503 | 503 |
+| Every GET, `POST /auth/callback`, `POST /logout` | live | live | live | live |
+| `POST /webhooks/monday/letters` | live | live (row + message; the queue is paused) | skip line, 200, no `letter_sends` row | 503 (Monday retries) |
+| Letter cron | runs | skip line | skip line | skip line |
+| Retention purges (scheduled) | run | run | run | run |
+
+Under `off` neither the webhook nor the cron creates a `letter_sends` row: a `queued` row that is
+never sent would block that donor's letter for good, since the cron skips any donor with a row.
+A dry-run letter mints no magic-link token and changes no `letter_sends` row; a dry-run change
+request leaves its row `queued`. Nothing re-enqueues either automatically, so neither is written
+later unless staff click the letter button again or the donor re-submits. A message queued before
+this build has no stamp and is written under `on`. Both main queues retry 100 times (about four
+days) before dead-lettering. Set the switch with the operator CLI at the repo root, never by hand —
+`writes hold`/`on` also pauses and resumes the queues:
+
+```sh
+node scripts/flags.mjs member-portal writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or donors can't sign in.
+
 ## Resetting for new board ids
 
 When the People board is deleted and rebuilt (a cutover retry — private runbook, Rollback step 8

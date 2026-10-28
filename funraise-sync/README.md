@@ -356,8 +356,8 @@ to it, with `src/integration.test.ts` carrying a fixture trimmed from the docume
 ## Failures and the dead-letter queue (#25)
 
 A failed consumer run marks the `events` row `failed` with the error and retries the message
-with backoff — 1, 4, then 16 minutes (`retryDelaySeconds` in `src/consumer/processBatch.ts`).
-Once `max_retries` (3) is exhausted the message goes to `funraise-sync-writes-dlq`
+with backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/flags.ts`).
+Once `max_retries` (100, about four days) is exhausted the message goes to `funraise-sync-writes-dlq`
 (`…-sandbox-dlq` in the sandbox), which this Worker **also consumes**
 (`src/consumer/processDeadLetters.ts`, same shape as `donation-rollups`'): the row's error is
 prefixed `dead-lettered after retries: ` and each batch logs one `console.error` naming the
@@ -662,6 +662,52 @@ it (or recreate it from the migrations) **before** the production Worker's first
 the walk against the production Recurring Gifts board. Same lesson `donation-rollups` wrote up in
 `docs/22` §5 of the private planning repo: bootstrap the D1 for the new board ids before
 anything writes.
+
+## Deploying: the write switch
+
+Every Monday write and ledger update is gated by the shared write switch (spec
+`../docs/superpowers/specs/2026-10-26-write-switch-design.md`, module `src/flags.ts`, a
+byte-identical copy of `member-portal/src/flags.ts`). It is read from the `FLAGS` KV namespace
+(`sandbox-FLAGS` under `--env sandbox`; ids in `wrangler.jsonc`):
+
+- `funraise-sync:writes` — `on` writes normally; `hold` writes nothing and keeps work queued (the
+  hourly poll skips without moving its cursor); `off` writes nothing and logs one
+  `"writeSwitch":"skipped"` line per would-be write (the poll still advances its cursor). **A
+  missing key means `off`**, and a KV read error means hold.
+- `funraise-sync:log` — `debug` adds redacted payloads to those lines.
+
+Set it with the operator CLI at the repo root, never by hand — `writes hold`/`on` also pauses and
+resumes `funraise-sync-writes`:
+
+```sh
+node scripts/flags.mjs funraise-sync writes on --env sandbox     # or --env production
+node scripts/flags.mjs status --env sandbox
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs everything. The webhook still records every delivery under any mode; one ingested while
+`off` is stamped and is never written, even if the switch is `on` by the time it's consumed. The
+daily raw-payload purge and the dead-letter consumer are D1 bookkeeping and run in every mode.
+
+**Rehearsed in the sandbox, 2026-10-27/28**, after `deploy:sandbox` of the switch build:
+
+1. **`hold`** (set 2026-10-27 19:10 UTC). Funraise's Test-button delivery and 10 real gifts that
+   arrived over the next 22 hours were each answered 200, recorded `queued` in D1, and held in the
+   paused queue; nothing reached Monday. `status` read the paused queue as `backlog 0 (no recent
+   sample)` the whole time — Queues analytics didn't sample it — so the D1 `queued` rows are the
+   way to see what a hold is holding.
+2. **`on`** (2026-10-28 ~17:47 UTC). After the 60 s cache wait the queue resumed and all 11 were
+   written in 37 s, oldest first, none failed; the 10 real gifts stay on the v3 boards.
+3. **`off`**. The Test button errored on Funraise's side that day, so a synthetic delivery
+   (transaction `-2`, posted with `X-Webhook-Secret`) stood in: answered 200, consumed 7 s later
+   as a dry run that matched the donor and logged one
+   `{"writeSwitch":"skipped","mode":"off","sink":"Donations","operation":"createItem"}` line; its
+   ledger row stayed `queued` with no Monday ids, and no item was created. Set back to `on` within
+   about two minutes; no real gift arrived meanwhile.
+
+Cleanup: the Test gift's donor and Donations items deleted (`state: deleted`) and the `-1`/`-2`
+ledger rows removed. `donation-rollups` held no rows for the gift, so there was nothing to remove
+there.
 
 ## Sandbox environment — inbound only, no outbound data
 

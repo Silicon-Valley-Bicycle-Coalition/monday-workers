@@ -1,13 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { D1GiftsStore } from '../db/gifts';
 import { D1DonationLinksStore } from '../db/links';
 import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
-import { dutiesForDate, runDuty, RECONCILE_AFFILIATIONS_PER_RUN,
+import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN,
   type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
+import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
+import type { BatchSkipContext } from '../writeSwitch';
 
 const OWNER_COLS = {
   giftLedgerJson: 'col_glj', lifetimeGiving: 'col_lt', giftCount: 'col_gc', firstGift: 'col_fg',
@@ -567,7 +569,6 @@ describe('reconcile duty', () => {
     const report = await runDuty('reconcile', d);
     expect(report.ok).toBe(true); // a missing column is a skip, not a mismatch
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('no organizationalGiving column for board "b2"'));
-    warn.mockRestore();
   });
 
   it('skips legs 5/6 entirely when config.affiliations is not configured', async () => {
@@ -705,5 +706,79 @@ describe('requeue duty', () => {
     expect(sent).toHaveLength(0);
     expect(report.ok).toBe(true);
     expect(state.updates).toHaveLength(0);
+  });
+});
+
+// The write switch (spec 2026-10-26) on the daily cron: the mode is read once per run (index.ts).
+describe('scheduled custodian run (write switch)', () => {
+  // Every console spy below is restored here, even when an assertion fails first.
+  afterEach(() => { vi.restoreAllMocks(); });
+  const gate = (mode: WriteMode): BatchSkipContext =>
+    ({ worker: 'donation-rollups', environment: 'production', mode, logLevel: 'normal', piiKeys: DEFAULT_PII_KEYS });
+  // July 15 in Pacific time: the nightly duties plus the year-end archive run.
+  const JULY_15 = new Date('2026-07-15T16:00:00Z');
+
+  async function seed() {
+    await seedGift(env.DB, 'old1', { fy: 2015 }); // archivable
+    // A pending row stuck for two days — the requeue duty's work, and an ATTENTION report.
+    await env.DB.prepare(`INSERT INTO pending_recomputes (donation_item_id, donation_board_id, event_id, received_at, status, kind)
+      VALUES ('stuck1', '100', 'e1', '2026-07-13T00:00:00Z', 'queued', 'donation')`).run();
+  }
+
+  it.each([['hold'], ['unknown']] as const)('%s: runs no duty, reads nothing and records no run', async (mode) => {
+    await seed();
+    const state: FakeClientState = { archived: [], updates: [] };
+    const sent: RecomputeQueueMessage[] = [];
+    const d = { ...deps(state, sent, testConfig({ alertItemId: 7 })), now: JULY_15 };
+    const lastRuns = vi.spyOn(d.gifts, 'lastRuns');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await runScheduled(d, gate(mode));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`write mode is "${mode}"`));
+    expect(lastRuns).not.toHaveBeenCalled();
+    expect(state.archived).toEqual([]);
+    expect(state.updates).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(await d.gifts.lastRuns()).toEqual([]);
+  });
+
+  it('off: runs the duties against recording sinks — no archive, alert or enqueue, and no run recorded', async () => {
+    await seed();
+    const state: FakeClientState = { archived: [], updates: [] };
+    const sent: RecomputeQueueMessage[] = [];
+    const d = { ...deps(state, sent, testConfig({ alertItemId: 7 })), now: JULY_15 };
+    const recordRun = vi.spyOn(d.gifts, 'recordRun');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runScheduled(d, gate('off'));
+    const lines = log.mock.calls.map(([line]) => String(line));
+
+    expect(recordRun).not.toHaveBeenCalled();
+    expect(await d.gifts.lastRuns()).toEqual([]);
+    expect(state.archived).toEqual([]);
+    expect(state.updates).toEqual([]);
+    expect(sent).toEqual([]);
+    // Nothing in D1 moved: the gift is still active, no summaries materialized.
+    expect(await d.gifts.getArchivable(2026)).toEqual([{ mondayItemId: 'old1', fiscalYear: 2015 }]);
+    expect(await d.gifts.getAnnualSummaries()).toEqual([]);
+    // Each would-be write is a skip line; each duty still logs its report.
+    const skipped = lines.filter((l) => l.includes('"writeSwitch":"skipped"')).map((l) => JSON.parse(l) as { sink: string; operation: string });
+    expect(skipped.map((l) => `${l.sink}.${l.operation}`)).toEqual(expect.arrayContaining([
+      'Monday.archiveItem', 'RECOMPUTE_QUEUE.sendBatch', 'Monday.createUpdate',
+    ]));
+    expect(lines.some((l) => l.startsWith('custodian archive (dry run): ok'))).toBe(true);
+  });
+
+  it('on: runs and records every duty today owes', async () => {
+    await seed();
+    const state: FakeClientState = { archived: [], updates: [] };
+    const sent: RecomputeQueueMessage[] = [];
+    const d = { ...deps(state, sent, testConfig({ alertItemId: 7 })), now: JULY_15 };
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await runScheduled(d, gate('on'));
+    expect(state.archived).toEqual(['old1']);
+    expect(sent.map((m) => m.donationItemId)).toEqual(['stuck1']);
+    expect((await d.gifts.lastRuns()).map((r) => r.duty).sort()).toEqual(
+      ['archive', 'classify', 'membership', 'reconcile', 'recurring', 'requeue']);
   });
 });

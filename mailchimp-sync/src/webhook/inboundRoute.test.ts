@@ -20,7 +20,7 @@ function postForm(app: ReturnType<typeof createInboundApp>, fields: Record<strin
 
 describe('GET /webhooks/mailchimp/audience', () => {
   it('responds 200 to Mailchimp\'s configuration-time ping', async () => {
-    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send: vi.fn() }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await app.request('/webhooks/mailchimp/audience');
     expect(res.status).toBe(200);
   });
@@ -30,7 +30,7 @@ describe('webhook secret', () => {
   it('rejects a request missing the secret with 401 and enqueues nothing', async () => {
     const send = vi.fn();
     const pendingStore = fakePendingStore();
-    const app = createInboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await postForm(app, { type: 'unsubscribe', 'data[email]': 'a@b.com' }, '');
     expect(res.status).toBe(401);
     expect(send).not.toHaveBeenCalled();
@@ -39,7 +39,7 @@ describe('webhook secret', () => {
 
   it('rejects a request with the wrong secret with 401 and enqueues nothing', async () => {
     const send = vi.fn();
-    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await postForm(app, { type: 'unsubscribe', 'data[email]': 'a@b.com' }, '?secret=wrong');
     expect(res.status).toBe(401);
     expect(send).not.toHaveBeenCalled();
@@ -54,6 +54,7 @@ describe('webhook secret', () => {
         pendingStore: fakePendingStore(),
         queue: { send },
         webhookSecret: missingSecret as unknown as string,
+        writeMode: async () => 'on',
       });
       const res = await postForm(app, { type: 'unsubscribe', 'data[email]': 'a@b.com' }, `?secret=${missingSecret ?? ''}`);
       expect(res.status, `secret binding ${JSON.stringify(missingSecret)}`).toBe(401);
@@ -66,7 +67,7 @@ describe('POST /webhooks/mailchimp/audience', () => {
   it('upserts and enqueues a valid event, keyed on email', async () => {
     const pendingStore = fakePendingStore();
     const send = vi.fn().mockResolvedValue(undefined);
-    const app = createInboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await postForm(app, { type: 'profile', 'data[email]': 'a@b.com' });
 
@@ -78,7 +79,7 @@ describe('POST /webhooks/mailchimp/audience', () => {
 
   it('rejects a malformed event with 200 and does not enqueue', async () => {
     const send = vi.fn();
-    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
     const res = await postForm(app, { type: 'profile' }); // no email
     expect(res.status).toBe(200);
     expect(send).not.toHaveBeenCalled();
@@ -87,7 +88,7 @@ describe('POST /webhooks/mailchimp/audience', () => {
   it('returns 500 and marks failed when enqueue throws', async () => {
     const pendingStore = fakePendingStore();
     const send = vi.fn().mockRejectedValue(new Error('queue down'));
-    const app = createInboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
 
     const res = await postForm(app, { type: 'unsubscribe', 'data[email]': 'a@b.com' });
 
@@ -98,7 +99,7 @@ describe('POST /webhooks/mailchimp/audience', () => {
   it('logs an enqueue failure by member id, never the address', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const send = vi.fn().mockRejectedValue(new Error('queue down'));
-    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET });
+    const app = createInboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, writeMode: async () => 'on' });
 
     await postForm(app, { type: 'unsubscribe', 'data[email]': 'a@b.com' });
 

@@ -168,6 +168,17 @@ wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — a
 in `config/backup.json`) means no filter, today's "snapshot everything the token can see"
 behaviour.
 
+## Write switch
+
+The `FLAGS` KV key `monday-backup:writes` (`on` | `hold` | `off`; missing or unrecognized means
+`off`, a KV read error acts like `hold`) gates both crons, read once per run. Anything but `on`
+makes the nightly backup log one skip line and return, with no `snapshot_runs` row, so the watchdog
+does not count it as a failure. The watchdog always computes and keeps its D1 bookkeeping, but its
+Slack alerts are logged as skips unless the mode is `on` (and a suppressed stale-snapshot alert is
+not marked as sent, so it fires once the switch is on). After a long `off`/`hold`, expect the
+36-hour staleness alert on the first watchdog run after flipping to `on`, until the next backup
+succeeds. Set the key with `node scripts/flags.mjs`.
+
 ## Retention
 
 SVBC has confirmed ample spare Drive storage, so the default is **keep every dated snapshot

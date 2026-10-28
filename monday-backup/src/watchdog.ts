@@ -1,4 +1,5 @@
 import { sendFailureAlert } from './alert';
+import { recordingProxy, type SkipContext } from './flags';
 
 // Independent staleness check (issue #29), on its own hourly cron so it runs in a separate
 // invocation from the backup: a backup the runtime kills for CPU or wall time never reaches its
@@ -24,16 +25,23 @@ export interface WatchdogDeps {
   store: WatchdogStore;
   slackWebhookUrl: string;
   now: () => Date;
+  // Set unless the write switch is `on`: Slack alerts are then recorded as skip lines instead of
+  // sent, and a suppressed stale-snapshot alert is not marked as sent (so it still fires once the
+  // switch is back on, rather than waiting out the 24h throttle). D1 bookkeeping stays live.
+  dryRun?: SkipContext;
 }
 
 export async function runWatchdog(deps: WatchdogDeps): Promise<void> {
+  const alerts = deps.dryRun
+    ? recordingProxy({ sendFailureAlert }, 'Slack alert', { sendFailureAlert: undefined }, deps.dryRun)
+    : { sendFailureAlert };
   const now = deps.now();
   const nowUtc = now.toISOString();
 
   const abandoned = await deps.store.abandonStaleRuns(new Date(now.getTime() - STUCK_RUN_MS).toISOString(), nowUtc);
   if (abandoned.length > 0) {
     const which = abandoned.map((r) => `run ${r.id} (started ${r.startedAt})`).join(', ');
-    await sendFailureAlert(
+    await alerts.sendFailureAlert(
       deps.slackWebhookUrl,
       `${abandoned.length} backup run(s) never finished — likely killed by the Workers CPU or wall-time limit, so no snapshot was recorded`,
       which,
@@ -52,6 +60,6 @@ export async function runWatchdog(deps: WatchdogDeps): Promise<void> {
     lastSnapshot === null
       ? `No snapshot has ever succeeded (watchdog armed ${armedAt}).`
       : `Last snapshot finished ${lastSnapshot}.`;
-  await sendFailureAlert(deps.slackWebhookUrl, 'no successful snapshot in over 36 hours', detail);
-  await deps.store.recordStaleAlert(nowUtc);
+  await alerts.sendFailureAlert(deps.slackWebhookUrl, 'no successful snapshot in over 36 hours', detail);
+  if (!deps.dryRun) await deps.store.recordStaleAlert(nowUtc);
 }

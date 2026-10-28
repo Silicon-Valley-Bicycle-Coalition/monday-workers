@@ -50,6 +50,10 @@ export const hi: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'हम अभी इस कार्ड को सत्यापित नहीं कर सके। कृपया कुछ मिनट बाद फिर से कोशिश करें।',
   'error.eventsLoadFailed': 'हम अभी आपके इवेंट पंजीकरण लोड नहीं कर सके। कृपया कुछ मिनटों में फिर से प्रयास करें।',
   'error.generic': 'कुछ गड़बड़ हो गई। कृपया फिर से लॉग इन करने की कोशिश करें।',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'अस्थायी रूप से उपलब्ध नहीं',
+  'unavailable.heading': 'अस्थायी रूप से उपलब्ध नहीं',
+  'unavailable.body': 'हम अपने सिस्टम अपडेट कर रहे हैं, इसलिए यह अभी उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर से कोशिश करें।',
 
   // Portal
   'portal.heading': 'आपका डोनर पोर्टल',

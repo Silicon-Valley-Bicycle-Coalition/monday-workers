@@ -19,6 +19,8 @@ function fakeEnv(overrides: Partial<Env> = {}): Env {
     WEBHOOK_SECRET: SECRET,
     EMAIL: { send: vi.fn().mockResolvedValue({ messageId: 'test-id' }) },
     REQUEST_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) },
+    // Existing behavior is tested under `on`; the write-switch block below overrides it.
+    FLAGS: { get: vi.fn().mockResolvedValue('on') } as unknown as KVNamespace,
     ...overrides,
   };
 }
@@ -172,5 +174,74 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
     expect(res.status).toBe(500);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('write switch (FLAGS)', () => {
+  const flags = (value: string | null | Error) =>
+    ({ get: vi.fn(async () => { if (value instanceof Error) throw value; return value; }) }) as unknown as KVNamespace;
+
+  it('reads the mode from <worker>:writes', async () => {
+    const env = fakeEnv({ FLAGS: flags('on') });
+    await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+    expect(env.FLAGS!.get).toHaveBeenCalledWith('bp-feedback-notify:writes', { cacheTtl: 30 });
+  });
+
+  it('answers a challenge without reading the mode', async () => {
+    const env = fakeEnv({ FLAGS: flags('hold') });
+    const res = await app.request(post({ challenge: 'abc123' }), undefined, env, fakeCtx());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ challenge: 'abc123' });
+    expect(env.FLAGS!.get).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['off', 'off'],
+    ['a missing key', null],
+  ] as const)('%s: logs a masked skip, returns 200, sends nothing and writes no status', async (_label, value) => {
+    writeSendStatus.mockClear();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const env = fakeEnv({ FLAGS: flags(value) });
+    const ctx = fakeCtx();
+    const res = await app.request(post(VALID_BODY), undefined, env, ctx);
+    expect(res.status).toBe(200);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).not.toHaveBeenCalled();
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    const lines = logSpy.mock.calls.map(([l]) => String(l));
+    expect(lines.some((l) => l.includes('skipped'))).toBe(true);
+    expect(lines.join('\n')).not.toContain('@');
+    logSpy.mockRestore();
+  });
+
+  it('off with debug logging still masks the organizer address and event name', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const get = vi.fn(async (key: string) => (key.endsWith(':log') ? 'debug' : 'off'));
+    const res = await app.request(post(VALID_BODY), undefined, fakeEnv({ FLAGS: { get } as unknown as KVNamespace }), fakeCtx());
+    expect(res.status).toBe(200);
+    const text = logSpy.mock.calls.map(([l]) => String(l)).join('\n');
+    expect(text).not.toContain('@');
+    expect(text).not.toContain('Fall Festival');
+    logSpy.mockRestore();
+  });
+
+  it.each([
+    ['hold', flags('hold')],
+    ['a KV read error (unknown)', flags(new Error('kv down'))],
+    ['a missing FLAGS binding', undefined],
+  ] as const)('%s: 503 and no send', async (_label, binding) => {
+    writeSendStatus.mockClear();
+    const env = fakeEnv({ FLAGS: binding });
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+    expect(res.status).toBe(503);
+    expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(writeSendStatus).not.toHaveBeenCalled();
+  });
+
+  it('still rejects an unauthorized request before reading the mode', async () => {
+    const env = fakeEnv({ FLAGS: flags('on') });
+    const res = await app.request(post(VALID_BODY, {}), undefined, env, fakeCtx());
+    expect(res.status).toBe(401);
+    expect(env.FLAGS!.get).not.toHaveBeenCalled();
   });
 });

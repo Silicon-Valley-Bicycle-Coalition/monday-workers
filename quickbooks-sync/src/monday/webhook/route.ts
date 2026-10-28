@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { MapStore } from '../../db/map';
 import type { MondayEventStore } from '../../db/mondayEvents';
+import { stampFor, type WriteMode } from '../../flags';
 import type { QuickbooksSyncConfig } from '../../types';
 import { hasReachedQueue, type QueueLike } from '../../quickbooks/webhook/route';
 import { isChallengeRequest, validateMondayEvent } from './validate';
@@ -15,6 +16,9 @@ export interface MondayWebhookDeps {
   // mailchimp-sync's Monday webhook, but fail-closed: an unset or empty binding rejects every
   // delivery rather than disabling the check.
   mondayWebhookSecret: string;
+  // The write switch's mode (flags.ts readWriteMode), read once per accepted delivery. Ingest runs
+  // in every mode; under `off` the message is stamped so the consumer dry-runs it.
+  writeMode: () => Promise<WriteMode>;
 }
 
 export function createMondayWebhookApp(deps: MondayWebhookDeps) {
@@ -72,8 +76,9 @@ export function createMondayWebhookApp(deps: MondayWebhookDeps) {
       resumed = true;
     }
 
+    const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ direction: 'monday-to-qb', eventId: event.mondayItemId });
+      await deps.queue.send({ direction: 'monday-to-qb', eventId: event.mondayItemId, ...stamp });
       await deps.mondayEventStore.updateStatus(event.mondayItemId, 'queued');
     } catch (err) {
       const errMsg = (err as Error).message;

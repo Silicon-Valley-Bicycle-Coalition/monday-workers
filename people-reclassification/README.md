@@ -4,8 +4,8 @@
 
 **Status: Built, not deployed** (`feat/people-reclassification`, 2026-10-09). Nothing is
 provisioned: no D1, no secrets, no sandbox deployment, and the production `config/svbc.json`
-still holds `0` board ids. Every Monday write ships **off** (`DRY_RUN: "true"` in both
-environments) — the first deployment's passes only record what they would move. See "Deploy".
+still holds `0` board ids. Every Monday write ships **off** (the write switch
+`people-reclassification:writes` is unset, which means `off`) — the first deployment's passes only record what they would move. See "Deploy".
 **Priority:** Post-cutover. The import lands People at ~74% of the ceiling; the plan's own
 trigger line is 85%, and the growth analysis puts a 7-year window at ~71% today, so this is
 headroom maintenance rather than a cutover blocker — but it is the only thing that will ever
@@ -38,7 +38,7 @@ Cloudflare cron, daily 10:00 UTC ──► src/duties.ts: does today owe a pass?
                                       quarterly (1st of Jan/Apr/Jul/Oct, caught up later in the
                                       month if missed) · threshold (People ≥ 85% of the ceiling,
                                       no pass this week) · continuation (last pass left work)
-POST /reclassify/run?secret=…  ──►   the same pass, on demand (?dryRun=false for a live one)
+POST /reclassify/run?secret=…  ──►   the same pass, on demand (follows the write mode; ?dryRun=true forces a plan-only pass)
                                             │
                                             ▼
                              src/pass.ts — one pass, reads first, then writes
@@ -115,7 +115,7 @@ and cannot be listed in the mapping. So:
   time (`getItemBoardId` → `ownerColumnsByBoard`).
 * **Not verified against a live board yet** — nothing here has run outside the test suite. The
   first live pass in the sandbox should be one item (`maxMovesPerRun: 1` temporarily, or a
-  `?dryRun=false` run after a dry run that plans exactly one), followed by a check that its
+  `writes on` run after a dry run that plans exactly one), followed by a check that its
   Donor-linked gifts, Organization link, Affiliations link and updates are intact. If a move
   does lose a link, the fallback is to restore it from the ledger row (item id, both boards)
   and the Donations board's Donor column, and to prefer archive-in-place on the live board
@@ -124,10 +124,16 @@ and cannot be listed in the mapping. So:
 
 ### Dry run, ledger, idempotence
 
-* **`DRY_RUN`** (wrangler var, both environments) must be exactly `"false"` for any Monday
-  write — moves and the IT Requests alert alike. A dry-run pass does the full read and records
-  its plan as `moves` rows with status `dry-run`, so `/reclassify/status` shows what a live pass
-  would do. `POST /reclassify/run?dryRun=false` runs one live pass without redeploying.
+* **The write switch** (`people-reclassification:writes` in the shared FLAGS KV namespace; flip it
+  with `node scripts/flags.mjs people-reclassification writes on|hold|off --env sandbox|production`)
+  must be `on` for any Monday write — moves and the IT Requests alert alike. `off` (also a missing
+  key) runs the pass as a dry run: it does the full read and records its plan as `moves` rows with
+  status `dry-run`, so `/reclassify/status` shows what a live pass would do. `hold`, and `unknown`
+  (the KV read failed), skip the cron run entirely: no Monday call, no ledger row. Without a query
+  parameter `POST /reclassify/run` follows the mode (409 under `hold`/`unknown`);
+  `?dryRun=true` forces a plan-only pass in any mode but `unknown`. `?dryRun=false` is rejected
+  with 400 — it used to run one live pass while the old `DRY_RUN` var said true; set the mode to
+  `on` instead. `/reclassify/status` reports the current `mode`.
 * **Ledger** (`migrations/0001_create_ledger.sql`): `runs` (one per pass, with the report),
   `moves` (one per decided item: direction, the activity date the decision rested on, the
   reason label, status), `alerts` (IT Requests items raised). A `moves` row goes `planned` →
@@ -184,7 +190,7 @@ Other config: `window` (`years: 7`, `timeZone`), `thresholds` (`itemsLimit: 1000
 
 `wrangler.jsonc` `env.sandbox`: `npm run deploy:sandbox` deploys `svbc-people-reclassification-sandbox`
 against the CRM Sandbox boards in `config/sandbox.json`, chosen at request time by the
-`ENVIRONMENT` var (`src/environment.ts`), with its own D1 and secrets and `DRY_RUN: "true"`.
+`ENVIRONMENT` var (`src/environment.ts`), with its own D1, FLAGS KV namespace and secrets; its write switch is independent of production's.
 This Worker writes only to Monday, so the split exists so the two deployments can coexist after
 cutover; `config/split.test.ts` fails if production shares a board id with the sandbox, if the
 sandbox ever points at the production IT Requests board, or if `env.sandbox` shares a resource
@@ -199,17 +205,18 @@ Nothing below has been done.
    svbc-people-reclassification-sandbox --env sandbox --remote`.
 2. `wrangler secret put MONDAY_API_TOKEN --env sandbox` (the Sandbox Integration user's token),
    `wrangler secret put RECLASSIFY_SECRET --env sandbox`.
-3. `npm run deploy:sandbox`. `DRY_RUN` is `"true"`: the daily cron and
+3. `npm run deploy:sandbox`. With the switch unset (`off`) the daily cron and
    `POST /reclassify/run?secret=…` only plan.
 4. Read the plan: `GET /reclassify/status?secret=…` (the last ten runs with their reports) and
    `wrangler d1 execute … --command "SELECT * FROM moves WHERE status = 'dry-run'"`. Check a
    sample of `aged-out` rows against the boards and against the sizing analysis's expectation
    (~7,150 live at N=7).
-5. One live move: `POST /reclassify/run?secret=…&dryRun=false` with `run.maxMovesPerRun` set to
-   1 (or after confirming the dry-run plan is tiny), then verify that item's links and updates
-   on its new board — see "Move mechanics". Then raise the cap and run the rest.
-6. Only then flip `env.sandbox.vars.DRY_RUN` to `"false"` and redeploy, so the quarterly cron
-   runs live. Production: the same steps against the top-level block once cutover fills
+5. One live move: with `run.maxMovesPerRun` set to 1 (or after confirming the dry-run plan is
+   tiny), `node scripts/flags.mjs people-reclassification writes on --env sandbox`, then
+   `POST /reclassify/run?secret=…`, and set the mode back to `off` (or `hold`) once it has
+   moved. Verify that item's links and updates on its new board — see "Move mechanics". Then
+   raise the cap and run the rest.
+6. Only then leave `writes` at `on` so the quarterly cron runs live. Production: the same steps against the top-level block once cutover fills
    `config/svbc.json`'s board ids; Workers Builds / the `deploy-sandbox:people-reclassification`
    CI job follow the repo's usual pattern (root README "Deploys").
 

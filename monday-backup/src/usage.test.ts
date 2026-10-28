@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runUsageCheck, type DailyUsage, type UsageAlertStore } from './usage';
+import type { SkipContext } from './flags';
 
 function fakeStore(init: { day: string; level: number } | null = null) {
   const state = { last: init };
@@ -104,5 +105,19 @@ describe('runUsageCheck', () => {
     const { fetchMock } = stubSlack();
     await runUsageCheck({ fetchUsage: async () => usage(6_000, 20_000), store, slackWebhookUrl: hook, now: () => NOW });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('under a dry run logs the alert as a skip line, sends nothing, and leaves it unsent', async () => {
+    const { fetchMock } = stubSlack();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { store, state } = fakeStore();
+    const dryRun: SkipContext = {
+      worker: 'monday-backup', environment: 'production', mode: 'off', logLevel: 'normal', deliveryId: 'cron', piiKeys: [],
+    };
+    await runUsageCheck({ fetchUsage: async () => usage(5_000), store, slackWebhookUrl: hook, now: () => NOW, dryRun });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(state.last).toBeNull();
+    const line = JSON.parse(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('writeSwitch'))!);
+    expect(line).toMatchObject({ writeSwitch: 'skipped', sink: 'Slack alert', operation: 'sendFailureAlert' });
   });
 });

@@ -1,4 +1,5 @@
 import { sendFailureAlert } from './alert';
+import { recordingProxy, type SkipContext } from './flags';
 
 // Account-wide Monday API usage check, run from the hourly watchdog cron. Monday caps the whole
 // account's API calls per day (Pro: 10,000, resetting at midnight UTC) across every token — every
@@ -29,6 +30,9 @@ export interface UsageCheckDeps {
   store: UsageAlertStore;
   slackWebhookUrl: string;
   now: () => Date;
+  // Set unless the write switch is `on`: the alert is recorded as a skip line instead of sent and
+  // not marked as sent, so it still fires once the switch is back on (same rule as the watchdog).
+  dryRun?: SkipContext;
 }
 
 export async function runUsageCheck(deps: UsageCheckDeps): Promise<void> {
@@ -44,12 +48,15 @@ export async function runUsageCheck(deps: UsageCheckDeps): Promise<void> {
   const last = await deps.store.lastUsageAlert();
   if (last !== null && last.day === day && last.level >= level) return;
 
-  await sendFailureAlert(
+  const alerts = deps.dryRun
+    ? recordingProxy({ sendFailureAlert }, 'Slack alert', { sendFailureAlert: undefined }, deps.dryRun)
+    : { sendFailureAlert };
+  await alerts.sendFailureAlert(
     deps.slackWebhookUrl,
     `Monday API usage passed ${level}% of the daily limit`,
     `${used.toLocaleString('en-US')} of ${usage.limit.toLocaleString('en-US')} calls used on ${day} UTC ` +
       `(${Math.round(percent)}%; Monday's figures as of ${usage.lastUpdated ?? 'unknown'}). ` +
       `The limit is account-wide and resets at midnight UTC; see platform_api daily_analytics by_user for who is using it.`,
   );
-  await deps.store.recordUsageAlert(day, level);
+  if (!deps.dryRun) await deps.store.recordUsageAlert(day, level);
 }

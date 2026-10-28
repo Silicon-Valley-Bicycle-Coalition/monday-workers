@@ -19,9 +19,10 @@
     "consumers": [
       {
         "queue": "eventbrite-sync-writes",
-        // The consumer backs each retry off by attempt — 1, 4, then 16 minutes
-        // (retryDelaySeconds in src/consumer/processBatch.ts) — before dead-lettering.
-        "max_retries": 3,
+        // The consumer backs each retry off by attempt — 1 minute doubling to an hour
+        // (retryDelaySeconds in src/flags.ts) — so 100 retries ride out about four days of
+        // Monday outage (or a write-switch `hold` the queue pause missed) before dead-lettering.
+        "max_retries": 100,
         // Single consumer at a time — Monday's per-token complexity budget punishes
         // concurrent writers during a backlog drain (the backfill script is one).
         "max_concurrency": 1,
@@ -38,6 +39,10 @@
       }
     ]
   },
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
   // Hourly sweep for the morning-after class follow-ups (src/followups/run.ts). The 08:00 Pacific
   // send time is decided in code, so this just has to fire every hour, DST included.
   "triggers": { "crons": ["0 * * * *"] },
@@ -78,7 +83,7 @@
         "consumers": [
           {
             "queue": "eventbrite-sync-writes-sandbox",
-            "max_retries": 3,
+            "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "eventbrite-sync-writes-sandbox-dlq"
           },
@@ -90,6 +95,8 @@
           }
         ]
       },
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2072", "simple": { "limit": 60, "period": 60 } }],
       "limits": { "cpu_ms": 100 },
       "observability": {

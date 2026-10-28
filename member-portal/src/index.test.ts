@@ -7,6 +7,10 @@ import type { MondayClient } from './monday/client';
 import type { MagicLinkTokenStore } from './db/tokens';
 import type { EmailSender } from './email/types';
 import type { ChangeQueueMessage, Config, Env, LetterSendQueueMessage } from './types';
+import type { WriteMode } from './flags';
+import type { BatchSkipContext } from './writeSwitch';
+
+const gate = (mode: WriteMode): BatchSkipContext => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
 
 // Full valid test Config shape, same fixture used in routes.test.ts / processBatch.test.ts /
 // processLetterSendBatch.test.ts.
@@ -64,7 +68,7 @@ const config: Config = {
 };
 
 function makeMessage<T>(body: T) {
-  return { body, ack: vi.fn(), retry: vi.fn() };
+  return { body, attempts: 1, ack: vi.fn(), retry: vi.fn() };
 }
 
 function fakeBatch<T>(queue: string, messages: { body: T; ack: () => void; retry: () => void }[]): MessageBatch<T> {
@@ -174,6 +178,7 @@ describe('routeQueueBatch', () => {
       emailSender: fakeEmailSender(),
       config,
       now: () => new Date('2026-08-24T10:00:00.000Z'),
+      gate: gate('on'),
     });
 
     expect(changeStore.getRequest).toHaveBeenCalledWith(1);
@@ -199,6 +204,7 @@ describe('routeQueueBatch', () => {
       emailSender: fakeEmailSender(),
       config,
       now: () => new Date('2026-08-24T10:00:00.000Z'),
+      gate: gate('on'),
     });
 
     expect(letterStore.getById).toHaveBeenCalledWith(1);
@@ -221,6 +227,7 @@ describe('routeQueueBatch', () => {
         emailSender: fakeEmailSender(),
         config,
         now: () => new Date('2026-08-24T10:00:00.000Z'),
+        gate: gate('on'),
       })
     ).rejects.toThrow('unrecognized queue "not-a-real-queue"');
     expect(changeStore.getRequest).not.toHaveBeenCalled();
@@ -241,6 +248,7 @@ describe('routeQueueBatch', () => {
       emailSender: fakeEmailSender(),
       config,
       now: () => new Date('2026-08-24T10:00:00.000Z'),
+      gate: gate('on'),
     });
 
     expect(changeStore.getRequest).toHaveBeenCalledWith(7);
@@ -261,6 +269,7 @@ describe('routeQueueBatch', () => {
       emailSender: fakeEmailSender(),
       config,
       now: () => new Date('2026-08-24T10:00:00.000Z'),
+      gate: gate('on'),
     });
 
     expect(letterStore.getById).toHaveBeenCalledWith(7);
@@ -278,8 +287,32 @@ describe('routeQueueBatch', () => {
         emailSender: fakeEmailSender(),
         config,
         now: () => new Date('2026-08-24T10:00:00.000Z'),
+        gate: gate('on'),
       })
     ).rejects.toThrow('unrecognized queue "member-portal-change-requests-sandbox-dlq"');
+  });
+});
+
+describe('routeQueueBatch (write switch)', () => {
+  it.each(['member-portal-change-requests', 'member-portal-letter-emails'])('holds a %s batch: retry at 60 s, no store read', async (queue) => {
+    const changeStore = fakeChangeStore();
+    const letterStore = fakeLetterStore();
+    const message = makeMessage({ requestId: 1, sendId: 1 });
+
+    await routeQueueBatch(fakeBatch(queue, [message]) as MessageBatch<ChangeQueueMessage>, {
+      changeStore,
+      letterStore,
+      monday: fakeMonday(),
+      tokenStore: fakeTokenStore(),
+      emailSender: fakeEmailSender(),
+      config,
+      now: () => new Date('2026-08-24T10:00:00.000Z'),
+      gate: gate('hold'),
+    });
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(changeStore.getRequest).not.toHaveBeenCalled();
+    expect(letterStore.getById).not.toHaveBeenCalled();
   });
 });
 

@@ -129,6 +129,22 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect((wrangler.vars as Json | undefined)?.SANDBOX_EMAIL_SINK).toBeUndefined();
   });
 
+  it('binds FLAGS to a different KV namespace than production', () => {
+    const flagsId = (scope: Json) => (scope.kv_namespaces as { binding: string; id: string }[]).find((ns) => ns.binding === 'FLAGS')?.id;
+    expect(flagsId(wrangler)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).toBeTruthy();
+    expect(flagsId(sandboxEnv)).not.toBe(flagsId(wrangler));
+  });
+
+  // The write switch's 4-day outage cover: 100 retries on the shared backoff (capped at an hour).
+  it('gives both main consumers 100 retries in production and the sandbox', () => {
+    for (const scope of [wrangler, sandboxEnv]) {
+      const consumers = (scope.queues as Json).consumers as { queue: string; max_retries: number }[];
+      expect(consumers).toHaveLength(2);
+      for (const consumer of consumers) expect(consumer.max_retries, consumer.queue).toBe(100);
+    }
+  });
+
   it('uses its own rate-limit namespace', () => {
     const prodLimiter = (wrangler.ratelimits as Json[])[0]!;
     const sbLimiter = (sandboxEnv.ratelimits as Json[])[0]!;

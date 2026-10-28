@@ -50,6 +50,10 @@ export const es: Record<TranslationKey, string> = {
   'error.verifyLoadFailed': 'No pudimos verificar esta tarjeta en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.eventsLoadFailed': 'No pudimos cargar tus inscripciones a eventos en este momento. Por favor intenta de nuevo en unos minutos.',
   'error.generic': 'Algo salió mal. Por favor intenta iniciar sesión de nuevo.',
+  // Shown for a POST that writes while the write switch is off or held (src/writeSwitch.ts).
+  'title.unavailable': 'No disponible por ahora',
+  'unavailable.heading': 'No disponible por ahora',
+  'unavailable.body': 'Estamos actualizando nuestros sistemas, así que esto no está disponible en este momento. Por favor intenta de nuevo en un rato.',
 
   // Portal
   'portal.heading': 'Tu portal de donante',

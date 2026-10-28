@@ -70,6 +70,32 @@ curl -X POST -H "Authorization: Bearer $DIGESTS_SECRET" \
   "https://svbc-report-digests.svbc-account.workers.dev/digests/run?key=last-week"
 ```
 
+## Write switch
+
+Every send — the hourly cron and the operator route — is gated by the shared write switch (root
+README, "Write switch: off / hold / on"; module `src/flags.ts`, a byte-identical copy of
+`member-portal/src/flags.ts`), read from the `FLAGS` KV namespace (`wrangler.jsonc`; the ids are
+placeholders until the namespaces exist). The Worker's only sink is email: Monday is only read,
+and it has no queue, D1 or cursor.
+
+- `report-digests:writes` `on`: sends as above.
+- `off` (also a **missing key**): each due digest is built from Monday as usual and the send is
+  logged as one `"writeSwitch":"skipped"` line (`sink: Email`), nothing sent. The operator route
+  does the same and answers with the result plus `"writeSwitch": "dry-run"`.
+- `hold`, or a KV read error: the cron skips the hour with one
+  `report-digests scheduled: write mode is …` line, and the operator route answers 503. Nothing is
+  caught up: after the flip back to `on`, resend any digest that fell due during the hold with
+  the operator route (`date=` set to the day it was due).
+- `report-digests:log` `debug` adds the would-be email to the skip line: recipients' addresses
+  masked, html and text bodies as length only.
+
+```sh
+node scripts/flags.mjs report-digests writes on --env sandbox   # or --env production
+```
+
+**Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
+dry-runs every digest.
+
 ## Config
 
 `config/svbc.json` is production and `config/sandbox.json` is the CRM Sandbox. `ENVIRONMENT`
@@ -111,6 +137,7 @@ sandbox email from any Worker.
 2. Run `salesforce-import`'s `configure` for `donations` and `people-live` (the normal step 4),
    which creates the three new views.
 3. `wrangler secret put MONDAY_API_TOKEN` and `wrangler secret put DIGESTS_SECRET`, then
+   `node scripts/flags.mjs report-digests writes on --env production` (repo root), then
    `npm run deploy`.
 4. Check one digest with the operator route, e.g. `key=fiscal-year-by-size`.
 5. Unsubscribe the Salesforce report subscriptions, or let the integration user's freeze stop them.

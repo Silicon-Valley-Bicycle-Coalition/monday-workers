@@ -1,23 +1,15 @@
 import { MailchimpRateLimitError } from '../mailchimp/client';
 import { MondayApiError } from '../monday/client';
+import { retryDelaySeconds as sharedRetryDelaySeconds } from '../flags';
 
-// Retry backoff (#35): a bare message.retry() redelivers almost immediately, so a Monday or
-// Mailchimp rate-limit burst burns all of wrangler.jsonc's max_retries (3) within seconds and
-// dead-letters the message. 60 s × 4^(attempt−1) gives 1, 4 and 16 minutes — about 21 minutes of
-// cover — capped at Queues' 12-hour maximum delay. Same curve as the rest of the fleet (each
-// Worker keeps its own copy; #35 chose per-Worker copies over a shared package).
-const RETRY_BASE_SECONDS = 60;
-const RETRY_FACTOR = 4;
-export const MAX_RETRY_DELAY_SECONDS = 12 * 60 * 60;
+// Retry backoff (#35, then the write switch): a bare message.retry() redelivers almost
+// immediately, so a rate-limit burst would burn the retries within seconds. The base delay is the
+// fleet-wide curve in flags.ts (60 s doubling to an hour, across wrangler.jsonc's max_retries of
+// 100 — about four days of cover); this file only supplies the upstream hint.
 
 // One greppable line when Mailchimp rejects the API key, naming the secret but never its value.
 export function credentialsRejectedLog(consumer: 'inbound' | 'outbound'): string {
   return `mailchimp-sync ${consumer} consumer: MAILCHIMP CREDENTIALS REJECTED (HTTP 401/403) — the MAILCHIMP_API_KEY secret is invalid, revoked, or lacks access. Retrying with backoff so messages dead-letter rather than drop; fix the secret, then replay the DLQ.`;
-}
-
-export function backoffSeconds(attempts: number | undefined): number {
-  const attempt = typeof attempts === 'number' && Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 1;
-  return Math.min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), MAX_RETRY_DELAY_SECONDS);
 }
 
 export function secondsUntilNextMidnightUtc(now: Date): number {
@@ -37,11 +29,9 @@ export function rateLimitHintSeconds(err: unknown, now: Date): number | undefine
   return undefined;
 }
 
-// The delay for message.retry(): the exponential backoff for this attempt, stretched to at least
-// any rate-limit hint, never beyond Queues' 12-hour cap.
+// The delay for message.retry(): the shared backoff for this attempt, stretched to at least any
+// rate-limit hint, never beyond Queues' 12-hour cap (flags.ts retryDelaySeconds).
 export function retryDelaySeconds(attempts: number | undefined, err?: unknown, now: Date = new Date()): number {
-  const backoff = backoffSeconds(attempts);
   const hint = rateLimitHintSeconds(err, now);
-  const delay = hint === undefined ? backoff : Math.max(backoff, Math.ceil(hint));
-  return Math.min(delay, MAX_RETRY_DELAY_SECONDS);
+  return sharedRetryDelaySeconds(attempts, hint === undefined ? undefined : Math.ceil(hint));
 }

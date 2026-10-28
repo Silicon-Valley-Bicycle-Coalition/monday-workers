@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
 import { createApp } from './webhook/route';
 import { D1EventStore } from './db/events';
-import { processFunraiseQueueBatch, type FunraiseQueueMessage } from './consumer/processBatch';
+import { consumeFunraiseBatch, processFunraiseQueueBatch, type FunraiseQueueMessage } from './consumer/processBatch';
 import type { MondayClient } from './monday/client';
 import type { FunraiseSyncConfig } from './types';
 import { testConfig } from './test/testConfig';
@@ -70,7 +70,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
 
     let captured: FunraiseQueueMessage | undefined;
     const queue = { send: async (m: FunraiseQueueMessage) => { captured = m; } };
-    const app = createApp({ eventStore, config, queue, webhookSecret: 'int-secret' });
+    const app = createApp({ eventStore, config, queue, webhookSecret: 'int-secret', writeMode: async () => 'on' });
 
     const res = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
       method: 'POST',
@@ -165,5 +165,52 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Monday write', () =
     const afterStale = await eventStore.getEventByEntity('transaction', '123');
     expect(afterStale?.status).toBe('written');
     expect(afterStale?.rawPayload).toContain('"status":"Refunded"');
+  });
+});
+
+// Write switch, against real D1: a delivery ingested under `off` is stamped, and consuming it
+// even after the switch is back `on` writes nothing — no placeholder donor id, no item id, no
+// status change (Review Focus 2).
+describe('integration: write switch off at ingest', () => {
+  it('records the delivery, then dry-runs it without touching its D1 row', async () => {
+    const eventStore = new D1EventStore(env.DB);
+    let captured: FunraiseQueueMessage | undefined;
+    const app = createApp({
+      eventStore,
+      config,
+      queue: { send: async (m: FunraiseQueueMessage) => { captured = m; } },
+      webhookSecret: 'int-secret',
+      writeMode: async () => 'off',
+    });
+
+    const res = await app.request('/webhooks/funraise/transaction?secret=int-secret', {
+      method: 'POST',
+      body: JSON.stringify({ ...funraiseDelivery({ sentAt: 1600000000000 }), data: { ...funraiseDelivery({ sentAt: 1600000000000 }).data, id: 456 } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res.status).toBe(200);
+    expect(captured).toEqual({ entityType: 'transaction', entityId: '456', writeStamp: 'dropped' });
+
+    const mondayClient: MondayClient = {
+      findItemByColumnValue: vi.fn().mockResolvedValue(null),
+      createItem: vi.fn(),
+      changeColumnValues: vi.fn(),
+    };
+    const ack = vi.fn();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await consumeFunraiseBatch([{ body: captured!, ack, retry: vi.fn() }], { eventStore, mondayClient, config }, {
+        worker: 'funraise-sync', environment: 'production', mode: 'on', logLevel: 'normal', piiKeys: ['name', 'email'],
+      });
+    } finally {
+      log.mockRestore();
+    }
+
+    expect(ack).toHaveBeenCalled();
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    const row = await eventStore.getEventByEntity('transaction', '456');
+    expect(row?.status).toBe('queued');
+    expect(row?.matchedDonorItemId).toBeNull();
+    expect(row?.mondayItemId).toBeNull();
   });
 });
