@@ -17,26 +17,30 @@
     "consumers": [
       {
         "queue": "donation-rollups-recompute",
-        // The Free plan's 50-subrequest budget is per invocation and D1 queries count: a full
-        // recompute costs ~16–26 (more for owners with hundreds of gifts or pending gift-term
-        // stamps), so the default batch of 10 is what produced the 2026-09-03 "Too many
-        // subrequests" failures. Two worst-case recomputes fit; three don't. Throughput is
-        // unchanged (max_concurrency is already 1). Can be raised now that the account is on Workers
-        // Paid (cap 1,000) — not yet done.
-        //
-        // Phase 2 (affiliation recompute) adds ~3 Monday calls per affected affiliation on top
-        // of phase 1's ~5 per message; two messages per invocation keeps a bulk re-point under
-        // the Free plan's 50-subrequest cap.
-        "max_batch_size": 2,
+        // The subrequest budget is per invocation and D1 queries count: a full recompute costs
+        // ~16–26, plus up to 10 gift-term stamps (MAX_GIFT_TERM_WRITES_PER_RECOMPUTE) and ~3
+        // Monday calls per affected affiliation in phase 2. On the Free plan's 50 that allowed a
+        // batch of 2 (the default 10 produced the 2026-09-03 "Too many subrequests" failures);
+        // on Workers Paid (cap 1,000) ten worst-case recomputes fit with room to spare. Messages
+        // in a batch run one after another, so batch size only trims the gap between
+        // invocations: ~10% throughput on sandbox v4 (2026-10-28), 12.8 → 14.2 owners/min.
+        "max_batch_size": 10,
         // Every retry is delayed (retryDelaySeconds in src/flags.ts): 1 minute doubling to an
         // hour, so 100 retries ride out about four days of Monday outage (or a write-switch
         // `hold` the queue pause missed) before the DLQ. A D1 daily-quota error, or Monday's
         // daily limit, defers to midnight UTC (capped at Queues' 12h); a Monday rate limit waits
         // at least its retry hint.
         "max_retries": 100,
-        // Single consumer at a time — Monday's per-token complexity budget punishes
-        // concurrent writers during a backlog drain (same reasoning as funraise-sync).
-        "max_concurrency": 1,
+        // Concurrency is the real throughput lever: a recompute is ~3 s of mostly Monday I/O.
+        // Three consumers drained the sandbox v4 post-sweep backlog at 40.4 owners/min (vs 14.2
+        // with one), per-owner time unchanged and 0 failures, so a full sweep of ~11,300 owners
+        // takes ~4.7 h instead of ~15 h. Kept at 3, not higher, for Monday's per-token
+        // complexity budget, which other Workers draw on during cutover (the sandbox run had
+        // no other writers); rate-limit errors are retried with backoff (src/flags.ts), so going
+        // over slows a drain rather than failing it. Two recomputes of one owner can now overlap
+        // more often; the later write wins and the next pass re-converges (README, "Concurrent
+        // gifts").
+        "max_concurrency": 3,
         "dead_letter_queue": "donation-rollups-recompute-dlq"
       },
       {
@@ -63,7 +67,7 @@
   // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
   // guardrail against a runaway invocation or a surprise bill. See the root README. CPU time
   // excludes the D1/Monday I/O wait this Worker's recompute batches are mostly made of, so this
-  // doesn't touch the max_batch_size=2 subrequest tuning above.
+  // doesn't constrain the max_batch_size subrequest sizing above.
   "limits": { "cpu_ms": 100 },
   // Daily custodian trigger at 09:00 UTC (≈ 2am Pacific) — src/custodian/custodian.ts's
   // dutiesForDate decides which duties today owes.
@@ -99,9 +103,7 @@
         "consumers": [
           {
             "queue": "donation-rollups-recompute-sandbox",
-            // Measured on sandbox v4 2026-10-28 during the post-sweep drain: 2/1 drained 12.8
-            // owners/min, 10/1 14.2, 10/3 40.4, with per-owner recompute time unchanged (~3.1 s,
-            // so no Monday throttling) and nothing failed. Production still has 2/1.
+            // Same as production; measured here (see the production consumer's comments).
             "max_batch_size": 10,
             "max_retries": 100,
             "max_concurrency": 3,
