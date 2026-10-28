@@ -98,6 +98,13 @@ Found`), or a Monday item no longer exists / has no name / carries a QuickBooks 
 elsewhere, the consumer records `not retried: <Intuit's code, message and detail>` on the row and
 acks the message — no retries, no DLQ.
 
+**Foreign-currency records (#76)** are terminal too. Monday's amount columns hold the home
+currency (`config` `quickbooksSync.currency`, `"USD"`), so with multicurrency on, a QuickBooks
+→ Monday record whose `CurrencyRef` names any other currency (an invoice's `TotalAmt`/`Balance`, a
+customer's `Balance`) fails `not retried: QuickBooks invoice … is in CAD, not USD` before anything
+is written. Enter it in Monday by hand; a redrive fails the same way. A record with no
+`CurrencyRef` (Items) is taken as home currency.
+
 To find rows needing attention: `wrangler d1 execute <db> --remote --command "SELECT event_id,
 error FROM monday_events WHERE status = 'failed'"` (same for `qb_events`); the error says whether
 it was dead-lettered or not retried. Fix the cause first — for a Monday → QuickBooks create, that

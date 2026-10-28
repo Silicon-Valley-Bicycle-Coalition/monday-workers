@@ -96,6 +96,12 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).toThrow('amountSource');
   });
 
+  it.each([undefined, '', 'usd', 'US$', 840])('requires currency to be an ISO 4217 code (%s rejected)', (bad) => {
+    const cfg = valid();
+    cfg.eventbriteSync.currency = bad;
+    expect(() => validateConfig(cfg)).toThrow('currency');
+  });
+
   it('requires skipFreeOrders to be a boolean', () => {
     const cfg = valid();
     cfg.eventbriteSync.skipFreeOrders = 'yes';

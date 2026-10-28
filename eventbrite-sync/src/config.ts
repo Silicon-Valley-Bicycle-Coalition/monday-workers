@@ -92,6 +92,9 @@ export function validateConfig(raw: unknown): EventbriteSyncConfig {
   if (!AMOUNT_SOURCES.includes(sync.amountSource as (typeof AMOUNT_SOURCES)[number])) {
     throw new Error(`config: "eventbriteSync.amountSource" must be one of ${AMOUNT_SOURCES.join(', ')}`);
   }
+  if (typeof sync.currency !== 'string' || !/^[A-Z]{3}$/.test(sync.currency)) {
+    throw new Error('config: "eventbriteSync.currency" must be the Donations board\'s ISO 4217 currency code, such as "USD"');
+  }
   if (typeof sync.skipFreeOrders !== 'boolean') {
     throw new Error('config: "eventbriteSync.skipFreeOrders" must be a boolean');
   }

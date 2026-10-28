@@ -220,6 +220,24 @@ describe('processOrderQueueBatch', () => {
     }
   });
 
+  it('marks a non-USD order failed and acks, writing nothing to Monday (#76)', async () => {
+    const orderStore = fakeStore(orderRow());
+    const mondayClient = fakeMonday();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const message = fakeMessage();
+    try {
+      const cad = testOrder({ costs: { gross: { currency: 'CAD', value: 4532, major_value: '45.32', display: 'CA$45.32' } } });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(cad), mondayClient, config });
+      expect(mondayClient.createItem).not.toHaveBeenCalled();
+      expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+      expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', expect.objectContaining({ error: expect.stringContaining('"CAD" is not USD'), amount: '45.32', currency: 'CAD' }));
+      expect(message.ack).toHaveBeenCalled();
+      expect(message.retry).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('marks a 404 from Eventbrite failed and acks — a retry cannot help', async () => {
     const orderStore = fakeStore(orderRow());
     const mondayClient = fakeMonday();

@@ -29,6 +29,7 @@ const config: QuickbooksSyncConfig = {
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: {},
     customerQbIdColumn: null,
+    currency: 'USD',
   },
 };
 

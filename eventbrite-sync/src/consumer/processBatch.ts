@@ -168,6 +168,11 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
     await orderStore.updateStatus(orderId, 'skipped', { ...definedFacts(mapping.facts), error: mapping.reason });
     return;
   }
+  if (mapping.outcome === 'review') {
+    console.warn(`eventbrite-sync consumer: order "${orderId}" not written: ${mapping.reason}`);
+    await orderStore.updateStatus(orderId, 'failed', { ...definedFacts(mapping.facts), error: mapping.reason });
+    return;
+  }
 
   // Donor: cached on the row after the first match so retries and later updates don't re-run
   // it. A match or create failure throws — retry, then DLQ — as in funraise-sync: a gift with

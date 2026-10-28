@@ -20,6 +20,7 @@ const validConfig = {
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName' },
     customerQbIdColumn: null,
+    currency: 'USD',
   },
 };
 
@@ -34,6 +35,13 @@ describe('validateConfig', () => {
     for (const bad of ['', 42, undefined]) {
       const broken = { ...validConfig, quickbooksSync: { ...validConfig.quickbooksSync, customerQbIdColumn: bad } };
       expect(() => validateConfig(broken), String(bad)).toThrow(/customerQbIdColumn/);
+    }
+  });
+
+  it('requires currency to be an ISO 4217 code', () => {
+    for (const bad of ['', 'usd', 'US$', 840, undefined]) {
+      const broken = { ...validConfig, quickbooksSync: { ...validConfig.quickbooksSync, currency: bad } };
+      expect(() => validateConfig(broken), String(bad)).toThrow(/currency/);
     }
   });
 
