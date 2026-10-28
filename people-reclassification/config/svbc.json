@@ -20,7 +20,7 @@
     "columns": { "attendee": "Attendee", "event": "Event", "attendance": "Attendance", "source": "Source" },
     "countedAttendanceLabels": ["Attended"],
     "countedRegisteredSources": ["Funraise"],
-    "events": { "boardId": 0, "startColumn": "Start" }
+    "events": { "boardId": 0, "startColumn": "Date" }
   },
   "volunteers": {
     "boardId": 0,
