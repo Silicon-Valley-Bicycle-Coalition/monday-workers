@@ -5,7 +5,7 @@ import { D1Ledger } from './ledger';
 describe('D1Ledger', () => {
   let ledger: D1Ledger;
   beforeEach(async () => {
-    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs')]);
+    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs'), env.DB.prepare('DELETE FROM pass_lease')]);
     ledger = new D1Ledger(env.DB);
   });
 
@@ -67,5 +67,17 @@ describe('D1Ledger', () => {
     await ledger.recordAlert('2', 'historical-capacity', '2026-11-01T10:00:00Z', null);
     expect(await ledger.lastAlertAt('2', 'historical-capacity')).toBe('2026-11-01T10:00:00Z');
     expect(await ledger.lastAlertAt('3', 'historical-capacity')).toBeNull();
+  });
+
+  it('leases one pass at a time: held until released or expired, and only its holder releases it', async () => {
+    expect(await ledger.acquireLease('a', '2026-10-09T17:00:00Z', '2026-10-09T17:30:00Z')).toBe(true);
+    expect(await ledger.acquireLease('b', '2026-10-09T17:10:00Z', '2026-10-09T17:40:00Z')).toBe(false);
+    await ledger.releaseLease('b');
+    expect(await ledger.acquireLease('b', '2026-10-09T17:10:00Z', '2026-10-09T17:40:00Z')).toBe(false);
+    expect(await ledger.acquireLease('b', '2026-10-09T17:30:00Z', '2026-10-09T18:00:00Z')).toBe(true);
+    await ledger.releaseLease('a');
+    expect(await ledger.acquireLease('c', '2026-10-09T17:31:00Z', '2026-10-09T18:01:00Z')).toBe(false);
+    await ledger.releaseLease('b');
+    expect(await ledger.acquireLease('c', '2026-10-09T17:31:00Z', '2026-10-09T18:01:00Z')).toBe(true);
   });
 });

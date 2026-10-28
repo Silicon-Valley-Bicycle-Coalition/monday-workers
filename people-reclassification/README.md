@@ -38,10 +38,11 @@ Cloudflare cron, daily 10:00 UTC ──► src/duties.ts: does today owe a pass?
                                       quarterly (1st of Jan/Apr/Jul/Oct, caught up later in the
                                       month if missed) · threshold (People ≥ 85% of the ceiling,
                                       no pass this week) · continuation (last pass left work)
-POST /reclassify/run?secret=…  ──►   the same pass, on demand (follows the write mode; ?dryRun=true forces a plan-only pass)
+POST /reclassify/run           ──►   the same pass, on demand (follows the write mode; ?dryRun=true forces a plan-only pass)
                                             │
                                             ▼
                              src/pass.ts — one pass, reads first, then writes
+  0. take the D1 pass lease — one pass at a time, cron or HTTP; a pass that finds it held is skipped
   1. settle any 'planned'/'ambiguous' ledger rows from an interrupted pass (where is the item now?)
   2. read both People boards' schemas; resolve every column by TITLE; build the move mapping;
      refuse the pass if the boards disagree on any value-bearing column
@@ -56,7 +57,7 @@ POST /reclassify/run?secret=…  ──►   the same pass, on demand (follows t
   7. warn if Historical is at ≥ 80% after the pass; optionally raise one IT Requests item per cooldown
                                             │
                                             ▼
-              D1 ledger (runs, moves, alerts) — every decision, auditable; GET /reclassify/status
+              D1 ledger (runs, moves, alerts, pass_lease) — every decision, auditable; GET /reclassify/status
 ```
 
 ### The liveness rule (`src/classify.ts`)
@@ -159,8 +160,14 @@ and cannot be listed in the mapping. So:
   Events, Event Registrations, Volunteers and (production) IT Requests. Sandbox: the shared
   Sandbox Integration user, as for every other sandbox Worker. Moving items needs edit rights on
   both boards.
-* **`RECLASSIFY_SECRET`:** shared secret for `/reclassify/*` (`?secret=…`, constant-time,
-  fail-closed — unset disables the routes). Behind the repo-standard 60/min/IP rate limit.
+* **`RECLASSIFY_SECRET`:** shared secret for `/reclassify/*`, sent as
+  `Authorization: Bearer <secret>` (never in the query string, where it would be logged with the
+  URL); constant-time, fail-closed — unset disables the routes. Behind the repo-standard
+  60/min/IP rate limit.
+* **One pass at a time:** every pass, cron or HTTP, dry run or live, holds a single-row D1 lease
+  (`pass_lease`, `migrations/0002_pass_lease.sql`) for its duration. A pass that finds it held is
+  skipped — the cron logs it and tries again next day; `POST /reclassify/run` answers `409`. A
+  lease whose holder died expires after 30 minutes.
 
 ## Monday targets
 
@@ -208,14 +215,15 @@ Nothing below has been done.
 2. `wrangler secret put MONDAY_API_TOKEN --env sandbox` (the Sandbox Integration user's token),
    `wrangler secret put RECLASSIFY_SECRET --env sandbox`.
 3. `npm run deploy:sandbox`. With the switch unset (`off`) the daily cron and
-   `POST /reclassify/run?secret=…` only plan.
-4. Read the plan: `GET /reclassify/status?secret=…` (the last ten runs with their reports) and
+   `POST /reclassify/run` only plan. Every operator call carries the secret as a header:
+   `curl -X POST -H "Authorization: Bearer $RECLASSIFY_SECRET" https://<worker>/reclassify/run`.
+4. Read the plan: `GET /reclassify/status` (the last ten runs with their reports) and
    `wrangler d1 execute … --command "SELECT * FROM moves WHERE status = 'dry-run'"`. Check a
    sample of `aged-out` rows against the boards and against the sizing analysis's expectation
    (~7,150 live at N=7).
 5. One live move: with `run.maxMovesPerRun` set to 1 (or after confirming the dry-run plan is
    tiny), `node scripts/flags.mjs people-reclassification writes on --env sandbox`, then
-   `POST /reclassify/run?secret=…`, and set the mode back to `off` (or `hold`) once it has
+   `POST /reclassify/run`, and set the mode back to `off` (or `hold`) once it has
    moved. Verify that item's links and updates on its new board — see "Move mechanics". Then
    raise the cap and run the rest.
 6. Only then leave `writes` at `on` so the quarterly cron runs live. Production: the same steps against the top-level block once cutover fills

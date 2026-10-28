@@ -138,7 +138,7 @@ const moveRows = () => env.DB.prepare('SELECT item_id, direction, status, reason
 describe('runPass', () => {
   let warn: ReturnType<typeof vi.spyOn>;
   beforeEach(async () => {
-    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs')]);
+    await env.DB.batch([env.DB.prepare('DELETE FROM moves'), env.DB.prepare('DELETE FROM alerts'), env.DB.prepare('DELETE FROM runs'), env.DB.prepare('DELETE FROM pass_lease')]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -302,6 +302,26 @@ describe('runPass', () => {
     const second = await runPass(deps(state), { runId: 'r1', trigger: 'http', dryRun: false });
     expect(second).toEqual({ skipped: 'run r1 already recorded (ok)' });
     expect(state.moves).toHaveLength(1);
+  });
+
+  it('runs one pass at a time: a pass that finds the lease held is skipped and touches nothing (#64)', async () => {
+    const state: FakeState = { live: [{ id: 'stale', lastGift: '2001-01-01' }], historical: [], moves: [], created: [] };
+    await env.DB.prepare("INSERT INTO pass_lease (id, holder, expires_at) VALUES (1, 'cron-other', '2026-10-09T17:20:00Z')").run();
+    const result = await runPass(deps(state), { runId: 'r1', trigger: 'http', dryRun: true });
+    expect(result).toEqual({ skipped: 'another pass is running; run r1 not started' });
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM runs').first('n')).toBe(0);
+    expect(state.moves).toHaveLength(0);
+  });
+
+  it('takes over a lease whose holder died (expired), and releases its own when done or failed', async () => {
+    const state: FakeState = { live: [{ id: 'stale', lastGift: '2001-01-01' }], historical: [], moves: [], created: [] };
+    await env.DB.prepare("INSERT INTO pass_lease (id, holder, expires_at) VALUES (1, 'dead', '2026-10-09T16:00:00Z')").run();
+    await pass(state);
+    expect(state.moves).toHaveLength(1);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM pass_lease').first('n')).toBe(0);
+    const failing = { ...deps(state), monday: { ...fakeClient(state), getBoardSchema: async () => { throw new Error('boom'); } } };
+    await expect(runPass(failing, { runId: 'r2', trigger: 'http', dryRun: true })).rejects.toThrow('boom');
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM pass_lease').first('n')).toBe(0);
   });
 
   it('warns when Historical nears its ceiling and raises one IT Requests item per cooldown', async () => {
