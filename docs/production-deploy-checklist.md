@@ -11,9 +11,11 @@ private plan's "Cutover Safeguards" section. Forks: substitute your own account,
 boards throughout.
 
 **Scope:** `member-portal`, `funraise-sync`, `donation-rollups`, `mailchimp-sync`,
-`quickbooks-sync`, `monday-backup`, `benevity-import`, `bp-feedback-notify`, `eventbrite-sync`
+`monday-backup`, `benevity-import`, `bp-feedback-notify`, `eventbrite-sync`
 (post-cutover, time-boxed by the Oct 22 Summit backfill), and the `salesforce-import` CLI. `svbc-calendars` isn't part of the migration and can ship on its own
 schedule — its checklist is [its README's Deploy section](../svbc-calendars/README.md#deploy).
+`quickbooks-sync` is postponed indefinitely (decided 2026-10-28) and is out of scope: don't
+deploy it, set its secrets, or register its webhooks at cutover. Its `writes` key stays `off`.
 
 **Status as of 2026-10-06:** nothing below is done unless marked (Phase 1 items resolved
 2026-09-29, 2026-10-01 and 2026-10-06 are ticked). `salesforce-import`'s
@@ -69,7 +71,7 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       Monday tokens"). Create after the production workspace exists, scope before minting:
   - [ ] `member-portal` — its own user, read access to only the boards it reads.
   - [ ] Staff-facing sync Workers (`funraise-sync`, `donation-rollups`, `mailchimp-sync`,
-        `benevity-import`, `quickbooks-sync`) — `donation-rollups`' README notes its dedicated
+        `benevity-import`) — `donation-rollups`' README notes its dedicated
         token is "scheduled for production cutover".
   - [ ] `monday-backup` — view access to every workspace.
   - [ ] Never a staff member's personal token.
@@ -84,8 +86,6 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys
         (`mailchimp-sync/README.md`, "Prerequisites before this can run against real data").
   - [ ] Google service account + destination Drive folder for `monday-backup`; Slack webhook.
-  - [ ] Intuit production app: self-assessment questionnaire, production keys
-        (`quickbooks-sync/README.md`). Likely lags cutover — fine, it's non-blocking.
 
 ## Phase 2 — Cloudflare resources (no board ids needed)
 
@@ -97,7 +97,6 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 | `funraise-sync` | exists, 0001–0005 applied (0005 applied 2026-10-08) | `funraise-sync-writes` | nothing — the D1 is still reset before first deploy (Phase 4 step 2) |
 | `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards); 0009 pending (membership rule) — `0001–0009` must be applied, and 0009 **before** deploying the membership-rule build (same ordering rule as 0005/0006: the build reads `volunteer_activity`, `gifts.term_start` and `pending_recomputes.kind`) | `donation-rollups-recompute` | apply 0009 first |
 | `mailchimp-sync` | created 2026-10-08, id wired | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` (created 2026-10-08) | nothing — 0001–0005 applied 2026-10-08 |
-| `quickbooks-sync` | created 2026-10-08, id wired | `quickbooks-sync-writes` (created 2026-10-08) | nothing — 0001–0006 applied 2026-10-08 |
 | `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0002 applied 2026-10-08 |
 | `benevity-import` | exists, 0001–0003 applied (0002–0003 applied 2026-10-08; the tables were empty, so 0002's dedupe had nothing to merge) | `benevity-import-writes` (created 2026-10-08) | nothing |
 | `eventbrite-sync` | **create** — id is `REPLACE_WITH_D1_ID` (sandbox is also a placeholder) | `eventbrite-sync-writes` | create D1 + queues; wire id; apply 0001 — post-cutover, see Phase 4 step 9 |
@@ -118,7 +117,6 @@ For each row:
 | `funraise-sync` | `MONDAY_API_TOKEN`, `FUNRAISE_WEBHOOK_SECRET`, `FUNRAISE_API_KEY` |
 | `donation-rollups` | `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` (Bearer for `/custodian/*`; not a webhook secret, never in a URL) |
 | `mailchimp-sync` | `MONDAY_API_TOKEN`, `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET`; optional `SLACK_WEBHOOK_URL` (gates its alerts) |
-| `quickbooks-sync` | `MONDAY_API_TOKEN`, `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`, `MONDAY_WEBHOOK_SECRET` |
 | `monday-backup` | `MONDAY_API_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
 | `benevity-import` | `MONDAY_API_TOKEN`, `BENEVITY_WEBHOOK_SECRET` |
 | `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
@@ -145,14 +143,12 @@ Worker's first deploy) except `member-portal`, which is
 | `benevity-import` | Monday webhook `change_specific_column_value` on the Uploads file column | `<host>/webhooks/monday/benevity-upload?secret=<SECRET>` |
 | `benevity-import` | Monday webhook on the worklist Retry status column (needs `uploadsBoard.retry` provisioned; until then the route ignores every event) | `<host>/webhooks/monday/benevity-retry?secret=<SECRET>` |
 | `member-portal` | Monday "Send Giving Letter" automation | `https://member.bikesiliconvalley.org/webhooks/monday/letters?secret=<LETTER_WEBHOOK_SECRET>` |
-| `quickbooks-sync` | Monday webhook | `<host>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>` |
-| `quickbooks-sync` | Intuit developer dashboard — signed with `QB_WEBHOOK_VERIFIER_TOKEN`, no `?secret=` | `<host>/webhooks/quickbooks` |
 | `bp-feedback-notify` | Monday automation on the `Post-Event Feedback` column (note: singular `webhook`) | `<host>/webhook/bp-feedback?secret=<WEBHOOK_SECRET>` |
 | `eventbrite-sync` | Eventbrite API, one organization-wide webhook (`order.placed`, `order.updated`, `order.refunded`) — `POST /v3/organizations/{org}/webhooks/` (see its README) | `<host>/webhooks/eventbrite/order?secret=<SECRET>` |
 
 Checked against the route definitions on `main` (2026-10-08). Not verified: the production
-`workers.dev` hostnames, and the exact Monday event types for the `mailchimp-sync`,
-`quickbooks-sync` and `benevity-retry` subscriptions — take those from each Worker's README.
+`workers.dev` hostnames, and the exact Monday event types for the `mailchimp-sync` and
+`benevity-retry` subscriptions — take those from each Worker's README.
 
 - [ ] **Workers Builds:** each Worker has a production connection (root directory =
       its subdirectory, deploy command `npx wrangler deploy`, branch `main`) alongside its
@@ -332,9 +328,9 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 - [ ] **7. `bp-feedback-notify`** — deploy, then add the `Post-Event Feedback` column and the
       automation (`bp-feedback-notify/README.md`, "Monday automation setup"); verify with
       `wrangler tail` on one real trigger.
-- [ ] **8. `quickbooks-sync`** — when Intuit production keys exist: Customers/Invoices/Products
-      boards, seed `qb_oauth_tokens` via the OAuth Playground, Intuit webhook
-      `/webhooks/quickbooks`, Monday webhook `/webhooks/monday?secret=`. Not a cutover blocker.
+- **8. `quickbooks-sync`** — postponed indefinitely (decided 2026-10-28); nothing to do at
+  cutover. Its production D1 and `quickbooks-sync-writes` queue were provisioned 2026-10-08 and
+  are left in place, unused.
 - [ ] **9. `eventbrite-sync`** (post-cutover; the Summit backfill is due after Oct 22 sales) —
       the `Eventbrite Order ID` column on production Donations comes from the cutover load
       (`salesforce-import` stamps it on migrated ticket gifts; transform warns if
@@ -353,7 +349,7 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 ## Phase 5 — First week
 
 - [ ] Daily: every production DLQ empty. `donation-rollups`, `funraise-sync`, `mailchimp-sync`
-      (both), `quickbooks-sync` and `eventbrite-sync` have a DLQ consumer; `member-portal` and
+      (both) and `eventbrite-sync` have a DLQ consumer; `member-portal` and
       `benevity-import` do not, so those need a human to look.
 - [ ] Daily: D1 write usage per database, now that the Free cap is gone and nothing stops a loop.
 - [ ] Each cron fired once and did what it should (Workers → Logs, or `wrangler tail`).

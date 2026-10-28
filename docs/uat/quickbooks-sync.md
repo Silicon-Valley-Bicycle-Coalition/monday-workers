@@ -1,6 +1,8 @@
 # UAT script: QuickBooks sync
 
-**Status 2026-10-06: nothing to test yet.**
+**Status 2026-10-28: postponed indefinitely — nothing to test.** SVBC decided not to ship this
+integration at migration. Invoices stay in QuickBooks Online by hand, as in the "Requesting an
+Invoice in Monday" protocol.
 
 ## What it will do
 

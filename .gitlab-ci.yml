@@ -201,6 +201,8 @@ svbc-calendars:
 
 # svbc-calendars, salesforce-import and geo-filter have no `sandbox` Wrangler
 # environment (see root README/CLAUDE.md) and so have no deploy-sandbox job.
+# quickbooks-sync is postponed indefinitely (decided 2026-10-28): its tests still run above, but
+# it has no deploy-sandbox job, so a merge doesn't redeploy it.
 
 deploy-sandbox:benevity-import:
   extends: .deploy_sandbox_job
@@ -256,8 +258,3 @@ deploy-sandbox:report-digests:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: report-digests
-
-deploy-sandbox:quickbooks-sync:
-  extends: .deploy_sandbox_job
-  variables:
-    WORKER_DIR: quickbooks-sync
