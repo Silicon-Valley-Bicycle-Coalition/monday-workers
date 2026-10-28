@@ -64,25 +64,38 @@ export class PassAbort extends Error {
 const HISTORICAL_ALERT_KIND = 'historical-capacity';
 // Consecutive move failures that stop a pass: Monday is unhappy, not one odd item.
 const MAX_CONSECUTIVE_FAILURES = 5;
+// How long a pass's lease lasts before another pass may take it over: well past the longest pass
+// a Worker invocation can run, so it only ever frees a lease whose holder died.
+const LEASE_MS = 30 * 60_000;
 
 export async function runPass(deps: PassDeps, opts: PassOptions): Promise<PassReport | { skipped: string }> {
   const now = deps.now ?? (() => new Date());
   const startedAt = now().toISOString();
-  const { created, existing } = await deps.ledger.startRun({ runId: opts.runId, trigger: opts.trigger, dryRun: opts.dryRun, startedAt });
-  if (!created) {
-    // A run that is still 'running' is either in progress in another invocation or died; a
-    // cron never retries the same run_id, and an operator chooses a new one.
-    return { skipped: `run ${opts.runId} already recorded (${existing!.status})` };
+  // One pass at a time, cron or HTTP, dry run or live (#64): even a dry run settles 'planned' rows,
+  // and settling another pass's in-flight move would mark it failed.
+  const leaseExpires = new Date(now().getTime() + LEASE_MS).toISOString();
+  if (!(await deps.ledger.acquireLease(opts.runId, startedAt, leaseExpires))) {
+    return { skipped: `another pass is running; run ${opts.runId} not started` };
   }
   try {
-    const report = await executePass(deps, opts, now);
-    await deps.ledger.finishRun(opts.runId, report.error === null ? 'ok' : 'failed', now().toISOString(), report);
-    return report;
-  } catch (err) {
-    const message = errorText(err);
-    console.error(`reclassify ${opts.runId}: pass failed: ${message}`);
-    await deps.ledger.finishRun(opts.runId, 'failed', now().toISOString(), { error: message });
-    throw err;
+    const { created, existing } = await deps.ledger.startRun({ runId: opts.runId, trigger: opts.trigger, dryRun: opts.dryRun, startedAt });
+    if (!created) {
+      // A run that is still 'running' died mid-pass (the lease rules out one in progress); a cron
+      // never retries the same run_id, and an operator chooses a new one.
+      return { skipped: `run ${opts.runId} already recorded (${existing!.status})` };
+    }
+    try {
+      const report = await executePass(deps, opts, now);
+      await deps.ledger.finishRun(opts.runId, report.error === null ? 'ok' : 'failed', now().toISOString(), report);
+      return report;
+    } catch (err) {
+      const message = errorText(err);
+      console.error(`reclassify ${opts.runId}: pass failed: ${message}`);
+      await deps.ledger.finishRun(opts.runId, 'failed', now().toISOString(), { error: message });
+      throw err;
+    }
+  } finally {
+    await deps.ledger.releaseLease(opts.runId);
   }
 }
 
