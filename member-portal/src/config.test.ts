@@ -50,7 +50,7 @@ const validConfig = {
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'Silicon Valley Bicycle Coalition',
     ein: '00-0000000',
@@ -189,17 +189,30 @@ describe('validateConfig', () => {
     expect(() => validateConfig(broken)).toThrow(/rateLimit\.attemptRetentionHours/);
   });
 
-  // login_attempts rows are only read inside the emailWindowSeconds window — purging any sooner
-  // would silently loosen the per-email rate limit.
-  it.each([0, -1, 0.25, '24'])('rejects rateLimit.attemptRetentionHours = %s (not beyond the 900s window)', (value) => {
+  // The daily cap reads login_attempts back 24 hours — purging any sooner would silently loosen it.
+  it.each([0, -1, 0.25, 23.9, '24'])('rejects rateLimit.attemptRetentionHours = %s (short of the 24-hour daily cap)', (value) => {
     const broken = { ...validConfig, rateLimit: { ...validConfig.rateLimit, attemptRetentionHours: value } };
     expect(() => validateConfig(broken)).toThrow(/rateLimit\.attemptRetentionHours/);
   });
 
-  it('accepts rateLimit.attemptRetentionHours just beyond the rate-limit window', () => {
-    const cfg = { ...validConfig, rateLimit: { ...validConfig.rateLimit, attemptRetentionHours: 0.5 } };
-    expect(() => validateConfig(cfg)).not.toThrow();
+  it('rejects a retention shorter than an emailWindowSeconds longer than a day', () => {
+    const rateLimit = { ...validConfig.rateLimit, emailWindowSeconds: 172_800, attemptRetentionHours: 24 };
+    expect(() => validateConfig({ ...validConfig, rateLimit })).toThrow(/rateLimit\.attemptRetentionHours/);
   });
+
+  it('accepts rateLimit.attemptRetentionHours of exactly 24', () => {
+    expect(() => validateConfig(validConfig)).not.toThrow();
+  });
+
+  it.each(['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const)(
+    'rejects a non-positive or non-integer rateLimit.%s',
+    (key) => {
+      for (const value of [0, -1, 1.5, '5']) {
+        const broken = { ...validConfig, rateLimit: { ...validConfig.rateLimit, [key]: value } };
+        expect(() => validateConfig(broken)).toThrow(new RegExp(`rateLimit\\.${key}`));
+      }
+    }
+  );
 
   it('throws when rateLimit is missing a key', () => {
     const { emailMaxAttempts, ...rest } = validConfig.rateLimit;

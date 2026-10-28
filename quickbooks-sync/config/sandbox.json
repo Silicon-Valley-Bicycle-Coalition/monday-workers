@@ -40,6 +40,7 @@
       "name": "DisplayName",
       "email_mm7nazg7": "PrimaryEmailAddr.Address"
     },
-    "customerQbIdColumn": "text_mm7ngg03"
+    "customerQbIdColumn": "text_mm7ngg03",
+    "currency": "USD"
   }
 }

@@ -12,6 +12,7 @@ import { retryDelaySeconds, type QueueMessageLike } from '../queueRetry';
 import { errorText } from '../logSafe';
 import { logDebug, messageDisposition } from '../flags';
 import { dryRunLetterDeps, type BatchSkipContext } from '../writeSwitch';
+import { magicLinkUrl } from '../auth/magicLinkUrl';
 
 export interface ProcessLetterSendBatchDeps {
   store: LetterSendStore;
@@ -171,7 +172,7 @@ async function processOne(sendId: number, deps: ProcessLetterSendBatchDeps, temp
   // render in the donor's language when the magic link lands.
   const locale: Locale = localeFromMondayLabel(contact.preferredLanguage) ?? DEFAULT_LOCALE;
   const template = templates.byLocale[locale]?.trim();
-  const loginUrl = `${deps.config.auth.portalBaseUrl}/auth/callback?token=${rawToken}&lang=${locale}`;
+  const loginUrl = magicLinkUrl(deps.config.auth.portalBaseUrl, rawToken, locale);
 
   // At-most-once: claim the row (queued → sending) immediately before the send, which is the only
   // step inside the claim window. The email and the D1 status write are two systems with no

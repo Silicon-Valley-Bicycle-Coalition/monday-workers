@@ -18,6 +18,7 @@ const config: QuickbooksSyncConfig = {
     linkColumn: { invoice: 'connect_col' },
     customerCreateFieldMap: { text_col: 'DisplayName', email_col: 'PrimaryEmailAddr.Address' },
     customerQbIdColumn: null,
+    currency: 'USD',
   },
 };
 

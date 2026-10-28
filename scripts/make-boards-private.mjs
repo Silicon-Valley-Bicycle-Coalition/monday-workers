@@ -26,6 +26,10 @@
 // item_nickname and name. Changing a board to private leaves existing subscribers in place;
 // adding or removing subscribers is a separate step (this script only reports them).
 //
+// Boards are selected in every state, not just active: an archived board keeps its items and stays
+// readable, and a deleted one (in trash) comes back with its kind if restored, so either left public
+// is still exposed (#71). The report marks each non-active board's state.
+//
 // Exit 0: nothing wrong. Exit 1: the Sandbox Integration user is subscribed to a selected board,
 // or --apply left a board not private. Exit 2: usage or API error. Dry-run writes nothing; --apply
 // writes only `change_board_kind` for boards that are not already private.
@@ -105,6 +109,7 @@ export function buildPlan(boards, { boardIds = [], sandboxUser = null } = {}) {
       id: String(b.id),
       name: b.name,
       kind: b.board_kind,
+      state: b.state ?? 'active',
       action: b.board_kind === 'private' ? 'keep' : 'make-private',
       users,
       teams,
@@ -128,12 +133,12 @@ export function formatPlan(plan, { apply = false, applied = false, sandboxUser =
   lines.push(`${mode}: ${plan.entries.length} board(s) selected, ${plan.toChange} not private`);
   for (const e of plan.entries) {
     const verb = applied ? (e.kind === 'private' ? 'private' : `STILL ${e.kind}`) : e.action === 'keep' ? 'already private' : `${e.kind} -> private`;
-    lines.push(`  ${e.id.padEnd(12)} ${e.name}  [${verb}]`);
+    lines.push(`  ${e.id.padEnd(12)} ${e.name}  [${verb}${e.state === 'active' ? '' : `, ${e.state}`}]`);
     lines.push(`      users: ${e.users.length === 0 ? '(none)' : e.users.map(person).join(', ')}`);
     lines.push(`      teams: ${e.teams.length === 0 ? '(none)' : e.teams.map((t) => `${t.name} (${t.id})`).join(', ')}`);
     if (e.sandboxUserSubscribed) lines.push(`      !! Sandbox Integration user ${sandboxUser} is subscribed — remove them`);
   }
-  for (const id of plan.missing) lines.push(`  ${id.padEnd(12)} NOT FOUND in the workspace (wrong id, archived, or not visible to this token)`);
+  for (const id of plan.missing) lines.push(`  ${id.padEnd(12)} NOT FOUND in the workspace (wrong id, or not visible to this token)`);
   if (sandboxUser === null) lines.push('Sandbox Integration user check skipped: pass --sandbox-user <id> to enforce it.');
   if (!apply && !applied && plan.toChange > 0) lines.push('Re-run with --apply to change them. Nothing was changed.');
   return lines.join('\n');
@@ -159,8 +164,8 @@ async function listWorkspaceBoards(token, workspace) {
     const data = await query(
       token,
       `query ($ws: [ID!], $limit: Int, $page: Int) {
-         boards(workspace_ids: $ws, limit: $limit, page: $page, state: active) {
-           id name board_kind workspace_id
+         boards(workspace_ids: $ws, limit: $limit, page: $page, state: all) {
+           id name board_kind workspace_id state
            subscribers { id name is_guest }
            team_subscribers { id name }
          }

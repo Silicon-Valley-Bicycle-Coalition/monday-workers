@@ -69,7 +69,7 @@ describe('wrangler.jsonc env.sandbox', () => {
       expect(producer.queue.endsWith('-sandbox')).toBe(true);
       expect(prodProducers).toContain(queueBaseName(producer.queue));
     }
-    for (const consumer of sbQueues.consumers as { queue: string; dead_letter_queue: string }[]) {
+    for (const consumer of (sbQueues.consumers as { queue: string; dead_letter_queue?: string }[]).filter((c) => c.dead_letter_queue !== undefined)) {
       expect(consumer.queue.endsWith('-sandbox')).toBe(true);
       expect(consumer.dead_letter_queue).toBe(`${consumer.queue}-dlq`);
     }
@@ -84,9 +84,24 @@ describe('wrangler.jsonc env.sandbox', () => {
 
   it('gives the write consumer about four days of retries (max_retries 100) in both environments', () => {
     for (const queues of [wrangler.queues as Json, sandboxEnv.queues as Json]) {
-      const consumers = queues.consumers as { max_retries: number }[];
+      const consumers = (queues.consumers as { max_retries: number; dead_letter_queue?: string }[]).filter((c) => c.dead_letter_queue !== undefined);
       expect(consumers).toHaveLength(1);
       expect(consumers[0]!.max_retries).toBe(100);
+    }
+  });
+
+  it('consumes each environment’s own dead-letter queue, with bounded retries and no further DLQ (#60)', () => {
+    const cases: [Json, string][] = [
+      [wrangler.queues as Json, 'benevity-import-writes-dlq'],
+      [sandboxEnv.queues as Json, 'benevity-import-writes-sandbox-dlq'],
+    ];
+    for (const [queues, dlq] of cases) {
+      const consumers = queues.consumers as { queue: string; max_retries?: number; dead_letter_queue?: string }[];
+      expect(consumers.find((c) => c.dead_letter_queue !== undefined)!.dead_letter_queue).toBe(dlq);
+      const dlqConsumer = consumers.find((c) => c.queue === dlq);
+      expect(dlqConsumer, dlq).toBeDefined();
+      expect(dlqConsumer!.max_retries).toBe(2);
+      expect(dlqConsumer!.dead_letter_queue).toBeUndefined();
     }
   });
 

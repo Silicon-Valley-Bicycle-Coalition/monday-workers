@@ -10,6 +10,7 @@ import { matchDonor } from '../matching/donors';
 import { getPath } from '../util/getPath';
 import { toISODate } from '../util/isoDate';
 import { errorMessage } from '../util/errorMessage';
+import { isTerminalError } from '../errors';
 import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
@@ -53,6 +54,10 @@ const EVENT_FIELD = 'fundraisingEvent';
 // funraiseTransactionLink), so a lookup by the bare id (matched against the link text) finds a
 // gift whichever writer created it.
 const FUNRAISE_TRANSACTION_URL = 'https://platform.funraise.io/transaction/';
+// On the events row's error for a failure that was acked instead of retried (src/errors.ts), so
+// it reads differently from one still being retried. The row stays 'failed', so
+// scripts/redrive-failed.mjs picks it up like any other.
+export const TERMINAL_PREFIX = 'not retried: ';
 
 /**
  * The queue() entry point for the write queue: the write switch's per-message decision in front
@@ -88,22 +93,31 @@ export async function processFunraiseQueueBatch(
       await processOne(entityType, entityId, deps);
       message.ack();
     } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}`);
+      const terminal = isTerminalError(err);
+      const errMsg = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
+      console.error(
+        `funraise-sync consumer: failed to process ${entityType} "${entityId}": ${errMsg}` +
+          (terminal ? ' — fix the cause, then re-drive with scripts/redrive-failed.mjs' : '')
+      );
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
+      let recorded = false;
       try {
         await deps.eventStore.updateStatusByEntity(entityType, entityId, 'failed', {
           error: errMsg,
         });
+        recorded = true;
       } catch (recordErr) {
         console.error(
           `funraise-sync consumer: could not record failure for ${entityType} "${entityId}": ${errorMessage(recordErr)}`
         );
       }
-      // Every failure here is retryable, as before (#25); only the delay is shared now — 1 minute
-      // doubling to an hour, across wrangler.jsonc's max_retries of 100 (about four days).
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
+      // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
+      // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
+      // max_retries of 100 (about four days).
+      if (terminal && recorded) message.ack();
+      else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }

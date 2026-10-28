@@ -44,8 +44,10 @@
     "portalBaseUrl": "http://localhost:8787"
   },
   "rateLimit": {
+    "emailCooldownSeconds": 60,
     "emailWindowSeconds": 900,
     "emailMaxAttempts": 5,
+    "emailDailyMax": 10,
     "attemptRetentionHours": 24
   },
   "taxLetter": {

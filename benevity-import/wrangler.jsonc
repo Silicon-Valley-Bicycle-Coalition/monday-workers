@@ -25,6 +25,17 @@
         // concurrent writers during a backlog drain (same reasoning as funraise-sync).
         "max_concurrency": 1,
         "dead_letter_queue": "benevity-import-writes-dlq"
+      },
+      // #60: a dead message marks its row needs-review ("dead-lettered after retries: …") and
+      // raises a Benevity Uploads worklist item for it, which a staff Retry re-queues
+      // (src/consumer/deadLetters.ts) — instead of expiring unseen. Retried only when D1 fails,
+      // with no further dead-letter queue. The worklist post is skipped unless writes are `on`
+      // and never retried here; the daily cron's sweep posts any that are missing.
+      {
+        "queue": "benevity-import-writes-dlq",
+        "max_batch_size": 10,
+        "max_retries": 2,
+        "max_concurrency": 1
       }
     ]
   },
@@ -41,7 +52,8 @@
   // guardrail against a runaway invocation or a surprise bill. See the root README.
   "limits": { "cpu_ms": 100 },
   "triggers": {
-    // Daily raw_row retention purge — window set by benevityImport.rawRowRetentionDays / unresolvedRowRetentionDays.
+    // Daily raw_row retention purge — window set by benevityImport.rawRowRetentionDays / unresolvedRowRetentionDays —
+    // then, while writes are `on`, the dead-letter worklist sweep (#60).
     "crons": ["15 9 * * *"]
   },
   "observability": {
@@ -77,6 +89,12 @@
             "max_retries": 100,
             "max_concurrency": 1,
             "dead_letter_queue": "benevity-import-writes-sandbox-dlq"
+          },
+          {
+            "queue": "benevity-import-writes-sandbox-dlq",
+            "max_batch_size": 10,
+            "max_retries": 2,
+            "max_concurrency": 1
           }
         ]
       },

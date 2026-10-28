@@ -1,5 +1,6 @@
 import type { EventbriteSourceConfig, NormalizedEvent } from '../types';
 import { toValidUrl } from '../util/toValidUrl';
+import { SOURCE_FETCH_TIMEOUT_MS } from '../util/fetchTimeout';
 
 interface EventbriteEventRecord {
   id: string;
@@ -114,7 +115,10 @@ export async function fetchEventbriteEvents(source: EventbriteSourceConfig, toke
       break;
     }
 
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       const detail = await errorDetail(response);
       throw new Error(`eventbrite: organizer ${source.organizerId} fetch failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`);

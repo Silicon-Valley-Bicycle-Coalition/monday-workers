@@ -46,15 +46,20 @@ Monday "Benevity Uploads" board — staff drop the file in a file column        
   │  Monday webhook on item create/file change
   ▼
 Cloudflare Worker (webhook handler)
-  │  1. fetch the asset via Monday's GraphQL API
+  │  record the upload in D1 `uploads` and enqueue one Queue message for it — no
+  │  fetch or parse inside the webhook request, so a large report can't time it out
+  ▼
+Cloudflare Queue → consumer Worker, per upload
+  │  1. fetch the asset via Monday's GraphQL API (refused, marked `error`, over 2 MB)
   │  2. split the file into one or more preamble+rows+footer blocks; parse each
   │     independently into D1 `disbursements`, validating its own header and its
   │     footer's reported total against the sum of its own rows
-  │  3. upsert each row into D1 `rows` keyed on Benevity Transaction ID — globally,
-  │     not per file or per block, so the same gift arriving in two different
-  │     bundles is still one row
+  │  3. upsert each block's rows into D1 `rows` keyed on Benevity Transaction ID —
+  │     one batched D1 call per block, and globally, not per file or per block, so
+  │     the same gift arriving in two different bundles is still one row
   │     (a re-upload of an overlapping file is a no-op for rows already written)
   │  4. enqueue one Cloudflare Queue message per row not yet written
+  │  a failed fetch or D1 call retries the message, resuming at the first unfinished block
   ▼
 Cloudflare Queue → consumer Worker, per row
   │  1. resolve the paying company → Organizations item (exact name, then config aliases)
@@ -62,7 +67,8 @@ Cloudflare Queue → consumer Worker, per row
   │  3. split the row: employee gift (if any) and company match (if any) → two Donations items
   │  4. write to Monday; stamp each item with the Transaction ID before marking the row done
   │  unresolved company or ambiguous person → write nothing, add a worklist item, mark
-  │  the row `needs-review`; retries + DLQ on API failure as in every webhook Worker here
+  │  the row `needs-review`; retries + DLQ on API failure as in every webhook Worker here, and
+  │  a gift that exhausts its retries lands on the worklist too (see Dead letters)
   ▼
 Donations board (+ Matched By → Organizations, Donor → People)
 Worklist: a group on the Benevity Uploads board, one item per row needing a human
@@ -245,6 +251,46 @@ duplicate Retry doesn't create duplicate Donations items. **Re-uploading the sam
 a retry** — rows and disbursements the Worker has already seen are skipped, so only new rows in
 the file are imported.
 
+## Dead letters
+
+A gift whose Monday write keeps failing is retried for about four days (`max_retries: 100`,
+backing off to an hour), then dead-lettered to `benevity-import-writes-dlq`
+(`benevity-import-writes-sandbox-dlq` in sandbox). This Worker consumes both (#60,
+`src/consumer/deadLetters.ts`), so a dead gift is never silently lost — which matters here more
+than elsewhere, because re-uploading the report is a no-op for a row already recorded. Each dead
+message:
+
+* marks its row `needs-review`, with `dead-lettered after retries: ` in front of the last error
+  the consumer recorded (never doubled) — in D1 first, so it's on record even while Monday is
+  the thing that's down;
+* raises a worklist item for it, reason **"Couldn't write this gift to Monday…"** with the last
+  error, at **Needs review** (a row replayed from the worklist that died again reuses its item).
+  Staff fix the cause and set **Retry**, exactly as for any other worklist item;
+* leaves a row that is no longer `ingested` (written, held for review, or skipped since the
+  message was sent) alone, and acks a body with no Transaction ID;
+* always acks. Only a D1 failure retries the dead message (60 s, at most `max_retries: 2`, no
+  further DLQ).
+
+Posting the worklist item is a Monday write, so it happens only while writes are `on`, and a
+failed post is logged rather than retried. The **daily cron** (after the `raw_row` purge, and
+only under `on`) posts the item for every dead-lettered row still missing one, 25 a run — so a
+gift that dead-letters during a Monday outage or a `hold` reaches the worklist once both are
+over. Each batch that marked anything logs **one** `console.error` naming the Transaction IDs.
+
+The same queue carries uploaded reports waiting to be ingested (#74), so a report can dead-letter
+too: its asset kept failing to fetch, or a block kept failing in D1. There is no row to mark or
+item to Retry, so the consumer marks the upload `error` (unless it has since finished) and logs a
+`console.error` naming the Monday asset. Rows from blocks it did finish are already queued on
+their own. Fix the cause, then upload the same file again: the new asset resumes from the
+disbursements and rows already recorded.
+
+To find dead-lettered rows directly:
+
+```sh
+npx wrangler d1 execute svbc-benevity-import --remote --command \
+  "SELECT transaction_id, worklist_item_id, error FROM rows WHERE error LIKE 'dead-lettered after retries: %'"
+```
+
 ## Idempotency and the migrated history
 
 Three D1 tables, reflecting file → disbursement-block → row now that a single upload can bundle
@@ -258,7 +304,7 @@ several disbursements:
   `Disbursement ID` is unique (migration `0002`, a partial index that exempts the empty id of a
   block whose header didn't parse): the same report re-uploaded as a new file, or bundled into a
   later download, finds its existing row — and its existing worklist item — instead of adding a
-  second one. The route looks a block up by (upload, position) first, so a retried upload
+  second one. The consumer looks a block up by (upload, position) first, so a retried upload
   resumes its own blocks, then by `Disbursement ID`, and inserts only on a miss. On
   parse, the sum of the block's own rows is checked against its own reported gross total; a
   mismatch marks the whole block `needs-review` rather than writing partial data from a block the
@@ -385,6 +431,14 @@ board 2026-10-19: Retry status column `color_mm89sfqw` (labels Needs review / Re
 Done), Key text column `text_mm892fps`, and the Retry webhook `655429553`; all three are wired
 into `config/sandbox.json`.
 
+Both routes authenticate with `?secret=<BENEVITY_WEBHOOK_SECRET>` because Monday can't send a
+custom header. That is an accepted trade-off: the full request URL, secret included, is recorded
+in this Worker's Workers Logs invocation records, readable by anyone with dashboard log access to
+it. Keep that access limited to people who could read the secret anyway, never log `c.req.url`
+here, and rotate the secret (new `wrangler secret put`, then delete and re-register **both**
+Monday webhooks with the new URL) if logs are ever shared. See the root README's "Webhook
+secrets in the URL" for who holds log access.
+
 Provisioned and verified 2026-09-19: D1 `svbc-benevity-import-sandbox` (id in `wrangler.jsonc`),
 both queues, both secrets, and Monday webhook `639785248` on the sandbox Uploads board. Register
 that webhook as `change_specific_column_value` with `config: {"columnId": "<file column id>"}` —
@@ -458,20 +512,25 @@ byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV n
   `off`**, and a KV read error means hold.
 - `benevity-import:log` — `debug` adds redacted payloads to those lines.
 
-Unlike the other migration Workers, **both webhook routes write to Monday themselves**, so the
-switch covers them directly (the subscribe challenge is always echoed):
+Unlike the other migration Workers, **the retry route writes to Monday itself**, so the switch
+covers both webhook routes directly (the subscribe challenge is always echoed):
 
 - `hold`/`unknown`: `/webhooks/monday/benevity-upload` and `/webhooks/monday/benevity-retry` answer
   **503** before any D1 or Monday call, so Monday redelivers once writes are back on.
-- `off`: the upload route still records uploads, disbursements and rows (so a re-upload isn't
-  mistaken for new) and enqueues each row, stamped `dropped`; its worklist `createItem` / label
-  changes / archive are logged, not made, and the worklist item id is not saved. The retry route
-  logs a skip and returns 200 (the item stays at Retry).
-- Queue consumer: `off` (or a `dropped` stamp, even if the mode is `on` by then) logs the Monday
+- `off`: the upload route still records the upload and enqueues it, stamped `dropped`. The retry
+  route logs a skip and returns 200 (the item stays at Retry).
+- Queue consumer, ingesting an upload under `off` (or one stamped `dropped`, even if the mode is
+  `on` by then): it still records disbursements and rows (so a re-upload isn't mistaken for new)
+  and enqueues each row, stamped `dropped`; its worklist `createItem` / label changes / archive are
+  logged, not made, and the worklist item id is not saved.
+- Queue consumer, writing a row: `off` (or a `dropped` stamp) logs the Monday
   writes and skips `updateStatus` / `requeue*` / `claimWorklistItemId`; `hold` retries at 1 minute
   doubling to an hour (`max_retries` is 100, about four days). A message queued before this
   build has no stamp and is written under `on`. The daily `raw_row` purge is D1-only and runs in
   every mode.
+- Dead-letter consumer: marks the row in D1 in every mode (a record of what happened, not a
+  Monday write); posts its worklist item only under `on`. The daily dead-letter sweep runs only
+  under `on`. See Dead letters.
 
 Set it with the operator CLI at the repo root, never by hand:
 
@@ -481,6 +540,15 @@ node scripts/flags.mjs benevity-import writes on --env sandbox     # or --env pr
 
 **Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
 dry-runs everything.
+
+**Reports uploaded while the switch was `off` are not written later by themselves** (spec: work
+ingested under `off` stays a dry run). Their rows sit in D1 at `ingested`, never sent again, and
+any block worklist item was never posted. To import one once writes are `on`, upload the same
+report file again — as a new file on the Uploads board, since a redelivery of the original asset
+is a no-op. The consumer finds the disbursement it already recorded, re-sends every row still at
+`ingested` (unstamped, so it is written), and posts the block's worklist item if it needs one; a
+held-back block is then released with Retry as usual. Retry alone can't do it: no worklist item
+exists to set. Covered by `src/integration.test.ts` ("re-uploading a report ingested under off").
 
 ## Related changes elsewhere
 

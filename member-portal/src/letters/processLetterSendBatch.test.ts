@@ -21,7 +21,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -135,7 +135,7 @@ describe('processLetterSendBatch', () => {
       expect.objectContaining({ to: 'jane@example.org', donorName: 'Jane Example', year: 2025 })
     );
     const sentEmailUrl = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0]!.loginUrl;
-    expect(sentEmailUrl).toContain('https://portal.example.org/auth/callback?token=');
+    expect(sentEmailUrl).toMatch(/^https:\/\/portal\.example\.org\/auth\/callback\?lang=[a-zA-Z-]+#token=[0-9a-f]{64}$/);
     expect(store.markSent).toHaveBeenCalledWith(42, expect.any(String));
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
@@ -433,7 +433,7 @@ describe('processLetterSendBatch', () => {
 
     const sent = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(sent.locale).toBe('es');
-    expect(sent.loginUrl).toContain('&lang=es');
+    expect(sent.loginUrl).toContain('?lang=es#');
   });
 
   it('defaults to English when the preferred language is unset or unrecognized', async () => {
@@ -454,7 +454,7 @@ describe('processLetterSendBatch', () => {
 
     const sent = (emailSender.sendLetterReadyEmail as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(sent.locale).toBe('en');
-    expect(sent.loginUrl).toContain('&lang=en');
+    expect(sent.loginUrl).toContain('?lang=en#');
   });
 
   it('picks the donor locale’s template, falling back to the default template', async () => {

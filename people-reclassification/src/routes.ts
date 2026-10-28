@@ -10,8 +10,9 @@ export interface RoutesDeps {
   recentRuns(): Promise<RunRow[]>;
   // The write switch, read once per request.
   mode(): Promise<WriteMode>;
-  // Same shared-secret convention as the other Workers' operator routes (?secret=…), checked
-  // constant-time and fail-closed: an unset/empty secret disables the routes entirely.
+  // The operator secret, presented as `Authorization: Bearer <secret>` (as report-digests does) —
+  // never in the query string, where it would land in request logs (#64). Checked constant-time
+  // and fail-closed: an unset/empty secret disables the routes entirely.
   secret?: string;
   now?: () => Date;
 }
@@ -23,15 +24,15 @@ export interface RoutesDeps {
 export function createApp(deps: RoutesDeps) {
   const app = new Hono();
   const now = deps.now ?? (() => new Date());
-  const authorized = (secret: string | undefined) => secretsMatch(secret, deps.secret);
+  const authorized = (header: string | undefined) => secretsMatch(header?.match(/^Bearer (.+)$/)?.[1], deps.secret);
 
   app.get('/reclassify/status', async (c) => {
-    if (!(await authorized(c.req.query('secret')))) return c.json({ ok: false }, 401);
+    if (!(await authorized(c.req.header('Authorization')))) return c.json({ ok: false }, 401);
     return c.json({ ok: true, mode: await deps.mode(), runs: await deps.recentRuns() });
   });
 
   app.post('/reclassify/run', async (c) => {
-    if (!(await authorized(c.req.query('secret')))) return c.json({ ok: false }, 401);
+    if (!(await authorized(c.req.header('Authorization')))) return c.json({ ok: false }, 401);
     const param = c.req.query('dryRun');
     if (param === 'false') return c.json({ ok: false, error: 'dryRun=false is no longer accepted; use scripts/flags.mjs' }, 400);
     if (param !== undefined && param !== 'true') return c.json({ ok: false, error: 'dryRun must be "true"' }, 400);
@@ -47,7 +48,9 @@ export function createApp(deps: RoutesDeps) {
     }
     const runId = `http-${now().toISOString().replace(/[:.]/g, '-')}`;
     const result = await deps.runPass({ dryRun, runId });
-    return c.json({ ok: !('skipped' in result) && result.error === null, ...result });
+    // Skipped: another pass holds the lease, or this run_id was already recorded.
+    if ('skipped' in result) return c.json({ ok: false, ...result }, 409);
+    return c.json({ ok: result.error === null, ...result });
   });
 
   return app;

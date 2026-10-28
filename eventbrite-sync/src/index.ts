@@ -97,7 +97,10 @@ export default {
       orderStore,
       eventStore,
       attendeeStore,
-      queue: { send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined) },
+      queue: {
+        send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined),
+        sendBatch: (messages: WriteQueueMessage[]) => env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
+      },
       eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,

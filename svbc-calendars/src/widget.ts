@@ -136,19 +136,19 @@ ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliber
         }
         var badgeHtml = evt.is_free ? '<span class="svbc-badge svbc-badge-free">Free</span>' : '<span class="svbc-badge svbc-badge-paid">Tickets</span>';
         var imgHtml = "";
-        if (SHOW_IMAGE && evt.logo_url) {
-          imgHtml = '<div class="svbc-event-img"><img src="' + evt.logo_url + '" alt="" loading="lazy"></div>';
+        if (SHOW_IMAGE && safeUrl(evt.logo_url)) {
+          imgHtml = '<div class="svbc-event-img"><img src="' + safeUrl(evt.logo_url) + '" alt="" loading="lazy"></div>';
         }
         var bodyParts = "";
         if (SHOW_DESCRIPTION && evt.summary) {
           bodyParts += '<div class="svbc-event-summary">' + esc(evt.summary) + '</div>';
         }
-        bodyParts += '<a class="svbc-cta" href="' + evt.url + '" target="_blank" rel="noopener">More Information</a>';
+        bodyParts += '<a class="svbc-cta" href="' + safeUrl(evt.url) + '" target="_blank" rel="noopener">More Information</a>';
         var dateBadge = '<div class="svbc-date-badge"><span class="svbc-date-day">' + day + '</span><span class="svbc-date-month">' + month + '</span></div>';
         if (LAYOUT === "grid") {
           var imgWithBadge = '<div class="svbc-event-img">' + dateBadge;
-          if (SHOW_IMAGE && evt.logo_url) {
-            imgWithBadge += '<img src="' + evt.logo_url + '" alt="" loading="lazy">';
+          if (SHOW_IMAGE && safeUrl(evt.logo_url)) {
+            imgWithBadge += '<img src="' + safeUrl(evt.logo_url) + '" alt="" loading="lazy">';
           }
           imgWithBadge += '</div>';
           html += '<div class="svbc-event">' + imgWithBadge + '<div class="svbc-event-header"><div class="svbc-event-details"><div class="svbc-event-title">' + esc(evt.name) + '</div><div class="svbc-meta-row">' + SVG_CALENDAR + '<span>' + esc(dateStr) + '</span></div><div class="svbc-meta-row">' + SVG_CLOCK + '<span>' + esc(timeStr) + '</span></div>' + (locationStr ? '<div class="svbc-meta-row">' + SVG_PIN + '<span>' + locationStr + '</span></div>' : '') + '</div></div><div class="svbc-event-body">' + bodyParts + '</div></div>';
@@ -172,6 +172,11 @@ ${webAnalyticsToken ? `<!-- No Subresource Integrity hash on this script deliber
   function esc(str) {
     if (!str) return "";
     return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  // Event URLs come from upstream data and land in src/href attributes: allow only http(s), so a
+  // javascript: or data: URL can't run, then escape so a quote can't break out of the attribute.
+  function safeUrl(url) {
+    return typeof url === "string" && /^https?:\\/\\//i.test(url) ? esc(url) : "";
   }
 })();
 <\/script>

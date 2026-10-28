@@ -66,6 +66,16 @@ describe('buildPlan', () => {
     assert.equal(plan.toChange, 2);
   });
 
+  it('plans archived and deleted boards like active ones, and records their state (#71)', () => {
+    const plan = buildPlan([board(1, 'A', 'public', { state: 'archived' }), board(2, 'B', 'share', { state: 'deleted' }), board(3, 'C')]);
+    assert.deepEqual(plan.entries.map((e) => [e.action, e.state]), [
+      ['make-private', 'archived'],
+      ['make-private', 'deleted'],
+      ['make-private', 'active'],
+    ]);
+    assert.equal(plan.toChange, 3);
+  });
+
   it('reports requested board ids that were not found', () => {
     const plan = buildPlan([board(1, 'A')], { boardIds: ['1', '7'] });
     assert.deepEqual(plan.missing, ['7']);
@@ -105,6 +115,12 @@ describe('formatPlan', () => {
     assert.match(out, /Sandbox Integration user 42 is subscribed/);
     assert.match(out, /3\s+NOT FOUND/);
     assert.match(out, /Nothing was changed\./);
+  });
+
+  it('marks a non-active board with its state', () => {
+    const out = formatPlan(buildPlan([board(1, 'Old', 'public', { state: 'archived' }), board(2, 'New')]));
+    assert.match(out, /Old\s+\[public -> private, archived\]/);
+    assert.match(out, /New\s+\[public -> private\]/);
   });
 
   it('says the sandbox check was skipped when no user id is given', () => {

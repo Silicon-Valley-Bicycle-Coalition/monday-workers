@@ -6,6 +6,9 @@ import { fiscalYearEnding } from './fiscalYear';
 // A fetched order, reduced to what the Donations write needs. Pure: no Monday, no D1.
 export type OrderMapping =
   | { outcome: 'skip'; reason: string; facts: OrderFacts }
+  // Giving, but not writable as it stands (a cost in another currency): nothing is written and
+  // the row is recorded failed for a human, not retried — a retry would see the same order.
+  | { outcome: 'review'; reason: string; facts: OrderFacts }
   | {
       outcome: 'write';
       itemName: string;
@@ -62,6 +65,12 @@ export function mapOrder(order: EventbriteOrder, config: EventbriteSyncConfig, o
   // still reports). Typically an order refunded before this Worker ever saw it, e.g. in a backfill.
   if (status === 'refunded' && !options.hasItem) {
     return { outcome: 'skip', reason: 'refunded order with no Donations item — never recorded as received, nothing to reverse', facts };
+  }
+  // The Amount column holds one currency; a cost in any other would be written as if it were
+  // that one. Checked after the skips, so a free or never-received order still reads as not
+  // giving. No currency at all means no cost object: the amount is 0 and nothing is misstated.
+  if (facts.currency !== null && facts.currency !== sync.currency) {
+    return { outcome: 'review', reason: `order currency "${facts.currency}" is not ${sync.currency} — enter it on the Donations board by hand`, facts };
   }
 
   const columnValues: Record<string, unknown> = {

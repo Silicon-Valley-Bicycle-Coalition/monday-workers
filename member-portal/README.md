@@ -125,7 +125,13 @@ better-fit product. (Project Galileo makes Access available to SVBC for staff-fa
 as gating the sandbox hostnames; that doesn't change the donor-auth decision.)
 
 **Rate-limit login requests** (per email and per IP) to blunt abuse of the email-sending step —
-this is the one place this Worker can be used to spam an inbox if left unguarded.
+this is the one place this Worker can be used to spam an inbox if left unguarded. Per IP: the
+`LOGIN_RATE_LIMITER` binding. Per address (`rateLimit` in config, issue #62): at most one login
+email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSeconds` (900), and
+`emailDailyMax` (10) per rolling 24 hours. One atomic D1 statement checks and records
+(`src/db/loginAttempts.ts`), and only a request it lets through is recorded — so someone rotating
+IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
+stretch a lockout by retrying.
 
 ## Sending the email
 
@@ -196,12 +202,24 @@ Routing destination). A live login-link request for a real sandbox People record
   token (not the raw token) so a D1 read doesn't itself leak a usable credential. Membership-card tokens are the exception — stored in plaintext because the card's
   QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
+* The emailed login link carries its token in the URL fragment
+  (`/auth/callback?lang=en#token=…`, issue #61): browsers never send a fragment, so the token stays out of request URLs and Workers Logs, where
+  anyone with log access could otherwise redeem an unclicked link (a letter link lives a week).
+  `GET /auth/callback` stays inert — an inline script copies the token into the confirm form and
+  strips it from the address bar, without submitting, under a CSP that allows only that script by
+  hash; the `POST` consumes it. Without JavaScript the form posts no token and the donor sees the
+  invalid-link page. Links sent before #61 (`?token=…`) still work until they expire; drop that
+  branch in `routes.ts` once `auth.letterLinkTtlHours` has passed since the #61 deploy. Workers
+  Logs still hold other URL secrets (`/webhooks/monday/letters?secret=`, `/verify/<card token>`),
+  so keep log access (Workers observability, Logpush destinations) to the people who need it.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and
-  `login_attempts` rows (every email anyone submits, donor or not) older than
-  `rateLimit.attemptRetentionHours` (24; validated to exceed the rate-limit window). Deletes are
-  batched and capped per run (`src/db/authRetention.ts`); indexes in migration `0005`.
+  `login_attempts` rows (one per login email allowed, donor or not, keyed by a SHA-256 of the
+  lowercased address since migration `0006`) older than `rateLimit.attemptRetentionHours` (24;
+  validated to cover the 24-hour daily cap). Deletes are batched and capped per run
+  (`src/db/authRetention.ts`); indexes in migrations `0005`/`0006`. The hash is unkeyed: it keeps
+  addresses out of D1 dumps, not out of reach of someone testing a known address.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
   boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
   v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never

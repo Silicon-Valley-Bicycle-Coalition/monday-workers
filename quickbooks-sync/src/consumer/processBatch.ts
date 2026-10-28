@@ -124,6 +124,15 @@ async function processQbToMonday(eventId: string, deps: ConsumerDeps): Promise<v
   // record as it currently stands, never an older snapshot over a newer one. A fetch failure
   // throws into the queue's retry/backoff/DLQ path like any other failure.
   const record = await deps.quickBooksClient.getEntity(event.entityType, event.qbId);
+  // A record's amounts (an invoice's TotalAmt and Balance, a customer's Balance) are in its
+  // CurrencyRef — with multicurrency on, possibly not the home currency the Monday columns hold
+  // (#76). Refuse it before anything is written. No CurrencyRef (Items have none) means home.
+  const currency = getPath(record, 'CurrencyRef.value');
+  if (typeof currency === 'string' && currency !== deps.config.quickbooksSync.currency) {
+    throw new TerminalError(
+      `QuickBooks ${event.entityType} ${event.qbId} is in ${currency}, not ${deps.config.quickbooksSync.currency} — its amounts would be written as ${deps.config.quickbooksSync.currency}; enter it in Monday by hand`
+    );
+  }
   const fetchedPayload = JSON.stringify(record);
   const columnValues = mapQbToMondayColumns(event.entityType, record, deps.config);
 

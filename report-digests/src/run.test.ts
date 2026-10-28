@@ -8,9 +8,9 @@ import { FakeMonday, item } from '../test/fakeMonday';
 const config = validateConfig(sandbox);
 const at = (iso: string) => localTime(new Date(iso), config.timeZone);
 const users = [
-  { id: '68302743', email: 'felicia@example.org', enabled: true },
-  { id: '68160704', email: 'clarrissa@example.org', enabled: true },
-  { id: '68302747', email: 'gone@example.org', enabled: false },
+  { id: '68302743', email: 'felicia@bikesiliconvalley.org', enabled: true },
+  { id: '68160704', email: 'clarrissa@bikesiliconvalley.org', enabled: true },
+  { id: '68302747', email: 'gone@bikesiliconvalley.org', enabled: false },
 ];
 const fakeEmail = () => ({ send: vi.fn().mockResolvedValue({ messageId: 'm1' }) });
 
@@ -46,7 +46,7 @@ describe('runDigest', () => {
     const result = await runDigest({ monday, email, config }, 'fiscal-year-by-size', at('2026-10-26T15:00:00Z'));
     expect(result).toEqual({ key: 'fiscal-year-by-size', sent: true, count: 1, recipients: 1 });
     const msg = email.send.mock.calls[0]![0];
-    expect(msg.to).toEqual(['clarrissa@example.org']);
+    expect(msg.to).toEqual(['clarrissa@bikesiliconvalley.org']);
     expect(msg.from).toEqual({ email: config.fromAddress, name: config.fromName });
     expect(msg.subject).toBe('FY2027 to date: $25 from 1 gifts');
     expect(msg.html).toContain('$25');
@@ -60,5 +60,33 @@ describe('runDigest', () => {
     const monday = new FakeMonday([], [], []);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(runDigest({ monday, email: fakeEmail(), config }, 'renewals', at('2026-11-01T16:00:00Z'))).rejects.toThrow('no active recipients');
+  });
+
+  // #70: the digests carry Windfall wealth-screening data, and production's EMAIL binding has no
+  // allowed_destination_addresses (that would put staff addresses in this public repo).
+  it('never emails an address outside recipientDomains, and raises it as an error by id', async () => {
+    const email = fakeEmail();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const outside = [
+      { id: '68160704', email: 'outsider@gmail.com', enabled: true },
+      { id: '68302747', email: 'Felicia@BikeSiliconValley.org', enabled: true },
+      { id: '1', email: 'spoof@bikesiliconvalley.org.evil.com', enabled: true },
+    ];
+    const cfg = { ...config, digests: { ...config.digests, 'fiscal-year-by-size': { ...config.digests['fiscal-year-by-size'], recipients: [68160704, 68302747, 1] } } };
+    const result = await runDigest({ monday: new FakeMonday([], [], outside), email, config: cfg }, 'fiscal-year-by-size', at('2026-10-26T15:00:00Z'));
+    expect(result).toMatchObject({ sent: true, recipients: 1 });
+    expect(email.send.mock.calls[0]![0].to).toEqual(['Felicia@BikeSiliconValley.org']);
+    expect(error).toHaveBeenCalledOnce();
+    expect(error.mock.calls[0]![0]).toContain('68160704, 1');
+    expect(error.mock.calls[0]![0]).not.toContain('@');
+    error.mockRestore();
+  });
+
+  it('throws rather than send when every recipient is outside recipientDomains', async () => {
+    const email = fakeEmail();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const monday = new FakeMonday([], [], [{ id: '68302743', email: 'outsider2@gmail.com', enabled: true }]);
+    await expect(runDigest({ monday, email, config }, 'renewals', at('2026-11-01T16:00:00Z'))).rejects.toThrow('no active recipients');
+    expect(email.send).not.toHaveBeenCalled();
   });
 });

@@ -18,8 +18,9 @@ will not receive anything.
 ## Try it
 
 1. Open [BP Request Form (sandbox)](https://bikesiliconvalley.monday.com/boards/18431960612) in
-   the Bike Parking Forms (sandbox) workspace. Pick any item with an organizer email filled in,
-   or create one.
+   the Bike Parking Forms (sandbox) workspace. Pick any item with an address in **Preferred Email
+   Address For Coordination**, or create one. That column, and **Event Name**, are what the email
+   uses; nothing else on the item matters.
 2. Set its **Post-Event Feedback** column to **Ready to Send**.
 3. Within a few seconds, check `sandbox@bikesiliconvalley.org`. Expect an email from **SVBC Bike
    Valet (sandbox)** addressed to the organizer's name, with a link to the feedback form. Open
@@ -27,6 +28,8 @@ will not receive anything.
 4. Set the column to **Sent to Organizer** yourself. See the first note below.
 5. Set it back to Ready to Send. A second email arrives. That is expected today (no duplicate
    check), so decide whether you want one.
+6. Clear the item's Preferred Email Address For Coordination and set it to Ready to Send again.
+   No email arrives: the Worker only sends to the address on the item.
 
 ## Don't report these
 

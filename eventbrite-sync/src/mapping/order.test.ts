@@ -89,6 +89,36 @@ describe('mapOrder', () => {
     expect(mapOrder(odd, config, { hasItem: false }).outcome).toBe('skip');
   });
 
+  describe('currency (#76)', () => {
+    const cad = (status = 'placed', majorValue = '45.32') =>
+      testOrder({ status, costs: { gross: { currency: 'CAD', value: Math.round(Number(majorValue) * 100), major_value: majorValue, display: '' } } });
+
+    it('routes a paid order in another currency to review, for a create and an update alike', () => {
+      for (const hasItem of [false, true]) {
+        const result = mapOrder(cad(), config, { hasItem });
+        expect(result.outcome).toBe('review');
+        if (result.outcome !== 'review') return;
+        expect(result.reason).toContain('"CAD" is not USD');
+        expect(result.facts).toMatchObject({ amount: '45.32', currency: 'CAD' });
+      }
+    });
+
+    it('routes a refund of an item in another currency to review too, rather than writing its amount', () => {
+      expect(mapOrder(cad('refunded'), config, { hasItem: true }).outcome).toBe('review');
+    });
+
+    it('still skips what is not giving whatever its currency', () => {
+      expect(mapOrder(cad('pending'), config, { hasItem: false }).outcome).toBe('skip');
+      expect(mapOrder(cad('placed', '0.00'), config, { hasItem: false }).outcome).toBe('skip');
+      expect(mapOrder(cad('refunded'), config, { hasItem: false }).outcome).toBe('skip');
+    });
+
+    it('compares against the configured currency', () => {
+      expect(mapOrder(cad(), testConfig({ currency: 'CAD' }), { hasItem: false }).outcome).toBe('write');
+      expect(mapOrder(testOrder(), testConfig({ currency: 'CAD' }), { hasItem: false }).outcome).toBe('review');
+    });
+  });
+
   it('leaves the Date column and the fiscal-year stamp out when `created` is unparseable', () => {
     const result = mapOrder(testOrder({ created: 'yesterday' }), config, { hasItem: false });
     expect(result.outcome).toBe('write');

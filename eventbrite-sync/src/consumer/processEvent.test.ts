@@ -4,7 +4,7 @@ import { consumeWriteBatch } from './processBatch';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
 import { testConfig } from '../test/testConfig';
 import { MondayApiError } from '../monday/graphql';
-import type { ProcessBatchDeps } from './processBatch';
+import type { ProcessBatchDeps, WriteQueueMessage } from './processBatch';
 import type { EventbriteEvent } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { AttendeeRow, EventRow } from '../types';
@@ -56,11 +56,13 @@ function setup(opts: { row?: EventRow | null; event?: EventbriteEvent | null; mo
   const row = opts.row === undefined ? eventRow() : opts.row;
   const eventStore = fakeEventStore({ getEvent: vi.fn().mockResolvedValue(row) });
   const attendeeStore = fakeAttendeeStore({ listByEvent: vi.fn().mockResolvedValue(opts.attendees ?? []) });
-  const queue = { send: vi.fn().mockResolvedValue(undefined) };
+  const queue = { send: vi.fn().mockResolvedValue(undefined), sendBatch: vi.fn().mockResolvedValue(undefined) };
+  // Every message the fan-out sent, across however many sendBatch calls.
+  const sent = (): WriteQueueMessage[] => queue.sendBatch.mock.calls.flatMap((c) => c[0] as WriteQueueMessage[]);
   const mondayClient = fakeMonday(opts.monday);
   const eventbriteClient = { getOrder: vi.fn(), getEvent: vi.fn().mockResolvedValue(opts.event === undefined ? event() : opts.event), getAttendee: vi.fn() };
   const deps = { eventStore, attendeeStore, queue, mondayClient, eventbriteClient, config: opts.config ?? config } as unknown as ProcessBatchDeps;
-  return { deps, eventStore, attendeeStore, queue, mondayClient, eventbriteClient };
+  return { deps, eventStore, attendeeStore, queue, sent, mondayClient, eventbriteClient };
 }
 
 const message = { kind: 'event' as const, eventId: '9001', action: 'event.updated' };
@@ -147,34 +149,45 @@ describe('processEvent', () => {
   describe('fan-out on reschedule or move', () => {
     const written = { mondayItemId: 'item-9', startsAt: '2026-10-31T02:00:00.000Z', locationKey: 'mitchell park, 600 e meadow dr, palo alto, ca 94306', status: 'written' as const };
 
-    it('enqueues one attendee message per registration when the start changed', async () => {
+    it('enqueues one attendee message per registration, in one sendBatch, when the start changed', async () => {
       const { deps, queue, eventStore } = setup({
         row: eventRow({ ...written, startsAt: '2026-10-24T02:00:00.000Z' }),
         attendees: [attendeeRow('a1'), attendeeRow('a2')],
       });
       await processEvent(message, deps);
-      expect(queue.send).toHaveBeenCalledTimes(2);
-      expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated' });
-      expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a2', action: 'event.updated' });
+      expect(queue.send).not.toHaveBeenCalled();
+      expect(queue.sendBatch).toHaveBeenCalledTimes(1);
+      expect(queue.sendBatch).toHaveBeenCalledWith([
+        { kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated' },
+        { kind: 'attendee', eventId: '9001', attendeeId: 'a2', action: 'event.updated' },
+      ]);
       expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.any(Object));
     });
 
-    it('enqueues when the location changed', async () => {
-      const { deps, queue } = setup({ row: eventRow({ ...written, locationKey: 'somewhere else' }), attendees: [attendeeRow('a1')] });
+    it('splits a class larger than one sendBatch (100 messages) across calls (#75)', async () => {
+      const ids = Array.from({ length: 150 }, (_, i) => `a${i}`);
+      const { deps, queue, sent } = setup({ row: eventRow({ ...written, startsAt: '2026-10-24T02:00:00.000Z' }), attendees: ids.map((id) => attendeeRow(id)) });
       await processEvent(message, deps);
-      expect(queue.send).toHaveBeenCalledTimes(1);
+      expect(queue.sendBatch.mock.calls.map((c) => (c[0] as WriteQueueMessage[]).length)).toEqual([100, 50]);
+      expect(sent().map((m) => (m.kind === 'attendee' ? m.attendeeId : null))).toEqual(ids);
+    });
+
+    it('enqueues when the location changed', async () => {
+      const { deps, sent } = setup({ row: eventRow({ ...written, locationKey: 'somewhere else' }), attendees: [attendeeRow('a1')] });
+      await processEvent(message, deps);
+      expect(sent()).toHaveLength(1);
     });
 
     it('enqueues nothing when start and location are unchanged', async () => {
       const { deps, queue } = setup({ row: eventRow(written), attendees: [attendeeRow('a1')] });
       await processEvent(message, deps);
-      expect(queue.send).not.toHaveBeenCalled();
+      expect(queue.sendBatch).not.toHaveBeenCalled();
     });
 
     it('enqueues nothing on the first write, when there is no previous start or location', async () => {
       const { deps, queue, attendeeStore } = setup({ attendees: [attendeeRow('a1')] });
       await processEvent(message, deps);
-      expect(queue.send).not.toHaveBeenCalled();
+      expect(queue.sendBatch).not.toHaveBeenCalled();
       expect(attendeeStore.listByEvent).not.toHaveBeenCalled();
     });
 
@@ -183,7 +196,7 @@ describe('processEvent', () => {
         row: eventRow({ ...written, startsAt: '2026-10-24T02:00:00.000Z' }),
         attendees: [attendeeRow('a1')],
       });
-      queue.send.mockRejectedValue(new Error('queue down'));
+      queue.sendBatch.mockRejectedValue(new Error('queue down'));
       await expect(processEvent(message, deps)).rejects.toThrow('queue down');
       expect(eventStore.updateStatus).not.toHaveBeenCalled();
     });
@@ -210,13 +223,12 @@ describe('event messages under the write switch', () => {
       await consumeWriteBatch([m], full(deps), gate('off'));
       expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
       expect(mondayClient.createItem).not.toHaveBeenCalled();
-      expect(queue.send).not.toHaveBeenCalled();
+      expect(queue.sendBatch).not.toHaveBeenCalled();
       expect(eventStore.updateStatus).not.toHaveBeenCalled();
       expect(m.ack).toHaveBeenCalled();
       expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([
         ['Events', 'changeColumnValues', 'event:9001'],
-        ['Write queue', 'send', 'event:9001'],
-        ['Write queue', 'send', 'event:9001'],
+        ['Write queue', 'sendBatch', 'event:9001'],
       ]);
     } finally {
       log.mockRestore();
@@ -247,17 +259,17 @@ describe('event messages under the write switch', () => {
   });
 
   it('on: writes and fans out unstamped attendee messages, as before', async () => {
-    const { deps, mondayClient, queue } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
+    const { deps, mondayClient, sent } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
     const m = msg();
     await consumeWriteBatch([m], full(deps), gate('on'));
     expect(mondayClient.changeColumnValues).toHaveBeenCalledTimes(1);
-    expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated' });
+    expect(sent()).toEqual([{ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated' }]);
     expect(m.ack).toHaveBeenCalled();
   });
 
   it('a fan-out sent on behalf of a dropped event carries its stamp', async () => {
-    const { deps, queue } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
+    const { deps, sent } = setup({ row: eventRow(moved), attendees: [attendeeRow('a1')] });
     await processEvent({ ...message, writeStamp: 'dropped' }, deps);
-    expect(queue.send).toHaveBeenCalledWith({ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated', writeStamp: 'dropped' });
+    expect(sent()).toEqual([{ kind: 'attendee', eventId: '9001', attendeeId: 'a1', action: 'event.updated', writeStamp: 'dropped' }]);
   });
 });

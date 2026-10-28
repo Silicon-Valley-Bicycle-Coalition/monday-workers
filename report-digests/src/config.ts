@@ -24,6 +24,9 @@ export interface DigestsConfig {
   fromAddress: string;
   fromName: string;
   logoUrl: string;
+  // The only domains a digest may be emailed to (#70): a recipient's Monday address outside them
+  // is dropped, since production's EMAIL binding has no allowed_destination_addresses.
+  recipientDomains: string[];
   boards: { donations: number; people: number };
   digests: Record<DigestKey, DigestConfig>;
 }
@@ -58,6 +61,17 @@ function intList(o: Json, key: string, path: string, min: number, max: number): 
     throw new Error(`config: ${path}.${key} must be a non-empty array of integers ${min}–${max}`);
   }
   return v as number[];
+}
+
+// Bare lowercase domains, matched exactly against the part after the address's last @.
+const DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
+function domainList(o: Json, key: string, path: string): string[] {
+  const v = o[key];
+  if (!Array.isArray(v) || v.length === 0 || v.some((d) => typeof d !== 'string' || !DOMAIN.test(d))) {
+    throw new Error(`config: ${path}.${key} must be a non-empty array of lowercase domains, without @`);
+  }
+  return v as string[];
 }
 
 function schedule(raw: unknown, path: string): Schedule {
@@ -96,6 +110,7 @@ export function validateConfig(raw: unknown): DigestsConfig {
     fromAddress: str(root, 'fromAddress', 'root'),
     fromName: str(root, 'fromName', 'root'),
     logoUrl: str(root, 'logoUrl', 'root'),
+    recipientDomains: domainList(root, 'recipientDomains', 'root'),
     boards: { donations: int(boards, 'donations', 'boards', 0), people: int(boards, 'people', 'boards', 0) },
     digests: Object.fromEntries(DIGEST_KEYS.map((key) => [key, digest(digests[key], `digests.${key}`)])) as Record<DigestKey, DigestConfig>,
   };

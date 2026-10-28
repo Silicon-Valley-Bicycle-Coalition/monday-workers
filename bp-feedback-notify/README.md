@@ -21,23 +21,31 @@ email with the feedback form link.
 2. A monday.com board automation ("Send a webhook") POSTs to
    `POST /webhook/bp-feedback?secret=<WEBHOOK_SECRET>` — monday's webhook action has no custom
    header field, only a URL, so the shared secret rides in the query string (the Worker also
-   accepts `X-Webhook-Secret` as a header, for any future caller that can set one) — with a body
-   shaped like:
+   accepts `X-Webhook-Secret` as a header, for any future caller that can set one). The Worker
+   reads only `itemId` from the body:
    ```json
-   {
-     "itemId": 13089808285,
-     "itemName": "Fall Festival — BP Request Form item name",
-     "eventName": "Fall Festival",
-     "organizerEmail": "organizer@example.org"
-   }
+   { "itemId": 13089808285 }
    ```
-   (`itemName` and `eventName` are usually the same text — monday exposes both because the
-   automation fills them from different sources; only `eventName` is used in the email copy.)
+   Whatever else the automation sends (`itemName`, `eventName`, `organizerEmail`) is ignored.
+   Before #66 the Worker trusted those fields, so anyone holding the URL secret could send
+   SVBC-branded mail to any address with any subject.
 3. Before monday sends real traffic, it verifies the URL by POSTing `{"challenge": "<token>"}`
    once and expecting that same body echoed back — the Worker handles this ahead of normal
    payload validation.
-4. The Worker validates the secret and payload, then sends the organizer an email with the
-   feedback form link via Cloudflare Email Sending.
+4. The Worker validates the secret and the item id. It then reads the item from Monday
+   (`config/*.json` `board`): the organizer's address from `Preferred Email Address For
+   Coordination` (`short_text3z8szxke`), and the event name from `Event Name`
+   (`short_textdqu5gf2d`), or the item name if that's blank. It refuses an item that isn't on the
+   configured board (404, nothing sent, nothing written back) and an item with no single valid
+   address (422, `Send Failed` written back when `sendStatus` is set). A failed Monday read
+   answers 502 so monday retries. Control characters in the event name are collapsed to a space
+   before it reaches the Subject.
+5. It sends the organizer an email with the feedback form link via Cloudflare Email Sending.
+
+The sandbox config uses the production board's column ids, on the assumption that the sandbox
+mirror was duplicated from the live board (monday keeps column ids on duplicate). Not verified:
+the tokens available when #66 was fixed couldn't see the sandbox board. If a sandbox send logs
+`bp-feedback-no-email` for an item that has an address, check the ids with `get_board_info`.
 
 No D1/queue here (unlike `funraise-sync`/`quickbooks-sync`) — a missed or duplicate reminder
 email is low-stakes compared to a dropped donation write, so a synchronous send-on-receipt is
@@ -59,6 +67,7 @@ sandbox mirror's actual live config on 2026-09-21, not just described genericall
    ```sh
    cd bp-feedback-notify
    wrangler secret put WEBHOOK_SECRET   # generate with: openssl rand -hex 32
+   wrangler secret put MONDAY_API_TOKEN # reads the item; see Secrets
    npm run deploy
    ```
    This deploys to `https://svbc-bp-feedback-notify.svbc-account.workers.dev` (same `*.workers.dev`
@@ -100,7 +109,7 @@ to them — the webhook just gets a 500. To surface it, set `sendStatus` in `con
 }
 ```
 
-and set a `MONDAY_API_TOKEN` secret (see Secrets). After each send the Worker sets that status
+(it uses the same `MONDAY_API_TOKEN` as the item read; see Secrets). After each send the Worker sets that status
 column to `sentLabel` or `failedLabel` via `change_simple_column_value` — in the background
 (`waitUntil`, 10-second timeout) after the webhook has been answered, so a slow Monday API can't
 push the response past monday's timeout and trigger a retry (a duplicate email). Add the `failedLabel`
@@ -124,12 +133,13 @@ wrangler secret put WEBHOOK_SECRET               # production
 wrangler secret put WEBHOOK_SECRET --env sandbox  # sandbox
 ```
 
-Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger an email send, so
-treat it like a password, not a config value.
+Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger a feedback email to
+the organizer on any BP Request Form item, so treat it like a password, not a config value.
 
-`MONDAY_API_TOKEN` is only needed once `sendStatus` is configured (see "Optional: write
-Sent/Failed back to the item"). Mint it from a dedicated integration user with access to only
-the BP Request Form board (root README, least-privilege tokens), per environment:
+`MONDAY_API_TOKEN` is required: every send reads the item from the board, and without the token
+the Worker answers 500 and sends nothing. The same token does the optional status write-back (see
+"Optional: write Sent/Failed back to the item"). Mint it from a dedicated integration user with
+access to only the BP Request Form board (root README, least-privilege tokens), per environment:
 
 ```sh
 wrangler secret put MONDAY_API_TOKEN               # production

@@ -2,18 +2,19 @@
 
 Uses the write switch (README, "Write switch: off / hold / on"). Run every command from the repo
 root. Never run `hold` to `off` to leave a hold: it drops the held messages. Never run
-`all writes on`: two Workers must stay `off` until their own checks pass (below), and `all` would
-turn them on.
+`all writes on`: three Workers must stay `off` (below), and `all` would turn them on.
 
-The in-scope Workers, in three groups that this runbook treats differently:
+The in-scope Workers, in four groups that this runbook treats differently:
 
 - **Writing normally** (`on` outside the hold): `benevity-import`, `bp-feedback-notify`,
   `email-log`, `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
-  `monday-backup`, `quickbooks-sync`, `report-digests`.
+  `monday-backup`, `report-digests`.
 - **`donation-rollups`**: `on` only once its Monday webhooks are subscribed
   (`donation-rollups/scripts/setup-webhooks.mjs`); `off` during the load.
 - **`people-reclassification`**: stays `off` until the staged one-item live check in its README
   ("Not verified against a live board yet") has passed; never part of a bulk flip.
+- **`quickbooks-sync`**: postponed indefinitely (decided 2026-10-28); stays `off` in both
+  environments and is never part of a bulk flip.
 
 ## Merging / first deploy sequencing
 
@@ -59,7 +60,7 @@ notice), so allow about a minute per Worker that has queues.
 Set the writing-normally group one Worker at a time, never with `all`:
 
 ```sh
-for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup quickbooks-sync report-digests; do
+for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
@@ -103,7 +104,7 @@ node scripts/flags.mjs donation-rollups writes off --env production
    with `on` would turn them on.
 
 ```sh
-for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup quickbooks-sync report-digests; do
+for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
   node scripts/flags.mjs "$w" writes hold --env production || echo "FAILED: $w"
 done
 ```
@@ -152,7 +153,7 @@ node scripts/flags.mjs status --env production
    never `all`. The CLI waits 60 s before resuming each Worker's queues.
 
 ```sh
-for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup quickbooks-sync report-digests; do
+for w in benevity-import bp-feedback-notify email-log eventbrite-sync funraise-sync mailchimp-sync member-portal monday-backup report-digests; do
   node scripts/flags.mjs "$w" writes on --env production || echo "FAILED: $w"
 done
 ```
@@ -187,7 +188,13 @@ flip. Recover them by hand if wanted:
 
 - `quickbooks-sync`: events stay queued; QuickBooks redelivery would be a duplicate, so use a
   manual redrive.
-- `benevity-import`: reports uploaded during the off period need a re-upload or the Retry action.
+- `benevity-import`: a report uploaded during the off period is recorded (its rows sit in D1 at
+  `ingested`) but never written, and no worklist item is posted for it, so the Retry action has
+  nothing to act on. Once writes are `on`, upload the same report file again as a new file on the
+  Benevity Uploads board: the Worker re-sends every row still at `ingested`, unstamped, and posts
+  any block worklist item it needs. Which reports: the `uploads` rows with `uploaded_at` inside the
+  off window (`wrangler d1 execute svbc-benevity-import --remote --command "SELECT monday_asset_id,
+  uploaded_at FROM uploads WHERE uploaded_at >= '<off start>'"`). See `benevity-import/README.md`.
 - `email-log`: rows close out `failed`, so a staff re-send is logged.
 - `member-portal`: change requests are refused with 503 under `off` (the donor re-submits); the
   letters webhook logs and returns 200 with no `letter_sends` row (staff re-click); a message

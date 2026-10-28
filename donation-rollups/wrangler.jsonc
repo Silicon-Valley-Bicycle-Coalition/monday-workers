@@ -85,7 +85,7 @@
   // nothing with production. The consumer settings mirror the top level — same subrequest and
   // D1-quota reasoning applies. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (MONDAY_API_TOKEN, MONDAY_WEBHOOK_SECRET).
+  // (MONDAY_API_TOKEN, MONDAY_WEBHOOK_SECRET, CUSTODIAN_SECRET).
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },

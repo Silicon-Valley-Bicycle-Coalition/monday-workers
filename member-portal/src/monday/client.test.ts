@@ -73,6 +73,11 @@ function makeCapturingClient(onBody: (body: { query: string; variables: Record<s
 // Issue #31: with no timeout, a hung Monday request held a dashboard render or a queue consumer
 // indefinitely. Every request carries an AbortSignal.timeout, and a timeout surfaces as a
 // monday-prefixed error the callers already log/retry on.
+// An email column's column_value as findDonorsByEmail requests it.
+function emailValue(address: string) {
+  return { id: 'email_col', text: address, value: JSON.stringify({ email: address, text: address }) };
+}
+
 describe('HttpMondayClient request timeout', () => {
   it('passes an AbortSignal to every Monday fetch', async () => {
     const fetchFn = fetchReturning({ data: { boards: [{ items_page: { items: [] } }] } });
@@ -132,7 +137,16 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
   it('returns every matching donor item', async () => {
     const fetchMock = fetchReturning({
       data: {
-        boards: [{ items_page: { items: [{ id: '1', name: 'Jane' }, { id: '2', name: 'Jane Also' }] } }],
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Jane', column_values: [emailValue('shared@example.org')] },
+                { id: '2', name: 'Jane Also', column_values: [emailValue('Shared@Example.org')] },
+              ],
+            },
+          },
+        ],
       },
     });
     const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
@@ -174,7 +188,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         boards: [
           {
             items_page: {
-              items: [{ id: '1', name: 'Jane', column_values: [{ id: 'lang_col', text: 'Spanish' }] }],
+              items: [{ id: '1', name: 'Jane', column_values: [emailValue('jane@example.org'), { id: 'lang_col', text: 'Spanish' }] }],
             },
           },
         ],
@@ -195,7 +209,7 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          data: { boards: [{ items_page: { items: [{ id: '1', name: 'Jane' }] } }] },
+          data: { boards: [{ items_page: { items: [{ id: '1', name: 'Jane', column_values: [emailValue('jane@example.org')] }] } }] },
         }),
       };
     });
@@ -207,6 +221,70 @@ describe('HttpMondayClient.findDonorsByEmail', () => {
     expect(captured).not.toBeNull();
     expect(captured!.query).not.toContain('REPLACE_WITH_COLUMN_ID');
     expect(matches).toEqual([{ id: '1', name: 'Jane', preferredLanguage: '' }]);
+  });
+
+  // Issue #62: whatever Monday's filter returns, only an exact (case-insensitive) address match
+  // may get a login link.
+  it('drops items whose address is not exactly the submitted one', async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Exact', column_values: [emailValue(' JANE@example.org ')] },
+                { id: '2', name: 'Superstring', column_values: [emailValue('mary.jane@example.org')] },
+                { id: '3', name: 'Other domain', column_values: [emailValue('jane@example.org.evil')] },
+                { id: '4', name: 'No email', column_values: [] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    expect((await client.findDonorsByEmail('jane@example.org')).map((m) => m.id)).toEqual(['1']);
+  });
+
+  it("matches on an email column's address, not its display label", async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Labelled', column_values: [{ id: 'email_col', text: 'Jane (work)', value: JSON.stringify({ email: 'jane@example.org', text: 'Jane (work)' }) }] },
+                { id: '2', name: 'Label only', column_values: [{ id: 'email_col', text: 'jane@example.org', value: JSON.stringify({ email: 'other@example.org', text: 'jane@example.org' }) }] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    expect((await client.findDonorsByEmail('jane@example.org')).map((m) => m.id)).toEqual(['1']);
+  });
+
+  it('reads a plain text column, and falls back to text when value is missing', async () => {
+    const fetchMock = fetchReturning({
+      data: {
+        boards: [
+          {
+            items_page: {
+              items: [
+                { id: '1', name: 'Text column', column_values: [{ id: 'email_col', text: 'jane@example.org', value: '"jane@example.org"' }] },
+                { id: '2', name: 'No value', column_values: [{ id: 'email_col', text: 'jane@example.org' }] },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', columns, 999, 1, 2, donationsCfg, pledgesCfg, 3, fetchMock);
+
+    expect((await client.findDonorsByEmail('jane@example.org')).map((m) => m.id)).toEqual(['1', '2']);
   });
 });
 
