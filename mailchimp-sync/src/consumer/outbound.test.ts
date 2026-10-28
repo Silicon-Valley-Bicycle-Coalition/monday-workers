@@ -15,7 +15,7 @@ const CONFIG: Config = {
     doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
   } },
   mailchimp: {
-    apiBaseUrl: '', audienceId: '',
+    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'],
     mergeFields: { memberSince: 'MS', memberUntil: 'MU', membershipTier: 'MT', membershipStatus: 'MST', address: 'AD', totalGiven: 'TG' },
     tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit' },
   },

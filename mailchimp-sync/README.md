@@ -47,9 +47,13 @@ Three independent flows — see the design doc for full sequence diagrams:
    cleaned contact stays that way. People join the audience only through Mailchimp's own
    signup forms or the cutover consent import. **One exception, one-way:** a reviewed Do Not
    Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below.
-2. **Campaign catalog reconciliation:** daily cron diffs Mailchimp's Interest Categories against a
-   D1-tracked set of Monday items on the Campaigns board — creates, renames, or archives as
-   needed. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
+2. **Campaign catalog reconciliation:** daily cron diffs the interests in the Interest Categories
+   listed in `mailchimp.interestCategoryIds` against a D1-tracked set of Monday items on the
+   Campaigns board — creates, renames, or archives as needed. Other categories are ignored, and
+   so are their interests on the inbound side: SVBC's production audience holds five older,
+   hidden categories (57 interests, mostly Constant Contact lists from 2008–2014) that would
+   otherwise each become a Campaigns item. A configured id missing from the audience fails the
+   run instead of reading as "no interests", which would archive every item. No webhook exists for "Interest Category changed" in Mailchimp, so this is polling, not
    a reliability fallback.
 3. **Inbound:** Mailchimp subscribe/unsubscribe/profile event → webhook → D1 idempotency →
    Cloudflare Queue → resolve the contact's current interests to Campaigns-board item ids → write
@@ -263,7 +267,11 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
 * Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
-  independently.
+  independently, and put its id in `mailchimp.interestCategoryIds` (production's is still
+  `REPLACE_WITH_INTEREST_CATEGORY_ID`). In production, adding Welcome Drip and Renewal Reminders
+  to the existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`)
+  works too; its Monthly e-Bulletin interest already covers Newsletter. Only the listed
+  categories are synced.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`

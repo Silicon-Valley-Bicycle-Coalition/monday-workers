@@ -15,7 +15,7 @@ const CONFIG: Config = {
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
     doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
   } },
-  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never },
+  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'] },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
@@ -127,6 +127,27 @@ describe('processInboundBatch', () => {
     expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['campaign-new']);
   });
 
+  it('leaves off an interest outside the configured categories instead of failing the message', async () => {
+    const message = fakeMessage('a@b.com');
+    const mondayClient = fakeMonday();
+    const campaignItemsStore = fakeCampaignItemsStore([
+      { interestId: 'int1', mondayItemId: 'campaign-1', name: 'Newsletter', archivedAt: null },
+    ]);
+    const mailchimpClient = fakeMailchimp({
+      // 'old-list' is in one of the audience's old categories, so listInterests never returns it.
+      getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { 'old-list': true, int1: true } }),
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]),
+    });
+    const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+
+    await processInboundBatch([message], { mondayClient, mailchimpClient, campaignItemsStore, pendingStore, config: CONFIG });
+
+    expect(mailchimpClient.listInterests).toHaveBeenCalledWith(['cat1']);
+    expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
+    expect(mondayClient.setConnectColumn).toHaveBeenCalledWith(111, 'donor-1', 'mc', ['campaign-1']);
+    expect(message.ack).toHaveBeenCalled();
+  });
+
   it('clears the connect column for an unsubscribed contact even though interests are still non-empty', async () => {
     const message = fakeMessage('unsub@b.com');
     const mondayClient = fakeMonday();
@@ -150,12 +171,13 @@ describe('processInboundBatch', () => {
   it('retries (does not ack) when an interest is still unresolvable after the one-shot reconcile', async () => {
     const message = fakeMessage('a@b.com');
     const mondayClient = fakeMonday();
-    // listInterests returns nothing matching, so reconcile can't create/track it either.
+    // A synced interest whose item another run has claimed but not yet recorded, so the
+    // reconcile can't track it either. (One outside the configured categories is left off.)
     const mailchimpClient = fakeMailchimp({
       getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { 'ghost-int': true } }),
-      listInterests: vi.fn().mockResolvedValue([]),
+      listInterests: vi.fn().mockResolvedValue([{ categoryId: 'cat1', interestId: 'ghost-int', name: 'Ghost' }]),
     });
-    const campaignItemsStore = fakeCampaignItemsStore([]);
+    const campaignItemsStore = { ...fakeCampaignItemsStore([]), claim: vi.fn().mockResolvedValue(false) };
     const pendingStore: PendingInboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processInboundBatch([message], {

@@ -5,7 +5,7 @@ import type { Config, DonorRecord } from '../types';
 const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, columns: {} as never },
   mailchimp: {
-    apiBaseUrl: '', audienceId: '',
+    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'],
     mergeFields: {
       memberSince: 'MEMBERSINCE', memberUntil: 'MEMBERUNTIL', membershipTier: 'MTIER',
       membershipStatus: 'MSTATUS', address: 'ADDRESS', totalGiven: 'TOTALGIVE',

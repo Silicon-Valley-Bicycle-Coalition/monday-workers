@@ -69,6 +69,11 @@ export function validateConfig(raw: unknown): Config {
   requireStringKeys(mergeFields, REQUIRED_MERGE_FIELDS, 'mailchimp.mergeFields');
   const tags = requireObject(mailchimp.tags, 'mailchimp.tags');
   requireStringKeys(tags, REQUIRED_TAGS, 'mailchimp.tags');
+  const categoryIds = mailchimp.interestCategoryIds;
+  if (!Array.isArray(categoryIds) || categoryIds.length === 0
+    || !categoryIds.every((id) => typeof id === 'string' && id !== '')) {
+    throw new Error('config: "mailchimp.interestCategoryIds" must be a non-empty array of category ids');
+  }
 
   if (typeof cfg.lifetimeTierValue !== 'string' || cfg.lifetimeTierValue === '') {
     throw new Error('config: missing required key "lifetimeTierValue"');
@@ -92,6 +97,7 @@ export function validateConfig(raw: unknown): Config {
       audienceId: mailchimp.audienceId,
       mergeFields: mergeFields as unknown as MailchimpMergeFieldsConfig,
       tags: tags as unknown as MailchimpTagsConfig,
+      interestCategoryIds: categoryIds as string[],
     },
     lifetimeTierValue: cfg.lifetimeTierValue,
     activeStatusValue: cfg.activeStatusValue,
