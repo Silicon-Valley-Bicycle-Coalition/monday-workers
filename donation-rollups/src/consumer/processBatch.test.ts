@@ -98,8 +98,11 @@ function fakeLinksStore(overrides: Partial<DonationLinksStore> = {}): DonationLi
   };
 }
 
-function fakeRecomputesStore(last: OwnerRecompute | null = null): OwnerRecomputesStore {
-  return { get: vi.fn().mockResolvedValue(last), record: vi.fn().mockResolvedValue(undefined), writtenSince: vi.fn().mockResolvedValue(new Set()) };
+function fakeRecomputesStore(last: OwnerRecompute | null = null, opts: { leaseFree?: boolean } = {}): OwnerRecomputesStore {
+  return {
+    get: vi.fn().mockResolvedValue(last), record: vi.fn().mockResolvedValue(undefined), writtenSince: vi.fn().mockResolvedValue(new Set()),
+    acquireLease: vi.fn().mockResolvedValue(opts.leaseFree ?? true), releaseLease: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 function fakeGiftsStore(): GiftsStore {
@@ -494,6 +497,44 @@ describe('processRecomputeBatch', () => {
     expect(message.retry).toHaveBeenCalled();
     expect(message.ack).not.toHaveBeenCalled();
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('dn4', 'failed', { error: 'monday API: HTTP 500' });
+  });
+
+  it('holds the owner lease across the recompute and releases it after the write', async () => {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const recomputesStore = fakeRecomputesStore();
+    const message = fakeMessage('dn5');
+    await processRecomputeBatch([message], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient: fakeMondayClient({ changeColumnValues }), config });
+
+    expect(recomputesStore.acquireLease).toHaveBeenCalledWith('donor-1', expect.any(String), expect.any(String), expect.any(String));
+    const holder = (recomputesStore.acquireLease as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(recomputesStore.releaseLease).toHaveBeenCalledWith('donor-1', holder);
+    expect(changeColumnValues).toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('waits (retries without a failure) while another recompute of the same owner holds the lease', async () => {
+    const changeColumnValues = vi.fn().mockResolvedValue(undefined);
+    const getDonationsByIds = vi.fn().mockResolvedValue([]);
+    const pendingStore = fakePendingStore();
+    const recomputesStore = fakeRecomputesStore(null, { leaseFree: false });
+    const message = fakeMessage('dn6');
+    await processRecomputeBatch([message], { pendingStore, linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient: fakeMondayClient({ changeColumnValues, getDonationsByIds }), config });
+
+    expect(getDonationsByIds).not.toHaveBeenCalled();
+    expect(changeColumnValues).not.toHaveBeenCalled();
+    expect(recomputesStore.releaseLease).not.toHaveBeenCalled();
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: expect.any(Number) });
+    expect(pendingStore.updateStatus).not.toHaveBeenCalledWith('dn6', 'failed', expect.anything());
+  });
+
+  it('releases the lease when the recompute fails', async () => {
+    const recomputesStore = fakeRecomputesStore();
+    const message = fakeMessage('dn7');
+    await processRecomputeBatch([message], { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore: fakeGiftsStore(), recomputesStore, volunteerStore: fakeVolunteerStore(), mondayClient: fakeMondayClient({ changeColumnValues: vi.fn().mockRejectedValue(new Error('monday API: HTTP 500')) }), config });
+
+    expect(recomputesStore.releaseLease).toHaveBeenCalledWith('donor-1', expect.any(String));
+    expect(message.retry).toHaveBeenCalled();
   });
 });
 

@@ -131,7 +131,9 @@ and cannot be listed in the mapping. So:
   status `dry-run`, so `/reclassify/status` shows what a live pass would do. `hold`, and `unknown`
   (the KV read failed), skip the cron run entirely: no Monday call, no ledger row. Without a query
   parameter `POST /reclassify/run` follows the mode (409 under `hold`/`unknown`);
-  `?dryRun=true` forces a plan-only pass in any mode but `unknown`. `?dryRun=false` is rejected
+  `?dryRun=true` forces a plan-only pass in any mode but `unknown`; the cron ignores such a
+  preview when deciding whether a pass is due, so it never stops a continuation or uses up a
+  quarterly or threshold pass (cron dry runs under `off` do count). `?dryRun=false` is rejected
   with 400 — it used to run one live pass while the old `DRY_RUN` var said true; set the mode to
   `on` instead. `/reclassify/status` reports the current `mode`.
 * **Ledger** (`migrations/0001_create_ledger.sql`): `runs` (one per pass, with the report),

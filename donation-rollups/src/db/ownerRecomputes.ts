@@ -17,6 +17,10 @@ export interface OwnerRecomputesStore {
   // recompute after its phases 1–2 finished (or after the caller's `since`) already saw the
   // loaded history.
   writtenSince(iso: string): Promise<Set<string>>;
+  // One recompute per owner at a time (migration 0010): true when this holder now has the lease,
+  // false while another holder's lease is unexpired. Release is a no-op for anyone but the holder.
+  acquireLease(ownerItemId: string, holder: string, nowISO: string, expiresAtISO: string): Promise<boolean>;
+  releaseLease(ownerItemId: string, holder: string): Promise<void>;
 }
 
 interface D1Row { owner_item_id: string; owner_board_id: string; fetched_at: string; written_at: string }
@@ -51,5 +55,20 @@ export class D1OwnerRecomputesStore implements OwnerRecomputesStore {
       .bind(iso)
       .all<{ owner_item_id: string }>();
     return new Set(res.results.map((r) => r.owner_item_id));
+  }
+
+  async acquireLease(ownerItemId: string, holder: string, nowISO: string, expiresAtISO: string): Promise<boolean> {
+    const row = await this.db
+      .prepare(`INSERT INTO owner_leases (owner_item_id, holder, expires_at) VALUES (?1, ?2, ?3)
+                ON CONFLICT (owner_item_id) DO UPDATE SET holder = excluded.holder, expires_at = excluded.expires_at
+                WHERE owner_leases.expires_at <= ?4
+                RETURNING holder`)
+      .bind(ownerItemId, holder, expiresAtISO, nowISO)
+      .first<{ holder: string }>();
+    return row?.holder === holder;
+  }
+
+  async releaseLease(ownerItemId: string, holder: string): Promise<void> {
+    await this.db.prepare(`DELETE FROM owner_leases WHERE owner_item_id = ?1 AND holder = ?2`).bind(ownerItemId, holder).run();
   }
 }

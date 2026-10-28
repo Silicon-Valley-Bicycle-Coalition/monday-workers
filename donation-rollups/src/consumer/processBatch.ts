@@ -59,6 +59,15 @@ export interface ProcessBatchDeps {
 // retries and land in the DLQ on every future delivery for the same owner.
 class NonRetryableError extends Error {}
 
+// Another recompute of the same owner holds its lease (migration 0010). Not a failure: the message
+// waits a short, fixed delay and re-reads Monday once the holder has written — often to find a
+// fresh enough fetch that it coalesces away.
+class OwnerBusyError extends Error {}
+const OWNER_BUSY_RETRY_SECONDS = 30;
+// Longer than any healthy recompute (seconds, or a minute or two of in-process Monday retries),
+// short enough that a holder that died mid-recompute only blocks its owner for a few retries.
+const OWNER_LEASE_TTL_MS = 5 * 60_000;
+
 // A first run after enabling the membership feature, or a widened eligibleGiftTypes, can leave
 // dozens of unstamped gifts on one owner; each stamp is one Monday mutation and the Free plan's
 // subrequest cap is 50 per invocation. The design converges (spec "Writes and idempotency"), so
@@ -128,6 +137,11 @@ async function runBatch(
       await processOne(message.body, deps);
       message.ack();
     } catch (err) {
+      if (err instanceof OwnerBusyError) {
+        console.log(`donation-rollups consumer: donation "${donationItemId}": ${err.message} — retrying in ${OWNER_BUSY_RETRY_SECONDS}s`);
+        message.retry({ delaySeconds: OWNER_BUSY_RETRY_SECONDS });
+        continue;
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error(`donation-rollups consumer: failed to process donation "${donationItemId}": ${errMsg}`);
       // This write is itself a D1 query. During a D1 outage it throws too — and until fix 4 that
@@ -348,9 +362,34 @@ async function enqueueOwnerRecompute(
 // refresh, membership, gift-history projections, affiliations. triggeringDonationId feeds the
 // affiliation fan-out; extraAffiliations adds ones a detached gift was attributed to (it's no
 // longer among the fetched donations, so affectedAffiliations can't see it).
+//
+// Held under the owner's lease from before the read to after the write: two recomputes of one
+// owner running at once (max_concurrency > 1) could otherwise read, then write, out of order, and
+// the stale one would overwrite the fresh totals with nothing left to repair them.
 async function recomputeOwner(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
   extraAffiliations: Set<string> = new Set(),
+): Promise<void> {
+  const holder = crypto.randomUUID();
+  const now = Date.now();
+  const leased = await deps.recomputesStore.acquireLease(ownerItemId, holder,
+    new Date(now).toISOString(), new Date(now + OWNER_LEASE_TTL_MS).toISOString());
+  if (!leased) throw new OwnerBusyError(`owner ${ownerItemId} is being recomputed by another message`);
+  try {
+    await recomputeOwnerLeased(deps, ownerItemId, ownerBoardId, donationItemId, extraAffiliations);
+  } finally {
+    // A failed release leaves the lease to expire; it must not turn a good recompute into a retry.
+    try {
+      await deps.recomputesStore.releaseLease(ownerItemId, holder);
+    } catch (err) {
+      console.warn(`donation-rollups consumer: could not release the lease on owner ${ownerItemId} (it expires on its own): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+async function recomputeOwnerLeased(
+  deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
+  extraAffiliations: Set<string>,
 ): Promise<void> {
   const { mondayClient, config } = deps;
   const { donationBoards, receivedStatusLabel, ownerColumnsByBoard } = config.donationRollups;

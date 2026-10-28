@@ -189,6 +189,9 @@ backfill) would silently lose recomputes the same way.
    worst-case recomputes fit and three don't (the default 10 is what produced the three
    "Too many subrequests" rows). Raised to 10, with `max_concurrency` 3, on Workers Paid
    (cap 1,000) on 2026-10-28; `wrangler.jsonc` has the sizing and the sandbox measurements.
+   Concurrency > 1 needs the per-owner lease (migration `0010_owner_leases.sql`, see "Concurrent
+   gifts"): apply it to each remote D1 **before** deploying a build that takes the lease, or every
+   recompute fails on the missing table.
 5. ~~**Give the DLQ a consumer … add a custodian duty `requeue-stuck`.**~~ **Done (branch
    `feat/rollups-dlq-requeue`):** the Worker now also consumes `donation-rollups-recompute-dlq`
    (`src/consumer/processDeadLetters.ts`): a dead message marks its pending row `failed` with
@@ -555,9 +558,12 @@ membership keys and stamps are compared away).
 * **Refunds:** a gift flipped to Failed drops out of the fold but keeps its stamped term columns;
   the owner's Until is recomputed from what remains but, being extend-only, never shortens below
   what the board already says — same as Salesforce. Shorten by hand if intended.
-* **Concurrent gifts:** two gifts for one owner recomputing at once can each write a merge of
-  what it read; the later writer wins and the stamped gifts' webhooks re-converge on the next
-  pass. Not atomic.
+* **Concurrent gifts:** two gifts for one owner never recompute at once. Each recompute holds a
+  per-owner lease in D1 (`owner_leases`, migration 0010) from before its Monday read to after its
+  write; a second message for that owner retries 30 s later and re-reads, often coalescing away.
+  Before 2026-10-28 they could interleave: the recompute that read first could write last and
+  overwrite fresher totals, and a plain amount edit sends no further webhook to repair that.
+  A lease whose holder died expires after 5 minutes.
 * **What changed from the 2026-09-15 write path:** the rule is activity-based (gift ≥ $1 or a
   volunteer hour) instead of "any Received Donation"; `termMonths` 12 → 13; `minAmountCents`
   added; the `typeLabels` keys `renewal` / `reacquire` became `continuing` / `lapsedRenewal`

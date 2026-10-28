@@ -27,7 +27,7 @@ const PENDING_MUTATORS = ['upsertPending', 'updateStatus'] as const satisfies re
 const LINKS_MUTATORS = ['upsertLink', 'bulkUpsert', 'deleteLink'] as const satisfies readonly (keyof DonationLinksStore)[];
 const GIFTS_MUTATORS = ['refreshFacts', 'markRemoved', 'setSummaryItemId', 'markArchived', 'setTermStarts',
   'upsertAnnualSummaries', 'recordRun'] as const satisfies readonly (keyof GiftsStore)[];
-const RECOMPUTES_MUTATORS = ['record'] as const satisfies readonly (keyof OwnerRecomputesStore)[];
+const RECOMPUTES_MUTATORS = ['record', 'acquireLease', 'releaseLease'] as const satisfies readonly (keyof OwnerRecomputesStore)[];
 const AFFILIATIONS_MUTATORS = ['upsert', 'bulkUpsert'] as const satisfies readonly (keyof AffiliationsStore)[];
 const VOLUNTEER_MUTATORS = ['upsert', 'upsertMany', 'markRemoved'] as const satisfies readonly (keyof VolunteerActivityStore)[];
 
@@ -103,7 +103,9 @@ export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext): Pr
     pendingStore: dryRunPendingStore(deps.pendingStore),
     linksStore: dryRunLinksStore(deps.linksStore),
     giftsStore: dryRunGiftsStore(deps.giftsStore),
-    recomputesStore: dryRunStore(deps.recomputesStore, RECOMPUTES_MUTATORS),
+    // A dry run writes nothing to Monday, so it has no lost update to guard against: it never
+    // waits on, or takes, an owner lease.
+    recomputesStore: dryRunStore(deps.recomputesStore, RECOMPUTES_MUTATORS, { acquireLease: async () => true }),
     affiliationsStore: dryRunStore(deps.affiliationsStore, AFFILIATIONS_MUTATORS, { bulkUpsert: async () => 0 }),
     volunteerStore: dryRunVolunteerStore(deps.volunteerStore),
     mondayClient: recordingProxy(deps.mondayClient, MONDAY_SINK, {

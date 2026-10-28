@@ -100,21 +100,25 @@ async function processOne(donorItemId: string, deps: OutboundConsumerDeps): Prom
     return;
   }
 
+  // A reviewed Do Not Solicit unsubscribes the person's own address — never the Household
+  // Email, which other people may share. The log makes this once per address: later column
+  // changes on the same person don't call Mailchimp again, and unchecking the box never
+  // resubscribes (only the person can, through Mailchimp). It runs before the merge-field
+  // update so a permanent error there (acked, never retried) can't skip the unsubscribe.
+  // 'not-in-audience' isn't logged, so a person who joins later is still unsubscribed.
+  if (donor.doNotSolicit && donor.dnsReasonStatus === config.dnsConfirmedValue && !(await deps.dnsLog.has(donor.email))) {
+    const unsubscribed = await mailchimpClient.unsubscribeMember(donor.email);
+    if (unsubscribed !== 'not-in-audience') {
+      await deps.dnsLog.record(donor.email, donorItemId, unsubscribed, new Date().toISOString());
+    }
+  }
+
   const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config));
   if (result === 'not-in-audience') {
     // Expected for every Donor who never opted in — Mailchimp owns consent, so this
     // Worker only enriches existing members. 'skipped', not 'written', so it's countable.
     await pendingStore.updateStatus(donorItemId, 'skipped', `"${donor.email}" is not in the Mailchimp audience`);
     return;
-  }
-
-  // A reviewed Do Not Solicit unsubscribes the person's own address — never the Household
-  // Email, which other people may share. The log makes this once per address: later column
-  // changes on the same person don't call Mailchimp again, and unchecking the box never
-  // resubscribes (only the person can, through Mailchimp).
-  if (donor.doNotSolicit && donor.dnsReasonStatus === config.dnsConfirmedValue && !(await deps.dnsLog.has(donor.email))) {
-    const result = await mailchimpClient.unsubscribeMember(donor.email);
-    await deps.dnsLog.record(donor.email, donorItemId, result, new Date().toISOString());
   }
 
   await pendingStore.updateStatus(donorItemId, 'written', undefined, new Date().toISOString());

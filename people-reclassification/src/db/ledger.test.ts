@@ -29,6 +29,16 @@ describe('D1Ledger', () => {
     expect(await ledger.lastRun({ trigger: 'threshold' })).toBeNull();
   });
 
+  it('can skip operator previews (HTTP dry runs) but keeps cron dry runs and live HTTP runs', async () => {
+    await ledger.startRun({ runId: 'cron-dry', trigger: 'quarterly', dryRun: true, startedAt: '2026-10-01T10:00:00Z' });
+    await ledger.startRun({ runId: 'http-live', trigger: 'http', dryRun: false, startedAt: '2026-10-02T10:00:00Z' });
+    await ledger.startRun({ runId: 'preview', trigger: 'http', dryRun: true, startedAt: '2026-10-03T10:00:00Z' });
+    expect(await ledger.lastRun()).toMatchObject({ runId: 'preview' });
+    expect(await ledger.lastRun({ skipPreviews: true })).toMatchObject({ runId: 'http-live' });
+    await env.DB.prepare("DELETE FROM runs WHERE run_id = 'http-live'").run();
+    expect(await ledger.lastRun({ skipPreviews: true })).toMatchObject({ runId: 'cron-dry' });
+  });
+
   it('records moves, advances their status, and lists only the unsettled ones', async () => {
     await ledger.startRun({ runId: 'r1', trigger: 'quarterly', dryRun: false, startedAt: '2026-10-01T10:00:00Z' });
     const base = { runId: 'r1', fromBoardId: '1', toBoardId: '2', direction: 'to-historical' as const, latestActivity: '2015-01-01', reason: 'aged-out', plannedAt: '2026-10-01T10:00:00Z' };
