@@ -345,7 +345,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         'are Received with Gift Type Event Ticket). Failed and Pending are real outcomes, not ' +
         'stages to work.',
       'Gift Type': 'Salesforce record type: Donation, Membership, Matching Donation, Click & ' +
-        'Pledge (historical), Sponsorship, Grant, Contract…',
+        'Pledge (historical), Sponsorship, Grants, Contracts…',
       'Donor': 'Who gave: a People, People (Historical), or Organizations item. Blank only when ' +
         'Anonymous Donor is checked. For a gift an organization made through an affiliated ' +
         'person, the organization is the Donor and the person is in Acting for.',
