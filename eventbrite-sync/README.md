@@ -228,7 +228,14 @@ backoff — 1 minute, doubling to a cap of 1 hour (`retryDelaySeconds` in `src/f
 sandbox), which this Worker also consumes (`src/consumer/processDeadLetters.ts`): the row's
 error is prefixed `dead-lettered after retries: ` and the batch logs one `console.error` naming
 the order ids. A 404 from Eventbrite is **not** retried: the row is marked `failed` ("not found in
-Eventbrite") and acked. To find dead orders:
+Eventbrite") and acked. Nor is any other failure no retry can fix (#75, `src/errors.ts`): an
+Eventbrite or Monday 4xx about the request itself, or a Monday 200 whose error code rejects the
+request (a column value it won't take, a column, board or item id that doesn't exist). The row
+(order, event or attendee) is marked `failed` with the error prefixed `not retried: ` and the
+message is acked. A rejected token (401/403), Monday's `UserUnauthorizedException` (also its
+answer for a deleted board), rate limits and 5xx still retry, since fixing the secret or the
+config heals the whole backlog. To find those: `… where error like 'not retried%'`. To find
+dead orders:
 `select order_id, event_id, error, received_at from orders where error like 'dead-lettered%'`.
 Re-drive by re-running `scripts/backfill-orders.mjs` for the affected event once the cause is
 fixed; adopt-before-create makes it safe for the orders that did land.
@@ -478,7 +485,7 @@ beyond the table above:
 - **Queue messages (order, event, attendee).** Under `off` (or a `dropped` stamp) the consumer runs
   the same fetch → map → match path against recording deps: each Donations, People, Events and
   Event Registrations write is a skip line, no ledger row changes, and the consumer's own sends
-  (an event's attendee fan-out, an attendee's request for its event) are logged as `Write queue`
+  (an event's attendee fan-out, one `sendBatch` per 100, an attendee's request for its event) are logged as `Write queue`
   skips, not sent. A message the consumer does send live carries its parent's stamp. A dry-run
   attendee whose event has a ledger row but no Events item yet (a dry run never records one) links
   the placeholder `dry-run-event` rather than retrying until its event is written.

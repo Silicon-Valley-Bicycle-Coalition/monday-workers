@@ -1,8 +1,9 @@
 import { PLACEHOLDER_COLUMN_ID } from '../config';
 import { mapEvent } from '../mapping/event';
 import { isItemGone } from '../monday/itemGone';
-import type { EventQueueMessage, ProcessBatchDeps } from './processBatch';
+import type { AttendeeQueueMessage, EventQueueMessage, ProcessBatchDeps } from './processBatch';
 import { stampOf } from './messages';
+import { sendInBatches } from '../util/sendBatch';
 
 // The events row's error when Eventbrite 404s the event. processAttendee reads it to stop asking
 // for an event that will never come.
@@ -80,10 +81,12 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     (row.locationKey !== null && row.locationKey !== mapping.locationKey);
   if (moved) {
     // Before the ledger records the new values: if a send fails, the retry still sees the
-    // change and fans out again (at-least-once; the attendee consumer is idempotent).
-    for (const attendee of await attendeeStore.listByEvent(eventId)) {
-      await queue.send({ kind: 'attendee', eventId, attendeeId: attendee.attendeeId, action: 'event.updated', ...stampOf(message) });
-    }
+    // change and fans out again (at-least-once; the attendee consumer is idempotent). In batches
+    // of up to 100 (#75), not one send per registration: a big class stays a few calls.
+    const fanOut = (await attendeeStore.listByEvent(eventId)).map(
+      (attendee): AttendeeQueueMessage => ({ kind: 'attendee', eventId, attendeeId: attendee.attendeeId, action: 'event.updated', ...stampOf(message) })
+    );
+    await sendInBatches(queue, fanOut);
   }
 
   await eventStore.updateStatus(eventId, 'written', { ...facts, mondayItemId, writtenAt: new Date().toISOString() });

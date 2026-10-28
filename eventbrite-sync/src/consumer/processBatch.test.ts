@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
-import { consumeWriteBatch, processOrderQueueBatch, type QueueMessageLike, type OrderQueueMessage } from './processBatch';
+import { consumeWriteBatch, processOrderQueueBatch, TERMINAL_PREFIX, type QueueMessageLike, type OrderQueueMessage } from './processBatch';
 import type { OrderStore } from '../db/orders';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
@@ -67,7 +67,7 @@ describe('processOrderQueueBatch', () => {
     const mondayClient = fakeMonday();
     const message = fakeMessage();
 
-    await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient, mondayClient, config });
+    await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient, mondayClient, config });
 
     expect(eventbriteClient.getOrder).toHaveBeenCalledWith('442719216');
     expect(mondayClient.findItemByColumnValue).toHaveBeenCalledWith(111, 'order_id_col', '442719216');
@@ -99,7 +99,7 @@ describe('processOrderQueueBatch', () => {
   it('skips donor matching when the row already has a match', async () => {
     const orderStore = fakeStore(orderRow({ matchedDonorItemId: '7' }));
     const mondayClient = fakeMonday();
-    await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+    await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
     expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalledWith(42, expect.anything(), expect.anything());
     expect(mondayClient.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.objectContaining({ connect_col: { item_ids: [7] } }));
   });
@@ -109,7 +109,7 @@ describe('processOrderQueueBatch', () => {
     const mondayClient = fakeMonday();
     const message = fakeMessage();
 
-    await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder({ status: 'refunded' })), mondayClient, config });
+    await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder({ status: 'refunded' })), mondayClient, config });
 
     expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
     expect(mondayClient.createItem).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe('processOrderQueueBatch', () => {
     const message = fakeMessage();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
       expect(mondayClient.createItem).not.toHaveBeenCalled();
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', expect.objectContaining({ error: expect.stringContaining('deleted or archived') }));
       expect(message.ack).toHaveBeenCalled();
@@ -150,7 +150,7 @@ describe('processOrderQueueBatch', () => {
     const message = fakeMessage();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
       expect(message.retry).toHaveBeenCalled();
       expect(message.ack).not.toHaveBeenCalled();
     } finally {
@@ -164,7 +164,7 @@ describe('processOrderQueueBatch', () => {
       findItemByColumnValue: vi.fn().mockImplementation(async (boardId: number) => (boardId === 111 ? { id: 'adopted-9' } : { id: '55' })),
     });
 
-    await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+    await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
 
     expect(mondayClient.createItem).not.toHaveBeenCalled();
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(111, 'adopted-9', {
@@ -181,7 +181,7 @@ describe('processOrderQueueBatch', () => {
     const mondayClient = fakeMonday();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder({ email: null })), mondayClient, config });
+      await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder({ email: null })), mondayClient, config });
       expect(mondayClient.createItem).toHaveBeenCalledWith(111, expect.any(String), expect.not.objectContaining({ connect_col: expect.anything() }));
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('no donor link'));
       expect(orderStore.updateStatus).not.toHaveBeenCalledWith('442719216', 'queued', expect.anything());
@@ -197,7 +197,7 @@ describe('processOrderQueueBatch', () => {
     const message = fakeMessage();
     try {
       const free = testOrder({ costs: { gross: { currency: 'USD', value: 0, major_value: '0.00', display: '$0.00' } } });
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(free), mondayClient, config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(free), mondayClient, config });
       expect(mondayClient.createItem).not.toHaveBeenCalled();
       expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
       // No donor lookup either — nothing to link.
@@ -213,7 +213,7 @@ describe('processOrderQueueBatch', () => {
     const orderStore = fakeStore(orderRow());
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder({ status: 'pending' })), mondayClient: fakeMonday(), config });
+      await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder({ status: 'pending' })), mondayClient: fakeMonday(), config });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'skipped', expect.objectContaining({ error: expect.stringContaining('"pending"') }));
     } finally {
       log.mockRestore();
@@ -244,7 +244,7 @@ describe('processOrderQueueBatch', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const message = fakeMessage();
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(null), mondayClient, config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(null), mondayClient, config });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: 'order not found in Eventbrite (HTTP 404)' });
       expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
       expect(message.ack).toHaveBeenCalled();
@@ -260,7 +260,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage();
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient, mondayClient: fakeMonday(), config: testConfig({ orderIdColumn: PLACEHOLDER_COLUMN_ID }) });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient, mondayClient: fakeMonday(), config: testConfig({ orderIdColumn: PLACEHOLDER_COLUMN_ID }) });
       expect(eventbriteClient.getOrder).not.toHaveBeenCalled();
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: expect.stringContaining('Eventbrite Order ID') });
       expect(message.retry).toHaveBeenCalled();
@@ -276,7 +276,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage();
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient, mondayClient, config: testConfig({ amountColumn: PLACEHOLDER_COLUMN_ID, dateColumn: PLACEHOLDER_COLUMN_ID }) });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient, mondayClient, config: testConfig({ amountColumn: PLACEHOLDER_COLUMN_ID, dateColumn: PLACEHOLDER_COLUMN_ID }) });
       expect(eventbriteClient.getOrder).not.toHaveBeenCalled();
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: expect.stringMatching(/amountColumn.*dateColumn/) });
       expect(message.retry).toHaveBeenCalled();
@@ -291,7 +291,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage('442719216', 2);
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient, mondayClient: fakeMonday(), config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient, mondayClient: fakeMonday(), config });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: 'eventbrite api: get order 442719216 failed with HTTP 503' });
       expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 120 });
       expect(message.ack).not.toHaveBeenCalled();
@@ -306,7 +306,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage();
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: 'monday API: HTTP 500' });
       expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
     } finally {
@@ -318,7 +318,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage('nope');
     try {
-      await processOrderQueueBatch([message], { orderStore: fakeStore(null), eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient: fakeMonday(), config });
+      await processOrderQueueBatch([message], { orderStore: fakeStore(null), eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient: fakeMonday(), config });
       expect(message.retry).toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
@@ -330,7 +330,7 @@ describe('processOrderQueueBatch', () => {
     const mondayClient = fakeMonday();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config: testConfig({}, { 'donations:live': null }) });
+      await processOrderQueueBatch([fakeMessage()], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config: testConfig({}, { 'donations:live': null }) });
       expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();
       expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: expect.stringContaining('donations:live') });
     } finally {
@@ -344,7 +344,7 @@ describe('processOrderQueueBatch', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const message = fakeMessage();
     try {
-      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')), getEvent: vi.fn(), getAttendee: vi.fn() }, mondayClient: fakeMonday(), config });
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')), getEvent: vi.fn(), getAttendee: vi.fn() }, mondayClient: fakeMonday(), config });
       expect(message.retry).toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('could not record failure'));
     } finally {
@@ -361,13 +361,54 @@ describe('retry delay', () => {
     try {
       for (const attempts of [1, 2, 3, 8]) {
         const message = fakeMessage('442719216', attempts);
-        await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')), getEvent: vi.fn(), getAttendee: vi.fn() }, mondayClient: fakeMonday(), config });
+        await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: { getOrder: vi.fn().mockRejectedValue(new Error('boom')), getEvent: vi.fn(), getAttendee: vi.fn() }, mondayClient: fakeMonday(), config });
         delays.push(message.retry.mock.calls[0][0].delaySeconds);
       }
     } finally {
       errorSpy.mockRestore();
     }
     expect(delays).toEqual([60, 120, 240, 3600]);
+  });
+});
+
+// #75: a rejection of the request itself fails the same way on every retry, so it is recorded and
+// acked instead of retried for four days into the DLQ.
+describe('terminal failures', () => {
+  const run = async (mondayClient: MondayClient, orderStore = fakeStore(orderRow())) => {
+    const message = fakeMessage('442719216', 1);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+    } finally {
+      errorSpy.mockRestore();
+    }
+    return { message, orderStore };
+  };
+
+  it('records a column value Monday rejects as not retried and acks the message', async () => {
+    const { message, orderStore } = await run(fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: invalid value', { httpStatus: 200, code: 'ColumnValueException' })) }));
+
+    expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: `${TERMINAL_PREFIX}monday API: invalid value` });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  it('still retries a rejected token (HTTP 401) — fixing the secret heals the backlog', async () => {
+    const { message } = await run(fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 401', { httpStatus: 401 })) }));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('retries a terminal failure it could not record, so it is not lost silently', async () => {
+    const orderStore = fakeStore(orderRow());
+    (orderStore.updateStatus as any).mockImplementation(async (_id: string, status: string) => {
+      if (status === 'failed') throw new Error('D1 down');
+    });
+    const { message } = await run(fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 400', { httpStatus: 400 })) }), orderStore);
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
   });
 });
 
@@ -386,7 +427,7 @@ describe('write switch', () => {
     const orderStore = fakeStore(row);
     const mondayClient = fakeMonday();
     const eventbriteClient = fakeEventbrite(testOrder());
-    return { orderStore, mondayClient, eventbriteClient, deps: { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient, mondayClient, config } };
+    return { orderStore, mondayClient, eventbriteClient, deps: { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient, mondayClient, config } };
   }
 
   function skipLines(log: { mock: { calls: unknown[][] } }): Record<string, any>[] {
@@ -507,7 +548,7 @@ describe('write switch', () => {
 
 describe('message kinds', () => {
   const deps = (orderStore: OrderStore, eventStore = fakeEventStore(), attendeeStore = fakeAttendeeStore()) => ({
-    orderStore, eventStore, attendeeStore, queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient: fakeMonday(), config,
+    orderStore, eventStore, attendeeStore, queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient: fakeMonday(), config,
   });
 
   it('treats a message with no kind as an order (queued before the union existed)', async () => {

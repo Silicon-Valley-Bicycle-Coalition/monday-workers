@@ -2,6 +2,7 @@ import type { OrderStore } from '../db/orders';
 import type { EventStore } from '../db/events';
 import type { AttendeeStore } from '../db/attendees';
 import type { QueueLike } from '../webhook/route';
+import type { BatchSender } from '../util/sendBatch';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
 import type { EventbriteSyncConfig } from '../types';
@@ -10,6 +11,7 @@ import { isItemGone } from '../monday/itemGone';
 import { mapOrder } from '../mapping/order';
 import { matchDonor } from '../matching/donors';
 import { errorMessage } from '../util/errorMessage';
+import { isTerminalError } from '../errors';
 import { linkedItemId } from '../util/itemId';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
@@ -27,7 +29,11 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-const REQUIRED_WRITE_COLUMNS = ['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
+// On the ledger row's error for a failure that was acked instead of retried (src/errors.ts), so
+// it reads differently from one still being retried or dead-lettered.
+export const TERMINAL_PREFIX = 'not retried: ';
+
+const REQUIRED_WRITE_COLUMNS =['amountColumn', 'statusColumn', 'dateColumn', 'donorEmailColumn', 'donorLinkColumn'] as const;
 
 // `writeStamp` (flags.ts): set by the producer when the write switch was `off` at ingest. A body
 // enqueued before the switch existed has no such key and is live.
@@ -54,12 +60,14 @@ export type AttendeeQueueMessage = {
 
 export type WriteQueueMessage = OrderQueueMessage | EventQueueMessage | AttendeeQueueMessage;
 
+export type ConsumerQueue = QueueLike & BatchSender<WriteQueueMessage>;
+
 export interface ProcessBatchDeps {
   orderStore: OrderStore;
   eventStore: EventStore;
   attendeeStore: AttendeeStore;
-  // For fanning an event out into per-attendee messages.
-  queue: QueueLike;
+  // send: an attendee asking for its event. sendBatch: an event fanning out to its attendees.
+  queue: ConsumerQueue;
   eventbriteClient: EventbriteClient;
   mondayClient: MondayClient;
   config: EventbriteSyncConfig;
@@ -94,20 +102,26 @@ export async function processOrderQueueBatch(messages: QueueMessageLike<WriteQue
       else await processOne(body.orderId, deps);
       message.ack();
     } catch (err) {
-      const errMsg = errorMessage(err);
-      console.error(`eventbrite-sync consumer: failed to process ${label}: ${errMsg}`);
+      const terminal = isTerminalError(err);
+      const errMsg = terminal ? `${TERMINAL_PREFIX}${errorMessage(err)}` : errorMessage(err);
+      console.error(`eventbrite-sync consumer: failed to process ${label}: ${errMsg}${terminal ? ' — fix the cause, then re-drive with the backfill script' : ''}`);
       // Recording the failure is bookkeeping; a D1 error here must not take the retry decision
       // down with it (the throw would fail the whole batch and retry every message immediately).
+      let recorded = false;
       try {
         if (body.kind === 'event') await deps.eventStore.updateStatus(body.eventId, 'failed', { error: errMsg });
         else if (body.kind === 'attendee') await deps.attendeeStore.updateStatus(body.attendeeId, 'failed', { error: errMsg });
         else await deps.orderStore.updateStatus(body.orderId, 'failed', { error: errMsg });
+        recorded = true;
       } catch (recordErr) {
         console.error(`eventbrite-sync consumer: could not record failure for ${label}: ${errorMessage(recordErr)}`);
       }
-      // Every failure here is retryable, as before; only the delay is shared now — 1 minute
-      // doubling to an hour, across wrangler.jsonc's max_retries of 100 (about four days).
-      message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
+      // A terminal failure (#75) is acked once it's on the row: retrying the same request can only
+      // fail the same way. If it couldn't be recorded, retry so it isn't lost silently. Anything
+      // else retries with the shared delay — 1 minute doubling to an hour, across wrangler.jsonc's
+      // max_retries of 100 (about four days).
+      if (terminal && recorded) message.ack();
+      else message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
   }
 }
