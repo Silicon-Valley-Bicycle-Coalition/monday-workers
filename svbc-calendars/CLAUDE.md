@@ -35,6 +35,7 @@ routes, 24h for the calendar routes — with a KV last-known-good fallback per s
 - TypeScript with `@cloudflare/workers-types`. Wrangler handles transpilation — no separate build step.
 - Tests use `@cloudflare/vitest-pool-workers` with `fetchMock` to intercept outbound calls. Tests live alongside their source files (`*.test.ts`) and in `test/`.
 - `EVENTBRITE_TOKEN` and `SLACK_WEBHOOK_URL` are secrets, set via `npx wrangler secret put`, never stored in code.
-- CORS allows `bikesiliconvalley.org` and `localhost` origins.
+- CORS is `Access-Control-Allow-Origin: *` on every response — never reflect the request's `Origin`, since cached responses carry no `Vary: Origin` (#72).
+- Public error bodies stay generic (`/events` 502s, `/status.json` omits `lastError`); upstream detail goes to `console.error`, KV and the Slack alert only.
 - Full route list (from `src/index.ts`): `OPTIONS` → CORS preflight (204); any non-`GET` method → 405; `GET /widget` → embeddable HTML widget; `GET /` or `GET /events` → Eventbrite JSON API; `GET /calendars` → staff listing page; `GET /calendars/:id.ics` → one source's ICS feed; `GET /status.json` → live per-source health (never cached); everything else → 404. A daily cron (`scheduled` handler) proactively warms every source into `CALENDAR_KV`.
 - `/widget` accepts query params: `max`, `images`, `descriptions`.

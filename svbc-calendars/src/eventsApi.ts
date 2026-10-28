@@ -1,6 +1,7 @@
 import type { Env, NormalizedEvent } from './types';
 import { fetchEventbriteEvents } from './adapters/eventbrite';
 import rawOrganizers from '../config/eventbriteOrganizers.json';
+import { errorMessage } from './util/errorMessage';
 
 interface EventbriteOrganizerConfig {
   id: string;
@@ -60,10 +61,9 @@ interface EventsResponse {
   total: number;
 }
 
+/** Deliberately just a generic message: the upstream detail is logged, never returned publicly (#72). */
 interface ErrorResponse {
   error: string;
-  status?: number;
-  detail?: string;
 }
 
 function jsonResponse(body: EventsResponse | ErrorResponse, status = 200, extraHeaders: Record<string, string> = {}): Response {
@@ -93,10 +93,6 @@ async function fetchOrganizerEvents(organizerId: string, token: string): Promise
   return fetchEventbriteEvents(organizerSource(organizerId), token, 50);
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 export async function fetchEventsResponse(env: Env, organizerId: string | null, pageSize: number, cacheTTL: number): Promise<Response> {
   let events: NormalizedEvent[];
   // True when the merged feed is missing an organizer that failed: still served, never cached.
@@ -105,7 +101,8 @@ export async function fetchEventsResponse(env: Env, organizerId: string | null, 
     try {
       events = await fetchOrganizerEvents(organizerId, env.EVENTBRITE_TOKEN);
     } catch (err) {
-      return jsonResponse({ error: 'Eventbrite API error', detail: errorMessage(err) }, 502);
+      console.error(`svbc-calendars: /events failed for organizer ${organizerId}: ${errorMessage(err)}`);
+      return jsonResponse({ error: 'Eventbrite API error' }, 502);
     }
   } else {
     // One organizer failing — e.g. deleted on Eventbrite, as "bike parking" (121346572357) was by
@@ -115,7 +112,8 @@ export async function fetchEventsResponse(env: Env, organizerId: string | null, 
     const failures = settled.flatMap((result, i) =>
       result.status === 'rejected' ? [`organizer ${ALLOWED_ORGANIZERS[i]}: ${errorMessage(result.reason)}`] : []);
     if (failures.length === settled.length) {
-      return jsonResponse({ error: 'Eventbrite API error', detail: failures.join('; ') }, 502);
+      console.error(`svbc-calendars: /events failed for every organizer: ${failures.join('; ')}`);
+      return jsonResponse({ error: 'Eventbrite API error' }, 502);
     }
     for (const failure of failures) {
       console.error(`svbc-calendars: /events served without ${failure}`);
