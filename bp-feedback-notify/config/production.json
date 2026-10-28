@@ -3,5 +3,10 @@
   "fromAddress": "noreply@mail.bikesiliconvalley.org",
   "fromName": "SVBC Bike Valet",
   "logoUrl": "https://member.bikesiliconvalley.org/email/logo.png",
+  "board": {
+    "boardId": "18395469629",
+    "eventNameColumnId": "short_textdqu5gf2d",
+    "organizerEmailColumnId": "short_text3z8szxke"
+  },
   "sendStatus": null
 }
