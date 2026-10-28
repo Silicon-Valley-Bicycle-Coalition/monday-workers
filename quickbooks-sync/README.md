@@ -2,7 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/quickbooks-sync.md`](../docs/uat/quickbooks-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
+**Status: postponed indefinitely (decided 2026-10-28).** SVBC isn't shipping this at migration.
+The sandbox write switch is `off` (production was never turned on) and CI no longer deploys the
+sandbox Worker on merge; nothing below is scheduled. Before resuming, re-read "Sandbox environment"
+and the deploy checklist history, then set `quickbooks-sync:writes` deliberately.
+
+**Status before postponement:** Built — rules out the Monday Ultimate-plan upgrade and the QuickBooks Complete
 Marketplace app (both carry an ongoing cost this avoids). 133 tests passing across 19 files;
 webhook routes, OAuth token store, rate limiting, and both sync directions are implemented. The
 sandbox environment's Cloudflare side (D1, queues, `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`) is
@@ -10,7 +15,7 @@ provisioned and verified (2026-09-22), and the Intuit app-review question is res
 still not connected to a real QuickBooks company — that needs an Intuit developer account and app
 credentials, a staff/admin task (see "Sandbox environment" and "Open question" below), which
 hasn't happened yet.
-**Priority:** Post-migration, non-blocking — nothing here affects Salesforce cutover readiness.
+**Priority:** Postponed indefinitely — nothing here affects Salesforce cutover readiness.
 **Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1, same shape as `funraise-sync`.
 
