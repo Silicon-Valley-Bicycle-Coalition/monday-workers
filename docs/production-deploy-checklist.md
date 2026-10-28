@@ -17,7 +17,7 @@ schedule — its checklist is [its README's Deploy section](../svbc-calendars/RE
 
 **Status as of 2026-10-06:** nothing below is done unless marked (Phase 1 items resolved
 2026-09-29, 2026-10-01 and 2026-10-06 are ticked). `salesforce-import`'s
-`cutoverDateISO` is `2026-10-30` (moved from `2026-10-09` on 2026-10-09, from `2026-10-16` on 2026-10-19, then from `2026-10-23` on 2026-10-26, with the cutover weekend; `donation-rollups` `membership.fromISO` moves with it). `benevity-import` `minDisbursementDate` doesn't follow the weekend: it's the day after the Period Ending of the last disbursement keyed into Salesforce, confirmed at the freeze. Phase 3/4 order brought in line with the private cutover
+`cutoverDateISO` is `2026-10-30` (moved from `2026-10-09` on 2026-10-09, from `2026-10-16` on 2026-10-19, then from `2026-10-23` on 2026-10-26, with the cutover weekend; `donation-rollups` `membership.fromISO` moves with it). `benevity-import` `minDisbursementDate` is `2026-10-30` too (from 2026-10-28): the freeze date, not a confirmed Period Ending, so a disbursement keyed before the freeze can't be imported twice and any unkeyed one before it is reviewed from its "Skipped, not imported" worklist item. Phase 3/4 order brought in line with the private cutover
 runbook (`docs/23-cutover-runbook.md`, step 4.0) on 2026-09-30: `donation-rollups` now deploys
 in Phase 3, before `configure` and the go/no-go.
 
