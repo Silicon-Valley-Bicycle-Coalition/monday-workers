@@ -75,6 +75,10 @@ export interface QuickbooksSyncConfig {
     // the item itself — the create-loop guard reads it. null until staff add the column; while
     // null, Monday -> QuickBooks Customer creates are refused (they can't be made loop-safe).
     customerQbIdColumn: string | null;
+    // The QuickBooks home currency (ISO 4217, "USD"), which the Monday amount columns are in. A
+    // record whose CurrencyRef names any other currency is not written (#76): its amounts are in
+    // that currency, so it fails terminally for a human instead of landing on Monday as dollars.
+    currency: string;
   };
 }
 

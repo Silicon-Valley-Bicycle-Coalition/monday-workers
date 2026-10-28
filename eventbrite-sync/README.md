@@ -203,6 +203,10 @@ fork that wants organizer revenue net of Eventbrite's fees sets `amountSource: "
 **Free orders** (`gross` 0, or no `costs`) with no Donations item yet are skipped — a free
 registration is not a gift. An order that already has an item is always updated even at 0, so a
 refund can never be masked by the skip. A **refunded** order with no item yet is skipped too: nothing was ever recorded as received, so there is nothing to reverse. If staff delete or archive an order's item, a later update is recorded `failed` ("deleted or archived") and acked, not retried or recreated.
+**Currency (#76).** The Amount column is in `currency` (`"USD"`). An order whose cost is in any
+other currency is never written as if it were dollars: once past the skips above, it is recorded
+`failed` ("order currency … is not USD") and acked, not retried, with nothing written to Monday —
+enter it on the Donations board by hand at the converted amount.
 
 ## Donor matching
 
@@ -396,7 +400,8 @@ hand.
 * **Historical orders** come over from Salesforce, not from here: `salesforce-import` migrates
   every eb4sf ticket gift (with its order id where Salesforce linked one, i.e. all of 2026). Don't
   point the backfill at older events — see "Adopt before create".
-* **Multi-currency.** `currency` is stored, not converted; SVBC's events are USD.
+* **Multi-currency.** Not converted: a non-`currency` order is recorded `failed` for a human (see
+  "Amount"), with its currency on the ledger row. SVBC's events are USD.
 
 ## Sandbox environment — inbound only, no outbound data
 

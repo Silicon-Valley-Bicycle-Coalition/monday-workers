@@ -7,6 +7,7 @@ const REQUIRED_QUICKBOOKS_SYNC_KEYS = [
   'linkColumn',
   'customerCreateFieldMap',
   'customerQbIdColumn',
+  'currency',
 ] as const;
 const REQUIRED_ENTITY_KEYS = ['customer', 'invoice', 'product'] as const;
 
@@ -61,6 +62,10 @@ export function validateConfig(raw: unknown): QuickbooksSyncConfig {
   const qbIdColumn = quickbooksSync.customerQbIdColumn;
   if (qbIdColumn !== null && (typeof qbIdColumn !== 'string' || qbIdColumn === '')) {
     throw new Error('config: "quickbooksSync.customerQbIdColumn" must be a Monday column id or null');
+  }
+
+  if (typeof quickbooksSync.currency !== 'string' || !/^[A-Z]{3}$/.test(quickbooksSync.currency)) {
+    throw new Error('config: "quickbooksSync.currency" must be the QuickBooks home currency as an ISO 4217 code, such as "USD"');
   }
 
   const columnMap = requireObject(quickbooksSync.columnMap, 'quickbooksSync.columnMap');

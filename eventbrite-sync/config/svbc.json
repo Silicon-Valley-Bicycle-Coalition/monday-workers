@@ -19,6 +19,7 @@
     "statusColumn": "REPLACE_WITH_COLUMN_ID",
     "dateColumn": "REPLACE_WITH_COLUMN_ID",
     "amountSource": "gross",
+    "currency": "USD",
     "skipFreeOrders": true,
     "statusLabelMap": {
       "placed": "Received",
