@@ -40,6 +40,10 @@ const REFRESH_LEASE_TTL_MS = 30_000;
 // apart, before giving up with a (queue-retryable) error.
 const LEASE_WAIT_ATTEMPTS = 5;
 const LEASE_WAIT_MS = 500;
+// Per-request bound on every Intuit call (#73). Half the lease TTL, so a hung token refresh is cut
+// off with room left for the compare-and-swap save before the lease can expire under it — a
+// refresh that outlived its lease could let a second refresher rotate the token again.
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type AccessToken = { realmId: string; accessToken: string };
 
@@ -140,6 +144,7 @@ export class HttpQuickBooksClient implements QuickBooksClient {
           Accept: 'application/json',
         },
         body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokens.refreshToken }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -182,6 +187,7 @@ export class HttpQuickBooksClient implements QuickBooksClient {
     const path = QB_ENTITY_PATH[entityType];
     const response = await fetch(`${this.apiBaseUrl}/${realmId}/${path}/${qbId}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw await apiError(response, `fetching ${entityType} ${qbId}`);
@@ -206,6 +212,9 @@ export class HttpQuickBooksClient implements QuickBooksClient {
         Accept: 'application/json',
       },
       body: JSON.stringify(fields),
+      // A timed-out create may still have committed; the retry reuses requestId, so Intuit
+      // returns that Customer instead of making a second.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) {
       throw await apiError(response, 'creating customer');

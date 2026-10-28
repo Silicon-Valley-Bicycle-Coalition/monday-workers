@@ -76,6 +76,11 @@ export interface MailchimpClient {
 
 let sinkLogged = false;
 
+// Per-request bound on every Mailchimp call (#73): the queues run at max_concurrency 1, so one hung
+// request would otherwise stall every message behind it. Matches the Monday client's
+// requestTimeoutMs. A timeout throws a plain TimeoutError, which the consumers retry.
+const REQUEST_TIMEOUT_MS = 20_000;
+
 export class HttpMailchimpClient implements MailchimpClient {
   constructor(
     private apiBaseUrl: string,
@@ -87,6 +92,10 @@ export class HttpMailchimpClient implements MailchimpClient {
     // which doesn't care about `this`) — only surfaced provisioning the sandbox 2026-09-22.
     private fetchFn: typeof fetch = fetch.bind(globalThis),
   ) {}
+
+  private request(url: string, init: RequestInit): Promise<Response> {
+    return this.fetchFn(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  }
 
   // Mailchimp Marketing API auth: HTTP Basic with any non-empty username and the API
   // key as the password (documented behavior, not a real credential pair).
@@ -105,7 +114,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     // subscribed every Donor with an email on their first column change — including ones
     // who never opted in (issue #28). PATCH 404s instead, and the status of an existing
     // member (subscribed, unsubscribed, cleaned…) is never sent, so never changed.
-    const response = await this.fetchFn(
+    const response = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}`,
       {
         method: 'PATCH',
@@ -128,7 +137,7 @@ export class HttpMailchimpClient implements MailchimpClient {
       ...managed.filter((name) => !desired.includes(name)).map((name) => ({ name, status: 'inactive' as const })),
     ];
     if (tags.length === 0) return;
-    const response = await this.fetchFn(
+    const response = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}/tags`,
       {
         method: 'POST',
@@ -143,13 +152,13 @@ export class HttpMailchimpClient implements MailchimpClient {
     const memberUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}`;
     // Look first: Mailchimp refuses a status change on a cleaned address, and an unsubscribed
     // one needs no write.
-    const lookup = await this.fetchFn(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
+    const lookup = await this.request(`${memberUrl}?fields=status`, { headers: { Authorization: this.authHeader() } });
     if (lookup.status === 404) return 'not-in-audience';
     if (!lookup.ok) throw await httpError('unsubscribeMember lookup', lookup);
     const { status } = (await lookup.json()) as { status: string };
     if (status === 'unsubscribed' || status === 'cleaned') return 'already-unsubscribed';
 
-    const response = await this.fetchFn(memberUrl, {
+    const response = await this.request(memberUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
       body: JSON.stringify({ status: 'unsubscribed' }),
@@ -159,7 +168,7 @@ export class HttpMailchimpClient implements MailchimpClient {
   }
 
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {
-    const response = await this.fetchFn(
+    const response = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}?fields=status,interests`,
       { headers: { Authorization: this.authHeader() } },
     );
@@ -170,7 +179,7 @@ export class HttpMailchimpClient implements MailchimpClient {
   }
 
   async listInterests(categoryIds: readonly string[]): Promise<MailchimpInterest[]> {
-    const categoriesResponse = await this.fetchFn(
+    const categoriesResponse = await this.request(
       `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories?count=100`,
       { headers: { Authorization: this.authHeader() } },
     );
@@ -184,7 +193,7 @@ export class HttpMailchimpClient implements MailchimpClient {
 
     const out: MailchimpInterest[] = [];
     for (const category of categoriesJson.categories.filter((c) => categoryIds.includes(c.id))) {
-      const interestsResponse = await this.fetchFn(
+      const interestsResponse = await this.request(
         `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories/${category.id}/interests?count=100`,
         { headers: { Authorization: this.authHeader() } },
       );
