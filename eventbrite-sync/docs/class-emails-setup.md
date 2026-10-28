@@ -1,5 +1,11 @@
 # Class emails: Monday-side setup checklist
 
+> **Not used for SVBC's production setup (decided 2026-10-28).** Monday can't send as the
+> shared address the class emails come from (a Google Group), so SVBC sends them by hand with
+> Gmail mail merge instead, using lists from Eventbrite or from Event Registrations' Attendance
+> column. The Worker's attendee and check-in feed is still useful for that column. This
+> checklist is kept for anyone running the Worker with a Monday-connected sending mailbox.
+
 The `eventbrite-sync` Worker sets **Follow-up Email** on each Event Registrations item the morning
 after a class (see the attendees spec,
 `docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md`). Everything that
