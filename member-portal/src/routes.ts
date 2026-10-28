@@ -21,8 +21,8 @@ import { checkLoginRateLimit } from './ratelimit';
 import { requestLogin } from './auth/requestLogin';
 import { verifyLogin } from './auth/verifyLogin';
 import { loadPortalData } from './portal/loadPortalData';
-import { checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
-import { sha256Hex } from './crypto/hash';
+import { CONFIRM_LOGIN_SCRIPT, checkEmailView, confirmLoginView, errorView, loginFormView, page, portalView, unavailableView } from './views';
+import { sha256Base64, sha256Hex } from './crypto/hash';
 import { secretsMatch } from './crypto/secretsMatch';
 import {
   changeRequestsEnabled,
@@ -62,7 +62,7 @@ import type { Locale } from './i18n/locales';
 import { t } from './i18n/t';
 import { decodeFavicon } from './assets/favicon';
 import { decodeEmailLogoPng } from './assets/emailLogo';
-import { securityHeaders } from './securityHeaders';
+import { DEFAULT_CSP, securityHeaders } from './securityHeaders';
 import { errorText } from './logSafe';
 import { logSkip } from './flags';
 import { stampedQueue, type BatchSkipContext } from './writeSwitch';
@@ -131,6 +131,13 @@ const CSRF_EXEMPT = new Set(['POST /webhooks/monday/letters']);
 // A POST that writes, under any mode but `on`: a friendly page, 503 so nothing caches it.
 function unavailable(c: Context, locale: Locale, authenticated: boolean) {
   return c.html(page(t(locale, 'title.unavailable') + ' — ' + t(locale, 'site.title'), unavailableView(locale, authenticated), locale, { authenticated }), 503);
+}
+
+// Hashed once per isolate: the input is a constant, so sharing it across requests is safe.
+let confirmLoginScriptHashPromise: Promise<string> | null = null;
+function confirmLoginScriptHash(): Promise<string> {
+  confirmLoginScriptHashPromise ??= sha256Base64(CONFIRM_LOGIN_SCRIPT).then((b64) => `sha256-${b64}`);
+  return confirmLoginScriptHashPromise;
 }
 
 export function createApp(deps: AppDeps) {
@@ -346,12 +353,18 @@ export function createApp(deps: AppDeps) {
   // inbound email, often executing its JS. Consuming the single-use token on this GET burned it
   // before the donor ever clicked (issue #31), so the GET is inert: it renders a button that
   // POSTs the token back to the route below, and only that POST consumes it.
-  app.get('/auth/callback', (c) => {
+  //
+  // The token arrives in the URL fragment (issue #61: in the query string it reached Workers
+  // Logs, and a letter link lives up to 168 hours), so the server never sees it here; the page's
+  // script copies it into the form. A ?token= link is one sent before that change and still
+  // renders as before. Drop that branch once every such link has expired: letterLinkTtlHours
+  // after the #61 deploy.
+  app.get('/auth/callback', async (c) => {
     const langParam = c.req.query('lang');
     const lang = langParam !== undefined && isLocale(langParam) ? langParam : null;
     const locale = lang ?? detectLocale(c);
-    const token = c.req.query('token');
-    if (!token) {
+    const legacyToken = c.req.query('token');
+    if (legacyToken === '') {
       return c.html(page(t(locale, 'title.error') + ' — ' + t(locale, 'site.title'), errorView('error.invalidLink', locale), locale));
     }
 
@@ -362,11 +375,13 @@ export function createApp(deps: AppDeps) {
     // still letting the browser send a real Origin on this page's own same-origin POST, which the
     // CSRF check requires (older Safari sends no Sec-Fetch-Site to fall back on).
     c.header('Referrer-Policy', 'same-origin');
+    // The page holds a live token in its DOM, so the one script that may run on it is ours.
+    c.header('Content-Security-Policy', `${DEFAULT_CSP}; script-src '${await confirmLoginScriptHash()}'`);
     // No footer language picker here: it redirects to location.pathname only, which would drop
     // the token (and the token must never be copied into the /lang redirect URL). The page
     // already renders in the link's own `lang`.
     return c.html(
-      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(token, lang, locale), locale, {
+      page(t(locale, 'title.confirmLogin') + ' — ' + t(locale, 'site.title'), confirmLoginView(legacyToken ?? null, lang, locale), locale, {
         languagePicker: false,
       })
     );

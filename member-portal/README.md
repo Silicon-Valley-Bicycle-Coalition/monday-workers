@@ -202,6 +202,16 @@ Routing destination). A live login-link request for a real sandbox People record
   token (not the raw token) so a D1 read doesn't itself leak a usable credential. Membership-card tokens are the exception — stored in plaintext because the card's
   QR code is redrawn from them on every dashboard load; see "v3 — Digital membership card" for
   why that tradeoff was kept.
+* The emailed login link carries its token in the URL fragment
+  (`/auth/callback?lang=en#token=…`, issue #61): browsers never send a fragment, so the token stays out of request URLs and Workers Logs, where
+  anyone with log access could otherwise redeem an unclicked link (a letter link lives a week).
+  `GET /auth/callback` stays inert — an inline script copies the token into the confirm form and
+  strips it from the address bar, without submitting, under a CSP that allows only that script by
+  hash; the `POST` consumes it. Without JavaScript the form posts no token and the donor sees the
+  invalid-link page. Links sent before #61 (`?token=…`) still work until they expire; drop that
+  branch in `routes.ts` once `auth.letterLinkTtlHours` has passed since the #61 deploy. Workers
+  Logs still hold other URL secrets (`/webhooks/monday/letters?secret=`, `/verify/<card token>`),
+  so keep log access (Workers observability, Logpush destinations) to the people who need it.
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and

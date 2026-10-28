@@ -14,6 +14,8 @@ import { SUPPORTED_LOCALES } from './i18n/locales';
 import { t } from './i18n/t';
 import type { WriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
+import { CONFIRM_LOGIN_SCRIPT } from './views';
+import { DEFAULT_CSP } from './securityHeaders';
 
 function inMemoryCardTokenStore(): CardTokenStore {
   const byDonor = new Map<string, string>();
@@ -275,8 +277,9 @@ function gateFor(mode: WriteMode): () => Promise<BatchSkipContext> {
   return async () => ({ worker: 'member-portal', environment: 'production', mode, logLevel: 'normal', piiKeys: [] });
 }
 
+// Issue #61: the emailed link carries the token in its fragment.
 function extractToken(loginUrl: string): string {
-  return new URL(loginUrl).searchParams.get('token') as string;
+  return new URLSearchParams(new URL(loginUrl).hash.slice(1)).get('token') as string;
 }
 
 // The second half of the magic-link flow: what the "Continue to your portal" button on GET
@@ -541,8 +544,80 @@ describe('GET /auth/callback confirmation page', () => {
     expect(html).toContain('&quot;&gt;&lt;script&gt;');
   });
 
-  it('shows the invalid-link page when the token is missing', async () => {
-    const res = await createApp(makeDeps()).request('/auth/callback');
+  it('shows the invalid-link page for an empty legacy ?token=', async () => {
+    const res = await createApp(makeDeps()).request('/auth/callback?token=');
+    expect(await res.text()).toContain('This link is invalid');
+  });
+});
+
+// Issue #61: the token in a ?token= query string reached Workers Logs (full request URLs). New
+// links put it in the fragment, which the browser never sends; the page's script copies it into
+// the form. The legacy ?token= tests above cover links already sitting in inboxes.
+describe('GET /auth/callback with the token in the fragment', () => {
+  async function fragmentPage(path = '/auth/callback?lang=en') {
+    const res = await createApp(makeDeps()).request(path, { redirect: 'manual' });
+    return { res, html: await res.text() };
+  }
+
+  it('emails links whose query string holds no token', async () => {
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const app = createApp(makeDeps({ monday, emailSender }));
+    await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' } });
+
+    const url = new URL(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl as string);
+    expect(url.search).toBe('?lang=en');
+    expect(url.hash).toMatch(/^#token=[0-9a-f]{64}$/);
+  });
+
+  it('renders the confirm form with an empty token for the script to fill, plus the hidden invalid-link copy', async () => {
+    const { res, html } = await fragmentPage();
+    expect(res.status).toBe(200);
+    expect(html).toContain('<input type="hidden" name="token" value="" id="confirm-token" />');
+    expect(html).toContain('<input type="hidden" name="lang" value="en" />');
+    expect(html).toContain('<div id="confirm-invalid" hidden>');
+    expect(html).toContain(t('en', 'error.invalidLink'));
+    expect(html).toContain(`<script>${CONFIRM_LOGIN_SCRIPT}</script>`);
+  });
+
+  // Same rule as the legacy page: scanners that execute JS must not be able to log in for the donor.
+  it('fills the form but never submits it', () => {
+    expect(CONFIRM_LOGIN_SCRIPT).not.toMatch(/submit|click|requestSubmit|fetch|XMLHttpRequest/);
+    expect(CONFIRM_LOGIN_SCRIPT).toContain('history.replaceState');
+  });
+
+  it('allows only its own script, pinned by hash, on top of the default CSP', async () => {
+    const { res } = await fragmentPage();
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(CONFIRM_LOGIN_SCRIPT));
+    const hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
+    expect(res.headers.get('content-security-policy')).toBe(`${DEFAULT_CSP}; script-src 'sha256-${hash}'`);
+  });
+
+  it('keeps the same no-store, noindex and same-origin Referrer-Policy as the legacy page', async () => {
+    const { res, html } = await fragmentPage();
+    expect(res.headers.get('referrer-policy')).toBe('same-origin');
+    expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
+    expect(html).not.toContain('action="/lang"');
+  });
+
+  it('logs the donor in with the token the script copied into the form', async () => {
+    const emailSender = { sendLoginEmail: vi.fn().mockResolvedValue(undefined), sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined) };
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const app = createApp(makeDeps({ monday, emailSender }));
+    await app.request('/', { method: 'POST', body: new URLSearchParams({ email: 'donor@example.org' }), headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const loginUrl = new URL(emailSender.sendLoginEmail.mock.calls[0]![0].loginUrl as string);
+
+    // What the browser requests: the path and query only.
+    expect((await app.request(loginUrl.pathname + loginUrl.search)).status).toBe(200);
+    const res = await completeLogin(app, { token: extractToken(loginUrl.href) });
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get('set-cookie')).toContain('session=');
+  });
+
+  it('answers a form posted with no token (JS off, or no fragment) with the invalid-link page', async () => {
+    const res = await completeLogin(createApp(makeDeps()), { token: '' });
     expect(await res.text()).toContain('This link is invalid');
   });
 });
