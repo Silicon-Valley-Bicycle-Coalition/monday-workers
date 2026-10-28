@@ -49,8 +49,8 @@ the consumer asks Monday for the item's `state` to tell them apart:
   or re-link clears `removed_at` on the next recompute, with provenance intact.
 - **Moved to a different owner:** `upsertLink` returns the previous owner. The consumer queues an
   owner-keyed recompute for it (`RecomputeQueueMessage.ownerItemId`), which is never coalesced.
-  The recompute is queued, not run inline, to stay inside the subrequest budget
-  `max_batch_size: 2` is tuned for.
+  The recompute is queued, not run inline, to stay inside the per-invocation subrequest
+  budget `max_batch_size` is sized for.
 
 Deletes only arrive if the board is subscribed to `item_deleted`, so `scripts/setup-webhooks.mjs`
 now also subscribes `item_deleted`, `item_archived` and `item_restored`. Re-run it once on
@@ -187,7 +187,8 @@ backfill) would silently lose recomputes the same way.
    and can be re-driven. Other errors still retry immediately. `max_batch_size` is 2: D1
    queries count against the 50-subrequest budget and a full recompute costs ~16–26, so two
    worst-case recomputes fit and three don't (the default 10 is what produced the three
-   "Too many subrequests" rows). Raise it on Workers Paid.
+   "Too many subrequests" rows). Raised to 10, with `max_concurrency` 3, on Workers Paid
+   (cap 1,000) on 2026-10-28; `wrangler.jsonc` has the sizing and the sandbox measurements.
 5. ~~**Give the DLQ a consumer … add a custodian duty `requeue-stuck`.**~~ **Done (branch
    `feat/rollups-dlq-requeue`):** the Worker now also consumes `donation-rollups-recompute-dlq`
    (`src/consumer/processDeadLetters.ts`): a dead message marks its pending row `failed` with
@@ -739,10 +740,10 @@ can grow to complete cycles faster — not yet done.
 affiliation touched. A single gift touches at most two affiliations (its own, plus one it moved
 away from), so this is nowhere near the Free plan's 50-subrequest cap — but a bulk re-point
 (many gifts changing "Acting for" in one deploy) could approach it if it ever landed in one
-consumer invocation. `wrangler.jsonc`'s consumer `max_batch_size: 2` keeps that bounded — phase 1
-costs `4 + ceil(gifts / 100)` Monday subrequests per message, plus phase 2 adds 3 calls per
-affected affiliation and 1 call per affected person; revisit if Workers Paid changes the batch
-size.
+consumer invocation. `wrangler.jsonc`'s consumer `max_batch_size` (10 on Workers Paid's
+1,000-subrequest cap) keeps that bounded — phase 1 costs `4 + ceil(gifts / 100)` Monday
+subrequests per message, plus phase 2 adds 3 calls per affected affiliation and 1 call per
+affected person.
 
 **Deferred.** Non-money rollups — registrations, volunteer hours, activities — are out of scope
 for this plan; a Person's or Organization's non-giving activity isn't touched here. Also
