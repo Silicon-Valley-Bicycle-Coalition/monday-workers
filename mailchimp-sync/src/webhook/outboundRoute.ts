@@ -3,6 +3,7 @@ import type { PendingOutboundStore } from '../db/pendingOutbound';
 import { validateMondayWebhookBody } from './validateMonday';
 import type { Config, OutboundSyncMessage } from '../types';
 import { stampFor, type WriteMode } from '../flags';
+import { secretsMatch } from '../secret';
 
 export interface OutboundQueueLike {
   send(message: OutboundSyncMessage): Promise<void>;
@@ -35,7 +36,7 @@ export function createOutboundApp(deps: OutboundAppDeps) {
     // Auth first — even the one-time challenge handshake stays behind the secret, since the
     // secret is part of the URL Monday registers and so arrives with the challenge too. An
     // unauthenticated caller learns nothing and enqueues nothing.
-    if (!deps.webhookSecret || c.req.query('secret') !== deps.webhookSecret) {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) {
       return c.json({ ok: false }, 401);
     }
 
