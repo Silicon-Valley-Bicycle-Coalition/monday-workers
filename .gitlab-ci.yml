@@ -7,8 +7,11 @@ stages:
   - test
   - deploy
 
+# Pinned to a minor (not `node:22`) so a new image can't change the build unannounced (#58);
+# patch releases still flow in. 22.18+ is the floor: Workers' .mjs scripts and the copy checks
+# below rely on Node's built-in type stripping.
 default:
-  image: node:22
+  image: node:22.23
 
 # One job per Worker subdirectory — this repo has no root package.json, each
 # Worker is self-contained (see root README/CLAUDE.md). A job only runs when
@@ -40,8 +43,21 @@ default:
 # stays inert until that variable exists, so enabling it never risks a double
 # deploy alongside a working dashboard connection. account_id is already
 # baked into each Worker's wrangler.jsonc, so no other variable is needed.
+#
+# The token must be a Protected + Masked (+ Hidden) CI variable, scoped in
+# Cloudflare to Workers deploys on this account only (#58): Protected keeps it
+# out of merge-request pipelines, which run unprotected branch code, so an MR
+# can't echo it. If you environment-scope it to `sandbox`, check the first main
+# pipeline still runs the job: the `rules:` gate below must see the variable. The
+# `sandbox` environment lets a maintainer protect deploys in Settings > CI/CD >
+# Protected environments; resource_group stops two main pipelines deploying
+# the same Worker at once.
 .deploy_sandbox_job:
   stage: deploy
+  environment:
+    name: sandbox
+    deployment_tier: staging
+  resource_group: "sandbox-$WORKER_DIR"
   cache:
     key: "$WORKER_DIR"
     paths:
