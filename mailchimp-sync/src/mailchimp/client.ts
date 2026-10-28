@@ -66,7 +66,12 @@ export interface MailchimpClient {
    */
   unsubscribeMember(email: string): Promise<UnsubscribeResult>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
-  listInterests(): Promise<MailchimpInterest[]>;
+  /**
+   * Every interest in the given categories. Throws if a category isn't in the audience: a
+   * mistyped id would otherwise read as "no interests", and the reconcile would archive every
+   * Campaigns item.
+   */
+  listInterests(categoryIds: readonly string[]): Promise<MailchimpInterest[]>;
 }
 
 let sinkLogged = false;
@@ -164,16 +169,21 @@ export class HttpMailchimpClient implements MailchimpClient {
     return { status: json.status, interests: json.interests ?? {} };
   }
 
-  async listInterests(): Promise<MailchimpInterest[]> {
+  async listInterests(categoryIds: readonly string[]): Promise<MailchimpInterest[]> {
     const categoriesResponse = await this.fetchFn(
       `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories?count=100`,
       { headers: { Authorization: this.authHeader() } },
     );
     if (!categoriesResponse.ok) throw await httpError('listInterests', categoriesResponse, true);
     const categoriesJson = (await categoriesResponse.json()) as { categories: { id: string }[] };
+    const present = new Set(categoriesJson.categories.map((category) => category.id));
+    const missing = categoryIds.filter((id) => !present.has(id));
+    if (missing.length > 0) {
+      throw new Error(`mailchimp listInterests: interest categories not in the audience: ${missing.join(', ')} (check mailchimp.interestCategoryIds)`);
+    }
 
     const out: MailchimpInterest[] = [];
-    for (const category of categoriesJson.categories) {
+    for (const category of categoriesJson.categories.filter((c) => categoryIds.includes(c.id))) {
       const interestsResponse = await this.fetchFn(
         `${this.apiBaseUrl}/lists/${this.audienceId}/interest-categories/${category.id}/interests?count=100`,
         { headers: { Authorization: this.authHeader() } },

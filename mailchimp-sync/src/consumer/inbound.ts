@@ -103,19 +103,23 @@ async function processOne(email: string, deps: InboundConsumerDeps): Promise<voi
     : [];
 
   const campaignItemIds: string[] = [];
-  let triedReconcile = false;
+  // Set by the first reconcile: the interests in the configured categories.
+  let synced: Set<string> | null = null;
   for (const interestId of subscribedInterestIds) {
     let row = await campaignItemsStore.getByInterestId(interestId);
-    if (row === null && !triedReconcile) {
-      // Genuinely new interest the daily reconciliation cron hasn't picked up yet —
-      // refresh the catalog once within this run instead of failing outright.
-      await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config });
-      triedReconcile = true;
+    if (row === null && synced === null) {
+      // Genuinely new interest the daily reconciliation cron hasn't picked up yet, or one in a
+      // category this Worker doesn't sync — refresh the catalog once within this run to tell.
+      const result = await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config });
+      synced = new Set(result.interestIds);
       row = await campaignItemsStore.getByInterestId(interestId);
     }
     if (row !== null) {
       campaignItemIds.push(row.mondayItemId);
-    } else if (triedReconcile) {
+    } else if (synced !== null && !synced.has(interestId)) {
+      // Outside mailchimp.interestCategoryIds (an old list, say): not a campaign, left off.
+      continue;
+    } else if (synced !== null) {
       // Still unresolvable even after a fresh reconcile — surface this loudly instead of
       // silently under-populating the connect column. Propagates to processInboundBatch's
       // catch, which retries via the Queue and eventually DLQs like any genuine failure.

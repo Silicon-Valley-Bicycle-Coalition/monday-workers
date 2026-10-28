@@ -7,7 +7,7 @@ import type { Config } from '../types';
 
 const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: 999, columns: {} as never },
-  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never },
+  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'] },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 
@@ -36,9 +36,10 @@ describe('reconcileCampaigns', () => {
 
     const result = await reconcileCampaigns({ mailchimpClient, mondayClient, campaignItemsStore, config: CONFIG });
 
+    expect(mailchimpClient.listInterests).toHaveBeenCalledWith(['cat1']);
     expect(mondayClient.createCampaignItem).toHaveBeenCalledWith(999, 'Newsletter');
     expect(campaignItemsStore.upsert).toHaveBeenCalledWith({ interestId: 'int1', mondayItemId: 'item1', name: 'Newsletter', archivedAt: null });
-    expect(result).toEqual({ created: 1, renamed: 0, archived: 0 });
+    expect(result).toEqual({ created: 1, renamed: 0, archived: 0, interestIds: ['int1'] });
   });
 
   it('does not create an item when another concurrent run already claimed the interest', async () => {
@@ -58,7 +59,7 @@ describe('reconcileCampaigns', () => {
     expect(campaignItemsStore.claim).toHaveBeenCalledWith('int1', 'Newsletter', expect.any(String), expect.any(String));
     expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
     expect(campaignItemsStore.upsert).not.toHaveBeenCalled();
-    expect(result).toEqual({ created: 0, renamed: 0, archived: 0 });
+    expect(result).toEqual({ created: 0, renamed: 0, archived: 0, interestIds: ['int1'] });
   });
 
   it('renames the Monday item when a tracked interest is renamed in Mailchimp', async () => {
@@ -77,7 +78,7 @@ describe('reconcileCampaigns', () => {
 
     expect(mondayClient.renameItem).toHaveBeenCalledWith(999, 'item1', 'New Name');
     expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
-    expect(result).toEqual({ created: 0, renamed: 1, archived: 0 });
+    expect(result).toEqual({ created: 0, renamed: 1, archived: 0, interestIds: ['int1'] });
   });
 
   it('archives a tracked Monday item whose interest no longer exists in Mailchimp', async () => {
@@ -93,7 +94,7 @@ describe('reconcileCampaigns', () => {
 
     expect(mondayClient.archiveItem).toHaveBeenCalledWith('item1');
     expect(campaignItemsStore.markArchived).toHaveBeenCalledWith('int1', expect.any(String));
-    expect(result).toEqual({ created: 0, renamed: 0, archived: 1 });
+    expect(result).toEqual({ created: 0, renamed: 0, archived: 1, interestIds: [] });
   });
 
   it('leaves an unchanged, still-present interest alone', async () => {
@@ -113,7 +114,7 @@ describe('reconcileCampaigns', () => {
     expect(mondayClient.createCampaignItem).not.toHaveBeenCalled();
     expect(mondayClient.renameItem).not.toHaveBeenCalled();
     expect(mondayClient.archiveItem).not.toHaveBeenCalled();
-    expect(result).toEqual({ created: 0, renamed: 0, archived: 0 });
+    expect(result).toEqual({ created: 0, renamed: 0, archived: 0, interestIds: ['int1'] });
   });
 
   it('never re-runs a Monday create that may have committed — the transport owns Monday retries (#35)', async () => {

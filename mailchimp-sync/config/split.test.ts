@@ -45,6 +45,12 @@ describe('config split: the Mailchimp sink', () => {
     }
   });
 
+  it('the two configs never share an interest category', () => {
+    for (const id of sandbox.mailchimp.interestCategoryIds) {
+      expect(production.mailchimp.interestCategoryIds).not.toContain(id);
+    }
+  });
+
   it('merge fields and tags are the same in both — they name Mailchimp fields, not ids', () => {
     expect(sandbox.mailchimp.mergeFields).toEqual(production.mailchimp.mergeFields);
     expect(sandbox.mailchimp.tags).toEqual(production.mailchimp.tags);

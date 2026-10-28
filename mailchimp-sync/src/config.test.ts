@@ -16,6 +16,7 @@ function validRaw() {
     mailchimp: {
       apiBaseUrl: 'https://us1.api.mailchimp.com/3.0',
       audienceId: 'abc123',
+      interestCategoryIds: ['cat1'] as unknown,
       mergeFields: {
         memberSince: 'MEMBERSINCE', memberUntil: 'MEMBERUNTIL', membershipTier: 'MTIER',
         membershipStatus: 'MSTATUS', address: 'ADDRESS', totalGiven: 'TOTALGIVE',
@@ -52,6 +53,15 @@ describe('validateConfig', () => {
     const raw = validRaw();
     delete (raw.mailchimp.mergeFields as Record<string, unknown>).address;
     expect(() => validateConfig(raw)).toThrow('config: missing required key "mailchimp.mergeFields.address"');
+  });
+
+  it('requires a non-empty mailchimp.interestCategoryIds', () => {
+    const message = 'config: "mailchimp.interestCategoryIds" must be a non-empty array of category ids';
+    for (const bad of [undefined, [], [''], 'cat1']) {
+      const raw = validRaw();
+      raw.mailchimp.interestCategoryIds = bad;
+      expect(() => validateConfig(raw)).toThrow(message);
+    }
   });
 
   it('rejects a missing mailchimp.tags key', () => {

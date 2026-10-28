@@ -152,12 +152,31 @@ describe('HttpMailchimpClient.listInterests', () => {
       } as Response);
     const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
 
-    const interests = await client.listInterests();
+    const interests = await client.listInterests(['cat1']);
 
     expect(interests).toEqual([
       { categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' },
       { categoryId: 'cat1', interestId: 'int2', name: 'Welcome Drip' },
     ]);
+  });
+
+  it('reads only the configured categories', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ categories: [{ id: 'old' }, { id: 'cat1' }] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ interests: [{ id: 'int1', name: 'Newsletter' }] }) } as Response);
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+
+    expect(await client.listInterests(['cat1'])).toEqual([{ categoryId: 'cat1', interestId: 'int1', name: 'Newsletter' }]);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(fetchFn.mock.calls[1]![0]).toContain('/interest-categories/cat1/interests');
+  });
+
+  it('throws when a configured category is not in the audience, rather than reading none', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ categories: [{ id: 'cat1' }] }) } as Response);
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+
+    await expect(client.listInterests(['cat1', 'typo'])).rejects.toThrow('interest categories not in the audience: typo');
   });
 });
 
@@ -254,7 +273,7 @@ describe('HttpMailchimpClient auth failures', () => {
 
       const reads = new HttpMailchimpClient('https://x', 'k', 'aud', rejected(status));
       await expect(reads.getMemberInterests('a@b.com')).rejects.toBeInstanceOf(MailchimpAuthError);
-      await expect(reads.listInterests()).rejects.toBeInstanceOf(MailchimpAuthError);
+      await expect(reads.listInterests(['cat1'])).rejects.toBeInstanceOf(MailchimpAuthError);
     });
   }
 
@@ -290,7 +309,7 @@ describe('HttpMailchimpClient rate limiting', () => {
 
   it('classifies a 429 from listInterests and the unsubscribe lookup as rate-limited', async () => {
     const client = new HttpMailchimpClient('https://x', 'k', 'aud', rateLimited({ 'Retry-After': '5' }));
-    await expect(client.listInterests()).rejects.toBeInstanceOf(MailchimpRateLimitError);
+    await expect(client.listInterests(['cat1'])).rejects.toBeInstanceOf(MailchimpRateLimitError);
     await expect(client.unsubscribeMember('a@b.com')).rejects.toBeInstanceOf(MailchimpRateLimitError);
   });
 

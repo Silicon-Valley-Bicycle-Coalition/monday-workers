@@ -27,6 +27,9 @@ export interface ReconcileResult {
   created: number;
   renamed: number;
   archived: number;
+  // Every interest in the configured categories, so a caller can tell an interest this Worker
+  // doesn't sync from one it does but couldn't resolve.
+  interestIds: string[];
 }
 
 export async function reconcileCampaigns(deps: ReconcileDeps): Promise<ReconcileResult> {
@@ -36,7 +39,7 @@ export async function reconcileCampaigns(deps: ReconcileDeps): Promise<Reconcile
     throw new Error('config: monday.campaignsBoardId must be set before reconciliation can run');
   }
 
-  const interests = await withRetry(() => mailchimpClient.listInterests(), RECONCILE_RETRY_OPTIONS);
+  const interests = await withRetry(() => mailchimpClient.listInterests(config.mailchimp.interestCategoryIds), RECONCILE_RETRY_OPTIONS);
   const trackedById = new Map((await campaignItemsStore.listActive()).map((row) => [row.interestId, row]));
 
   let created = 0;
@@ -68,5 +71,5 @@ export async function reconcileCampaigns(deps: ReconcileDeps): Promise<Reconcile
     archived++;
   }
 
-  return { created, renamed, archived };
+  return { created, renamed, archived, interestIds: interests.map((interest) => interest.interestId) };
 }

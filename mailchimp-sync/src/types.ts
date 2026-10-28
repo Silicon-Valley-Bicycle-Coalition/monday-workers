@@ -45,6 +45,9 @@ export interface Config {
     audienceId: string;
     mergeFields: MailchimpMergeFieldsConfig;
     tags: MailchimpTagsConfig;
+    // The Interest Categories this Worker syncs to the Campaigns board. Every other category in
+    // the audience is ignored: production's holds decades of old lists (docs/39 §3).
+    interestCategoryIds: string[];
   };
   lifetimeTierValue: string;
   activeStatusValue: string;
