@@ -4,8 +4,8 @@
 
 **Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
 `wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
-(`MONDAY_API_TOKEN`), a Google service account added as a member (Content manager) of the
-destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
+(`MONDAY_API_TOKEN`), a Google service account added as a member (**Contributor**, not Content manager — see
+"Service account key" below) of the destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
 and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
 that Shared Drive (or the Shared Drive's own id). Requires **Workers Paid** (see Cloudflare
 config below). None of the GraphQL queries in `src/monday/client.ts` (item fragments, updates,
@@ -83,7 +83,7 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
   least-privilege principle `../README.md` already states for every other Worker here: a token
   compromise should expose only what this Worker needs, not one person's full account access.
 * **Google Drive API** — a service account that is a **member of a Shared Drive** (role:
-  Content manager), not a personal OAuth grant tied to one staff member's account — a personal
+  **Contributor**), not a personal OAuth grant tied to one staff member's account — a personal
   grant breaks the day that person leaves or changes their password. It must be a Shared Drive,
   not a My Drive folder shared with the service account: [service accounts have no storage
   quota](https://developers.google.com/workspace/drive/api/guides/about-shareddrives), so uploads
@@ -91,6 +91,17 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
   `supportsAllDrives=true` (and the folder lookup `includeItemsFromAllDrives=true&corpora=allDrives`);
   without those, Drive answers 404 for Shared Drive items. Snapshots count against the Shared
   Drive's (i.e. the Workspace's pooled) storage.
+
+  **Contributor, not Content manager (issue #67).** The token carries the full `drive` scope
+  (`ensureFolder` lists folders it didn't create), so the Shared Drive role is the real limit on
+  a leaked key. A Contributor can list, create folders and upload, which is all the Worker does,
+  but Drive refuses it any trash, move or delete; Content manager would let a leaked key trash
+  every snapshot. What a Contributor key *can* still do is edit: upload new revisions over
+  existing snapshot files or add junk files. Snapshots are dated folders written once and never
+  edited, so a Shared Drive manager should treat any snapshot file with more than one revision
+  as tampered with (Drive keeps the earlier revisions; restore one from the file's
+  **Manage versions**). If that residual risk ever matters more, the next step is a second
+  Shared Drive the account isn't a member of, filled by a copy it can't reach. Not built.
 
 ## Cloudflare config (fleet standard)
 
@@ -148,7 +159,8 @@ Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageA
 because production already reports the shared account's API usage. Until production is
 deployed, set it to `true` in `config/backup.sandbox.json` if you want the usage alert from the
 sandbox instead; any token on the account can read the figure. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
-sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder, the
+sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder
+(also as Contributor), the
 sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`
 is replaced with the id `wrangler d1 create` prints. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
@@ -167,6 +179,33 @@ or doc whose `workspaceId` isn't in the list, so a token that somehow gained bro
 wouldn't back up outside the sandbox workspace. `workspaceIds` is optional — absent or empty (as
 in `config/backup.json`) means no filter, today's "snapshot everything the token can see"
 behaviour.
+
+## Service account key
+
+The Worker signs its own Google tokens from `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, so that key is
+the one long-lived Drive credential. It never expires on its own; rotate it yearly, whenever
+someone who handled it leaves, and at once if it may have leaked. Production and sandbox use
+different service accounts, so rotate each separately (add `--env sandbox` for the sandbox).
+
+1. Google Cloud console → **IAM & Admin → Service accounts** → the backup account → **Keys** →
+   **Add key → Create new key** (JSON). The file downloads to your machine.
+2. Store its `private_key` value. Pasting it as it appears in the JSON, literal `\n`s and all,
+   is fine (`src/drive/jwt.ts` accepts both forms):
+
+   ```sh
+   npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+   ```
+
+   `GOOGLE_SERVICE_ACCOUNT_EMAIL` stays the same: a new key, not a new account.
+3. Confirm the next nightly snapshot lands in Drive and no failure alert reaches Slack.
+4. Back on **Keys**, delete the old key. Then delete the downloaded JSON file; the Wrangler
+   secret is the only copy that should exist.
+
+**Suspected leak:** delete the old key *first* (step 4), then steps 1–3. A missed night is
+cheaper than a live leaked key, and the watchdog's 36-hour alert covers the gap. Afterwards a
+Shared Drive manager checks the drive's activity panel for files or revisions the Worker didn't
+write (see "Contributor, not Content manager" above), and confirms the account's role is still
+Contributor under **Manage members**.
 
 ## Write switch
 

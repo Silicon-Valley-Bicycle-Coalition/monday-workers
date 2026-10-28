@@ -85,7 +85,8 @@ These are landmines in the repo itself that break the cutover MR if left alone.
   - [ ] Funraise production API key.
   - [ ] Mailchimp production audience with the 6 merge fields, Interest Category, and Journeys
         (`mailchimp-sync/README.md`, "Prerequisites before this can run against real data").
-  - [ ] Google service account + destination Drive folder for `monday-backup`; Slack webhook.
+  - [ ] Google service account + destination Drive folder for `monday-backup` (account added to the
+    Shared Drive as **Contributor**, not Content manager — #67); Slack webhook.
 
 ## Phase 2 — Cloudflare resources (no board ids needed)
 
