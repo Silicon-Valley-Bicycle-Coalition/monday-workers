@@ -116,7 +116,7 @@ For each row:
 |---|---|
 | `member-portal` | `MONDAY_API_TOKEN`, `LETTER_WEBHOOK_SECRET` |
 | `funraise-sync` | `MONDAY_API_TOKEN`, `FUNRAISE_WEBHOOK_SECRET`, `FUNRAISE_API_KEY` |
-| `donation-rollups` | `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET` |
+| `donation-rollups` | `MONDAY_API_TOKEN`, `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` (Bearer for `/custodian/*`; not a webhook secret, never in a URL) |
 | `mailchimp-sync` | `MONDAY_API_TOKEN`, `MAILCHIMP_API_KEY`, `MONDAY_WEBHOOK_SECRET`, `MAILCHIMP_WEBHOOK_SECRET`; optional `SLACK_WEBHOOK_URL` (gates its alerts) |
 | `quickbooks-sync` | `MONDAY_API_TOKEN`, `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`, `MONDAY_WEBHOOK_SECRET` |
 | `monday-backup` | `MONDAY_API_TOKEN`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
@@ -214,7 +214,7 @@ has run, and both `configure`'s dashboards and the go/no-go sample review look a
   - [ ] Monday webhooks via `scripts/setup-webhooks.mjs` →
         `/webhooks/monday/donations?secret=`. Subscribed **before** the first sweep.
   - [ ] Custodian passes, in this order: **`classify`**
-        (`POST /custodian/run/classify?secret=…`, repeated until `detail.remaining` is `0` —
+        (`POST /custodian/run/classify` with `Authorization: Bearer <CUSTODIAN_SECRET>`, repeated until `detail.remaining` is `0` —
         at most 300 gifts a run) → **`sweep`** (one recompute per ledger owner; fills Donor
         Level) → **`archive`** (restates the Annual Giving Summary). Budget 8–12 hours;
         unmeasured at production scale.

@@ -504,7 +504,7 @@ membership keys and stamps are compared away).
   before the November Board Elections export:
 
   ```
-  POST /custodian/run/membership?secret=…&all=true[&since=<ISO>]
+  POST /custodian/run/membership?all=true[&since=<ISO>]   (Authorization: Bearer $CUSTODIAN_SECRET)
   ```
 
   Call it with a long client timeout (the HTTP request returns only when the run's slice
@@ -583,8 +583,17 @@ so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs
 loaded 2026-08-31; 32,739 Received, 33,541 archived).
 
 The **custodian** runs six duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
-and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify}?secret=…`
-and `GET /custodian/status` (last run per duty, from `custodian_runs`):
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify}`
+and `GET /custodian/status` (last run per duty, from `custodian_runs`), each with
+`Authorization: Bearer <CUSTODIAN_SECRET>` (issue #63 — its own secret, never the webhook's,
+which sits in Monday's webhook URL; a `?secret=` query parameter is ignored; unset = every
+custodian route 401s):
+
+```sh
+curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
+  'https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/custodian/run/classify'
+```
+
 
 * **archive** (July 15 + on demand) — archives active gifts past the retention window
   (`custodian.activeFiscalYears`), then materializes closed-year summaries. Idempotent.
@@ -647,7 +656,7 @@ Membership, Sponsorships, Grants & Contracts, Matching Donations, Other Program 
 **Gift Size** (`< $100`, `$100–249`, `$250–999`, `$1k–4.9k`, `$5k+`), **Fiscal Quarter** and
 **Gift Fiscal Year** (labels created on first write). Values come from `classifyGift` over the
 gift's amount, date and type. It runs nightly and on demand
-(`POST /custodian/run/classify?secret=…`), skips gifts already correct, and writes at most
+(`POST /custodian/run/classify` with the custodian Bearer secret), skips gifts already correct, and writes at most
 `CLASSIFY_WRITES_PER_RUN` (300) gifts per run — repeat until `detail.remaining` is `0` (~13 runs
 for the first ~3,800 gifts). Provision with `scripts/setup-classification-columns.mjs <donationsBoardId>`.
 
@@ -875,6 +884,10 @@ sandbox gets rebuilt before cutover:
   fails loudly rather than silently. Note the API cannot read back a webhook's URL, so a lost
   secret means rotate (`wrangler secret put MONDAY_WEBHOOK_SECRET`, redeploy, re-run
   `setup-webhooks.mjs`), not recover.
+* **Custodian routes** — `CUSTODIAN_SECRET`, a separate random value sent as
+  `Authorization: Bearer <secret>` (issue #63). It never appears in a URL, so it stays out of
+  Monday's config and request logs, and rotating it (`wrangler secret put CUSTODIAN_SECRET`)
+  touches no webhook subscription. Same constant-time, fail-closed check as the webhook.
 * **Monday.com GraphQL API** — reusing `salesforce-import`'s existing token for Sandbox testing.
   **Deliberately deferred, not open debt** (decided 2026-08-24, same reasoning as the donor-portal
   integration user — see `migration-plan.md`'s Post-Migration Follow-ups in the private planning

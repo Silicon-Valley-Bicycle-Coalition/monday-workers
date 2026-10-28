@@ -191,6 +191,8 @@ export interface Env {
   RECOMPUTE_QUEUE: Queue<RecomputeQueueMessage>;
   MONDAY_API_TOKEN: string;
   MONDAY_WEBHOOK_SECRET?: string;
+  // Bearer secret for the /custodian/* routes (issue #63). Unset = those routes 401 everything.
+  CUSTODIAN_SECRET?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.

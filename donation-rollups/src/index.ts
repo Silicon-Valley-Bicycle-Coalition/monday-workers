@@ -84,7 +84,7 @@ export default {
           runDuty: async (duty, opts, disposition) => runDuty(duty,
             custodianDepsFor(disposition, deps, { ...(await gateOnce()), deliveryId: `custodian:${duty}:${new Date().toISOString()}` }), opts),
           lastRuns: () => deps.gifts.lastRuns(),
-          secret: env.MONDAY_WEBHOOK_SECRET,
+          secret: env.CUSTODIAN_SECRET,
           writeMode: async () => (await gateOnce()).mode,
         });
         return app.fetch(request, env, ctx);
