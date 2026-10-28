@@ -9,7 +9,7 @@ import { FakeMonday, item } from '../test/fakeMonday';
 // Write switch (spec 2026-10-26): every digest send — the hourly cron and the operator route — is
 // gated on `report-digests:writes`.
 const config = validateConfig(sandbox);
-const users = [{ id: '68160704', email: 'clarrissa@example.org', enabled: true }];
+const users = [{ id: '68160704', email: 'clarrissa@bikesiliconvalley.org', enabled: true }];
 // 08:00 Pacific on a Monday: recent-gifts-wealth, fiscal-year-by-size and last-week are due.
 const MONDAY_MORNING = new Date('2026-10-26T15:00:00Z');
 const gate = (mode: WriteMode, logLevel: 'normal' | 'debug' = 'normal'): BatchSkipContext => ({
@@ -52,7 +52,7 @@ describe('runScheduledDigests', () => {
     ]);
     // Recipients' addresses never reach the log, and the bodies are logged by length only.
     const text = JSON.stringify(lines);
-    expect(text).not.toContain('clarrissa@example.org');
+    expect(text).not.toContain('clarrissa@bikesiliconvalley.org');
     expect(text).toMatch(/"html":"<text:\d+>"/);
     // The per-digest result line says it was a dry run.
     expect(log.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"writeSwitch":"dry-run"'))).toHaveLength(2);

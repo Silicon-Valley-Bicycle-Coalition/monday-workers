@@ -18,6 +18,8 @@ export function dueDigests(config: DigestsConfig, now: LocalTime): DigestKey[] {
   return DIGEST_KEYS.filter((key) => isDue(config.digests[key].schedule, now));
 }
 
+const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1).toLowerCase();
+
 // Builds one digest and emails it. `force` sends even an empty skipWhenEmpty digest (the operator
 // route, for checking a digest by hand).
 export async function runDigest(deps: RunDeps, key: DigestKey, now: LocalTime, { force = false } = {}): Promise<RunResult> {
@@ -25,11 +27,15 @@ export async function runDigest(deps: RunDeps, key: DigestKey, now: LocalTime, {
   const digest = await buildDigest(key, deps.monday, deps.config, now);
   if (digest.count === 0 && cfg.skipWhenEmpty && !force) return { key, sent: false, reason: 'empty' };
 
-  const users = await deps.monday.getUsers(cfg.recipients);
-  const to = users.filter((u) => u.enabled && u.email).map((u) => u.email);
-  // A recipient who left (deactivated or gone) is logged by id, never by address, and the rest
-  // still get the email; nobody left at all is an error for Workers Issues to raise.
-  const missing = cfg.recipients.filter((id) => !users.some((u) => u.enabled && u.email && Number(u.id) === id));
+  const users = (await deps.monday.getUsers(cfg.recipients)).filter((u) => u.enabled && u.email);
+  // Fail closed on the domain (#70): a Monday user whose address is outside recipientDomains (a
+  // guest, a personal address) never gets the digest. Unlike a departure, that's a misconfiguration,
+  // so it's an error for Workers Issues. Both are logged by id, never by address, and the rest still
+  // get the email; nobody left at all is an error.
+  const offDomain = users.filter((u) => !deps.config.recipientDomains.includes(domainOf(u.email)));
+  if (offDomain.length > 0) console.error(`digest ${key}: recipient user id(s) ${offDomain.map((u) => u.id).join(', ')} have an address outside recipientDomains; not sent to them`);
+  const to = users.filter((u) => !offDomain.includes(u)).map((u) => u.email);
+  const missing = cfg.recipients.filter((id) => !users.some((u) => Number(u.id) === id));
   if (missing.length > 0) console.warn(`digest ${key}: recipient user id(s) ${missing.join(', ')} not found or deactivated`);
   if (to.length === 0) throw new Error(`digest ${key}: no active recipients`);
 

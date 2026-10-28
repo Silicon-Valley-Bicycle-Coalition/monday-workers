@@ -55,7 +55,8 @@ subscriptions are dropped, since nobody reads that mailbox.
   caught up: resend with the route below.
 * **Recipients are Monday user ids** in `config/*.json`. Emails are looked up at send time, so no
   staff address sits in this public repo. A deactivated recipient is skipped with a warning (by
-  id). A digest with no active recipient fails.
+  id). An address outside `recipientDomains` never gets the digest, which carries
+  wealth-screening data. It is logged as an error, by id. A digest with no recipient left fails.
 * **Board views by name**: the link goes to the view `configure` made. If that view doesn't exist
   yet, the link goes to the board instead.
 * **Failures**: each digest runs on its own. A failure (a missing column, a Monday error, a send
@@ -103,6 +104,9 @@ picks one, and `src/config.ts` validates it.
 
 * `boards.donations`, `boards.people`: board ids. Production stays `0` until the cutover load
   creates the boards. Fill them in weekend step 4, before the first Monday.
+* `recipientDomains`: the only domains a digest goes to (`["bikesiliconvalley.org"]`), matched
+  exactly against the part after the `@`. Production's `EMAIL` binding has no platform allowlist,
+  because that would list staff addresses in this repo. This check stands in for it.
 * `digests.<key>.schedule`: `{ "weekdays": [1], "hour": 8 }` (0 = Sunday) or
   `{ "monthDays": [1, 15], "hour": 9 }`.
 * `digests.<key>.recipients`: Monday user ids. `view`: the board view name. `skipWhenEmpty`:

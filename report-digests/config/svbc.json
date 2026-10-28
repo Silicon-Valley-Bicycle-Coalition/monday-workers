@@ -7,6 +7,9 @@
   "fromAddress": "noreply@mail.bikesiliconvalley.org",
   "fromName": "SVBC Monday reports",
   "logoUrl": "https://member.bikesiliconvalley.org/email/logo.png",
+  "recipientDomains": [
+    "bikesiliconvalley.org"
+  ],
   "boards": {
     "donations": 0,
     "people": 0
