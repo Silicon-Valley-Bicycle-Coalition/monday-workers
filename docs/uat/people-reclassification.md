@@ -22,10 +22,10 @@ hand) is never moved.
 ## Try it (once it is live in the sandbox)
 
 1. **A reactivated donor.** Find someone on
-   [People (Historical) (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577228)
-   whose Last Gift Date is years ago, and add a gift for them on Donations (sandbox v3) dated
+   [People (Historical) (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342607)
+   whose Last Gift Date is years ago, and add a gift for them on Donations (sandbox v4) dated
    this month (the donation-rollups script shows how). After the next pass runs, they should be
-   on [People (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577220) with their
+   on [People (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342592) with their
    gifts, organization and Updates intact.
 2. **Someone who aged out.** After a pass, open the newest group on People (Historical): the
    people moved there should all have a Last Gift Date, Member Until and event history more than

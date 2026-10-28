@@ -34,9 +34,9 @@ const boardIds = (cfg: BoardIdSources): number[] => [
 ];
 
 describe('config split: board ids', () => {
-  it('the sandbox boards are the CRM Sandbox v3 ones', () => {
-    expect(sandbox.boards.live.boardId).toBe(18431577220);
-    expect(sandbox.boards.historical.boardId).toBe(18431577228);
+  it('the sandbox boards are the CRM Sandbox v4 ones', () => {
+    expect(sandbox.boards.live.boardId).toBe(18437342592);
+    expect(sandbox.boards.historical.boardId).toBe(18437342607);
     expect(boardIds(sandbox).every((id) => id > 0)).toBe(true);
   });
 
