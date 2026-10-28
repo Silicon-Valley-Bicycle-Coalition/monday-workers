@@ -66,7 +66,9 @@ It exits non-zero and lists the workspaces if the token reaches any board outsid
 `board_kind: public`, so after the cutover load every member token reaches and can edit them.
 Do this **after the load and before any Worker's production deploy**:
 
-1. Rehearse on a sandbox board first (dry run, then `--apply` on one throwaway board).
+1. Rehearse on a sandbox board first (dry run, then `--apply` on one throwaway board). The
+   script selects archived and deleted boards too (#71), so include one archived throwaway board:
+   `change_board_kind` on a non-active board hasn't been exercised yet.
 2. Dry run against production: `MONDAY_API_TOKEN=... node scripts/make-boards-private.mjs
    --workspace <id> --prefix "<board name prefix>" --sandbox-user <Sandbox Integration user id>`.
    It lists each matching board's kind, subscribers and team subscribers and changes nothing.
