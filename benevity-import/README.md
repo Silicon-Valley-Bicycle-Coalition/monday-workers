@@ -46,15 +46,20 @@ Monday "Benevity Uploads" board — staff drop the file in a file column        
   │  Monday webhook on item create/file change
   ▼
 Cloudflare Worker (webhook handler)
-  │  1. fetch the asset via Monday's GraphQL API
+  │  record the upload in D1 `uploads` and enqueue one Queue message for it — no
+  │  fetch or parse inside the webhook request, so a large report can't time it out
+  ▼
+Cloudflare Queue → consumer Worker, per upload
+  │  1. fetch the asset via Monday's GraphQL API (refused, marked `error`, over 2 MB)
   │  2. split the file into one or more preamble+rows+footer blocks; parse each
   │     independently into D1 `disbursements`, validating its own header and its
   │     footer's reported total against the sum of its own rows
-  │  3. upsert each row into D1 `rows` keyed on Benevity Transaction ID — globally,
-  │     not per file or per block, so the same gift arriving in two different
-  │     bundles is still one row
+  │  3. upsert each block's rows into D1 `rows` keyed on Benevity Transaction ID —
+  │     one batched D1 call per block, and globally, not per file or per block, so
+  │     the same gift arriving in two different bundles is still one row
   │     (a re-upload of an overlapping file is a no-op for rows already written)
   │  4. enqueue one Cloudflare Queue message per row not yet written
+  │  a failed fetch or D1 call retries the message, resuming at the first unfinished block
   ▼
 Cloudflare Queue → consumer Worker, per row
   │  1. resolve the paying company → Organizations item (exact name, then config aliases)
@@ -258,7 +263,7 @@ several disbursements:
   `Disbursement ID` is unique (migration `0002`, a partial index that exempts the empty id of a
   block whose header didn't parse): the same report re-uploaded as a new file, or bundled into a
   later download, finds its existing row — and its existing worklist item — instead of adding a
-  second one. The route looks a block up by (upload, position) first, so a retried upload
+  second one. The consumer looks a block up by (upload, position) first, so a retried upload
   resumes its own blocks, then by `Disbursement ID`, and inserts only on a miss. On
   parse, the sum of the block's own rows is checked against its own reported gross total; a
   mismatch marks the whole block `needs-review` rather than writing partial data from a block the
@@ -458,16 +463,18 @@ byte-identical copy of `member-portal/src/flags.ts`), read from the `FLAGS` KV n
   `off`**, and a KV read error means hold.
 - `benevity-import:log` — `debug` adds redacted payloads to those lines.
 
-Unlike the other migration Workers, **both webhook routes write to Monday themselves**, so the
-switch covers them directly (the subscribe challenge is always echoed):
+Unlike the other migration Workers, **the retry route writes to Monday itself**, so the switch
+covers both webhook routes directly (the subscribe challenge is always echoed):
 
 - `hold`/`unknown`: `/webhooks/monday/benevity-upload` and `/webhooks/monday/benevity-retry` answer
   **503** before any D1 or Monday call, so Monday redelivers once writes are back on.
-- `off`: the upload route still records uploads, disbursements and rows (so a re-upload isn't
-  mistaken for new) and enqueues each row, stamped `dropped`; its worklist `createItem` / label
-  changes / archive are logged, not made, and the worklist item id is not saved. The retry route
-  logs a skip and returns 200 (the item stays at Retry).
-- Queue consumer: `off` (or a `dropped` stamp, even if the mode is `on` by then) logs the Monday
+- `off`: the upload route still records the upload and enqueues it, stamped `dropped`. The retry
+  route logs a skip and returns 200 (the item stays at Retry).
+- Queue consumer, ingesting an upload under `off` (or one stamped `dropped`, even if the mode is
+  `on` by then): it still records disbursements and rows (so a re-upload isn't mistaken for new)
+  and enqueues each row, stamped `dropped`; its worklist `createItem` / label changes / archive are
+  logged, not made, and the worklist item id is not saved.
+- Queue consumer, writing a row: `off` (or a `dropped` stamp) logs the Monday
   writes and skips `updateStatus` / `requeue*` / `claimWorklistItemId`; `hold` retries at 1 minute
   doubling to an hour (`max_retries` is 100, about four days). A message queued before this
   build has no stamp and is written under `on`. The daily `raw_row` purge is D1-only and runs in
@@ -481,6 +488,15 @@ node scripts/flags.mjs benevity-import writes on --env sandbox     # or --env pr
 
 **Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
 dry-runs everything.
+
+**Reports uploaded while the switch was `off` are not written later by themselves** (spec: work
+ingested under `off` stays a dry run). Their rows sit in D1 at `ingested`, never sent again, and
+any block worklist item was never posted. To import one once writes are `on`, upload the same
+report file again — as a new file on the Uploads board, since a redelivery of the original asset
+is a no-op. The consumer finds the disbursement it already recorded, re-sends every row still at
+`ingested` (unstamped, so it is written), and posts the block's worklist item if it needs one; a
+held-back block is then released with Retry as usual. Retry alone can't do it: no worklist item
+exists to set. Covered by `src/integration.test.ts` ("re-uploading a report ingested under off").
 
 ## Related changes elsewhere
 

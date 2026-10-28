@@ -11,6 +11,7 @@ import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
 import { consumeBenevityBatch, type BenevityQueueMessage } from './consumer/processBatch';
+import { MAX_REPORT_LENGTH, ReportTooLargeError } from './consumer/ingestUpload';
 import { checkRequestRateLimit } from './rateLimit';
 import type { Env, BenevityImportConfig } from './types';
 
@@ -36,7 +37,21 @@ async function fetchCsv(url: string): Promise<string> {
   if (!response.ok) {
     throw new Error(`benevity report fetch: HTTP ${response.status}`);
   }
+  // Refused before the body is read when the response says it is too large; ingestUpload checks
+  // the text's length too, for a response that doesn't say.
+  const length = Number(response.headers.get('Content-Length'));
+  if (length > MAX_REPORT_LENGTH) {
+    await response.body?.cancel();
+    throw new ReportTooLargeError(`Content-Length ${length}`);
+  }
   return response.text();
+}
+
+function writeQueue(env: Env) {
+  return {
+    sendBatch: (messages: BenevityQueueMessage[]) =>
+      env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
+  };
 }
 
 export default {
@@ -57,12 +72,8 @@ export default {
         rowStore: new D1RowStore(env.DB),
         config,
         gate: () => skipContext(env),
-        queue: {
-          sendBatch: (messages: BenevityQueueMessage[]) =>
-            env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
-        },
+        queue: writeQueue(env),
         webhookSecret: env.BENEVITY_WEBHOOK_SECRET,
-        fetchCsv,
         now: () => new Date().toISOString(),
       });
       return app.fetch(request, env, ctx);
@@ -73,11 +84,14 @@ export default {
     const config = configFor(env);
     const gate = await skipContext(env);
     await consumeBenevityBatch([...batch.messages], {
+      uploadStore: new D1UploadStore(env.DB),
       rowStore: new D1RowStore(env.DB),
       disbursementStore: new D1DisbursementStore(env.DB),
       aliasStore: new D1AliasStore(env.DB),
       mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
       config,
+      queue: writeQueue(env),
+      fetchCsv,
       now: () => new Date().toISOString(),
     }, gate);
   },

@@ -11,10 +11,19 @@ import { ensureWorklistItem, setWorklistLabel } from '../matching/worklist';
 import { errorMessage } from '../util/errorMessage';
 import { logDebug, messageDisposition, retryDelaySeconds, type WriteStamp } from '../flags';
 import { dryRunConsumerDeps, type BatchSkipContext } from '../writeSwitch';
+import { ingestUpload, type IngestDeps } from './ingestUpload';
 
-// The optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were
-// `off` stays a dry run even if the mode is `on` by the time it is consumed.
-export type BenevityQueueMessage = { transactionId: string } & WriteStamp;
+// Two kinds share the write queue: an uploaded report to fetch and parse (#74), sent by the upload
+// webhook, and a row to write, sent once the report is ingested (or by a staff Retry). The
+// optional stamp is the write switch's (src/flags.ts): a message enqueued while writes were `off`
+// stays a dry run even if the mode is `on` by the time it is consumed.
+export type RowMessage = { transactionId: string } & WriteStamp;
+export type UploadMessage = { assetId: string } & WriteStamp;
+export type BenevityQueueMessage = RowMessage | UploadMessage;
+
+function isUploadMessage(body: BenevityQueueMessage): body is UploadMessage {
+  return 'assetId' in body;
+}
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -24,13 +33,8 @@ export interface QueueMessageLike<T> {
   retry(options?: { delaySeconds?: number }): void;
 }
 
-export interface ProcessBatchDeps {
-  rowStore: RowStore;
-  disbursementStore: DisbursementStore;
+export interface ProcessBatchDeps extends IngestDeps {
   aliasStore: AliasStore;
-  mondayClient: MondayClient;
-  config: BenevityImportConfig;
-  now: () => string;
 }
 
 /**
@@ -45,7 +49,7 @@ export async function consumeBenevityBatch(
   gate: BatchSkipContext
 ): Promise<void> {
   for (const message of messages) {
-    const ctx = { ...gate, deliveryId: message.body.transactionId };
+    const ctx = { ...gate, deliveryId: isUploadMessage(message.body) ? `asset:${message.body.assetId}` : message.body.transactionId };
     const disposition = messageDisposition(gate.mode, message.body);
     logDebug(ctx, 'disposition', { disposition, writeStamp: message.body.writeStamp ?? null, attempts: message.attempts ?? null });
     if (disposition === 'retry') {
@@ -61,6 +65,10 @@ export async function processBenevityQueueBatch(
   deps: ProcessBatchDeps
 ): Promise<void> {
   for (const message of messages) {
+    if (isUploadMessage(message.body)) {
+      await processUpload(message.body.assetId, message, deps);
+      continue;
+    }
     const { transactionId } = message.body;
     try {
       await processOne(transactionId, deps);
@@ -80,6 +88,18 @@ export async function processBenevityQueueBatch(
       }
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
     }
+  }
+}
+
+async function processUpload(assetId: string, message: QueueMessageLike<BenevityQueueMessage>, deps: ProcessBatchDeps): Promise<void> {
+  try {
+    await ingestUpload(assetId, deps);
+    message.ack();
+  } catch (err) {
+    // ingestUpload has already marked the upload 'error' if it got as far as recording it; the
+    // retry resumes the same asset from its first unfinished block.
+    console.error(`benevity consumer: failed to ingest asset "${assetId}": ${errorMessage(err)}`);
+    message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
   }
 }
 
