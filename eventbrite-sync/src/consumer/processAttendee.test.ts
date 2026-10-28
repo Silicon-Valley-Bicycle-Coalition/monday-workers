@@ -259,6 +259,20 @@ describe('processAttendee', () => {
     warn.mockRestore();
   });
 
+  it('marks the attendee failed without retry, and requests nothing, when the event failed terminally (#75)', async () => {
+    const { deps, eventStore, attendeeStore, queue, mondayClient, eventbriteClient } = setup({
+      evRow: eventRow({ mondayItemId: null, status: 'failed', error: 'not retried: monday API: ColumnValueException' }),
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await processAttendee(message, deps);
+    expect(queue.send).not.toHaveBeenCalled();
+    expect(eventStore.recordDelivery).not.toHaveBeenCalled();
+    expect(eventbriteClient.getAttendee).not.toHaveBeenCalled();
+    expect(mondayClient.createItem).not.toHaveBeenCalled();
+    expect(attendeeStore.updateStatus).toHaveBeenCalledWith('a1', 'failed', { error: expect.stringMatching(/event 9001 failed without retry \(not retried: monday API: ColumnValueException\)/) });
+    warn.mockRestore();
+  });
+
   it('still requests the event when its row failed for another reason', async () => {
     const { deps, queue } = setup({ evRow: eventRow({ mondayItemId: null, status: 'failed', error: 'monday API: 500' }) });
     await expect(processAttendee(message, deps)).rejects.toThrow(/9001/);

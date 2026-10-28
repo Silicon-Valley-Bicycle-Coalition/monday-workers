@@ -232,7 +232,9 @@ Eventbrite") and acked. Nor is any other failure no retry can fix (#75, `src/err
 Eventbrite or Monday 4xx about the request itself, or a Monday 200 whose error code rejects the
 request (a column value it won't take, a column, board or item id that doesn't exist). The row
 (order, event or attendee) is marked `failed` with the error prefixed `not retried: ` and the
-message is acked. A rejected token (401/403), Monday's `UserUnauthorizedException` (also its
+message is acked. An attendee whose event failed either way is marked `failed` too ("event … failed
+without retry" or "not found in Eventbrite"), rather than re-requesting the event on every retry
+for four days. A rejected token (401/403), Monday's `UserUnauthorizedException` (also its
 answer for a deleted board), rate limits and 5xx still retry, since fixing the secret or the
 config heals the whole backlog. To find those: `… where error like 'not retried%'`. To find
 dead orders:
