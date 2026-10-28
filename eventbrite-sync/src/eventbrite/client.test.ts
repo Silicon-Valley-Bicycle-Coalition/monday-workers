@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { HttpEventbriteClient } from './client';
 import { testOrder } from '../test/testConfig';
+import { TerminalError } from '../errors';
 
 function response(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
@@ -34,6 +35,15 @@ describe('HttpEventbriteClient', () => {
     for (const status of [429, 500, 503]) {
       const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(response(status, {})));
       await expect(client.getOrder('1'), String(status)).rejects.toThrow(`HTTP ${status}`);
+    }
+  });
+
+  it('throws a TerminalError on a 4xx that is about the request itself (#75), but not on 401/403/429', async () => {
+    const terminal = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(response(400, {})));
+    await expect(terminal.getOrder('1')).rejects.toBeInstanceOf(TerminalError);
+    for (const status of [401, 403, 429, 503]) {
+      const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', vi.fn().mockResolvedValue(response(status, {})));
+      await expect(client.getOrder('1'), String(status)).rejects.not.toBeInstanceOf(TerminalError);
     }
   });
 

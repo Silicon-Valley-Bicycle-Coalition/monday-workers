@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { fakeEventStore, fakeAttendeeStore } from '../test/fakeStores';
-import { consumeWriteBatch, processOrderQueueBatch, type QueueMessageLike, type OrderQueueMessage } from './processBatch';
+import { consumeWriteBatch, processOrderQueueBatch, TERMINAL_PREFIX, type QueueMessageLike, type OrderQueueMessage } from './processBatch';
 import type { OrderStore } from '../db/orders';
 import type { EventbriteClient } from '../eventbrite/client';
 import type { MondayClient } from '../monday/client';
@@ -350,6 +350,47 @@ describe('retry delay', () => {
       errorSpy.mockRestore();
     }
     expect(delays).toEqual([60, 120, 240, 3600]);
+  });
+});
+
+// #75: a rejection of the request itself fails the same way on every retry, so it is recorded and
+// acked instead of retried for four days into the DLQ.
+describe('terminal failures', () => {
+  const run = async (mondayClient: MondayClient, orderStore = fakeStore(orderRow())) => {
+    const message = fakeMessage('442719216', 1);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await processOrderQueueBatch([message], { orderStore, eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+    } finally {
+      errorSpy.mockRestore();
+    }
+    return { message, orderStore };
+  };
+
+  it('records a column value Monday rejects as not retried and acks the message', async () => {
+    const { message, orderStore } = await run(fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: invalid value', { httpStatus: 200, code: 'ColumnValueException' })) }));
+
+    expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'failed', { error: `${TERMINAL_PREFIX}monday API: invalid value` });
+    expect(message.ack).toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  it('still retries a rejected token (HTTP 401) — fixing the secret heals the backlog', async () => {
+    const { message } = await run(fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 401', { httpStatus: 401 })) }));
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
+
+  it('retries a terminal failure it could not record, so it is not lost silently', async () => {
+    const orderStore = fakeStore(orderRow());
+    (orderStore.updateStatus as any).mockImplementation(async (_id: string, status: string) => {
+      if (status === 'failed') throw new Error('D1 down');
+    });
+    const { message } = await run(fakeMonday({ createItem: vi.fn().mockRejectedValue(new MondayApiError('monday API: HTTP 400', { httpStatus: 400 })) }), orderStore);
+
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    expect(message.ack).not.toHaveBeenCalled();
   });
 });
 
