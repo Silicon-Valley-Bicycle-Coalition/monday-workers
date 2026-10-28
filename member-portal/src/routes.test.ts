@@ -74,7 +74,7 @@ function inMemorySessionStore(): SessionStore {
 }
 
 function inMemoryAttemptStore(): LoginAttemptStore {
-  return { recordAttempt: vi.fn().mockResolvedValue(undefined), countRecentAttempts: vi.fn().mockResolvedValue(0) };
+  return { tryReserve: vi.fn().mockResolvedValue(true) };
 }
 
 // Mirrors Task 7's fakeStore in submitChangeRequest.test.ts: mock-based, not a real in-memory
@@ -192,7 +192,7 @@ const config: Config = {
   monday: { apiUrl: 'x', donorsBoardId: 1, donationsBoardId: 2, organizationsBoardId: 3, volunteersBoardId: null, columns: {} as never },
   email: { fromAddress: 'a@example.org', fromName: 'Test', logoUrl: 'https://example.org/email/logo.png' },
   auth: { magicLinkTtlMinutes: 15, letterLinkTtlHours: 168, sessionTtlHours: 24, portalBaseUrl: 'https://portal.example.org' },
-  rateLimit: { emailWindowSeconds: 900, emailMaxAttempts: 5, attemptRetentionHours: 24 },
+  rateLimit: { emailCooldownSeconds: 60, emailWindowSeconds: 900, emailMaxAttempts: 5, emailDailyMax: 10, attemptRetentionHours: 24 },
   taxLetter: {
     orgLegalName: 'SVBC',
     ein: '00-0000000',
@@ -722,6 +722,30 @@ describe('POST / rate limiting', () => {
 
     expect(res.status).toBe(200);
     expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+  });
+
+  // Issue #62: the per-address limiter (cooldown, window, daily cap) denies without sending or
+  // looking the donor up, and the page is the same generic one.
+  it('returns the generic response, sends nothing and skips Monday when the address has no room left', async () => {
+    const monday = fakeMonday({ 'donor@example.org': [{ id: 'donor-1', name: 'Jane' }] });
+    const emailSender = {
+      sendLoginEmail: vi.fn().mockResolvedValue(undefined),
+      sendLetterReadyEmail: vi.fn().mockResolvedValue(undefined),
+    };
+    const attemptStore = { tryReserve: vi.fn().mockResolvedValue(false) };
+    const app = createApp(makeDeps({ monday, emailSender, attemptStore }));
+
+    const res = await app.request('/', {
+      method: 'POST',
+      body: new URLSearchParams({ email: 'donor@example.org' }),
+      headers: { ...SAME_ORIGIN, 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(t('en', 'checkEmail.heading'));
+    expect(attemptStore.tryReserve).toHaveBeenCalledTimes(1);
+    expect(emailSender.sendLoginEmail).not.toHaveBeenCalled();
+    expect(monday.findDonorsByEmail).not.toHaveBeenCalled();
   });
 });
 

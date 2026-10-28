@@ -125,7 +125,13 @@ better-fit product. (Project Galileo makes Access available to SVBC for staff-fa
 as gating the sandbox hostnames; that doesn't change the donor-auth decision.)
 
 **Rate-limit login requests** (per email and per IP) to blunt abuse of the email-sending step —
-this is the one place this Worker can be used to spam an inbox if left unguarded.
+this is the one place this Worker can be used to spam an inbox if left unguarded. Per IP: the
+`LOGIN_RATE_LIMITER` binding. Per address (`rateLimit` in config, issue #62): at most one login
+email per `emailCooldownSeconds` (60), `emailMaxAttempts` (5) per `emailWindowSeconds` (900), and
+`emailDailyMax` (10) per rolling 24 hours. One atomic D1 statement checks and records
+(`src/db/loginAttempts.ts`), and only a request it lets through is recorded — so someone rotating
+IPs can send an address at most `emailDailyMax` emails a day, each with a working link, and can't
+stretch a lockout by retrying.
 
 ## Sending the email
 
@@ -199,9 +205,11 @@ Routing destination). A live login-link request for a real sandbox People record
 * Session cookies get an explicit server-side TTL too (hours to low days, not indefinite) —
   sessions live in D1, so expiry and logout are server-enforced, not cookie-only.
 * Retention: the daily cron deletes expired `sessions` and `magic_link_tokens` rows, and
-  `login_attempts` rows (every email anyone submits, donor or not) older than
-  `rateLimit.attemptRetentionHours` (24; validated to exceed the rate-limit window). Deletes are
-  batched and capped per run (`src/db/authRetention.ts`); indexes in migration `0005`.
+  `login_attempts` rows (one per login email allowed, donor or not, keyed by a SHA-256 of the
+  lowercased address since migration `0006`) older than `rateLimit.attemptRetentionHours` (24;
+  validated to cover the 24-hour daily cap). Deletes are batched and capped per run
+  (`src/db/authRetention.ts`); indexes in migrations `0005`/`0006`. The hash is unkeyed: it keeps
+  addresses out of D1 dumps, not out of reach of someone testing a known address.
 * The Worker's Monday API token comes from a dedicated integration user with access to only the
   boards this portal reads (Donors, Donations, Membership, Organizations, and — once the gated
   v4–v6 features are configured — Pledges, Event Registrations, Events, and Volunteers) — never

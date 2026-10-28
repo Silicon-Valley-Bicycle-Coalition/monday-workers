@@ -5,8 +5,10 @@ export interface IpRateLimiter {
 }
 
 export interface RateLimitConfig {
+  emailCooldownSeconds: number;
   emailWindowSeconds: number;
   emailMaxAttempts: number;
+  emailDailyMax: number;
 }
 
 export interface RateLimitDeps {
@@ -29,13 +31,14 @@ export async function checkLoginRateLimit(
     return false;
   }
 
-  const nowISO = now.toISOString();
-  const sinceISO = new Date(now.getTime() - deps.config.emailWindowSeconds * 1000).toISOString();
-
-  // Count attempts prior to this one, then record this one — so "emailMaxAttempts" means
-  // "this many attempts already used in the window", and the next one past that is denied.
-  const priorCount = await deps.attemptStore.countRecentAttempts(email, sinceISO);
-  await deps.attemptStore.recordAttempt(email, nowISO);
-
-  return priorCount < deps.config.emailMaxAttempts;
+  // Only a request every per-address limit lets through is recorded (issue #62). Recording denied
+  // ones too let anyone rotating IPs keep a donor locked out indefinitely while still sending them
+  // a login email every few minutes; now the address gets at most emailDailyMax a day, and each
+  // of those carries a working link.
+  return deps.attemptStore.tryReserve(email, now, {
+    cooldownSeconds: deps.config.emailCooldownSeconds,
+    windowSeconds: deps.config.emailWindowSeconds,
+    maxInWindow: deps.config.emailMaxAttempts,
+    maxPerDay: deps.config.emailDailyMax,
+  });
 }

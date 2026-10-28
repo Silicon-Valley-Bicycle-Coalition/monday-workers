@@ -83,7 +83,13 @@ const REQUIRED_AUTH_KEYS = ['magicLinkTtlMinutes', 'letterLinkTtlHours', 'sessio
 // January email days later still gets in (issue #31), short enough that a typo can't mint
 // month-long bearer credentials sitting in inboxes.
 const MAX_LETTER_LINK_TTL_HOURS = 168;
-const REQUIRED_RATE_LIMIT_KEYS = ['emailWindowSeconds', 'emailMaxAttempts', 'attemptRetentionHours'] as const;
+const REQUIRED_RATE_LIMIT_KEYS = [
+  'emailCooldownSeconds',
+  'emailWindowSeconds',
+  'emailMaxAttempts',
+  'emailDailyMax',
+  'attemptRetentionHours',
+] as const;
 const REQUIRED_TAX_LETTER_KEYS = [
   'orgLegalName',
   'ein',
@@ -187,11 +193,20 @@ export function validateConfig(raw: unknown): Config {
 
   const rateLimit = requireObject(cfg, 'rateLimit');
   requireKeys(rateLimit, 'rateLimit', REQUIRED_RATE_LIMIT_KEYS);
-  // The daily purge deletes login_attempts older than this; any retention not beyond the
-  // per-email window would silently loosen the rate limit it exists to enforce.
-  const windowHours = typeof rateLimit.emailWindowSeconds === 'number' ? rateLimit.emailWindowSeconds / 3600 : 0;
-  if (typeof rateLimit.attemptRetentionHours !== 'number' || !(rateLimit.attemptRetentionHours > windowHours)) {
-    throw new Error('config: "rateLimit.attemptRetentionHours" must be a number of hours longer than rateLimit.emailWindowSeconds');
+  for (const key of ['emailCooldownSeconds', 'emailWindowSeconds', 'emailMaxAttempts', 'emailDailyMax'] as const) {
+    const value = rateLimit[key];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new Error(`config: "rateLimit.${key}" must be a positive integer`);
+    }
+  }
+  // The daily purge deletes login_attempts older than this; anything shorter than the longest
+  // look-back (the 24-hour daily cap, or the window if longer) would silently loosen the limit
+  // it exists to enforce.
+  const lookbackHours = Math.max(24, (rateLimit.emailWindowSeconds as number) / 3600);
+  if (typeof rateLimit.attemptRetentionHours !== 'number' || !(rateLimit.attemptRetentionHours >= lookbackHours)) {
+    throw new Error(
+      'config: "rateLimit.attemptRetentionHours" must be a number of hours covering both 24 hours (the daily cap) and rateLimit.emailWindowSeconds'
+    );
   }
 
   const taxLetter = requireObject(cfg, 'taxLetter');
