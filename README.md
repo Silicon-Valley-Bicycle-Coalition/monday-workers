@@ -167,6 +167,37 @@ Migration Method). What it needs instead: retry-with-backoff on individual Monda
 within the script itself, and a log of which records failed so a partial run can be resumed rather
 than restarted from zero. See that Worker's README.
 
+## Webhook secrets in the URL (`?secret=`)
+
+Funraise, Eventbrite and Monday webhooks can't send a custom header or a per-delivery signature
+this repo can verify, so every Worker they call authenticates the delivery by a shared secret
+embedded in the registered URL: `funraise-sync`, `eventbrite-sync`, `donation-rollups`,
+`mailchimp-sync` (Monday and Mailchimp routes), `benevity-import`, `member-portal`'s letters
+route, `quickbooks-sync`'s Monday route and `bp-feedback-notify`. (Intuit signs its own
+deliveries, so `quickbooks-sync`'s `/webhooks/quickbooks` has no `?secret=`.) Each route fails
+closed while its secret is unset.
+
+The accepted trade-off (#65): a URL secret lands wherever the full request URL is recorded —
+above all Cloudflare's **Workers Logs** invocation records, which every Worker here keeps
+(`observability.enabled`). Anyone who can read a Worker's logs in the dashboard, or holds an API
+token with Workers observability or Log Share read, can read its webhook secret and forge
+deliveries. Mitigations, in every such Worker:
+
+- **Keep log access limited to people who could read the secret anyway.** As of 2026-10-28 the
+  SVBC Cloudflare account has three members, all Super Administrators (who can already rotate
+  any Worker secret); there are no read-only or log-only members. Before adding anyone below
+  that level, give them a role without Workers observability or Log Share access, and never mint
+  an API token with those permissions for a third party. Re-check the list under
+  Manage Account → Members whenever staff change, and update this paragraph.
+- **Never log `c.req.url`** (or the raw query string) in Worker code. Callers that *can* set
+  headers — scripts, hand replays — use `X-Webhook-Secret` where the route accepts it, so their
+  secret never reaches a URL.
+- **Rotate if logs are ever shared or exported:** `wrangler secret put <NAME>` with a new value,
+  then edit the URL at the sender (Monday subscriptions must be deleted and re-registered).
+- A secret used only in a URL authenticates webhooks and nothing else. Operator endpoints take
+  their own secret in a header (`Authorization: Bearer`, as `report-digests` does), not
+  `?secret=`.
+
 ## Write switch: off / hold / on
 
 Every Worker that writes to Monday (or sends email) reads a per-Worker mode from a shared

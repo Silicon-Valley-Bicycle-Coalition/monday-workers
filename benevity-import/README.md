@@ -385,6 +385,14 @@ board 2026-10-19: Retry status column `color_mm89sfqw` (labels Needs review / Re
 Done), Key text column `text_mm892fps`, and the Retry webhook `655429553`; all three are wired
 into `config/sandbox.json`.
 
+Both routes authenticate with `?secret=<BENEVITY_WEBHOOK_SECRET>` because Monday can't send a
+custom header. That is an accepted trade-off: the full request URL, secret included, is recorded
+in this Worker's Workers Logs invocation records, readable by anyone with dashboard log access to
+it. Keep that access limited to people who could read the secret anyway, never log `c.req.url`
+here, and rotate the secret (new `wrangler secret put`, then delete and re-register **both**
+Monday webhooks with the new URL) if logs are ever shared. See the root README's "Webhook
+secrets in the URL" for who holds log access.
+
 Provisioned and verified 2026-09-19: D1 `svbc-benevity-import-sandbox` (id in `wrangler.jsonc`),
 both queues, both secrets, and Monday webhook `639785248` on the sandbox Uploads board. Register
 that webhook as `change_specific_column_value` with `config: {"columnId": "<file column id>"}` —
