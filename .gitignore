@@ -14,3 +14,7 @@ worker-configuration.d.ts
 
 # superpowers:brainstorming visual-companion mockups (ephemeral scratch, not deliverables)
 .superpowers/
+
+# salesforce-import resolves data/ against the cwd, so a run from anywhere but its own directory
+# lands real donor PII there. Unanchored on purpose: matches a data/ at any depth.
+data/
