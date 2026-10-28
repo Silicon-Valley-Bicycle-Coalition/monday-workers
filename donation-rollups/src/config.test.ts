@@ -146,7 +146,7 @@ describe('validateConfig — membership block', () => {
     // columns, so switching it on also needs an owner membership block and the volunteer arrays.
     const raw = rawSandboxConfig.donationRollups.ownerColumnsByBoard as Record<string, any>;
     const enabled = { ...rawSandboxConfig, donationRollups: { ...rawSandboxConfig.donationRollups,
-      ownerColumnsByBoard: { ...raw, '18431577220': { ...raw['18431577220'], membership: membershipColumns } },
+      ownerColumnsByBoard: { ...raw, '18437342592': { ...raw['18437342592'], membership: membershipColumns } },
       membership: documentedMembershipBlock, volunteerBoards: [], historicalVolunteerBoards: [] } };
     expect(validateConfig(enabled).donationRollups.membership?.eligibleGiftTypes).toEqual(['Donation']);
   });
@@ -215,17 +215,17 @@ describe('validateConfig — affiliations block', () => {
     raw.affiliations = null;
     const cfg = validateConfig(raw);
     expect(cfg.affiliations).toBeNull();
-    expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBe('board_relation_mm79313');
+    expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBe('board_relation_mm8h44js');
   });
   it('the shipped sandbox config has the affiliations feature on, wired to the real Affiliations board', () => {
     const cfg = validateConfig(rawBase());
     expect(cfg.affiliations).toEqual({
-      boardId: 18431577240,
+      boardId: 18437342615,
       columns: {
-        personLink: 'board_relation_mm794eac',
-        attributedGiving: 'numeric_mm79ym3t',
-        attributedGiftCount: 'numeric_mm796s2x',
-        lastAttributedGift: 'date_mm79bzkq',
+        personLink: 'board_relation_mm8hvr9x',
+        attributedGiving: 'numeric_mm8htx9k',
+        attributedGiftCount: 'numeric_mm8hn5vv',
+        lastAttributedGift: 'date_mm8hy6jg',
       },
     });
   });
@@ -234,13 +234,13 @@ describe('validateConfig — affiliations block', () => {
     raw.affiliations = { boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag',
       attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } };
     raw.donationRollups.donationBoards[0].columns.actingForLink = 'br_af';
-    raw.donationRollups.ownerColumnsByBoard['18431577220'].organizationalGiving = 'n_og';
+    raw.donationRollups.ownerColumnsByBoard['18437342592'].organizationalGiving = 'n_og';
     const cfg = validateConfig(raw);
     expect(cfg.affiliations).toEqual({ boardId: 555, columns: { personLink: 'br_p', attributedGiving: 'n_ag',
       attributedGiftCount: 'n_agc', lastAttributedGift: 'd_lag' } });
     expect(cfg.donationRollups.donationBoards[0]!.columns.actingForLink).toBe('br_af');
-    expect(cfg.donationRollups.ownerColumnsByBoard['18431577220']!.organizationalGiving).toBe('n_og');
-    expect(cfg.donationRollups.ownerColumnsByBoard['18431577213']!.organizationalGiving).toBeUndefined();
+    expect(cfg.donationRollups.ownerColumnsByBoard['18437342592']!.organizationalGiving).toBe('n_og');
+    expect(cfg.donationRollups.ownerColumnsByBoard['18437342579']!.organizationalGiving).toBeUndefined();
   });
   it('rejects an affiliations block missing a column, and a block without actingForLink on the donation board', () => {
     const raw = rawBase();
