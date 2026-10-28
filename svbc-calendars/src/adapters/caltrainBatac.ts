@@ -1,10 +1,11 @@
 import type { CaltrainBatacSourceConfig, NormalizedEvent } from '../types';
 import { parseIcsEvents } from '../util/parseIcs';
+import { SOURCE_FETCH_TIMEOUT_MS } from '../util/fetchTimeout';
 
 const DATA_URI_PATTERN = /data:text\/calendar;charset=utf8;base64,([A-Za-z0-9+/=]+)/g;
 
 export async function fetchCaltrainBatacEvents(source: CaltrainBatacSourceConfig): Promise<NormalizedEvent[]> {
-  const response = await fetch(source.pageUrl);
+  const response = await fetch(source.pageUrl, { signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS) });
   if (!response.ok) {
     throw new Error(`caltrainBatac: page fetch failed: ${response.status} ${response.statusText}`);
   }

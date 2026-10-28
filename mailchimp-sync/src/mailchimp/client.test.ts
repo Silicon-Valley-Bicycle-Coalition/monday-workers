@@ -321,3 +321,25 @@ describe('HttpMailchimpClient rate limiting', () => {
     expect(err).not.toBeInstanceOf(MailchimpRateLimitError);
   });
 });
+
+// #73: the queues run one message at a time, so a hung Mailchimp call must fail (and be retried)
+// rather than stall every message behind it.
+describe('HttpMailchimpClient request timeouts', () => {
+  it('passes every request a timeout signal, and a hung request rejects with TimeoutError', async () => {
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => realTimeout(1));
+    const fetchFn = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)))
+    );
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn as typeof fetch);
+
+    await expect(client.unsubscribeMember('a@b.com')).rejects.toMatchObject({ name: 'TimeoutError' });
+    await expect(client.getMemberInterests('a@b.com')).rejects.toMatchObject({ name: 'TimeoutError' });
+    await expect(client.listInterests(['cat-1'])).rejects.toMatchObject({ name: 'TimeoutError' });
+
+    expect(timeoutSpy).toHaveBeenCalledTimes(3);
+    for (const [timeoutMs] of timeoutSpy.mock.calls) expect(timeoutMs).toBe(20_000);
+    timeoutSpy.mockRestore();
+  });
+});
