@@ -4,7 +4,7 @@ import { mapEvent } from '../mapping/event';
 import { matchPerson } from '../matching/people';
 import { isActive, statusText } from '../monday/client';
 import { isItemGone } from '../monday/itemGone';
-import type { AttendeeQueueMessage, ProcessBatchDeps } from './processBatch';
+import { TERMINAL_PREFIX, type AttendeeQueueMessage, type ProcessBatchDeps } from './processBatch';
 import { EVENT_NOT_FOUND_ERROR } from './processEvent';
 import { stampOf } from './messages';
 import { linkedItemId } from '../util/itemId';
@@ -34,10 +34,14 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   // the event consumer writes it, and the retry finds it. recordDelivery first, because it is the
   // upsert that guarantees the ledger row processEvent requires.
   const eventRow = await eventStore.getEvent(eventId);
-  if (eventRow !== null && eventRow.mondayItemId === null && eventRow.status === 'failed' && (eventRow.error ?? '').includes(EVENT_NOT_FOUND_ERROR)) {
-    // Eventbrite 404d the event itself: asking again would just 404 again, and this attendee would
-    // retry its way to the dead-letter queue. Stop here, for a human.
-    const reason = `event ${eventId} not found in Eventbrite (HTTP 404); attendee not written`;
+  const eventError = eventRow?.status === 'failed' && eventRow.mondayItemId === null ? (eventRow.error ?? '') : '';
+  if (eventError.includes(EVENT_NOT_FOUND_ERROR) || eventError.startsWith(TERMINAL_PREFIX)) {
+    // The event failed for good — Eventbrite 404d it, or a deterministic 4xx (#75). Asking again
+    // would fail the same way, and this attendee would retry its way to the dead-letter queue,
+    // re-sending the event each time. Stop here, for a human.
+    const reason = eventError.includes(EVENT_NOT_FOUND_ERROR)
+      ? `event ${eventId} not found in Eventbrite (HTTP 404); attendee not written`
+      : `event ${eventId} failed without retry (${eventError}); attendee not written`;
     console.warn(`eventbrite-sync consumer: attendee "${attendeeId}": ${reason}; marking failed without retry`);
     await attendeeStore.updateStatus(attendeeId, 'failed', { error: reason });
     return;
