@@ -8,7 +8,7 @@ export function buildExtracts(cfg: Config): { name: string; soql: string; backup
         Email, Primary_Email__c, Secondary_Email__c, Email_3__c, Email_4__c,
         npe01__HomeEmail__c, npe01__WorkEmail__c, npe01__AlternateEmail__c, npe01__Preferred_Email__c,
         Account.Do_Not_Solicit__c, Account.Do_Not_Solicit_What__c, Employer__c, dtd__company__c, funraise__fr_ID__c, Elected__c,
-        Do_Not_Mail__c, Do_Not_Mail_Reason__c, Deceased__c, npsp__Deceased__c,
+        Do_Not_Mail__c, Do_Not_Mail_Reason__c, Deceased__c, npsp__Deceased__c, npsp__Do_Not_Contact__c,
         ${WINDFALL_FIELDS.join(', ')},
         Account.Owner.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name FROM Contact` },
     { name: 'accounts', paginate: true, soql: `SELECT Id, Name, npe01__SYSTEM_AccountType__c, Type, Type_2__c, Industry,

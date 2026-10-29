@@ -162,6 +162,26 @@ describe('contactToPayload', () => {
     expect(npsp.columns['Do Not Solicit Reason']).toBe('Deceased; Mail');
   });
 
+  it('marks an NPSP Do Not Contact as both Do Not Solicit and Do Not Mail, joining any existing reason (#53)', () => {
+    const dnc = contactToPayload({ Id: 'c16', FirstName: 'A', LastName: 'B', npsp__Do_Not_Contact__c: true },
+      'people-live', { consent: new Map() });
+    expect(dnc.columns['Do Not Solicit']).toEqual({ checked: 'true' });
+    expect(dnc.columns['Do Not Solicit Reason']).toBe('Do Not Contact (Salesforce)');
+    expect(dnc.columns['Do Not Mail']).toEqual({ checked: 'true' });
+    expect(dnc.columns['Do Not Mail Reason']).toBe('Do Not Contact (Salesforce)');
+    const both = contactToPayload({ Id: 'c17', FirstName: 'A', LastName: 'B', npsp__Do_Not_Contact__c: true,
+      Deceased__c: true, Do_Not_Mail__c: true, Do_Not_Mail_Reason__c: 'Undeliverable',
+      Account: { Do_Not_Solicit__c: true, Do_Not_Solicit_What__c: 'Mail' } }, 'people-live', { consent: new Map() });
+    expect(both.columns['Do Not Solicit Reason']).toBe('Deceased; Do Not Contact (Salesforce); Mail');
+    expect(both.columns['Do Not Mail Reason']).toBe('Undeliverable; Do Not Contact (Salesforce)');
+    const none = contactToPayload({ Id: 'c18', FirstName: 'A', LastName: 'B', npsp__Do_Not_Contact__c: false },
+      'people-live', { consent: new Map() });
+    expect(none.columns['Do Not Solicit']).toBeNull();
+    expect(none.columns['Do Not Mail']).toBeNull();
+    expect(none.columns['Do Not Solicit Reason']).toBe('');
+    expect(none.columns['Do Not Mail Reason']).toBe('');
+  });
+
   it('prefers Employer__c over the empty 360MatchPro dtd__company__c for Employer Name', () => {
     const p = contactToPayload({ Id: 'c1', FirstName: 'A', LastName: 'B', Employer__c: 'Google',
       dtd__company__c: null, CreatedDate: '2020-01-01T00:00:00Z', CreatedBy: { Name: 'X' },
