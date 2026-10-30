@@ -21,6 +21,7 @@
   "triggers": { "crons": ["*/30 * * * *"] },
   "vars": {
     "ENVIRONMENT": "production",
+    "PROBE_ENABLED": "false",
     // Set to the SVBC Integrations user id at cutover (plan step 0.4).
     "EXPECTED_USER_ID": "",
     "MONDAY_SUBDOMAIN": "bikesiliconvalley"
@@ -44,6 +45,7 @@
       "triggers": { "crons": ["*/30 * * * *"] },
       "vars": {
         "ENVIRONMENT": "sandbox",
+        "PROBE_ENABLED": "true",
         // Sandbox Integration
         "EXPECTED_USER_ID": "117112617",
         "MONDAY_SUBDOMAIN": "bikesiliconvalley"

@@ -5,7 +5,7 @@ import { createApp } from './routes';
 import { D1AppTokenStore } from './tokenStore';
 
 const TOKEN = 'PROBE-SECRET-TOKEN-VALUE';
-const testEnv = { ...(env as unknown as Env), START_KEY: 'the-start-key' } as Env;
+const testEnv = { ...(env as unknown as Env), START_KEY: 'the-start-key', PROBE_ENABLED: 'true' } as Env;
 
 interface Seen {
   auth: string | null;
@@ -33,9 +33,8 @@ function fakeMonday(failing?: string) {
   return { fetchFn, seen };
 }
 
-function appWith(fetchFn: typeof fetch) {
-  const broker = { token: async () => TOKEN };
-  return createApp({ store: new D1AppTokenStore(env.DB), env: testEnv, fetchFn, now: () => new Date(), broker });
+function appWith(fetchFn: typeof fetch, broker: { token(app: any): Promise<string> } | null = { token: async () => TOKEN }, over: Partial<Env> = {}) {
+  return createApp({ store: new D1AppTokenStore(env.DB), env: { ...testEnv, ...over }, fetchFn, now: () => new Date(), broker: broker ?? undefined });
 }
 
 const url = (extra = '') => `https://broker.test/oauth/probe/readonly?key=the-start-key&workspace=7${extra}`;
@@ -97,5 +96,86 @@ describe('GET /oauth/probe/:app', () => {
     const text = await res.text();
     expect(text).not.toContain(TOKEN);
     expect(res.status).toBe(200);
+  });
+
+  it('measures complexity first and alone', async () => {
+    const order: string[] = [];
+    let complexityDone = false;
+    const base = fakeMonday().fetchFn;
+    const fetchFn = (async (u: RequestInfo | URL, init?: RequestInit) => {
+      const q = (JSON.parse(String(init?.body)) as { query: string }).query;
+      if (q.includes('complexity')) {
+        order.push('complexity');
+        await new Promise((r) => setTimeout(r, 20));
+        complexityDone = true;
+      } else {
+        expect(complexityDone).toBe(true);
+        order.push('other');
+      }
+      return base(u, init);
+    }) as typeof fetch;
+    const res = await appWith(fetchFn).request(url());
+    expect(res.status).toBe(200);
+    expect(order[0]).toBe('complexity');
+    expect(order.filter((o) => o === 'complexity')).toHaveLength(1);
+    expect(order.length).toBeGreaterThan(1);
+  });
+
+  it('records a timeout as that check failing, without the token', async () => {
+    const base = fakeMonday().fetchFn;
+    const fetchFn = (async (u: RequestInfo | URL, init?: RequestInit) => {
+      const q = (JSON.parse(String(init?.body)) as { query: string }).query;
+      if (q.includes('platform_api')) throw new DOMException(`timed out ${TOKEN}`, 'TimeoutError');
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return base(u, init);
+    }) as typeof fetch;
+    const res = await appWith(fetchFn).request(url());
+    const text = await res.text();
+    expect(text).not.toContain(TOKEN);
+    const body = JSON.parse(text) as Record<string, any>;
+    expect(body.platformApi.ok).toBe(false);
+    expect(body.bareHeader).toEqual({ ok: true });
+  });
+
+  it('is 404 before the key check unless PROBE_ENABLED is exactly "true"', async () => {
+    for (const flag of ['false', '', 'TRUE', undefined]) {
+      let brokerCalls = 0;
+      let fetchCalls = 0;
+      const fetchFn = (async () => {
+        fetchCalls++;
+        return Response.json({});
+      }) as typeof fetch;
+      const broker = { token: async () => (brokerCalls++, TOKEN) };
+      const app = appWith(fetchFn, broker, { PROBE_ENABLED: flag });
+      expect((await app.request(url())).status).toBe(404);
+      expect((await app.request('https://broker.test/oauth/probe/readonly?workspace=7')).status).toBe(404);
+      expect(brokerCalls + fetchCalls).toBe(0);
+    }
+  });
+
+  it('is 409 when the broker throws, and only mentions consent when it says so', async () => {
+    const transient = appWith(fakeMonday().fetchFn, { token: async () => { throw new Error('D1 hiccup'); } });
+    const r1 = await transient.request(url());
+    expect(r1.status).toBe(409);
+    expect(await r1.text()).not.toMatch(/consent/i);
+    const consent = appWith(fakeMonday().fetchFn, {
+      token: async () => { throw new Error('monday-auth: the readonly app needs consent; re-run'); },
+    });
+    const r2 = await consent.request(url());
+    expect(r2.status).toBe(409);
+    expect(await r2.text()).toMatch(/consent/i);
+  });
+
+  it('is 500 when no broker is configured', async () => {
+    expect((await appWith(fakeMonday().fetchFn, null).request(url())).status).toBe(500);
+  });
+
+  it('never leaks the token from an HTTP error body that echoes it bare and as Bearer', async () => {
+    const fetchFn = (async () =>
+      Response.json({ error_message: `bad auth ${TOKEN} / Bearer ${TOKEN}` }, { status: 401 })) as typeof fetch;
+    const res = await appWith(fetchFn).request(url());
+    const text = await res.text();
+    expect(text).not.toContain(TOKEN);
+    expect(JSON.parse(text).bareHeader.ok).toBe(false);
   });
 });

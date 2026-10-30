@@ -99,8 +99,9 @@ export function createApp(deps: RouteDeps): Hono {
   });
 
   // Verification aid for the Monday checks (token scope, header form, platform_api, complexity).
-  // Same key gate as /oauth/start; the response never includes the token.
+  // Off unless PROBE_ENABLED is exactly "true" (404 before the key check). Same key gate as /oauth/start; the response never includes the token.
   app.get('/oauth/probe/:app', async (c) => {
+    if (env.PROBE_ENABLED !== 'true') return c.text('not found', 404);
     if (!(await keyMatches(c.req.query('key') ?? '', env.START_KEY))) return c.text('forbidden', 403);
     const name = c.req.param('app');
     if (!isAppKey(name)) return c.text('unknown app', 404);
@@ -112,7 +113,13 @@ export function createApp(deps: RouteDeps): Hono {
       token = await broker.token(name);
     } catch (err) {
       console.error(`monday-auth: probe could not get a ${name} token: ${err instanceof Error ? err.message : 'error'}`);
-      return c.text(`no usable token for the ${name} app; run the consent flow`, 409);
+      const needsConsent = err instanceof Error && /needs consent|not authorized yet/i.test(err.message);
+      return c.text(
+        needsConsent
+          ? `the ${name} app needs consent; run its consent flow`
+          : `could not get a ${name} token right now; try again`,
+        409
+      );
     }
     return c.json(await runProbe(token, workspace, fetchFn));
   });

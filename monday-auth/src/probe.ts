@@ -22,6 +22,7 @@ async function gql<T>(fetchFn: FetchFn, authorization: string, query: string): P
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: authorization, 'API-Version': API_VERSION },
     body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(15_000),
   });
   const body = (await res.json().catch(() => null)) as { data?: T; errors?: { message?: string }[]; error_message?: string } | null;
   if (!res.ok || body === null || body.errors || !body.data) {
@@ -51,7 +52,22 @@ export async function runProbe(token: string, workspace: string, fetchFn: FetchF
       return { ok: true as const };
     });
 
-  const [me, scope, bareHeader, bearerHeader, platformApi, complexity] = await Promise.all([
+  // Measured alone and first, so `before` is the budget as the probe found it and
+  // `before - after` is this one query's cost.
+  const complexity = await attempt(async () => {
+    const data = await gql<{ complexity: { before: number; after: number; reset_in_x_seconds: number } }>(
+      fetchFn,
+      token,
+      '{ complexity { before after reset_in_x_seconds } me { id } }'
+    );
+    return {
+      before: data.complexity.before,
+      after: data.complexity.after,
+      resetInSeconds: data.complexity.reset_in_x_seconds,
+    };
+  });
+
+  const [me, scope, bareHeader, bearerHeader, platformApi] = await Promise.all([
     attempt(async () => (await gql<{ me: { id: string; name: string } }>(fetchFn, token, '{ me { id name } }')).me),
     attempt(async () => summarizeScope(await listBoards((q) => gql(fetchFn, token, q)), [workspace])),
     header(token),
@@ -59,18 +75,6 @@ export async function runProbe(token: string, workspace: string, fetchFn: FetchF
     attempt(async () => {
       await gql(fetchFn, token, '{ platform_api { daily_limit { base } } }');
       return { ok: true as const };
-    }),
-    attempt(async () => {
-      const data = await gql<{ complexity: { before: number; after: number; reset_in_x_seconds: number } }>(
-        fetchFn,
-        token,
-        '{ complexity { before after reset_in_x_seconds } me { id } }'
-      );
-      return {
-        before: data.complexity.before,
-        after: data.complexity.after,
-        resetInSeconds: data.complexity.reset_in_x_seconds,
-      };
     }),
   ]);
   return { me, scope, bareHeader, bearerHeader, platformApi, complexity };
