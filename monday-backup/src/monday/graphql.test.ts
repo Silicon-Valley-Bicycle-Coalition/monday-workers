@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BudgetExhaustedError, Deadline } from '../deadline';
-import { AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL } from './graphql';
+import { AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL, tokenProviderFor } from './graphql';
 
 // Read-path retry behaviour is covered through HttpMondayClient in client.test.ts; this file
 // covers what only the restore tool's writes use: `idempotent: false`.
@@ -212,5 +212,64 @@ describe('MondayGraphQL apiVersion option', () => {
     await new MondayGraphQL('https://api.monday.com/v2', 't', { apiVersion: '2026-01' }).request('query { ok }', {});
     const versions = fetchMock.mock.calls.map((call) => new Headers((call as unknown as [string, RequestInit])[1].headers).get('API-Version'));
     expect(versions).toEqual([MONDAY_API_VERSION, '2026-01']);
+  });
+});
+
+describe('MondayGraphQL token provider', () => {
+  const ok = () => new Response(JSON.stringify({ data: { ok: 1 } }), { status: 200 });
+  const unauthorized = () => new Response('Not Authenticated', { status: 401 });
+  function withProvider(provider: (rejected?: string) => Promise<string>, responses: Response[], maxAttempts = 4) {
+    const fetchMock = vi.fn();
+    for (const r of responses) fetchMock.mockResolvedValueOnce(r);
+    vi.stubGlobal('fetch', fetchMock);
+    const gql = new MondayGraphQL('https://api.monday.com/v2', provider, { sleepFn: async () => {}, maxAttempts });
+    return { gql, fetchMock };
+  }
+  const authOf = (fetchMock: ReturnType<typeof vi.fn>, call: number) =>
+    (fetchMock.mock.calls[call]![1] as RequestInit & { headers: Record<string, string> }).headers.Authorization;
+
+  it('calls the provider per request', async () => {
+    const provider = vi.fn().mockResolvedValue('tokA');
+    const { gql, fetchMock } = withProvider(provider, [ok(), ok()]);
+    await gql.request('query { ok }', {});
+    await gql.request('query { ok }', {});
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(authOf(fetchMock, 0)).toBe('tokA');
+    expect(authOf(fetchMock, 1)).toBe('tokA');
+  });
+
+  it('asks the provider again once after a 401, passing the rejected token', async () => {
+    const provider = vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce('new');
+    const { gql, fetchMock } = withProvider(provider, [unauthorized(), ok()]);
+    await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: 1 });
+    expect(provider.mock.calls).toEqual([[], ['old']]);
+    expect(authOf(fetchMock, 1)).toBe('new');
+  });
+
+  it('a second 401 throws MondayApiError httpStatus 401 without a third call', async () => {
+    const provider = vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce('new');
+    const { gql, fetchMock } = withProvider(provider, [unauthorized(), unauthorized()]);
+    await expect(gql.request('query { ok }', {})).rejects.toMatchObject({ httpStatus: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a string token never retries a 401', async () => {
+    const { gql, fetchMock } = transport([unauthorized(), ok()]);
+    await expect(gql.request('query { ok }', {})).rejects.toMatchObject({ httpStatus: 401 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('401 retry does not count against maxAttempts', async () => {
+    const provider = vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce('new');
+    const { gql } = withProvider(provider, [unauthorized(), ok()], 1);
+    await expect(gql.request('query { ok }', {})).resolves.toEqual({ ok: 1 });
+  });
+
+  it('tokenProviderFor prefers the binding, falls back to the string, throws on neither', async () => {
+    const token = vi.fn().mockResolvedValue('fromBinding');
+    expect(await tokenProviderFor({ MONDAY_AUTH: { token }, MONDAY_API_TOKEN: 'str' })('bad')).toBe('fromBinding');
+    expect(token).toHaveBeenCalledWith('bad');
+    expect(await tokenProviderFor({ MONDAY_API_TOKEN: 'str' })()).toBe('str');
+    expect(() => tokenProviderFor({})).toThrow(/neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN/);
   });
 });
