@@ -41,7 +41,13 @@ export class ReadOnlyToken extends AppToken {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    const app = createApp({ store: new D1AppTokenStore(env.DB), env, fetchFn: fetch, now: () => new Date() });
+    const app = createApp({
+      store: new D1AppTokenStore(env.DB),
+      env,
+      fetchFn: fetch,
+      now: () => new Date(),
+      broker: brokerFor(env),
+    });
     return app.fetch(request, env);
   },
 

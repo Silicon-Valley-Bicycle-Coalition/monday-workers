@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { APPS, type AppKey } from './apps';
 import type { Env } from './env';
+import { runProbe } from './probe';
 import { authorizeUrl, exchangeCode, fetchMe, pkcePair, revoke, type FetchFn } from './mondayOAuth';
 import type { D1AppTokenStore } from './tokenStore';
 
@@ -9,6 +10,8 @@ export interface RouteDeps {
   env: Env;
   fetchFn: FetchFn;
   now: () => Date;
+  // Hands out the app's current access token; required only by the probe route.
+  broker?: { token(app: AppKey): Promise<string> };
 }
 
 function esc(value: unknown): string {
@@ -57,7 +60,7 @@ function credentials(env: Env, app: AppKey): { clientId: string; clientSecret: s
 
 // No response, page or log line below ever includes an access or refresh token.
 export function createApp(deps: RouteDeps): Hono {
-  const { store, env, fetchFn, now } = deps;
+  const { store, env, fetchFn, now, broker } = deps;
   const app = new Hono();
 
   app.get('/health', async (c) => {
@@ -93,6 +96,25 @@ export function createApp(deps: RouteDeps): Hono {
       }),
       302
     );
+  });
+
+  // Verification aid for the Monday checks (token scope, header form, platform_api, complexity).
+  // Same key gate as /oauth/start; the response never includes the token.
+  app.get('/oauth/probe/:app', async (c) => {
+    if (!(await keyMatches(c.req.query('key') ?? '', env.START_KEY))) return c.text('forbidden', 403);
+    const name = c.req.param('app');
+    if (!isAppKey(name)) return c.text('unknown app', 404);
+    const workspace = c.req.query('workspace') ?? '';
+    if (!/^\d+$/.test(workspace)) return c.text('workspace must be a numeric workspace id', 400);
+    if (!broker) return c.text('probe is not configured', 500);
+    let token: string;
+    try {
+      token = await broker.token(name);
+    } catch (err) {
+      console.error(`monday-auth: probe could not get a ${name} token: ${err instanceof Error ? err.message : 'error'}`);
+      return c.text(`no usable token for the ${name} app; run the consent flow`, 409);
+    }
+    return c.json(await runProbe(token, workspace, fetchFn));
   });
 
   app.get('/oauth/callback', async (c) => {
