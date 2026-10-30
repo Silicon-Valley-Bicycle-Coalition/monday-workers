@@ -22,7 +22,7 @@
   "mailchimp": {
     "apiBaseUrl": "https://us9.api.mailchimp.com/3.0",
     "audienceId": "eab542a5df",
-    "interestCategoryIds": ["REPLACE_WITH_INTEREST_CATEGORY_ID"],
+    "interestCategoryIds": ["760af5e2a0"],
     "mergeFields": {
       "memberSince": "MEMBSINCE",
       "memberUntil": "MEMBUNTIL",
