@@ -12,8 +12,7 @@
     {
       "binding": "DB",
       "database_name": "svbc-monday-auth",
-      // Placeholder until `wrangler d1 create svbc-monday-auth` runs (plan Task 6).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "bafa2bf8-25b7-4bcb-8631-a946e6fe7d94",
       "migrations_dir": "migrations"
     }
   ],
@@ -22,8 +21,8 @@
   "vars": {
     "ENVIRONMENT": "production",
     "PROBE_ENABLED": "false",
-    // Set to the SVBC Integrations user id at cutover (plan step 0.4).
-    "EXPECTED_USER_ID": "",
+    // The SVBC Integration user (created 2026-10-30); consent by anyone else is refused.
+    "EXPECTED_USER_ID": "120827741",
     "MONDAY_SUBDOMAIN": "bikesiliconvalley"
   },
   "observability": { "enabled": true, "issues": { "enabled": true } },
@@ -37,8 +36,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-monday-auth-sandbox",
-          // Placeholder until `wrangler d1 create svbc-monday-auth-sandbox` runs (plan Task 6).
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "810908bd-9f8e-4a19-baf9-ff7d373f962d",
           "migrations_dir": "migrations"
         }
       ],
