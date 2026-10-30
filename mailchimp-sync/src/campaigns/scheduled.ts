@@ -10,6 +10,12 @@ export async function runScheduledReconcile(
   deps: ReconcileDeps,
   reconcile: (deps: ReconcileDeps) => Promise<ReconcileResult>,
 ): Promise<void> {
+  // Production can run outbound-only, with no Campaigns board yet (decided 2026-10-30): the
+  // reconcile has nowhere to write, so skip it rather than throw on every nightly run.
+  if (deps.config.monday.campaignsBoardId === null) {
+    console.log('mailchimp-sync reconcile: no Campaigns board configured (monday.campaignsBoardId is null); skipping');
+    return;
+  }
   const disposition = runDisposition(gate.mode);
   if (disposition === 'skip') {
     console.warn(`mailchimp-sync reconcile: write mode is "${gate.mode}"; skipping the campaign reconcile`);

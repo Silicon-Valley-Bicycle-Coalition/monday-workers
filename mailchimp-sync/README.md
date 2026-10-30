@@ -270,11 +270,17 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
 * Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
-  independently, and put its id in `mailchimp.interestCategoryIds` (production's is still
-  `REPLACE_WITH_INTEREST_CATEGORY_ID`). In production, adding Welcome Drip and Renewal Reminders
-  to the existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`)
-  works too; its Monthly e-Bulletin interest already covers Newsletter. Only the listed
-  categories are synced.
+  independently, and put its id in `mailchimp.interestCategoryIds`. **Production uses the
+  existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`)**
+  (decided 2026-10-30); add Welcome Drip and Renewal Reminders there; its Monthly e-Bulletin
+  interest already covers Newsletter. Only the listed categories are synced.
+* **Production starts outbound-only** (decided 2026-10-30): `campaignsBoardId` stays `null` and
+  the Mailchimp audience webhook isn't registered, so Monday → Mailchimp (merge fields, tags,
+  Do Not Solicit unsubscribes) runs and Mailchimp → Monday (the Campaigns connect column, the
+  inbound side's only job) doesn't. The nightly reconcile skips itself with one log line while
+  no Campaigns board is configured. To turn inbound on later: build the Campaigns board and the
+  People `mailchimpCampaigns` connect column, fill both ids, deploy, then register the audience
+  webhook.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`
