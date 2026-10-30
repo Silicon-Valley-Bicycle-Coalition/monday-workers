@@ -623,12 +623,16 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
 `[itemId, dateISO, cents, type, status, actingForItemId|'']` (the sixth element is the
 affiliation model's — see below — empty string for a gift with no Acting for), sourced from the
-D1 ledger so it includes archived gifts and their types — plus (where the account supports it) a
-markdown gift-history table in the item description with a deep link per gift. The description
-write is **deliberately non-fatal**:
-`set_item_description_content` 500s outright on this account (the item-description feature isn't
-enabled — even a trivial markdown fails, observed 2026-08-31), so a failure logs and moves on
-rather than burning queue retries over a redundant rendering of the JSON column. Provision the
+D1 ledger so it includes archived gifts and their types — plus a markdown gift-history table in
+the item description with a deep link per gift. The description write is **deliberately
+non-fatal**: `set_item_description_content` returns a bare `Internal server error` for any
+markdown on a board whose item view lacks the **Item description** widget, so a failure logs
+"gift-history description skipped" and moves on rather than burning queue retries over a
+redundant rendering of the JSON column. **Add that widget by hand to the item view of every owner
+board** (open an item → **+** in the item view header → Item description) before the first sweep;
+there is no API for it. Once it's there, writes succeed for every item on the board, including
+items with no description yet (verified on the sandbox 2026-10-30; the 2026-08-31 reading that
+the feature was off for the whole account was wrong). Provision the
 column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
 
 **The Annual Giving Summary board (docs/20 §5.4)** — created by
