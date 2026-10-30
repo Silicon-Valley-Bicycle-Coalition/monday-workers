@@ -94,11 +94,11 @@ Provision what doesn't depend on Monday, so cutover weekend is only config + dep
 
 | Worker | D1 (production) | Queues (+ `-dlq` each) | Still to do |
 |---|---|---|---|
-| `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` (both exist with DLQs, verified 2026-10-08) | nothing — 0001–0005 already applied (verified 2026-10-08) |
+| `member-portal` | exists | `member-portal-change-requests`, `member-portal-letter-emails` (both exist with DLQs, verified 2026-10-08) | nothing — 0001–0006 applied (0001–0005 verified 2026-10-08; 0006, `hash_login_attempts`, applied 2026-10-29 on an empty `login_attempts`) |
 | `funraise-sync` | exists, 0001–0005 applied (0005 applied 2026-10-08) | `funraise-sync-writes` | nothing — the D1 is still reset before first deploy (Phase 4 step 2) |
-| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards); 0009 pending (membership rule) — `0001–0009` must be applied, and 0009 **before** deploying the membership-rule build (same ordering rule as 0005/0006: the build reads `volunteer_activity`, `gifts.term_start` and `pending_recomputes.kind`) | `donation-rollups-recompute` | apply 0009 first |
+| `donation-rollups` | exists (kept through the §9 move); 0001–0008 applied (0008, `gifts_removed_at`, applied 2026-10-08 — it had been missing; all 37,367 gifts read `removed_at` NULL afterwards); 0009 (membership rule) applied 2026-10-23 and 0010 (`owner_leases`, the per-owner recompute lease) applied 2026-10-29 — both had to land **before** the builds that read them (same ordering rule as 0005/0006) | `donation-rollups-recompute` | nothing — 0001–0010 applied |
 | `mailchimp-sync` | created 2026-10-08, id wired | `mailchimp-sync-outbound`, `mailchimp-sync-inbound` (created 2026-10-08) | nothing — 0001–0005 applied 2026-10-08 |
-| `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0002 applied 2026-10-08 |
+| `monday-backup` | created 2026-10-08, id wired | — | nothing — 0001–0003 applied (0003, `usage_alert_state`, applied 2026-10-29) |
 | `benevity-import` | exists, 0001–0003 applied (0002–0003 applied 2026-10-08; the tables were empty, so 0002's dedupe had nothing to merge) | `benevity-import-writes` (created 2026-10-08) | nothing |
 | `eventbrite-sync` | **create** — id is `REPLACE_WITH_D1_ID` (sandbox is also a placeholder) | `eventbrite-sync-writes` | create D1 + queues; wire id; apply 0001 — post-cutover, see Phase 4 step 9 |
 | `bp-feedback-notify` | — | — | nothing |
