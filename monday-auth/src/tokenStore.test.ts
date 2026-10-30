@@ -110,17 +110,18 @@ describe('D1AppTokenStore', () => {
 
   it('takePending returns the verifier once and deletes on read', async () => {
     const store = new D1AppTokenStore(env.DB);
-    await store.putPending('st1', 'portal', 'verifier', now);
+    await store.putPending('st1', 'portal', 'verifier', 'https://a.test/oauth/callback', now);
     expect(await store.takePending('st1', new Date(now.getTime() + 60_000))).toEqual({
       app: 'portal',
       codeVerifier: 'verifier',
+      redirectUri: 'https://a.test/oauth/callback',
     });
     expect(await store.takePending('st1', now)).toBeNull();
   });
 
   it('takePending returns null after 10 minutes and deletes on read', async () => {
     const store = new D1AppTokenStore(env.DB);
-    await store.putPending('st2', 'portal', 'verifier', now);
+    await store.putPending('st2', 'portal', 'verifier', 'https://a.test/oauth/callback', now);
     expect(await store.takePending('st2', new Date(now.getTime() + 10 * 60_000 + 1))).toBeNull();
     const row = await env.DB.prepare('SELECT 1 FROM oauth_pending WHERE state = ?1').bind('st2').first();
     expect(row).toBeNull();
@@ -128,11 +129,11 @@ describe('D1AppTokenStore', () => {
 
   it('purgeExpiredPending deletes only rows older than 10 minutes and reports the count', async () => {
     const store = new D1AppTokenStore(env.DB);
-    await store.putPending('old', 'portal', 'v1', now);
-    await store.putPending('new', 'sync', 'v2', new Date(now.getTime() + 9 * 60_000));
+    await store.putPending('old', 'portal', 'v1', 'https://a.test/cb', now);
+    await store.putPending('new', 'sync', 'v2', 'https://a.test/cb', new Date(now.getTime() + 9 * 60_000));
     const purged = await store.purgeExpiredPending(new Date(now.getTime() + 10 * 60_000 + 1));
     expect(purged).toBe(1);
     expect(await store.takePending('old', now)).toBeNull();
-    expect(await store.takePending('new', new Date(now.getTime() + 10 * 60_000))).toEqual({ app: 'sync', codeVerifier: 'v2' });
+    expect(await store.takePending('new', new Date(now.getTime() + 10 * 60_000))).toEqual({ app: 'sync', codeVerifier: 'v2', redirectUri: 'https://a.test/cb' });
   });
 });

@@ -84,11 +84,12 @@ export function createApp(deps: RouteDeps): Hono {
 
     const state = crypto.randomUUID();
     const { verifier, challenge } = await pkcePair();
-    await store.putPending(state, name, verifier, now());
+    const redirectUri = new URL('/oauth/callback', c.req.url).href;
+    await store.putPending(state, name, verifier, redirectUri, now());
     return c.redirect(
       authorizeUrl({
         clientId: creds.clientId,
-        redirectUri: new URL('/oauth/callback', c.req.url).href,
+        redirectUri,
         scopes: APPS[name].scopes,
         state,
         codeChallenge: challenge,
@@ -139,7 +140,7 @@ export function createApp(deps: RouteDeps): Hono {
     let tokens;
     try {
       tokens = await exchangeCode(
-        { ...creds, code, redirectUri: new URL('/oauth/callback', c.req.url).href, verifier: pending.codeVerifier },
+        { ...creds, code, redirectUri: pending.redirectUri, verifier: pending.codeVerifier },
         fetchFn,
         now
       );
@@ -148,14 +149,21 @@ export function createApp(deps: RouteDeps): Hono {
       return c.html(page('Consent failed', ['Monday did not accept the authorization code. Start the flow again.']), 502);
     }
 
-    const revokeQuietly = async () => {
-      try {
-        await revoke({ ...creds, token: tokens.accessToken }, fetchFn);
-        return true;
-      } catch (err) {
-        console.error(`monday-auth: revoke after a rejected consent failed: ${err instanceof Error ? err.message : 'error'}`);
-        return false;
-      }
+    // Revokes both new tokens; a failure of either is logged (never with the token) and ignored.
+    // Returns true only if both revokes succeeded.
+    const revokeQuietly = async (): Promise<boolean> => {
+      const results = await Promise.all(
+        [tokens.accessToken, tokens.refreshToken].map(async (token) => {
+          try {
+            await revoke({ ...creds, token }, fetchFn);
+            return true;
+          } catch (err) {
+            console.error(`monday-auth: revoke after a failed consent failed: ${err instanceof Error ? err.message : 'error'}`);
+            return false;
+          }
+        })
+      );
+      return results.every(Boolean);
     };
 
     let me;
@@ -174,21 +182,34 @@ export function createApp(deps: RouteDeps): Hono {
           `Consent was given as Monday user ${esc(me.id)} (${esc(me.name)}), but this Worker only accepts user ${esc(env.EXPECTED_USER_ID || '(none configured)')}.`,
           'Nothing was stored.',
           revoked
-            ? 'The token was revoked.'
-            : 'Revoking the token failed; remove the app from that user in Monday if it is still listed.',
+            ? 'The tokens were revoked.'
+            : 'Revoking a token failed; remove the app from that user in Monday if it is still listed.',
           'Log in to Monday as the integration user and start the consent flow again.',
         ]),
         403
       );
     }
 
-    await store.save({
-      app: key,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      accessTokenExpiresAt: tokens.expiresAt,
-      authorizedUserId: me.id,
-    });
+    try {
+      await store.save({
+        app: key,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        accessTokenExpiresAt: tokens.expiresAt,
+        authorizedUserId: me.id,
+      });
+    } catch {
+      // The error text is not logged: a driver error could echo the bound token values.
+      console.error(`monday-auth: saving the ${key} token failed`);
+      await revokeQuietly();
+      return c.html(
+        page('Token not stored', [
+          'Monday accepted the consent, but the token could not be stored, so it was revoked.',
+          'Run the consent flow again.',
+        ]),
+        500
+      );
+    }
     return c.html(
       page('Authorized', [
         `App: ${esc(key)}`,

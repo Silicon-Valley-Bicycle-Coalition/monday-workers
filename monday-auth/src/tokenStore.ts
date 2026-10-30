@@ -144,22 +144,22 @@ export class D1AppTokenStore {
     return result.meta.changes === 1;
   }
 
-  async putPending(state: string, app: AppKey, codeVerifier: string, now: Date): Promise<void> {
+  async putPending(state: string, app: AppKey, codeVerifier: string, redirectUri: string, now: Date): Promise<void> {
     await this.db
-      .prepare('INSERT INTO oauth_pending (state, app, code_verifier, created_at) VALUES (?1, ?2, ?3, ?4)')
-      .bind(state, app, codeVerifier, now.toISOString())
+      .prepare('INSERT INTO oauth_pending (state, app, code_verifier, redirect_uri, created_at) VALUES (?1, ?2, ?3, ?4, ?5)')
+      .bind(state, app, codeVerifier, redirectUri, now.toISOString())
       .run();
   }
 
   // Single use: the row is deleted on read, even when it has expired (then returns null).
-  async takePending(state: string, now: Date): Promise<{ app: AppKey; codeVerifier: string } | null> {
+  async takePending(state: string, now: Date): Promise<{ app: AppKey; codeVerifier: string; redirectUri: string } | null> {
     const row = await this.db
-      .prepare('DELETE FROM oauth_pending WHERE state = ?1 RETURNING app, code_verifier, created_at')
+      .prepare('DELETE FROM oauth_pending WHERE state = ?1 RETURNING app, code_verifier, redirect_uri, created_at')
       .bind(state)
-      .first<{ app: AppKey; code_verifier: string; created_at: string }>();
+      .first<{ app: AppKey; code_verifier: string; redirect_uri: string; created_at: string }>();
     if (row === null) return null;
     if (now.getTime() - new Date(row.created_at).getTime() > PENDING_TTL_MS) return null;
-    return { app: row.app, codeVerifier: row.code_verifier };
+    return { app: row.app, codeVerifier: row.code_verifier, redirectUri: row.redirect_uri };
   }
 
   // Cron housekeeping: drops consent flows nobody finished. Same cutoff takePending honours

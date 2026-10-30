@@ -1,8 +1,10 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from './env';
 import { createApp } from './routes';
 import { D1AppTokenStore } from './tokenStore';
+
+afterEach(() => vi.restoreAllMocks());
 
 const NOW = new Date('2026-10-30T10:00:00.000Z');
 const SECRET_ACCESS = 'ACCESS-TOKEN-SECRET-VALUE';
@@ -156,6 +158,76 @@ describe('GET /oauth/callback', () => {
     const revoke = monday.calls.find((c) => c.url.endsWith('/oauth/revoke'));
     expect(revoke).toBeDefined();
     expect(new URLSearchParams(revoke!.body).get('token')).toBe(SECRET_ACCESS);
+    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(c.body).get('token'));
+    expect(revoked.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
+  });
+
+  it('sends the start-time redirect_uri in the exchange even when the callback arrives on another host', async () => {
+    const monday = fakeMonday('42');
+    const { app } = appWith(monday.fetchFn);
+    const state = await startAndGetState(app); // started on broker.test
+    const res = await app.request(`https://other-host.example/oauth/callback?code=c&state=${state}`);
+    expect(res.status).toBe(200);
+    const exchange = monday.calls.find((c) => c.url.endsWith('/oauth/token'))!;
+    expect(new URLSearchParams(exchange.body).get('redirect_uri')).toBe('https://broker.test/oauth/callback');
+  });
+
+  it('revokes both tokens, with no token in the page or logs, when the me lookup fails', async () => {
+    const monday = fakeMonday('42');
+    const meFails = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === 'https://api.monday.com/v2' ? new Response('', { status: 500 }) : monday.fetchFn(input, init)) as typeof fetch;
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...a) => void logs.push(a.join(' ')));
+    const { app, store } = appWith(meFails);
+    const state = await startAndGetState(app);
+    const res = await app.request(`https://broker.test/oauth/callback?code=c&state=${state}`);
+    spy.mockRestore();
+    expect(res.status).toBe(502);
+    const text = await res.text();
+    expect(text).not.toContain(SECRET_ACCESS);
+    expect(text).not.toContain(SECRET_REFRESH);
+    expect(logs.join('\n')).not.toContain('TOKEN-SECRET');
+    expect(await store.get('sync')).toBeNull();
+    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(c.body).get('token'));
+    expect(revoked.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
+  });
+
+  it('a failing revoke of one token does not change the 403 and still tries the other', async () => {
+    const monday = fakeMonday('99');
+    const attempts: (string | null)[] = [];
+    const flaky = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/oauth/revoke')) {
+        const token = new URLSearchParams(String(init?.body)).get('token');
+        attempts.push(token);
+        return new Response('', { status: token === SECRET_ACCESS ? 500 : 200 });
+      }
+      return monday.fetchFn(input, init);
+    }) as typeof fetch;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { app } = appWith(flaky);
+    const state = await startAndGetState(app);
+    const res = await app.request(`https://broker.test/oauth/callback?code=c&state=${state}`);
+    expect(res.status).toBe(403);
+    expect(attempts.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
+  });
+
+  it('when the store cannot save, revokes both tokens and returns a 500 page that leaks no token', async () => {
+    const monday = fakeMonday('42');
+    const store = new D1AppTokenStore(env.DB);
+    vi.spyOn(store, 'save').mockRejectedValue(new Error(`db down ${SECRET_ACCESS}`));
+    const logs: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...a) => void logs.push(a.join(' ')));
+    const app = createApp({ store, env: testEnv, fetchFn: monday.fetchFn, now: () => NOW });
+    const state = await startAndGetState(app);
+    const res = await app.request(`https://broker.test/oauth/callback?code=c&state=${state}`);
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).toMatch(/not stored/i);
+    expect(text).toMatch(/consent/i);
+    expect(text).not.toContain('TOKEN-SECRET');
+    expect(logs.join('\n')).not.toContain('TOKEN-SECRET');
+    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(c.body).get('token'));
+    expect(revoked.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
   });
 
   it('an empty EXPECTED_USER_ID rejects every user', async () => {

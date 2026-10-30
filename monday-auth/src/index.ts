@@ -22,21 +22,23 @@ export function brokerFor(env: Env): TokenBroker {
 
 // Service-binding RPC surface: each class can only obtain its own app's token, so a consumer's
 // binding decides which Monday app (and scopes) it can reach.
-class AppToken extends WorkerEntrypoint<Env> {
-  protected appKey: AppKey = 'portal';
+// Abstract with no default, so a subclass that forgets its appKey is a compile error rather than
+// silently handing out another app's token.
+abstract class AppToken extends WorkerEntrypoint<Env> {
+  protected abstract readonly appKey: AppKey;
   async token(rejected?: string): Promise<string> {
     return brokerFor(this.env).token(this.appKey, rejected);
   }
 }
 
 export class PortalToken extends AppToken {
-  protected override appKey: AppKey = 'portal';
+  protected override readonly appKey: AppKey = 'portal';
 }
 export class SyncToken extends AppToken {
-  protected override appKey: AppKey = 'sync';
+  protected override readonly appKey: AppKey = 'sync';
 }
 export class ReadOnlyToken extends AppToken {
-  protected override appKey: AppKey = 'readonly';
+  protected override readonly appKey: AppKey = 'readonly';
 }
 
 export default {

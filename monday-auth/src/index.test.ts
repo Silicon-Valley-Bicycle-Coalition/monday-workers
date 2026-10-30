@@ -31,7 +31,7 @@ describe('scheduled', () => {
 
   it('purges abandoned consent rows, and a refresh failure does not skip the purge', async () => {
     const store = new D1AppTokenStore(env.DB);
-    await store.putPending('stale', 'portal', 'v', new Date(Date.now() - 60 * 60_000));
+    await store.putPending('stale', 'portal', 'v', 'https://a.test/cb', new Date(Date.now() - 60 * 60_000));
     vi.spyOn(TokenBroker.prototype, 'refreshAllIfDue').mockRejectedValue(new Error('boom'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await worker.scheduled({} as ScheduledController, testEnv, ctx);
