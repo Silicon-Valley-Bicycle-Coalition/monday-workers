@@ -266,14 +266,16 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   `MEMBERUNTIL` (11 chars each) become `MEMBERSINC`/`MEMBERUNTI` if typed as-is, which then
   won't match `config/*.json`'s `mailchimp.mergeFields` and silently drops those two fields
   from every sync. Discovered provisioning the sandbox audience 2026-09-22; use the 9-char
-  tags above instead.
+  tags above instead. **Production: created 2026-10-30** through the API, with the sandbox
+  audience's types (dates `MM/DD/YYYY`, `TOTALGIVE` a number, all non-public).
 * Exclude the `do-not-solicit` tag from every fundraising send and Customer Journey audience.
 * Create one Interest Category (e.g. "Communications") with one Interest per campaign type:
   Newsletter, Welcome Drip, Renewal Reminders, and any others donors should be able to toggle
-  independently, and put its id in `mailchimp.interestCategoryIds`. **Production uses the
-  existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`)**
-  (decided 2026-10-30); add Welcome Drip and Renewal Reminders there; its Monthly e-Bulletin
-  interest already covers Newsletter. Only the listed categories are synced.
+  independently, and put its id in `mailchimp.interestCategoryIds`. **Production (decided
+  2026-10-30):** Welcome Drip (`be943454d9`) and Renewal Reminders (`986d6c84bf`) were added to
+  the existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`, the
+  id in `config/svbc.json`); its Monthly e-Bulletin interest already covers Newsletter. Only
+  the listed categories are synced.
 * **Production starts outbound-only** (decided 2026-10-30): `campaignsBoardId` stays `null` and
   the Mailchimp audience webhook isn't registered, so Monday → Mailchimp (merge fields, tags,
   Do Not Solicit unsubscribes) runs and Mailchimp → Monday (the Campaigns connect column, the

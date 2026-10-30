@@ -504,10 +504,10 @@ async function recomputeOwnerLeased(
       buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
-    // Gift Ledger JSON column, and set_item_description_content 500s outright on accounts
-    // where the item-description feature isn't enabled (observed live 2026-08-31 — even a
-    // trivial markdown fails). The rollups and JSON projection above already landed; don't
-    // burn queue retries over the optional rendering.
+    // Gift Ledger JSON column, and set_item_description_content 500s outright on any board
+    // whose item view lacks the Item description widget (UI-only setup; with it, every item on
+    // the board writes, verified 2026-10-30). The rollups and JSON projection above already
+    // landed; don't burn queue retries over the optional rendering.
     console.warn(`donation-rollups consumer: gift-history description skipped for owner "${ownerItemId}": ${err instanceof Error ? err.message : String(err)}`);
   }
 
