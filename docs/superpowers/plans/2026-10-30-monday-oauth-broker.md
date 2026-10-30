@@ -18,7 +18,7 @@
 - No HTTP response body and no log line ever contains an access or refresh token.
 - Token endpoint `POST https://auth.monday.com/oauth_ms/oauth/token`; revoke `POST https://auth.monday.com/oauth_ms/oauth/revoke`; PKCE `S256` required; `expires_in` 3600.
 - Refresh margin 10 minutes; proactive refresh cron every 30 minutes.
-- Scopes — Portal: `boards:read`. Staff sync: `boards:read boards:write updates:write assets:read users:read notifications:write`. Read-only: `boards:read updates:read assets:read docs:read users:read workspaces:read`.
+- Scopes — Portal: `boards:read me:read`. Staff sync: `boards:read boards:write updates:write assets:read users:read notifications:write me:read`. Read-only: `boards:read updates:read assets:read docs:read users:read workspaces:read me:read`.
 - Admin/one-time tooling (salesforce-import, geo-filter, `scripts/*.mjs`, Workers' `scripts/*.mjs`, monday-backup restore CLI) keeps reading `MONDAY_API_TOKEN` from the operator's shell. Webhook registration stays human-owned.
 - Type-check with `npm run typecheck` in each Worker, never bare `tsc`.
 - Run `npm ci` once in any new Worker directory before its first test.

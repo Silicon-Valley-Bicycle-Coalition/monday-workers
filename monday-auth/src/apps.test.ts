@@ -3,7 +3,7 @@ import { APPS } from './apps';
 
 describe('APPS', () => {
   it('Portal is read-only', () => {
-    expect(APPS.portal.scopes).toEqual(['boards:read']);
+    expect(APPS.portal.scopes).toEqual(['boards:read', 'me:read']);
   });
 
   it('no app requests a write scope it does not list in the spec', () => {
@@ -14,6 +14,7 @@ describe('APPS', () => {
       'assets:read',
       'users:read',
       'notifications:write',
+      'me:read',
     ]);
     expect(APPS.readonly.scopes).toEqual([
       'boards:read',
@@ -22,6 +23,7 @@ describe('APPS', () => {
       'docs:read',
       'users:read',
       'workspaces:read',
+      'me:read',
     ]);
   });
 

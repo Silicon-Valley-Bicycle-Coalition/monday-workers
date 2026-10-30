@@ -23,9 +23,11 @@ integration user. Developer Center: avatar menu → **Developers** → **Create 
 
 | App name | Key | Scopes (exactly these, nothing else) |
 |---|---|---|
-| `SVBC Portal` | `portal` | `boards:read` |
-| `SVBC Staff Sync` | `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write` |
-| `SVBC Read-only` | `readonly` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read` |
+| `SVBC Portal` | `portal` | `boards:read`, `me:read` |
+| `SVBC Staff Sync` | `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `me:read` |
+| `SVBC Read-only` | `readonly` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read`, `me:read` |
+
+`me:read` is needed for the consent user check (the callback queries `me`).
 
 For **each** app:
 

@@ -147,4 +147,31 @@ describe('mondayOAuth', () => {
     expect(headers.get('Authorization')).toBe('acc');
     expect(headers.get('API-Version')).toBe('2026-07');
   });
+
+  it('fetchMe says why when GraphQL returns errors (scope problem)', async () => {
+    const body = { errors: [{ message: 'Missing required scope me:read', extensions: { code: 'MissingScope' } }] };
+    await expect(fetchMe('acc', fakeFetch(200, body))).rejects.toThrow(
+      /^monday me query:.*Missing required scope me:read.*MissingScope/
+    );
+  });
+
+  it('fetchMe never puts the access token in its error, even when Monday echoes it', async () => {
+    const token = 'secret-token-abc123';
+    const body = { errors: [{ message: `Invalid token ${token} supplied`, extensions: { code: `bad-${token}` } }] };
+    const err = await fetchMe(token, fakeFetch(200, body)).catch((e: Error) => e);
+    expect((err as Error).message).toContain('[redacted]');
+    expect((err as Error).message).not.toContain(token);
+  });
+
+  it('fetchMe includes HTTP status and the JSON error detail on a non-ok response', async () => {
+    const body = { error_message: 'Not Authenticated', error_code: 'UserUnauthorizedException' };
+    await expect(fetchMe('acc', fakeFetch(401, body))).rejects.toThrow(
+      /monday me query: HTTP 401.*Not Authenticated.*UserUnauthorizedException/
+    );
+  });
+
+  it('fetchMe truncates long detail to 300 characters after redacting', async () => {
+    const err = await fetchMe('acc', fakeFetch(200, { errors: [{ message: 'x'.repeat(1000) }] })).catch((e: Error) => e);
+    expect((err as Error).message.length).toBeLessThan(400);
+  });
 });

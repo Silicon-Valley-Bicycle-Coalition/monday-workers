@@ -5,8 +5,9 @@
 // Request format is from Monday's migration guide
 // (https://developer.monday.com/apps/docs/migrating-to-the-new-oauth-flow): the token and revoke
 // endpoints take `Content-Type: application/json` with the client secret in the JSON body
-// (client_secret_post), not form-encoded bodies. No thrown message here ever includes a token or the response body (a
-// server may echo the token back in `error_description`).
+// (client_secret_post), not form-encoded bodies. No thrown message here ever includes a token or the raw response body (a
+// server may echo the token back in `error_description`). The exception is fetchMe, which adds
+// Monday's error detail with the access token redacted, capped at 300 chars.
 
 const AUTHORIZE_URL = 'https://auth.monday.com/oauth2/authorize';
 const TOKEN_URL = 'https://auth.monday.com/oauth_ms/oauth/token';
@@ -176,6 +177,31 @@ export async function revoke(
   if (!response.ok) throw new Error(`monday oauth revoke: HTTP ${response.status}`);
 }
 
+const MAX_DETAIL_CHARS = 300;
+
+// Monday's error detail from a GraphQL `errors` array or a top-level error_message/error_code
+// body, with every occurrence of the access token redacted *before* truncating (so a cut can't
+// leave a partial token behind).
+function errorDetail(json: unknown, accessToken: string): string {
+  if (typeof json !== 'object' || json === null) return '';
+  const body = json as { errors?: unknown; error_message?: unknown; error_code?: unknown };
+  const parts: string[] = [];
+  const add = (v: unknown): void => {
+    if (typeof v === 'string' && v !== '') parts.push(v);
+  };
+  if (Array.isArray(body.errors)) {
+    for (const e of body.errors as Array<{ message?: unknown; extensions?: { code?: unknown } } | null>) {
+      add(e?.message);
+      add(e?.extensions?.code);
+    }
+  }
+  add(body.error_message);
+  add(body.error_code);
+  let text = parts.join('; ');
+  if (accessToken !== '') text = text.split(accessToken).join('[redacted]');
+  return text.slice(0, MAX_DETAIL_CHARS);
+}
+
 export async function fetchMe(accessToken: string, fetchFn: FetchFn): Promise<{ id: string; name: string }> {
   const response = await fetchFn(API_URL, {
     method: 'POST',
@@ -183,11 +209,15 @@ export async function fetchMe(accessToken: string, fetchFn: FetchFn): Promise<{ 
     body: JSON.stringify({ query: '{ me { id name } }' }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`monday me query: HTTP ${response.status}`);
-  const json = (await response.json()) as { data?: { me?: { id?: unknown; name?: unknown } }; errors?: unknown };
-  const me = json.data?.me;
+  const json: unknown = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const detail = errorDetail(json, accessToken);
+    throw new Error(`monday me query: HTTP ${response.status}${detail === '' ? '' : `: ${detail}`}`);
+  }
+  const me = (json as { data?: { me?: { id?: unknown; name?: unknown } } } | undefined)?.data?.me;
   if (me === undefined || me === null || me.id === undefined || me.id === null) {
-    throw new Error('monday me query: no user in the response');
+    const detail = errorDetail(json, accessToken);
+    throw new Error(`monday me query: no user in the response${detail === '' ? '' : `: ${detail}`}`);
   }
   return { id: String(me.id), name: typeof me.name === 'string' ? me.name : '' };
 }
