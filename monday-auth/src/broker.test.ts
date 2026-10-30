@@ -49,7 +49,7 @@ function harness(opts: { responder?: Responder; gate?: Promise<void>; env?: Env 
   const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url !== TOKEN_URL) throw new Error(`unexpected fetch ${url}`);
-    const form = new URLSearchParams(String(init?.body ?? ''));
+    const form = new URLSearchParams(JSON.parse(String(init?.body ?? '{}')) as Record<string, string>);
     tokenCalls.push(form);
     const call = tokenCalls.length;
     if (opts.gate) await opts.gate;

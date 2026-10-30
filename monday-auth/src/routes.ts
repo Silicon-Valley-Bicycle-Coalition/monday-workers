@@ -153,9 +153,14 @@ export function createApp(deps: RouteDeps): Hono {
     // Returns true only if both revokes succeeded.
     const revokeQuietly = async (): Promise<boolean> => {
       const results = await Promise.all(
-        [tokens.accessToken, tokens.refreshToken].map(async (token) => {
+        (
+          [
+            [tokens.accessToken, 'access_token'],
+            [tokens.refreshToken, 'refresh_token'],
+          ] as const
+        ).map(async ([token, tokenTypeHint]) => {
           try {
-            await revoke({ ...creds, token }, fetchFn);
+            await revoke({ ...creds, token, tokenTypeHint }, fetchFn);
             return true;
           } catch (err) {
             console.error(`monday-auth: revoke after a failed consent failed: ${err instanceof Error ? err.message : 'error'}`);

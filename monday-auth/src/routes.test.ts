@@ -140,8 +140,8 @@ describe('GET /oauth/callback', () => {
       status: 'ok',
     });
     const exchange = monday.calls.find((c) => c.url.endsWith('/oauth/token'))!;
-    expect(new URLSearchParams(exchange.body).get('redirect_uri')).toBe('https://broker.test/oauth/callback');
-    expect(new URLSearchParams(exchange.body).get('code_verifier')).toBeTruthy();
+    expect(new URLSearchParams(JSON.parse(exchange.body) as Record<string, string>).get('redirect_uri')).toBe('https://broker.test/oauth/callback');
+    expect(new URLSearchParams(JSON.parse(exchange.body) as Record<string, string>).get('code_verifier')).toBeTruthy();
   });
 
   it('callback for another user revokes the token, stores nothing, and the page names both user ids', async () => {
@@ -157,9 +157,18 @@ describe('GET /oauth/callback', () => {
     expect(await store.get('sync')).toBeNull();
     const revoke = monday.calls.find((c) => c.url.endsWith('/oauth/revoke'));
     expect(revoke).toBeDefined();
-    expect(new URLSearchParams(revoke!.body).get('token')).toBe(SECRET_ACCESS);
-    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(c.body).get('token'));
+    expect(new URLSearchParams(JSON.parse(revoke!.body) as Record<string, string>).get('token')).toBe(SECRET_ACCESS);
+    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(JSON.parse(c.body) as Record<string, string>).get('token'));
     expect(revoked.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
+    const hints = monday.calls
+      .filter((c) => c.url.endsWith('/oauth/revoke'))
+      .map((c) => [(JSON.parse(c.body) as { token: string }).token, (JSON.parse(c.body) as { token_type_hint?: string }).token_type_hint]);
+    expect(hints.sort()).toEqual(
+      [
+        [SECRET_ACCESS, 'access_token'],
+        [SECRET_REFRESH, 'refresh_token'],
+      ].sort()
+    );
   });
 
   it('sends the start-time redirect_uri in the exchange even when the callback arrives on another host', async () => {
@@ -169,7 +178,7 @@ describe('GET /oauth/callback', () => {
     const res = await app.request(`https://other-host.example/oauth/callback?code=c&state=${state}`);
     expect(res.status).toBe(200);
     const exchange = monday.calls.find((c) => c.url.endsWith('/oauth/token'))!;
-    expect(new URLSearchParams(exchange.body).get('redirect_uri')).toBe('https://broker.test/oauth/callback');
+    expect(new URLSearchParams(JSON.parse(exchange.body) as Record<string, string>).get('redirect_uri')).toBe('https://broker.test/oauth/callback');
   });
 
   it('revokes both tokens, with no token in the page or logs, when the me lookup fails', async () => {
@@ -188,7 +197,7 @@ describe('GET /oauth/callback', () => {
     expect(text).not.toContain(SECRET_REFRESH);
     expect(logs.join('\n')).not.toContain('TOKEN-SECRET');
     expect(await store.get('sync')).toBeNull();
-    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(c.body).get('token'));
+    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(JSON.parse(c.body) as Record<string, string>).get('token'));
     expect(revoked.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
   });
 
@@ -197,7 +206,7 @@ describe('GET /oauth/callback', () => {
     const attempts: (string | null)[] = [];
     const flaky = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/oauth/revoke')) {
-        const token = new URLSearchParams(String(init?.body)).get('token');
+        const token = new URLSearchParams(JSON.parse(String(init?.body)) as Record<string, string>).get('token');
         attempts.push(token);
         return new Response('', { status: token === SECRET_ACCESS ? 500 : 200 });
       }
@@ -226,7 +235,7 @@ describe('GET /oauth/callback', () => {
     expect(text).toMatch(/consent/i);
     expect(text).not.toContain('TOKEN-SECRET');
     expect(logs.join('\n')).not.toContain('TOKEN-SECRET');
-    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(c.body).get('token'));
+    const revoked = monday.calls.filter((c) => c.url.endsWith('/oauth/revoke')).map((c) => new URLSearchParams(JSON.parse(c.body) as Record<string, string>).get('token'));
     expect(revoked.sort()).toEqual([SECRET_ACCESS, SECRET_REFRESH].sort());
   });
 

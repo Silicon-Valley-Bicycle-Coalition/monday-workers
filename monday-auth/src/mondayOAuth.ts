@@ -2,8 +2,10 @@
 // a `me` lookup to confirm which user consented. Monday rotates the refresh token on every
 // refresh; the caller must store the new one and discard the old.
 //
-// Monday's docs don't spell out the token-endpoint form fields, so these are standard OAuth 2.0
-// form-encoded bodies. No thrown message here ever includes a token or the response body (a
+// Request format is from Monday's migration guide
+// (https://developer.monday.com/apps/docs/migrating-to-the-new-oauth-flow): the token and revoke
+// endpoints take `Content-Type: application/json` with the client secret in the JSON body
+// (client_secret_post), not form-encoded bodies. No thrown message here ever includes a token or the response body (a
 // server may echo the token back in `error_description`).
 
 const AUTHORIZE_URL = 'https://auth.monday.com/oauth2/authorize';
@@ -86,11 +88,11 @@ interface TokenResponse {
   error?: unknown;
 }
 
-async function postTokenEndpoint(form: Record<string, string>, fetchFn: FetchFn, what: string): Promise<TokenResponse> {
+async function postTokenEndpoint(payload: Record<string, string>, fetchFn: FetchFn, what: string): Promise<TokenResponse> {
   const response = await fetchFn(TOKEN_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body: new URLSearchParams(form).toString(),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const body = (await response.json().catch(() => ({}))) as TokenResponse;
@@ -156,11 +158,19 @@ export async function refresh(
   return toTokens(body, opts.refreshToken, now, 'refresh');
 }
 
-export async function revoke(opts: { clientId: string; clientSecret: string; token: string }, fetchFn: FetchFn): Promise<void> {
+export async function revoke(
+  opts: { clientId: string; clientSecret: string; token: string; tokenTypeHint?: 'access_token' | 'refresh_token' },
+  fetchFn: FetchFn
+): Promise<void> {
   const response = await fetchFn(REVOKE_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body: new URLSearchParams({ token: opts.token, client_id: opts.clientId, client_secret: opts.clientSecret }).toString(),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      token: opts.token,
+      client_id: opts.clientId,
+      client_secret: opts.clientSecret,
+      ...(opts.tokenTypeHint === undefined ? {} : { token_type_hint: opts.tokenTypeHint }),
+    }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`monday oauth revoke: HTTP ${response.status}`);

@@ -6,13 +6,13 @@ const TOKEN_URL = 'https://auth.monday.com/oauth_ms/oauth/token';
 interface Captured {
   url: string;
   init: RequestInit;
-  form: URLSearchParams;
+  json: Record<string, unknown>;
 }
 
 function fakeFetch(status: number, body: unknown, calls: Captured[] = []): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    calls.push({ url, init: init ?? {}, form: new URLSearchParams(typeof init?.body === 'string' ? init.body : String(init?.body ?? '')) });
+    calls.push({ url, init: init ?? {}, json: typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {} });
     return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
 }
@@ -66,13 +66,15 @@ describe('mondayOAuth', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe(TOKEN_URL);
     expect(calls[0]!.init.method).toBe('POST');
-    const form = calls[0]!.form;
-    expect(form.get('grant_type')).toBe('authorization_code');
-    expect(form.get('code')).toBe('the-code');
-    expect(form.get('code_verifier')).toBe('ver');
-    expect(form.get('redirect_uri')).toBe('https://cb');
-    expect(form.get('client_id')).toBe('cid');
-    expect(form.get('client_secret')).toBe('sec');
+    expect(new Headers(calls[0]!.init.headers).get('Content-Type')).toBe('application/json');
+    expect(calls[0]!.json).toEqual({
+      grant_type: 'authorization_code',
+      client_id: 'cid',
+      client_secret: 'sec',
+      code: 'the-code',
+      redirect_uri: 'https://cb',
+      code_verifier: 'ver',
+    });
   });
 
   it('refresh returns the rotated refresh token', async () => {
@@ -85,10 +87,9 @@ describe('mondayOAuth', () => {
     );
     expect(result).toEqual({ accessToken: 'new-acc', refreshToken: 'new-ref', expiresAt: '2026-10-30T11:00:00.000Z' });
     expect(calls[0]!.url).toBe(TOKEN_URL);
-    expect(calls[0]!.form.get('grant_type')).toBe('refresh_token');
-    expect(calls[0]!.form.get('refresh_token')).toBe('old-ref');
-    expect(calls[0]!.form.get('client_id')).toBe('cid');
-    expect(calls[0]!.form.get('client_secret')).toBe('sec');
+    expect(calls[0]!.init.method).toBe('POST');
+    expect(new Headers(calls[0]!.init.headers).get('Content-Type')).toBe('application/json');
+    expect(calls[0]!.json).toEqual({ grant_type: 'refresh_token', client_id: 'cid', client_secret: 'sec', refresh_token: 'old-ref' });
   });
 
   it('invalid_grant throws RefreshRejectedError', async () => {
@@ -116,12 +117,25 @@ describe('mondayOAuth', () => {
     expect(result.expiresAt).toBe('2026-10-30T12:34:56.000Z');
   });
 
-  it('revoke posts the token to oauth_ms/oauth/revoke', async () => {
+  it('revoke posts a JSON body to oauth_ms/oauth/revoke', async () => {
     const calls: Captured[] = [];
-    await revoke({ clientId: 'cid', clientSecret: 'sec', token: 'tok' }, fakeFetch(200, {}, calls));
+    await revoke({ clientId: 'cid', clientSecret: 'sec', token: 'tok' }, fakeFetch(200, { success: true }, calls));
     expect(calls[0]!.url).toBe('https://auth.monday.com/oauth_ms/oauth/revoke');
-    expect(calls[0]!.form.get('token')).toBe('tok');
-    expect(calls[0]!.form.get('client_id')).toBe('cid');
+    expect(calls[0]!.init.method).toBe('POST');
+    expect(new Headers(calls[0]!.init.headers).get('Content-Type')).toBe('application/json');
+    expect(calls[0]!.json).toEqual({ token: 'tok', client_id: 'cid', client_secret: 'sec' });
+  });
+
+  it('revoke sends token_type_hint when given', async () => {
+    const calls: Captured[] = [];
+    await revoke({ clientId: 'cid', clientSecret: 'sec', token: 'tok', tokenTypeHint: 'refresh_token' }, fakeFetch(200, { success: true }, calls));
+    expect(calls[0]!.json).toEqual({ token: 'tok', client_id: 'cid', client_secret: 'sec', token_type_hint: 'refresh_token' });
+  });
+
+  it('revoke failure throws without the token or response body', async () => {
+    const p = revoke({ clientId: 'cid', clientSecret: 'sec', token: 'tok-secret' }, fakeFetch(400, { error: 'invalid_request', error_description: 'tok-secret' }));
+    await expect(p).rejects.toThrow(/400/);
+    await expect(p).rejects.not.toThrow(/tok-secret/);
   });
 
   it('fetchMe sends the bare token and API-Version, and returns id as a string', async () => {
