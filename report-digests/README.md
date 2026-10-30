@@ -144,7 +144,9 @@ sandbox email from any Worker.
    `node scripts/flags.mjs report-digests writes on --env production` (repo root), then
    `npm run deploy`.
 4. Check one digest with the operator route, e.g. `key=fiscal-year-by-size`.
-5. Unsubscribe the Salesforce report subscriptions, or let the integration user's freeze stop them.
+5. Delete the Salesforce report subscriptions (three owned by `SVBC Integration`, three by
+   Clarrissa, one by Violeta Palatto). No user is frozen at cutover, so they keep mailing
+   T0-frozen numbers next to the digests until someone deletes them.
 
 ## Commands
 

@@ -579,7 +579,7 @@ cutover weekend available if the first attempt fails.
 `validate` checks the load against its own ledger. `reconcile` checks it against the source:
 it recomputes what must be on Monday from the frozen extract (`data/extract/`) and compares
 that with what Monday itself reports. It only reads from Monday. Exit 0 means **GO**, 1 means
-**NO-GO**. The full report goes to `data/reconcile/report.md` (Markdown tables you can paste
+**NO-GO**, 2 a setup error with nothing checked (no `MONDAY_API_TOKEN`, a bad `--top`). The full report goes to `data/reconcile/report.md` (Markdown tables you can paste
 into the cutover log) and `data/reconcile/result.json`.
 
 | Check | Salesforce side (frozen extract) | Monday side (read back) |

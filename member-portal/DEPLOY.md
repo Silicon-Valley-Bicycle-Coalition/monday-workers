@@ -81,7 +81,7 @@ From `member-portal/`, in order:
 # SVBC: the D1 already exists and its id is in wrangler.jsonc — skip the create. Forks: run it
 # and paste the returned id into wrangler.jsonc database_id.
 wrangler d1 create svbc-member-portal
-wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0005
+wrangler d1 migrations apply svbc-member-portal --remote   # applies 0001–0006 (0006 hashes login_attempts; without it logins send no email)
 wrangler queues create member-portal-change-requests
 wrangler queues create member-portal-change-requests-dlq
 wrangler queues create member-portal-letter-emails

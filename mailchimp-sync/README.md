@@ -276,6 +276,13 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   the existing "Which SVBC emails would you like to subscribe to?" category (`760af5e2a0`, the
   id in `config/svbc.json`); its Monthly e-Bulletin interest already covers Newsletter. Only
   the listed categories are synced.
+* **Production starts outbound-only** (decided 2026-10-30): `campaignsBoardId` stays `null` and
+  the Mailchimp audience webhook isn't registered, so Monday → Mailchimp (merge fields, tags,
+  Do Not Solicit unsubscribes) runs and Mailchimp → Monday (the Campaigns connect column, the
+  inbound side's only job) doesn't. The nightly reconcile skips itself with one log line while
+  no Campaigns board is configured. To turn inbound on later: build the Campaigns board and the
+  People `mailchimpCampaigns` connect column, fill both ids, deploy, then register the audience
+  webhook.
 * Build the welcome-drip and renewal-reminder Customer Journeys, each gated on its corresponding
   Interest, triggered off `MEMBSINCE`/`MEMBUNTIL` respectively. Renewal cadence: 28 and 14 days
   before `MEMBUNTIL` and on the day itself, which is what Salesforce's `Scheduled_Membership_Emails`

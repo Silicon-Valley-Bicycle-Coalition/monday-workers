@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -154,6 +154,18 @@ describe('runReconcile', () => {
 
   it('rejects a bad --top', async () => {
     expect(await runReconcile(['--top', 'x'], { reader: fakeReader(perfect()) })).toBe(2);
+  });
+
+  it('exits 2, not 1 (NO-GO), when MONDAY_API_TOKEN is missing', async () => {
+    const saved = process.env['MONDAY_API_TOKEN'];
+    delete process.env['MONDAY_API_TOKEN'];
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await runReconcile([])).toBe(2);
+    } finally {
+      err.mockRestore();
+      if (saved !== undefined) process.env['MONDAY_API_TOKEN'] = saved;
+    }
   });
 });
 

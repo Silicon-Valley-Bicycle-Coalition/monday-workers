@@ -397,6 +397,51 @@ emailed; one that ended within 3 days **will** be once its Class Type is set and
 blank — see "Follow-up rules" above, and set Follow-ups = Sent first if it was already emailed by
 hand.
 
+## Resetting for new board ids
+
+When the boards this Worker writes are deleted and rebuilt (a cutover retry — private runbook,
+Rollback step 8 — or a sandbox rebuild), every `monday_item_id` in D1 is dead: an update to a
+known order, event or attendee goes to an item that no longer exists. Reset D1 before the
+Eventbrite webhook points at the Worker on the new boards. Nothing needs keeping: all three
+kinds adopt before create on the new boards (orders by **Eventbrite Order ID**, events by
+**Eventbrite ID**, registrations by the attendee id column), so a re-drive updates what the new
+load already carries and creates only what it doesn't.
+
+**First:** set the switch to `hold` (`node scripts/flags.mjs eventbrite-sync writes hold --env
+production`) and disable the Eventbrite webhooks, so nothing is written back.
+
+```sh
+# 1. Export, to somewhere outside the repo (it holds order amounts and item ids).
+npx wrangler d1 export svbc-eventbrite-sync --remote --output <dir>/svbc-eventbrite-sync.sql
+
+# 2. Clear all three tables. -y answers any wrangler confirmation prompt; unanswered without a
+#    TTY, one cancels silently with exit 0.
+npx wrangler d1 execute svbc-eventbrite-sync --remote -y --command \
+  "DELETE FROM attendees; DELETE FROM events; DELETE FROM orders;"
+
+# 3. Check: every count is 0.
+npx wrangler d1 execute svbc-eventbrite-sync --remote --command \
+  "SELECT 'orders' AS t, COUNT(*) AS n FROM orders UNION ALL SELECT 'events', COUNT(*) FROM events UNION ALL SELECT 'attendees', COUNT(*) FROM attendees"
+```
+
+Sandbox: `svbc-eventbrite-sync-sandbox`, with `--env sandbox` on every command.
+
+| Table | Reset | Why |
+|---|---|---|
+| `orders` | cleared | `monday_item_id` and `matched_donor_item_id` are Donations and People items on the old boards. |
+| `events` | cleared | `monday_item_id` is an Events item on the old board. |
+| `attendees` | cleared | `monday_item_id` and `matched_person_item_id` are Event Registrations and People items on the old boards. |
+
+`d1_migrations` is untouched. A message still on the queue for an old item finds no row and is
+handled as a new delivery once the switch is back `on`.
+
+**Then:** deploy with the new ids, `writes on`, re-register the webhooks, and re-drive the gap
+with `scripts/backfill-orders.mjs` and `scripts/backfill-attendees.mjs` per event (see
+"Backfill" above): `--dry-run` first, then the real run.
+
+Tested 2026-10-30 on a local D1 with both migrations applied (the statements run and the
+check reads 0). Not yet run against a deployed D1.
+
 ## Out of scope (follow-ups)
 
 * **Order ↔ registration link.** A ticket's Donations item still has no link to its Event

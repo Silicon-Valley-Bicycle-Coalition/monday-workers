@@ -79,7 +79,8 @@ export async function runReconcile(args: string[], deps: { reader?: MondayReader
   let reader = deps.reader;
   if (!reader) {
     const token = process.env['MONDAY_API_TOKEN'];
-    if (!token) { console.error('reconcile: MONDAY_API_TOKEN not set'); return 1; }
+    // 2, like a bad --top: 1 means NO-GO, and a missing token is a setup error, not a finding.
+    if (!token) { console.error('reconcile: MONDAY_API_TOKEN not set'); return 2; }
     reader = new GraphqlMondayReader(new MondayClient({ apiUrl: cfg.monday.apiUrl, token }));
   }
 

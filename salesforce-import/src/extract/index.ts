@@ -9,6 +9,14 @@ const CEILING_WARN_FRACTION = 0.8;
 
 export async function runExtract(args: string[], deps: { exec?: ExecFn } = {}): Promise<number> {
   const cfg = loadConfig();
+  // Check --consent's path up front: a bare flag used to be ignored silently, after every query
+  // had run, and the extract then carried no consent at all.
+  const consentIdx = args.indexOf('--consent');
+  const consentPath = consentIdx >= 0 ? args[consentIdx + 1] : undefined;
+  if (consentIdx >= 0 && (!consentPath || consentPath.startsWith('--'))) {
+    console.error('extract: --consent needs the path to the Mailchimp consent CSV');
+    return 2;
+  }
   const acknowledge = args.includes('--acknowledge-sync-errors');
   const gate = await checkSyncErrorGate(cfg.salesforceOrg, { exec: deps.exec, acknowledge });
   if (gate.blocked) {
@@ -38,10 +46,9 @@ export async function runExtract(args: string[], deps: { exec?: ExecFn } = {}): 
     counts[ex.name] = await writeNdjson(dataPath(dir, `${ex.name}.ndjson`), rows);
     console.log(`extract: ${ex.name} → ${counts[ex.name]} rows (${dir})`);
   }
-  const consentIdx = args.indexOf('--consent');
-  if (consentIdx >= 0 && args[consentIdx + 1]) {
+  if (consentPath) {
     const { ingestConsent } = await import('./consent.js');
-    counts['consent'] = await ingestConsent(args[consentIdx + 1]!);
+    counts['consent'] = await ingestConsent(consentPath);
   }
   await writeJson(dataPath('extract', 'manifest.json'), {
     extractedAt: new Date().toISOString(), counts, syncErrorCount: gate.errorCount,
