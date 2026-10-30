@@ -161,4 +161,14 @@ export class D1AppTokenStore {
     if (now.getTime() - new Date(row.created_at).getTime() > PENDING_TTL_MS) return null;
     return { app: row.app, codeVerifier: row.code_verifier };
   }
+
+  // Cron housekeeping: drops consent flows nobody finished. Same cutoff takePending honours
+  // (older than the TTL is dead). Returns how many rows were removed.
+  async purgeExpiredPending(now: Date): Promise<number> {
+    const result = await this.db
+      .prepare('DELETE FROM oauth_pending WHERE created_at < ?1')
+      .bind(new Date(now.getTime() - PENDING_TTL_MS).toISOString())
+      .run();
+    return result.meta.changes;
+  }
 }

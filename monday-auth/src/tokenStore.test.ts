@@ -125,4 +125,14 @@ describe('D1AppTokenStore', () => {
     const row = await env.DB.prepare('SELECT 1 FROM oauth_pending WHERE state = ?1').bind('st2').first();
     expect(row).toBeNull();
   });
+
+  it('purgeExpiredPending deletes only rows older than 10 minutes and reports the count', async () => {
+    const store = new D1AppTokenStore(env.DB);
+    await store.putPending('old', 'portal', 'v1', now);
+    await store.putPending('new', 'sync', 'v2', new Date(now.getTime() + 9 * 60_000));
+    const purged = await store.purgeExpiredPending(new Date(now.getTime() + 10 * 60_000 + 1));
+    expect(purged).toBe(1);
+    expect(await store.takePending('old', now)).toBeNull();
+    expect(await store.takePending('new', new Date(now.getTime() + 10 * 60_000))).toEqual({ app: 'sync', codeVerifier: 'v2' });
+  });
 });
