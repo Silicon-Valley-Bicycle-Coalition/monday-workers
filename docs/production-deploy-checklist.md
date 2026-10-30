@@ -12,12 +12,14 @@ boards throughout.
 
 **Scope:** `member-portal`, `funraise-sync`, `donation-rollups`, `mailchimp-sync`,
 `monday-backup`, `benevity-import`, `bp-feedback-notify`, `eventbrite-sync`
-(post-cutover, time-boxed by the Oct 22 Summit backfill), and the `salesforce-import` CLI. `svbc-calendars` isn't part of the migration and can ship on its own
+(post-cutover, time-boxed by the Oct 22 Summit backfill), `report-digests` (live before the first
+Monday 08:00 after cutover; its README, "Deploy"), and the `salesforce-import` CLI. The private
+runbook's other step-6 items (6.11 board linking, 6.12 invoicing Tasks) are scripts, not deploys. `svbc-calendars` isn't part of the migration and can ship on its own
 schedule — its checklist is [its README's Deploy section](../svbc-calendars/README.md#deploy).
 `quickbooks-sync` is postponed indefinitely (decided 2026-10-28) and is out of scope: don't
 deploy it, set its secrets, or register its webhooks at cutover. Its `writes` key stays `off`.
 
-**Status as of 2026-10-06:** nothing below is done unless marked (Phase 1 items resolved
+**Status as of 2026-10-06, wording refreshed 2026-10-30** (readiness review): nothing below is done unless marked (Phase 1 items resolved
 2026-09-29, 2026-10-01 and 2026-10-06 are ticked). `salesforce-import`'s
 `cutoverDateISO` is `2026-10-30` (moved from `2026-10-09` on 2026-10-09, from `2026-10-16` on 2026-10-19, then from `2026-10-23` on 2026-10-26, with the cutover weekend; `donation-rollups` `membership.fromISO` moves with it). `benevity-import` `minDisbursementDate` is `2026-10-30` too (from 2026-10-28): the freeze date, not a confirmed Period Ending, so a disbursement keyed before the freeze can't be imported twice and any unkeyed one before it is reviewed from its "Skipped, not imported" worklist item. Phase 3/4 order brought in line with the private cutover
 runbook (`docs/23-cutover-runbook.md`, step 4.0) on 2026-09-30: `donation-rollups` now deploys
@@ -243,18 +245,27 @@ For each Worker:
 2. `npm test && npm run typecheck` (split test proves no sandbox id leaked in).
 3. Merge, then deploy: `npm run deploy` from `main` for the first deploy. (Merging alone deploys
    nothing but `svbc-calendars` until the Workers Builds item above is done — root README, "Deploys".)
-4. Register its inbound feeds.
-5. Run its verification before starting the next Worker.
+4. Turn its write switch on, `node scripts/flags.mjs <worker> writes on --env production` (a
+   missing key reads as `off`, and work ingested under `off` is never written). `funraise-sync`:
+   before its bootstrap walk. `donation-rollups` went on in Phase 3, after its webhooks.
+5. Register its inbound feeds.
+6. Run its verification before starting the next Worker.
+
+At the end, `node scripts/flags.mjs status --env production`: every deployed Worker reads
+`writes=on`. Until step 9 creates `eventbrite-sync-writes`, its row reads `missing` and `status`
+exits 1; that is expected.
 
 Order matters: `donation-rollups` must be listening before anything writes Donations, which is
 why it was already deployed, bootstrapped and subscribed in Phase 3.
 
 - [ ] **1. `donation-rollups`** — deployed in Phase 3. Here, only the live check: edit one test
-      gift, see the owner's rollups recompute; `/custodian/status` clean.
+      gift, see the owner's rollups recompute, delete it and see Lifetime Giving and Gift Count
+      drop within a minute; `/custodian/status` clean.
 - [ ] **2. `funraise-sync`**
   - [ ] **Add the `Refunded` label to the production Donations board's Status column first.**
         The consumer maps a Funraise refund to it, so a refund replayed below (or arriving live)
-        dead-letters and leaves the gift `Received` until it exists. It is not created by the
+        is rejected (`failed`, error prefixed `not retried: `, since #75) and leaves the gift
+        `Received` until it exists. It is not created by the
         import and is missing on sandbox v3 too. `eventbrite-sync` (step 9) needs the same label.
   - [ ] Config: Donations, Recurring Gifts, People boards + all `subscriptionsPoll.columns`,
         and a real `entityIdColumn` (adopt-before-create; the split test requires it, and
@@ -263,8 +274,12 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
         holds what was copied out of it on 2026-09-19 — 1,175 ledger rows, cursors and six
         events, all pointing at deleted sandbox items. README, "Resetting for new board ids",
         step 2 and 3b.
-  - [ ] Bootstrap the subscriptions poller locally *before* the deployed cron can fire
-        (`funraise-sync/README.md`, `wrangler dev --remote --test-scheduled`).
+  - [ ] `node scripts/flags.mjs funraise-sync writes on --env production` **before the walk**:
+        the local walk reads production `FLAGS`; under `off` it dry-runs but still advances its
+        cursor, so the walk is wasted, and under `hold` it doesn't run.
+  - [ ] Bootstrap the subscriptions poller locally (`funraise-sync/README.md`, `wrangler dev
+        --remote --test-scheduled`), starting right after :00; since #25 an overlap with the
+        deployed cron is safe.
   - [ ] **Repoint Funraise's single webhook** from the `-sandbox` Worker to
         `/webhooks/funraise/transaction?secret=` on production, and note the time. The sandbox
         loses its Funraise feed from here on — expected.
@@ -285,11 +300,18 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
            by every run from that address, and a `429` counts as `failed`.
         3. Exit 0 is clean. Exit 1: a delivery failed, or the secret was rejected (the run
            stops at the first row). Wait a minute and re-run until every row reads
-           `already present`; re-running is safe. Exit 2: rows whose payload the retention
+           `already present`; re-running is safe. A row rejected for good (`not retried: `,
+           e.g. a refund before the `Refunded` label) never converges this way: add the label,
+           then `scripts/redrive-failed.mjs --worker-url <production> --older-than-min 0`.
+           Before the run, check `flags.mjs status` shows `funraise-sync` `writes=on`: a gift
+           ingested under `off` stays `queued` and the replay only answers `duplicate`
+           (recovery: `UPDATE events SET status = 'failed' WHERE status = 'queued'`, then
+           `redrive-failed.mjs`). Exit 2: rows whose payload the retention
            purge emptied — recover those from Funraise by hand.
         The script reports *enqueued*, not *written*: the production consumer makes the Monday
-        writes one gift at a time afterwards. A refunded gift in the window dead-letters if the
-        `Refunded` label (first item of this step) was not added before the replay.
+        writes one gift at a time afterwards. A refunded gift in the window is rejected (`failed`,
+        `not retried: `) if the `Refunded` label (first item of this step) was not added before
+        the replay.
   - [ ] Confirm `funraiseSync.oldestActiveFiscalYear` in `config/svbc.json` equals the importer's
         `cutoffFY` (2026 for this cutover), then query `events` rows with
         `status = 'needs_review'`: an edited or refunded gift from an archived fiscal year —
@@ -297,7 +319,8 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
   - [ ] **Post-repoint window check** (private runbook `docs/23`, step 5), once the replay's
         queue has drained. Its five checks are the gate, not the script's counts: ledger to
         ledger (every sandbox id in the window is `written` in production with a
-        `monday_item_id`; no `failed` or dead-lettered rows), against Funraise's own dashboard
+        `monday_item_id`; no `status = 'failed'` rows, which covers both `dead-lettered after
+        retries: ` and `not retried: `), against Funraise's own dashboard
         (the only check that catches a delivery the sandbox Worker never received), nothing
         doubled on the Donations board, no archived-year item created since the repoint, and
         the `Refunded` label in place. Only the first is a query, plus check 3 (one Donations
@@ -320,10 +343,17 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       verification yet — at minimum, change one Donor's email and confirm the audience member
       updates (and that no member is *created*).
 - [ ] **5. `benevity-import`** — add the `Benevity Disbursement Date` column and confirm the
-      `Matched By`/`Benevity Transaction ID` columns (`benevity-import/README.md`); webhook of
-      type `change_specific_column_value` on the Uploads file column →
-      `/webhooks/monday/benevity-upload?secret=`. Verify with a one-row upload, then delete the
-      items. Don't backfill through this Worker.
+      `Matched By`/`Benevity Transaction ID` columns (`benevity-import/README.md`); provision the
+      worklist's Retry status column (Needs review / Retry / Queued / Done) and Key text column
+      and fill `uploadsBoard.retry.column` and `worklistKeyColumn` (both
+      `REPLACE_WITH_COLUMN_ID` today). **Two** webhooks of type `change_specific_column_value`:
+      the Uploads file column → `/webhooks/monday/benevity-upload?secret=`, and the Retry column
+      → `/webhooks/monday/benevity-retry?secret=` (without it Retry does nothing). Verify with a
+      one-row upload built for it: a **synthetic** Disbursement ID and Transaction ID, and Period
+      Ending on or after `minDisbursementDate` (`2026-10-30`; the cutoff is strict, so an older
+      row is only skipped). Then delete its Monday items and its D1 rows in the README reset's
+      foreign-key order (`rows`, `disbursements`, `uploads`); a real row deleted from Monday
+      but left in D1 stays `written` and is skipped forever. Don't backfill through this Worker.
 - [ ] **6. `monday-backup`** — Drive folder id in `config/backup.json`; confirm the first daily
       snapshot lands and Slack reports it.
 - [ ] **7. `bp-feedback-notify`** — deploy, then add the `Post-Event Feedback` column and the
@@ -350,8 +380,9 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 ## Phase 5 — First week
 
 - [ ] Daily: every production DLQ empty. `donation-rollups`, `funraise-sync`, `mailchimp-sync`
-      (both) and `eventbrite-sync` have a DLQ consumer; `member-portal` and
-      `benevity-import` do not, so those need a human to look.
+      (both), `eventbrite-sync` and `benevity-import` (since 2026-10-28) have a DLQ consumer;
+      `member-portal` does not, so it needs a human to look. A `not retried: ` row never
+      reaches a DLQ: also check each D1 for `status = 'failed'`.
 - [ ] Daily: D1 write usage per database, now that the Free cap is gone and nothing stops a loop.
 - [ ] Each cron fired once and did what it should (Workers → Logs, or `wrangler tail`).
 - [ ] Per-Worker CPU time well under the 100 ms cap.
