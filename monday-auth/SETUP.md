@@ -55,8 +55,15 @@ npx wrangler secret put SYNC_CLIENT_SECRET --env sandbox
 npx wrangler secret put READONLY_CLIENT_ID --env sandbox
 npx wrangler secret put READONLY_CLIENT_SECRET --env sandbox
 npx wrangler secret put START_KEY --env sandbox          # e.g. `openssl rand -hex 32`; keep it in the password manager
-npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  # same webhook monday-backup alerts to
+npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  # optional; see below
 ```
+
+`SLACK_WEBHOOK_URL` is optional: without it, "needs consent" alerts only reach the Worker's logs.
+Fine for sandbox; **required before production**. No webhook existed as of 2026-10-30
+(`monday-backup` isn't deployed yet). Create one Slack app, e.g. *SVBC Integration Alerts*
+(api.slack.com/apps → Create New App → Incoming Webhooks → Add New Webhook), with a webhook for
+`#crm-sandbox` and one for the production alerts channel, and use them for both `monday-auth`
+and `monday-backup`.
 
 Then, in a private browser window **logged into Monday as the right user** — **Sandbox
 Integration** for sandbox, **SVBC Integrations** for production — open each of these and click
