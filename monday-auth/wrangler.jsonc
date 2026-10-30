@@ -1,5 +1,5 @@
 {
-  "name": "monday-auth",
+  "name": "svbc-monday-auth",
   "main": "src/index.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC account — forks: replace with your own
   "compatibility_date": "2026-08-01",
@@ -11,8 +11,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "monday-auth",
-      // Placeholder until `wrangler d1 create monday-auth` runs (plan Task 6).
+      "database_name": "svbc-monday-auth",
+      // Placeholder until `wrangler d1 create svbc-monday-auth` runs (plan Task 6).
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
@@ -30,14 +30,14 @@
 
   "env": {
     "sandbox": {
-      "name": "monday-auth-sandbox",
+      "name": "svbc-monday-auth-sandbox",
       "workers_dev": true,
       "preview_urls": false,
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "monday-auth-sandbox",
-          // Placeholder until `wrangler d1 create monday-auth-sandbox` runs (plan Task 6).
+          "database_name": "svbc-monday-auth-sandbox",
+          // Placeholder until `wrangler d1 create svbc-monday-auth-sandbox` runs (plan Task 6).
           "database_id": "00000000-0000-0000-0000-000000000000",
           "migrations_dir": "migrations"
         }

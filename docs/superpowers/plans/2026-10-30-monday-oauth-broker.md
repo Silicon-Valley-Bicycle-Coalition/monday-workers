@@ -38,7 +38,7 @@
 These gate Task 6 onward in sandbox and step 0.4 in production. Code tasks 1–5 don't need them.
 
 - **H1.** Create the *SVBC Integrations* Monday user (CRM member + Work Management member). Note its user id.
-- **H2.** In the Developer Center, create apps `SVBC Portal`, `SVBC Staff Sync`, `SVBC Read-only`. For each: OAuth & Permissions → scopes per Global Constraints; redirect URIs `https://monday-auth-sandbox.<workers-subdomain>.workers.dev/oauth/callback` and `https://monday-auth.<workers-subdomain>.workers.dev/oauth/callback`; draft version → **New OAuth Flow** on → promote live. Install each in the account.
+- **H2.** In the Developer Center, create apps `SVBC Portal`, `SVBC Staff Sync`, `SVBC Read-only`. For each: OAuth & Permissions → scopes per Global Constraints; redirect URIs `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/callback` and `https://svbc-monday-auth.svbc-account.workers.dev/oauth/callback`; draft version → **New OAuth Flow** on → promote live. Install each in the account.
 - **H3.** After Task 6 deploys the sandbox broker: `wrangler secret put` (in `monday-auth`, `--env sandbox`) `PORTAL_CLIENT_ID`, `PORTAL_CLIENT_SECRET`, `SYNC_CLIENT_ID`, `SYNC_CLIENT_SECRET`, `READONLY_CLIENT_ID`, `READONLY_CLIENT_SECRET`, `START_KEY` (any long random string), `SLACK_WEBHOOK_URL`. Then, logged into Monday as **Sandbox Integration**, open `/oauth/start/portal?key=…`, `/sync`, `/readonly` and approve. Same for production with SVBC Integrations at cutover step 0.4.
 
 ---
@@ -204,7 +204,7 @@ Needs H1–H2. Operator steps run by David where marked; the agent records resul
 - Create: `monday-auth/README.md`
 - Modify: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md` (append "Verification results, 2026-10-31")
 
-- [ ] **Step 1:** `cd monday-auth && npx wrangler d1 create monday-auth-sandbox` and `npx wrangler d1 create monday-auth`; put the ids in `wrangler.jsonc`. `npx wrangler d1 migrations apply monday-auth-sandbox --remote --env sandbox`. `npm run deploy:sandbox` — Expected: deploy succeeds; `curl https://monday-auth-sandbox.<subdomain>.workers.dev/health` lists three apps `missing`.
+- [ ] **Step 1:** `cd monday-auth && npx wrangler d1 create svbc-monday-auth-sandbox` and `npx wrangler d1 create svbc-monday-auth`; put the ids in `wrangler.jsonc`. `npx wrangler d1 migrations apply svbc-monday-auth-sandbox --remote --env sandbox`. `npm run deploy:sandbox` — Expected: deploy succeeds; `curl https://svbc-monday-auth-sandbox.svbc-account.workers.dev/health` lists three apps `missing`.
 - [ ] **Step 2 (David):** H3 for sandbox. Expected: `/health` shows three apps `ok`.
 - [ ] **Step 3:** For each app, open `/oauth/probe/<app>?key=…&workspace=17141226` (David pastes the JSON, or the agent uses the browser pane with David's approval of the key). Record per spec item: (1) `platformApi.ok` on `readonly`; (4) which header variant works; (6) run `probe/sync` then immediately `probe/readonly` — if `readonly`'s `complexity.before` is lower than its fresh budget by `sync`'s spend, the budget is per user. Item 5 is answered by Step 2 succeeding with one app per two redirect URIs.
 - [ ] **Step 4: Act on results.** Bearer required → in Task 1's `graphql.ts`, prefix `Bearer ` only for provider-sourced tokens, add a test `'provider tokens are sent as Bearer'`, recopy, commit. `platform_api` uncovered → in `monday-backup/src/usage.ts` treat an auth/scope error as "usage unavailable" (log, no alert), with a test. Per-user budget → in `monday-backup/wrangler.jsonc` move the hourly cron from `30 * * * *` to `45 * * * *` and note the per-user budget in its README.
@@ -221,7 +221,7 @@ Needs H1–H2. Operator steps run by David where marked; the agent records resul
 
 **Interfaces:**
 - Consumes: `tokenProviderFor`, `MondayTokenSource` (Task 1); entrypoint `SyncToken` (Task 4).
-- Produces: the per-Worker recipe Task 8 repeats: `Env` gains `MONDAY_AUTH?: MondayTokenSource` and `MONDAY_API_TOKEN` becomes optional; every `new HttpMondayClient(url, env.MONDAY_API_TOKEN, …)` becomes `new HttpMondayClient(url, tokenProviderFor(env), …)`; `wrangler.jsonc` top level `"services": [{ "binding": "MONDAY_AUTH", "service": "monday-auth", "entrypoint": "SyncToken" }]`, and `env.sandbox` the same with `"service": "monday-auth-sandbox"`.
+- Produces: the per-Worker recipe Task 8 repeats: `Env` gains `MONDAY_AUTH?: MondayTokenSource` and `MONDAY_API_TOKEN` becomes optional; every `new HttpMondayClient(url, env.MONDAY_API_TOKEN, …)` becomes `new HttpMondayClient(url, tokenProviderFor(env), …)`; `wrangler.jsonc` top level `"services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }]`, and `env.sandbox` the same with `"service": "svbc-monday-auth-sandbox"`.
 
 - [ ] **Step 1: Write the failing test** `'builds its Monday client from the MONDAY_AUTH binding when bound'`: env with `MONDAY_AUTH: { token: vi.fn().mockResolvedValue('brokered') }` and no `MONDAY_API_TOKEN`; trigger one handler path that reads Monday with a stubbed `fetch`; assert the request header is `'brokered'`.
 - [ ] **Step 2: Run** `npm test` — Expected: FAIL.
@@ -297,6 +297,6 @@ Repeat Task 7's recipe and test for each, in this order (runbook deploy order): 
 Operator task, in runbook order; listed so nothing is forgotten.
 
 - [ ] H1 done; `EXPECTED_USER_ID` set to SVBC Integrations' id in `monday-auth/wrangler.jsonc`; commit.
-- [ ] `npx wrangler d1 migrations apply monday-auth --remote`; `npm run deploy` in `monday-auth`; H3 for production as SVBC Integrations; `/health` three `ok`; `/oauth/probe/sync?key=…&workspace=18201685` shows `me` = SVBC Integrations.
+- [ ] `npx wrangler d1 migrations apply svbc-monday-auth --remote`; `npm run deploy` in `monday-auth`; H3 for production as SVBC Integrations; `/health` three `ok`; `/oauth/probe/sync?key=…&workspace=18201685` shows `me` = SVBC Integrations.
 - [ ] Each Worker's production deploy (runbook 4.x) uses its binding; no production `MONDAY_API_TOKEN` is ever set on a Worker. `member-portal-writer` deploys before `member-portal`.
 - [ ] Runbook 3.8 board privacy: subscribe SVBC Integrations to the Workers' boards.

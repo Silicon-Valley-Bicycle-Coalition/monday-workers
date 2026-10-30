@@ -1,0 +1,84 @@
+# monday-auth setup cheat sheet
+
+The one-time Monday and Cloudflare steps a person does by hand: an agent never creates accounts
+or handles client secrets or tokens. Steps 1–2 are done once and serve both sandbox and
+production. Step 3 is done per environment (sandbox first, then production at cutover step 0.4).
+
+Monday's Developer Center labels below come from Monday's docs and may differ slightly on screen.
+If a label doesn't match, look for the nearest equivalent and note it here.
+
+## 1. The integration user (once)
+
+- [ ] Admin → Users → Invite: **SVBC Integrations**, on an address you control
+      (e.g. `integrations@bikesiliconvalley.org`).
+- [ ] Accept the invite and set its password (store it in the password manager, not here).
+- [ ] Seats: **CRM member** and **Work Management member** (the backup reads every workspace).
+- [ ] Note its **user id** (open its profile; the number in the URL). It isn't secret — send it
+      over so it can go in `wrangler.jsonc` as production `EXPECTED_USER_ID`.
+
+## 2. Three OAuth apps (once)
+
+Do this logged in as **yourself** (an admin), so the apps are owned by the account, not by the
+integration user. Developer Center: avatar menu → **Developers** → **Create app**.
+
+| App name | Key | Scopes (exactly these, nothing else) |
+|---|---|---|
+| `SVBC Portal` | `portal` | `boards:read` |
+| `SVBC Staff Sync` | `sync` | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write` |
+| `SVBC Read-only` | `readonly` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read` |
+
+For **each** app:
+
+- [ ] **Create app** → the name from the table.
+- [ ] **OAuth & Permissions → Scopes**: tick exactly the scopes in its row.
+- [ ] **OAuth & Permissions → Redirect URLs**: add both:
+  - `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/callback`
+  - `https://svbc-monday-auth.svbc-account.workers.dev/oauth/callback`
+- [ ] Turn on the **New OAuth Flow** (OAuth 2.1). It's set per version: create a **draft
+      version**, turn the toggle on in that draft, then **promote it to live**. Without it,
+      Monday issues the old never-expiring tokens and refreshes fail.
+- [ ] **Install** the app in the SVBC account.
+- [ ] Leave the **Client ID** and **Client Secret** where they are (Basic information). Don't
+      paste them into chat, an issue, or this file; step 3 copies them straight into Cloudflare.
+
+## 3. Secrets and consent (per environment)
+
+Waits until the broker is deployed (plan Task 6 for sandbox; cutover step 0.4 for production).
+Run from `monday-auth/`; drop `--env sandbox` for production. Each command prompts for the value
+without echoing it.
+
+```sh
+npx wrangler secret put PORTAL_CLIENT_ID --env sandbox
+npx wrangler secret put PORTAL_CLIENT_SECRET --env sandbox
+npx wrangler secret put SYNC_CLIENT_ID --env sandbox
+npx wrangler secret put SYNC_CLIENT_SECRET --env sandbox
+npx wrangler secret put READONLY_CLIENT_ID --env sandbox
+npx wrangler secret put READONLY_CLIENT_SECRET --env sandbox
+npx wrangler secret put START_KEY --env sandbox          # e.g. `openssl rand -hex 32`; keep it in the password manager
+npx wrangler secret put SLACK_WEBHOOK_URL --env sandbox  # same webhook monday-backup alerts to
+```
+
+Then, in a private browser window **logged into Monday as the right user** — **Sandbox
+Integration** for sandbox, **SVBC Integrations** for production — open each of these and click
+Authorize (production: same paths on `svbc-monday-auth.svbc-account.workers.dev`):
+
+- [ ] `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/start/portal?key=<START_KEY>`
+- [ ] `…/oauth/start/sync?key=<START_KEY>`
+- [ ] `…/oauth/start/readonly?key=<START_KEY>`
+
+Each should end on a page naming the app, the Monday user and the scopes. A "wrong user" page
+means you were logged in as someone else: the token was revoked and nothing was stored; switch
+users and try again.
+
+- [ ] Check: `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/health` shows all three
+      apps `ok`.
+
+## If something goes wrong later
+
+- **Slack alert "needs consent"** for an app: Monday rejected its refresh token (app uninstalled,
+  user deactivated, or token revoked). Re-run that app's `/oauth/start/<app>` as the integration
+  user. Workers' queues hold their writes and retry meanwhile.
+- **Rotate a client secret**: regenerate it in the Developer Center, `wrangler secret put` the new
+  value, then re-run consent for that app.
+- **Cut off an app entirely**: uninstall it from the account. Every Worker on that app stops
+  getting tokens at once.
