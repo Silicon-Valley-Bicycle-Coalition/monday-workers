@@ -23,32 +23,51 @@ const testEnv: Env = {
   READONLY_CLIENT_SECRET: 'readonly-secret',
 };
 
-type Responder = (form: URLSearchParams) => { status: number; body: unknown } | Promise<{ status: number; body: unknown }>;
+type Responder = (form: URLSearchParams, call: number) => { status: number; body: unknown };
 
-// Fake Monday token endpoint: counts calls, rotates tokens (`acc-N` / `ref-N`) unless overridden.
-function harness(responder?: Responder) {
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+async function until(cond: () => boolean): Promise<void> {
+  for (let i = 0; i < 2000 && !cond(); i++) await new Promise((r) => setTimeout(r, 1));
+  if (!cond()) throw new Error('until: condition never became true');
+}
+
+// Fake Monday token endpoint: counts calls, rotates tokens (`acc-new-N` / `ref-new-N`) unless a
+// responder overrides. With `gate`, every token-endpoint call and every broker sleep waits for
+// the gate, so a test holds the winner mid-refresh until the loser is polling. After the gate
+// opens each poll sleeps 20 ms: a 200 ms budget, far longer than the winner's D1 write.
+function harness(opts: { responder?: Responder; gate?: Promise<void>; env?: Env } = {}) {
   const store = new D1AppTokenStore(env.DB);
   const tokenCalls: URLSearchParams[] = [];
   const alerts: string[] = [];
+  let sleeps = 0;
   let n = 0;
   const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url !== TOKEN_URL) throw new Error(`unexpected fetch ${url}`);
     const form = new URLSearchParams(String(init?.body ?? ''));
     tokenCalls.push(form);
-    // Yield so a concurrent caller gets to run while this "network call" is in flight.
-    await new Promise((r) => setTimeout(r, 5));
-    const res = responder
-      ? await responder(form)
+    const call = tokenCalls.length;
+    if (opts.gate) await opts.gate;
+    const res = opts.responder
+      ? opts.responder(form, call)
       : { status: 200, body: { access_token: `acc-new-${++n}`, refresh_token: `ref-new-${n}`, expires_in: 3600 } };
     return new Response(JSON.stringify(res.body), { status: res.status, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   const broker = new TokenBroker({
     store,
-    env: testEnv,
+    env: opts.env ?? testEnv,
     fetchFn,
     now: () => NOW,
-    sleep: () => new Promise((r) => setTimeout(r, 5)),
+    sleep: async () => {
+      sleeps++;
+      if (opts.gate) await opts.gate;
+      await new Promise((r) => setTimeout(r, 20));
+    },
     alert: async (text) => {
       alerts.push(text);
     },
@@ -61,8 +80,10 @@ function harness(responder?: Responder) {
       accessTokenExpiresAt: inMinutes(expiresInMinutes),
       authorizedUserId: '42',
     });
-  return { store, broker, tokenCalls, alerts, seed };
+  return { store, broker, tokenCalls, alerts, seed, sleeps: () => sleeps };
 }
+
+const quiet = () => vi.spyOn(console, 'error').mockImplementation(() => {});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -94,11 +115,14 @@ describe('TokenBroker', () => {
   });
 
   it('two concurrent token() calls on an expiring token make one refresh call', async () => {
-    const h = harness();
+    const gate = deferred();
+    const h = harness({ gate: gate.promise });
     await h.seed('sync', 1);
-    const [a, b] = await Promise.all([h.broker.token('sync'), h.broker.token('sync')]);
-    expect(a).toBe('acc-new-1');
-    expect(b).toBe('acc-new-1');
+    const both = Promise.all([h.broker.token('sync'), h.broker.token('sync')]);
+    // The winner is inside the token-endpoint call and the loser is polling.
+    await until(() => h.tokenCalls.length === 1 && h.sleeps() >= 1);
+    gate.resolve();
+    expect(await both).toEqual(['acc-new-1', 'acc-new-1']);
     expect(h.tokenCalls).toHaveLength(1);
   });
 
@@ -117,10 +141,13 @@ describe('TokenBroker', () => {
   });
 
   it('invalid_grant marks needs_consent, alerts once, and throws', async () => {
-    const h = harness(() => ({ status: 400, body: { error: 'invalid_grant' } }));
+    const gate = deferred();
+    const h = harness({ gate: gate.promise, responder: () => ({ status: 400, body: { error: 'invalid_grant' } }) });
     await h.seed('sync', 1);
-    const results = await Promise.allSettled([h.broker.token('sync'), h.broker.token('sync')]);
-    for (const r of results) {
+    const both = Promise.allSettled([h.broker.token('sync'), h.broker.token('sync')]);
+    await until(() => h.tokenCalls.length === 1 && h.sleeps() >= 1);
+    gate.resolve();
+    for (const r of await both) {
       expect(r.status).toBe('rejected');
       expect(String((r as PromiseRejectedResult).reason.message)).toMatch(/needs consent/);
     }
@@ -136,22 +163,34 @@ describe('TokenBroker', () => {
     const h = harness();
     await expect(h.broker.token('readonly')).rejects.toThrow(/not authorized/);
     await h.seed('readonly', 1);
-    await h.store.markNeedsConsent('readonly');
+    await h.store.markNeedsConsent('readonly', 1);
     await expect(h.broker.token('readonly')).rejects.toThrow(/needs consent/);
     await expect(h.broker.token('readonly', 'acc-old-readonly')).rejects.toThrow(/needs consent/);
     expect(h.tokenCalls).toHaveLength(0);
     expect(h.alerts).toHaveLength(0);
   });
 
-  it('a non-invalid_grant failure releases the lease, keeps status ok and does not alert', async () => {
+  it('transient failure inside the margin returns the still-valid stored token', async () => {
+    const errors = quiet();
+    const h = harness({ responder: () => ({ status: 503, body: { error: 'server_error' } }) });
+    await h.seed('sync', 5);
+    expect(await h.broker.token('sync')).toBe('acc-old-sync');
+    expect(h.tokenCalls).toHaveLength(1);
+    expect(await h.store.get('sync')).toMatchObject({ status: 'ok', version: 1 });
+    expect(h.alerts).toHaveLength(0);
+    expect(errors).toHaveBeenCalled();
+  });
+
+  it('transient failure on an expired token throws retryable, releases the lease, and does not alert', async () => {
     let fail = true;
-    const h = harness(() =>
-      fail
-        ? { status: 503, body: { error: 'server_error' } }
-        : { status: 200, body: { access_token: 'acc-after', refresh_token: 'ref-after', expires_in: 3600 } }
-    );
-    await h.seed('sync', 1);
-    await expect(h.broker.token('sync')).rejects.toThrow(/503/);
+    const h = harness({
+      responder: () =>
+        fail
+          ? { status: 503, body: { error: 'server_error' } }
+          : { status: 200, body: { access_token: 'acc-after', refresh_token: 'ref-after', expires_in: 3600 } },
+    });
+    await h.seed('sync', -1);
+    await expect(h.broker.token('sync')).rejects.toThrow(/retryable.*503/);
     expect((await h.store.get('sync'))?.status).toBe('ok');
     expect(h.alerts).toHaveLength(0);
     // Lease released: the next call can refresh straight away.
@@ -159,16 +198,56 @@ describe('TokenBroker', () => {
     expect(await h.broker.token('sync')).toBe('acc-after');
   });
 
-  it('refreshAllIfDue refreshes only apps inside the margin and isolates failures', async () => {
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const h = harness((form) =>
-      form.get('client_id') === 'portal-id'
-        ? { status: 500, body: {} }
-        : { status: 200, body: { access_token: 'acc-sync-refreshed', refresh_token: 'ref-sync-refreshed', expires_in: 3600 } }
-    );
-    await h.seed('portal', 2); // due, but Monday fails
-    await h.seed('sync', 5); // due
-    await h.seed('readonly', 30); // not due
+  it('transient failure on a forced refresh throws retryable even though the token is unexpired', async () => {
+    const h = harness({ responder: () => ({ status: 503, body: {} }) });
+    await h.seed('portal', 50);
+    await expect(h.broker.token('portal', 'acc-old-portal')).rejects.toThrow(/retryable/);
+  });
+
+  it('a loser takes over the lease after the winner fails transiently', async () => {
+    const gate = deferred();
+    const h = harness({
+      gate: gate.promise,
+      responder: (_form, call) =>
+        call === 1
+          ? { status: 503, body: {} }
+          : { status: 200, body: { access_token: 'acc-takeover', refresh_token: 'ref-takeover', expires_in: 3600 } },
+    });
+    await h.seed('sync', -1); // expired: the failed winner throws, so only the loser's refresh succeeds
+    const both = Promise.allSettled([h.broker.token('sync'), h.broker.token('sync')]);
+    await until(() => h.tokenCalls.length === 1 && h.sleeps() >= 1);
+    gate.resolve();
+    const results = await both;
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<string>).value)).toEqual([
+      'acc-takeover',
+    ]);
+    expect(h.tokenCalls).toHaveLength(2);
+    expect(await h.store.get('sync')).toMatchObject({ refreshToken: 'ref-takeover', version: 2 });
+  });
+
+  it('a missing client secret is a config error that never calls Monday', async () => {
+    const h = harness({ env: { ...testEnv, SYNC_CLIENT_SECRET: '' } });
+    await h.seed('sync', 1);
+    const p = h.broker.token('sync');
+    await expect(p).rejects.toThrow('monday-auth: SYNC_CLIENT_SECRET is not set');
+    await expect(p).rejects.not.toThrow(/retryable/);
+    expect(h.tokenCalls).toHaveLength(0);
+    // The lease wasn't taken: a correctly configured broker refreshes at once.
+    expect(await harness().broker.token('sync')).toBe('acc-new-1');
+  });
+
+  it('refreshAllIfDue refreshes apps within 40 minutes of expiry and isolates failures', async () => {
+    const errors = quiet();
+    const h = harness({
+      responder: (form) =>
+        form.get('client_id') === 'portal-id'
+          ? { status: 500, body: {} }
+          : { status: 200, body: { access_token: 'acc-sync-refreshed', refresh_token: 'ref-sync-refreshed', expires_in: 3600 } },
+    });
+    await h.seed('portal', -1); // due and expired, but Monday fails
+    await h.seed('sync', 35); // due: inside the 40-minute cron window, outside the 10-minute margin
+    await h.seed('readonly', 45); // not due
     await expect(h.broker.refreshAllIfDue()).resolves.toBeUndefined();
     expect(h.tokenCalls.map((f) => f.get('client_id')).sort()).toEqual(['portal-id', 'sync-id']);
     expect((await h.store.get('sync'))?.accessToken).toBe('acc-sync-refreshed');
@@ -180,13 +259,13 @@ describe('TokenBroker', () => {
   it('refreshAllIfDue skips missing and needs_consent apps without throwing', async () => {
     const h = harness();
     await h.seed('portal', 1);
-    await h.store.markNeedsConsent('portal');
+    await h.store.markNeedsConsent('portal', 1);
     await expect(h.broker.refreshAllIfDue()).resolves.toBeUndefined();
     expect(h.tokenCalls).toHaveLength(0);
     expect(h.alerts).toHaveLength(0);
   });
 
-  it('no thrown message or alert text contains the access or refresh token', async () => {
+  it('no thrown message or alert text contains the access or refresh token or client secret', async () => {
     const logged: string[] = [];
     for (const method of ['log', 'info', 'warn', 'error'] as const) {
       vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
@@ -202,26 +281,46 @@ describe('TokenBroker', () => {
       }
     };
 
+    // missing app
+    await capture(harness().broker.token('readonly'));
+
     // invalid_grant (description echoes the token, as a careless server might)
-    const rejected = harness((form) => ({
-      status: 400,
-      body: { error: 'invalid_grant', error_description: `refresh token ${form.get('refresh_token')} revoked` },
-    }));
+    const rejected = harness({
+      responder: (form) => ({
+        status: 400,
+        body: { error: 'invalid_grant', error_description: `refresh token ${form.get('refresh_token')} revoked` },
+      }),
+    });
     await rejected.seed('sync', 1);
     await capture(rejected.broker.token('sync'));
     await capture(rejected.broker.token('sync', 'acc-old-sync'));
 
-    // 5xx whose body echoes the token
-    const flaky = harness((form) => ({ status: 502, body: { error: 'bad_gateway', token: form.get('refresh_token') } }));
-    await flaky.seed('portal', 1);
+    // 5xx whose body echoes the token and secret: expired (throws), still valid (logs, returns), cron
+    const flaky = harness({
+      responder: (form) => ({
+        status: 502,
+        body: { error: 'bad_gateway', token: form.get('refresh_token'), secret: form.get('client_secret') },
+      }),
+    });
+    await flaky.seed('portal', -1);
     await capture(flaky.broker.token('portal'));
+    await flaky.seed('readonly', 5);
+    await capture(flaky.broker.token('readonly'));
     await flaky.broker.refreshAllIfDue();
 
-    // missing app
-    await capture(flaky.broker.token('readonly'));
-
     expect(thrown.length).toBeGreaterThanOrEqual(4);
-    const secrets = ['acc-old-sync', 'ref-old-sync', 'acc-old-portal', 'ref-old-portal'];
+    expect(logged.length).toBeGreaterThan(0);
+    const secrets = [
+      'acc-old-sync',
+      'ref-old-sync',
+      'acc-old-portal',
+      'ref-old-portal',
+      'acc-old-readonly',
+      'ref-old-readonly',
+      'sync-secret',
+      'portal-secret',
+      'readonly-secret',
+    ];
     for (const text of [...thrown, ...rejected.alerts, ...flaky.alerts, ...logged]) {
       for (const secret of secrets) expect(text).not.toContain(secret);
     }

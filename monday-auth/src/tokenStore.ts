@@ -132,11 +132,14 @@ export class D1AppTokenStore {
   }
 
   // True only when this call changed the status from 'ok' to 'needs_consent', so the caller
-  // alerts once per state change rather than once per failed request.
-  async markNeedsConsent(app: AppKey): Promise<boolean> {
+  // alerts once per state change rather than once per failed request. Gated on the version the
+  // caller refreshed from, so an invalid_grant for an old pair can't mark a freshly re-consented row.
+  async markNeedsConsent(app: AppKey, expectedVersion: number): Promise<boolean> {
     const result = await this.db
-      .prepare(`UPDATE oauth_tokens SET status = 'needs_consent', updated_at = ?2 WHERE app = ?1 AND status = 'ok'`)
-      .bind(app, new Date().toISOString())
+      .prepare(
+        `UPDATE oauth_tokens SET status = 'needs_consent', updated_at = ?2 WHERE app = ?1 AND status = 'ok' AND version = ?3`
+      )
+      .bind(app, new Date().toISOString(), expectedVersion)
       .run();
     return result.meta.changes === 1;
   }

@@ -86,16 +86,24 @@ describe('D1AppTokenStore', () => {
   it('markNeedsConsent returns true once, then false', async () => {
     const store = new D1AppTokenStore(env.DB);
     await store.save(seed);
-    expect(await store.markNeedsConsent('sync')).toBe(true);
+    expect(await store.markNeedsConsent('sync', 1)).toBe(true);
     expect((await store.get('sync'))?.status).toBe('needs_consent');
-    expect(await store.markNeedsConsent('sync')).toBe(false);
-    expect(await store.markNeedsConsent('portal')).toBe(false); // no row
+    expect(await store.markNeedsConsent('sync', 1)).toBe(false);
+    expect(await store.markNeedsConsent('portal', 1)).toBe(false); // no row
+  });
+
+  it('markNeedsConsent does nothing when the version moved (an old-generation invalid_grant)', async () => {
+    const store = new D1AppTokenStore(env.DB);
+    await store.save(seed);
+    await store.save({ ...seed, accessToken: 'reconsented' }); // version 2
+    expect(await store.markNeedsConsent('sync', 1)).toBe(false);
+    expect(await store.get('sync')).toMatchObject({ status: 'ok', accessToken: 'reconsented' });
   });
 
   it('save after needs_consent resets status to ok', async () => {
     const store = new D1AppTokenStore(env.DB);
     await store.save(seed);
-    await store.markNeedsConsent('sync');
+    await store.markNeedsConsent('sync', 1);
     await store.save(seed);
     expect(await store.get('sync')).toMatchObject({ status: 'ok', version: 2 });
   });
