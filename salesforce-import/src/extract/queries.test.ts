@@ -66,7 +66,8 @@ describe('buildExtracts', () => {
     expect(byName.get('contacts')!.soql).toContain('Elected__c');
   });
   it('selects Do Not Mail and both Deceased flags for postal suppression (monday-migration docs/35 §3.1)', () => {
-    for (const f of ['Do_Not_Mail__c', 'Do_Not_Mail_Reason__c', 'Deceased__c', 'npsp__Deceased__c']) {
+    for (const f of ['Do_Not_Mail__c', 'Do_Not_Mail_Reason__c', 'Deceased__c', 'npsp__Deceased__c',
+      'npsp__Do_Not_Contact__c']) {
       expect(byName.get('contacts')!.soql, f).toContain(f);
     }
   });

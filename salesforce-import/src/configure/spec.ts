@@ -85,7 +85,7 @@ const SHARED_DESCRIPTIONS = {
 // People boards only — Organizations has no Do Not Mail.
 const POSTAL_DESCRIPTIONS = {
   'Do Not Mail': 'Leave this person off postal mailings. Email consent is separate (the Consent columns).',
-  'Do Not Mail Reason': 'Opt out all mail, or Undeliverable (the address needs fixing).',
+  'Do Not Mail Reason': 'Opt out all mail, Undeliverable (the address needs fixing), or Do Not Contact (Salesforce).',
 } as const;
 // People boards only.
 const PORTFOLIO_DESCRIPTIONS = {
