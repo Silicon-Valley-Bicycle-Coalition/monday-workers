@@ -58,7 +58,8 @@
           "memberType": "color_mm8jp69c",
           "lapseCount": "numeric_mm8jqb5e",
           "lastLapsed": "date_mm8jf03y"
-        }
+        },
+        "hasActiveRecurringGift": "boolean_mm8hzx4e"
       },
       "18437342607": {
         "giftLedgerJson": "text_mm8jepqy",
@@ -85,7 +86,8 @@
           "memberType": "color_mm8jrb2q",
           "lapseCount": "numeric_mm8jdtew",
           "lastLapsed": "date_mm8jn8te"
-        }
+        },
+        "hasActiveRecurringGift": "boolean_mm8hry6e"
       },
       "18437342579": {
         "giftLedgerJson": "text_mm8j9adj",
@@ -174,7 +176,15 @@
           "Completed"
         ]
       }
-    ]
+    ],
+    "recurringGifts": {
+      "boardId": 18437342630,
+      "columns": {
+        "donorLink": "board_relation_mm8hb8th",
+        "status": "color_mm8hk16a"
+      },
+      "activeStatusLabel": "Active"
+    }
   },
   "custodian": {
     "activeFiscalYears": 2,
