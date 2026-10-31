@@ -1,14 +1,14 @@
 # monday-auth setup cheat sheet
 
 The one-time Monday and Cloudflare steps a person does by hand: an agent never creates accounts
-or handles client secrets or tokens. Step 1 is done once per environment's integration user.
-Steps 2 and 3 are done per environment (sandbox first, then production at cutover step 0.4):
+or handles client secrets or tokens. Step 1 creates the production integration user (the sandbox
+already has **Sandbox Integration**). Steps 2 and 3 are done per environment (sandbox first, then production at cutover step 0.4):
 each environment has its own three apps.
 
 Monday's Developer Center labels below come from Monday's docs and may differ slightly on screen.
 If a label doesn't match, look for the nearest equivalent and note it here.
 
-## 1. The integration user (once)
+## 1. The integration user (production, once)
 
 - [ ] Admin → Users → Invite: **SVBC Integrations**, on an address you control
       (e.g. `integrations@bikesiliconvalley.org`).
