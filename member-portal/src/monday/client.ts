@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import type { Locale } from '../i18n/locales';
 import { parseAmount as parseAmountOrNull } from '../amounts';
-import { MondayGraphQL } from './graphql';
+import { MondayGraphQL, type TokenProvider } from './graphql';
 
 export { AmbiguousWriteError, MondayApiError } from './graphql';
 
@@ -122,7 +122,8 @@ export type DonationReadOptions = Pick<DonationsConfig, 'countableStatuses' | 'h
 export class HttpMondayClient implements MondayClient {
   constructor(
     apiUrl: string,
-    apiToken: string,
+    // A fixed token or a provider (tokenProviderFor in ./graphql) that fetches a fresh one per call.
+    apiToken: string | TokenProvider,
     private columns: MondayColumns,
     private donorsBoardId: number,
     private donationsBoardId: number,

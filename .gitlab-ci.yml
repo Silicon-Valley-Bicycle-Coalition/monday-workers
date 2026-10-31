@@ -234,6 +234,19 @@ deploy-sandbox:member-portal:
   variables:
     WORKER_DIR: member-portal
 
+# The change-requests queue consumer, split out of member-portal (wrangler.writer.jsonc). Same
+# directory and cache as the portal; resource_group is distinct so the two can deploy together.
+# Messages simply wait in the queue if the portal deploys first and the writer follows.
+deploy-sandbox:member-portal-writer:
+  extends: .deploy_sandbox_job
+  resource_group: "sandbox-member-portal-writer"
+  variables:
+    WORKER_DIR: member-portal
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npx wrangler deploy -c wrangler.writer.jsonc --env sandbox
+
 deploy-sandbox:funraise-sync:
   extends: .deploy_sandbox_job
   variables:

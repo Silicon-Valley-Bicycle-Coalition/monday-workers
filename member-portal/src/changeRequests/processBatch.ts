@@ -23,6 +23,10 @@ export async function consumeChangeQueueBatch(
   gate: BatchSkipContext
 ): Promise<void> {
   for (const message of messages) {
+    if (!hasValidShape(message.body)) {
+      rejectMalformed(message);
+      continue;
+    }
     const disposition = messageDisposition(gate.mode, message.body);
     if (disposition === 'retry') {
       message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
@@ -41,7 +45,27 @@ export async function processChangeQueueBatch(
   messages: QueueMessageLike<ChangeQueueMessage>[],
   deps: ProcessChangeBatchDeps
 ): Promise<void> {
-  for (const message of messages) await handleMessage(message, deps);
+  for (const message of messages) {
+    if (!hasValidShape(message.body)) {
+      rejectMalformed(message);
+      continue;
+    }
+    await handleMessage(message, deps);
+  }
+}
+
+// The queue body is all this consumer trusts before it reads D1, so it must be a positive integer
+// id. Anything else can never succeed: log it (no body contents — it is untrusted) and retry
+// rather than ack, so it exhausts its retries into the dead-letter queue instead of vanishing.
+function hasValidShape(body: unknown): body is ChangeQueueMessage {
+  if (typeof body !== 'object' || body === null) return false;
+  const id = (body as { requestId?: unknown }).requestId;
+  return typeof id === 'number' && Number.isSafeInteger(id) && id > 0;
+}
+
+function rejectMalformed(message: QueueMessageLike<ChangeQueueMessage>): void {
+  console.error('member-portal consumer: malformed change-request message (requestId is not a positive integer); routing to the dead-letter path');
+  message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
 }
 
 async function handleMessage(message: QueueMessageLike<ChangeQueueMessage>, deps: ProcessChangeBatchDeps): Promise<void> {

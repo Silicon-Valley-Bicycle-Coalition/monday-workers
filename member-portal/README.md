@@ -152,6 +152,19 @@ A dedicated sending subdomain (`mail.bikesiliconvalley.org`) with its own SPF/DK
 kept separate from the main domain's mail flow, is standard practice for transactional email — see
 `DEPLOY.md` Phase 3 for the onboarding steps.
 
+**Read-only portal, separate writer.** Monday access comes from the `svbc-monday-auth` OAuth
+broker, not a stored token (`MONDAY_AUTH` service binding; `tokenProviderFor` in
+`src/monday/graphql.ts` falls back to a `MONDAY_API_TOKEN` secret only while that binding is
+absent). The portal binds the broker's **`PortalToken`** entrypoint (read scope) and never calls a
+Monday mutation: it enqueues change requests to `member-portal-change-requests` and does not
+consume that queue. **`svbc-member-portal-writer`** (`wrangler.writer.jsonc`, entry
+`src/writer.ts`; sandbox `svbc-member-portal-writer-sandbox`) is the sole consumer: it binds
+**`SyncToken`**, shares the portal's D1 database and `FLAGS` namespace (so the same write switch
+governs it), serves no traffic, and throws on any other queue. The portal keeps the letter-emails
+consumer, which only reads Monday. Deploy the writer first
+(`npm run deploy:writer` / `deploy:writer:sandbox`) so the queue is never without a consumer;
+`config/split.test.ts` and `src/index.test.ts` pin the split.
+
 **Sandbox environment — inbound only, no outbound data.** `npm run deploy:sandbox` deploys
 `svbc-member-portal-sandbox` (`wrangler.jsonc` `env.sandbox`) against the CRM Sandbox boards
 (`config/sandbox.json`, chosen at request time by the `ENVIRONMENT` var — see
@@ -165,7 +178,7 @@ production and sandbox configs are kept apart by `config/split.test.ts`, which f
 share a sink, a board id, or a column id (the id checks are latent until production boards exist
 and start biting at cutover). What the sandbox cannot exercise today, because the CRM Sandbox has
 no board or column for it: change requests (no Change Requests board, so the `CHANGE_QUEUE`
-consumer idles), volunteer history, event registrations, pledges, and the
+consumer idles in `svbc-member-portal-writer-sandbox`), volunteer history, event registrations, pledges, and the
 communication-preference checkboxes — each stays hidden by its own config gate. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
@@ -265,7 +278,8 @@ config-gated features:
   operator fills in the real wording.
 * **Change requests** (`GET`/`POST /:locale/portal/change-request`): a donor submits a new address,
   email, or phone; the Worker records it in D1 (dedupe window:
-  `changeRequests.dedupeWindowHours`) and a queue consumer creates an item on a staff-owned
+  `changeRequests.dedupeWindowHours`) and a queue consumer (the separate
+  `svbc-member-portal-writer` Worker, below) creates an item on a staff-owned
   Change Requests board (donor link, field, old value, new value, submitted-at). Staff apply
   approved changes to the Donors board by hand — the portal never writes donor records.
   **Gated on `changeRequests.boardId`** plus its column ids and the `donorAddress`/`donorPhone`
@@ -274,8 +288,8 @@ config-gated features:
 Operator setup for v2, in addition to the v1 steps: create the Change Requests board (five
 columns: connect-boards to Donors, three text, one date) and fill in
 `changeRequests.boardId`/`columns`; fill in `monday.columns.donorAddress` and
-`monday.columns.donorPhone`; grant the portal's integration user **write access to the Change
-Requests board only**; create the `member-portal-change-requests` queue and its
+`monday.columns.donorPhone`; grant the broker's Staff Sync (`SyncToken`) identity **write access to the Change
+Requests board** (the portal's own `PortalToken` is read-only); create the `member-portal-change-requests` queue and its
 `member-portal-change-requests-dlq` dead-letter queue before deploying; apply D1 migration
 `0002_create_change_requests.sql`; and, once the letter language is signed off, replace every
 `REPLACE_AFTER_SIGNOFF` in `taxLetter`.

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import production from './svbc.json';
 import sandbox from './sandbox.json';
 import wranglerText from '../wrangler.jsonc?raw';
+import writerText from '../wrangler.writer.jsonc?raw';
 import { parseJsonc } from '../test/jsonc';
 import { validateConfig, lettersEnabled, letterCronConfigured } from '../src/config';
 import { queueBaseName } from '../src/environment';
@@ -137,10 +138,11 @@ describe('wrangler.jsonc env.sandbox', () => {
   });
 
   // The write switch's 4-day outage cover: 100 retries on the shared backoff (capped at an hour).
-  it('gives both main consumers 100 retries in production and the sandbox', () => {
+  // The portal keeps only the letter-emails consumer; change-requests moved to the writer.
+  it('gives its letter-emails consumer 100 retries in production and the sandbox', () => {
     for (const scope of [wrangler, sandboxEnv]) {
       const consumers = (scope.queues as Json).consumers as { queue: string; max_retries: number }[];
-      expect(consumers).toHaveLength(2);
+      expect(consumers.map((c) => queueBaseName(c.queue))).toEqual(['member-portal-letter-emails']);
       for (const consumer of consumers) expect(consumer.max_retries, consumer.queue).toBe(100);
     }
   });
@@ -150,5 +152,54 @@ describe('wrangler.jsonc env.sandbox', () => {
     const sbLimiter = (sandboxEnv.ratelimits as Json[])[0]!;
     expect(sbLimiter.name).toBe(prodLimiter.name);
     expect(sbLimiter.namespace_id).not.toBe(prodLimiter.namespace_id);
+  });
+});
+
+// member-portal-writer (wrangler.writer.jsonc) consumes what the portal enqueues, with the broker's
+// write-scope entrypoint. It must see the same D1 database, queues and write-switch namespace as
+// the portal per environment, or the queue and the rows it points at would drift apart.
+describe('wrangler.writer.jsonc', () => {
+  const writer = parseJsonc(writerText) as Json;
+  const writerSandbox = get(writer, 'env.sandbox') as Json;
+  const pairs: [string, Json, Json, string][] = [
+    ['production', writer, wrangler, 'svbc-monday-auth'],
+    ['sandbox', writerSandbox, sandboxEnv, 'svbc-monday-auth-sandbox'],
+  ];
+
+  it('is named svbc-member-portal-writer and serves no traffic', () => {
+    expect(writer.name).toBe('svbc-member-portal-writer');
+    expect(writer.main).toBe('src/writer.ts');
+    for (const scope of [writer, writerSandbox]) {
+      expect(scope.workers_dev).toBe(false);
+      expect(scope.preview_urls).toBe(false);
+      expect(scope.routes).toBeUndefined();
+      expect(scope.triggers).toBeUndefined();
+    }
+  });
+
+  it.each(pairs)('%s: consumes exactly the portal’s change-requests queue, 100 retries, one at a time, same DLQ', (_env, w, p) => {
+    const producers = ((p.queues as Json).producers as { queue: string; binding: string }[]).find((q) => q.binding === 'CHANGE_QUEUE')!;
+    const consumers = (w.queues as Json).consumers as { queue: string; max_retries: number; max_concurrency: number; dead_letter_queue: string }[];
+    expect(consumers).toHaveLength(1);
+    expect(consumers[0]).toMatchObject({ queue: producers.queue, max_retries: 100, max_concurrency: 1, dead_letter_queue: `${producers.queue}-dlq` });
+    expect((w.queues as Json).producers).toBeUndefined();
+  });
+
+  it.each(pairs)('%s: shares the portal’s D1 database and FLAGS namespace', (_env, w, p) => {
+    const db = (scope: Json) => (scope.d1_databases as { binding: string; database_name: string; database_id: string }[])[0]!;
+    expect(db(w)).toMatchObject({ binding: 'DB', database_name: db(p).database_name, database_id: db(p).database_id });
+    const flags = (scope: Json) => (scope.kv_namespaces as { binding: string; id: string }[]).find((ns) => ns.binding === 'FLAGS')?.id;
+    expect(flags(w)).toBeTruthy();
+    expect(flags(w)).toBe(flags(p));
+  });
+
+  it.each(pairs)('%s: binds the broker’s SyncToken (write scope), the portal PortalToken', (_env, w, p, service) => {
+    expect(w.services).toEqual([{ binding: 'MONDAY_AUTH', service, entrypoint: 'SyncToken' }]);
+    expect(p.services).toEqual([{ binding: 'MONDAY_AUTH', service, entrypoint: 'PortalToken' }]);
+  });
+
+  it('only the sandbox selects config/sandbox.json', () => {
+    expect((writer.vars as Json | undefined)?.ENVIRONMENT).toBeUndefined();
+    expect((writerSandbox.vars as Json).ENVIRONMENT).toBe('sandbox');
   });
 });
