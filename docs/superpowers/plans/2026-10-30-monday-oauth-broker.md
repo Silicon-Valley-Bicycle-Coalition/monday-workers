@@ -16,7 +16,7 @@
 - `monday-backup/src/monday/graphql.ts` is canonical; the 11 copies listed in `.gitlab-ci.yml` job `monday-graphql-copies` stay byte-identical, and the file stays strip-only TypeScript (no constructor parameter properties, enums, namespaces).
 - Tests never call `api.monday.com` or `auth.monday.com`; inject `fetchFn`.
 - No HTTP response body and no log line ever contains an access or refresh token.
-- Token endpoint `POST https://auth.monday.com/oauth_ms/oauth/token`; revoke `POST https://auth.monday.com/oauth_ms/oauth/revoke`; PKCE `S256` required; `expires_in` 3600.
+- Token endpoint `POST https://auth.monday.com/oauth_ms/oauth/token`; revoke `POST https://auth.monday.com/oauth_ms/oauth/revoke`; PKCE `S256` required; `expires_in` 3600 (observed 2026-10-31: access tokens actually last about 24 h; the broker reads the JWT `exp`, so nothing depends on this number).
 - Refresh margin 10 minutes; proactive refresh cron every 30 minutes.
 - Scopes — Portal: `boards:read me:read`. Staff sync: `boards:read boards:write updates:write assets:read users:read notifications:write docs:write me:read`. Read-only: `boards:read updates:read assets:read docs:read users:read workspaces:read me:read`.
 - Admin/one-time tooling (salesforce-import, geo-filter, `scripts/*.mjs`, Workers' `scripts/*.mjs`, monday-backup restore CLI) keeps reading `MONDAY_API_TOKEN` from the operator's shell. Webhook registration stays human-owned.

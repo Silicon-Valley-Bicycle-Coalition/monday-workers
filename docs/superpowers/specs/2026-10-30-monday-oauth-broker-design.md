@@ -37,7 +37,7 @@ Why this works and what it trades away:
 - **Accepted risk, to be documented where operators will see it:** `member-portal` is
   internet-facing, and its token can **read** every board SVBC Integrations can see, not only the
   ones the portal displays. Accepted because the alternative (its own user) costs a seat.
-- **The portal is read-only** (`boards:read` only). `boards:write` isn't board-limited, so a
+- **The portal is read-only** (`boards:read` and `me:read` only). `boards:write` isn't board-limited, so a
   portal holding it could change or archive items on Donations or any other board; that write
   exposure is **not** accepted. The portal's one write, `create_item` for change requests, moves
   to a staff-side Worker (see "Change requests leave the portal").
@@ -270,3 +270,36 @@ Receivers keep their existing shared-secret checks; nothing about inbound webhoo
 - Each in-scope Worker's README: secrets table (`MONDAY_API_TOKEN` → service binding).
 - Private repo: `docs/23` step 0.4, `docs/25`, `migration-plan.md` seats table (CRM 9/10 → 7/10),
   issue #78, and #19 (folds into the Staff sync app).
+
+## Verification results, 2026-10-31
+
+Run against the sandbox broker as Sandbox Integration (user 117112617, workspace 17141226), with
+all three sandbox apps.
+
+- **Consent** works end to end for portal, sync and readonly; `/health` shows all three `ok`.
+- **Wrong-user guard** verified live: consent as SVBC Integration (120827741) on the sandbox
+  broker was refused, both tokens were revoked, the callback returned 403, and nothing was stored.
+- **Open question 1 (`platform_api`):** covered. `platform_api { daily_limit }` succeeds under the
+  read-only app (and under portal and sync). No soft-fail needed in the backup.
+- **Open question 4 (header):** both the bare token and `Bearer <token>` work. The shared
+  transport is unchanged.
+- **Open question 5 (apps per environment):** answered the other way. One app per two redirect
+  URIs is not how it is deployed: the sandbox needs its own three apps (authorizing the production
+  apps as Sandbox Integration fails with "Invalid scope / Requested scopes are not authorized for
+  this app"; SVBC Integration could authorize the same apps). Three separate sandbox apps in the
+  same `bikesiliconvalley` account worked, so the sandbox, a workspace and not an account, still
+  gets its own set. `monday-auth/SETUP.md` step 2 is written per environment.
+- **Complexity budget (open question 6):** each app's token started at 5,000,000 (after 4,999,990
+  for the 10-point probe, reset 60 s), including readonly, submitted seconds after sync's probe had
+  listed 547 boards. So the budget is per app, not per user. Timing was reported by the operator,
+  not confirmed from logs. No change to `monday-backup`'s cron schedule.
+- **Access token lifetime:** about 24 hours (JWT `exp` is roughly consent + 24 h), not the 3600 s
+  the plan's Global Constraints assumed. The broker reads `exp`, so nothing changes; the 30-minute
+  refresh cron mostly no-ops.
+- **Read exposure, measured:** a `boards:read` token sees 547 boards: 101 in the sandbox
+  workspace and 446 outside it across 35 workspaces (434 public, 12 private; 250 active, 165
+  deleted, 31 archived). The 12 private boards mean the integration user is subscribed to private
+  boards outside its workspace. Follow-up: remove SVBC Integration and Sandbox Integration from the
+  private boards they don't need, before production consent.
+- **Revoke cascade** (does revoking an access token also revoke its refresh token): unverified.
+  The broker revokes both explicitly, so it does not matter.
