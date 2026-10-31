@@ -72,8 +72,10 @@ production is each Worker's `config/split.test.ts` (the two configs share no id)
 MONDAY_API_TOKEN=... node scripts/check-monday-token-scope.mjs --workspace 17141226
 ```
 
-(`MONDAY_API_TOKEN` here is the operator tool's own environment variable, not a Worker secret: paste an
-access token you obtained for the user being measured. Broker tokens are never returned over HTTP.)
+(`MONDAY_API_TOKEN` here is the operator tool's own environment variable, not a Worker secret. The
+broker never returns a token over HTTP; to measure an app's token as the broker holds it, use its
+`/oauth/probe/:app` scope check, which is on in sandbox and off in production unless `PROBE_ENABLED`
+is set to `true` for the check — see [`monday-auth/README.md`](monday-auth/README.md).)
 
 It exits non-zero and lists the workspaces if the token reaches any board outside the ones named.
 
