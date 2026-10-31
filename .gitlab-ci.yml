@@ -118,19 +118,7 @@ monday-auth-bindings:
   rules:
     - changes:
         - monday-auth/**/*
-        - benevity-import/wrangler.jsonc
-        - bp-feedback-notify/wrangler.jsonc
-        - donation-rollups/wrangler.jsonc
-        - email-log/wrangler.jsonc
-        - eventbrite-sync/wrangler.jsonc
-        - funraise-sync/wrangler.jsonc
-        - mailchimp-sync/wrangler.jsonc
-        - member-portal/wrangler.jsonc
-        - monday-backup/wrangler.jsonc
-        - people-reclassification/wrangler.jsonc
-        - quickbooks-sync/wrangler.jsonc
-        - report-digests/wrangler.jsonc
-        - member-portal/wrangler.writer.jsonc
+        - "*/wrangler*.jsonc"
         - scripts/check-monday-auth-bindings.mjs
         - scripts/check-monday-auth-bindings.test.mjs
         - scripts/check-worker-flags.mjs
@@ -199,6 +187,18 @@ mailchimp-sync:
   variables:
     WORKER_DIR: mailchimp-sync
 
+# The OAuth broker. Its rules add scripts/lib/**, which src/probe.ts imports
+# (../../scripts/lib/token-scope.mjs). No deploy-sandbox job on purpose: it is deployed by hand,
+# after its D1 migrations are applied (see monday-auth/README.md, "Deploying").
+monday-auth:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: monday-auth
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
 monday-backup:
   extends: .worker_job
   variables:
@@ -259,22 +259,30 @@ deploy-sandbox:eventbrite-sync:
   variables:
     WORKER_DIR: eventbrite-sync
 
+# Portal first, then the writer. Cloudflare Queues allows one consumer Worker per queue, and the
+# sandbox portal consumed member-portal-change-requests-sandbox until the consumer moved to
+# member-portal-writer, so the writer can't be published as its consumer while the portal still
+# is. Change requests simply wait in the queue between the two deploys. (wrangler deploy doesn't
+# detach a consumer dropped from the config, so the one-time detach is a manual step: see
+# member-portal/DEPLOY.md, "Sandbox environment". Production never had a portal consumer.)
 deploy-sandbox:member-portal:
   extends: .deploy_sandbox_job
-  # The writer must be live before the portal drops its change-requests consumer. optional: the
-  # writer job is skipped when its rules don't match, and the portal still deploys then.
-  needs:
-    - job: deploy-sandbox:member-portal-writer
-      optional: true
   variables:
     WORKER_DIR: member-portal
 
 # The change-requests queue consumer, split out of member-portal (wrangler.writer.jsonc). Same
-# directory and cache as the portal; resource_group is distinct so the two can deploy together.
-# Messages simply wait in the queue if the portal deploys first and the writer follows.
+# directory and cache as the portal; resource_group is distinct so the two jobs don't share a lock.
+# optional: when the portal deploy job doesn't exist in a pipeline, the writer still deploys. Its
+# needs then still include the member-portal test job, so a red test never deploys it (when the
+# portal job exists it waits on the whole test stage, and so does the writer through it).
 deploy-sandbox:member-portal-writer:
   extends: .deploy_sandbox_job
   resource_group: "sandbox-member-portal-writer"
+  needs:
+    - job: member-portal
+      optional: true
+    - job: deploy-sandbox:member-portal
+      optional: true
   variables:
     WORKER_DIR: member-portal
   script:

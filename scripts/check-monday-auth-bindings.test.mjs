@@ -2,7 +2,16 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BROKER, EXPECTED, SANDBOX_BROKER, checkBindings, configPathFor, loadConfigs } from './check-monday-auth-bindings.mjs';
+import {
+  BROKER,
+  EXPECTED,
+  SANDBOX_BROKER,
+  checkBindings,
+  checkUnlistedBrokerServices,
+  configPathFor,
+  loadAllConfigs,
+  loadConfigs,
+} from './check-monday-auth-bindings.mjs';
 
 const bind = (service, entrypoint) => ({ services: [{ binding: 'OTHER', service: 'x' }, { binding: 'MONDAY_AUTH', service, entrypoint }] });
 const correct = () =>
@@ -53,6 +62,34 @@ describe('checkBindings', () => {
   });
 });
 
+describe('checkUnlistedBrokerServices', () => {
+  const listed = () =>
+    Object.fromEntries(Object.entries(EXPECTED).map(([worker, entrypoint]) => [
+      configPathFor(worker),
+      { ...bind(BROKER, entrypoint), env: { sandbox: bind(SANDBOX_BROKER, entrypoint) } },
+    ]));
+
+  it('passes when only the listed Workers bind the broker, under MONDAY_AUTH', () => {
+    assert.deepEqual(checkUnlistedBrokerServices({ ...listed(), 'svbc-calendars/wrangler.jsonc': { name: 'x' } }), []);
+  });
+  it('flags an unlisted Worker binding either broker, in any env, under any name', () => {
+    const files = listed();
+    files['new-worker/wrangler.jsonc'] = { services: [{ binding: 'MONDAY_SYNC', service: BROKER, entrypoint: 'SyncToken' }] };
+    files['other/wrangler.staging.jsonc'] = { env: { staging: { services: [{ binding: 'AUTH', service: SANDBOX_BROKER }] } } };
+    assert.deepEqual(checkUnlistedBrokerServices(files), [
+      'new-worker/wrangler.jsonc (production): binds svbc-monday-auth (entrypoint "SyncToken") as MONDAY_SYNC but is not in EXPECTED; add it with its entrypoint',
+      'other/wrangler.staging.jsonc (staging): binds svbc-monday-auth-sandbox (entrypoint "(default)") as AUTH but is not in EXPECTED; add it with its entrypoint',
+    ]);
+  });
+  it('flags a listed Worker with a second broker binding under another name', () => {
+    const files = listed();
+    files['monday-backup/wrangler.jsonc'].services.push({ binding: 'MONDAY_SYNC', service: BROKER, entrypoint: 'SyncToken' });
+    assert.deepEqual(checkUnlistedBrokerServices(files), [
+      'monday-backup/wrangler.jsonc (production): binds svbc-monday-auth (entrypoint "SyncToken") as MONDAY_SYNC; only MONDAY_AUTH may bind the broker',
+    ]);
+  });
+});
+
 describe('EXPECTED', () => {
   it('covers the member-portal writer from its own config file', () => {
     assert.equal(EXPECTED['member-portal-writer'], 'SyncToken');
@@ -64,4 +101,7 @@ describe('EXPECTED', () => {
 it('passes the repo as it is', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   assert.deepEqual(checkBindings(loadConfigs(root)), []);
+  const all = loadAllConfigs(root);
+  assert.ok('member-portal/wrangler.writer.jsonc' in all && 'svbc-calendars/wrangler.jsonc' in all);
+  assert.deepEqual(checkUnlistedBrokerServices(all), []);
 });
