@@ -2,8 +2,9 @@
   // member-portal-writer: the change-requests queue consumer, split out of the portal so the
   // portal can be read-only on Monday (its broker binding is PortalToken). This Worker holds the
   // write credential (SyncToken) and serves no traffic — no routes, no workers.dev. Deploy:
-  // `npm run deploy:writer` / `deploy:writer:sandbox`; deploy it BEFORE the portal when the
-  // consumer first moves, so the queue always has one consumer. Source: src/writer.ts.
+  // `npm run deploy:writer` / `deploy:writer:sandbox`, AFTER the portal: Queues allows one
+  // consumer Worker per queue, so the old portal consumer must be gone before this one attaches
+  // (change requests wait in the queue meanwhile; see DEPLOY.md). Source: src/writer.ts.
   "name": "svbc-member-portal-writer",
   "main": "src/writer.ts",
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own

@@ -80,7 +80,7 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
 
 * **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments
   bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `ReadOnlyToken` entrypoint — the *SVBC
-  Read-only* OAuth app (read scopes only, no `boards:write`), consented as SVBC Integrations with
+  Read-only* OAuth app (read scopes only, no `boards:write`), consented as SVBC Integration with
   view access to every workspace — production (`svbc-monday-backup`) to `svbc-monday-auth`, sandbox
   (`--env sandbox`) to `svbc-monday-auth-sandbox` (Sandbox Integration). `src/monday/graphql.ts`
   `tokenProviderFor` asks it per request and re-asks once on a 401, so a token refreshed mid-run

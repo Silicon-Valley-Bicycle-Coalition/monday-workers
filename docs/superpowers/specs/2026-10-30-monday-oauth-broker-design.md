@@ -13,7 +13,7 @@ Three integration users would spend three of those ten, and every seat an integr
 is one a staff member or volunteer can't have without a purchase decision.
 
 This design replaces the personal tokens with **Monday OAuth app tokens, all authorized by one
-dedicated user, _SVBC Integrations_** (mirroring the single `SVBC Integration` user Salesforce's
+dedicated user, _SVBC Integration_** (mirroring the single `SVBC Integration` user Salesforce's
 connected apps ran as). That costs **one** CRM member seat. The per-Worker narrowing that separate
 users used to provide comes instead from **OAuth scopes, one app per exposure class**.
 
@@ -22,20 +22,23 @@ Why this works and what it trades away:
 - Monday has **no app identity**: an OAuth token "belongs to the user" who authorized the app, so
   a seat is still needed — one, shared.
 - Scopes limit the **kind** of operation (`boards:read`, `boards:write`, `updates:write`…), never
-  **which boards**. Every Worker can reach every board SVBC Integrations can see. The board-level
+  **which boards**. Every Worker can reach every board SVBC Integration can see. The board-level
   isolation separate users gave (with private boards, runbook step 3.8) is given up.
-- Monday's **OAuth 2.1 flow** adds expiring access tokens (`expires_in` 3600 s), rotating
-  refresh tokens, and revocation, so a leaked access token is useful for about an hour and a whole
-  app can be cut off by revoking or uninstalling it.
+- Monday's **OAuth 2.1 flow** adds expiring access tokens, rotating refresh tokens, and
+  revocation, so a leaked access token is useful for about 24 hours (measured; see Verification
+  results, "Access token lifetime"), not indefinitely, and a whole app can be cut off by revoking
+  or uninstalling it. For the portal that means a leaked token reads every board the integration
+  user can see for up to a day. Response to a leak: uninstall the app (cuts off every token it
+  issued at once), or regenerate its client secret and re-run its consent flow.
 
 ## Decided (in conversation, 2026-10-30)
 
-- One dedicated user, **SVBC Integrations**, authorizes every production app. CRM member seat;
+- One dedicated user, **SVBC Integration**, authorizes every production app. CRM member seat;
   plus a Work Management seat, because `monday-backup` reads every workspace (WM has 20 paid
   seats, so this costs nothing new).
 - OAuth apps **per exposure class**, three of them (table below).
 - **Accepted risk, to be documented where operators will see it:** `member-portal` is
-  internet-facing, and its token can **read** every board SVBC Integrations can see, not only the
+  internet-facing, and its token can **read** every board SVBC Integration can see, not only the
   ones the portal displays. Accepted because the alternative (its own user) costs a seat.
 - **The portal is read-only** (`boards:read` and `me:read` only). `boards:write` isn't board-limited, so a
   portal holding it could change or archive items on Donations or any other board; that write
@@ -45,7 +48,7 @@ Why this works and what it trades away:
   production load, with dwk doing QA. Production Workers still deploy straight onto the broker;
   there is no interim personal token.
 - **Live at cutover**: production Workers go live on OAuth tokens, not on a personal token with a
-  later switch-over. Step 0.4 of the cutover runbook (#78) becomes "create SVBC Integrations,
+  later switch-over. Step 0.4 of the cutover runbook (#78) becomes "create SVBC Integration,
   install and authorize the three apps" instead of "create three users, mint three tokens".
 - A token broker Worker and the three-app grouping below (proposed by the author, approved).
 
@@ -115,7 +118,7 @@ Per-Worker operations behind this mapping (surveyed 2026-10-30 on `main`):
 4. Whether the OAuth token takes `Authorization: Bearer <token>`; the shared transport sends the
    bare token (`graphql.ts:240-242`), which works for personal tokens.
 5. Whether one app can register two redirect URIs (production and sandbox broker), and whether one
-   app can be authorized by two users (SVBC Integrations and Sandbox Integration) with
+   app can be authorized by two users (SVBC Integration and Sandbox Integration) with
    independent tokens.
 6. Whether Monday's per-minute complexity budget is per user, per app, or per token. All Workers
    now share one user; if the budget is per user, the backup's hourly run and a donation burst
@@ -141,7 +144,7 @@ that talks to `auth.monday.com`.
   (table `qb_oauth_tokens`, migrations `0001` and `0003`: single-refresher lease plus CAS) and the
   refresh loop in `quickbooks-sync/src/quickbooks/client.ts:103-185`.
 - **Secrets:** each app's client id and client secret (`wrangler secret put`, entered by a human),
-  and the expected SVBC Integrations user id per environment (a var, not a secret).
+  and the expected SVBC Integration user id per environment (a var, not a secret).
 - **Refresh:** on request, return the cached access token if it has more than a margin
   *(design-author's call: 10 minutes)* left; otherwise take the lease, refresh at
   `POST https://auth.monday.com/oauth_ms/oauth/token`, store the **new** refresh token and access
@@ -203,7 +206,7 @@ stays.
 
 The broker's only public routes: `GET /oauth/start/:app`, `GET /oauth/callback`, `GET /health`.
 
-1. An operator, **logged into Monday as SVBC Integrations** (or Sandbox Integration for the
+1. An operator, **logged into Monday as SVBC Integration** (or Sandbox Integration for the
    sandbox broker), opens `/oauth/start/:app`.
 2. The broker generates `state` and a PKCE verifier (S256, required by the 2.1 flow), stores them
    short-lived, and redirects to Monday's authorize URL with the app's scopes and the account
@@ -238,9 +241,9 @@ Receivers keep their existing shared-secret checks; nothing about inbound webhoo
   run through the broker without printing one — left to the builder). The sandbox README rule
   "every sandbox token comes from Sandbox Integration" still holds; the token just arrives via the
   broker.
-- **Production, as cutover step 0.4**: create SVBC Integrations (CRM member + WM), deploy
+- **Production, as cutover step 0.4**: create SVBC Integration (CRM member + WM), deploy
   `monday-auth`, enter the apps' client ids/secrets, install the apps in the account, authorize
-  each as SVBC Integrations. Production Workers deploy already bound to the broker. Runbook,
+  each as SVBC Integration. Production Workers deploy already bound to the broker. Runbook,
   deploy checklist, #78, and the root README's token policy are updated to match (private repo
   docs `23`, `25`, `migration-plan.md`).
 - **Manual by design** (a human, in the Monday and Cloudflare UIs): creating the user, creating the

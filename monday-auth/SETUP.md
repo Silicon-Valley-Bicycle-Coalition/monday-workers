@@ -10,19 +10,30 @@ If a label doesn't match, look for the nearest equivalent and note it here.
 
 ## 1. The integration user (production, once)
 
-- [ ] Admin → Users → Invite: **SVBC Integrations**, on an address you control
+Production's user, **SVBC Integration** (user id `120827741`), already exists (created
+2026-10-30); this step is for rebuilding it.
+
+- [ ] Admin → Users → Invite: **SVBC Integration**, on an address you control
       (e.g. `integrations@bikesiliconvalley.org`).
 - [ ] Accept the invite and set its password (store it in the password manager, not here).
 - [ ] Seats: **CRM member** and **Work Management member** (the backup reads every workspace).
 - [ ] Note its **user id** (open its profile; the number in the URL). It isn't secret — send it
       over so it can go in `wrangler.jsonc` as production `EXPECTED_USER_ID`.
 
+> **Never create a personal API token for SVBC Integration**, and if one exists, never use it.
+> Like every Monday user, it has a personal token under avatar → **Developers** → **My access
+> tokens**; nobody should ever open that page as this user. That token is unscoped and never
+> expires, so it would undo everything the broker's scoped, expiring app tokens buy. Operator
+> scripts (`MONDAY_API_TOKEN=…` in the runbook) use the operator's **own** personal admin token,
+> and Workers get theirs from the broker. If a personal token was ever generated for this user,
+> regenerate it there (which invalidates the old one) and don't record the new one.
+
 ## 2. Three OAuth apps per environment
 
 Sandbox and production each need their **own** three apps. An app authorized by the other
 environment's integration user fails: on 2026-10-31 Sandbox Integration got Monday's "Invalid
 scope / Requested scopes are not authorized for this app" page authorizing the production apps,
-while SVBC Integrations could authorize them fine. Three separate sandbox apps, created in the
+while SVBC Integration could authorize them fine. Three separate sandbox apps, created in the
 same `bikesiliconvalley` account (the sandbox is a workspace, not a separate account), worked.
 
 Do this logged in as **yourself** (an admin), so the apps are owned by the account, not by the
@@ -82,7 +93,7 @@ manifest), then add a webhook for `#crm-sandbox` and one for the production aler
 `monday-backup`.
 
 Then, in a private browser window **logged into Monday as the right user** — **Sandbox
-Integration** for sandbox, **SVBC Integrations** for production — open each of these and click
+Integration** for sandbox, **SVBC Integration** for production — open each of these and click
 Authorize (production: same paths on `svbc-monday-auth.svbc-account.workers.dev`):
 
 - [ ] `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/start/portal`
@@ -97,13 +108,23 @@ means you were logged in as someone else: the token was revoked and nothing was 
 users and try again.
 
 - [ ] Check: `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/health` shows all three
-      apps `ok`.
+      apps `ok`, and `"alerts": "configured"` once `SLACK_WEBHOOK_URL` is set (required in
+      production).
 
 ## If something goes wrong later
 
 - **Slack alert "needs consent"** for an app: Monday rejected its refresh token (app uninstalled,
   user deactivated, or token revoked). Re-run that app's `/oauth/start/<app>` as the integration
   user. Workers' queues hold their writes and retry meanwhile.
+- **Slack alert "rejected the … app's client credentials"** (`invalid_client` /
+  `unauthorized_client`): the client id or secret in Cloudflare doesn't match the Developer
+  Center (a rotated or mis-pasted secret), or the app was uninstalled. Fix the secret with
+  `wrangler secret put`, or re-install and re-run consent. The stored token keeps being handed out
+  until it expires, so this is urgent but not yet an outage.
+- **Slack alert "token refresh keeps failing"**: refreshes have failed for hours (Monday auth
+  outage, network) and under 6 hours are left on the stored token. Check `wrangler tail` and
+  `/health` (`lastRefreshErrorAt`). When it expires, every Worker on that app fails until a
+  refresh succeeds; their queues retry.
 - **Rotate a client secret**: regenerate it in the Developer Center, `wrangler secret put` the new
   value, then re-run consent for that app.
 - **Cut off an app entirely**: uninstall it from the account. Every Worker on that app stops

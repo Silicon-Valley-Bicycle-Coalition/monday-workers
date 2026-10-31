@@ -118,9 +118,12 @@ Commit the `database_id` edit, then:
 
 ```sh
 npm test && npm run typecheck
-npm run deploy:writer   # first: the change-requests consumer lives in member-portal-writer
 npm run deploy
+npm run deploy:writer   # the change-requests consumer lives in member-portal-writer
 ```
+
+Production's portal never consumed `member-portal-change-requests`, so either order works here;
+portal first just matches the sandbox. Change requests wait in the queue until the writer is up.
 
 ## Sandbox environment (independent of Phases 1–5)
 
@@ -168,9 +171,31 @@ box with a past start date would queue up to `maxTriggersPerRun` (200) letter em
 
 ```sh
 npm test && npm run typecheck
-npm run deploy:writer:sandbox   # first: svbc-member-portal-writer-sandbox consumes change requests
-npm run deploy:sandbox
+npm run deploy:sandbox          # first: drops the portal's change-requests consumer from its config
+npm run deploy:writer:sandbox   # then: svbc-member-portal-writer-sandbox consumes change requests
 ```
+
+**Portal first, then the writer.** Cloudflare Queues allows one consumer Worker per queue, and
+`svbc-member-portal-sandbox` consumed `member-portal-change-requests-sandbox` until the consumer
+moved to the writer, so the writer can't attach while the portal still does. Change requests the
+portal enqueues in between simply wait in the queue. CI's `deploy-sandbox:member-portal-writer`
+job `needs` the portal's for the same reason.
+
+**One-time fallback, first deploy after the split:** `wrangler deploy` attaches the consumers a
+config lists, but (as of wrangler 4.156) it doesn't detach one the config dropped, so the old
+portal consumer may still be attached after `npm run deploy:sandbox`, and the writer's deploy
+then fails on the second consumer. Check, and detach it if it is still there, before deploying
+the writer:
+
+```sh
+npx wrangler queues consumer worker list member-portal-change-requests-sandbox   # who consumes it
+npx wrangler queues consumer worker remove member-portal-change-requests-sandbox svbc-member-portal-sandbox
+npm run deploy:writer:sandbox
+npx wrangler queues info member-portal-change-requests-sandbox                    # one consumer: the writer
+```
+
+If CI ran the writer job before the detach, re-run that job afterwards. Production never had a
+portal consumer, so this never applies there.
 
 The deploy attaches the custom domain `member.sandbox.bikesiliconvalley.org` (declared in
 `env.sandbox.routes`; the zone is on Cloudflare, so no manual DNS).

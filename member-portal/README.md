@@ -161,8 +161,11 @@ consume that queue. **`svbc-member-portal-writer`** (`wrangler.writer.jsonc`, en
 `src/writer.ts`; sandbox `svbc-member-portal-writer-sandbox`) is the sole consumer: it binds
 **`SyncToken`**, shares the portal's D1 database and `FLAGS` namespace (so the same write switch
 governs it), serves no traffic, and throws on any other queue. The portal keeps the letter-emails
-consumer, which only reads Monday. Deploy the writer first
-(`npm run deploy:writer` / `deploy:writer:sandbox`) so the queue is never without a consumer;
+consumer, which only reads Monday. Deploy the portal first, then the writer
+(`npm run deploy:writer` / `deploy:writer:sandbox`): Cloudflare Queues allows one consumer
+Worker per queue, so the writer can't attach while the sandbox portal still consumes the queue.
+Change requests wait in the queue between the two deploys (see `DEPLOY.md` for the one-time
+sandbox detach);
 `config/split.test.ts` and `src/index.test.ts` pin the split.
 
 **Sandbox environment — inbound only, no outbound data.** `npm run deploy:sandbox` deploys
