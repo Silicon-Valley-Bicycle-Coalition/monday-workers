@@ -3,8 +3,8 @@
 **Staff UAT script:** [`docs/uat/monday-backup.md`](../docs/uat/monday-backup.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
 **Status:** Built (`feat/monday-backup`) — not deployed. Needs D1 provisioning (`database_id` in
-`wrangler.jsonc` is a placeholder), a dedicated Monday backup integration user/token
-(`MONDAY_API_TOKEN`), a Google service account added as a member (**Contributor**, not Content manager — see
+`wrangler.jsonc` is a placeholder), the `monday-auth` broker's Read-only app consented
+(`MONDAY_AUTH`), a Google service account added as a member (**Contributor**, not Content manager — see
 "Service account key" below) of the destination **Shared Drive** (`GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`),
 and `config/backup.json`'s `destinationParentFolderId` filled in with the id of a folder inside
 that Shared Drive (or the Shared Drive's own id). Requires **Workers Paid** (see Cloudflare
@@ -78,10 +78,17 @@ Google Drive, one snapshot folder per run, kept indefinitely (see Retention belo
 
 ## APIs & auth
 
-* **Monday.com GraphQL API** — a read-only token from a **dedicated backup integration user**
-  with view access to every workspace, not a staff member's personal token. Follows the same
-  least-privilege principle `../README.md` already states for every other Worker here: a token
-  compromise should expose only what this Worker needs, not one person's full account access.
+* **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments
+  bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `ReadOnlyToken` entrypoint — the *SVBC
+  Read-only* OAuth app (read scopes only, no `boards:write`), consented as SVBC Integrations with
+  view access to every workspace — production (`svbc-monday-backup`) to `svbc-monday-auth`, sandbox
+  (`--env sandbox`) to `svbc-monday-auth-sandbox` (Sandbox Integration). `src/monday/graphql.ts`
+  `tokenProviderFor` asks it per request and re-asks once on a 401, so a token refreshed mid-run
+  doesn't fail the backup. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is
+  under way (delete it once the binding works); with neither, building the Monday client throws a
+  config error naming both. The restore CLI (`scripts/restore.ts`) keeps reading `MONDAY_API_TOKEN`
+  from the operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN`
+  in `.dev.vars` for it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 * **Google Drive API** — a service account that is a **member of a Shared Drive** (role:
   **Contributor**), not a personal OAuth grant tied to one staff member's account — a personal
   grant breaks the day that person leaves or changes their password. It must be a Shared Drive,

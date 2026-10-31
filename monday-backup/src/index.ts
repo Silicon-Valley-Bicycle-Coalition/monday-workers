@@ -7,6 +7,7 @@ import { validateConfig } from './config';
 import { D1SnapshotRunStore } from './db/runs';
 import { GoogleDriveClient } from './drive/client';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { Deadline } from './deadline';
 import { runUsageCheck } from './usage';
 import { runWatchdog } from './watchdog';
@@ -60,7 +61,7 @@ export default {
         config.apiUsageAlerts
           ? runUsageCheck({
               dryRun,
-              fetchUsage: () => new HttpMondayClient(MONDAY_API_URL, env.MONDAY_API_TOKEN).getDailyUsage(),
+              fetchUsage: () => new HttpMondayClient(MONDAY_API_URL, tokenProviderFor(env)).getDailyUsage(),
               store,
               slackWebhookUrl: env.SLACK_WEBHOOK_URL,
               now: () => new Date(),
@@ -82,7 +83,7 @@ export default {
     // One deadline shared by both clients; runBackup sets and extends it (src/deadline.ts).
     const deadline = new Deadline();
     await runBackup({
-      monday: new HttpMondayClient(MONDAY_API_URL, env.MONDAY_API_TOKEN, { deadline }),
+      monday: new HttpMondayClient(MONDAY_API_URL, tokenProviderFor(env), { deadline }),
       drive: new GoogleDriveClient(
         {
           clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,

@@ -19,8 +19,13 @@ afterEach(async () => {
 const flags = (value: string | null | Error) =>
   ({ get: vi.fn(async () => { if (value instanceof Error) throw value; return value; }) }) as unknown as KVNamespace;
 const cron = (c: string) => ({ scheduledTime: Date.now(), cron: c }) as ScheduledController;
+// vitest.config.ts stubs the MONDAY_AUTH service binding (it isn't RPC-capable), so the fake env
+// clears it and uses a fixed token unless a test passes its own.
 const withFlags = (value: string | null | Error, extra: Record<string, unknown> = {}) =>
-  ({ ...env, SLACK_WEBHOOK_URL: 'https://hooks.example/webhook', FLAGS: flags(value), ...extra }) as unknown as Env;
+  ({
+    ...env, MONDAY_AUTH: undefined, MONDAY_API_TOKEN: 'test-token',
+    SLACK_WEBHOOK_URL: 'https://hooks.example/webhook', FLAGS: flags(value), ...extra,
+  }) as unknown as Env;
 
 type Json = Record<string, unknown>;
 
@@ -82,6 +87,16 @@ describe('worker entry point', () => {
     // Production config turns on the account-wide usage check: one platform_api query, no alert.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string).query).toContain('platform_api');
+  });
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // The production watchdog's usage check is the cheapest Monday read; its header is all this checks.
+    const fetchMock = stubMondayUsage();
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    await worker.scheduled(cron(WATCHDOG_CRON), withFlags('on', { SLACK_WEBHOOK_URL: '', MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth }));
+    expect(auth.token).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
   });
 
   it('skips the usage check in the sandbox, which shares the production Monday account', async () => {
