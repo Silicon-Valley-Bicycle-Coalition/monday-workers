@@ -119,10 +119,16 @@ standard across every webhook-driven Worker here.
   from Eventbrite's side; a Test delivery that points at a non-existent order is marked `failed`
   ("not found in Eventbrite") and acked, never retried. The blueprint says a non-2xx answer is
   retried but gives no schedule — read it off the delivery log.
-* **Monday.com GraphQL API** — standard token, same pattern as every other Worker here; the
-  sandbox reuses the shared `Sandbox Integration` user, production gets a dedicated integration
-  user (root README "Least-privilege Monday tokens"; run
-  `node ../scripts/check-monday-token-scope.mjs` before calling it scoped).
+* **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments
+  bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff
+  Sync* OAuth app — production (`svbc-eventbrite-sync`) to `svbc-monday-auth`, sandbox (`--env
+  sandbox`) to `svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per
+  request and re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the
+  cutover is under way (delete it once the binding works); with neither, building the Monday client
+  throws a config error naming both. Operator scripts (`scripts/*.mjs`) keep reading
+  `MONDAY_API_TOKEN` from the operator's shell. Local `wrangler dev` has no broker to call, so put a
+  `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 ## Prerequisite column: `Eventbrite Order ID`
 
@@ -487,7 +493,6 @@ npx wrangler d1 create svbc-eventbrite-sync-sandbox      # paste the id into wra
 npx wrangler queues create eventbrite-sync-writes-sandbox
 npx wrangler queues create eventbrite-sync-writes-sandbox-dlq
 npx wrangler d1 migrations apply svbc-eventbrite-sync-sandbox --remote --env sandbox
-npx wrangler secret put MONDAY_API_TOKEN --env sandbox
 npx wrangler secret put EVENTBRITE_PRIVATE_TOKEN --env sandbox
 npx wrangler secret put EVENTBRITE_WEBHOOK_SECRET --env sandbox
 npm run deploy:sandbox

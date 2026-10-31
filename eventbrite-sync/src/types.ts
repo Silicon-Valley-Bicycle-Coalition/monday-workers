@@ -1,3 +1,4 @@
+import type { MondayTokenSource } from './monday/graphql';
 import type { WriteQueueMessage } from './consumer/processBatch';
 
 // Ledger statuses. 'received'/'queued' are the route's; the consumer ends a row at 'written'
@@ -170,10 +171,15 @@ export interface EventbriteSyncConfig {
 
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates worker-configuration.d.ts from wrangler.jsonc);
-// only secrets and the narrowed queue message type are declared here.
-export interface Env extends Cloudflare.Env {
+// only secrets, the narrowed queue message type, and MONDAY_AUTH are declared here. MONDAY_AUTH is
+// generated as an untyped Service, so it is omitted and restated as the broker's RPC shape.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   WRITE_QUEUE: Queue<WriteQueueMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   // Eventbrite private token (`wrangler secret put EVENTBRITE_PRIVATE_TOKEN`), sent as
   // `Authorization: Bearer` on every order fetch. Optional in the type because secrets aren't
   // declared in wrangler.jsonc; the consumer fails every message (retry, then DLQ) until it is set.
