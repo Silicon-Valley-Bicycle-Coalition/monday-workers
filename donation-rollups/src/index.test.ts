@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { env } from 'cloudflare:workers';
 import worker, { isDeadLetterBatch } from './index';
 
@@ -153,5 +153,29 @@ describe('custodian secret (issue #63)', () => {
   it('fails closed when CUSTODIAN_SECRET is unset, even with the webhook secret set', async () => {
     const res = await worker.fetch(status({ Authorization: `Bearer ${SECRET}` }), envFor({ ENVIRONMENT: 'sandbox' }), ctx);
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Monday token from the monday-auth broker', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // Any GraphQL body will do: the recompute's first Monday read is all this checks.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    const message = {
+      body: { donationItemId: '910101', donationBoardId: '18437342657' },
+      attempts: 1, ack: vi.fn(), retry: vi.fn(),
+    };
+
+    await worker.queue({ queue: 'donation-rollups-recompute-sandbox', messages: [message] } as unknown as MessageBatch<import('./types').RecomputeQueueMessage>,
+      envFor({ ENVIRONMENT: 'sandbox', MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth }));
+
+    expect(auth.token).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
   });
 });

@@ -126,7 +126,15 @@ across every webhook-driven Worker in this plan.
   `https://api.funraise.io` by the subscriptions poller and the consumer's never-seen-subscription
   lookup only (read-only use; nothing here writes to Funraise). Rate limit 3,000 requests/month
   on the base plan — see "Recurring gifts and registrations" for the budget.
-* **Monday.com GraphQL API** — standard API token, same pattern as every other Worker here.
+* **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments bind `MONDAY_AUTH`
+  (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync* OAuth app — production
+  (`svbc-funraise-sync`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to `svbc-monday-auth-sandbox`;
+  `src/monday/graphql.ts` `tokenProviderFor` asks it per request and re-asks once on a 401. A
+  `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under way (delete it once the
+  binding works); with neither, building the Monday client throws a config error naming both.
+  Operator scripts (`scripts/*.mjs`) keep reading `MONDAY_API_TOKEN` from the operator's shell. Local
+  `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 ## Donor matching
 

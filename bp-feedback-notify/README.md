@@ -67,7 +67,6 @@ sandbox mirror's actual live config on 2026-09-21, not just described genericall
    ```sh
    cd bp-feedback-notify
    wrangler secret put WEBHOOK_SECRET   # generate with: openssl rand -hex 32
-   wrangler secret put MONDAY_API_TOKEN # reads the item; see Secrets
    npm run deploy
    ```
    This deploys to `https://svbc-bp-feedback-notify.svbc-account.workers.dev` (same `*.workers.dev`
@@ -109,7 +108,7 @@ to them — the webhook just gets a 500. To surface it, set `sendStatus` in `con
 }
 ```
 
-(it uses the same `MONDAY_API_TOKEN` as the item read; see Secrets). After each send the Worker sets that status
+(it uses the same Monday access as the item read; see Secrets). After each send the Worker sets that status
 column to `sentLabel` or `failedLabel` via `change_simple_column_value` — in the background
 (`waitUntil`, 10-second timeout) after the webhook has been answered, so a slow Monday API can't
 push the response past monday's timeout and trigger a retry (a duplicate email). Add the `failedLabel`
@@ -136,15 +135,17 @@ wrangler secret put WEBHOOK_SECRET --env sandbox  # sandbox
 Generate with e.g. `openssl rand -hex 32`. Anyone with this value can trigger a feedback email to
 the organizer on any BP Request Form item, so treat it like a password, not a config value.
 
-`MONDAY_API_TOKEN` is required: every send reads the item from the board, and without the token
-the Worker answers 500 and sends nothing. The same token does the optional status write-back (see
-"Optional: write Sent/Failed back to the item"). Mint it from a dedicated integration user with
-access to only the BP Request Form board (root README, least-privilege tokens), per environment:
-
-```sh
-wrangler secret put MONDAY_API_TOKEN               # production
-wrangler secret put MONDAY_API_TOKEN --env sandbox  # sandbox
-```
+Monday access is required: every send reads the item from the board, and the same access does the
+optional status write-back (see "Optional: write Sent/Failed back to the item"). It comes from the
+`monday-auth` broker, not a stored token: both deployments bind `MONDAY_AUTH` (`wrangler.jsonc`
+`services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync* OAuth app — production to
+`svbc-monday-auth`, sandbox to `svbc-monday-auth-sandbox`. This Worker carries no transport copy, so
+`src/mondayApi.ts` has its own `tokenProviderFor`: it asks the broker per request and re-asks once
+on a 401, as the shared `graphql.ts` does. A `MONDAY_API_TOKEN` secret is only the fallback while
+the cutover is under way (delete it once the binding works); with neither, the Worker logs
+`bp-feedback-misconfigured`, answers 500 and sends nothing. Local `wrangler dev` has no broker to
+call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+`docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 Because monday's webhook action can only carry the secret in the URL (see Data flow above), it
 appears in this Worker's Cloudflare access logs (Logpush, `wrangler tail`) on every request.

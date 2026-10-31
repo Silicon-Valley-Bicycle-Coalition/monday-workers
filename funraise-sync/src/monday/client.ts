@@ -1,4 +1,4 @@
-import { MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 
 export interface MondayItem {
   id: string;
@@ -20,7 +20,9 @@ const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options });
   }
 

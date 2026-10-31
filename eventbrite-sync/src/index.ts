@@ -8,6 +8,7 @@ import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor, type TokenProvider } from './monday/graphql';
 import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { runFollowups, type FollowupResult } from './followups/run';
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
@@ -102,7 +103,7 @@ export default {
         sendBatch: (messages: WriteQueueMessage[]) => env.WRITE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
       },
       eventbriteClient: new HttpEventbriteClient(config.eventbrite.apiUrl, token),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
     }, gate);
   },
@@ -124,9 +125,12 @@ export async function runScheduled(
   check: typeof checkMissedOrders = checkMissedOrders
 ): Promise<void> {
   const config = configFor(env);
-  const token = env.MONDAY_API_TOKEN;
-  if (token === undefined || token === '') {
-    throw new Error('MONDAY_API_TOKEN is not set (wrangler secret put MONDAY_API_TOKEN); cannot run class follow-ups');
+  // The broker binding, else the fixed token (an empty one counts as unset, as it always has here).
+  let token: TokenProvider;
+  try {
+    token = tokenProviderFor({ MONDAY_AUTH: env.MONDAY_AUTH, MONDAY_API_TOKEN: env.MONDAY_API_TOKEN || undefined });
+  } catch {
+    throw new Error('neither the MONDAY_AUTH service binding (monday-auth) nor MONDAY_API_TOKEN (wrangler secret put MONDAY_API_TOKEN) is set; cannot run class follow-ups');
   }
   const now = new Date(controller.scheduledTime);
   // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them,

@@ -110,7 +110,9 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(SPOOFED_BODY), undefined, env, fakeCtx());
 
     expect(res.status).toBe(200);
-    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), TOKEN, VALID_BODY.itemId);
+    expect(readFeedbackItem).toHaveBeenCalledWith(expect.objectContaining({ boardId: '18395469629' }), expect.any(Function), VALID_BODY.itemId);
+    // The token reaches the Monday helpers as a provider (src/mondayApi.ts tokenProviderFor).
+    expect(await (readFeedbackItem.mock.calls[0]![1] as () => Promise<string>)()).toBe(TOKEN);
     const sent = (env.EMAIL.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(sent.to).toBe('organizer@example.org');
     expect(sent.subject).toContain('Fall Festival');
@@ -155,7 +157,7 @@ describe('POST /webhook/bp-feedback', () => {
 
     expect(res.status).toBe(422);
     expect(env.EMAIL.send).not.toHaveBeenCalled();
-    expect(writeSendStatus).toHaveBeenLastCalledWith(null, TOKEN, VALID_BODY.itemId, 'failed');
+    expect(writeSendStatus).toHaveBeenLastCalledWith(null, expect.any(Function), VALID_BODY.itemId, 'failed');
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
     errorSpy.mockRestore();
   });
@@ -173,7 +175,7 @@ describe('POST /webhook/bp-feedback', () => {
     errorSpy.mockRestore();
   });
 
-  it('fails closed without MONDAY_API_TOKEN: 500, no read, no send', async () => {
+  it('fails closed with neither MONDAY_AUTH nor MONDAY_API_TOKEN: 500, no read, no send', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const env = fakeEnv({ MONDAY_API_TOKEN: undefined });
 
@@ -182,7 +184,23 @@ describe('POST /webhook/bp-feedback', () => {
     expect(res.status).toBe(500);
     expect(readFeedbackItem).not.toHaveBeenCalled();
     expect(env.EMAIL.send).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringMatching(/bp-feedback-misconfigured.*MONDAY_AUTH.*MONDAY_API_TOKEN/));
     errorSpy.mockRestore();
+  });
+
+  it('builds its Monday token from the MONDAY_AUTH binding when bound', async () => {
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    const env = fakeEnv({ MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth });
+
+    const res = await app.request(post(VALID_BODY), undefined, env, fakeCtx());
+
+    expect(res.status).toBe(200);
+    // The board read and the status write-back are handed the broker's provider, not a string.
+    const token = readFeedbackItem.mock.calls[0]![1] as () => Promise<string>;
+    expect(typeof token).toBe('function');
+    expect(await token()).toBe('brokered');
+    expect(auth.token).toHaveBeenCalled();
+    expect((writeSendStatus.mock.calls.at(-1) as unknown[])[1]).toBe(token);
   });
 
   it('sends the feedback email straight to the organizer in production', async () => {
@@ -250,7 +268,7 @@ describe('POST /webhook/bp-feedback', () => {
     const res = await app.request(post(VALID_BODY), undefined, fakeEnv({ EMAIL: { send } }), ctx);
 
     expect(res.status).toBe(status);
-    expect(writeSendStatus).toHaveBeenLastCalledWith(null, TOKEN, VALID_BODY.itemId, outcome);
+    expect(writeSendStatus).toHaveBeenLastCalledWith(null, expect.any(Function), VALID_BODY.itemId, outcome);
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1);
     expect(ctx.waitUntil.mock.calls[0]![0]).toBe(writeSendStatus.mock.results.at(-1)!.value);
     errorSpy.mockRestore();

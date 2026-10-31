@@ -9,7 +9,7 @@ import type {
   UpdateRecord,
   UpdateReply,
 } from '../types';
-import { MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+import { MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 import type { DailyUsage } from '../usage';
 
 const BOARDS_PAGE_SIZE = 50;
@@ -223,7 +223,9 @@ export type HttpMondayClientOptions = MondayGraphQLOptions;
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: HttpMondayClientOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: HttpMondayClientOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, options);
   }
 

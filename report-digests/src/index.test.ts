@@ -94,3 +94,32 @@ describe('POST /digests/run under the write switch', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('Monday token from the monday-auth broker', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Any GraphQL body will do: the digest's first Monday read is all this checks.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { boards: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    const env = {
+      EMAIL: { send: vi.fn() },
+      MONDAY_AUTH: auth,
+      DIGESTS_SECRET: 's3cret',
+      REQUEST_RATE_LIMITER: { limit: vi.fn().mockResolvedValue({ success: true }) },
+      ENVIRONMENT: 'sandbox',
+      SANDBOX_EMAIL_SINK: 'sandbox@bikesiliconvalley.org',
+      FLAGS: { get: vi.fn().mockResolvedValue('on') },
+    } as unknown as Env;
+
+    await worker.fetch(new Request('https://digests.example/digests/run?key=renewals', { method: 'POST', headers: { Authorization: 'Bearer s3cret' } }), env);
+
+    expect(auth.token).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
+  });
+});

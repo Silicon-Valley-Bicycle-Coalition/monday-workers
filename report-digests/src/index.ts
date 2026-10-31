@@ -3,6 +3,7 @@ import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, environmentOf } from './environment';
 import { DIGEST_KEYS, validateConfig, type DigestKey } from './config';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor, type MondayTokenSource } from './monday/graphql';
 import { sandboxEmailBinding } from './email/sandboxBinding';
 import { checkRequestRateLimit } from './rateLimit';
 import { secretsMatch } from './secret';
@@ -17,7 +18,11 @@ const WORKER = 'report-digests';
 
 export interface Env {
   EMAIL: SendEmail;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's ReadOnlyToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   DIGESTS_SECRET?: string;
   REQUEST_RATE_LIMITER: RateLimit;
   ENVIRONMENT?: string;
@@ -38,7 +43,7 @@ function deps(env: Env): RunDeps {
     if (!env.SANDBOX_EMAIL_SINK) throw new Error('SANDBOX_EMAIL_SINK must be set when ENVIRONMENT=sandbox');
     email = sandboxEmailBinding(env.EMAIL, env.SANDBOX_EMAIL_SINK);
   }
-  return { monday: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN), email, config };
+  return { monday: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)), email, config };
 }
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));

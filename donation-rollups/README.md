@@ -892,12 +892,21 @@ sandbox gets rebuilt before cutover:
   `Authorization: Bearer <secret>` (issue #63). It never appears in a URL, so it stays out of
   Monday's config and request logs, and rotating it (`wrangler secret put CUSTODIAN_SECRET`)
   touches no webhook subscription. Same constant-time, fail-closed check as the webhook.
-* **Monday.com GraphQL API** — reusing `salesforce-import`'s existing token for Sandbox testing.
-  **Deliberately deferred, not open debt** (decided 2026-08-24, same reasoning as the donor-portal
-  integration user — see `migration-plan.md`'s Post-Migration Follow-ups in the private planning
-  repo): minting a dedicated least-privilege token against Sandbox board ids would be throwaway
-  work, since the sandbox gets rebuilt before cutover. The dedicated token gets minted against the
-  **production** workspace as part of production cutover instead — see "Not yet done" below.
+* **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both
+  deployments bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the
+  *SVBC Staff Sync* OAuth app — which owns the token and its refresh;
+  `src/monday/graphql.ts` `tokenProviderFor` asks it per request and re-asks once on a 401.
+  Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
+
+  | Setting | Production (`svbc-donation-rollups`) | Sandbox (`--env sandbox`) | Operator scripts (`scripts/*.mjs`) |
+  | --- | --- | --- | --- |
+  | Monday access | `MONDAY_AUTH` → `svbc-monday-auth` / `SyncToken` | `MONDAY_AUTH` → `svbc-monday-auth-sandbox` / `SyncToken` | `MONDAY_API_TOKEN` in the operator's shell |
+  | `MONDAY_API_TOKEN` secret | none (fallback only while the cutover is under way; delete it once the binding works) | none (same) | — |
+  | `MONDAY_WEBHOOK_SECRET`, `CUSTODIAN_SECRET` | `wrangler secret put` | `wrangler secret put … --env sandbox` | `setup-webhooks.mjs` needs `WEBHOOK_SECRET` |
+
+  With neither the binding nor the secret, building the Monday client throws a config error
+  naming both, rather than sending an empty `Authorization` header. Local `wrangler dev` has no
+  broker to call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it.
 
 ## Non-destructive by design
 
@@ -1049,9 +1058,9 @@ Monday daily limit still defers to midnight UTC.
   Repair (re-enqueue in slices) only after the write-amplification fixes or Workers Paid — the
   account is on Workers Paid now (confirmed 2026-09-29), so the repair is unblocked.
 * **DLQ has no consumer** — dead messages expire unseen after 4 days; see the same section.
-* **Dedicated least-privilege API token — scheduled for production cutover, not before** (see
-  "APIs & auth" above). Scope, once minted: read-only on the Donations board, read/write on
-  People/People Historical/Organizations.
+* ~~Dedicated least-privilege API token~~ Superseded by the `monday-auth` broker's Staff Sync
+  OAuth app (see "APIs & auth" above); the sandbox QA and the `MONDAY_API_TOKEN` secret's removal
+  happen at deploy time.
 * ~~`owner_board_id` in `donation_links` is written blank by the bootstrap script.~~ Fixed
   2026-08-31: `bootstrap-links-from-artifacts.mjs` populates it from the importer's ledger.
 * **Retire the stale numeric `Fiscal Year` column (`numeric_mm6jm0g4`) on the Donations board?**

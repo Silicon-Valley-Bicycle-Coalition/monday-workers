@@ -84,12 +84,40 @@ describe('scheduled (hourly follow-ups)', () => {
     expect(error).toHaveBeenCalledWith('eventbrite-sync follow-ups: sweep failed: D1 unavailable');
   });
 
-  it('throws naming MONDAY_API_TOKEN when it is unset, and runs nothing', async () => {
+  it('throws naming both MONDAY_AUTH and MONDAY_API_TOKEN when neither is set, and runs nothing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const { ctx } = context();
     const run = vi.fn<typeof runFollowups>();
-    await expect(runScheduled(controller, { ...env, MONDAY_API_TOKEN: undefined } as unknown as Env, ctx, run)).rejects.toThrow('MONDAY_API_TOKEN');
+    const neither = { ...env, MONDAY_AUTH: undefined, MONDAY_API_TOKEN: undefined } as unknown as Env;
+    await expect(runScheduled(controller, neither, ctx, run)).rejects.toThrow(/MONDAY_AUTH.*MONDAY_API_TOKEN/);
     expect(run).not.toHaveBeenCalled();
-    await expect(worker.scheduled(controller, { ...env, MONDAY_API_TOKEN: undefined } as unknown as Env, ctx)).rejects.toThrow('MONDAY_API_TOKEN');
+    await expect(worker.scheduled(controller, neither, ctx)).rejects.toThrow(/MONDAY_AUTH.*MONDAY_API_TOKEN/);
+  });
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const auth = { token: vi.fn().mockResolvedValue('brokered') };
+      // The follow-up sweep's first Monday read, made through the client runScheduled built.
+      const run = vi.fn<typeof runFollowups>().mockImplementation(async (_now, deps) => {
+        await deps.mondayClient.getItems(1, ['910101'], ['name']);
+        return { sent: [], held: [], skipped: [], failed: [] };
+      });
+      const { ctx, waited } = context();
+      const brokered = { ...env, MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth, FLAGS: { get: async () => 'on' } } as unknown as Env;
+      await runScheduled(controller, brokered, ctx, run);
+      await Promise.all(waited);
+
+      expect(run).toHaveBeenCalled();
+      expect(auth.token).toHaveBeenCalled();
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('the real handler sweeps an empty ledger without touching Monday', async () => {

@@ -1,3 +1,4 @@
+import type { MondayTokenSource } from './monday/graphql';
 // A column is named by its title, not its id: salesforce-import creates both People boards from
 // one column spec, so titles agree across them while ids differ per board, and the move's
 // columns_mapping is built from the same title match (src/columns.ts). Titles are resolved to
@@ -49,7 +50,11 @@ export interface ReclassificationConfig {
 
 export interface Env {
   DB: D1Database;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   // Shared secret for the /reclassify/* routes (Authorization: Bearer …); unset = routes disabled.
   RECLASSIFY_SECRET?: string;
   // Write switch (`people-reclassification:writes` = on | hold | off), see src/flags.ts.

@@ -156,10 +156,16 @@ and cannot be listed in the mapping. So:
   groups }`, `items_page(limit: 500)` with `column_values` (+ `linked_item_ids` on connect
   columns), `items(ids:) { board { id } }`. Writes: `move_item_to_board`, and `create_item` on IT
   Requests when configured — both sent non-idempotent so a timeout is recorded, never retried blind.
-* **Token:** `MONDAY_API_TOKEN`, a dedicated integration user with access to both People boards,
-  Events, Event Registrations, Volunteers and (production) IT Requests. Sandbox: the shared
-  Sandbox Integration user, as for every other sandbox Worker. Moving items needs edit rights on
-  both boards.
+* **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind
+  `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+  OAuth app, consented as SVBC Integrations (production, `svbc-monday-auth`) or Sandbox Integration
+  (sandbox, `svbc-monday-auth-sandbox`) — which needs access to both People boards, Events, Event
+  Registrations, Volunteers and (production) IT Requests; moving items needs edit rights on both
+  boards. `src/monday/graphql.ts` `tokenProviderFor` asks the broker per request and re-asks once on
+  a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under way (delete it
+  once the binding works); with neither, building the Monday client throws a config error naming
+  both. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for
+  it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 * **`RECLASSIFY_SECRET`:** shared secret for `/reclassify/*`, sent as
   `Authorization: Bearer <secret>` (never in the query string, where it would be logged with the
   URL); constant-time, fail-closed — unset disables the routes. Behind the repo-standard
@@ -212,8 +218,8 @@ Nothing below has been done.
 1. `wrangler d1 create svbc-people-reclassification-sandbox`; paste the id into
    `env.sandbox.d1_databases[0].database_id`; `wrangler d1 migrations apply
    svbc-people-reclassification-sandbox --env sandbox --remote`.
-2. `wrangler secret put MONDAY_API_TOKEN --env sandbox` (the Sandbox Integration user's token),
-   `wrangler secret put RECLASSIFY_SECRET --env sandbox`.
+2. `wrangler secret put RECLASSIFY_SECRET --env sandbox` (Monday access is the `MONDAY_AUTH`
+   binding to the sandbox broker, consented as Sandbox Integration — no token secret).
 3. `npm run deploy:sandbox`. With the switch unset (`off`) the daily cron and
    `POST /reclassify/run` only plan. Every operator call carries the secret as a header:
    `curl -X POST -H "Authorization: Bearer $RECLASSIFY_SECRET" https://<worker>/reclassify/run`.

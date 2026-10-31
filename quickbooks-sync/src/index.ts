@@ -11,6 +11,7 @@ import { createConfigSelector, environmentOf } from './environment';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { createMondayWebhookApp } from './monday/webhook/route';
 import { HttpQuickBooksClient } from './quickbooks/client';
 import { D1TokenStore } from './quickbooks/tokenStore';
@@ -111,7 +112,7 @@ export default {
       qbEventStore: new D1QbEventStore(env.DB),
       mondayEventStore: new D1MondayEventStore(env.DB),
       mapStore: new D1MapStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       quickBooksClient: new HttpQuickBooksClient(
         new D1TokenStore(env.DB),
         env.QB_CLIENT_ID,

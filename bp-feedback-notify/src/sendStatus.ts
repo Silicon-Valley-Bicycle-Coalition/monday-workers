@@ -1,9 +1,9 @@
 // Writes the outcome of a feedback-email send back onto the BP Request Form item, so staff can
 // see a failed send on the board instead of it existing only in Worker logs. Optional: a config
-// with `sendStatus: null` (the default until the board column and a Monday token exist) skips
+// with `sendStatus: null` (the default until the board column and Monday access exist) skips
 // the write entirely, and the outcome is only logged.
 
-import { mondayRequest } from './mondayApi';
+import { mondayRequest, type TokenProvider } from './mondayApi';
 
 export interface SendStatusConfig {
   /** The board the webhook's items live on (BP Request Form, or its sandbox mirror). */
@@ -30,13 +30,13 @@ function errorMessage(error: unknown): string {
  */
 export async function writeSendStatus(
   config: SendStatusConfig | null,
-  token: string | undefined,
+  token: string | TokenProvider | undefined,
   itemId: number,
   outcome: SendOutcome
 ): Promise<void> {
   if (config === null) return;
   if (!token) {
-    console.error(JSON.stringify({ event: 'bp-feedback-status-skipped', itemId, outcome, reason: 'MONDAY_API_TOKEN is not set' }));
+    console.error(JSON.stringify({ event: 'bp-feedback-status-skipped', itemId, outcome, reason: 'neither MONDAY_AUTH nor MONDAY_API_TOKEN is set' }));
     return;
   }
   const label = outcome === 'sent' ? config.sentLabel : config.failedLabel;

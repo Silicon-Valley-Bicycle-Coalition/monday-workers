@@ -5,7 +5,8 @@
   "compatibility_date": "2026-08-01",
   "upload_source_maps": true,
   // Secrets (set with `wrangler secret put <NAME>`, never committed):
-  //   MONDAY_API_TOKEN          — Monday API token (dedicated integration user, least-privilege)
+  //   MONDAY_API_TOKEN          — fallback only while the OAuth cutover is under way: Monday access
+  //                               comes from the MONDAY_AUTH binding below (monday-auth broker)
   //   QB_CLIENT_ID              — QuickBooks OAuth2 app client id
   //   QB_CLIENT_SECRET          — QuickBooks OAuth2 app client secret
   //   QB_WEBHOOK_VERIFIER_TOKEN — QuickBooks webhook verifier token (HMAC signature check)
@@ -62,6 +63,10 @@
     "enabled": true,
     "issues": { "enabled": true }
   },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-quickbooks-sync-sandbox
   // against Intuit's *sandbox* host (config/sandbox.json quickbooks.apiBaseUrl, selected by the
@@ -70,9 +75,10 @@
   // config/split.test.ts fails if the two configs ever share the host. Everything here is
   // non-inheritable in Wrangler and deliberately restated.
   // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
-  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for MONDAY_API_TOKEN,
+  // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
   // QB_CLIENT_ID and QB_CLIENT_SECRET (the sandbox app's *development* keys — production keys
-  // are refused by the sandbox host), QB_WEBHOOK_VERIFIER_TOKEN, MONDAY_WEBHOOK_SECRET.
+  // are refused by the sandbox host), QB_WEBHOOK_VERIFIER_TOKEN, MONDAY_WEBHOOK_SECRET. Monday
+  // access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
@@ -108,7 +114,9 @@
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }
-      }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
     }
   }
 }

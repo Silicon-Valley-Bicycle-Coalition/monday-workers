@@ -1,3 +1,4 @@
+import type { MondayTokenSource } from './monday/graphql';
 import type { WriteStamp } from './flags';
 
 export interface MailchimpMergeFieldsConfig {
@@ -60,7 +61,11 @@ export interface Env {
   DB: D1Database;
   OUTBOUND_QUEUE: Queue<OutboundSyncMessage>;
   INBOUND_QUEUE: Queue<InboundSyncMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET: string;
   MAILCHIMP_API_KEY: string;
   MAILCHIMP_WEBHOOK_SECRET: string;

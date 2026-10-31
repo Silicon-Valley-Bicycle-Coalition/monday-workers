@@ -6,7 +6,7 @@ declare global {
       DB: D1Database;
       FLAGS: KVNamespace;
       WRITE_QUEUE: Queue<BenevityQueueMessage>;
-      MONDAY_API_TOKEN: string;
+      MONDAY_API_TOKEN?: string;
       TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
       ENVIRONMENT?: string;
     }

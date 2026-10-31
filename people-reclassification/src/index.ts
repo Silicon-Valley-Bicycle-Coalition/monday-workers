@@ -5,6 +5,7 @@ import { validateConfig } from './config';
 import { readLogLevel, readWriteMode, runDisposition } from './flags';
 import { D1Ledger } from './db/ledger';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { runPass, type PassDeps } from './pass';
 import { decideCron } from './duties';
 import { createApp } from './routes';
@@ -21,7 +22,7 @@ const WORKER = 'people-reclassification';
 
 function passDeps(env: Env): PassDeps {
   const config = configFor(env);
-  return { monday: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN), ledger: new D1Ledger(env.DB), config };
+  return { monday: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)), ledger: new D1Ledger(env.DB), config };
 }
 
 export default {

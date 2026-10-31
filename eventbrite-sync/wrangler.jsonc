@@ -58,13 +58,18 @@
     "enabled": true,
     "issues": { "enabled": true }
   },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. src/monday/graphql.ts tokenProviderFor prefers this binding
+  // over a MONDAY_API_TOKEN secret. Design: docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
   // ── Sandbox environment ───────────────────────────────────────────────────────────────────
   // `wrangler deploy --env sandbox` (npm run deploy:sandbox) deploys svbc-eventbrite-sync-sandbox
   // against the CRM Sandbox boards (config/sandbox.json, selected by the ENVIRONMENT var).
   // Everything here is non-inheritable in Wrangler and deliberately restated: the sandbox shares
   // nothing with production. Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — set the sandbox copies with `wrangler secret put <NAME> --env sandbox`
-  // (MONDAY_API_TOKEN, EVENTBRITE_PRIVATE_TOKEN, EVENTBRITE_WEBHOOK_SECRET).
+  // (EVENTBRITE_PRIVATE_TOKEN, EVENTBRITE_WEBHOOK_SECRET). Monday access comes from the MONDAY_AUTH
+  // binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
@@ -102,7 +107,9 @@
       "observability": {
         "enabled": true,
         "issues": { "enabled": true }
-      }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
     }
   }
 }

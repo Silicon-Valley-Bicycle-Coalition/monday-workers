@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import worker, { isDeadLetterBatch } from './index';
 
 describe('isDeadLetterBatch', () => {
@@ -74,5 +74,33 @@ describe('environment selection', () => {
         { ...env, ENVIRONMENT: 'staging' } as unknown as import('./types').Env
       )
     ).rejects.toThrow('ENVIRONMENT');
+  });
+});
+
+describe('Monday token from the monday-auth broker', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // An already-written, already-matched event: the consumer's first Monday call is the column
+    // update, which is all this checks.
+    await env.DB.prepare(
+      `INSERT INTO events (event_id, entity_type, entity_id, raw_payload, status, received_at, matched_donor_item_id, monday_item_id)
+       VALUES ('evt-broker', 'transaction', 'txn-broker', '{}', 'matched', '2026-10-30T00:00:00.000Z', '', '910101')`
+    ).run();
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { change_multiple_column_values: { id: '910101' } } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    const message = { body: { entityType: 'transaction', entityId: 'txn-broker' }, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+
+    await worker.queue(
+      { queue: 'funraise-sync-writes-sandbox', messages: [message] } as unknown as MessageBatch<import('./consumer/processBatch').FunraiseQueueMessage>,
+      { ...env, ENVIRONMENT: 'sandbox', MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth, FLAGS: { get: async () => 'on' } } as unknown as import('./types').Env
+    );
+
+    expect(auth.token).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
   });
 });

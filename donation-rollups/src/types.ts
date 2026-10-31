@@ -1,4 +1,5 @@
 import type { WriteStamp } from './flags';
+import type { MondayTokenSource } from './monday/graphql';
 
 // One entry per Donations *era* board — salesforce-import splits donation history across
 // several boards to stay under Monday's 10k-item ceiling (a "live" current-era board plus
@@ -189,7 +190,11 @@ export interface PendingRow {
 export interface Env {
   DB: D1Database;
   RECOMPUTE_QUEUE: Queue<RecomputeQueueMessage>;
-  MONDAY_API_TOKEN: string;
+  // Monday access: the monday-auth broker's SyncToken entrypoint (wrangler.jsonc services). The
+  // fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   MONDAY_WEBHOOK_SECRET?: string;
   // Bearer secret for the /custodian/* routes (issue #63). Unset = those routes 401 everything.
   CUSTODIAN_SECRET?: string;
