@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,5 +34,17 @@ describe('runExtract', () => {
     expect(await runExtract([], { exec: fakeExec })).toBe(1);
     expect(await runExtract(['--acknowledge-sync-errors'], { exec: fakeExec })).toBe(0);
     rowsByObject['FROM funraise__Error__c'] = [{ expr0: 0 }];
+  });
+
+  it('refuses a --consent with no path before running any query', async () => {
+    const exec = vi.fn(fakeExec);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await runExtract(['--consent'], { exec })).toBe(2);
+      expect(await runExtract(['--consent', '--acknowledge-sync-errors'], { exec })).toBe(2);
+      expect(exec).not.toHaveBeenCalled();
+    } finally {
+      err.mockRestore();
+    }
   });
 });

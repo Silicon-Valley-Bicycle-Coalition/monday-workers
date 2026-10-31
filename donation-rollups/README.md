@@ -623,12 +623,16 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
 `[itemId, dateISO, cents, type, status, actingForItemId|'']` (the sixth element is the
 affiliation model's — see below — empty string for a gift with no Acting for), sourced from the
-D1 ledger so it includes archived gifts and their types — plus (where the account supports it) a
-markdown gift-history table in the item description with a deep link per gift. The description
-write is **deliberately non-fatal**:
-`set_item_description_content` 500s outright on this account (the item-description feature isn't
-enabled — even a trivial markdown fails, observed 2026-08-31), so a failure logs and moves on
-rather than burning queue retries over a redundant rendering of the JSON column. Provision the
+D1 ledger so it includes archived gifts and their types — plus a markdown gift-history table in
+the item description with a deep link per gift. The description write is **deliberately
+non-fatal**: `set_item_description_content` returns a bare `Internal server error` for any
+markdown on a board whose item view lacks the **Item description** widget, so a failure logs
+"gift-history description skipped" and moves on rather than burning queue retries over a
+redundant rendering of the JSON column. **Add that widget by hand to the item view of every owner
+board** (open an item → **+** in the item view header → Item description) before the first sweep;
+there is no API for it. Once it's there, writes succeed for every item on the board, including
+items with no description yet (verified on the sandbox 2026-10-30; the 2026-08-31 reading that
+the feature was off for the whole account was wrong). Provision the
 column via `setup-owner-columns.mjs` (it's part of the 13-column set now).
 
 **The Annual Giving Summary board (docs/20 §5.4)** — created by
@@ -907,6 +911,58 @@ live donor data no matter what triggers it.
 one against production directly** (the sandbox gets rebuilt before cutover, so today's ids won't
 necessarily match) — don't assume sandbox and production share ids just because the schema matches.
 
+## Resetting for new board ids
+
+When the boards this Worker reads and writes are deleted and rebuilt (a cutover retry — private
+runbook, Rollback step 8 — or a sandbox rebuild), every Monday item id in D1 is dead. The
+bootstrap (`bootstrap-*-from-artifacts.mjs`) replaces `donation_links`, `pending_recomputes`,
+`gifts` and `affiliations` wholesale, but nothing replaces the rest: `volunteer_activity` is
+upsert-only, so owners from the old boards would survive and count toward the membership rule,
+and a kept `custodian_runs` row is the resume point of a sliced sweep or archive, which would
+pick up partway through the new boards.
+
+**First:** set the switch to `hold` (`node scripts/flags.mjs donation-rollups writes hold --env
+production`): the daily custodian run is skipped and the recompute queue pauses, so nothing
+writes back what this clears. Disable the old boards' webhooks (or delete the old boards).
+
+```sh
+# 1. Export, to somewhere outside the repo (it holds donor amounts and item ids).
+npx wrangler d1 export svbc-donation-rollups --remote --output <dir>/svbc-donation-rollups.sql
+
+# 2. Clear every table keyed by an old item id, and the old summary items. -y answers any
+#    wrangler confirmation prompt; unanswered without a TTY, one cancels silently with exit 0.
+npx wrangler d1 execute svbc-donation-rollups --remote -y --command \
+  "DELETE FROM donation_links; DELETE FROM pending_recomputes; DELETE FROM gifts; DELETE FROM affiliations; DELETE FROM volunteer_activity; DELETE FROM owner_recomputes; DELETE FROM owner_leases; DELETE FROM membership_baseline; DELETE FROM custodian_runs; UPDATE annual_summaries SET monday_item_id = NULL;"
+
+# 3. Check: every column is 0. (One row of subqueries: D1 refuses a UNION ALL this long,
+#    "too many terms in compound SELECT".)
+npx wrangler d1 execute svbc-donation-rollups --remote --command \
+  "SELECT (SELECT COUNT(*) FROM donation_links) AS donation_links, (SELECT COUNT(*) FROM pending_recomputes) AS pending_recomputes, (SELECT COUNT(*) FROM gifts) AS gifts, (SELECT COUNT(*) FROM affiliations) AS affiliations, (SELECT COUNT(*) FROM volunteer_activity) AS volunteer_activity, (SELECT COUNT(*) FROM owner_recomputes) AS owner_recomputes, (SELECT COUNT(*) FROM owner_leases) AS owner_leases, (SELECT COUNT(*) FROM membership_baseline) AS membership_baseline, (SELECT COUNT(*) FROM custodian_runs) AS custodian_runs, (SELECT COUNT(*) FROM annual_summaries WHERE monday_item_id IS NOT NULL) AS summaries_with_an_item"
+```
+
+Sandbox: `svbc-donation-rollups-sandbox`, with `--env sandbox` on every command.
+
+| Table | Reset | Why |
+|---|---|---|
+| `donation_links`, `pending_recomputes`, `gifts`, `affiliations` | cleared | Old item ids. The bootstrap from the new load's artifacts refills them. |
+| `volunteer_activity` | cleared | Old registration and owner ids; upsert-only, so nothing else removes them. The `membership?all=true` pre-pass reloads it from the new boards. |
+| `owner_recomputes`, `owner_leases` | cleared | Per-owner bookkeeping for old owners. |
+| `membership_baseline` | cleared | Retired (no longer read), but keyed by old owners. |
+| `custodian_runs` | cleared | Each duty's last run, and a sliced sweep's or archive's resume point. Cleared, every duty starts from the beginning. `/custodian/status` reads empty until the first run. |
+| `annual_summaries` | **kept, `monday_item_id` nulled** | The totals are restated by `archive`; the item ids are on the old Annual Giving Summary board, and `archive` fails with "Item not found in board" on a kept one. |
+
+`d1_migrations` is untouched. A recompute message still on the queue for an old item fails once
+the switch is back `on` and goes to the dead-letter queue; that's expected, so clear the DLQ
+after the new boards' passes.
+
+**Then**, in this order (cutover runbook step 4.0): deploy with the new ids, the provisioning
+scripts, the bootstrap, `setup-webhooks.mjs --prune <old board ids>` (without `--prune` the old
+boards' subscriptions are left in place), `writes on`, and the custodian passes.
+
+Tested 2026-10-30 on a local D1 with every migration applied: rows seeded in the cleared
+tables were removed, `annual_summaries` kept its totals with `monday_item_id` nulled, and the
+check read 0. Not yet run against a deployed D1.
+
 ## Sandbox environment — inbound only, no outbound data
 
 This Worker has a permanent `sandbox` Wrangler environment (`wrangler.jsonc` `env.sandbox`):
@@ -971,7 +1027,10 @@ node scripts/flags.mjs status --env sandbox
 ```
 
 **Set `writes on` before deploying** a build that carries the switch, or the deployed Worker
-dry-runs everything. **During a production load** (salesforce-import), keep rollups `off` — or
+dry-runs everything. The exception is a **first production deploy onto freshly loaded boards**
+(cutover runbook step 4.0): deploy with the switch `off`, so the 09:00 UTC cron dry-runs
+against the half-configured Worker, and turn it on once the webhooks are subscribed, before the
+custodian passes. **During a production load** (salesforce-import), keep rollups `off` — or
 its Monday webhooks unsubscribed, as today — until the load finishes: every imported gift fires a
 webhook, and under `on` each one is a full owner recompute. Recompute retries now back off 1
 minute doubling to an hour across `max_retries: 100` (about four days) before the DLQ; a D1 or

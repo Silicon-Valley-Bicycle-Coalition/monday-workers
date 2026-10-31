@@ -58,7 +58,7 @@ npm run cli -- transform            # fails on assertion violations; read data/t
 #   board-linking survey's Volunteer Roster rows (private planning repo, docs/29).
 npm run cli -- load --dry-run       # prints the full per-board plan, writes nothing
 npm run cli -- load                 # idempotent; re-run to retry failures only (sequential by default;
-                                    #   --batched is opt-in, sandbox-only until its rehearsal passes)
+                                    #   production runs --batched, see "Batched load" below)
 npm run cli -- validate             # reconciliation + data/validate/sample.csv (with review links) for the admin
 npm run cli -- validate --live      # also reads every board back from Monday (see below)
 npm run cli -- reconcile            # go/no-go gate: extract vs Monday, per fiscal year and per board
@@ -85,10 +85,12 @@ them. Targets that were never migrated at all are still skipped by design. `data
 records per-run counts: created, adopted, failed, written/partial/pending/skipped links, and
 archived/deferred items.
 
-**Batched load (#22) — opt-in, not the default.** Plain `load` runs the pre-#22 sequential path
-(one `create_item` per request, one at a time, the pre-#22 Monday client) and prints
-`load: mode = sequential (default)`. **`--batched` must not be used against production until
-every step of the rehearsal checklist below has passed on the sandbox account.** `load --batched`
+**Batched load (#22) — what production runs, but not the default.** Plain `load` runs the pre-#22
+sequential path (one `create_item` per request, one at a time, the pre-#22 Monday client) and prints
+`load: mode = sequential (default)`. **The production cutover load uses `--batched`** (decided
+2026-10-09 after the rehearsal below; sequential is ≈ 67 h and doesn't fit a weekend). The CLI
+default stays sequential, so **pass `--batched` on the first production run and on every re-run**.
+Nothing in the code enforces that; check that the mode line says `batched`. `load --batched`
 prints `load: mode = batched (size 10, concurrency 3, inline links on)`. It sends 10 aliased
 `create_item`s per request (`--batch-size N`, max 25) with 3 requests in flight
 (`--concurrency N`, max 8; separate links and archives are aliased `--batch-size` to a request too, #50), and puts a payload's board-relation values straight into its `create_item` when every
@@ -128,7 +130,7 @@ npm run cli -- load --dry-run                     # per-board plan + old vs --ba
 npm run cli -- load --dry-run --request-ms 1100 --create-ms 435 --link-ms 700 --archive-ms 760  # override the measured cost defaults
 npm run cli -- load                               # DEFAULT: the pre-#22 sequential path, unchanged
 npm run cli -- load --sequential                  # the same thing, spelled out
-npm run cli -- load --batched                     # SANDBOX ONLY until rehearsed: 10 per request, 3 in flight, inline links
+npm run cli -- load --batched                     # PRODUCTION: 10 per request, 3 in flight, inline links
 npm run cli -- load --batched --batch-size 25 --concurrency 4   # tune on top of --batched
 npm run cli -- load --batched --no-inline-links   # batch creates, but write every relation separately
 ```
@@ -164,7 +166,7 @@ counts requests, retries by reason, backoff and peak in-flight, and `scripts/pro
 re-measures the costs on a sandbox workspace.
 
 **Rehearse the batched path against the sandbox Monday account before cutover** (every step uses
-`--batched`; until all pass, production loads stay on the default):
+`--batched`; results below):
 1. A full `load --batched`: `report.json` shows `links.inlineUnconfirmed` and `links.inlineRejected` at
    0, there are no `DUPLICATE` lines, and `validate --live` passes (0 missing, duplicated or
    unexpected).
@@ -179,8 +181,14 @@ re-measures the costs on a sandbox workspace.
 **Rehearsal results, 2026-10-09.** Measured 2026-10-06 → 09 against fresh `(batched rehearsal)`
 boards in the sandbox workspace, from the 2026-09-08 extract, at the defaults (size 10,
 concurrency 3, inline links on). The final state matched the dry-run plan exactly: 96,007 items,
-110,013 links, 44,783 archives. **The checklist has not yet passed** — steps 1, 2 and 5 are still
-open — so the rule above stands: `--batched` stays off production.
+110,013 links, 44,783 archives. Steps 1, 2 and 5 were left open. **Production adopted `--batched`
+anyway (2026-10-09)**, because every correctness check passed and sequential doesn't fit a weekend.
+Links and archives were then aliased (#50), and an awake re-rehearsal (2026-10-09 → 12) measured
+the full load at **27 h 51 min**, against a ≈ 26.7 h estimate. Its 22 ambiguous creates resolved
+in a 70 s second run with 0 duplicates, and `validate --live` was clean apart from the two
+pre-existing `recon-funraise-*` checks. Steps 1, 4 and 6 passed there; step 1 passed after the
+link pass (`inlineUnconfirmed` was 1 before it). **Step 5 has never run**, so resuming a batched
+ledger with plain `load` (the cutover-weekend fallback below) is untested.
 
 | Step | Result | Detail |
 |------|--------|--------|
@@ -571,7 +579,7 @@ cutover weekend available if the first attempt fails.
 `validate` checks the load against its own ledger. `reconcile` checks it against the source:
 it recomputes what must be on Monday from the frozen extract (`data/extract/`) and compares
 that with what Monday itself reports. It only reads from Monday. Exit 0 means **GO**, 1 means
-**NO-GO**. The full report goes to `data/reconcile/report.md` (Markdown tables you can paste
+**NO-GO**, 2 a setup error with nothing checked (no `MONDAY_API_TOKEN`, a bad `--top`). The full report goes to `data/reconcile/report.md` (Markdown tables you can paste
 into the cutover log) and `data/reconcile/result.json`.
 
 | Check | Salesforce side (frozen extract) | Monday side (read back) |

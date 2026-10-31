@@ -317,6 +317,15 @@ describe('scheduled reconcile', () => {
     await runScheduledReconcile(gate('on'), deps, reconcile);
     expect(reconcile).toHaveBeenCalledWith(deps);
   });
+
+  it('no Campaigns board configured: skips with one line instead of failing every night', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const reconcile = vi.fn();
+    const deps = { ...reconcileDeps(), config: { ...CONFIG, monday: { ...CONFIG.monday, campaignsBoardId: null } } };
+    await runScheduledReconcile(gate('on'), deps, reconcile);
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(logged(log)).toContain('no Campaigns board');
+  });
 });
 
 describe('a failing dropped-status write', () => {

@@ -14,7 +14,9 @@
 //     [--env sandbox]               read the sandbox D1 (svbc-funraise-sync-sandbox) instead
 //     [--status failed]             which rows (default failed; failed,received adds stranded rows)
 //     [--older-than-min 60]         skip rows received in the last N minutes — the consumer may
-//                                   still be retrying them (the backoff spans ~21 minutes)
+//                                   still be retrying them (the backoff starts at 1 minute and
+//                                   doubles to an hour, for up to 100 retries; a `failed` row is
+//                                   final, so 0 is safe for those)
 //     [--pause-ms 2000]             wait between deliveries (the consumer runs one at a time)
 //     [--dry-run]                   print the plan and exit
 //
