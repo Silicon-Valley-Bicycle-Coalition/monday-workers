@@ -67,6 +67,8 @@ describe('/oauth/probe/:app', () => {
     const res = await probe(appWith(fetchFn));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
+    expect(body.app).toBe('readonly');
+    expect(Object.keys(body)[0]).toBe('app');
     expect(body.me).toEqual({ id: '42', name: 'Sam' });
     expect(body.scope.total).toBe(1);
     expect(body.scope.inside).toBe(1);

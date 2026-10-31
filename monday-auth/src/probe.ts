@@ -1,4 +1,5 @@
 import { listBoards, summarizeScope } from '../../scripts/lib/token-scope.mjs';
+import type { AppKey } from './apps';
 import type { FetchFn } from './mondayOAuth';
 
 const API_URL = 'https://api.monday.com/v2';
@@ -8,6 +9,7 @@ const API_VERSION = '2026-07';
 export type Check = { ok: true } | { ok: false; error: string };
 
 export interface ProbeReport {
+  app: AppKey;
   me: { id: string; name: string } | { ok: false; error: string };
   scope: ReturnType<typeof summarizeScope> | { ok: false; error: string };
   bareHeader: Check;
@@ -34,7 +36,7 @@ async function gql<T>(fetchFn: FetchFn, authorization: string, query: string): P
 
 // Runs each check on its own, so one failing never hides the others. Errors are the Monday
 // message or HTTP status with any occurrence of the token scrubbed; the token is never returned.
-export async function runProbe(token: string, workspace: string, fetchFn: FetchFn): Promise<ProbeReport> {
+export async function runProbe(app: AppKey, token: string, workspace: string, fetchFn: FetchFn): Promise<ProbeReport> {
   const scrub = (err: unknown): { ok: false; error: string } => {
     const message = err instanceof Error ? err.message : 'error';
     return { ok: false, error: message.split(token).join('[token]').slice(0, 300) };
@@ -77,5 +79,5 @@ export async function runProbe(token: string, workspace: string, fetchFn: FetchF
       return { ok: true as const };
     }),
   ]);
-  return { me, scope, bareHeader, bearerHeader, platformApi, complexity };
+  return { app, me, scope, bareHeader, bearerHeader, platformApi, complexity };
 }

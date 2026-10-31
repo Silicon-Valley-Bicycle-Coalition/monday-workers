@@ -149,7 +149,7 @@ export function createApp(deps: RouteDeps): Hono {
         409
       );
     }
-    return c.json(await runProbe(token, workspace, fetchFn));
+    return c.json(await runProbe(name, token, workspace, fetchFn));
   });
 
   app.get('/oauth/callback', async (c) => {
