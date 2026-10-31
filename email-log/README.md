@@ -125,8 +125,15 @@ still unset until the board and live mail exist.
 | `capacity.activitiesMaxItems`, `warnPct` | board ceiling and the percentage at which the consumer files a capacity alert |
 | `alerts.itRequests` | IT Requests board id, type column id, label, and `cooldownDays`; `null` disables alerts |
 
-* **Secret:** `MONDAY_API_TOKEN` only (`wrangler secret put MONDAY_API_TOKEN`, and again with
-  `--env sandbox`). Unset, every message fails and dead-letters.
+* **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind
+  `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+  OAuth app — production (`svbc-email-log`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to
+  `svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per request and
+  re-asks once on a 401. No secrets: a `MONDAY_API_TOKEN` secret is only the fallback while the
+  cutover is under way (delete it once the binding works). With neither, every message fails
+  (building the Monday client throws a config error naming both) and dead-letters. Local `wrangler
+  dev` has no broker to call, so put a `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 * **Vars:** `ENVIRONMENT` (`sandbox` in `env.sandbox`; unset = production) and `SANDBOX_EMAIL_SINK`
   (sandbox only). In the sandbox every reply goes to the sink address, and the `send_email`
   binding is locked to it at the platform (`allowed_destination_addresses`). A missing sink
@@ -180,9 +187,8 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    `npx wrangler d1 migrations apply svbc-email-log-sandbox --env sandbox --remote`. Create the
    queues `email-log-writes-sandbox` and `email-log-writes-sandbox-dlq`. (Production later:
    `svbc-email-log`, `email-log-writes`, `email-log-writes-dlq`.)
-3. **Token.** Create a dedicated Monday integration user, then
-   `wrangler secret put MONDAY_API_TOKEN --env sandbox`, and run
-   `node ../scripts/check-monday-token-scope.mjs --workspace <id>` with that token.
+3. **Monday access.** Confirm the sandbox broker's Staff Sync app is consented
+   (`svbc-monday-auth-sandbox`); the `MONDAY_AUTH` binding needs no secret here.
 4. **Email Routing.** Enable Email Routing on `log.bikesiliconvalley.org`. Confirm the Workspace
    MX records on the apex and the Email Sending records on `mail.` are untouched. Route
    `log-sandbox@log.bikesiliconvalley.org` to the Worker `svbc-email-log-sandbox`. Deploy with
