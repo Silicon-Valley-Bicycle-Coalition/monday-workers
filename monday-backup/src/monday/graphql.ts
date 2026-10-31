@@ -194,11 +194,13 @@ export interface MondayTokenSource {
 }
 
 // The binding wins; the fixed MONDAY_API_TOKEN secret is the fallback during the OAuth cutover.
+// An empty MONDAY_API_TOKEN counts as unset, so it fails here instead of sending an empty
+// Authorization header.
 export function tokenProviderFor(env: { MONDAY_AUTH?: MondayTokenSource; MONDAY_API_TOKEN?: string }): TokenProvider {
   const auth = env.MONDAY_AUTH;
   if (auth !== undefined) return (rejected) => auth.token(rejected);
   const fixed = env.MONDAY_API_TOKEN;
-  if (fixed !== undefined) return async () => fixed;
+  if (fixed !== undefined && fixed !== '') return async () => fixed;
   throw new Error('monday auth: neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN is set');
 }
 

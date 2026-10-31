@@ -272,4 +272,11 @@ describe('MondayGraphQL token provider', () => {
     expect(await tokenProviderFor({ MONDAY_API_TOKEN: 'str' })()).toBe('str');
     expect(() => tokenProviderFor({})).toThrow(/neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN/);
   });
+
+  it('tokenProviderFor treats an empty MONDAY_API_TOKEN as unset', async () => {
+    // An empty secret would otherwise send an empty Authorization header.
+    expect(() => tokenProviderFor({ MONDAY_API_TOKEN: '' })).toThrow(/neither the MONDAY_AUTH service binding nor MONDAY_API_TOKEN/);
+    const token = async () => 'fromBinding';
+    expect(await tokenProviderFor({ MONDAY_AUTH: { token }, MONDAY_API_TOKEN: '' })()).toBe('fromBinding');
+  });
 });
