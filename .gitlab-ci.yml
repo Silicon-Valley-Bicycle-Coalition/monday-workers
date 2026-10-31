@@ -109,6 +109,35 @@ worker-flags-copies:
     # Loaded through Node's strip-only type support, so it must not need a TypeScript compile step.
     - node --input-type=module -e "await import('./member-portal/src/flags.ts')"
 
+# Each Worker reaches Monday through the monday-auth broker's MONDAY_AUTH service binding, and the
+# entrypoint it binds (PortalToken / SyncToken / ReadOnlyToken) sets its access. Production must
+# bind svbc-monday-auth and the sandbox env svbc-monday-auth-sandbox. The expected mapping is
+# EXPECTED in the script; it mirrors the design spec's apps table.
+monday-auth-bindings:
+  stage: test
+  rules:
+    - changes:
+        - monday-auth/**/*
+        - benevity-import/wrangler.jsonc
+        - bp-feedback-notify/wrangler.jsonc
+        - donation-rollups/wrangler.jsonc
+        - email-log/wrangler.jsonc
+        - eventbrite-sync/wrangler.jsonc
+        - funraise-sync/wrangler.jsonc
+        - mailchimp-sync/wrangler.jsonc
+        - member-portal/wrangler.jsonc
+        - monday-backup/wrangler.jsonc
+        - people-reclassification/wrangler.jsonc
+        - quickbooks-sync/wrangler.jsonc
+        - report-digests/wrangler.jsonc
+        - member-portal/wrangler.writer.jsonc
+        - scripts/check-monday-auth-bindings.mjs
+        - scripts/check-monday-auth-bindings.test.mjs
+        - scripts/check-worker-flags.mjs
+        - .gitlab-ci.yml
+  script:
+    - node scripts/check-monday-auth-bindings.mjs
+
 # Blocks logging email addresses: Workers Issues forwards the logs around a failure to its
 # automation targets (see root README "Error monitoring: Workers Issues"). A dependency-free scan
 # rather than ESLint — typescript-eslint doesn't support the TypeScript 7 the Workers build with.
