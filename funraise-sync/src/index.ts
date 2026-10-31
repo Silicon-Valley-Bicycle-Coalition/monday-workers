@@ -7,6 +7,7 @@ import { D1EventStore } from './db/events';
 import { D1SubscriptionStore } from './db/subscriptions';
 import { HttpFunraiseClient } from './funraise/client';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { consumeFunraiseBatch, type FunraiseQueueMessage } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { pollSubscriptions } from './subscriptions/poll';
@@ -84,7 +85,7 @@ export default {
     const gate = await skipContext(env);
     await consumeFunraiseBatch([...batch.messages], {
       eventStore: new D1EventStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
       subscriptionStore: new D1SubscriptionStore(env.DB),
       funraiseClient: funraiseClient(env),
@@ -109,7 +110,7 @@ export default {
         const live = {
           funraiseClient: client,
           subscriptionStore: new D1SubscriptionStore(env.DB),
-          mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+          mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
           config,
           maxPages: config.subscriptionsPoll.maxPagesPerRun,
         };
