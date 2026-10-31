@@ -14,6 +14,7 @@ describe('APPS', () => {
       'assets:read',
       'users:read',
       'notifications:write',
+      'docs:write',
       'me:read',
     ]);
     expect(APPS.readonly.scopes).toEqual([

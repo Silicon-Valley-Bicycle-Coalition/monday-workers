@@ -84,10 +84,14 @@ Why this works and what it trades away:
 | App | Workers | Scopes |
 |---|---|---|
 | **Portal** | `member-portal` | `boards:read`, `me:read` |
-| **Staff sync** | `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `benevity-import`, `email-log`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync` (postponed, wired anyway) | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `me:read` |
+| **Staff sync** | `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `benevity-import`, `email-log`, `eventbrite-sync`, `people-reclassification`, `bp-feedback-notify`, `quickbooks-sync` (postponed, wired anyway) | `boards:read`, `boards:write`, `updates:write`, `assets:read`, `users:read`, `notifications:write`, `docs:write`, `me:read` |
 | **Read-only** | `monday-backup`, `report-digests` | `boards:read`, `updates:read`, `assets:read`, `docs:read`, `users:read`, `workspaces:read`, `me:read` |
 
 2026-10-30: me:read added after live consent; the consent check queries `me`.
+
+2026-10-31: docs:write added to Staff sync. On the sandbox broker, `donation-rollups`' gift-history
+description write (`set_item_description_content`) was refused with "missing required scopes"
+under `boards:write` alone (open question 2 below).
 
 Per-Worker operations behind this mapping (surveyed 2026-10-30 on `main`):
 
@@ -104,7 +108,9 @@ Per-Worker operations behind this mapping (surveyed 2026-10-30 on `main`):
 
 1. Which scope, if any, covers `platform_api` (backup's usage stats). If none, drop that query
    from the backup or fail it soft.
-2. That `set_item_description_content` is `boards:write` and not `docs:write`.
+2. That `set_item_description_content` is `boards:write` and not `docs:write`. **Answered
+   2026-10-31: `boards:write` is not enough** ("missing required scopes" on the sandbox broker);
+   Staff sync now requests `docs:write`.
 3. That `workspaces:read` is needed for `boards(workspace_ids:…)` filtering, or not.
 4. Whether the OAuth token takes `Authorization: Bearer <token>`; the shared transport sends the
    bare token (`graphql.ts:240-242`), which works for personal tokens.
