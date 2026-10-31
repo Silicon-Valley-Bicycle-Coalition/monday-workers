@@ -66,6 +66,14 @@ export function checkIds(list) {
     .map((entry) => entry.worker);
 }
 
+// A Worker's Wrangler configs: wrangler.jsonc, plus wrangler.writer.jsonc when it has one (a
+// second Worker deployed from the same directory, e.g. member-portal-writer, sharing its FLAGS).
+export function configFiles(worker, exists) {
+  return ['wrangler.jsonc', 'wrangler.writer.jsonc']
+    .map((name) => `${worker}/${name}`)
+    .filter((path, i) => i === 0 || exists(path));
+}
+
 function main() {
   const strict = process.argv.includes('--strict');
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -80,14 +88,16 @@ function main() {
     if (existsSync(join(root, flagsPath))) copies[flagsPath] = readFileSync(join(root, flagsPath), 'utf8');
     else pending.push(`${flagsPath} missing`);
 
-    const wranglerPath = join(root, worker, 'wrangler.jsonc');
-    const found = existsSync(wranglerPath) ? flagsIds(readFileSync(wranglerPath, 'utf8')) : { production: null, sandbox: null };
-    if (found.production === null || found.sandbox === null) pending.push(`${worker}/wrangler.jsonc has no FLAGS binding${found.production === null && found.sandbox === null ? '' : ' in one environment'}`);
-    ids.push({ worker, ...found });
+    for (const configPath of configFiles(worker, (path) => existsSync(join(root, path)))) {
+      const full = join(root, configPath);
+      const found = existsSync(full) ? flagsIds(readFileSync(full, 'utf8')) : { production: null, sandbox: null };
+      if (found.production === null || found.sandbox === null) pending.push(`${configPath} has no FLAGS binding${found.production === null && found.sandbox === null ? '' : ' in one environment'}`);
+      ids.push({ worker: configPath, ...found });
+    }
   }
 
   for (const path of findDrift(canonical, copies)) failures.push(`${path} differs from ${CANONICAL}`);
-  for (const worker of checkIds(ids)) failures.push(`${worker}/wrangler.jsonc FLAGS ids differ from the other Workers'`);
+  for (const worker of checkIds(ids)) failures.push(`${worker} FLAGS ids differ from the other Workers'`);
   if (strict) failures.push(...pending);
 
   for (const line of pending) console.log(`${strict ? 'FAIL' : 'pending'}: ${line}`);

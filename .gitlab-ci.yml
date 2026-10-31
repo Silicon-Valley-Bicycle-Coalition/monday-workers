@@ -101,6 +101,7 @@ worker-flags-copies:
     - changes:
         - "*/src/flags.ts"
         - "*/wrangler.jsonc"
+        - "*/wrangler.writer.jsonc"
         - scripts/check-worker-flags.mjs
         - .gitlab-ci.yml
   script:
@@ -231,6 +232,11 @@ deploy-sandbox:eventbrite-sync:
 
 deploy-sandbox:member-portal:
   extends: .deploy_sandbox_job
+  # The writer must be live before the portal drops its change-requests consumer. optional: the
+  # writer job is skipped when its rules don't match, and the portal still deploys then.
+  needs:
+    - job: deploy-sandbox:member-portal-writer
+      optional: true
   variables:
     WORKER_DIR: member-portal
 

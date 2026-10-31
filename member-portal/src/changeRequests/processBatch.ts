@@ -64,7 +64,7 @@ function hasValidShape(body: unknown): body is ChangeQueueMessage {
 }
 
 function rejectMalformed(message: QueueMessageLike<ChangeQueueMessage>): void {
-  console.error('member-portal consumer: malformed change-request message (requestId is not a positive integer); routing to the dead-letter path');
+  console.error('member-portal consumer: malformed change-request message (requestId is not a positive integer); retrying, so it reaches the dead-letter queue after max_retries');
   message.retry({ delaySeconds: retryDelaySeconds(message.attempts) });
 }
 
