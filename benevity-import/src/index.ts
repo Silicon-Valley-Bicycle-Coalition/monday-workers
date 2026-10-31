@@ -10,6 +10,7 @@ import { D1DisbursementStore } from './db/disbursements';
 import { D1RowStore } from './db/rows';
 import { D1AliasStore } from './db/aliases';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { consumeBenevityBatch, type BenevityQueueMessage } from './consumer/processBatch';
 import { readReportText } from './consumer/ingestUpload';
 import { processDeadLetters, sweepDeadLetteredRows } from './consumer/deadLetters';
@@ -63,7 +64,7 @@ export default {
       if (limited) return limited;
 
       const app = createApp({
-        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
         uploadStore: new D1UploadStore(env.DB),
         disbursementStore: new D1DisbursementStore(env.DB),
         rowStore: new D1RowStore(env.DB),
@@ -92,7 +93,7 @@ export default {
       await processDeadLetters([...batch.messages], {
         rowStore: new D1RowStore(env.DB),
         uploadStore: new D1UploadStore(env.DB),
-        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
         config,
         writesOn: (await readWriteMode(env, WORKER)) === 'on',
       });
@@ -105,7 +106,7 @@ export default {
       rowStore: new D1RowStore(env.DB),
       disbursementStore: new D1DisbursementStore(env.DB),
       aliasStore: new D1AliasStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
       queue: writeQueue(env),
       fetchCsv,
@@ -136,7 +137,7 @@ export default {
     if ((await readWriteMode(env, WORKER)) !== 'on') return;
     const swept = await sweepDeadLetteredRows({
       rowStore: store,
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
     });
     if (swept.posted.length > 0 || swept.failed.length > 0) {

@@ -410,9 +410,15 @@ placeholders until cutover), validated at first request, none hardcoded:
 | Benevity Uploads board: worklist **Retry** status column (`uploadsBoard.retry`), labels `Needs review` / `Retry` / `Queued` / `Done` (all four must exist on the column; names configurable) | staff replay trigger — see Worklist; its own Monday webhook to `/webhooks/monday/benevity-retry`; `null` until provisioned (the route then ignores every event) |
 | Benevity Uploads board: worklist `Key` text column (`uploadsBoard.worklistKeyColumn`) | each worklist item's stable key — the row's Transaction ID, or `disbursement <id>` for a block — looked up before posting so a retried write adopts the item instead of posting a second one; `null` until provisioned (the lookup is then skipped) |
 
-Token: a dedicated staff-facing integration user with access to exactly these boards (see the
-least-privilege note in `../README.md`); the same user `funraise-sync` writes as is acceptable,
-never a staff member's personal token.
+Monday access comes from the `monday-auth` broker, not a stored token. Both deployments bind
+`MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+OAuth app — production (`svbc-benevity-import`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to
+`svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per request and
+re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under
+way (delete it once the binding works); with neither, building the Monday client throws a config
+error naming both. Operator scripts (`scripts/*.mjs`) keep reading `MONDAY_API_TOKEN` from the
+operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in
+`.dev.vars` for it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 ## Sandbox environment — inbound only, no outbound data
 

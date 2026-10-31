@@ -75,3 +75,44 @@ describe('worker entry point', () => {
     await expect(worker.queue(batchOf('someone-elses-queue-dlq', ['TXN']), env as unknown as import('./types').Env)).rejects.toThrow('no consumer');
   });
 });
+
+describe('Monday token from the monday-auth broker', () => {
+  beforeEach(async () => {
+    await applyMigrations(env.DB);
+  });
+
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // A dead-lettered row with no worklist item: the scheduled sweep's first Monday call is all
+    // this checks.
+    const uploadId = (await new D1UploadStore(env.DB).createUpload('broker', '2026-10-30T00:00:00Z')).id;
+    const disbursementId = (
+      await new D1DisbursementStore(env.DB).findOrCreate({
+        uploadId, blockIndex: 0, disbursementId: 'DLQ-broker', periodEnding: '2026-03-16', currency: 'USD',
+        rowCount: 1, reportedGrossTotal: 150, reportedNetTotal: 150, needsReview: false, reviewReason: null,
+      })
+    ).disbursement.id;
+    const rows = new D1RowStore(env.DB);
+    await rows.upsertRows([{ transactionId: 'TXN-broker', disbursementId, rawRow: '{}', status: 'ingested', ingestedAt: '2026-10-30T00:00:00Z' }]);
+    await rows.updateStatus('TXN-broker', 'needs-review', { error: `${DEAD_LETTER_PREFIX}monday: HTTP 503` });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items_page_by_column_values: { items: [] } } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = { token: vi.fn().mockResolvedValue('brokered') };
+    try {
+      await worker.scheduled(
+        { scheduledTime: Date.now(), cron: '15 9 * * *' } as ScheduledController,
+        { ...env, ENVIRONMENT: 'sandbox', MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth, FLAGS: { get: async () => 'on' } } as unknown as import('./types').Env
+      );
+
+      expect(auth.token).toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalled();
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
+});
