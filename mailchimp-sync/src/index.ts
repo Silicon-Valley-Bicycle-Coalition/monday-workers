@@ -4,6 +4,7 @@ import sandboxConfig from '../config/sandbox.json';
 import { createConfigSelector, queueBaseName } from './environment';
 import { validateConfig } from './config';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { HttpMailchimpClient } from './mailchimp/client';
 import { D1PendingOutboundStore } from './db/pendingOutbound';
 import { D1PendingInboundStore } from './db/pendingInbound';
@@ -91,7 +92,7 @@ export default {
     }
 
     const gate = await skipContext(env);
-    const mondayClient = new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN);
+    const mondayClient = new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env));
     const mailchimpClient = new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId);
 
     if (!isDeadLetterQueue && queueName === 'mailchimp-sync-outbound') {
@@ -127,7 +128,7 @@ export default {
       skipContext(env)
         .then((gate) => runScheduledReconcile(gate, {
           mailchimpClient: new HttpMailchimpClient(config.mailchimp.apiBaseUrl, env.MAILCHIMP_API_KEY, config.mailchimp.audienceId),
-          mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+          mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
           campaignItemsStore: new D1CampaignItemsStore(env.DB),
           config,
         }, reconcileCampaigns))

@@ -403,12 +403,22 @@ dry-runs everything.
 - `npm run typecheck` — type-check with no emit
 - `npm run dev` — run the Worker locally with `wrangler dev`
 - `npm run deploy` — deploy with `wrangler deploy`
-- `wrangler secret put MONDAY_API_TOKEN` / `MAILCHIMP_API_KEY` / `MONDAY_WEBHOOK_SECRET` /
+- `wrangler secret put MAILCHIMP_API_KEY` / `MONDAY_WEBHOOK_SECRET` /
   `MAILCHIMP_WEBHOOK_SECRET` — set secrets (never commit them). Neither webhook route works
   without its secret: both fail closed, 401ing every delivery (including the Monday challenge
   handshake) until the secret is set, rather than accepting unauthenticated requests.
   `SLACK_WEBHOOK_URL` is optional — dead-letter alerts, see [Dead letters](#dead-letters).
   Every secret is set again with `--env sandbox` for the sandbox deployment.
+- **Monday.com GraphQL API** — from the `monday-auth` broker, not a stored token. Both deployments
+  bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff
+  Sync* OAuth app — production (`svbc-mailchimp-sync`) to `svbc-monday-auth`, sandbox (`--env
+  sandbox`) to `svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per
+  request and re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the
+  cutover is under way (delete it once the binding works); with neither, building the Monday client
+  throws a config error naming both. Operator scripts (`scripts/*.mjs`) keep reading
+  `MONDAY_API_TOKEN` from the operator's shell. Local `wrangler dev` has no broker to call, so put a
+  `MONDAY_API_TOKEN` in `.dev.vars` for it. Design:
+  `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 - `wrangler d1 create svbc-mailchimp-sync` — provision D1, then fill the real `database_id` into
   `wrangler.jsonc`
 

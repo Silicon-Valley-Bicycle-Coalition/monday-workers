@@ -266,3 +266,26 @@ describe('request-time config selection', () => {
     await expect(worker.queue(emptyBatch('mailchimp-sync-outbound-dlq-sandbox'), fakeEnv({ ENVIRONMENT: 'sandbox' }))).rejects.toThrow('unknown queue');
   });
 });
+
+describe('Monday token from the monday-auth broker', () => {
+  it('builds its Monday client from the MONDAY_AUTH binding when bound', async () => {
+    // "Item not found" — the outbound consumer's first Monday read is all this checks.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ data: { items: [] } }), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const auth = { token: vi.fn().mockResolvedValue('brokered') };
+      const env = fakeEnv({ MONDAY_API_TOKEN: undefined, MONDAY_AUTH: auth });
+      const message = fakeMessage<OutboundSyncMessage>({ donorItemId: '1' });
+
+      await worker.queue({ queue: 'mailchimp-sync-outbound', messages: [message] } as unknown as MessageBatch<unknown>, env);
+
+      expect(auth.token).toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalled();
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe('brokered');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
