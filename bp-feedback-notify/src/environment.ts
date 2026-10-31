@@ -27,10 +27,10 @@ export interface WorkerConfig {
   // (production vs sandbox), not necessarily this Worker's own.
   logoUrl: string;
   // Where the organizer's address and the event name are read from (#66) — never the webhook
-  // body. Needs the MONDAY_API_TOKEN secret.
+  // body. Needs Monday access (the MONDAY_AUTH binding, or MONDAY_API_TOKEN).
   board: FeedbackBoardConfig;
   // Where to write Sent/Failed back onto the item after each send (see src/sendStatus.ts), or
-  // null to only log the outcome. Needs the MONDAY_API_TOKEN secret when set.
+  // null to only log the outcome. Uses the same Monday access when set.
   sendStatus: SendStatusConfig | null;
 }
 

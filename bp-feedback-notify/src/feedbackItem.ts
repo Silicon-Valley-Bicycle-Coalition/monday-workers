@@ -1,7 +1,7 @@
 // Reads the organizer's address and the event name off the BP Request Form item itself (#66).
 // The webhook body only names the item: anyone holding the URL secret could otherwise pick the
 // recipient and the subject line of an SVBC-branded email.
-import { mondayRequest } from './mondayApi';
+import { mondayRequest, type TokenProvider } from './mondayApi';
 
 export interface FeedbackBoardConfig {
   /** BP Request Form (or its sandbox mirror). An item on any other board is refused. */
@@ -28,7 +28,7 @@ interface ItemsResponse {
 }
 
 /** Throws on a Monday API failure, so the caller can answer with a retryable status. */
-export async function readFeedbackItem(config: FeedbackBoardConfig, token: string, itemId: number): Promise<FeedbackItem> {
+export async function readFeedbackItem(config: FeedbackBoardConfig, token: string | TokenProvider, itemId: number): Promise<FeedbackItem> {
   const data = await mondayRequest<ItemsResponse>(
     token,
     `query ($itemIds: [ID!], $columnIds: [String!]) {

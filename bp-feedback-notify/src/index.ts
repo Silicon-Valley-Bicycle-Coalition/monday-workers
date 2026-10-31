@@ -7,6 +7,7 @@ import { timingSafeEqual } from './timingSafeEqual';
 import { checkRequestRateLimit } from './rateLimit';
 import { writeSendStatus } from './sendStatus';
 import { readFeedbackItem } from './feedbackItem';
+import { tokenProviderFor, type MondayTokenSource, type TokenProvider } from './mondayApi';
 import { redactEmails } from './redactEmails';
 import { DEFAULT_PII_KEYS, logSkip, readLogLevel, readWriteMode, redactPayload } from './flags';
 import production from '../config/production.json';
@@ -16,8 +17,12 @@ export interface Env extends EnvironmentBindings {
   EMAIL: SendEmail;
   WEBHOOK_SECRET: string;
   SANDBOX_EMAIL_SINK?: string;
-  // Reads the organizer's address and event name off the item (src/feedbackItem.ts), and writes
-  // the send status back when config.sendStatus is set (src/sendStatus.ts).
+  // Monday access — reads the organizer's address and event name off the item
+  // (src/feedbackItem.ts), and writes the send status back when config.sendStatus is set
+  // (src/sendStatus.ts). The monday-auth broker's SyncToken entrypoint (wrangler.jsonc services);
+  // the fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way.
+  // tokenProviderFor (src/mondayApi.ts) prefers the binding.
+  MONDAY_AUTH?: MondayTokenSource;
   MONDAY_API_TOKEN?: string;
   // Provisioned in wrangler.jsonc — see README "Reliability: traffic and cost limits".
   REQUEST_RATE_LIMITER: RateLimit;
@@ -98,9 +103,12 @@ app.post('/webhook/bp-feedback', async (c) => {
   const config = configFor(c.env, production, sandbox);
   const environment = c.env.ENVIRONMENT === 'sandbox' ? 'sandbox' : 'production';
   const { itemId } = payload;
-  const token = c.env.MONDAY_API_TOKEN;
-  if (!token) {
-    console.error(JSON.stringify({ event: 'bp-feedback-misconfigured', environment, itemId, reason: 'MONDAY_API_TOKEN is not set' }));
+  // An empty MONDAY_API_TOKEN counts as unset, as it always has here.
+  let token: TokenProvider;
+  try {
+    token = tokenProviderFor({ MONDAY_AUTH: c.env.MONDAY_AUTH, MONDAY_API_TOKEN: c.env.MONDAY_API_TOKEN || undefined });
+  } catch {
+    console.error(JSON.stringify({ event: 'bp-feedback-misconfigured', environment, itemId, reason: 'neither MONDAY_AUTH nor MONDAY_API_TOKEN is set' }));
     return c.json({ sent: false, itemId }, 500);
   }
 
