@@ -10,6 +10,7 @@ import { D1VolunteerActivityStore } from './db/volunteerActivity';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
 import { D1AffiliationsStore } from './db/affiliations';
 import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
 import { consumeRecomputeBatch } from './consumer/processBatch';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { runDuty, runScheduled, type CustodianDeps } from './custodian/custodian';
@@ -50,7 +51,7 @@ function custodianDeps(env: Env): CustodianDeps {
     pending: new D1PendingStore(env.DB),
     volunteers: new D1VolunteerActivityStore(env.DB),
     recomputes: new D1OwnerRecomputesStore(env.DB),
-    mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+    mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
     queue: {
       sendBatch: (messages: RecomputeQueueMessage[]) =>
         env.RECOMPUTE_QUEUE.sendBatch(messages.map((body) => ({ body }))).then(() => undefined),
@@ -114,7 +115,7 @@ export default {
     if (isDeadLetterBatch(batch.queue)) {
       await processDeadLetters([...batch.messages], {
         pendingStore: new D1PendingStore(env.DB),
-        mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+        mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
         config,
       });
       return;
@@ -127,7 +128,7 @@ export default {
       volunteerStore: new D1VolunteerActivityStore(env.DB),
       recomputesStore: new D1OwnerRecomputesStore(env.DB),
       affiliationsStore: new D1AffiliationsStore(env.DB),
-      mondayClient: new HttpMondayClient(config.monday.apiUrl, env.MONDAY_API_TOKEN),
+      mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
       config,
       queue: { send: (message: RecomputeQueueMessage) => env.RECOMPUTE_QUEUE.send(message).then(() => undefined) },
     }, gate);

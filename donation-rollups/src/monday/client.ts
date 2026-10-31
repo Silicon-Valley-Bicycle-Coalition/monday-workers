@@ -5,7 +5,7 @@ import type { BoardMembership } from '../membership/derive';
 import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
 import {
   AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
-  type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions,
+  type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions, type TokenProvider,
 } from './graphql';
 
 function chunksOf<T>(items: T[], size: number): T[][] {
@@ -190,7 +190,9 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
 
   constructor(
     private apiUrl: string,
-    private apiToken: string,
+    // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+    // MondayGraphQL, which re-asks a provider once on a 401.
+    private apiToken: string | TokenProvider,
     private options: MondayGraphQLOptions = {},
   ) {}
 
