@@ -322,16 +322,31 @@ describe('GET /health', () => {
       authorizedUserId: '42',
     });
     await store.markNeedsConsent('portal', 1);
+    await store.recordRefreshError('sync', 1, NOW);
     const app = createApp({ store, env: testEnv, fetchFn: noFetch, now: () => NOW });
     const res = await app.request('https://broker.test/health');
     const text = await res.text();
     expect(text).not.toContain(SECRET_ACCESS);
     expect(text).not.toContain(SECRET_REFRESH);
     expect(text).not.toContain('p-acc');
-    expect(JSON.parse(text)).toEqual([
-      { app: 'portal', status: 'needs_consent' },
-      { app: 'sync', status: 'ok', expiresAt: '2026-10-30T11:00:00.000Z' },
-      { app: 'readonly', status: 'missing' },
-    ]);
+    expect(JSON.parse(text)).toEqual({
+      alerts: 'unconfigured',
+      apps: [
+        { app: 'portal', status: 'needs_consent' },
+        { app: 'sync', status: 'ok', expiresAt: '2026-10-30T11:00:00.000Z', lastRefreshErrorAt: NOW.toISOString() },
+        { app: 'readonly', status: 'missing' },
+      ],
+    });
+  });
+
+  it('/health says alerts are configured without revealing the webhook URL', async () => {
+    const store = new D1AppTokenStore(env.DB);
+    const webhook = 'https://hooks.slack.test/services/T0/B0/HOOK-SECRET';
+    const app = createApp({ store, env: { ...testEnv, SLACK_WEBHOOK_URL: webhook }, fetchFn: noFetch, now: () => NOW });
+    const text = await (await app.request('https://broker.test/health')).text();
+    expect(text).not.toContain('HOOK-SECRET');
+    expect(JSON.parse(text)).toMatchObject({ alerts: 'configured' });
+    const empty = createApp({ store, env: { ...testEnv, SLACK_WEBHOOK_URL: '' }, fetchFn: noFetch, now: () => NOW });
+    expect(await (await empty.request('https://broker.test/health')).json()).toMatchObject({ alerts: 'unconfigured' });
   });
 });

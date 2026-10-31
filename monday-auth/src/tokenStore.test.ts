@@ -17,7 +17,14 @@ describe('D1AppTokenStore', () => {
     const store = new D1AppTokenStore(env.DB);
     expect(await store.get('sync')).toBeNull();
     await store.save(seed);
-    expect(await store.get('sync')).toEqual({ ...seed, status: 'ok', version: 1 });
+    expect(await store.get('sync')).toEqual({
+      ...seed,
+      status: 'ok',
+      version: 1,
+      lastRefreshErrorAt: null,
+      refreshFailingSince: null,
+      refreshErrorAlertedAt: null,
+    });
     expect(await store.get('portal')).toBeNull();
   });
 
@@ -98,6 +105,48 @@ describe('D1AppTokenStore', () => {
     await store.save({ ...seed, accessToken: 'reconsented' }); // version 2
     expect(await store.markNeedsConsent('sync', 1)).toBe(false);
     expect(await store.get('sync')).toMatchObject({ status: 'ok', accessToken: 'reconsented' });
+  });
+
+  it('recordRefreshError keeps the streak start, moves the last-error time, and is version-gated', async () => {
+    const store = new D1AppTokenStore(env.DB);
+    await store.save(seed);
+    const later = new Date(now.getTime() + 30 * 60_000);
+    await store.recordRefreshError('sync', 1, now);
+    await store.recordRefreshError('sync', 1, later);
+    expect(await store.get('sync')).toMatchObject({
+      refreshFailingSince: now.toISOString(),
+      lastRefreshErrorAt: later.toISOString(),
+      refreshErrorAlertedAt: null,
+    });
+    await store.recordRefreshError('sync', 7, new Date(later.getTime() + 1)); // stale version: no-op
+    expect((await store.get('sync'))?.lastRefreshErrorAt).toBe(later.toISOString());
+  });
+
+  it('markRefreshErrorAlerted returns true once per failing streak, and only while failing', async () => {
+    const store = new D1AppTokenStore(env.DB);
+    await store.save(seed);
+    expect(await store.markRefreshErrorAlerted('sync', 1, now)).toBe(false); // not failing
+    await store.recordRefreshError('sync', 1, now);
+    expect(await store.markRefreshErrorAlerted('sync', 2, now)).toBe(false); // wrong version
+    expect(await store.markRefreshErrorAlerted('sync', 1, now)).toBe(true);
+    expect(await store.markRefreshErrorAlerted('sync', 1, now)).toBe(false);
+    expect((await store.get('sync'))?.refreshErrorAlertedAt).toBe(now.toISOString());
+  });
+
+  it('saveRefreshed and save clear the refresh-error state, so the next streak alerts again', async () => {
+    const store = new D1AppTokenStore(env.DB);
+    await store.save(seed);
+    await store.recordRefreshError('sync', 1, now);
+    await store.markRefreshErrorAlerted('sync', 1, now);
+    await store.acquireRefreshLease('sync', 1, 'lease-a', now, 60_000);
+    expect(await store.saveRefreshed('sync', refreshed, 1, 'lease-a')).toBe(true);
+    const cleared = { lastRefreshErrorAt: null, refreshFailingSince: null, refreshErrorAlertedAt: null };
+    expect(await store.get('sync')).toMatchObject({ version: 2, ...cleared });
+
+    await store.recordRefreshError('sync', 2, now);
+    expect(await store.markRefreshErrorAlerted('sync', 2, now)).toBe(true);
+    await store.save(seed); // re-consent
+    expect(await store.get('sync')).toMatchObject({ version: 3, ...cleared });
   });
 
   it('save after needs_consent resets status to ok', async () => {

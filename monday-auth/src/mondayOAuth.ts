@@ -16,8 +16,9 @@ const API_URL = 'https://api.monday.com/v2';
 // Same value as monday-backup's MONDAY_API_VERSION; kept local so Workers don't import each other.
 const MONDAY_API_VERSION = '2026-07';
 const REQUEST_TIMEOUT_MS = 10_000;
-// Monday documents access tokens as lasting an hour; used only if neither expires_in nor a JWT
-// exp is present (throwing then would lose an already-rotated refresh token).
+// Used only if neither expires_in nor a JWT exp is present (throwing then would lose an
+// already-rotated refresh token). Deliberately short: Monday's tokens measured about 24 h (JWT
+// exp, 2026-10-30), and guessing low only costs an early refresh.
 const DEFAULT_EXPIRES_IN_S = 3600;
 
 export type FetchFn = typeof fetch;
@@ -34,6 +35,19 @@ export class RefreshRejectedError extends Error {
   constructor() {
     super('monday oauth: token endpoint rejected the grant (invalid_grant)');
     this.name = 'RefreshRejectedError';
+  }
+}
+
+// The token endpoint rejected the client itself (`invalid_client`: a wrong or rotated client
+// secret; `unauthorized_client`: the app may not use this grant, e.g. it was uninstalled). A
+// retry can't fix either, so the broker alerts at once; the message is HTTP status plus code only.
+export type ClientRejectedCode = 'invalid_client' | 'unauthorized_client';
+export class ClientRejectedError extends Error {
+  readonly code: ClientRejectedCode;
+  constructor(what: string, status: number, code: ClientRejectedCode) {
+    super(`monday oauth ${what}: HTTP ${status} ${code}`);
+    this.name = 'ClientRejectedError';
+    this.code = code;
   }
 }
 
@@ -99,6 +113,9 @@ async function postTokenEndpoint(payload: Record<string, string>, fetchFn: Fetch
   const body = (await response.json().catch(() => ({}))) as TokenResponse;
   if (!response.ok) {
     if (body.error === 'invalid_grant') throw new RefreshRejectedError();
+    if (body.error === 'invalid_client' || body.error === 'unauthorized_client') {
+      throw new ClientRejectedError(what, response.status, body.error);
+    }
     const code = typeof body.error === 'string' && /^[a-z_]{1,64}$/.test(body.error) ? ` ${body.error}` : '';
     throw new Error(`monday oauth ${what}: HTTP ${response.status}${code}`);
   }

@@ -8,7 +8,15 @@ export interface StoredAppToken {
   authorizedUserId: string;
   status: 'ok' | 'needs_consent';
   version: number;
+  // Refresh-failure state (migration 0003): all null while refreshes succeed.
+  lastRefreshErrorAt: string | null;
+  refreshFailingSince: string | null;
+  refreshErrorAlertedAt: string | null;
 }
+
+// What save() takes: the token pair and who consented. Version, status and the error state are
+// the store's to set.
+export type NewAppToken = Omit<StoredAppToken, 'version' | 'status' | 'lastRefreshErrorAt' | 'refreshFailingSince' | 'refreshErrorAlertedAt'>;
 
 export interface RefreshedTokens {
   accessToken: string;
@@ -27,7 +35,13 @@ interface TokenRow {
   authorized_user_id: string;
   status: 'ok' | 'needs_consent';
   version: number;
+  last_refresh_error_at: string | null;
+  refresh_failing_since: string | null;
+  refresh_error_alerted_at: string | null;
 }
+
+// Clears the refresh-failure state; shared by save() and saveRefreshed().
+const CLEAR_REFRESH_ERROR = 'refresh_failing_since = NULL, last_refresh_error_at = NULL, refresh_error_alerted_at = NULL';
 
 // D1-backed token rows, one per app, with a single-refresher lease and compare-and-swap (a port
 // of quickbooks-sync's D1TokenStore keyed by `app`). Monday rotates the refresh token on every
@@ -42,7 +56,8 @@ export class D1AppTokenStore {
   async get(app: AppKey): Promise<StoredAppToken | null> {
     const row = await this.db
       .prepare(
-        `SELECT app, access_token, refresh_token, access_token_expires_at, authorized_user_id, status, version
+        `SELECT app, access_token, refresh_token, access_token_expires_at, authorized_user_id, status, version,
+                last_refresh_error_at, refresh_failing_since, refresh_error_alerted_at
          FROM oauth_tokens WHERE app = ?1`
       )
       .bind(app)
@@ -56,12 +71,15 @@ export class D1AppTokenStore {
       authorizedUserId: row.authorized_user_id,
       status: row.status,
       version: row.version,
+      lastRefreshErrorAt: row.last_refresh_error_at,
+      refreshFailingSince: row.refresh_failing_since,
+      refreshErrorAlertedAt: row.refresh_error_alerted_at,
     };
   }
 
   // Seeds or replaces the pair outright (consent flow, manual re-seed): bumps the version, sets
-  // status 'ok' and clears any lease.
-  async save(token: Omit<StoredAppToken, 'version' | 'status'>): Promise<void> {
+  // status 'ok' and clears any lease and refresh-failure state.
+  async save(token: NewAppToken): Promise<void> {
     await this.db
       .prepare(
         `INSERT INTO oauth_tokens (app, access_token, refresh_token, access_token_expires_at, authorized_user_id, status, version, updated_at)
@@ -75,7 +93,8 @@ export class D1AppTokenStore {
            updated_at = excluded.updated_at,
            version = oauth_tokens.version + 1,
            refresh_lease_token = NULL,
-           refresh_lease_until = NULL`
+           refresh_lease_until = NULL,
+           ${CLEAR_REFRESH_ERROR}`
       )
       .bind(
         token.app,
@@ -102,7 +121,7 @@ export class D1AppTokenStore {
   }
 
   // Compare-and-swap: writes only if the row is still at `expectedVersion` and `leaseToken`
-  // still holds the lease; bumps the version and clears the lease.
+  // still holds the lease; bumps the version and clears the lease and refresh-failure state.
   async saveRefreshed(app: AppKey, tokens: RefreshedTokens, expectedVersion: number, leaseToken: string): Promise<boolean> {
     const result = await this.db
       .prepare(
@@ -113,7 +132,8 @@ export class D1AppTokenStore {
            updated_at = ?4,
            version = version + 1,
            refresh_lease_token = NULL,
-           refresh_lease_until = NULL
+           refresh_lease_until = NULL,
+           ${CLEAR_REFRESH_ERROR}
          WHERE app = ?5 AND version = ?6 AND refresh_lease_token = ?7`
       )
       .bind(tokens.accessToken, tokens.refreshToken, tokens.accessTokenExpiresAt, new Date().toISOString(), app, expectedVersion, leaseToken)
@@ -140,6 +160,33 @@ export class D1AppTokenStore {
         `UPDATE oauth_tokens SET status = 'needs_consent', updated_at = ?2 WHERE app = ?1 AND status = 'ok' AND version = ?3`
       )
       .bind(app, new Date().toISOString(), expectedVersion)
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  // A refresh of the pair at `version` failed (anything but invalid_grant). Starts the failing
+  // run if none is open and moves the last-error time. Version-gated, so a failure for a pair
+  // that was replaced meanwhile records nothing.
+  async recordRefreshError(app: AppKey, version: number, now: Date): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE oauth_tokens SET refresh_failing_since = COALESCE(refresh_failing_since, ?1), last_refresh_error_at = ?1
+         WHERE app = ?2 AND version = ?3`
+      )
+      .bind(now.toISOString(), app, version)
+      .run();
+  }
+
+  // True only for the call that marks the current failing run as alerted, so a caller alerts once
+  // per run (the run ends with saveRefreshed or save). False when the row isn't failing, has
+  // moved past `version`, or was already alerted.
+  async markRefreshErrorAlerted(app: AppKey, version: number, now: Date): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `UPDATE oauth_tokens SET refresh_error_alerted_at = ?1
+         WHERE app = ?2 AND version = ?3 AND refresh_failing_since IS NOT NULL AND refresh_error_alerted_at IS NULL`
+      )
+      .bind(now.toISOString(), app, version)
       .run();
     return result.meta.changes === 1;
   }

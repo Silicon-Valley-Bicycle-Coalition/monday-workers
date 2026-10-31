@@ -80,7 +80,7 @@ function harness(opts: { responder?: Responder; gate?: Promise<void>; env?: Env 
       accessTokenExpiresAt: inMinutes(expiresInMinutes),
       authorizedUserId: '42',
     });
-  return { store, broker, tokenCalls, alerts, seed, sleeps: () => sleeps };
+  return { store, broker, tokenCalls, alerts, seed, env, sleeps: () => sleeps };
 }
 
 const quiet = () => vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -237,7 +237,7 @@ describe('TokenBroker', () => {
     expect(await harness().broker.token('sync')).toBe('acc-new-1');
   });
 
-  it('refreshAllIfDue refreshes apps within 40 minutes of expiry and isolates failures', async () => {
+  it('refreshAllIfDue refreshes apps within 8 hours of expiry, isolates failures, then rejects naming them', async () => {
     const errors = quiet();
     const h = harness({
       responder: (form) =>
@@ -246,14 +246,78 @@ describe('TokenBroker', () => {
           : { status: 200, body: { access_token: 'acc-sync-refreshed', refresh_token: 'ref-sync-refreshed', expires_in: 3600 } },
     });
     await h.seed('portal', -1); // due and expired, but Monday fails
-    await h.seed('sync', 35); // due: inside the 40-minute cron window, outside the 10-minute margin
-    await h.seed('readonly', 45); // not due
-    await expect(h.broker.refreshAllIfDue()).resolves.toBeUndefined();
+    await h.seed('sync', 7 * 60); // due: inside the 8-hour cron window, outside the 10-minute margin
+    await h.seed('readonly', 9 * 60); // not due
+    await expect(h.broker.refreshAllIfDue()).rejects.toThrow(/scheduled refresh failed for: portal$/);
     expect(h.tokenCalls.map((f) => f.get('client_id')).sort()).toEqual(['portal-id', 'sync-id']);
     expect((await h.store.get('sync'))?.accessToken).toBe('acc-sync-refreshed');
     expect((await h.store.get('portal'))?.accessToken).toBe('acc-old-portal');
     expect((await h.store.get('readonly'))?.version).toBe(1);
     expect(errors).toHaveBeenCalled();
+  });
+
+  it('refreshAllIfDue counts a failure the stored token papered over (fallback) as a failure', async () => {
+    quiet();
+    const h = harness({ responder: () => ({ status: 503, body: {} }) });
+    await h.seed('sync', 7 * 60); // valid for 7 h: obtain() hands it out, but the refresh failed
+    await expect(h.broker.refreshAllIfDue()).rejects.toThrow(/scheduled refresh failed for: sync$/);
+    expect(await h.store.get('sync')).toMatchObject({ status: 'ok', version: 1, lastRefreshErrorAt: NOW.toISOString() });
+  });
+
+  it('cron alerts once when refreshes keep failing and under 6 hours remain, and again after a recovery', async () => {
+    quiet();
+    let fail = true;
+    const h = harness({
+      responder: () =>
+        fail ? { status: 503, body: { error: 'server_error' } } : { status: 200, body: { access_token: 'acc-ok', refresh_token: 'ref-ok', expires_in: 86_400 } },
+    });
+    await h.seed('sync', 7 * 60); // failing, but 7 h left: record, don't alert yet
+    await h.broker.refreshAllIfDue().catch(() => {});
+    expect(h.alerts).toHaveLength(0);
+    expect((await h.store.get('sync'))?.refreshFailingSince).toBe(NOW.toISOString());
+
+    // Same streak, now with 5 h left (as if two hours of failing cron runs went by).
+    await h.env.DB.prepare('UPDATE oauth_tokens SET access_token_expires_at = ?1 WHERE app = ?2').bind(inMinutes(5 * 60), 'sync').run();
+    await h.broker.refreshAllIfDue().catch(() => {});
+    await h.broker.refreshAllIfDue().catch(() => {});
+    expect(h.alerts).toHaveLength(1);
+    expect(h.alerts[0]).toMatch(/\[sandbox\] the sync app's token refresh keeps failing/);
+    expect(h.alerts[0]).toMatch(/2026-10-30T15:00:00.000Z/);
+
+    // A successful refresh clears the state; a later streak alerts again.
+    fail = false;
+    await h.broker.refreshAllIfDue();
+    expect(await h.store.get('sync')).toMatchObject({ lastRefreshErrorAt: null, refreshFailingSince: null, refreshErrorAlertedAt: null });
+    fail = true;
+    await h.env.DB.prepare('UPDATE oauth_tokens SET access_token_expires_at = ?1 WHERE app = ?2').bind(inMinutes(60), 'sync').run();
+    await h.broker.refreshAllIfDue().catch(() => {});
+    expect(h.alerts).toHaveLength(2);
+  });
+
+  it('on-demand refresh failures record the error but leave the under-6-hours alert to the cron', async () => {
+    quiet();
+    const h = harness({ responder: () => ({ status: 503, body: {} }) });
+    await h.seed('sync', 5);
+    expect(await h.broker.token('sync')).toBe('acc-old-sync');
+    expect(h.alerts).toHaveLength(0);
+    expect((await h.store.get('sync'))?.lastRefreshErrorAt).toBe(NOW.toISOString());
+  });
+
+  it('invalid_client / unauthorized_client alert at once (once per streak), keep serving the stored token, and need no consent', async () => {
+    quiet();
+    for (const code of ['invalid_client', 'unauthorized_client']) {
+      const h = harness({ responder: () => ({ status: 401, body: { error: code, error_description: 'secret sync-secret wrong' } }) });
+      await h.seed('sync', 5);
+      expect(await h.broker.token('sync')).toBe('acc-old-sync');
+      expect(await h.broker.token('sync')).toBe('acc-old-sync');
+      await h.broker.refreshAllIfDue().catch(() => {});
+      expect(h.alerts).toHaveLength(1);
+      expect(h.alerts[0]).toMatch(new RegExp(`\\[sandbox\\] Monday rejected the sync app's client credentials \\(${code}\\)`));
+      expect(h.alerts[0]).toMatch(/SYNC_CLIENT_SECRET/);
+      expect(h.alerts[0]).not.toContain('sync-secret');
+      expect(await h.store.get('sync')).toMatchObject({ status: 'ok', version: 1 });
+      await h.env.DB.prepare('DELETE FROM oauth_tokens').run();
+    }
   });
 
   it('refreshAllIfDue skips missing and needs_consent apps without throwing', async () => {
@@ -306,7 +370,15 @@ describe('TokenBroker', () => {
     await capture(flaky.broker.token('portal'));
     await flaky.seed('readonly', 5);
     await capture(flaky.broker.token('readonly'));
-    await flaky.broker.refreshAllIfDue();
+    await capture(flaky.broker.refreshAllIfDue());
+
+    // invalid_client whose description echoes the secret: logs and alerts
+    const badClient = harness({
+      responder: (form) => ({ status: 401, body: { error: 'invalid_client', error_description: `bad secret ${form.get('client_secret')}` } }),
+    });
+    await badClient.seed('sync', 5);
+    await capture(badClient.broker.token('sync'));
+    await capture(badClient.broker.refreshAllIfDue());
 
     expect(thrown.length).toBeGreaterThanOrEqual(4);
     expect(logged.length).toBeGreaterThan(0);
@@ -321,7 +393,8 @@ describe('TokenBroker', () => {
       'portal-secret',
       'readonly-secret',
     ];
-    for (const text of [...thrown, ...rejected.alerts, ...flaky.alerts, ...logged]) {
+    expect(badClient.alerts).toHaveLength(1);
+    for (const text of [...thrown, ...rejected.alerts, ...flaky.alerts, ...badClient.alerts, ...logged]) {
       for (const secret of secrets) expect(text).not.toContain(secret);
     }
   });
