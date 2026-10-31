@@ -54,16 +54,38 @@ const noFetch = (async () => {
   throw new Error('fetch must not be called');
 }) as typeof fetch;
 
+// START_KEY is posted as a form field (never in the URL).
+function post(app: ReturnType<typeof createApp>, url: string, fields: Record<string, string>) {
+  return app.request(url, { method: 'POST', body: new URLSearchParams(fields) });
+}
+
 async function startAndGetState(app: ReturnType<typeof createApp>, name = 'sync'): Promise<string> {
-  const res = await app.request(`https://broker.test/oauth/start/${name}?key=the-start-key`);
+  const res = await post(app, `https://broker.test/oauth/start/${name}`, { key: 'the-start-key' });
   return new URL(res.headers.get('location')!).searchParams.get('state')!;
 }
 
-describe('GET /oauth/start/:app', () => {
+describe('/oauth/start/:app', () => {
+  it('GET shows the key form and never takes the key from the URL', async () => {
+    const { app } = appWith(noFetch);
+    const res = await app.request('https://broker.test/oauth/start/sync?key=the-start-key');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('method="post"');
+    expect(html).toContain('type="password" name="key"');
+    expect(res.headers.get('location')).toBeNull();
+    const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM oauth_pending').first<{ n: number }>();
+    expect(row?.n).toBe(0);
+  });
+
+  it('GET for an unknown app is 404', async () => {
+    const { app } = appWith(noFetch);
+    expect((await app.request('https://broker.test/oauth/start/nope')).status).toBe(404);
+  });
+
   it('start without the key is 403 and stores nothing', async () => {
     const { app } = appWith(noFetch);
-    for (const url of ['https://broker.test/oauth/start/sync', 'https://broker.test/oauth/start/sync?key=wrong']) {
-      expect((await app.request(url)).status).toBe(403);
+    for (const fields of [{}, { key: 'wrong' }] as Record<string, string>[]) {
+      expect((await post(app, 'https://broker.test/oauth/start/sync', fields)).status).toBe(403);
     }
     const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM oauth_pending').first<{ n: number }>();
     expect(row?.n).toBe(0);
@@ -71,22 +93,22 @@ describe('GET /oauth/start/:app', () => {
 
   it('is 403 when START_KEY is unset or empty, even for an empty key', async () => {
     const { app } = appWith(noFetch, { START_KEY: '' });
-    expect((await app.request('https://broker.test/oauth/start/sync?key=')).status).toBe(403);
-    expect((await app.request('https://broker.test/oauth/start/sync')).status).toBe(403);
+    expect((await post(app, 'https://broker.test/oauth/start/sync', { key: '' })).status).toBe(403);
+    expect((await post(app, 'https://broker.test/oauth/start/sync', {})).status).toBe(403);
     const { app: app2 } = appWith(noFetch, { START_KEY: undefined as unknown as string });
-    expect((await app2.request('https://broker.test/oauth/start/sync?key=undefined')).status).toBe(403);
+    expect((await post(app2, 'https://broker.test/oauth/start/sync', { key: 'undefined' })).status).toBe(403);
   });
 
-  it('unknown app is 404, but only after the key check', async () => {
+  it('a POSTed unknown app is 404, but only after the key check', async () => {
     const { app } = appWith(noFetch);
-    expect((await app.request('https://broker.test/oauth/start/nope?key=the-start-key')).status).toBe(404);
-    expect((await app.request('https://broker.test/oauth/start/nope?key=bad')).status).toBe(403);
+    expect((await post(app, 'https://broker.test/oauth/start/nope', { key: 'the-start-key' })).status).toBe(404);
+    expect((await post(app, 'https://broker.test/oauth/start/nope', { key: 'bad' })).status).toBe(403);
   });
 
   it('start redirects to auth.monday.com with the stored state and S256 challenge', async () => {
     const { app, store } = appWith(noFetch);
-    const res = await app.request('https://broker.test/oauth/start/sync?key=the-start-key');
-    expect(res.status).toBe(302);
+    const res = await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key' });
+    expect(res.status).toBe(303);
     const location = new URL(res.headers.get('location')!);
     expect(location.origin + location.pathname).toBe('https://auth.monday.com/oauth2/authorize');
     const q = location.searchParams;
@@ -107,7 +129,7 @@ describe('GET /oauth/start/:app', () => {
 
   it('is 500 naming the variable, without storing anything, when the app has no client id', async () => {
     const { app } = appWith(noFetch, { SYNC_CLIENT_ID: '' });
-    const res = await app.request('https://broker.test/oauth/start/sync?key=the-start-key');
+    const res = await post(app, 'https://broker.test/oauth/start/sync', { key: 'the-start-key' });
     expect(res.status).toBe(500);
     expect(await res.text()).toContain('SYNC_CLIENT_ID');
   });

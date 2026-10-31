@@ -71,9 +71,12 @@ Then, in a private browser window **logged into Monday as the right user** — *
 Integration** for sandbox, **SVBC Integrations** for production — open each of these and click
 Authorize (production: same paths on `svbc-monday-auth.svbc-account.workers.dev`):
 
-- [ ] `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/start/portal?key=<START_KEY>`
-- [ ] `…/oauth/start/sync?key=<START_KEY>`
-- [ ] `…/oauth/start/readonly?key=<START_KEY>`
+- [ ] `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/start/portal`
+- [ ] `…/oauth/start/sync`
+- [ ] `…/oauth/start/readonly`
+
+Each page asks for `START_KEY` (paste it from the password manager) and posts it; the key never
+goes in the URL, where Workers Logs and browser history would keep it.
 
 Each should end on a page naming the app, the Monday user and the scopes. A "wrong user" page
 means you were logged in as someone else: the token was revoked and nothing was stored; switch

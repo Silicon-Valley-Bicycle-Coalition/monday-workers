@@ -37,27 +37,34 @@ function appWith(fetchFn: typeof fetch, broker: { token(app: any): Promise<strin
   return createApp({ store: new D1AppTokenStore(env.DB), env: { ...testEnv, ...over }, fetchFn, now: () => new Date(), broker: broker ?? undefined });
 }
 
-const url = (extra = '') => `https://broker.test/oauth/probe/readonly?key=the-start-key&workspace=7${extra}`;
+const PROBE = 'https://broker.test/oauth/probe/readonly';
+// START_KEY is posted as a form field (never in the URL).
+const probe = (app: ReturnType<typeof createApp>, fields: Record<string, string> = { key: 'the-start-key', workspace: '7' }, url = PROBE) =>
+  app.request(url, { method: 'POST', body: new URLSearchParams(fields) });
 
-describe('GET /oauth/probe/:app', () => {
+describe('/oauth/probe/:app', () => {
   it('probe requires the key', async () => {
     const { fetchFn, seen } = fakeMonday();
     const app = appWith(fetchFn);
-    expect((await app.request('https://broker.test/oauth/probe/readonly?workspace=7')).status).toBe(403);
-    expect((await app.request('https://broker.test/oauth/probe/readonly?key=wrong&workspace=7')).status).toBe(403);
-    expect((await app.request('https://broker.test/oauth/probe/nope?key=the-start-key&workspace=7')).status).toBe(404);
+    expect((await probe(app, { workspace: '7' })).status).toBe(403);
+    expect((await probe(app, { key: 'wrong', workspace: '7' })).status).toBe(403);
+    expect((await probe(app, { key: 'the-start-key', workspace: '7' }, 'https://broker.test/oauth/probe/nope')).status).toBe(404);
+    // A key in the URL is ignored: GET only shows the form.
+    const get = await app.request(`${PROBE}?key=the-start-key&workspace=7`);
+    expect(get.status).toBe(200);
+    expect(await get.text()).toContain('method="post"');
     expect(seen).toEqual([]);
   });
 
   it('requires a numeric workspace', async () => {
     const app = appWith(fakeMonday().fetchFn);
-    expect((await app.request('https://broker.test/oauth/probe/readonly?key=the-start-key')).status).toBe(400);
-    expect((await app.request('https://broker.test/oauth/probe/readonly?key=the-start-key&workspace=abc')).status).toBe(400);
+    expect((await probe(app, { key: 'the-start-key' })).status).toBe(400);
+    expect((await probe(app, { key: 'the-start-key', workspace: 'abc' })).status).toBe(400);
   });
 
   it('reports every check on success and sends the token both ways', async () => {
     const { fetchFn, seen } = fakeMonday();
-    const res = await appWith(fetchFn).request(url());
+    const res = await probe(appWith(fetchFn));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
     expect(body.me).toEqual({ id: '42', name: 'Sam' });
@@ -73,7 +80,7 @@ describe('GET /oauth/probe/:app', () => {
 
   it('probe reports each check independently when one fails', async () => {
     const { fetchFn } = fakeMonday('platform_api');
-    const res = await appWith(fetchFn).request(url());
+    const res = await probe(appWith(fetchFn));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, any>;
     expect(body.platformApi.ok).toBe(false);
@@ -86,13 +93,13 @@ describe('GET /oauth/probe/:app', () => {
   it('probe output never contains the token', async () => {
     for (const failing of [undefined, 'platform_api', 'complexity', 'boards(', 'me {']) {
       const { fetchFn } = fakeMonday(failing);
-      const res = await appWith(fetchFn).request(url());
+      const res = await probe(appWith(fetchFn));
       expect(await res.text()).not.toContain(TOKEN);
     }
     const throwing = (async () => {
       throw new Error(`network down for ${TOKEN}`);
     }) as typeof fetch;
-    const res = await appWith(throwing).request(url());
+    const res = await probe(appWith(throwing));
     const text = await res.text();
     expect(text).not.toContain(TOKEN);
     expect(res.status).toBe(200);
@@ -114,7 +121,7 @@ describe('GET /oauth/probe/:app', () => {
       }
       return base(u, init);
     }) as typeof fetch;
-    const res = await appWith(fetchFn).request(url());
+    const res = await probe(appWith(fetchFn));
     expect(res.status).toBe(200);
     expect(order[0]).toBe('complexity');
     expect(order.filter((o) => o === 'complexity')).toHaveLength(1);
@@ -129,7 +136,7 @@ describe('GET /oauth/probe/:app', () => {
       expect(init?.signal).toBeInstanceOf(AbortSignal);
       return base(u, init);
     }) as typeof fetch;
-    const res = await appWith(fetchFn).request(url());
+    const res = await probe(appWith(fetchFn));
     const text = await res.text();
     expect(text).not.toContain(TOKEN);
     const body = JSON.parse(text) as Record<string, any>;
@@ -147,33 +154,34 @@ describe('GET /oauth/probe/:app', () => {
       }) as typeof fetch;
       const broker = { token: async () => (brokerCalls++, TOKEN) };
       const app = appWith(fetchFn, broker, { PROBE_ENABLED: flag });
-      expect((await app.request(url())).status).toBe(404);
-      expect((await app.request('https://broker.test/oauth/probe/readonly?workspace=7')).status).toBe(404);
+      expect((await probe(app)).status).toBe(404);
+      expect((await probe(app, { workspace: '7' })).status).toBe(404);
+      expect((await app.request(PROBE)).status).toBe(404);
       expect(brokerCalls + fetchCalls).toBe(0);
     }
   });
 
   it('is 409 when the broker throws, and only mentions consent when it says so', async () => {
     const transient = appWith(fakeMonday().fetchFn, { token: async () => { throw new Error('D1 hiccup'); } });
-    const r1 = await transient.request(url());
+    const r1 = await probe(transient);
     expect(r1.status).toBe(409);
     expect(await r1.text()).not.toMatch(/consent/i);
     const consent = appWith(fakeMonday().fetchFn, {
       token: async () => { throw new Error('monday-auth: the readonly app needs consent; re-run'); },
     });
-    const r2 = await consent.request(url());
+    const r2 = await probe(consent);
     expect(r2.status).toBe(409);
     expect(await r2.text()).toMatch(/consent/i);
   });
 
   it('is 500 when no broker is configured', async () => {
-    expect((await appWith(fakeMonday().fetchFn, null).request(url())).status).toBe(500);
+    expect((await probe(appWith(fakeMonday().fetchFn, null))).status).toBe(500);
   });
 
   it('never leaks the token from an HTTP error body that echoes it bare and as Bearer', async () => {
     const fetchFn = (async () =>
       Response.json({ error_message: `bad auth ${TOKEN} / Bearer ${TOKEN}` }, { status: 401 })) as typeof fetch;
-    const res = await appWith(fetchFn).request(url());
+    const res = await probe(appWith(fetchFn));
     const text = await res.text();
     expect(text).not.toContain(TOKEN);
     expect(JSON.parse(text).bareHeader.ok).toBe(false);

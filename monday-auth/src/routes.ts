@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { APPS, type AppKey } from './apps';
 import type { Env } from './env';
 import { runProbe } from './probe';
@@ -27,6 +27,19 @@ function page(title: string, lines: string[]): string {
   return `<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><h1>${esc(title)}</h1>${lines
     .map((l) => `<p>${l}</p>`)
     .join('')}`;
+}
+
+// START_KEY travels in a POST body, never the URL: request URLs land in Workers Logs and browser history.
+function keyForm(title: string, extraFields = ''): string {
+  return `<!doctype html><meta charset="utf-8"><title>${esc(title)}</title><h1>${esc(title)}</h1>` +
+    `<form method="post"><p><label>START_KEY <input type="password" name="key" autocomplete="off" required></label></p>` +
+    `${extraFields}<p><button type="submit">Continue</button></p></form>`;
+}
+
+async function formField(c: Context, name: string): Promise<string> {
+  const body = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
+  const value = (body as Record<string, unknown>)[name];
+  return typeof value === 'string' ? value : '';
 }
 
 function isAppKey(name: string): name is AppKey {
@@ -74,9 +87,16 @@ export function createApp(deps: RouteDeps): Hono {
     return c.json(out);
   });
 
-  // The key gates everything under /oauth/start, including the unknown-app 404.
-  app.get('/oauth/start/:app', async (c) => {
-    if (!(await keyMatches(c.req.query('key') ?? '', env.START_KEY))) return c.text('forbidden', 403);
+  // GET only shows the key form; nothing is checked or stored until it's posted.
+  app.get('/oauth/start/:app', (c) => {
+    const name = c.req.param('app');
+    if (!isAppKey(name)) return c.text('unknown app', 404);
+    return c.html(keyForm(`Authorize the ${name} app`));
+  });
+
+  // The key gates the POST, including the unknown-app 404.
+  app.post('/oauth/start/:app', async (c) => {
+    if (!(await keyMatches(await formField(c, 'key'), env.START_KEY))) return c.text('forbidden', 403);
     const name = c.req.param('app');
     if (!isAppKey(name)) return c.text('unknown app', 404);
     const creds = credentials(env, name);
@@ -95,18 +115,25 @@ export function createApp(deps: RouteDeps): Hono {
         codeChallenge: challenge,
         subdomain: env.MONDAY_SUBDOMAIN,
       }),
-      302
+      303
     );
   });
 
   // Verification aid for the Monday checks (token scope, header form, platform_api, complexity).
   // Off unless PROBE_ENABLED is exactly "true" (404 before the key check). Same key gate as /oauth/start; the response never includes the token.
-  app.get('/oauth/probe/:app', async (c) => {
+  app.get('/oauth/probe/:app', (c) => {
     if (env.PROBE_ENABLED !== 'true') return c.text('not found', 404);
-    if (!(await keyMatches(c.req.query('key') ?? '', env.START_KEY))) return c.text('forbidden', 403);
     const name = c.req.param('app');
     if (!isAppKey(name)) return c.text('unknown app', 404);
-    const workspace = c.req.query('workspace') ?? '';
+    return c.html(keyForm(`Probe the ${name} app`, `<p><label>Workspace id <input name="workspace" inputmode="numeric" required></label></p>`));
+  });
+
+  app.post('/oauth/probe/:app', async (c) => {
+    if (env.PROBE_ENABLED !== 'true') return c.text('not found', 404);
+    if (!(await keyMatches(await formField(c, 'key'), env.START_KEY))) return c.text('forbidden', 403);
+    const name = c.req.param('app');
+    if (!isAppKey(name)) return c.text('unknown app', 404);
+    const workspace = await formField(c, 'workspace');
     if (!/^\d+$/.test(workspace)) return c.text('workspace must be a numeric workspace id', 400);
     if (!broker) return c.text('probe is not configured', 500);
     let token: string;
