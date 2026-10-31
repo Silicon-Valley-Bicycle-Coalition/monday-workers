@@ -177,8 +177,18 @@ instead of overwriting the new one.
 ## Secrets
 
 Set with `wrangler secret put <NAME>` (never commit them) — the full list with descriptions is in
-`wrangler.jsonc`'s comments: `MONDAY_API_TOKEN`, `QB_CLIENT_ID`, `QB_CLIENT_SECRET`,
-`QB_WEBHOOK_VERIFIER_TOKEN`, `MONDAY_WEBHOOK_SECRET`.
+`wrangler.jsonc`'s comments: `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_WEBHOOK_VERIFIER_TOKEN`,
+`MONDAY_WEBHOOK_SECRET`.
+
+Monday access comes from the `monday-auth` broker, not a stored token. Both deployments bind
+`MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
+OAuth app — production (`svbc-quickbooks-sync`) to `svbc-monday-auth`, sandbox (`--env sandbox`) to
+`svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per request and
+re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the cutover is under
+way (delete it once the binding works); with neither, building the Monday client throws a config
+error naming both. Operator scripts (`scripts/*.mjs`) keep reading `MONDAY_API_TOKEN` from the
+operator's shell. Local `wrangler dev` has no broker to call, so put a `MONDAY_API_TOKEN` in
+`.dev.vars` for it. Design: `docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 Monday doesn't sign webhook payloads, so the Monday webhook is authenticated by
 `MONDAY_WEBHOOK_SECRET` embedded in the subscription URL (same pattern as `mailchimp-sync`, but
