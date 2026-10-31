@@ -1,4 +1,4 @@
-import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type RequestOptions } from './graphql';
+import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type TokenProvider, type RequestOptions } from './graphql';
 import type { BoardColumn, ColumnMapping } from '../columns';
 
 export interface BoardSchema {
@@ -41,7 +41,9 @@ interface RawColumnValue { id: string; text: string | null; linked_item_ids?: st
 export class HttpMondayClient implements ReclassificationMondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options, apiVersion: MONDAY_API_VERSION });
   }
 
