@@ -117,10 +117,19 @@ picks one, and `src/config.ts` validates it.
 
 | Secret | Purpose |
 |---|---|
-| `MONDAY_API_TOKEN` | Reads Donations, People and users. Read-only use; the integration user's token. |
 | `DIGESTS_SECRET` | Bearer secret for `POST /digests/run`. Any random string. |
 
-Set each once per environment: `wrangler secret put <NAME>` and `wrangler secret put <NAME> --env sandbox`.
+Set it once per environment: `wrangler secret put DIGESTS_SECRET` and `wrangler secret put DIGESTS_SECRET --env sandbox`.
+
+Monday access (reads Donations, People and users) comes from the `monday-auth` broker, not a
+stored token. Both deployments bind `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its
+`ReadOnlyToken` entrypoint — the *SVBC Read-only* OAuth app — production to `svbc-monday-auth`,
+sandbox to `svbc-monday-auth-sandbox`; `src/monday/graphql.ts` `tokenProviderFor` asks it per
+request and re-asks once on a 401. A `MONDAY_API_TOKEN` secret is only the fallback while the
+cutover is under way (delete it once the binding works); with neither, building the Monday client
+throws a config error naming both. Local `wrangler dev` has no broker to call, so put a
+`MONDAY_API_TOKEN` in `.dev.vars` (or the `--env-file`) for it. Design:
+`docs/superpowers/specs/2026-10-30-monday-oauth-broker-design.md`.
 
 ## Sandbox environment
 
@@ -140,7 +149,8 @@ sandbox email from any Worker.
 1. `config/svbc.json`: set `boards.donations` and `boards.people` to the production board ids.
 2. Run `salesforce-import`'s `configure` for `donations` and `people-live` (the normal step 4),
    which creates the three new views.
-3. `wrangler secret put MONDAY_API_TOKEN` and `wrangler secret put DIGESTS_SECRET`, then
+3. Confirm the production broker's Read-only app is consented (`MONDAY_AUTH`), and
+   `wrangler secret put DIGESTS_SECRET`, then
    `node scripts/flags.mjs report-digests writes on --env production` (repo root), then
    `npm run deploy`.
 4. Check one digest with the operator route, e.g. `key=fiscal-year-by-size`.

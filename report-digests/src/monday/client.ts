@@ -1,4 +1,4 @@
-import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions } from './graphql';
+import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
 
 export interface BoardColumn { id: string; title: string; type: string }
 export interface Board { id: string; name: string; columns: BoardColumn[]; views: { id: string; name: string }[] }
@@ -53,7 +53,9 @@ function toItem(raw: RawItem, columnIds: string[]): Item {
 export class HttpMondayClient implements DigestsMondayClient {
   private readonly transport: MondayGraphQL;
 
-  constructor(apiUrl: string, apiToken: string, options: MondayGraphQLOptions = {}) {
+  // A fixed token, or the MONDAY_AUTH broker's provider (tokenProviderFor) — passed through to
+  // MondayGraphQL, which re-asks a provider once on a 401.
+  constructor(apiUrl: string, apiToken: string | TokenProvider, options: MondayGraphQLOptions = {}) {
     this.transport = new MondayGraphQL(apiUrl, apiToken, { ...DEFAULT_OPTIONS, ...options, apiVersion: MONDAY_API_VERSION });
   }
 
