@@ -11,6 +11,8 @@
     "dev:local": "wrangler dev --config wrangler.local.jsonc",
     "deploy": "wrangler deploy",
     "deploy:sandbox": "wrangler deploy --env sandbox",
+    "deploy:writer": "wrangler deploy -c wrangler.writer.jsonc",
+    "deploy:writer:sandbox": "wrangler deploy -c wrangler.writer.jsonc --env sandbox",
     "typecheck": "wrangler types --include-runtime=false && tsc --noEmit"
   },
   "keywords": [],

@@ -76,15 +76,26 @@ export function createApp(deps: RouteDeps): Hono {
   const { store, env, fetchFn, now, broker } = deps;
   const app = new Hono();
 
+  // Status only: no token, no error text, and whether alerts can be sent (never the webhook URL).
   app.get('/health', async (c) => {
-    const out: { app: AppKey; status: 'ok' | 'needs_consent' | 'missing'; expiresAt?: string }[] = [];
+    type AppHealth = {
+      app: AppKey;
+      status: 'ok' | 'needs_consent' | 'missing';
+      expiresAt?: string;
+      lastRefreshErrorAt?: string;
+    };
+    const apps: AppHealth[] = [];
     for (const key of Object.keys(APPS) as AppKey[]) {
       const row = await store.get(key);
-      if (row === null) out.push({ app: key, status: 'missing' });
-      else if (row.status === 'needs_consent') out.push({ app: key, status: 'needs_consent' });
-      else out.push({ app: key, status: 'ok', expiresAt: row.accessTokenExpiresAt });
+      if (row === null) apps.push({ app: key, status: 'missing' });
+      else if (row.status === 'needs_consent') apps.push({ app: key, status: 'needs_consent' });
+      else {
+        const entry: AppHealth = { app: key, status: 'ok', expiresAt: row.accessTokenExpiresAt };
+        if (row.lastRefreshErrorAt !== null) entry.lastRefreshErrorAt = row.lastRefreshErrorAt;
+        apps.push(entry);
+      }
     }
-    return c.json(out);
+    return c.json({ alerts: env.SLACK_WEBHOOK_URL ? 'configured' : 'unconfigured', apps });
   });
 
   // GET only shows the key form; nothing is checked or stored until it's posted.
@@ -149,7 +160,7 @@ export function createApp(deps: RouteDeps): Hono {
         409
       );
     }
-    return c.json(await runProbe(token, workspace, fetchFn));
+    return c.json(await runProbe(name, token, workspace, fetchFn));
   });
 
   app.get('/oauth/callback', async (c) => {

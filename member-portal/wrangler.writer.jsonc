@@ -1,0 +1,84 @@
+{
+  // member-portal-writer: the change-requests queue consumer, split out of the portal so the
+  // portal can be read-only on Monday (its broker binding is PortalToken). This Worker holds the
+  // write credential (SyncToken) and serves no traffic — no routes, no workers.dev. Deploy:
+  // `npm run deploy:writer` / `deploy:writer:sandbox`, AFTER the portal: Queues allows one
+  // consumer Worker per queue, so the old portal consumer must be gone before this one attaches
+  // (change requests wait in the queue meanwhile; see DEPLOY.md). Source: src/writer.ts.
+  "name": "svbc-member-portal-writer",
+  "main": "src/writer.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "workers_dev": false,
+  "preview_urls": false,
+  // The portal's database. Migrations are applied from wrangler.jsonc only (the portal owns the
+  // schema), so no migrations_dir here.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-member-portal",
+      "database_id": "de5bdf9d-d1fd-4f8c-aeb5-d49df43a6c41"
+    }
+  ],
+  // The write-switch flags: same namespace as every in-scope Worker (scripts/flags.mjs); the
+  // writer reads the portal's `member-portal` keys, so one switch governs both.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  "limits": { "cpu_ms": 100 },
+  "queues": {
+    "consumers": [
+      {
+        "queue": "member-portal-change-requests",
+        "max_retries": 100,
+        // Single consumer at a time — Monday's per-token complexity budget punishes
+        // concurrent writers during a backlog drain.
+        "max_concurrency": 1,
+        "dead_letter_queue": "member-portal-change-requests-dlq"
+      }
+    ]
+  },
+  // Monday access: the monday-auth broker's SyncToken entrypoint (write scope).
+  // src/monday/graphql.ts tokenProviderFor prefers this binding over a MONDAY_API_TOKEN secret.
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy -c wrangler.writer.jsonc --env sandbox` (npm run deploy:writer:sandbox)
+  // deploys svbc-member-portal-writer-sandbox. Non-inheritable bindings are restated, mirroring
+  // the portal's env.sandbox. ENVIRONMENT selects config/sandbox.json.
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "workers_dev": false,
+      "preview_urls": false,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-member-portal-sandbox",
+          "database_id": "490a0d98-e168-46eb-a4ee-ef28ecf92043"
+        }
+      ],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "limits": { "cpu_ms": 100 },
+      "queues": {
+        "consumers": [
+          {
+            "queue": "member-portal-change-requests-sandbox",
+            "max_retries": 100,
+            "max_concurrency": 1,
+            "dead_letter_queue": "member-portal-change-requests-sandbox-dlq"
+          }
+        ]
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }],
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      }
+    }
+  }
+}

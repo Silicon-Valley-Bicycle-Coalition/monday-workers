@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every deployed Worker gets its Monday access from a new `monday-auth` broker Worker holding OAuth 2.1 tokens for three apps (Portal, Staff sync, Read-only), all authorized by one *SVBC Integrations* user, instead of a personal `MONDAY_API_TOKEN`.
+**Goal:** Every deployed Worker gets its Monday access from a new `monday-auth` broker Worker holding OAuth 2.1 tokens for three apps (Portal, Staff sync, Read-only), all authorized by one *SVBC Integration* user, instead of a personal `MONDAY_API_TOKEN`.
 
 **Architecture:** `monday-auth` owns the OAuth client secrets and a D1 table of tokens per app, refreshes under a single-refresher lease with compare-and-swap (the `quickbooks-sync` token-store pattern), and exposes one `WorkerEntrypoint` per app. Consumers bind to their app's entrypoint (`MONDAY_AUTH`) and pass a token *provider* into the shared `graphql.ts` transport, which asks again once on a 401. The portal becomes read-only: its change-request queue is consumed by a second deploy of the same code, `member-portal-writer`, bound to the Staff sync token.
 
@@ -16,7 +16,7 @@
 - `monday-backup/src/monday/graphql.ts` is canonical; the 11 copies listed in `.gitlab-ci.yml` job `monday-graphql-copies` stay byte-identical, and the file stays strip-only TypeScript (no constructor parameter properties, enums, namespaces).
 - Tests never call `api.monday.com` or `auth.monday.com`; inject `fetchFn`.
 - No HTTP response body and no log line ever contains an access or refresh token.
-- Token endpoint `POST https://auth.monday.com/oauth_ms/oauth/token`; revoke `POST https://auth.monday.com/oauth_ms/oauth/revoke`; PKCE `S256` required; `expires_in` 3600.
+- Token endpoint `POST https://auth.monday.com/oauth_ms/oauth/token`; revoke `POST https://auth.monday.com/oauth_ms/oauth/revoke`; PKCE `S256` required; `expires_in` 3600 (observed 2026-10-31: access tokens actually last about 24 h; the broker reads the JWT `exp`, so nothing depends on this number).
 - Refresh margin 10 minutes; proactive refresh cron every 30 minutes.
 - Scopes — Portal: `boards:read me:read`. Staff sync: `boards:read boards:write updates:write assets:read users:read notifications:write docs:write me:read`. Read-only: `boards:read updates:read assets:read docs:read users:read workspaces:read me:read`.
 - Admin/one-time tooling (salesforce-import, geo-filter, `scripts/*.mjs`, Workers' `scripts/*.mjs`, monday-backup restore CLI) keeps reading `MONDAY_API_TOKEN` from the operator's shell. Webhook registration stays human-owned.
@@ -37,9 +37,9 @@
 
 These gate Task 6 onward in sandbox and step 0.4 in production. Code tasks 1–5 don't need them.
 
-- **H1.** Create the *SVBC Integrations* Monday user (CRM member + Work Management member). Note its user id.
+- **H1.** Create the *SVBC Integration* Monday user (CRM member + Work Management member). Note its user id.
 - **H2.** In the Developer Center, create apps `SVBC Portal`, `SVBC Staff Sync`, `SVBC Read-only`. For each: OAuth & Permissions → scopes per Global Constraints; redirect URIs `https://svbc-monday-auth-sandbox.svbc-account.workers.dev/oauth/callback` and `https://svbc-monday-auth.svbc-account.workers.dev/oauth/callback`; draft version → **New OAuth Flow** on → promote live. Install each in the account.
-- **H3.** After Task 6 deploys the sandbox broker: `wrangler secret put` (in `monday-auth`, `--env sandbox`) `PORTAL_CLIENT_ID`, `PORTAL_CLIENT_SECRET`, `SYNC_CLIENT_ID`, `SYNC_CLIENT_SECRET`, `READONLY_CLIENT_ID`, `READONLY_CLIENT_SECRET`, `START_KEY` (any long random string), `SLACK_WEBHOOK_URL`. Then, logged into Monday as **Sandbox Integration**, open `/oauth/start/portal?key=…`, `/sync`, `/readonly` and approve. Same for production with SVBC Integrations at cutover step 0.4.
+- **H3.** After Task 6 deploys the sandbox broker: `wrangler secret put` (in `monday-auth`, `--env sandbox`) `PORTAL_CLIENT_ID`, `PORTAL_CLIENT_SECRET`, `SYNC_CLIENT_ID`, `SYNC_CLIENT_SECRET`, `READONLY_CLIENT_ID`, `READONLY_CLIENT_SECRET`, `START_KEY` (any long random string), `SLACK_WEBHOOK_URL`. Then, logged into Monday as **Sandbox Integration**, open `/oauth/start/portal?key=…`, `/sync`, `/readonly` and approve. Same for production with SVBC Integration at cutover step 0.4.
 
 ---
 
@@ -261,7 +261,7 @@ Repeat Task 7's recipe and test for each, in this order (runbook deploy order): 
 - [ ] **Step 2: Run** `npm test` — Expected: FAIL.
 - [ ] **Step 3: Implement.** Add `wrangler.writer.jsonc` to `worker-flags-copies`' FLAGS id check in `scripts/check-worker-flags.mjs` if it scans config files by name.
 - [ ] **Step 4: Run** `npm test && npm run typecheck` (typecheck both configs: `wrangler types -c wrangler.writer.jsonc` into a separate file if needed) — Expected: PASS.
-- [ ] **Step 5: Sandbox QA:** deploy writer first (`npm run deploy:writer:sandbox`), then the portal (`npm run deploy:sandbox`); delete the portal's sandbox `MONDAY_API_TOKEN`; submit a change request in the sandbox portal. Expected: item appears on the sandbox Change Requests board; portal pages render; `wrangler tail` on the portal shows no mutation.
+- [ ] **Step 5: Sandbox QA:** deploy the portal first (`npm run deploy:sandbox`), detach its old change-requests consumer if the deploy left it attached (`member-portal/DEPLOY.md`, Sandbox environment), then the writer (`npm run deploy:writer:sandbox`). Corrected 2026-10-31 by the final review: Queues allows one consumer per queue, so writer-first fails; change requests wait in the queue in between; delete the portal's sandbox `MONDAY_API_TOKEN`; submit a change request in the sandbox portal. Expected: item appears on the sandbox Change Requests board; portal pages render; `wrangler tail` on the portal shows no mutation.
 - [ ] **Step 6: Commit** `feat(member-portal): read-only portal; member-portal-writer consumes change requests`.
 
 ---
@@ -283,9 +283,9 @@ Repeat Task 7's recipe and test for each, in this order (runbook deploy order): 
 
 ### Task 11: Documentation, both repos
 
-**Files (monday-workers):** `README.md` ("Least-privilege Monday tokens" section rewritten: one SVBC Integrations user, broker, three apps, Sandbox Integration for sandbox via the sandbox broker, the accepted portal read exposure, board privacy still required), `CLAUDE.md` ("Monday API tokens are least-privilege by design" paragraph; add `monday-auth` to the sandbox Worker list).
+**Files (monday-workers):** `README.md` ("Least-privilege Monday tokens" section rewritten: one SVBC Integration user, broker, three apps, Sandbox Integration for sandbox via the sandbox broker, the accepted portal read exposure, board privacy still required), `CLAUDE.md` ("Monday API tokens are least-privilege by design" paragraph; add `monday-auth` to the sandbox Worker list).
 
-**Files (monday-migration, its own worktree per its CLAUDE.md):** `docs/23-cutover-runbook.md` row 0.4 (create SVBC Integrations; deploy `monday-auth`; H2–H3 for production; `/health` shows three `ok`), rows 3.8 (subscribe SVBC Integrations, not three users) and 4.x deploy rows (each Worker deploys with its binding, no `MONDAY_API_TOKEN`); `docs/25-remaining-tasks.md` #78 line; `migration-plan.md` seats table (integration users 4 → 2: SVBC Integrations, Sandbox Integration; CRM 7/10); `README.md` index if it lists specs.
+**Files (monday-migration, its own worktree per its CLAUDE.md):** `docs/23-cutover-runbook.md` row 0.4 (create SVBC Integration; deploy `monday-auth`; H2–H3 for production; `/health` shows three `ok`), rows 3.8 (subscribe SVBC Integration, not three users) and 4.x deploy rows (each Worker deploys with its binding, no `MONDAY_API_TOKEN`); `docs/25-remaining-tasks.md` #78 line; `migration-plan.md` seats table (integration users 4 → 2: SVBC Integration, Sandbox Integration; CRM 7/10); `README.md` index if it lists specs.
 
 - [ ] **Step 1:** Edit the files. **Step 2:** `grep -rn "three integration users\|member-portal.*own user\|MONDAY_API_TOKEN" README.md CLAUDE.md */README.md` in monday-workers — Expected: remaining hits are only admin/CLI tooling. **Step 3:** Commit in each repo (`docs: one integration user via the monday-auth broker`).
 - [ ] **Step 4 (needs David's OK before posting):** update #78's description checklist and #19 to the one-user plan via `glab`.
@@ -296,7 +296,7 @@ Repeat Task 7's recipe and test for each, in this order (runbook deploy order): 
 
 Operator task, in runbook order; listed so nothing is forgotten.
 
-- [ ] H1 done; `EXPECTED_USER_ID` set to SVBC Integrations' id in `monday-auth/wrangler.jsonc`; commit.
-- [ ] `npx wrangler d1 migrations apply svbc-monday-auth --remote`; `npm run deploy` in `monday-auth`; H3 for production as SVBC Integrations; `/health` three `ok`; `/oauth/probe/sync?key=…&workspace=18201685` shows `me` = SVBC Integrations.
-- [ ] Each Worker's production deploy (runbook 4.x) uses its binding; no production `MONDAY_API_TOKEN` is ever set on a Worker. `member-portal-writer` deploys before `member-portal`.
-- [ ] Runbook 3.8 board privacy: subscribe SVBC Integrations to the Workers' boards.
+- [ ] H1 done; `EXPECTED_USER_ID` set to SVBC Integration's id in `monday-auth/wrangler.jsonc`; commit.
+- [ ] `npx wrangler d1 migrations apply svbc-monday-auth --remote`; `npm run deploy` in `monday-auth`; H3 for production as SVBC Integration; `/health` three `ok`; `POST /oauth/probe/sync` (form fields `key` and `workspace=18201685`; the key is posted, never in the query string) shows `me` = SVBC Integration, with `PROBE_ENABLED` on for that deploy only (`monday-auth/README.md`, "Measuring production scope with the probe").
+- [ ] Each Worker's production deploy (runbook 4.x) uses its binding; no production `MONDAY_API_TOKEN` is ever set on a Worker. `member-portal` deploys before `member-portal-writer` (production never had a portal consumer, so either order works there; the sandbox needs portal first).
+- [ ] Runbook 3.8 board privacy: subscribe SVBC Integration to the Workers' boards.

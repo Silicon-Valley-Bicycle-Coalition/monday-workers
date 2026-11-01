@@ -1,14 +1,20 @@
 import { APPS, type AppKey } from './apps';
 import type { Env } from './env';
-import { refresh, RefreshRejectedError, type FetchFn } from './mondayOAuth';
+import { ClientRejectedError, refresh, RefreshRejectedError, type FetchFn } from './mondayOAuth';
 import type { D1AppTokenStore, StoredAppToken } from './tokenStore';
 
 // On-demand: refresh once fewer than this many ms remain, so no consumer is handed a token
 // about to expire.
 export const REFRESH_MARGIN_MS = 10 * 60_000;
-// Cron: the 30-minute cron plus the 10-minute margin, so a token never reaches the on-demand
-// margin between two cron runs and consumers rarely wait on a refresh.
-export const CRON_REFRESH_WINDOW_MS = 40 * 60_000;
+// Cron: start refreshing this long before expiry. Monday's access tokens last about 24 h, so this
+// costs one extra rotation every few days, and buys hours of retries (every 30 minutes) before a
+// failing refresh lets the stored token expire. It is also well over the 30-minute cron plus the
+// 10-minute margin, so consumers rarely wait on a refresh.
+export const CRON_REFRESH_WINDOW_MS = 8 * 60 * 60_000;
+// Cron: once refreshes have kept failing (anything but invalid_grant) and less than this is left
+// on the stored token, alert once for that run of failures. The stored token is still handed out
+// meanwhile, so this is the time a human has before every consumer of the app fails.
+export const REFRESH_FAILING_ALERT_MS = 6 * 60 * 60_000;
 // Long enough to cover one token-endpoint call (10 s timeout) plus the D1 write.
 export const LEASE_TTL_MS = 30_000;
 // A caller that loses the lease polls this many times, this far apart: it returns as soon as the
@@ -25,7 +31,8 @@ export interface TokenBrokerDeps {
   alert: (text: string) => Promise<void>;
 }
 
-// A refresh failed for a reason other than invalid_grant (network, 5xx, malformed response).
+// A refresh failed for a reason other than invalid_grant (network, 5xx, malformed response, or a
+// rejected client, which also alerts).
 class TransientRefreshError extends Error {}
 
 function errorMessage(err: unknown): string {
@@ -54,17 +61,45 @@ export class TokenBroker {
 
   // For the cron: refresh every app within CRON_REFRESH_WINDOW_MS of expiry. Apps are
   // independent — one failing doesn't stop the others — and an app that is missing or needs
-  // consent is skipped (its state was already alerted on).
+  // consent is skipped (its state was already alerted on). Rejects at the end, naming every app
+  // whose refresh failed, so the cron invocation shows as failed rather than passing silently;
+  // that includes a failure obtain() papered over by handing out the still-valid stored token.
   async refreshAllIfDue(): Promise<void> {
+    const failed: AppKey[] = [];
     for (const app of Object.keys(APPS) as AppKey[]) {
       try {
         const row = await this.deps.store.get(app);
         if (row === null || row.status !== 'ok' || this.remainingMs(row) > CRON_REFRESH_WINDOW_MS) continue;
-        await this.obtain(app, undefined, CRON_REFRESH_WINDOW_MS);
+        try {
+          await this.obtain(app, undefined, CRON_REFRESH_WINDOW_MS);
+        } catch (err) {
+          console.error(`monday-auth: scheduled refresh of the ${app} app failed: ${errorMessage(err)}`);
+        }
+        if (await this.alertIfFailingNearExpiry(app)) failed.push(app);
       } catch (err) {
         console.error(`monday-auth: scheduled refresh of the ${app} app failed: ${errorMessage(err)}`);
+        failed.push(app);
       }
     }
+    if (failed.length > 0) throw new Error(`monday-auth: scheduled refresh failed for: ${failed.join(', ')}`);
+  }
+
+  // After the cron's refresh attempt: true if the app is in a run of failed refreshes. Alerts
+  // once per run, when under REFRESH_FAILING_ALERT_MS is left on the stored token.
+  private async alertIfFailingNearExpiry(app: AppKey): Promise<boolean> {
+    const row = await this.deps.store.get(app);
+    if (row === null || row.status !== 'ok' || row.refreshFailingSince === null) return false;
+    // `!(x >= limit)` also catches an unparseable expiry (NaN).
+    if (!(this.remainingMs(row) >= REFRESH_FAILING_ALERT_MS) && (await this.deps.store.markRefreshErrorAlerted(app, row.version, this.deps.now()))) {
+      await this.deps
+        .alert(
+          `[${this.deps.env.ENVIRONMENT}] the ${app} app's token refresh keeps failing (since ${row.refreshFailingSince}, ` +
+            `last at ${row.lastRefreshErrorAt}). Its stored token expires at ${row.accessTokenExpiresAt}; after that every ` +
+            `consumer of the app fails. Check the broker's logs for the cause (Monday outage, network) and /health.`
+        )
+        .catch(() => {});
+    }
+    return true;
   }
 
   private async obtain(app: AppKey, rejected: string | undefined, marginMs: number): Promise<string> {
@@ -170,8 +205,28 @@ export class TokenBroker {
         }
         throw new Error(`monday-auth: the ${app} app needs consent; its refresh token was rejected, re-run its consent flow`);
       }
-      // Network / 5xx / malformed response: retryable. Free the lease so the next caller can try.
+      // Everything else (network, 5xx, malformed response, a rejected client): retryable as far as
+      // consumers go, since the stored token may still work. Record it for the cron's alert and
+      // /health, then free the lease so the next caller can try. The record is best effort: a D1
+      // failure here must not replace the refresh error.
+      const now = this.deps.now();
+      await store.recordRefreshError(app, row.version, now).catch(() => {});
       await store.releaseRefreshLease(app, leaseToken).catch(() => {});
+      if (err instanceof ClientRejectedError) {
+        // No retry fixes these, so alert now rather than waiting for the cron's near-expiry alert
+        // (once per run of failures: the same flag that alert uses).
+        if (await store.markRefreshErrorAlerted(app, row.version, now).catch(() => false)) {
+          const { clientIdVar, clientSecretVar } = APPS[app];
+          await this.deps
+            .alert(
+              `[${this.deps.env.ENVIRONMENT}] Monday rejected the ${app} app's client credentials (${err.code}). ` +
+                `Check that ${clientIdVar} and ${clientSecretVar} in Cloudflare match the app in the Developer Center ` +
+                `and that the app is still installed (re-run its consent flow if not). The stored token is handed ` +
+                `out until it expires at ${row.accessTokenExpiresAt}.`
+            )
+            .catch(() => {});
+        }
+      }
       throw new TransientRefreshError(`monday-auth: refresh of the ${app} app failed (retryable): ${errorMessage(err)}`);
     }
 

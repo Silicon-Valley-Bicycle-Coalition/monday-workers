@@ -33,8 +33,10 @@ describe('scheduled', () => {
     const store = new D1AppTokenStore(env.DB);
     await store.putPending('stale', 'portal', 'v', 'https://a.test/cb', new Date(Date.now() - 60 * 60_000));
     vi.spyOn(TokenBroker.prototype, 'refreshAllIfDue').mockRejectedValue(new Error('boom'));
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    await worker.scheduled({} as ScheduledController, testEnv, ctx);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Still fails the invocation (visible in the Worker's cron events), after running the purge.
+    await expect(worker.scheduled({} as ScheduledController, testEnv, ctx)).rejects.toThrow(/scheduled refresh failed: boom/);
+    expect(errors.mock.calls.map((c) => c.join(' ')).join('\n')).toMatch(/scheduled refresh failed: boom/);
     const row = await env.DB.prepare('SELECT 1 FROM oauth_pending WHERE state = ?1').bind('stale').first();
     expect(row).toBeNull();
   });
@@ -43,7 +45,7 @@ describe('scheduled', () => {
     const refresh = vi.spyOn(TokenBroker.prototype, 'refreshAllIfDue').mockResolvedValue();
     vi.spyOn(D1AppTokenStore.prototype, 'purgeExpiredPending').mockRejectedValue(new Error('db down'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await worker.scheduled({} as ScheduledController, testEnv, ctx);
+    await expect(worker.scheduled({} as ScheduledController, testEnv, ctx)).rejects.toThrow(/purging abandoned consent rows failed: db down/);
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
@@ -52,6 +54,6 @@ describe('fetch', () => {
   it('serves /health through the app', async () => {
     const res = await worker.fetch(new Request('https://broker.test/health'), testEnv, ctx);
     expect(res.status).toBe(200);
-    expect(Array.isArray(await res.json())).toBe(true);
+    expect(Array.isArray(((await res.json()) as { apps: unknown }).apps)).toBe(true);
   });
 });

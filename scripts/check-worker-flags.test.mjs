@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { IN_SCOPE, checkIds, findDrift, flagsIds } from './check-worker-flags.mjs';
+import { IN_SCOPE, checkIds, configFiles, findDrift, flagsIds } from './check-worker-flags.mjs';
 
 const wrangler = `{
   // top-level
@@ -49,4 +49,20 @@ it('IN_SCOPE names the twelve Workers', () => {
   assert.equal(IN_SCOPE.length, 12);
   assert.ok(IN_SCOPE.includes('report-digests'));
   assert.ok(IN_SCOPE.includes('member-portal'));
+});
+
+describe('configFiles', () => {
+  it('always checks wrangler.jsonc', () => {
+    assert.deepEqual(configFiles('w', () => false), ['w/wrangler.jsonc']);
+  });
+  it('also checks wrangler.writer.jsonc when it exists', () => {
+    assert.deepEqual(configFiles('member-portal', () => true), ['member-portal/wrangler.jsonc', 'member-portal/wrangler.writer.jsonc']);
+  });
+  it('flags a writer config whose FLAGS ids differ', () => {
+    const list = [
+      { worker: 'member-portal/wrangler.jsonc', production: 'p', sandbox: 's' },
+      { worker: 'member-portal/wrangler.writer.jsonc', production: 'p', sandbox: 'other' },
+    ];
+    assert.deepEqual(checkIds(list), ['member-portal/wrangler.writer.jsonc']);
+  });
 });

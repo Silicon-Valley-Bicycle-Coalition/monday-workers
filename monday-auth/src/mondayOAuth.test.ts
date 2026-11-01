@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { authorizeUrl, exchangeCode, fetchMe, pkcePair, refresh, RefreshRejectedError, revoke } from './mondayOAuth';
+import {
+  authorizeUrl,
+  ClientRejectedError,
+  exchangeCode,
+  fetchMe,
+  pkcePair,
+  refresh,
+  RefreshRejectedError,
+  revoke,
+} from './mondayOAuth';
 
 const TOKEN_URL = 'https://auth.monday.com/oauth_ms/oauth/token';
 
@@ -106,6 +115,23 @@ describe('mondayOAuth', () => {
     await expect(p).rejects.toThrow(/503/);
     await expect(p).rejects.not.toBeInstanceOf(RefreshRejectedError);
     await expect(p).rejects.not.toThrow(/old-ref/);
+  });
+
+  it('invalid_client and unauthorized_client throw ClientRejectedError with the code, never the secret or token', async () => {
+    for (const [status, code] of [
+      [401, 'invalid_client'],
+      [400, 'unauthorized_client'],
+    ] as const) {
+      const p = refresh(
+        { clientId: 'cid', clientSecret: 'sec-VALUE', refreshToken: 'old-ref' },
+        fakeFetch(status, { error: code, error_description: 'client sec-VALUE / token old-ref not allowed' })
+      );
+      await expect(p).rejects.toBeInstanceOf(ClientRejectedError);
+      await expect(p).rejects.toMatchObject({ code });
+      await expect(p).rejects.toThrow(`monday oauth refresh: HTTP ${status} ${code}`);
+      await expect(p).rejects.not.toThrow(/sec-VALUE|old-ref/);
+      await expect(p).rejects.not.toBeInstanceOf(RefreshRejectedError);
+    }
   });
 
   it('expiresAt falls back to JWT exp when expires_in is missing', async () => {

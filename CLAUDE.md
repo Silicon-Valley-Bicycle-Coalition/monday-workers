@@ -172,7 +172,8 @@ source — the goal is that another org's fork is a config change, not a rewrite
 
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
-`benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`, `report-digests`; not `svbc-calendars`) carries a
+`benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`, `report-digests`,
+`member-portal-writer`, `monday-auth`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
@@ -237,13 +238,16 @@ calls mostly render a donor's page, where a multi-second backoff is worse than a
 donor can reload past. Everything the transport throws is a `MondayApiError` (`httpStatus`,
 `code`, `retryAfterSeconds`), so a queue consumer can pick its delay from the failure.
 
-**Monday API tokens are least-privilege by design:** mint from dedicated integration users scoped
-per exposure class (the public-facing `member-portal` gets its own user with access to only the
-boards it reads), never a staff member's personal token — see the root README for why. A
-dedicated user is not by itself a scoped one (#18): any Monday team member can read and edit
-every Main board in every open workspace, so "only the boards it reads" holds only for private
-boards. Never describe a token as scoped without running
-`node scripts/check-monday-token-scope.mjs --workspace <id>` against it.
+**Monday API tokens are least-privilege by design:** Workers never hold a Monday token. One
+integration user (SVBC Integration; Sandbox Integration in the sandbox) authorizes three OAuth apps
+(Portal, Staff sync, Read-only, each environment with its own set), the `monday-auth` broker holds
+the tokens, and a Worker's service binding (`PortalToken`, `SyncToken`, `ReadOnlyToken`) picks its
+app. New Workers bind an entrypoint (CI checks it) instead of adding a `MONDAY_API_TOKEN` secret;
+never use a staff member's personal token. One user is not a scoped one (#18): any Monday team
+member can read and edit every Main board in every open workspace, so "only the boards it reads"
+holds only for private boards, and the internet-facing `member-portal`'s read-only token can read
+everything the user can see (accepted; see the root README). Never describe a token as scoped
+without running `node scripts/check-monday-token-scope.mjs --workspace <id>` against it.
 
 **`data/` directories** (e.g. in `salesforce-import`) hold real extracted donor PII pulled from
 Salesforce and are gitignored per-Worker. Never remove that ignore rule or commit real data.

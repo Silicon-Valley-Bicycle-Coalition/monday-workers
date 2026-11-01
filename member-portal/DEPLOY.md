@@ -27,7 +27,13 @@ read-only portal (donations, membership, discounts) work as soon as Phase 1–5 
 2. **Change Requests board:** create a staff-owned board with five columns: connect-boards →
    People/Donors, `Field` (text), `Old Value` (text), `New Value` (text), `Submitted At`
    (date). Restrict board access to staff who process changes.
-3. **Integration user:** create a dedicated Monday user (e.g. `member-portal@bikesiliconvalley.org`)
+3. **Monday access (OAuth broker):** the portal reads Monday through the `svbc-monday-auth`
+   broker's read-only `PortalToken` entrypoint and `member-portal-writer` writes Change Requests
+   through `SyncToken` (service bindings in `wrangler.jsonc` / `wrangler.writer.jsonc`) — no
+   Monday token is stored on either Worker, so skip the token steps below once the broker is
+   deployed and consented. The paragraph that follows is the legacy fixed-token route (the
+   `MONDAY_API_TOKEN` fallback `tokenProviderFor` still honours when `MONDAY_AUTH` is unbound):
+   create a dedicated Monday user (e.g. `member-portal@bikesiliconvalley.org`)
    per the root README's least-privilege convention. Give it access to exactly five boards:
    Donors/People, Donations, Organizations, Membership (if separate), and Change Requests —
    the first four effectively read-only (viewer where the plan allows), Change Requests with
@@ -86,7 +92,7 @@ wrangler queues create member-portal-change-requests
 wrangler queues create member-portal-change-requests-dlq
 wrangler queues create member-portal-letter-emails
 wrangler queues create member-portal-letter-emails-dlq
-wrangler secret put MONDAY_API_TOKEN        # paste Phase 1 token
+# No MONDAY_API_TOKEN: Monday access is the MONDAY_AUTH broker binding (see Phase 1).
 wrangler secret put LETTER_WEBHOOK_SECRET   # a fresh random string — never the sandbox value
                                              # (no email secret to set — the send_email binding
                                              # in wrangler.jsonc needs no API key)
@@ -113,7 +119,11 @@ Commit the `database_id` edit, then:
 ```sh
 npm test && npm run typecheck
 npm run deploy
+npm run deploy:writer   # the change-requests consumer lives in member-portal-writer
 ```
+
+Production's portal never consumed `member-portal-change-requests`, so either order works here;
+portal first just matches the sandbox. Change requests wait in the queue until the writer is up.
 
 ## Sandbox environment (independent of Phases 1–5)
 
@@ -146,7 +156,7 @@ wrangler queues create member-portal-change-requests-sandbox
 wrangler queues create member-portal-change-requests-sandbox-dlq
 wrangler queues create member-portal-letter-emails-sandbox
 wrangler queues create member-portal-letter-emails-sandbox-dlq
-wrangler secret put MONDAY_API_TOKEN --env sandbox      # the sandbox integration user's token
+# No MONDAY_API_TOKEN: the sandbox broker binding (svbc-monday-auth-sandbox) supplies Monday access.
 wrangler secret put LETTER_WEBHOOK_SECRET --env sandbox # any fresh random string
 ```
 
@@ -161,8 +171,31 @@ box with a past start date would queue up to `maxTriggersPerRun` (200) letter em
 
 ```sh
 npm test && npm run typecheck
-npm run deploy:sandbox
+npm run deploy:sandbox          # first: drops the portal's change-requests consumer from its config
+npm run deploy:writer:sandbox   # then: svbc-member-portal-writer-sandbox consumes change requests
 ```
+
+**Portal first, then the writer.** Cloudflare Queues allows one consumer Worker per queue, and
+`svbc-member-portal-sandbox` consumed `member-portal-change-requests-sandbox` until the consumer
+moved to the writer, so the writer can't attach while the portal still does. Change requests the
+portal enqueues in between simply wait in the queue. CI's `deploy-sandbox:member-portal-writer`
+job `needs` the portal's for the same reason.
+
+**One-time fallback, first deploy after the split:** `wrangler deploy` attaches the consumers a
+config lists, but (as of wrangler 4.156) it doesn't detach one the config dropped, so the old
+portal consumer may still be attached after `npm run deploy:sandbox`, and the writer's deploy
+then fails on the second consumer. Check, and detach it if it is still there, before deploying
+the writer:
+
+```sh
+npx wrangler queues consumer worker list member-portal-change-requests-sandbox   # who consumes it
+npx wrangler queues consumer worker remove member-portal-change-requests-sandbox svbc-member-portal-sandbox
+npm run deploy:writer:sandbox
+npx wrangler queues info member-portal-change-requests-sandbox                    # one consumer: the writer
+```
+
+If CI ran the writer job before the detach, re-run that job afterwards. Production never had a
+portal consumer, so this never applies there.
 
 The deploy attaches the custom domain `member.sandbox.bikesiliconvalley.org` (declared in
 `env.sandbox.routes`; the zone is on Cloudflare, so no manual DNS).

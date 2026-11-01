@@ -54,17 +54,22 @@ export default {
   },
 
   // Refresh tokens that are near expiry and drop abandoned consent rows. Independent: one
-  // failing must not skip the other.
+  // failing must not skip the other. Each failure is logged, and the invocation then rejects so
+  // the cron run shows as failed in the Worker's cron events instead of passing silently. The
+  // messages carry no token: the broker's and the store's errors never do.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const failures: string[] = [];
     try {
       await brokerFor(env).refreshAllIfDue();
     } catch (err) {
-      console.error(`monday-auth: scheduled refresh failed: ${err instanceof Error ? err.message : 'error'}`);
+      failures.push(`monday-auth: scheduled refresh failed: ${err instanceof Error ? err.message : 'error'}`);
     }
     try {
       await new D1AppTokenStore(env.DB).purgeExpiredPending(new Date());
     } catch (err) {
-      console.error(`monday-auth: purging abandoned consent rows failed: ${err instanceof Error ? err.message : 'error'}`);
+      failures.push(`monday-auth: purging abandoned consent rows failed: ${err instanceof Error ? err.message : 'error'}`);
     }
+    for (const failure of failures) console.error(failure);
+    if (failures.length > 0) throw new Error(failures.join('; '));
   },
 };

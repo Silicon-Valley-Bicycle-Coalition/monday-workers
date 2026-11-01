@@ -158,7 +158,7 @@ and cannot be listed in the mapping. So:
   Requests when configured — both sent non-idempotent so a timeout is recorded, never retried blind.
 * **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind
   `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
-  OAuth app, consented as SVBC Integrations (production, `svbc-monday-auth`) or Sandbox Integration
+  OAuth app, consented as SVBC Integration (production, `svbc-monday-auth`) or Sandbox Integration
   (sandbox, `svbc-monday-auth-sandbox`) — which needs access to both People boards, Events, Event
   Registrations, Volunteers and (production) IT Requests; moving items needs edit rights on both
   boards. `src/monday/graphql.ts` `tokenProviderFor` asks the broker per request and re-asks once on

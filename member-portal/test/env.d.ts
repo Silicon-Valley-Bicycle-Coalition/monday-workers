@@ -1,7 +1,7 @@
 declare namespace Cloudflare {
   interface Env {
     DB: D1Database;
-    MONDAY_API_TOKEN: string;
+    MONDAY_API_TOKEN?: string;
     EMAIL: SendEmail;
     LOGIN_RATE_LIMITER: RateLimit;
     FLAGS: KVNamespace;

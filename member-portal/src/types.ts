@@ -1,5 +1,6 @@
 import type { Locale } from './i18n/locales';
 import type { WriteStamp } from './flags';
+import type { MondayTokenSource } from './monday/graphql';
 
 export interface MondayColumns {
   donorEmail: string;
@@ -342,9 +343,15 @@ export interface LetterSendQueueMessage extends WriteStamp {
 // Bindings (DB, queues, rate limiters) come from the generated Cloudflare.Env
 // (`npm run typecheck` regenerates the gitignored worker-configuration.d.ts from wrangler.jsonc —
 // a bare `tsc --noEmit` reads a missing or stale copy; see README "Development");
-// only secrets and narrowed queue message types are declared here.
-export interface Env extends Cloudflare.Env {
-  MONDAY_API_TOKEN: string;
+// only secrets, the MONDAY_AUTH binding (typed as the token source the generated Service stands
+// in for) and narrowed queue message types are declared here.
+export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
+  // Monday access: the monday-auth broker's PortalToken entrypoint (read-only scope) for the
+  // portal, SyncToken for member-portal-writer (wrangler.jsonc / wrangler.writer.jsonc services).
+  // The fixed MONDAY_API_TOKEN secret is only the fallback while the OAuth cutover is under way;
+  // tokenProviderFor (src/monday/graphql.ts) prefers the binding and throws if neither is set.
+  MONDAY_AUTH?: MondayTokenSource;
+  MONDAY_API_TOKEN?: string;
   EMAIL: SendEmail;
   CHANGE_QUEUE: Queue<ChangeQueueMessage>;
   LETTER_SEND_QUEUE: Queue<LetterSendQueueMessage>;
