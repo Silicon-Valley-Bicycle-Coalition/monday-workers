@@ -131,10 +131,11 @@ describe('validateConfig — membership block', () => {
     expect(() => validateConfig(bad)).toThrow(/membership\.currentTermStart/);
   });
 
-  it('the shipped production config/svbc.json validates with its placeholder ids', () => {
+  it('the shipped production config/svbc.json validates with the cutover board ids', () => {
     const cfg = validateConfig(rawConfig);
-    expect(cfg.donationRollups.donationBoards[0]!.boardId).toBe(0);
-    expect(cfg.custodian.annualSummaryBoardId).toBeNull();
+    expect(cfg.donationRollups.donationBoards[0]!.boardId).toBe(18437909794);
+    expect(cfg.custodian.workspaceId).toBe(18201685);
+    expect(cfg.custodian.annualSummaryBoardId).toBe(18438022323);
   });
 
   it('the shipped config/sandbox.json validates (the membership block may be on or off — see README "Enabling")', () => {
