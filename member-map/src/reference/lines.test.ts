@@ -36,11 +36,12 @@ describe('milesByPolygon', () => {
     expect(total).toBeCloseTo(lineMiles(coords), 4);
   });
 
-  it('counts a line lying along the shared edge at most once', () => {
+  it('counts a line lying along the shared edge exactly once', () => {
     const coords: [number, number][] = [[0.01, 0.002], [0.01, 0.008]];
     const m = milesByPolygon([line(coords)], [A, B]);
     const total = [...m.values()].reduce((a, b) => a + b, 0);
-    expect(total).toBeLessThanOrEqual(lineMiles(coords) + 1e-9);
+    expect(total).toBeCloseTo(lineMiles(coords), 6);
+    expect(m.size).toBe(1);
   });
 
   it('adds nothing for a line outside every polygon', () => {

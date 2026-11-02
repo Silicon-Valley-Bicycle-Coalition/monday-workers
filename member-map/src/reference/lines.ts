@@ -66,8 +66,11 @@ const keyOf = (p: [number, number]) => `${p[0].toFixed(7)},${p[1].toFixed(7)}`;
 
 /**
  * Miles of line inside each polygon, by GEOID. A piece is credited to the polygon whose interior
- * holds its midpoint. A piece lying on a shared edge is credited once, to the first polygon (in
- * list order) whose boundary it touches, so no mile is counted twice.
+ * holds its midpoint. A piece lying on a shared edge is credited to exactly one of the polygons
+ * that touch it, so no mile is counted twice. Which one is not specified: on a diagonal edge the
+ * great-circle midpoint lands a hair to one side and that side's polygon gets it; only exactly
+ * N-S/E-W edges fall through to the on-edge branch, which picks the first in list order. Do not
+ * rely on the choice.
  */
 export function milesByPolygon(lines: Line[], polys: Poly[]): Map<string, number> {
   const out = new Map<string, number>();
