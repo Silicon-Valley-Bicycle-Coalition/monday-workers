@@ -8,6 +8,7 @@ import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
 import { D1VolunteerActivityStore } from './db/volunteerActivity';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
+import { D1RollCallCreditsStore } from './db/rollCallCredits';
 import { D1AffiliationsStore } from './db/affiliations';
 import { DEFAULT_PII_KEYS, type WriteMode } from './flags';
 import type { BatchSkipContext } from './writeSwitch';
@@ -74,7 +75,7 @@ async function requeueLive(): Promise<RecomputeQueueMessage[]> {
   const sent: RecomputeQueueMessage[] = [];
   const deps: CustodianDeps = {
     gifts: new D1GiftsStore(env.DB), pending: pending(), volunteers: new D1VolunteerActivityStore(env.DB),
-    recomputes: new D1OwnerRecomputesStore(env.DB), mondayClient: {} as CustodianMondayClient,
+    recomputes: new D1OwnerRecomputesStore(env.DB), rollCallCredits: new D1RollCallCreditsStore(env.DB), mondayClient: {} as CustodianMondayClient,
     queue: { sendBatch: async (msgs) => { sent.push(...msgs); } }, config,
     now: new Date(Date.now() + 2 * 86_400_000),
   };

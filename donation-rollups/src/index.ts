@@ -8,6 +8,7 @@ import { D1DonationLinksStore } from './db/links';
 import { D1GiftsStore } from './db/gifts';
 import { D1VolunteerActivityStore } from './db/volunteerActivity';
 import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
+import { D1RollCallCreditsStore } from './db/rollCallCredits';
 import { D1AffiliationsStore } from './db/affiliations';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
@@ -51,6 +52,7 @@ function custodianDeps(env: Env): CustodianDeps {
     pending: new D1PendingStore(env.DB),
     volunteers: new D1VolunteerActivityStore(env.DB),
     recomputes: new D1OwnerRecomputesStore(env.DB),
+    rollCallCredits: new D1RollCallCreditsStore(env.DB),
     mondayClient: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
     queue: {
       sendBatch: (messages: RecomputeQueueMessage[]) =>

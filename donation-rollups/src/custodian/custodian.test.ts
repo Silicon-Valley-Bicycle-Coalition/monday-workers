@@ -5,6 +5,7 @@ import { D1DonationLinksStore } from '../db/links';
 import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
+import { D1RollCallCreditsStore } from '../db/rollCallCredits';
 import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN,
   type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
@@ -90,7 +91,7 @@ function deps(state: FakeClientState, sent: RecomputeQueueMessage[], config = te
     gifts: new D1GiftsStore(env.DB),
     pending: new D1PendingStore(env.DB),
     volunteers: new D1VolunteerActivityStore(env.DB),
-    recomputes: new D1OwnerRecomputesStore(env.DB),
+    recomputes: new D1OwnerRecomputesStore(env.DB), rollCallCredits: new D1RollCallCreditsStore(env.DB),
     mondayClient: fakeClient(state),
     queue: { sendBatch: async (msgs) => { sent.push(...msgs); } },
     config,

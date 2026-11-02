@@ -6,6 +6,7 @@ import { D1GiftsStore } from '../db/gifts';
 import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
+import { D1RollCallCreditsStore } from '../db/rollCallCredits';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const MEMBERSHIP = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil', currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
@@ -62,7 +63,7 @@ function fakeClient(f: Fake): CustodianMondayClient {
 }
 function deps(f: Fake, sent: RecomputeQueueMessage[], now = new Date('2027-12-03T10:00:00Z')): CustodianDeps {
   return { gifts: new D1GiftsStore(env.DB), pending: new D1PendingStore(env.DB), volunteers: new D1VolunteerActivityStore(env.DB),
-    recomputes: new D1OwnerRecomputesStore(env.DB), mondayClient: fakeClient(f),
+    recomputes: new D1OwnerRecomputesStore(env.DB), rollCallCredits: new D1RollCallCreditsStore(env.DB), mondayClient: fakeClient(f),
     queue: { sendBatch: async (m) => { sent.push(...m); } }, config: config(), now };
 }
 

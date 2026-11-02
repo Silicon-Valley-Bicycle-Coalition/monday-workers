@@ -2,6 +2,7 @@ import type { GiftsStore } from '../db/gifts';
 import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
+import type { RollCallCreditsStore } from '../db/rollCallCredits';
 import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord, ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage, VolunteerBoardConfig,
   HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
@@ -46,6 +47,7 @@ export interface CustodianDeps {
   pending: PendingStore;
   volunteers: VolunteerActivityStore;
   recomputes: OwnerRecomputesStore;
+  rollCallCredits: RollCallCreditsStore;
   mondayClient: CustodianMondayClient;
   queue: { sendBatch(messages: RecomputeQueueMessage[]): Promise<void> };
   config: DonationRollupsConfig;

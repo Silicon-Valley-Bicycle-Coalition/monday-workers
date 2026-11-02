@@ -16,6 +16,7 @@ import type { GiftsStore } from './db/gifts';
 import type { OwnerRecomputesStore } from './db/ownerRecomputes';
 import type { AffiliationsStore } from './db/affiliations';
 import type { VolunteerActivityStore } from './db/volunteerActivity';
+import type { RollCallCreditsStore } from './db/rollCallCredits';
 
 // Everything a skip line needs except the delivery, which is per message (or per cron run).
 export type BatchSkipContext = Omit<SkipContext, 'deliveryId'>;
@@ -29,6 +30,7 @@ const GIFTS_MUTATORS = ['refreshFacts', 'markRemoved', 'setSummaryItemId', 'mark
   'upsertAnnualSummaries', 'recordRun'] as const satisfies readonly (keyof GiftsStore)[];
 const RECOMPUTES_MUTATORS = ['record', 'acquireLease', 'releaseLease'] as const satisfies readonly (keyof OwnerRecomputesStore)[];
 const AFFILIATIONS_MUTATORS = ['upsert', 'bulkUpsert'] as const satisfies readonly (keyof AffiliationsStore)[];
+const ROLLCALL_MUTATORS = ['upsert', 'remove', 'markArchived'] as const satisfies readonly (keyof RollCallCreditsStore)[];
 const VOLUNTEER_MUTATORS = ['upsert', 'upsertMany', 'markRemoved'] as const satisfies readonly (keyof VolunteerActivityStore)[];
 
 // readOnlyProxy drops a write to `undefined`; a mutator whose caller reads its result gets a
@@ -129,6 +131,7 @@ export function custodianDepsFor(disposition: 'run' | 'dry-run', deps: Custodian
     pending: dryRunStore(deps.pending, PENDING_MUTATORS),
     volunteers: dryRunVolunteerStore(deps.volunteers),
     recomputes: dryRunStore(deps.recomputes, RECOMPUTES_MUTATORS),
+    rollCallCredits: dryRunStore(deps.rollCallCredits, ROLLCALL_MUTATORS, { upsert: async () => 0 }),
     mondayClient: recordingProxy(deps.mondayClient, MONDAY_SINK, {
       archiveItem: undefined,
       createItem: function (): string {
