@@ -193,6 +193,21 @@ describe('runRollCall', () => {
     expect(h.created[0]!.values).toMatchObject({ to: '100.00' });
   });
 
+  it('counts no gift of zero or negative cents, from the ledger or from a stored credits row', async () => {
+    const h = harness({
+      // Ada: a real gift and a $0 one; Pat: only a $0 gift, so no row at all.
+      ledger: [gift('g1', '13', 10_000), gift('g2', '13', 0), gift('g3', '11', 0), gift('g4', '31', -5_000)],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+    });
+    // A $0 anonymous gift stored before this rule: it must not count either.
+    h.credits.set('a0', { giftItemId: 'a0', fiscalYear: 2027, amountCents: 0, status: 'Received', giftType: 'Individual Donation',
+      credit: 'anonymous', unmatchedMatch: false, archivedAt: '2026-10-01T00:00:00Z' });
+    const report = await runRollCall(h.deps, NOW);
+    expect((report.detail as { rows: number }).rows).toBe(1);
+    expect(h.writes).toEqual(['group FY2027 (in progress)', 'create Ada Park']);
+    expect(h.created[0]!.values).toMatchObject({ to: '100.00', gi: '1' });
+  });
+
   it('freezes closed years: an FY2025 row whose donor vanished stays', async () => {
     // FY2025 is closed and archived (current FY2027, activeFiscalYears 2); the duty's first year
     // is set back to 2025 here so the frozen rule applies.

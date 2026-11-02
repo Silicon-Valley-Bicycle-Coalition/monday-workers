@@ -18,6 +18,11 @@ describe('creditFor', () => {
     expect(creditFor(item({ fiscalYear: 0 }), EXCLUDED)).toBe('skip');
     expect(creditFor(item({ fiscalYear: NaN }), EXCLUDED)).toBe('skip');
   });
+  it('skips a zero or negative amount, so no credits row is stored for it', () => {
+    expect(creditFor(item({ amountCents: 0, anonymous: true }), EXCLUDED)).toBe('skip');
+    expect(creditFor(item({ amountCents: -500, donorItemIds: [] }), EXCLUDED)).toBe('skip');
+    expect(creditFor(item({ amountCents: 0 }), EXCLUDED)).toBe('skip');
+  });
   it('credits a matching gift to its Matched By company, even when anonymous', () => {
     expect(creditFor(item({ giftType: 'Matching Donation', matchedByItemIds: ['o9'] }), EXCLUDED))
       .toEqual({ credit: 'item:o9', unmatchedMatch: false });

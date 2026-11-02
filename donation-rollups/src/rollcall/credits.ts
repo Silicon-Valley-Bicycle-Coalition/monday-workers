@@ -18,6 +18,9 @@ export function creditFor(
   item: DonationCreditItem, excludedGiftTypes: string[],
 ): { credit: string | null; unmatchedMatch: boolean } | 'ledger' | 'skip' {
   if (!Number.isInteger(item.fiscalYear) || item.fiscalYear <= 0) return 'skip';
+  // A $0 (or blank, read as 0) or negative gift isn't a gift to recognize, as in
+  // donor-roll-call.mjs.
+  if (item.amountCents <= 0) return 'skip';
   if (item.status === null || !RECEIVED_LABELS.includes(item.status)) return 'skip';
   if (excludedGiftTypes.includes(item.giftType)) return 'skip';
   const matching = item.giftType === MATCHING;

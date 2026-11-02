@@ -36,15 +36,18 @@ const DELETE_FLOOR = 10;
 // after currentFY are ignored, so a typo'd year never gets a group of its own.
 export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig, currentFY: number):
   Promise<{ gifts: CountedGift[]; pendingLedger: number }> {
-  const counted = (status: string, giftType: string | null, fiscalYear: number) => fiscalYear <= currentFY
-    && RECEIVED_LABELS.includes(status) && !(giftType !== null && cfg.excludedGiftTypes.includes(giftType));
-  const credits = (await deps.rollCallCredits.all(cfg.firstFiscalYear)).filter((r) => counted(r.status, r.giftType, r.fiscalYear));
+  // A gift of zero or negative cents never counts (donor-roll-call.mjs skips it too): it would
+  // make a $0 row, or add to a row's Gifts without adding to its Total.
+  const counted = (status: string, giftType: string | null, fiscalYear: number, cents: number) => fiscalYear <= currentFY
+    && cents > 0 && RECEIVED_LABELS.includes(status) && !(giftType !== null && cfg.excludedGiftTypes.includes(giftType));
+  const credits = (await deps.rollCallCredits.all(cfg.firstFiscalYear))
+    .filter((r) => counted(r.status, r.giftType, r.fiscalYear, r.amountCents));
   const creditById = new Map(credits.map((r) => [r.giftItemId, r]));
 
   const gifts: CountedGift[] = [];
   const inLedger = new Set<string>();
   for (const g of await deps.gifts.countedGifts(cfg.firstFiscalYear)) {
-    if (!counted(g.status, g.giftType, g.fiscalYear)) continue;
+    if (!counted(g.status, g.giftType, g.fiscalYear, g.amountCents)) continue;
     inLedger.add(g.mondayItemId);
     const row = creditById.get(g.mondayItemId);
     if (row !== undefined && row.credit !== null) continue;
