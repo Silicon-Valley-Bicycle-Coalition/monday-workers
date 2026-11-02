@@ -906,10 +906,13 @@ rows can differ from what a live run would write.
 `setup-roll-call-board.mjs` creates these three table views through `create_view_table` (filter
 plus sort worked), each sorted by Total, largest first:
 
-* **This year so far** — Fiscal Year is the in-progress year, Listed is `Listed`, Tier is not
-  `Under $100`.
-* **Last closed year** — Fiscal Year is the most recently closed year, Listed is `Listed`, Tier is
-  `$100+` or higher. This is the one to export for the report.
+* **This year so far** — Fiscal Year is the in-progress year and Listed is `Listed`.
+* **Last closed year** — Fiscal Year is the most recently closed year and Listed is `Listed`. This
+  is the one to export for the report.
+
+Neither view filters on Tier: every listed donor from $1 up appears, and the Tier column still
+shows each donor's level (including `Under $100`). Changed 2026-11-02 at the request of SVBC
+development; the live views on both boards were already updated to match.
 * **Needs review** — Review Note is not empty.
 
 A filter can't say "the in-progress year", so the two year views name the fiscal years as of the
