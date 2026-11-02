@@ -1,0 +1,34 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "accountUrl": "https://bikesiliconvalley.monday.com"
+  },
+  "boards": {
+    "peopleLive": 18431577220,
+    "peopleHistorical": 18431577228,
+    "organizations": 18431577213
+  },
+  "columns": {
+    "address": "Address",
+    "city": "City",
+    "zip": "Zip",
+    "lat": "Lat",
+    "lng": "Lng",
+    "membershipStatus": "Membership Status",
+    "doNotSolicit": "Do Not Solicit"
+  },
+  "activeLabel": "Active",
+  "geocoder": {
+    "url": "https://geocoding.geo.census.gov/geocoder/locations/addressbatch",
+    "benchmark": "Public_AR_Current",
+    "defaultState": "CA",
+    "batchSize": 1000,
+    "maxPerRun": 5000,
+    "retryNoMatchDays": 90
+  },
+  "access": {
+    "teamDomain": "",
+    "aud": "",
+    "allowedEmailDomain": "bikesiliconvalley.org"
+  }
+}

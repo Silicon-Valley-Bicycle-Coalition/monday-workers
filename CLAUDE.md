@@ -231,7 +231,7 @@ writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.
 through constructor options in their own `client.ts`, never by editing the copy. The
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
-donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-portal,
+donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-map, member-portal,
 people-reclassification, quickbooks-sync and report-digests;
 salesforce-import deliberately keeps its own client (`src/load/monday.ts`) through the
 2026-10-09 cutover: it's the one every load rehearsal validated, its `gqlPartial()` (per-alias

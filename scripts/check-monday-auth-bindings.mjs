@@ -34,6 +34,7 @@ export const EXPECTED = {
   'quickbooks-sync': 'SyncToken',
   'monday-backup': 'ReadOnlyToken',
   'report-digests': 'ReadOnlyToken',
+  'member-map': 'ReadOnlyToken',
 };
 
 // Each Worker's Wrangler config file, keyed like EXPECTED.
