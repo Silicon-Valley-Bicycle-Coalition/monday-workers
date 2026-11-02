@@ -11,6 +11,7 @@ import { parseGiftLedgerJson } from '../projections/giftHistory';
 import { runClassify } from './classify';
 import { runMembership, type MembershipDetail } from './membership';
 import { runRecurring } from './recurring';
+import { runRollCall } from './rollcall';
 import { formatCents, parseAmountCents } from '../money';
 import { runDisposition } from '../flags';
 import { custodianDepsFor, type BatchSkipContext } from '../writeSwitch';
@@ -67,8 +68,9 @@ export interface CustodianDeps {
 
 export interface DutyReport { ok: boolean; summary: string; detail?: unknown }
 
-export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership', 'recurring'] as const;
-export interface DutyOptions { all?: boolean; since?: string }
+export const DUTIES = ['archive', 'capacity', 'sweep', 'reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall'] as const;
+// force: rollcall only, past its mass-delete guard.
+export interface DutyOptions { all?: boolean; since?: string; force?: boolean }
 export type Duty = (typeof DUTIES)[number];
 
 // Cron schedule, decided by date so one daily trigger covers everything:
@@ -89,12 +91,12 @@ export function dutiesForDate(
 ): Duty[] {
   const { year, month, day } = localDateParts(now, fiscalYear.timeZone);
   // requeue: fix 5; classify: chartable labels; membership: 13-month anniversaries; recurring: Has
-  // Active Recurring Gift — all nightly
-  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership', 'recurring'];
+  // Active Recurring Gift; rollcall: the Donor Roll Call board — all nightly
+  const duties: Duty[] = ['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall'];
   if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1) duties.push('capacity');
   if (month === fiscalYear.startMonth && day === 1) duties.push('sweep');
   if (month === fiscalYear.startMonth && day === 15) duties.push('archive');
-  for (const duty of ['sweep', 'archive', 'classify'] as const) {
+  for (const duty of ['sweep', 'archive', 'classify', 'rollcall'] as const) {
     if (duties.includes(duty)) continue;
     const last = lastRuns.find((r) => r.duty === duty)?.report as
       { detail?: { remaining?: number } } | undefined;
@@ -134,6 +136,7 @@ export async function runDuty(duty: Duty, deps: CustodianDeps, opts: DutyOptions
       : duty === 'requeue' ? await runRequeue(deps, now)
       : duty === 'classify' ? await runClassify(deps.mondayClient, deps.config)
       : duty === 'recurring' ? await runRecurring(deps)
+      : duty === 'rollcall' ? await runRollCall(deps, now, { force: opts.force ?? false })
       : duty === 'membership' ? await runMembership(deps, now, { all: opts.all ?? false, since: opts.since ?? null },
           ((await deps.gifts.lastRuns()).find((r) => r.duty === 'membership')?.report as { detail?: MembershipDetail } | undefined)?.detail ?? null)
       : await runReconcile(deps);

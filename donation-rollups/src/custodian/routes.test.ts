@@ -68,6 +68,15 @@ describe('custodian route auth', () => {
     expect(runDuty).toHaveBeenLastCalledWith('membership', {}, 'run');
   });
 
+  it('accepts the rollcall duty, passing force=1 through as force', async () => {
+    const runDuty = vi.fn().mockResolvedValue({ ok: true, summary: 'x' });
+    const a = app({ secret: 'shh', runDuty });
+    expect((await a.request('/custodian/run/rollcall', { method: 'POST', headers: bearer('shh') })).status).toBe(200);
+    expect(runDuty).toHaveBeenLastCalledWith('rollcall', {}, 'run');
+    await a.request('/custodian/run/rollcall?force=1', { method: 'POST', headers: bearer('shh') });
+    expect(runDuty).toHaveBeenLastCalledWith('rollcall', { force: true }, 'run');
+  });
+
   it('rejects a malformed since', async () => {
     const a = app({ secret: 'shh' });
     expect((await a.request('/custodian/run/membership?all=true&since=yesterday', { method: 'POST', headers: bearer('shh') })).status).toBe(400);

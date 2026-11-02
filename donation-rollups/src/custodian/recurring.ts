@@ -13,7 +13,7 @@ export interface RecurringDetail {
 }
 
 // Monday's checkbox text is "v" when checked and empty otherwise.
-const isChecked = (text: string | null): boolean => text !== null && text !== '';
+export const isChecked = (text: string | null): boolean => text !== null && text !== '';
 
 export async function runRecurring(deps: CustodianDeps): Promise<DutyReport> {
   const cfg = deps.config.donationRollups.recurringGifts;

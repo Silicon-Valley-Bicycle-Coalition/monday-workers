@@ -45,6 +45,7 @@ export function createCustodianApp(deps: CustodianAppDeps) {
     }
     const opts: DutyOptions = {};
     if (c.req.query('all') === 'true') opts.all = true;
+    if (c.req.query('force') === '1') opts.force = true;
     const since = c.req.query('since');
     if (since !== undefined) {
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(since)) return c.json({ ok: false, error: 'since must be an ISO 8601 timestamp' }, 400);
