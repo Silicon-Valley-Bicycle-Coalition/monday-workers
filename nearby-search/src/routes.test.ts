@@ -258,6 +258,21 @@ describe('POST /api/confirm', () => {
     expect(queue.batches).toEqual([100, 100, 50]);
   });
 
+  it('records the search before sending, and how many were sent when sending fails partway', async () => {
+    const { post, queue, deps, db } = setup();
+    const many = Array.from({ length: 250 }, (_, i) => ({ id: `m${i}`, name: 'N', lat: 37.3382, lng: -121.8863, zip: null, kind: 'person' as const }));
+    deps.monday.listContacts = async (src: { kind: string }) => (src.kind === 'person' ? many : []);
+    queue.failOnBatch = 2;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await post('/api/confirm', valid);
+    expect(res.status).toBe(500);
+    expect(queue.sent).toHaveLength(100);
+    expect(db.searches).toHaveLength(1);
+    // [board_id, label, query, miles, matched, queued, confirmed_by, created_at]
+    expect(db.searches[0]![4]).toBe(250);
+    expect(db.searches[0]![5]).toBe(100);
+  });
+
   it('answers 422 for not-found and records nothing', async () => {
     const { post, queue, db } = setup('on', fakeDeps({ hits: [] }));
     expect((await post('/api/confirm', valid)).status).toBe(422);

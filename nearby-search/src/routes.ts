@@ -145,16 +145,24 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
     const writeMode = await readWriteMode(c.env, WORKER);
     const stamp = stampFor(writeMode);
     const messages: WriteMessage[] = fresh.map((m) => ({ boardId, label, contactId: m.id, kind: m.kind, name: m.name, stamp }));
-    for (let i = 0; i < messages.length; i += SEND_BATCH) {
-      await c.env.WRITES.sendBatch(messages.slice(i, i + SEND_BATCH).map((message) => ({ body: message })));
-    }
-
-    const queued = messages.length;
-    await c.env.DB.prepare(
+    // The audit row goes in first (queued 0) and is updated as batches are sent, so a send that
+    // fails partway still records who confirmed what and how many messages actually went out.
+    const inserted = await c.env.DB.prepare(
       'INSERT INTO searches (board_id, label, query, miles, matched, queued, confirmed_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     )
-      .bind(String(boardId), label, request.query ?? `event:${request.eventItemId}`, request.miles, preview.matches.length, queued, c.get('staffEmail'), new Date().toISOString())
+      .bind(String(boardId), label, request.query ?? `event:${request.eventItemId}`, request.miles, preview.matches.length, 0, c.get('staffEmail'), new Date().toISOString())
       .run();
+    const searchId = inserted.meta.last_row_id;
+    let queued = 0;
+    try {
+      for (let i = 0; i < messages.length; i += SEND_BATCH) {
+        const chunk = messages.slice(i, i + SEND_BATCH);
+        await c.env.WRITES.sendBatch(chunk.map((message) => ({ body: message })));
+        queued += chunk.length;
+      }
+    } finally {
+      if (queued > 0) await c.env.DB.prepare('UPDATE searches SET queued = ? WHERE id = ?').bind(queued, searchId).run();
+    }
 
     return c.json({
       queued,

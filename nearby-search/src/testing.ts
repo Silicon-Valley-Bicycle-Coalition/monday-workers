@@ -109,7 +109,12 @@ export class FakeD1 {
           }
           if (sql.startsWith('INSERT INTO searches')) {
             this.searches.push(args);
-            return { success: true, meta: { changes: 1 } };
+            return { success: true, meta: { changes: 1, last_row_id: this.searches.length } };
+          }
+          if (sql.startsWith('UPDATE searches SET queued = ? WHERE id = ?')) {
+            const row = this.searches[(args[1] as number) - 1];
+            if (row) row[5] = args[0];
+            return { success: true, meta: { changes: row ? 1 : 0 } };
           }
           if (sql.startsWith("INSERT OR IGNORE INTO result_rows (board_id, contact_id, result_item_id, created_at) VALUES (?, ?, '', ?)")) {
             if (this.row(args[0], args[1])) return { success: true, meta: { changes: 0 } };
@@ -144,7 +149,13 @@ export class FakeD1 {
 export class FakeQueue {
   sent: WriteMessage[] = [];
   batches: number[] = [];
-  async sendBatch(items: { body: WriteMessage }[]) { this.batches.push(items.length); this.sent.push(...items.map((i) => i.body)); }
+  // Test hook: make the nth sendBatch call (1-based) throw.
+  failOnBatch?: number;
+  async sendBatch(items: { body: WriteMessage }[]) {
+    if (this.batches.length + 1 === this.failOnBatch) throw new Error('queue down');
+    this.batches.push(items.length);
+    this.sent.push(...items.map((i) => i.body));
+  }
 }
 
 export function fakeEnv(mode: 'on' | 'hold' | 'off' | 'error' = 'on') {
