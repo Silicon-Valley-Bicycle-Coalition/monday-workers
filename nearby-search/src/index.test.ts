@@ -9,3 +9,22 @@ describe('GET /health', () => {
     expect(await res.text()).toBe('ok');
   });
 });
+
+describe('queue', () => {
+  it('recognizes both dead-letter queue names from wrangler.jsonc', async () => {
+    const { isDeadLetterBatch } = await import('./index');
+    expect(isDeadLetterBatch('nearby-search-writes-dlq')).toBe(true);
+    expect(isDeadLetterBatch('nearby-search-writes-sandbox-dlq')).toBe(true);
+    expect(isDeadLetterBatch('nearby-search-writes')).toBe(false);
+  });
+
+  it('acks a dead-letter batch without reading the write switch', async () => {
+    const { vi } = await import('vitest');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const msg = { body: { boardId: 900, contactId: 'p1', name: 'Secret Name', label: 'x', kind: 'person', stamp: {} }, ack: vi.fn(), retry: vi.fn() };
+    await worker.queue({ queue: 'nearby-search-writes-dlq', messages: [msg] } as unknown as MessageBatch<never>, {} as Env);
+    expect(msg.ack).toHaveBeenCalled();
+    expect(err.mock.calls.map(String).join('')).not.toContain('Secret Name');
+    err.mockRestore();
+  });
+});
