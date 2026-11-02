@@ -7,9 +7,9 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
-    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
   } },
-  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'] },
+  mailchimp: { apiBaseUrl: '', audienceId: '', mergeFields: {} as never, tags: {} as never, interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ' },
   lifetimeTierValue: 'Lifetime', activeStatusValue: 'Active', dnsConfirmedValue: 'Confirmed',
 };
 

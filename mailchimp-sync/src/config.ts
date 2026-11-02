@@ -57,6 +57,10 @@ export function validateConfig(raw: unknown): Config {
   }
   const columns = requireObject(monday.columns, 'monday.columns');
   requireStringKeys(columns, REQUIRED_MONDAY_COLUMNS, 'monday.columns');
+  // Explicit null (not an absent key) says "this deployment has no Nearby column yet".
+  if (columns.nearby !== null && (typeof columns.nearby !== 'string' || columns.nearby === '')) {
+    throw new Error('config: "monday.columns.nearby" must be a column id or null');
+  }
 
   const mailchimp = requireObject(cfg.mailchimp, 'mailchimp');
   if (typeof mailchimp.apiBaseUrl !== 'string' || mailchimp.apiBaseUrl === '') {
@@ -69,6 +73,9 @@ export function validateConfig(raw: unknown): Config {
   requireStringKeys(mergeFields, REQUIRED_MERGE_FIELDS, 'mailchimp.mergeFields');
   const tags = requireObject(mailchimp.tags, 'mailchimp.tags');
   requireStringKeys(tags, REQUIRED_TAGS, 'mailchimp.tags');
+  if (typeof mailchimp.nearbyTagPrefix !== 'string' || mailchimp.nearbyTagPrefix === '') {
+    throw new Error('config: missing required key "mailchimp.nearbyTagPrefix"');
+  }
   const categoryIds = mailchimp.interestCategoryIds;
   if (!Array.isArray(categoryIds) || categoryIds.length === 0
     || !categoryIds.every((id) => typeof id === 'string' && id !== '')) {
@@ -97,6 +104,7 @@ export function validateConfig(raw: unknown): Config {
       audienceId: mailchimp.audienceId,
       mergeFields: mergeFields as unknown as MailchimpMergeFieldsConfig,
       tags: tags as unknown as MailchimpTagsConfig,
+      nearbyTagPrefix: mailchimp.nearbyTagPrefix,
       interestCategoryIds: categoryIds as string[],
     },
     lifetimeTierValue: cfg.lifetimeTierValue,

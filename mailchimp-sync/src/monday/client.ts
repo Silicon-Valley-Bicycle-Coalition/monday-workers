@@ -20,6 +20,12 @@ export interface MondayClient {
 // including a daily-limit error, which the transport never retries in-process.
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 20_000 };
 
+// A dropdown column's text is its selected labels joined with ", ". Labels never contain commas
+// (nearby-search rejects them), so the split is exact.
+function splitDropdownLabels(text: string): string[] {
+  return text.split(', ').map((label) => label.trim()).filter((label) => label !== '');
+}
+
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
@@ -34,6 +40,7 @@ export class HttpMondayClient implements MondayClient {
       columns.email, columns.membershipStatus, columns.membershipTier,
       columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
       columns.state, columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
+      ...(columns.nearby === null ? [] : [columns.nearby]),
     ];
     const data = await this.transport.request<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
       `query ($itemId: ID!, $columnIds: [String!]) {
@@ -60,6 +67,7 @@ export class HttpMondayClient implements MondayClient {
       // A checkbox column's text is "v" when checked and "" when not.
       doNotSolicit: (byId.get(columns.doNotSolicit) ?? '') !== '',
       dnsReasonStatus: byId.get(columns.dnsReasonStatus) ?? '',
+      nearby: columns.nearby === null ? [] : splitDropdownLabels(byId.get(columns.nearby) ?? ''),
     };
   }
 

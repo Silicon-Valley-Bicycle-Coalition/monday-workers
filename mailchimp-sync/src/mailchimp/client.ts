@@ -74,6 +74,11 @@ export interface MailchimpClient {
    * 'not-in-audience' (no write) for an address Mailchimp doesn't hold.
    */
   unsubscribeMember(email: string): Promise<UnsubscribeResult>;
+  /**
+   * The names of the tags currently on a member (up to 1000), [] for an address not in the
+   * audience. Read before updateMember so the Nearby tags it should deactivate can be named.
+   */
+  getMemberTagNames(email: string): Promise<string[]>;
   getMemberInterests(email: string): Promise<MailchimpMemberInterests | null>;
   /**
    * Every interest in the given categories. Throws if a category isn't in the audience: a
@@ -193,6 +198,18 @@ export class HttpMailchimpClient implements MailchimpClient {
     });
     if (response.ok) return 'unsubscribed';
     throw await httpError('unsubscribeMember', response);
+  }
+
+  async getMemberTagNames(email: string): Promise<string[]> {
+    const response = await this.request(
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${memberId(email)}/tags?count=1000`,
+      { headers: { Authorization: this.authHeader() } },
+    );
+    if (response.status === 404) return [];
+    // Like the other reads, any failure is retried rather than acked.
+    if (!response.ok) throw await httpError('getMemberTagNames', response, true);
+    const json = (await response.json()) as { tags?: { name: string }[] };
+    return (json.tags ?? []).map((tag) => tag.name);
   }
 
   async getMemberInterests(email: string): Promise<MailchimpMemberInterests | null> {

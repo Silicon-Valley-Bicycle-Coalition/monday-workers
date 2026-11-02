@@ -53,13 +53,20 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
     out.push(tags.doNotSolicit);
   }
 
+  for (const label of donor.nearby) out.push(config.mailchimp.nearbyTagPrefix + label);
+
   return out;
 }
 
 // Every Mailchimp tag this worker owns — the only tags updateMember is allowed to
 // deactivate when buildTags no longer produces them. Must stay a superset of every
 // possible buildTags output; anything outside this set is left alone in Mailchimp.
-export function managedTags(config: Config): string[] {
+// Nearby tags are open-ended (one per label), so the member's current tags that start with the
+// Nearby prefix are owned too: that is how a label removed on Monday is deactivated. The prefix
+// is reserved for this worker; a staff-made tag with it would be cleared the same way.
+export function managedTags(config: Config, currentMemberTags: string[] = []): string[] {
   const tags = config.mailchimp.tags;
-  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit];
+  const prefix = config.mailchimp.nearbyTagPrefix;
+  const nearby = currentMemberTags.filter((name) => name.startsWith(prefix));
+  return [tags.activeMember, tags.lapsedMember, tags.lifetimeMember, tags.hasDonated, tags.doNotSolicit, ...nearby];
 }
