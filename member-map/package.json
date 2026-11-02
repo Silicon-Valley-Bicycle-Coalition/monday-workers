@@ -4,7 +4,7 @@
   "description": "Staff-only map of SVBC members over OpenStreetMap, with a gap score showing where membership is thin.",
   "main": "src/index.ts",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/*.test.mjs",
     "dev": "wrangler dev",
     "dev:sandbox": "wrangler dev --env sandbox",
     "deploy": "wrangler deploy",

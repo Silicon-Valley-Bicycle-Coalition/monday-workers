@@ -1,0 +1,60 @@
+{
+  "builtAt": "2026-11-02T23:55:37.205Z",
+  "sources": [
+    {
+      "name": "Census cartographic boundary block groups (500k)",
+      "url": "https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_06_bg_500k.zip",
+      "vintage": "2024"
+    },
+    {
+      "name": "ACS 5-year B01003 total population (table-based summary file)",
+      "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b01003.dat",
+      "vintage": "2020-2024"
+    },
+    {
+      "name": "ACS 5-year B19013 median household income (table-based summary file)",
+      "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b19013.dat",
+      "vintage": "2020-2024"
+    },
+    {
+      "name": "TIGER/Line roads, county 081, MTFCC S1200/S1400",
+      "url": "https://www2.census.gov/geo/tiger/TIGER2024/ROADS/tl_2024_06081_roads.zip",
+      "vintage": "2024"
+    },
+    {
+      "name": "TIGER/Line roads, county 085, MTFCC S1200/S1400",
+      "url": "https://www2.census.gov/geo/tiger/TIGER2024/ROADS/tl_2024_06085_roads.zip",
+      "vintage": "2024"
+    },
+    {
+      "name": "Census cartographic boundary places (San Jose, GEOID 0668000)",
+      "url": "https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_06_place_500k.zip",
+      "vintage": "2024"
+    },
+    {
+      "name": "TIGERweb counties (legal boundaries, clip for bike lines)",
+      "url": "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query",
+      "vintage": "TIGERweb current"
+    },
+    {
+      "name": "MTC regional bike facilities (field class)",
+      "url": "https://services3.arcgis.com/i2dkYWmb4wHvYPda/arcgis/rest/services/regional_bike_facilities/FeatureServer/0/query",
+      "vintage": "fetched 2026-11-02"
+    },
+    {
+      "name": "San Jose bikeways, STATUS='Existing' (field EXISTINGBIKEWAYCLASS)",
+      "url": "https://geo.sanjoseca.gov/server/rest/services/OPN/OPN_OpenDataService/MapServer/418/query",
+      "vintage": "fetched 2026-11-02"
+    },
+    {
+      "name": "MTC Equity Priority Communities, Plan Bay Area 2050+, ACS 2018-2022 (2020 tracts; tract field tract_geoid, flag epc_2050p = 1)",
+      "url": "https://services3.arcgis.com/i2dkYWmb4wHvYPda/arcgis/rest/services/draft_equity_priority_communities_pba2050plus_acs2022a/FeatureServer/0/query",
+      "vintage": "ACS 2018-2022"
+    },
+    {
+      "name": "MTC Equity Priority Communities, Plan Bay Area 2050+, ACS 2014-2018 (2010 tracts; tract field geoid, flag epc_2050 = 1; carried to 2020 tracts by block-group interior points)",
+      "url": "https://services3.arcgis.com/i2dkYWmb4wHvYPda/arcgis/rest/services/equity_priority_communities_2025_acs2018/FeatureServer/0/query",
+      "vintage": "ACS 2014-2018"
+    }
+  ]
+}
