@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
 vi.mock('./config', () => ({
   configFor: () => ({ access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-123' } }),
 }));
 
-import { verifyAccessJwt, requireAccess, type AccessVariables } from './access';
+import { verifyAccessJwt, requireAccess, resetCertCacheForTests, type AccessVariables } from './access';
 import type { Env } from './types';
 
 const cfg = { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-123' };
@@ -21,8 +21,8 @@ const b64url = (data: ArrayBuffer | string): string => {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 };
 
-async function sign(payload: Record<string, unknown>, kid = 'k1'): Promise<string> {
-  const head = b64url(JSON.stringify({ alg: 'RS256', kid, typ: 'JWT' }));
+async function sign(payload: Record<string, unknown>, kid = 'k1', header: Record<string, unknown> = {}): Promise<string> {
+  const head = b64url(JSON.stringify({ alg: 'RS256', kid, typ: 'JWT', ...header }));
   const body = b64url(JSON.stringify(payload));
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(`${head}.${body}`));
   return `${head}.${body}.${b64url(sig)}`;
@@ -37,6 +37,9 @@ const claims = (over: Record<string, unknown> = {}) => ({
 });
 
 const certs = async () => [{ ...publicJwk, kid: 'k1' } as JsonWebKey];
+
+beforeEach(() => resetCertCacheForTests());
+afterEach(() => vi.unstubAllGlobals());
 
 beforeAll(async () => {
   const pair = (await crypto.subtle.generateKey(
@@ -82,6 +85,57 @@ describe('verifyAccessJwt', () => {
   });
 });
 
+describe('verifyAccessJwt fail-closed paths', () => {
+  it('rejects alg none', async () => {
+    expect(await verifyAccessJwt(await sign(claims(), 'k1', { alg: 'none' }), cfg, certs, NOW)).toBeNull();
+  });
+  it('rejects alg HS256', async () => {
+    expect(await verifyAccessJwt(await sign(claims(), 'k1', { alg: 'HS256' }), cfg, certs, NOW)).toBeNull();
+  });
+  it('rejects a missing kid', async () => {
+    expect(await verifyAccessJwt(await sign(claims(), 'k1', { kid: undefined }), cfg, certs, NOW)).toBeNull();
+  });
+  it('rejects nbf in the future', async () => {
+    expect(await verifyAccessJwt(await sign(claims({ nbf: NOW + 300 })), cfg, certs, NOW)).toBeNull();
+  });
+  it('returns null when the cert fetch throws', async () => {
+    const boom = async (): Promise<JsonWebKey[]> => {
+      throw new Error('network');
+    };
+    expect(await verifyAccessJwt(await sign(claims()), cfg, boom, NOW)).toBeNull();
+  });
+  it('returns null on a non-200 cert fetch and does not cache the failure', async () => {
+    let calls = 0;
+    vi.stubGlobal('fetch', async () => {
+      calls++;
+      return calls === 1 ? new Response('nope', { status: 500 }) : new Response(JSON.stringify({ keys: [{ ...publicJwk, kid: 'k1' } as JsonWebKey] }));
+    });
+    const token = await sign(claims({ exp: Math.floor(Date.now() / 1000) + 600 }));
+    expect(await verifyAccessJwt(token, cfg)).toBeNull();
+    expect(await verifyAccessJwt(token, cfg)).toEqual({ email: 'staff@example.org' });
+    expect(calls).toBe(2);
+  });
+});
+
+describe('cert cache and key rotation', () => {
+  it('refetches once on an unknown kid, then rate-limits forced refetches to one per minute', async () => {
+    let calls = 0;
+    const rotated = { ...publicJwk, kid: 'k1' } as JsonWebKey;
+    const old = { ...publicJwk, kid: 'old' } as JsonWebKey;
+    vi.stubGlobal('fetch', async () => {
+      calls++;
+      return new Response(JSON.stringify({ keys: calls === 1 ? [old] : [rotated] }));
+    });
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    expect(await verifyAccessJwt(await sign(claims({ exp })), cfg)).toEqual({ email: 'staff@example.org' });
+    expect(calls).toBe(2);
+    expect(await verifyAccessJwt(await sign(claims({ exp }), 'forged'), cfg)).toBeNull();
+    expect(calls).toBe(2);
+    expect(await verifyAccessJwt(await sign(claims({ exp }), 'forged2'), cfg)).toBeNull();
+    expect(calls).toBe(2);
+  });
+});
+
 describe('requireAccess', () => {
   const app = new Hono<{ Bindings: Env; Variables: AccessVariables }>();
   app.use('*', requireAccess());
@@ -101,7 +155,11 @@ describe('requireAccess with a valid token', () => {
   it('sets staffEmail and continues', async () => {
     const realNow = Math.floor(Date.now() / 1000);
     const token = await sign(claims({ exp: realNow + 600 }));
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ keys: [{ ...publicJwk, kid: 'k1' } as JsonWebKey] })));
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ keys: [{ ...publicJwk, kid: 'k1' } as JsonWebKey] }));
+    });
     try {
       const app = new Hono<{ Bindings: Env; Variables: AccessVariables }>();
       app.use('*', requireAccess());
@@ -109,6 +167,7 @@ describe('requireAccess with a valid token', () => {
       const res = await app.request('/who', { headers: { 'Cf-Access-Jwt-Assertion': token } }, {} as Env);
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('staff@example.org');
+      expect(urls).toEqual(['https://svbc.cloudflareaccess.com/cdn-cgi/access/certs']);
     } finally {
       vi.unstubAllGlobals();
     }

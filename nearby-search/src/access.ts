@@ -8,11 +8,31 @@ import type { Env } from './types';
 export type AccessVariables = { staffEmail: string };
 
 const CERTS_TTL_MS = 60 * 60 * 1000;
+// A forced refetch (unknown kid, i.e. possible key rotation) is allowed at most once per
+// minute per team domain, so a forged kid can't turn every request into an outbound fetch.
+const FORCED_REFETCH_FLOOR_MS = 60 * 1000;
 const certCache = new Map<string, { keys: JsonWebKey[]; fetchedAt: number }>();
+const lastForced = new Map<string, number>();
 
-async function fetchAccessCerts(teamDomain: string): Promise<JsonWebKey[]> {
+export function resetCertCacheForTests(): void {
+  certCache.clear();
+  lastForced.clear();
+}
+
+async function fetchAccessCerts(teamDomain: string, force = false): Promise<JsonWebKey[]> {
   const cached = certCache.get(teamDomain);
-  if (cached && Date.now() - cached.fetchedAt < CERTS_TTL_MS) return cached.keys;
+  const nowMs = Date.now();
+  if (cached) {
+    const fresh = nowMs - cached.fetchedAt < CERTS_TTL_MS;
+    if (!force && fresh) return cached.keys;
+    if (force) {
+      const last = lastForced.get(teamDomain);
+      if (last !== undefined && nowMs - last < FORCED_REFETCH_FLOOR_MS) return cached.keys;
+      lastForced.set(teamDomain, nowMs);
+    }
+  } else if (force) {
+    lastForced.set(teamDomain, nowMs);
+  }
   const res = await fetch(`https://${teamDomain}/cdn-cgi/access/certs`);
   if (!res.ok) throw new Error(`Access certs fetch failed: ${res.status}`);
   const body = (await res.json()) as { keys?: JsonWebKey[] };
@@ -37,7 +57,7 @@ function decodeJson(segment: string): Record<string, unknown> {
 export async function verifyAccessJwt(
   token: string | null,
   cfg: Config['access'],
-  fetchCerts: () => Promise<JsonWebKey[]> = () => fetchAccessCerts(cfg.teamDomain),
+  fetchCerts: (opts?: { force?: boolean }) => Promise<JsonWebKey[]> = (opts) => fetchAccessCerts(cfg.teamDomain, opts?.force),
   now: number = Math.floor(Date.now() / 1000),
 ): Promise<{ email: string } | null> {
   if (!token) return null;
@@ -48,7 +68,9 @@ export async function verifyAccessJwt(
     const header = decodeJson(head);
     if (header.alg !== 'RS256' || typeof header.kid !== 'string') return null;
 
-    const jwk = (await fetchCerts()).find((k) => (k as { kid?: string }).kid === header.kid);
+    const findKey = (keys: JsonWebKey[]) => keys.find((k) => (k as { kid?: string }).kid === header.kid);
+    // An unknown kid may mean Access rotated its keys: refetch once, bypassing the cache.
+    const jwk = findKey(await fetchCerts()) ?? findKey(await fetchCerts({ force: true }));
     if (!jwk) return null;
     const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, decodeSegment(sig), new TextEncoder().encode(`${head}.${body}`));
