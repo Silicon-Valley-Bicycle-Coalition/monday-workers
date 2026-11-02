@@ -203,6 +203,8 @@ sandbox boards before production:
       dropdown on both People boards.
 - [ ] A Nearby label survives a `people-reclassification` move between People and People
       (Historical), and the results-board link still points at the moved item.
+- [ ] The board picker lists the results workspace's main boards and none of their subitem boards
+      or docs (`listBoards` keeps Monday board `type` `board` only).
 - [ ] The page loads Leaflet and turf with their SRI hashes (no integrity errors in the console).
 - [ ] The Access application's cookie is SameSite Lax or Strict.
 
