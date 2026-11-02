@@ -2,8 +2,8 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": null,
-      "people-live": null,
+      "donations:live": 18437909794,
+      "people-live": 18437909781,
       "events": null,
       "event-registrations": null
     }
@@ -14,10 +14,10 @@
     "actions": ["order.placed", "order.updated", "order.refunded"]
   },
   "eventbriteSync": {
-    "orderIdColumn": "REPLACE_WITH_COLUMN_ID",
-    "amountColumn": "REPLACE_WITH_COLUMN_ID",
-    "statusColumn": "REPLACE_WITH_COLUMN_ID",
-    "dateColumn": "REPLACE_WITH_COLUMN_ID",
+    "orderIdColumn": "text_mm8n459q",
+    "amountColumn": "numeric_mm8nsb7t",
+    "statusColumn": "color_mm8nspep",
+    "dateColumn": "date_mm8nty3x",
     "amountSource": "gross",
     "currency": "USD",
     "skipFreeOrders": true,
@@ -26,12 +26,12 @@
       "refunded": "Refunded"
     },
     "itemNameTemplate": "{buyer} - {event}",
-    "thankYouSentColumn": "REPLACE_WITH_COLUMN_ID",
-    "giftTypeColumn": "REPLACE_WITH_COLUMN_ID",
+    "thankYouSentColumn": "boolean_mm8q7wrr",
+    "giftTypeColumn": "text_mm8nyftg",
     "giftTypeValue": "Event Ticket",
-    "fiscalYearColumn": "REPLACE_WITH_COLUMN_ID",
-    "donorEmailColumn": "REPLACE_WITH_COLUMN_ID",
-    "donorLinkColumn": "REPLACE_WITH_COLUMN_ID"
+    "fiscalYearColumn": "text_mm8ngcfh",
+    "donorEmailColumn": "email_mm8nx6qg",
+    "donorLinkColumn": "board_relation_mm8n97wj"
   },
   "attendeeSync": {
     "actions": [

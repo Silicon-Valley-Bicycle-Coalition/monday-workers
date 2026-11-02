@@ -84,6 +84,16 @@ describe('config split: board and column ids', () => {
     expect(sb === PLACEHOLDER_COLUMN_ID || prod !== sb).toBe(true);
   });
 
+  // The order path is live in production (2026-11-02): every Donations/People key is filled from
+  // the production boards. The attendee feed stays unset until Event Registrations is mapped.
+  it('production fills the order path: both boards and every eventbriteSync column', () => {
+    expect(production.monday.boards['donations:live']).toBe(18437909794);
+    expect(production.monday.boards['people-live']).toBe(18437909781);
+    for (const [key, value] of Object.entries(production.eventbriteSync)) {
+      if (key.endsWith('Column')) expect(value, key).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
+    }
+  });
+
   it('both shipped configs validate', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
