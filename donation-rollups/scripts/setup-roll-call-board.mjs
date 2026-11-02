@@ -81,9 +81,11 @@ function lookup(byTitle, board, title) {
 }
 
 if (!boardId) {
+  // Private, not public: the board holds donor names and giving totals, and a public board is
+  // readable (and editable) by every member of the account. Only its subscribers see a private one.
   const created = await graphql(
     `mutation ($name: String!, $workspaceId: ID!) {
-       create_board (board_name: $name, board_kind: public, workspace_id: $workspaceId) {
+       create_board (board_name: $name, board_kind: private, workspace_id: $workspaceId) {
          id
          items_page (limit: 25) { items { id } }
        } }`,
@@ -150,6 +152,8 @@ const donations = {
   },
 };
 
+console.error(`setup-roll-call-board: board ${boardId} is private and holds donor names and giving totals. ` +
+  'Subscribe only the staff who need it (the report owner and whoever prints the roll call).');
 console.log(JSON.stringify({
   rollCall: {
     boardId: Number(boardId),
