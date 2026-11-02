@@ -46,7 +46,10 @@ Three independent flows — see the design doc for full sequence diagrams:
    `PATCH`, which 404s rather than creating, and never sends a `status`, so an unsubscribed or
    cleaned contact stays that way. People join the audience only through Mailchimp's own
    signup forms or the cutover consent import. **One exception, one-way:** a reviewed Do Not
-   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below.
+   Solicit unsubscribes the contact — see [Do Not Solicit](#do-not-solicit) below. **An Email
+   change moves the contact:** when staff change a Donor's Email column, the old address's
+   contact is renamed to the new one, so its consent and history follow the person — see
+   [Address changes made on Monday](#address-changes-made-on-monday).
 2. **Campaign catalog reconciliation:** daily cron diffs the interests in the Interest Categories
    listed in `mailchimp.interestCategoryIds` against a D1-tracked set of Monday items on the
    Campaigns board — creates, renames, or archives as needed. Other categories are ignored, and
@@ -323,6 +326,18 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   address, but this Worker doesn't rewrite the Donor's Email column — so until staff update it
   on Monday, the event records as `skipped` and later outbound updates for that Donor also skip
   (the old address is no longer in the audience).
+* <a id="address-changes-made-on-monday"></a>**Address changes made on Monday** move the
+  Mailchimp contact. The Donors webhook's `change_column_value` event carries the column's
+  `previousValue`; for the configured Email column only, the route queues that old address with
+  the Donor id, and the consumer renames the contact (`PATCH` with only `email_address`) before
+  its usual update. Its status — subscribed, unsubscribed, cleaned — and tags and history carry
+  over unchanged, so consent follows the person and nothing is ever created. No rename when the
+  new address is already a contact (two contacts are never merged; the new one is updated as
+  before), when the old address isn't one, or when only case or spacing changed. A permanent
+  Mailchimp refusal is logged and the update carries on by the new address, as before this
+  existed. Fixed 2026-11-02, after the cutover's Gate C check showed an edited address skipping
+  (svbc-monday-migration cutover log, Mon 9:31 am). Edits made before this deploy aren't
+  replayed: change the address in Mailchimp by hand.
 * A "Mailchimp Campaigns" board, created once by staff (like every other board id in this repo —
   this Worker reconciles its *items* daily but does not create the board itself), plus a new
   connect-column on the Donors board pointed at it.

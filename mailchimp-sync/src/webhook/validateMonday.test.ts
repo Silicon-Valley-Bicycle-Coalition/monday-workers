@@ -21,6 +21,18 @@ describe('validateMondayWebhookBody', () => {
       .toEqual({ donorItemId: '555', columnId: undefined });
   });
 
+  it('extracts the previous address from an email column change', () => {
+    const body = { event: { type: 'update_column_value', pulseId: 555, columnId: 'e',
+      value: { email: 'new@b.com', text: 'new@b.com' }, previousValue: { email: 'Old@B.com ', text: 'Old@B.com', changed_at: '2026-11-02T17:31:52Z' } } };
+    expect(validateMondayWebhookBody(body)).toEqual({ donorItemId: '555', columnId: 'e', previousEmail: 'Old@B.com' });
+  });
+
+  it('leaves previousEmail undefined when there was no previous address or it is not an email value', () => {
+    for (const previousValue of [null, undefined, {}, { email: '' }, { label: { text: 'Active' } }, 'x']) {
+      expect(validateMondayWebhookBody({ event: { pulseId: 555, columnId: 'e', previousValue } }).previousEmail).toBeUndefined();
+    }
+  });
+
   it('rejects a body with no event object', () => {
     expect(() => validateMondayWebhookBody({})).toThrow('webhook body has no "event" object');
   });

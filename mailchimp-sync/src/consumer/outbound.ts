@@ -6,7 +6,7 @@ import { MailchimpAuthError, MailchimpPermanentError } from '../mailchimp/client
 import type { Config, OutboundSyncMessage } from '../types';
 import { buildMergeFields, buildTags, managedTags } from './mapDonor';
 import { credentialsRejectedLog, retryDelaySeconds } from './backoff';
-import { errorText, redactEmails } from '../logSafe';
+import { errorText, memberId, redactEmails } from '../logSafe';
 import { messageDisposition, retryDelaySeconds as baseRetryDelaySeconds } from '../flags';
 import { dryRunOutboundDeps, type BatchSkipContext } from '../writeSwitch';
 
@@ -65,9 +65,9 @@ export async function consumeOutboundBatch(
 }
 
 async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, deps: OutboundConsumerDeps): Promise<void> {
-  const { donorItemId } = message.body;
+  const { donorItemId, previousEmail } = message.body;
   try {
-    await processOne(donorItemId, deps);
+    await processOne(donorItemId, previousEmail, deps);
     message.ack();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -91,13 +91,29 @@ async function handleMessage(message: QueueMessageLike<OutboundSyncMessage>, dep
   }
 }
 
-async function processOne(donorItemId: string, deps: OutboundConsumerDeps): Promise<void> {
+async function processOne(donorItemId: string, previousEmail: string | undefined, deps: OutboundConsumerDeps): Promise<void> {
   const { mondayClient, mailchimpClient, config, pendingStore } = deps;
 
   const donor = await mondayClient.getDonorById(donorItemId, config.monday.columns);
   if (donor === null || donor.email === '') {
     await pendingStore.updateStatus(donorItemId, 'written', undefined, new Date().toISOString());
     return;
+  }
+
+  // Staff changed this Donor's Email on Monday: move the Mailchimp member that held the old
+  // address to the new one, so its consent and history follow the person instead of the new
+  // address reading as "not in the audience" forever. First, so the Do Not Solicit unsubscribe
+  // and the update below both land on the renamed member. A permanent refusal (say, an address
+  // Mailchimp won't accept) is logged and the run carries on as it did before this existed;
+  // anything transient throws and retries the whole message.
+  if (previousEmail !== undefined && memberId(previousEmail) !== memberId(donor.email)) {
+    try {
+      const renamed = await mailchimpClient.renameMember(previousEmail, donor.email);
+      if (renamed === 'renamed') console.log(`mailchimp-sync outbound consumer: donor ${donorItemId} member ${memberId(previousEmail)} moved to ${memberId(donor.email)}`);
+    } catch (err) {
+      if (!(err instanceof MailchimpPermanentError)) throw err;
+      console.warn(`mailchimp-sync outbound consumer: donor ${donorItemId} member not moved to the new address: ${redactEmails(errorText(err))}`);
+    }
   }
 
   // A reviewed Do Not Solicit unsubscribes the person's own address — never the Household
