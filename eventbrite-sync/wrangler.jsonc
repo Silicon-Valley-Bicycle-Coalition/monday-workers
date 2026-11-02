@@ -8,9 +8,8 @@
     {
       "binding": "DB",
       "database_name": "svbc-eventbrite-sync",
-      // Not yet created. `wrangler d1 create svbc-eventbrite-sync` on the SVBC account and paste
-      // the id here (README "Deploy"); forks: create your own.
-      "database_id": "REPLACE_WITH_D1_ID",
+      // Created 2026-11-02 on the SVBC account (README "Deploy"); forks: create your own.
+      "database_id": "212c9b84-a5b7-4b01-a9f2-0558b0d54849",
       "migrations_dir": "migrations"
     }
   ],
