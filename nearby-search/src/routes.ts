@@ -1,6 +1,7 @@
 // Staff API: preview a search on the map, then confirm it to queue the matches onto a results
 // board. Everything is behind Cloudflare Access; preview never writes anything.
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
+import { renderPage } from './page';
 import { requireAccess, type AccessVariables } from './access';
 import type { Config } from './config';
 import { readWriteMode, stampFor } from './flags';
@@ -19,6 +20,7 @@ export interface Deps {
 export const WORKER = 'nearby-search';
 const SEND_BATCH = 100;
 const MAX_LABEL = 60;
+const EVENT_MILES = 2;
 
 type AppEnv = { Bindings: Env; Variables: AccessVariables };
 
@@ -32,18 +34,35 @@ function labelError(label: unknown): string | null {
   return null;
 }
 
-export function buildApp(makeDeps: (env: Env) => Deps): Hono<AppEnv> {
+// `access` exists only so src/index.local.ts can swap in a bypass; the deployed entry never passes it.
+export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler<AppEnv> = requireAccess()): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Unauthenticated liveness probe; every other route sits behind Cloudflare Access.
   app.get('/health', (c) => c.text('ok'));
+
+  // The search page. Behind Access like the API; ?event=<item id> prefills it from an Events row.
+  app.get('/', access, async (c) => {
+    const eventId = c.req.query('event');
+    let html: string;
+    if (!eventId) {
+      html = renderPage();
+    } else {
+      const { monday, config } = makeDeps(c.env);
+      const event = await monday.getEventAddress(config.monday.eventsBoardId, eventId, config.monday.eventsAddressColumn);
+      html = event
+        ? renderPage({ event: { eventItemId: eventId, eventName: event.name, address: event.address, miles: EVENT_MILES } })
+        : renderPage({ notice: 'Event not found or it has no address. Type an address below instead.' });
+    }
+    return c.html(html);
+  });
 
   app.use('/api/*', async (c, next) => {
     const limited = await checkRequestRateLimit(c.req.raw, { limit: (key) => c.env.REQUEST_RATE_LIMITER.limit({ key }) });
     if (limited) return limited;
     await next();
   });
-  app.use('/api/*', requireAccess());
+  app.use('/api/*', access);
 
   app.onError((err, c) => {
     if (err instanceof OsmError) return c.json({ message: 'OpenStreetMap is unavailable; try again shortly.' }, 502);
@@ -101,7 +120,8 @@ export function buildApp(makeDeps: (env: Env) => Deps): Hono<AppEnv> {
     const done = new Set(written.results.map((r) => r.contact_id));
 
     const fresh = preview.matches.filter((m) => !linked.has(m.id) && !done.has(m.id));
-    const stamp = stampFor(await readWriteMode(c.env, WORKER));
+    const writeMode = await readWriteMode(c.env, WORKER);
+    const stamp = stampFor(writeMode);
     const messages: WriteMessage[] = fresh.map((m) => ({ boardId, label, contactId: m.id, kind: m.kind, name: m.name, stamp }));
     for (let i = 0; i < messages.length; i += SEND_BATCH) {
       await c.env.WRITES.sendBatch(messages.slice(i, i + SEND_BATCH).map((message) => ({ body: message })));
@@ -118,6 +138,7 @@ export function buildApp(makeDeps: (env: Env) => Deps): Hono<AppEnv> {
       queued,
       alreadyOnBoard: preview.matches.length - queued,
       historical: messages.filter((m) => m.kind === 'historical').length,
+      writeMode,
     });
   });
 

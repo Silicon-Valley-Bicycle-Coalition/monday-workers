@@ -127,10 +127,15 @@ describe('POST /api/confirm validation', () => {
 });
 
 describe('POST /api/confirm', () => {
+  it.each([['on', 'on'], ['hold', 'hold'], ['off', 'off'], ['error', 'unknown']] as const)('reports writeMode for %s', async (mode, expected) => {
+    const { post } = setup(mode);
+    expect(((await (await post('/api/confirm', valid)).json()) as any).writeMode).toBe(expected);
+  });
+
   it('queues each match and records the search', async () => {
     const { post, queue, db } = setup();
     const res = await post('/api/confirm', valid);
-    expect(await res.json()).toEqual({ queued: 3, alreadyOnBoard: 0, historical: 1 });
+    expect(await res.json()).toEqual({ queued: 3, alreadyOnBoard: 0, historical: 1, writeMode: 'on' });
     expect(queue.sent.map((m) => m.contactId).sort()).toEqual(['h1', 'p1', 'p2']);
     expect(queue.sent[0]).toMatchObject({ boardId: 900, label: 'Main St ride', stamp: {} });
     expect(db.searches).toHaveLength(1);
@@ -143,7 +148,7 @@ describe('POST /api/confirm', () => {
     for (const m of queue.sent) db.resultRows.push({ board_id: String(m.boardId), contact_id: m.contactId });
     queue.sent.length = 0;
     const res = await post('/api/confirm', valid);
-    expect(await res.json()).toEqual({ queued: 0, alreadyOnBoard: 3, historical: 0 });
+    expect(await res.json()).toEqual({ queued: 0, alreadyOnBoard: 3, historical: 0, writeMode: 'on' });
     expect(queue.sent).toEqual([]);
     expect(db.searches).toHaveLength(2);
   });
@@ -152,7 +157,7 @@ describe('POST /api/confirm', () => {
     const { post, queue, deps } = setup();
     deps.monday.linked = new Set(['p1']);
     const res = await post('/api/confirm', valid);
-    expect(await res.json()).toEqual({ queued: 2, alreadyOnBoard: 1, historical: 1 });
+    expect(await res.json()).toEqual({ queued: 2, alreadyOnBoard: 1, historical: 1, writeMode: 'on' });
     expect(queue.sent.map((m) => m.contactId)).not.toContain('p1');
   });
 
