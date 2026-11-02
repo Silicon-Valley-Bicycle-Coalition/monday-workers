@@ -2,6 +2,7 @@ import { fiscalYearLabel, fiscalYearRange, isFiscalYearValue } from './fiscal.js
 import { resolveLabelId } from './labels.js';
 import type { CurrentColumn, ResolvedRule } from './plan.js';
 import type { FilterRule } from './spec.js';
+import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 export interface WidgetSpec {
   name: string;
@@ -20,7 +21,7 @@ export function colId(columns: Columns, board: string, title: string): string | 
   const b = columns.get(board);
   if (!b) return { error: `board "${board}" has no id` };
   if (title === 'name') return 'name';
-  const c = b.columns.find((x) => x.title === title);
+  const c = b.columns.find((x) => bareTitle(x.title) === title);
   return c ? c.id : { error: `board "${board}" has no column "${title}"` };
 }
 
@@ -109,7 +110,7 @@ export function widgetFilter(w: WidgetSpec, columns: Columns, now: Date = new Da
   if (!w.filter) return undefined;
   const rules: ResolvedRule[] = [];
   for (const r of w.filter.rules) {
-    const c = columns.get(w.filter.board)?.columns.find((x) => x.title === r.columnTitle);
+    const c = columns.get(w.filter.board)?.columns.find((x) => bareTitle(x.title) === r.columnTitle);
     if (!c) return { error: `filter column "${r.columnTitle}" missing` };
     let compare_value: unknown = r.compareValue ?? [];
     if (isFiscalYearValue(compare_value)) compare_value = fiscalYearRange(now, compare_value.fiscalYear === 'previous' ? -1 : 0);

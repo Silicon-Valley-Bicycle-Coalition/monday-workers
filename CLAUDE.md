@@ -170,6 +170,15 @@ instead of a queue.
 Worker's `config/*.json`, validated at startup. Keep new SVBC-specific values there rather than in
 source — the goal is that another org's fork is a config change, not a rewrite.
 
+**Read-only column markers: match titles with `bareTitle`.** Staff-facing column titles carry 🔒
+(a Worker writes it) or 📜 (Salesforce history, loaded once) so staff don't edit them, applied by
+`scripts/mark-read-only-columns.mjs`, whose `MARKED_COLUMNS` is the list. Code and config always
+name the *bare* title. Anything that finds a Monday column by title must compare through
+`bareTitle` from `scripts/lib/column-titles.mjs`, never `c.title === title`. Otherwise a marked
+column reads as missing, and an idempotent setup script creates a duplicate under the bare title.
+A Worker that imports the module adds `scripts/lib/**/*` to its CI job rules, as `monday-auth` does.
+When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run the script.
+
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
 `benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`, `report-digests`,

@@ -7,6 +7,7 @@
 // Usage: MONDAY_API_TOKEN=... node scripts/setup-classification-columns.mjs <donationsBoardId>
 
 import { MONDAY_API_VERSION } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const token = process.env.MONDAY_API_TOKEN;
 const boardId = process.argv[2];
@@ -36,7 +37,7 @@ async function graphql(query, variables) {
 }
 
 const { boards } = await graphql('query ($id: [ID!]) { boards(ids: $id) { columns { id title } } }', { id: [boardId] });
-const byTitle = new Map(boards[0].columns.map((c) => [c.title, c.id]));
+const byTitle = new Map(boards[0].columns.map((c) => [bareTitle(c.title), c.id]));
 const out = {};
 for (const [key, spec] of Object.entries(FIELDS)) {
   let id = byTitle.get(spec.title);

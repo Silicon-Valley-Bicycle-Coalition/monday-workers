@@ -17,6 +17,13 @@ all:
   view is the last tab.
 - **Plumbing columns are hidden** in working views: Salesforce Debug, Salesforce Owner, Lat, Lng,
   Gift Ledger (JSON), the Funraise, Eventbrite, and Benevity IDs. They're still on the board.
+- **🔒 and 📜 mean don't edit.** A column titled 🔒 is filled in by an automation (Lifetime
+  Giving, Donor Level, Membership Status, Funding Stream, the Funraise ID, and so on). Change it
+  by hand and the next nightly or sync run puts the computed value back, or the link to the
+  outside system breaks. A column titled 📜 is history brought over from Salesforce once
+  (Salesforce ID, Windfall wealth data, Volunteers 2014–2020). Nothing updates it, and it stays as
+  the record of what Salesforce held. If a 🔒 or 📜 value looks wrong, report it rather than fixing
+  it in place. Columns without a marker are yours to edit.
 - **One colour language:** red means needs action, amber means coming due, grey means
   historical. (Shading is unconfirmed on screen; see the README's known gaps.)
 - **Worklists are named as tasks** ("Major gifts to thank", "Members expiring soon") and tagged

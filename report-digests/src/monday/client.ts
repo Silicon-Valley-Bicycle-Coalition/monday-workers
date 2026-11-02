@@ -1,4 +1,5 @@
 import { MONDAY_API_VERSION, MondayGraphQL, type MondayGraphQLOptions, type TokenProvider } from './graphql';
+import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 export interface BoardColumn { id: string; title: string; type: string }
 export interface Board { id: string; name: string; columns: BoardColumn[]; views: { id: string; name: string }[] }
@@ -101,7 +102,7 @@ export class HttpMondayClient implements DigestsMondayClient {
         { ids: ids.slice(i, i + 100) },
       );
       for (const item of data.items) {
-        const byTitle = new Map(item.column_values.map((cv) => [cv.column.title, cv.text === null || cv.text === '' ? null : cv.text]));
+        const byTitle = new Map(item.column_values.map((cv) => [bareTitle(cv.column.title), cv.text === null || cv.text === '' ? null : cv.text]));
         out.push({ id: item.id, name: item.name, boardId: item.board.id, byTitle });
       }
     }

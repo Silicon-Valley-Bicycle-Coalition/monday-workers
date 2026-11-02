@@ -9,6 +9,7 @@
 //     --workspace 17141226 --name "Annual Giving Summary (sandbox v2)" [--board <existingId>]
 
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const token = process.env.MONDAY_API_TOKEN;
 if (!token) {
@@ -65,7 +66,7 @@ if (!boardId) {
 }
 
 const data = await graphql('query ($ids: [ID!]) { boards(ids: $ids) { columns { id title } } }', { ids: [boardId] });
-const byTitle = new Map(data.boards[0].columns.map((c) => [c.title, c.id]));
+const byTitle = new Map(data.boards[0].columns.map((c) => [bareTitle(c.title), c.id]));
 const cols = {};
 for (const [field, spec] of Object.entries(FIELDS)) {
   if (byTitle.has(spec.title)) {

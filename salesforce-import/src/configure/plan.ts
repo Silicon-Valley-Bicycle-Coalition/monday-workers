@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BoardSpec, ColoringRule, ColumnSpec, ViewSpec } from './spec.js';
 import { resolveLabelId } from './labels.js';
+import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 export interface CurrentColumn { id: string; title: string; type: string; description: string | null; settings_str: string }
 export interface CurrentGroup { id: string; title: string }
@@ -34,8 +35,8 @@ export function planBoardBase(current: CurrentBoard, spec: BoardSpec): BasePlan 
     notes.push(`board already has ${current.groups.length} groups — skipping default-group rename`);
   }
 
-  const existingTitles = new Set(current.columns.map((c) => c.title));
-  const columnsToCreate = (spec.columns ?? []).filter((c) => !existingTitles.has(c.title));
+  const existingTitles = new Set(current.columns.map((c) => bareTitle(c.title)));
+  const columnsToCreate = (spec.columns ?? []).filter((c) => !existingTitles.has(bareTitle(c.title)));
 
   const strayNames = new Set(spec.deleteStrayViews ?? []);
   const viewsToDelete = current.views
@@ -54,7 +55,7 @@ export function planColumnDescriptions(
 ): { updates: ColumnDescriptionUpdate[]; notes: string[] } {
   const updates: ColumnDescriptionUpdate[] = [];
   const notes: string[] = [];
-  const byTitle = new Map(columns.map((c) => [c.title, c]));
+  const byTitle = new Map(columns.map((c) => [bareTitle(c.title), c]));
   for (const [title, text] of Object.entries(spec.columnDescriptions ?? {})) {
     const col = byTitle.get(title);
     if (!col) { notes.push(`column description for "${title}" — no such column on this board yet`); continue; }
@@ -127,7 +128,7 @@ export function planViews(
   const notes: string[] = [];
   const create: ResolvedView[] = [];
   const update: (ResolvedView & { viewId: string })[] = [];
-  const byTitle = new Map(columns.map((c) => [c.title, c]));
+  const byTitle = new Map(columns.map((c) => [bareTitle(c.title), c]));
 
   for (const viewSpec of spec.views ?? []) {
     const resolved = resolveView(viewSpec, byTitle, columns, boardId);

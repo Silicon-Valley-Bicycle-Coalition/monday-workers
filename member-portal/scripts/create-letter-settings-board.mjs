@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -111,7 +112,7 @@ async function ensureLocaleColumns(boardId) {
     `query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`,
     { boardId: [boardId] }
   );
-  const byTitle = new Map((columnData.boards[0]?.columns ?? []).map((c) => [c.title, c.id]));
+  const byTitle = new Map((columnData.boards[0]?.columns ?? []).map((c) => [bareTitle(c.title), c.id]));
   const ids = {};
   for (const [locale, label] of Object.entries(NON_EN_LOCALES)) {
     const title = localeColumnTitle(label);
