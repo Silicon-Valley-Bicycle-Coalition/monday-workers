@@ -1,4 +1,5 @@
 import type { WriteStamp } from './flags';
+import type { MondayTokenSource } from './monday/graphql';
 
 // Which of the three source boards a contact came from. 'historical' is People (Historical).
 export type ContactKind = 'person' | 'historical' | 'organization';
@@ -18,7 +19,8 @@ export interface Env {
   DB: D1Database;
   WRITES: Queue<WriteMessage>;
   FLAGS: KVNamespace;
-  MONDAY_AUTH: Fetcher;
+  // The monday-auth broker's SyncToken entrypoint (generated as an untyped Service, restated as its RPC shape).
+  MONDAY_AUTH: MondayTokenSource;
   REQUEST_RATE_LIMITER: RateLimit;
   ENVIRONMENT?: string;
 }

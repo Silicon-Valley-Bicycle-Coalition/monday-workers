@@ -1,12 +1,20 @@
-import { Hono } from 'hono';
+import { configFor } from './config';
+import { createOsmClient } from './locate/osm';
+import { HttpNearbyMondayClient } from './monday/client';
+import { tokenProviderFor } from './monday/graphql';
+import { buildApp } from './routes';
 import type { Env, WriteMessage } from './types';
 
 export type { Env } from './types';
 
-const app = new Hono<{ Bindings: Env }>();
-
-// Unauthenticated liveness probe; every other route sits behind Cloudflare Access.
-app.get('/health', (c) => c.text('ok'));
+const app = buildApp((env) => {
+  const config = configFor(env);
+  return {
+    config,
+    osm: createOsmClient(config.osm),
+    monday: new HttpNearbyMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+  };
+});
 
 export default {
   fetch: app.fetch,

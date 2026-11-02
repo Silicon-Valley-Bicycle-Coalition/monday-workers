@@ -1,0 +1,125 @@
+// Staff API: preview a search on the map, then confirm it to queue the matches onto a results
+// board. Everything is behind Cloudflare Access; preview never writes anything.
+import { Hono } from 'hono';
+import { requireAccess, type AccessVariables } from './access';
+import type { Config } from './config';
+import { readWriteMode, stampFor } from './flags';
+import { OsmError, type OsmClient } from './locate/osm';
+import type { NearbyMondayClient } from './monday/client';
+import { checkRequestRateLimit } from './rateLimit';
+import { runSearch, SearchInputError, validatePreviewRequest, type PreviewRequest, type SearchDeps } from './search';
+import type { Env, WriteMessage } from './types';
+
+export interface Deps {
+  osm: OsmClient;
+  monday: NearbyMondayClient;
+  config: Config;
+}
+
+export const WORKER = 'nearby-search';
+const SEND_BATCH = 100;
+const MAX_LABEL = 60;
+
+type AppEnv = { Bindings: Env; Variables: AccessVariables };
+
+// Returns the first problem with a Nearby label, or null. Commas are the Monday dropdown/tags
+// separator, so a comma would split one label into two.
+function labelError(label: unknown): string | null {
+  if (typeof label !== 'string') return 'label must be a string.';
+  const t = label.trim();
+  if (t.length < 1 || t.length > MAX_LABEL) return `label must be 1 to ${MAX_LABEL} characters.`;
+  if (t.includes(',')) return 'label must not contain commas.';
+  return null;
+}
+
+export function buildApp(makeDeps: (env: Env) => Deps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  // Unauthenticated liveness probe; every other route sits behind Cloudflare Access.
+  app.get('/health', (c) => c.text('ok'));
+
+  app.use('/api/*', async (c, next) => {
+    const limited = await checkRequestRateLimit(c.req.raw, { limit: (key) => c.env.REQUEST_RATE_LIMITER.limit({ key }) });
+    if (limited) return limited;
+    await next();
+  });
+  app.use('/api/*', requireAccess());
+
+  app.onError((err, c) => {
+    if (err instanceof OsmError) return c.json({ message: 'OpenStreetMap is unavailable; try again shortly.' }, 502);
+    if (err instanceof SearchInputError) return c.json({ message: err.message }, 400);
+    console.error('nearby-search request failed', err instanceof Error ? err.name : 'unknown');
+    return c.json({ message: 'Internal error.' }, 500);
+  });
+
+  async function jsonBody(req: Request): Promise<unknown> {
+    try {
+      return await req.json();
+    } catch {
+      return null;
+    }
+  }
+
+  app.post('/api/preview', async (c) => {
+    const body = await jsonBody(c.req.raw);
+    const problem = validatePreviewRequest(body);
+    if (problem) return c.json({ message: problem }, 400);
+    const preview = await runSearch(body as PreviewRequest, makeDeps(c.env));
+    if (preview.resolved.kind === 'not-found') return c.json({ message: preview.resolved.message }, 422);
+    return c.json(preview);
+  });
+
+  app.get('/api/boards', async (c) => {
+    const { monday, config } = makeDeps(c.env);
+    return c.json(await monday.listBoards(config.monday.resultsWorkspaceIds));
+  });
+
+  app.post('/api/confirm', async (c) => {
+    const body = await jsonBody(c.req.raw);
+    const problem = validatePreviewRequest(body);
+    if (problem) return c.json({ message: problem }, 400);
+    const { boardId, label: rawLabel, ...rest } = body as PreviewRequest & { boardId?: unknown; label?: unknown };
+    const lerr = labelError(rawLabel);
+    if (lerr) return c.json({ message: lerr }, 400);
+    const label = (rawLabel as string).trim();
+    if (typeof boardId !== 'number' || !Number.isInteger(boardId) || boardId <= 0) {
+      return c.json({ message: 'boardId must be a board id.' }, 400);
+    }
+
+    const deps: SearchDeps = makeDeps(c.env);
+    const boards = await deps.monday.listBoards(deps.config.monday.resultsWorkspaceIds);
+    if (!boards.some((b) => b.id === String(boardId))) return c.json({ message: 'boardId is not a results board.' }, 400);
+
+    // Re-run the search here: the client's preview is only a picture, never the list to write.
+    const request = rest as PreviewRequest;
+    const preview = await runSearch(request, deps);
+    if (preview.resolved.kind === 'not-found') return c.json({ message: preview.resolved.message }, 422);
+
+    const columns = await deps.monday.findResultColumns(boardId);
+    const linked = columns ? await deps.monday.linkedContactIds(boardId, columns.connectColumnId) : new Set<string>();
+    const written = await c.env.DB.prepare('SELECT contact_id FROM result_rows WHERE board_id = ?').bind(String(boardId)).all<{ contact_id: string }>();
+    const done = new Set(written.results.map((r) => r.contact_id));
+
+    const fresh = preview.matches.filter((m) => !linked.has(m.id) && !done.has(m.id));
+    const stamp = stampFor(await readWriteMode(c.env, WORKER));
+    const messages: WriteMessage[] = fresh.map((m) => ({ boardId, label, contactId: m.id, kind: m.kind, name: m.name, stamp }));
+    for (let i = 0; i < messages.length; i += SEND_BATCH) {
+      await c.env.WRITES.sendBatch(messages.slice(i, i + SEND_BATCH).map((message) => ({ body: message })));
+    }
+
+    const queued = messages.length;
+    await c.env.DB.prepare(
+      'INSERT INTO searches (board_id, label, query, miles, matched, queued, confirmed_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(String(boardId), label, request.query ?? `event:${request.eventItemId}`, request.miles, preview.matches.length, queued, c.get('staffEmail'), new Date().toISOString())
+      .run();
+
+    return c.json({
+      queued,
+      alreadyOnBoard: preview.matches.length - queued,
+      historical: messages.filter((m) => m.kind === 'historical').length,
+    });
+  });
+
+  return app;
+}
