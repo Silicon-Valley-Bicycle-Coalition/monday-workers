@@ -19,7 +19,8 @@
 import type { Config } from './config';
 import { DEFAULT_PII_KEYS, logSkip, messageDisposition, retryDelaySeconds, type LogLevel, type WriteMode } from './flags';
 import type { NearbyMondayClient, ResultColumns } from './monday/client';
-import { AmbiguousWriteError, MondayApiError } from './monday/graphql';
+import { isTerminal } from './monday/errors';
+import { MondayApiError } from './monday/graphql';
 import { WORKER } from './routes';
 import type { WriteMessage } from './types';
 
@@ -38,23 +39,7 @@ export interface ConsumerDeps {
   now?: () => Date;
 }
 
-// 4xx statuses that are not about the request itself, so they stay retryable: a rejected token or
-// missing board access (fixing it heals the backlog) and the answers that recover with a wait.
-// Same rule as funraise-sync/src/errors.ts.
-const RETRYABLE_4XX = new Set([401, 403, 408, 409, 425, 429]);
-// Monday's codes for a request rejected on its content, sent with HTTP 200 and an `errors` array
-// (a deleted contact item is InvalidItemIdException). Same list as funraise-sync/src/errors.ts.
-const MONDAY_TERMINAL_CODE =
-  /^(ColumnValueException|CorrectedValueException|InvalidArgumentException|InvalidBoardIdException|InvalidColumnIdException|InvalidItemIdException|ItemNameTooLongException|RecordInvalidException|ResourceNotFoundException)$/;
-
-export function isTerminal(err: unknown): err is MondayApiError {
-  // A write that may have committed is never terminal: the retry's stale-claim check is what keeps
-  // it from being created twice.
-  if (!(err instanceof MondayApiError) || err instanceof AmbiguousWriteError) return false;
-  const status = err.httpStatus;
-  if (status !== undefined && status >= 400 && status < 500) return !RETRYABLE_4XX.has(status);
-  return MONDAY_TERMINAL_CODE.test(err.code ?? '');
-}
+export { isTerminal };
 
 const CLAIM_SQL = "INSERT OR IGNORE INTO result_rows (board_id, contact_id, result_item_id, created_at) VALUES (?, ?, '', ?)";
 const READ_SQL = 'SELECT result_item_id, created_at FROM result_rows WHERE board_id = ? AND contact_id = ?';
