@@ -305,6 +305,20 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   `POST /lists/{id}/members/{hash}/tags` — explicit `active`/`inactive` per tag, touching only
   the tags this Worker manages (`managedTags`), so staff- or other-tool-applied tags are never
   disturbed.
+* **Nearby tags.** When `monday.columns.nearby` is set, each label in the People "Nearby"
+  dropdown (written by `nearby-search`) becomes a tag `mailchimp.nearbyTagPrefix` + label
+  (`"Near: Stevens Creek bikeway"`). Labels are 1-60 characters with no commas, so the column's
+  text splits exactly on `", "`. They are open-ended, so before `updateMember` the consumer reads
+  the member's current tags (`GET /lists/{id}/members/{hash}/tags?count=1000`) and treats every
+  one starting with the prefix as managed: a label removed on Monday is sent `inactive`, and the
+  prefix is reserved for this Worker (a staff-made `Near: ...` tag would be cleared too). The
+  read happens only when the column is configured, the Donor has an email and the update is
+  about to run. `nearby` is `null` in both configs until the column exists (set its id in
+  `config/svbc.json` / `config/sandbox.json` to turn this on). Any People column change fires
+  the Donors webhook, so editing Nearby flows through the normal outbound path.
+  **Limit:** only the People board is watched. People (Historical) items get Nearby labels
+  too but are not synced to Mailchimp until this Worker watches that board
+  (svbc-monday-workers#83).
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address

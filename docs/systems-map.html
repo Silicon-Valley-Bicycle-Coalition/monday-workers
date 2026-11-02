@@ -170,7 +170,7 @@
 
 <h1>SVBC Systems Map</h1>
 <p class="lede">How Silicon Valley Bicycle Coalition's Monday.com CRM and its Cloudflare Workers fit together once Salesforce retires in October 2026. Monday.com becomes the single system of record; every Worker either feeds it once, keeps it current, or reads from it.</p>
-<div class="meta">as of 2026-10-26 &middot; production cutover weekend 2026-10-23 to 25 &middot; most Workers run in the sandbox environment, none against production boards yet &mdash; see status table</div>
+<div class="meta">as of 2026-11-02 &middot; production cutover weekend 2026-10-23 to 25 &middot; most Workers run in the sandbox environment, none against production boards yet &mdash; see status table</div>
 
 <div class="legend">
   <span class="item"><span class="swatch" style="background:var(--orange)"></span>Cloudflare Worker</span>
@@ -610,6 +610,7 @@
     <tr><td class="worker">monday-backup</td><td><span class="pill pill-sandbox">sandbox</span></td><td>deployed since 2026-09-22 but has never completed a backup: Drive destination folder, Google service account on the Shared Drive, Slack secret; production D1 exists (2026-10-08), production also needs a backup integration user</td></tr>
     <tr><td class="worker">eventbrite-sync</td><td><span class="pill pill-pending">built</span></td><td>not deployed anywhere (2026-10-06): private token, D1/queues/secrets, webhook registration, the shared Refunded label; the Eventbrite Order ID column now comes from the cutover load (2026-10-19), which also carries the Oct 22 Bike Summit orders</td></tr>
     <tr><td class="worker">people-reclassification</td><td><span class="pill pill-pending">built</span></td><td>not deployed anywhere (2026-10-09), every write dry-run until its write switch is <span class="mono">on</span>: D1, board ids, and the one-item live check that connect columns survive a board move</td></tr>
+    <tr><td class="worker">nearby-search</td><td><span class="pill pill-pending">built; sandbox rollout pending</span></td><td>built, not deployed anywhere (2026-11-02): staff-only map search for People, People (Historical) and Organizations near an address, intersection or road segment, queuing results-board rows and Nearby labels (synced to Mailchimp tags by mailchimp-sync), plus an hourly geocode backfill. Needs the Access application, D1/queues, and real board and column ids in config</td></tr>
   </tbody>
 </table>
 

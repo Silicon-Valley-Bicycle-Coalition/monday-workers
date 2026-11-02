@@ -122,6 +122,33 @@ describe('HttpMailchimpClient.updateMember', () => {
   });
 });
 
+describe('HttpMailchimpClient.getMemberTagNames', () => {
+  it('lists the member\'s tag names via the tags endpoint with count=1000', async () => {
+    const fetchFn = fakeFetch({ ok: true, json: async () => ({ tags: [{ id: 1, name: 'Near: Old' }, { id: 2, name: 'VIP' }], total_items: 2 }) });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+
+    expect(await client.getMemberTagNames('a@b.com')).toEqual(['Near: Old', 'VIP']);
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toMatch(/\/lists\/aud1\/members\/[0-9a-f]{32}\/tags\?count=1000$/);
+    expect((init as RequestInit).method ?? 'GET').toBe('GET');
+  });
+
+  it('returns [] on a 404 (member not in the audience)', async () => {
+    const fetchFn = fakeFetch({ ok: false, status: 404 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key', 'aud1', fetchFn);
+    expect(await client.getMemberTagNames('a@b.com')).toEqual([]);
+  });
+
+  it('throws the client\'s usual classified errors on other failures', async () => {
+    const server = new HttpMailchimpClient('https://x', 'k', 'aud', fakeFetch({ ok: false, status: 503 }));
+    await expect(server.getMemberTagNames('a@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+    const auth = new HttpMailchimpClient('https://x', 'k', 'aud', fakeFetch({ ok: false, status: 401 }));
+    await expect(auth.getMemberTagNames('a@b.com')).rejects.toBeInstanceOf(MailchimpAuthError);
+    const limited = new HttpMailchimpClient('https://x', 'k', 'aud', fakeFetch({ ok: false, status: 429 }));
+    await expect(limited.getMemberTagNames('a@b.com')).rejects.toBeInstanceOf(MailchimpRateLimitError);
+  });
+});
+
 describe('HttpMailchimpClient.getMemberInterests', () => {
   it('returns null on a 404 (contact not yet in the audience)', async () => {
     const fetchFn = fakeFetch({ ok: false, status: 404 });

@@ -19,10 +19,10 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: 111, campaignsBoardId: 999, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
-    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
   } },
   mailchimp: {
-    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'],
+    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
     mergeFields: { memberSince: 'MS', memberUntil: 'MU', membershipTier: 'MT', membershipStatus: 'MST', address: 'AD', totalGiven: 'TG' },
     tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit' },
   },
@@ -39,7 +39,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: EMAIL, membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: true, dnsReasonStatus: 'Confirmed',
+    doNotSolicit: true, dnsReasonStatus: 'Confirmed', nearby: [],
     ...overrides,
   };
 }
@@ -59,6 +59,7 @@ function fakeMailchimp(overrides: Partial<MailchimpClient> = {}): MailchimpClien
     updateMember: vi.fn().mockResolvedValue('updated'),
     renameMember: vi.fn(), unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'),
     getMemberInterests: vi.fn().mockResolvedValue({ status: 'subscribed', interests: { int1: true } }),
+    getMemberTagNames: vi.fn().mockResolvedValue([]),
     listInterests: vi.fn().mockResolvedValue([]),
     ...overrides,
   };

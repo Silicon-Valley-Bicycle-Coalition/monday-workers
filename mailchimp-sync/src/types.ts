@@ -32,6 +32,9 @@ export interface MondayColumnsConfig {
   mailchimpCampaigns: string;
   doNotSolicit: string; // checkbox
   dnsReasonStatus: string; // status: OK / Missing / Confirmed
+  // The People "Nearby" dropdown (written by nearby-search): each label becomes a Mailchimp tag.
+  // null = not synced (the column doesn't exist on this board yet).
+  nearby: string | null;
 }
 
 export interface Config {
@@ -46,6 +49,10 @@ export interface Config {
     audienceId: string;
     mergeFields: MailchimpMergeFieldsConfig;
     tags: MailchimpTagsConfig;
+    // Prepended to each Nearby label to make its Mailchimp tag ("Near: " + "Stevens Creek bikeway").
+    // Also how a removed label is recognized as ours to deactivate: managedTags() adds every
+    // tag the member holds that starts with it.
+    nearbyTagPrefix: string;
     // The Interest Categories this Worker syncs to the Campaigns board. Every other category in
     // the audience is ignored: production's holds decades of old lists (docs/39 §3).
     interestCategoryIds: string[];
@@ -122,6 +129,8 @@ export interface DonorRecord {
   totalGiven: string;
   doNotSolicit: boolean;
   dnsReasonStatus: string;
+  // Labels from the Nearby dropdown; [] when unset or the column isn't configured.
+  nearby: string[];
 }
 
 export interface MailchimpInterest {

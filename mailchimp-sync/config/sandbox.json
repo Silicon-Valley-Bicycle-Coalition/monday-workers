@@ -16,7 +16,8 @@
       "totalGiven": "numeric_mm79zsgp",
       "mailchimpCampaigns": "board_relation_mm7eg3jz",
       "doNotSolicit": "boolean_mm79xbdh",
-      "dnsReasonStatus": "color_mm7dc4z7"
+      "dnsReasonStatus": "color_mm7dc4z7",
+      "nearby": null
     }
   },
   "mailchimp": {
@@ -37,7 +38,8 @@
       "lifetimeMember": "lifetime-member",
       "hasDonated": "has-donated",
       "doNotSolicit": "do-not-solicit"
-    }
+    },
+    "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active",

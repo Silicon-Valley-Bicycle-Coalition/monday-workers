@@ -16,7 +16,8 @@
       "totalGiven": "numeric_mm8n7g4",
       "mailchimpCampaigns": "REPLACE_WITH_COLUMN_ID",
       "doNotSolicit": "boolean_mm8nf0wq",
-      "dnsReasonStatus": "color_mm8qfbce"
+      "dnsReasonStatus": "color_mm8qfbce",
+      "nearby": null
     }
   },
   "mailchimp": {
@@ -39,7 +40,8 @@
       "lifetimeMember": "lifetime-member",
       "hasDonated": "has-donated",
       "doNotSolicit": "do-not-solicit"
-    }
+    },
+    "nearbyTagPrefix": "Near: "
   },
   "lifetimeTierValue": "Lifetime",
   "activeStatusValue": "Active",
