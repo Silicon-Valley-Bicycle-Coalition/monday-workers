@@ -50,6 +50,10 @@ export function expandStreetName(name: string): string {
 
 const clean = (s: string): string => s.trim().replace(/[\s,;]+$/, '');
 
+// The final operand can carry a trailing city/state ("Winchester Blvd, San Jose"); cut it at the
+// first comma or " in " / " near " so the street name is what gets expanded.
+const cutTail = (s: string): string => clean(s.split(/,|\s+(?:in|near)\s+/i)[0]!);
+
 export function parseLocationText(text: string): LocationQuery | { kind: 'empty' } {
   const input = text
     .trim()
@@ -67,7 +71,7 @@ export function parseLocationText(text: string): LocationQuery | { kind: 'empty'
       kind: 'segment',
       road: expandStreetName(clean(segment[1]!)),
       from: expandStreetName(clean(segment[2]!)),
-      to: expandStreetName(clean(segment[3]!)),
+      to: expandStreetName(cutTail(segment[3]!)),
     };
   }
 
@@ -75,7 +79,7 @@ export function parseLocationText(text: string): LocationQuery | { kind: 'empty'
   if (intersection) {
     const a = intersection[1] ?? intersection[3]!;
     const b = intersection[2] ?? intersection[4]!;
-    return { kind: 'intersection', a: expandStreetName(clean(a)), b: expandStreetName(clean(b)) };
+    return { kind: 'intersection', a: expandStreetName(clean(a)), b: expandStreetName(cutTail(b)) };
   }
 
   if (/^\d/.test(input)) return { kind: 'address', text: input };
