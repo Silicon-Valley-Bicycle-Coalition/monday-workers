@@ -173,7 +173,7 @@ source — the goal is that another org's fork is a config change, not a rewrite
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
 `benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`, `report-digests`,
-`member-portal-writer`, `monday-auth`; not `svbc-calendars`) carries a
+`nearby-search`, `member-portal-writer`, `monday-auth`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
@@ -185,8 +185,9 @@ environment to another Worker, copy `member-portal`'s `environment.ts`, split te
 `docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`.
 
 **Write switch (off / hold / on), per Worker, in the shared `FLAGS` KV namespace** (`<worker>:writes`;
-missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). All 12
-migration/integration Workers carry it — the eleven listed in the spec plus `report-digests`
+missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). All 13
+migration/integration Workers carry it — the eleven listed in the spec plus `report-digests` and
+`nearby-search`
 (`svbc-calendars` excluded). `member-portal/src/flags.ts` is
 canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the CI
 job `worker-flags-copies` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
@@ -223,7 +224,9 @@ through constructor options in their own `client.ts`, never by editing the copy.
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
 donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-portal,
-people-reclassification, quickbooks-sync and report-digests;
+nearby-search, people-reclassification, quickbooks-sync and report-digests;
+`nearby-search` also carries a byte-identical copy of `geo-filter/src/geometry.ts` (the corridor and
+point logic), enforced by the `geo-geometry-copies` CI job; edit geo-filter's, then copy it over.
 salesforce-import deliberately keeps its own client (`src/load/monday.ts`) through the
 2026-10-09 cutover: it's the one every load rehearsal validated, its `gqlPartial()` (per-alias
 results from multi-create requests) has no transport equivalent, and `gqlLegacy()` must stay

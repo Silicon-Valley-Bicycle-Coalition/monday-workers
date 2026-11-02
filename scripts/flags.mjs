@@ -45,6 +45,7 @@ export const QUEUES = {
   'mailchimp-sync': ['mailchimp-sync-outbound', 'mailchimp-sync-inbound'],
   'member-portal': ['member-portal-change-requests', 'member-portal-letter-emails'],
   'monday-backup': [],
+  'nearby-search': ['nearby-search-writes'],
   'people-reclassification': [],
   'quickbooks-sync': ['quickbooks-sync-writes'],
   'report-digests': [],

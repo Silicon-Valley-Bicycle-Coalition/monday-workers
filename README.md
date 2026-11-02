@@ -134,6 +134,7 @@ open it in a browser. Keep it in step with this table — it carries an "as of" 
 | [`email-log`](email-log/README.md) | Built, not deployed (2026-10-20; design [`docs/superpowers/specs/2026-10-19-email-log-design.md`](docs/superpowers/specs/2026-10-19-email-log-design.md)). Staff BCC or forward a significant email to `log@log.bikesiliconvalley.org` and it becomes an Activities (Logged) item linked to the matching People, replacing the Salesforce Gmail extension's one-click logging; a reply goes out only when an address didn't match. **Blocked on** the Activities (Logged) board, D1/queues, the Monday integration user, Email Routing on `log.bikesiliconvalley.org`, and the `Authentication-Results` authserv-id live check (it rejects all mail until set). Has a **sandbox environment** (`npm run deploy:sandbox`, `config/sandbox.json`), unprovisioned | Post-cutover, non-blocking — replaces the Salesforce Gmail extension's one-click email logging |
 | [`people-reclassification`](people-reclassification/README.md) | **Built, not deployed** (`feat/people-reclassification`, 2026-10-09). The periodic pass the plan's "Still open" first bullet asks for: moves People items whose latest activity (Last Gift Date, Member Until, counted event registrations, volunteer hours; Lifetime members and Funraise-linked people never age out) is outside a rolling **7-year** window to People (Historical), and reactivated Historical people back — daily cron that fires a pass on the first of each quarter, when People crosses 85% of the ceiling, or to continue unfinished work; `POST /reclassify/run` on demand. Every write is **dry-run** until the write switch (`people-reclassification:writes`) is `on`; a D1 ledger records every decision. Warns (and optionally raises an IT Requests item) when Historical nears its own ceiling. Not provisioned anywhere; move behaviour (connect-column survival across `move_item_to_board`) still needs the one-item live check in its README | Post-cutover, non-blocking — People lands at ~74% of the ceiling; this keeps it there |
 | [`report-digests`](report-digests/README.md) | **Built, sandbox deployed 2026-10-26** (`feat/report-subscriptions`; `svbc-report-digests-sandbox`, secrets set). Five scheduled email digests of Monday board views that replace the seven Salesforce report subscriptions still live in October 2026 (unmatched gifts, membership renewals, recent gifts with the donor's Windfall screening, the fiscal year by gift size, last week's gifts). Hourly cron, Pacific schedules in config, recipients as Monday user ids. Why not Monday: scheduled dashboard email is Enterprise-only, and Pro's 5 scheduled PDF exports can't skip an empty run or join a donor's columns. Sandbox sends currently bounce at the sink mailbox (see its README). Every send is gated by the write switch (`report-digests:writes`); a digest due under `hold` is not caught up | **Cutover weekend**: the Salesforce subscriptions email frozen data from then on. Needs production board ids, the three new `configure` views, and two secrets |
+| [`nearby-search`](nearby-search/README.md) | **In development** (2026-11-02; design [`docs/superpowers/specs/2026-11-02-nearby-search-design.md`](docs/superpowers/specs/2026-11-02-nearby-search-design.md)). Staff-only map search for People, People (Historical) and Organizations near an address or road segment (OpenStreetMap), behind Cloudflare Access; confirming a search queues the matches onto a results board in Monday. Scaffold only so far: config, D1 migration, CI registration; not deployed anywhere. Every Monday write will be gated by the write switch (`nearby-search:writes`) | Post-cutover, non-blocking — replaces the Salesforce Bike-lane GIS proximity lookups |
 
 Two related builds are **deliberately not Workers**:
 
@@ -226,10 +227,10 @@ Every Worker that writes to Monday (or sends email) reads a per-Worker mode from
 Workers KV namespace, `FLAGS`, so a migration or an incident can stop writes in seconds without a
 deploy. Design: [`docs/superpowers/specs/2026-10-26-write-switch-design.md`](docs/superpowers/specs/2026-10-26-write-switch-design.md);
 the migration procedure: [`docs/runbooks/migration-hold.md`](docs/runbooks/migration-hold.md).
-In scope, twelve Workers: `benevity-import`, `bp-feedback-notify`, `donation-rollups`,
+In scope, thirteen Workers: `benevity-import`, `bp-feedback-notify`, `donation-rollups`,
 `email-log`, `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
-`monday-backup`, `people-reclassification`, `quickbooks-sync` and `report-digests`
-(`svbc-calendars` excluded).
+`monday-backup`, `nearby-search`, `people-reclassification`, `quickbooks-sync` and
+`report-digests` (`svbc-calendars` excluded).
 
 | Mode | Behaviour |
 |---|---|
@@ -304,7 +305,7 @@ Combined with 14-day retention, a multi-day Monday outage or a long `hold` queue
 dead-lettering. Error classification (retryable vs terminal) is unchanged per Worker.
 
 **KV namespaces** were created 2026-10-27: `FLAGS` (`1dec1f10ebcc41e7a464179ba2b37628`) and
-`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 12 in-scope `wrangler.jsonc` files carry
+`sandbox-FLAGS` (`a80c21a348064e07bb9c1bff16bee1a4`). All 13 in-scope `wrangler.jsonc` files carry
 both ids (forks: create your own with `npx wrangler kv namespace create FLAGS` and
 `npx wrangler kv namespace create sandbox-FLAGS`, and replace them);
 `node scripts/check-worker-flags.mjs --strict` (CI job `worker-flags-copies`) verifies they match and that every Worker's `src/flags.ts` is

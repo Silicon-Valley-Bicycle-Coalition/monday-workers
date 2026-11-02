@@ -1,0 +1,45 @@
+{
+  "monday": {
+    "apiUrl": "https://api.monday.com/v2",
+    "sources": [
+      {
+        "kind": "person",
+        "boardId": null,
+        "latColumn": "REPLACE_WITH_COLUMN_ID",
+        "lngColumn": "REPLACE_WITH_COLUMN_ID",
+        "nameColumn": null,
+        "nearbyColumn": "REPLACE_WITH_COLUMN_ID",
+        "address": { "street": "REPLACE_WITH_COLUMN_ID", "city": "REPLACE_WITH_COLUMN_ID", "state": "REPLACE_WITH_COLUMN_ID", "zip": "REPLACE_WITH_COLUMN_ID" }
+      },
+      {
+        "kind": "historical",
+        "boardId": null,
+        "latColumn": "REPLACE_WITH_COLUMN_ID",
+        "lngColumn": "REPLACE_WITH_COLUMN_ID",
+        "nameColumn": null,
+        "nearbyColumn": "REPLACE_WITH_COLUMN_ID",
+        "address": null
+      },
+      {
+        "kind": "organization",
+        "boardId": null,
+        "latColumn": "REPLACE_WITH_COLUMN_ID",
+        "lngColumn": "REPLACE_WITH_COLUMN_ID",
+        "nameColumn": null,
+        "nearbyColumn": null,
+        "address": { "street": "REPLACE_WITH_COLUMN_ID", "city": "REPLACE_WITH_COLUMN_ID", "state": "REPLACE_WITH_COLUMN_ID", "zip": "REPLACE_WITH_COLUMN_ID" }
+      }
+    ],
+    "resultsWorkspaceIds": [],
+    "eventsBoardId": null,
+    "eventsAddressColumn": "REPLACE_WITH_COLUMN_ID"
+  },
+  "osm": {
+    "nominatimUrl": "https://nominatim.openstreetmap.org",
+    "overpassUrl": "https://overpass-api.de/api/interpreter",
+    "userAgent": "REPLACE_WITH_USER_AGENT (svbc-nearby-search; contact address)"
+  },
+  "serviceArea": [36.9, -122.7, 37.8, -121.5],
+  "access": { "teamDomain": "REPLACE_WITH_ACCESS_TEAM_DOMAIN", "aud": "REPLACE_WITH_SANDBOX_ACCESS_AUD" },
+  "geocode": { "censusUrl": "https://geocoding.geo.census.gov/geocoder/locations/address", "perRun": 200 }
+}
