@@ -69,6 +69,15 @@ describe('buildTags', () => {
       .toContain('lapsed-member');
   });
 
+  it('gives a never-member (blank Membership Status) no membership tag, so syncTags clears all three', () => {
+    // Blank status means never a member (docs/22): tagging these lapsed-member put ~1,800 people who
+    // never joined into renewal sends (found 2026-11-02, cutover Gate C).
+    const tags = buildTags(donor({ membershipStatus: '', membershipTier: '' }), CONFIG);
+    expect(tags).not.toContain('lapsed-member');
+    expect(tags).not.toContain('active-member');
+    expect(tags).not.toContain('lifetime-member');
+  });
+
   it('adds has-donated only when totalGiven is a positive number', () => {
     expect(buildTags(donor({ totalGiven: '150' }), CONFIG)).toContain('has-donated');
     expect(buildTags(donor({ totalGiven: '0' }), CONFIG)).not.toContain('has-donated');
