@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { FakeD1 } from './testing';
 import worker from './index';
 import type { Env } from './types';
 
@@ -18,13 +19,37 @@ describe('queue', () => {
     expect(isDeadLetterBatch('nearby-search-writes')).toBe(false);
   });
 
-  it('acks a dead-letter batch without reading the write switch', async () => {
-    const { vi } = await import('vitest');
+  const dead = (contactId: string) => ({
+    body: { boardId: 900, contactId, name: 'Secret Name', label: 'x', kind: 'person', stamp: {} },
+    ack: vi.fn(),
+    retry: vi.fn(),
+  });
+
+  it('releases a pending claim, leaves a done row, and acks a dead-letter batch', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const msg = { body: { boardId: 900, contactId: 'p1', name: 'Secret Name', label: 'x', kind: 'person', stamp: {} }, ack: vi.fn(), retry: vi.fn() };
-    await worker.queue({ queue: 'nearby-search-writes-dlq', messages: [msg] } as unknown as MessageBatch<never>, {} as Env);
-    expect(msg.ack).toHaveBeenCalled();
+    const db = new FakeD1();
+    db.resultRows.push(
+      { board_id: '900', contact_id: 'p1', result_item_id: '', created_at: 't' },
+      { board_id: '900', contact_id: 'p2', result_item_id: '5000', created_at: 't' },
+    );
+    const a = dead('p1');
+    const b = dead('p2');
+    await worker.queue({ queue: 'nearby-search-writes-dlq', messages: [a, b] } as unknown as MessageBatch<never>, { DB: db } as unknown as Env);
+    expect(db.resultRows).toEqual([{ board_id: '900', contact_id: 'p2', result_item_id: '5000', created_at: 't' }]);
+    expect(a.ack).toHaveBeenCalled();
+    expect(b.ack).toHaveBeenCalled();
     expect(err.mock.calls.map(String).join('')).not.toContain('Secret Name');
+    err.mockRestore();
+  });
+
+  it('retries a dead letter whose claim release fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const db = new FakeD1();
+    db.failRelease = true;
+    const m = dead('p1');
+    await worker.queue({ queue: 'nearby-search-writes-sandbox-dlq', messages: [m] } as unknown as MessageBatch<never>, { DB: db } as unknown as Env);
+    expect(m.ack).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalled();
     err.mockRestore();
   });
 });

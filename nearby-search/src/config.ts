@@ -90,7 +90,10 @@ export function validateConfig(raw: unknown): Config {
   if (!Array.isArray(m.sources)) throw new Error('config monday.sources must be an array');
   const sources = m.sources.map(source);
   for (const kind of CONTACT_KINDS) {
-    if (!sources.some((s) => s.kind === kind)) throw new Error(`config monday.sources has no ${kind} board`);
+    const count = sources.filter((s) => s.kind === kind).length;
+    if (count === 0) throw new Error(`config monday.sources has no ${kind} board`);
+    // The consumer looks a contact's source board up by kind, so each kind maps to one board.
+    if (count > 1) throw new Error(`config monday.sources has more than one ${kind} board`);
   }
   if (!Array.isArray(m.resultsWorkspaceIds) || m.resultsWorkspaceIds.length === 0) {
     throw new Error('config monday.resultsWorkspaceIds must be a non-empty array');

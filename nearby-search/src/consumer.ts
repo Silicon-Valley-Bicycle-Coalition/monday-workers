@@ -6,8 +6,16 @@
 // delivery that died mid-write, so the next one takes over after checking the board itself: the
 // row may already exist (an ambiguous create), and creating it again would duplicate it.
 //
+// A takeover is itself a compare-and-set on created_at, so two deliveries can't both take over one
+// stale claim; the queue also runs with max_concurrency: 1 (wrangler.jsonc).
+//
 // Messages run one at a time, in order: addNearbyLabel is read-modify-write on a dropdown, so two
 // concurrent writes to the same contact would lose a label.
+//
+// The label is written before the row for crash safety: the stale-claim check only sees the row,
+// so a row must never exist without its label. The reverse can happen (a terminal create failure
+// after the label landed leaves a label with no row); that's acceptable, since the claim is
+// released and confirming the search again re-queues the contact.
 import type { Config } from './config';
 import { DEFAULT_PII_KEYS, logSkip, messageDisposition, retryDelaySeconds, type LogLevel, type WriteMode } from './flags';
 import type { NearbyMondayClient, ResultColumns } from './monday/client';
@@ -51,7 +59,8 @@ export function isTerminal(err: unknown): err is MondayApiError {
 const CLAIM_SQL = "INSERT OR IGNORE INTO result_rows (board_id, contact_id, result_item_id, created_at) VALUES (?, ?, '', ?)";
 const READ_SQL = 'SELECT result_item_id, created_at FROM result_rows WHERE board_id = ? AND contact_id = ?';
 const DONE_SQL = 'UPDATE result_rows SET result_item_id = ? WHERE board_id = ? AND contact_id = ?';
-const RELEASE_SQL = "DELETE FROM result_rows WHERE board_id = ? AND contact_id = ? AND result_item_id = ''";
+export const RELEASE_SQL = "DELETE FROM result_rows WHERE board_id = ? AND contact_id = ? AND result_item_id = ''";
+const TAKEOVER_SQL = "UPDATE result_rows SET created_at = ? WHERE board_id = ? AND contact_id = ? AND result_item_id = '' AND created_at = ?";
 
 type Claim = 'claimed' | 'done' | 'wait' | 'stale';
 
@@ -80,7 +89,10 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
     if (!row) return 'wait';
     if (row.result_item_id !== '') return 'done';
     const age = now().getTime() - Date.parse(row.created_at);
-    return Number.isFinite(age) && age < CLAIM_STALE_MS ? 'wait' : 'stale';
+    if (Number.isFinite(age) && age < CLAIM_STALE_MS) return 'wait';
+    // Take over only if nobody else did since the read: refreshing created_at claims it afresh.
+    const taken = await deps.db.prepare(TAKEOVER_SQL).bind(now().toISOString(), board, contact, row.created_at).run();
+    return taken.meta.changes === 1 ? 'stale' : 'wait';
   };
 
   for (const msg of batch.messages) {
@@ -139,12 +151,15 @@ export async function handleBatch(batch: MessageBatch<WriteMessage>, deps: Consu
       if (isTerminal(err)) {
         // Item ids and codes only: never the name, label or address.
         console.warn(JSON.stringify({ worker: WORKER, terminal: true, itemId: body.contactId, code: err.code ?? err.httpStatus ?? null }));
-        // Nothing was created (a non-ambiguous rejection), so free the claim for a later search.
+        // Nothing was created (a non-ambiguous rejection), so free the claim for a later search. If
+        // the release itself fails, retry rather than ack: an acked message would leave its claim
+        // pending for good, and confirm would skip this contact on this board forever.
         if (claimed) {
           try {
             await deps.db.prepare(RELEASE_SQL).bind(board, body.contactId).run();
           } catch {
-            // A leftover pending claim only goes stale; the next delivery checks the board.
+            msg.retry({ delaySeconds: retryDelaySeconds(msg.attempts) });
+            continue;
           }
         }
         msg.ack();

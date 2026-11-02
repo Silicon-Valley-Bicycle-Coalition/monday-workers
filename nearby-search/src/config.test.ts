@@ -62,6 +62,13 @@ describe('validateConfig', () => {
     expect(() => validateConfig(raw)).toThrow(`no ${kind} board`);
   });
 
+  it.each(['person', 'historical', 'organization'])('rejects more than one %s board', (kind) => {
+    const raw = fixture();
+    const dup = { ...raw.monday.sources.find((s) => s.kind === kind)!, boardId: 199 };
+    raw.monday.sources = [...raw.monday.sources, dup];
+    expect(() => validateConfig(raw)).toThrow(`more than one ${kind} board`);
+  });
+
   it('accepts nearbyColumn null only for organization', () => {
     const raw = fixture() as any;
     expect(() => validateConfig(raw)).not.toThrow();

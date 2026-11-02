@@ -278,6 +278,39 @@ describe('handleBatch', () => {
     expect(m.ack).toHaveBeenCalled();
   });
 
+  it('a stale takeover that loses the race waits instead of writing', async () => {
+    const db = new FakeD1();
+    const stale = new Date(NOW.getTime() - CLAIM_STALE_MS).toISOString();
+    db.resultRows.push({ board_id: '900', contact_id: 'p1', result_item_id: '', created_at: stale });
+    // Another delivery takes the claim over between this one's read and its takeover.
+    db.beforeTakeover = () => { db.resultRows[0]!.created_at = new Date(NOW.getTime() - 1000).toISOString(); };
+    const m = message('p1');
+    const { monday } = await run([m], { db });
+    expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 600 });
+    expect(monday.calls).toEqual([]);
+  });
+
+  it('a stale takeover refreshes the claim time', async () => {
+    const db = new FakeD1();
+    db.resultRows.push({ board_id: '900', contact_id: 'p1', result_item_id: '', created_at: new Date(NOW.getTime() - CLAIM_STALE_MS).toISOString() });
+    const monday = new WritingMonday();
+    monday.createError = new MondayApiError('bad gateway', { httpStatus: 502 });
+    await run([message('p1')], { db, monday });
+    expect(db.resultRows[0]).toMatchObject({ result_item_id: '', created_at: NOW.toISOString() });
+  });
+
+  it('a terminal error whose claim release fails retries instead of acking', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db = new FakeD1();
+    db.failRelease = true;
+    const monday = new WritingMonday();
+    monday.createError = new MondayApiError('bad value', { httpStatus: 400, code: 'ColumnValueException' });
+    const m = message('p1');
+    await run([m], { db, monday });
+    expect(m.ack).not.toHaveBeenCalled();
+    expect(m.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+  });
+
   it('calls ensureResultColumns once per board per batch', async () => {
     const { monday } = await run([message('p1'), message('p2'), message('h1', 'historical', { boardId: 901 })]);
     expect(monday.ensured.map(([b]) => b)).toEqual([900, 901]);

@@ -1,5 +1,5 @@
 import { configFor } from './config';
-import { handleBatch } from './consumer';
+import { handleBatch, RELEASE_SQL } from './consumer';
 import { environmentOf } from './environment';
 import { readLogLevel, readWriteMode } from './flags';
 import { createOsmClient } from './locate/osm';
@@ -31,10 +31,17 @@ export default {
   // Both the write queue and its dead-letter queue (wrangler.jsonc) are consumed here.
   async queue(batch: MessageBatch<WriteMessage>, env: Env): Promise<void> {
     if (isDeadLetterBatch(batch.queue)) {
-      // A write that exhausted its retries: log the ids only (no name, label or address) and drop
-      // it. Confirming the search again re-queues any contact still missing from the board.
+      // A write that exhausted its retries: log the ids only (no name, label or address), release
+      // a still-pending claim so confirming the search again re-queues the contact, then drop it.
+      // A done row (real item id or 'linked') is untouched. If the release fails, retry.
       for (const msg of batch.messages) {
         console.error(JSON.stringify({ worker: WORKER, deadLetter: true, boardId: msg.body.boardId, itemId: msg.body.contactId }));
+        try {
+          await env.DB.prepare(RELEASE_SQL).bind(String(msg.body.boardId), msg.body.contactId).run();
+        } catch {
+          msg.retry();
+          continue;
+        }
         msg.ack();
       }
       return;

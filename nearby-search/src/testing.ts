@@ -75,6 +75,10 @@ export interface SearchRow { values: unknown[] }
 export class FakeD1 {
   resultRows: ResultRow[] = [];
   searches: unknown[][] = [];
+  // Test hooks: run just before a stale-claim takeover (to simulate a racing delivery), and make
+  // the claim-release DELETE throw.
+  beforeTakeover?: () => void;
+  failRelease = false;
   private row(board: unknown, contact: unknown) {
     return this.resultRows.find((r) => r.board_id === board && r.contact_id === contact);
   }
@@ -101,12 +105,20 @@ export class FakeD1 {
             this.resultRows.push({ board_id: args[0] as string, contact_id: args[1] as string, result_item_id: '', created_at: args[2] as string });
             return { success: true, meta: { changes: 1 } };
           }
+          if (sql.startsWith("UPDATE result_rows SET created_at = ? WHERE board_id = ? AND contact_id = ? AND result_item_id = '' AND created_at = ?")) {
+            this.beforeTakeover?.();
+            const r = this.row(args[1], args[2]);
+            const hit = r !== undefined && r.result_item_id === '' && r.created_at === args[3];
+            if (hit) r.created_at = args[0] as string;
+            return { success: true, meta: { changes: hit ? 1 : 0 } };
+          }
           if (sql.startsWith('UPDATE result_rows SET result_item_id = ? WHERE board_id = ? AND contact_id = ?')) {
             const r = this.row(args[1], args[2]);
             if (r) r.result_item_id = args[0] as string;
             return { success: true, meta: { changes: r ? 1 : 0 } };
           }
           if (sql.startsWith("DELETE FROM result_rows WHERE board_id = ? AND contact_id = ? AND result_item_id = ''")) {
+            if (this.failRelease) throw new Error('d1 down');
             const before = this.resultRows.length;
             this.resultRows = this.resultRows.filter((r) => !(r.board_id === args[0] && r.contact_id === args[1] && r.result_item_id === ''));
             return { success: true, meta: { changes: before - this.resultRows.length } };
