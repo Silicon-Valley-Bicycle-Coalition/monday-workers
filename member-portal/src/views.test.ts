@@ -627,6 +627,56 @@ describe('portalView tab structure', () => {
   });
 });
 
+describe('portalView get-involved links', () => {
+  const data: PortalView = {
+    donors: [],
+    discounts: [],
+    donationHistoryEnabled: true,
+    volunteerHistory: null,
+  };
+  const noFunraise = { manageRecurringUrl: null, renewMembershipUrl: null };
+
+  it('groups links by category with committee labels and calendar links', () => {
+    const html = portalView(data, 'en', {}, noFunraise, null, {}, [
+      { category: 'transit', label: 'BART Bicycle Advisory Task Force', url: 'https://bart.legistar.com/Calendar.aspx', calendarUrl: 'https://c.example.org/bart.ics' },
+      { category: 'civic', label: 'San José BPAC', url: 'https://sanjose.legistar.com/Calendar.aspx' },
+    ]);
+    expect(html).toContain(t('en', 'portal.getInvolvedHeading'));
+    expect(html).toContain(t('en', 'portal.getInvolvedTransit'));
+    expect(html).toContain(t('en', 'portal.getInvolvedCivic'));
+    expect(html).not.toContain(`<h3>${t('en', 'portal.getInvolvedEvents')}</h3>`);
+    expect(html).toContain('href="https://bart.legistar.com/Calendar.aspx"');
+    expect(html).toContain('href="https://c.example.org/bart.ics"');
+    expect(html).toContain('San José BPAC');
+    // Only the BART link has a feed.
+    expect(html.split(t('en', 'portal.addToCalendar')).length - 1).toBe(1);
+    // City committees come before transit agencies.
+    expect(html.indexOf(t('en', 'portal.getInvolvedCivic'))).toBeLessThan(html.indexOf(t('en', 'portal.getInvolvedTransit')));
+  });
+
+  it('uses translated link text for unlabeled events and volunteer links', () => {
+    const html = portalView(data, 'es', {}, noFunraise, null, {}, [
+      { category: 'events', url: 'https://www.eventbrite.com/o/1' },
+      { category: 'volunteer', url: 'https://example.org/volunteer' },
+    ]);
+    expect(html).toContain(t('es', 'portal.getInvolvedEventsLink'));
+    expect(html).toContain(t('es', 'portal.getInvolvedVolunteerLink'));
+  });
+
+  it('omits the section when no links are configured', () => {
+    const html = portalView(data, 'en', {}, noFunraise);
+    expect(html).not.toContain(t('en', 'portal.getInvolvedHeading'));
+  });
+
+  it('escapes labels and URLs', () => {
+    const html = portalView(data, 'en', {}, noFunraise, null, {}, [
+      { category: 'civic', label: '<b>Council</b>', url: 'https://x.org/?a=1&b=2' },
+    ]);
+    expect(html).toContain('&lt;b&gt;Council&lt;/b&gt;');
+    expect(html).toContain('href="https://x.org/?a=1&amp;b=2"');
+  });
+});
+
 describe('portalView funraise deep links', () => {
   const data: PortalView = {
     donors: [

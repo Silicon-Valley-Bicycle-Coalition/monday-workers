@@ -734,6 +734,26 @@ before any real ones exist.
 stanza to *exist*. Copy `"impact": { "statementsByYear": {} }` from this repo's
 `config/svbc.json` before deploying v8 code over an older config; the feature then stays off.
 
+## v9 — Get involved links
+
+A "Get involved" section on the dashboard (`GET /:locale/portal`) links every member to the
+public meetings where South Bay bike decisions get made and to SVBC's own calendar, grouped as
+city bike/pedestrian committees, transit-agency committees (BART, Caltrain), SVBC events and
+volunteer opportunities. The list lives in `config/*.json`'s `getInvolved.links`, one entry per
+link: `category` (`civic`, `transit`, `events` or `volunteer`), the public meeting page `url`,
+an optional `calendarUrl`, and a `label`. Committee names are proper nouns and stay untranslated,
+so `civic` and `transit` links must have a `label`. An `events` or `volunteer` link without one
+gets translated link text instead. Every URL must be https.
+
+Each `calendarUrl` is the matching `svbc-calendars` ICS feed
+(`https://committees.bikesiliconvalley.org/calendars/<feed-id>.ics`), so adding a committee here
+usually means adding its source there too. The links are public pages, not donor data, so
+sandbox and local configs carry the same list. The section is the same for every member: the
+dashboard doesn't load a donor's address, so it isn't filtered by city. It costs no Monday read.
+
+**Upgrading an existing deployment (forks included):** config validation requires the
+`getInvolved` stanza to exist. `"getInvolved": { "links": [] }` keeps the section off.
+
 ## Deploying: the write switch
 
 Every write the portal makes on a donor's behalf is gated by the shared write switch (spec

@@ -80,6 +80,19 @@
     "manageRecurringUrl": "https://give.funraise.org/login",
     "renewMembershipUrl": "https://give.funraise.org/give?campaign=membership"
   },
+  "getInvolved": {
+    "links": [
+      {"category": "transit", "label": "BART Bicycle Advisory Task Force", "url": "https://bart.legistar.com/Calendar.aspx", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/bart.ics"},
+      {"category": "transit", "label": "Caltrain Bicycle and Active Transportation Advisory Committee", "url": "https://www.caltrain.com/about-caltrain/advisory-committees/batac", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/caltrain-batac.ics"},
+      {"category": "civic", "label": "Campbell Bicycle & Pedestrian Advisory Committee", "url": "https://www.campbellca.gov/AgendaCenter", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/campbell.ics"},
+      {"category": "civic", "label": "Cupertino Bicycle Pedestrian Commission", "url": "https://cupertino.legistar.com/Calendar.aspx", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/cupertino.ics"},
+      {"category": "civic", "label": "San José Bicycle Pedestrian Advisory Committee", "url": "https://sanjose.legistar.com/Calendar.aspx", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/san-jose.ics"},
+      {"category": "civic", "label": "Santa Clara Bicycle & Pedestrian Advisory Committee", "url": "https://santaclara.legistar.com/Calendar.aspx", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/santa-clara.ics"},
+      {"category": "civic", "label": "Saratoga Pedestrian, Equestrian & Bicycle Trails Advisory Committee", "url": "https://www.saratoga.ca.us/AgendaCenter", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/saratoga.ics"},
+      {"category": "events", "url": "https://www.eventbrite.com/o/21763925459", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/eventbrite-public-events.ics"},
+      {"category": "volunteer", "url": "https://bikesiliconvalley.org/get-involved/volunteer", "calendarUrl": "https://committees.bikesiliconvalley.org/calendars/eventbrite-volunteer-opportunities.ics"}
+    ]
+  },
   "letterCron": {
     "boardId": 6,
     "columns": {
