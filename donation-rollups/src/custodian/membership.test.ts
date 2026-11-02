@@ -59,6 +59,8 @@ function fakeClient(f: Fake): CustodianMondayClient {
     async pageHistoricalShifts() { return { items: f.shifts ?? [], cursor: null }; },
     async getItemsBoardIds(ids) { return new Map(ids.flatMap((id) => (f.boardOf?.[id] ? [[id, f.boardOf[id]!] as [string, string]] : []))); },
     async pageRecurringGifts() { return { items: [], cursor: null }; },
+    async pageDonationCredits() { return { items: [], cursor: null }; },
+    async getItemsState() { return new Map(); },
   };
 }
 function deps(f: Fake, sent: RecomputeQueueMessage[], now = new Date('2027-12-03T10:00:00Z')): CustodianDeps {

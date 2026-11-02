@@ -2,7 +2,7 @@ import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
 import { parseHours } from '../membership/volunteer';
 import type { BoardMembership } from '../membership/derive';
-import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
+import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig, RollCallConfig } from '../types';
 import {
   AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
   type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions, type TokenProvider,
@@ -57,6 +57,17 @@ export interface RecurringGiftRecord {
   id: string;
   statusLabel: string | null;
   donorItemIds: string[];
+}
+
+export interface DonationCreditRecord {
+  id: string;
+  fiscalYear: number; // 0 when the Fiscal Year Ending cell is blank or unparseable
+  amountCents: number;
+  status: string | null;
+  giftType: string;
+  donorItemIds: string[];
+  matchedByItemIds: string[];
+  anonymous: boolean;
 }
 
 export interface HistoricalShiftRecord {
@@ -183,6 +194,18 @@ export function statusLabel(text: string | null | undefined, value: string | nul
   }
   if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { index?: unknown }).index !== 'number') return null;
   return text === null || text === undefined || text.trim() === '' ? null : text;
+}
+
+// A checkbox cell's value is JSON like {"checked":"true"} (Monday returns the string or the
+// boolean), or null when never set.
+function checkboxChecked(value: string | null | undefined): boolean {
+  if (value === null || value === undefined || value.trim() === '') return false;
+  try {
+    const checked = (JSON.parse(value) as { checked?: unknown } | null)?.checked;
+    return checked === true || checked === 'true';
+  } catch {
+    return false;
+  }
 }
 
 export class HttpMondayClient implements DonationRollupsMondayClient {
@@ -437,6 +460,49 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
           donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [] };
       }),
     };
+  }
+
+  async pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null) {
+    const c = cfg.columns;
+    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+      await this.graphql(
+        `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
+          boards(ids: $boardId) {
+            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
+          }
+        }`,
+        { boardId: [cfg.boardId], columnIds: [c.amount, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous], cursor },
+      );
+    const page = data.boards[0]?.items_page;
+    if (page === undefined) return { items: [], cursor: null };
+    return {
+      cursor: page.cursor,
+      items: page.items.map((item) => {
+        const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
+        const status = byId.get(c.status);
+        return { id: item.id,
+          fiscalYear: Number((byId.get(c.fiscalYear)?.text ?? '').trim()) || 0,
+          amountCents: parseAmountCents(byId.get(c.amount)?.text) ?? 0,
+          status: statusLabel(status?.text, status?.value),
+          giftType: (byId.get(c.giftType)?.text ?? '').trim(),
+          donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [],
+          matchedByItemIds: byId.get(c.matchedBy)?.linked_item_ids ?? [],
+          anonymous: checkboxChecked(byId.get(c.anonymous)?.value) };
+      }),
+    };
+  }
+
+  async getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>> {
+    const out = new Map<string, 'active' | 'archived' | 'deleted'>();
+    for (const chunk of chunksOf(itemIds, 100)) {
+      // items(ids:) defaults to 25 without a limit.
+      const data = await this.graphql<{ items: { id: string; state: string }[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id state } }`, { ids: chunk });
+      for (const item of data.items) {
+        if (item.state === 'active' || item.state === 'archived' || item.state === 'deleted') out.set(item.id, item.state);
+      }
+    }
+    return out;
   }
 
   async getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>> {

@@ -382,6 +382,24 @@ describe('status columns read by stored value (label id 5)', () => {
     const page = await client.pageRecurringGifts({ boardId: 9, columns: { donorLink: 'donor', status: 'st' }, activeStatusLabel: 'Active' }, null);
     expect(page.items.map((i) => i.statusLabel)).toEqual([null, 'Active']);
   });
+  it('pageDonationCredits parses amount, fiscal year, links, status and the Anonymous checkbox', async () => {
+    const CFG = { boardId: 9, columns: { amount: 'am', status: 'st', fiscalYear: 'fy', giftType: 'gt', donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } };
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'g1', column_values: [{ id: 'am', text: '$1,250.50' }, { id: 'st', text: 'Received', value: '{"index":1}' }, { id: 'fy', text: '2026' },
+        { id: 'gt', text: 'Matching Donation' }, { id: 'dl', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'mb', text: 'Acme', linked_item_ids: ['o1'] },
+        { id: 'an', text: 'v', value: '{"checked":"true"}' }] },
+      { id: 'g2', column_values: [{ id: 'am', text: '' }, { id: 'st', text: 'Received', value: null }, { id: 'fy', text: 'n/a' },
+        { id: 'gt', text: '' }, { id: 'dl', text: '' }, { id: 'mb', text: '' }, { id: 'an', text: '', value: null }] }] } }] } });
+    expect((await client.pageDonationCredits(CFG, null)).items).toEqual([
+      { id: 'g1', fiscalYear: 2026, amountCents: 125050, status: 'Received', giftType: 'Matching Donation',
+        donorItemIds: ['p1'], matchedByItemIds: ['o1'], anonymous: true },
+      { id: 'g2', fiscalYear: 0, amountCents: 0, status: null, giftType: '',
+        donorItemIds: [], matchedByItemIds: [], anonymous: false }]);
+  });
+  it('getItemsState maps states and leaves unknown ids out', async () => {
+    const client = clientReturning({ data: { items: [{ id: 'a', state: 'active' }, { id: 'b', state: 'archived' }] } });
+    expect(await client.getItemsState(['a', 'b', 'c'])).toEqual(new Map([['a', 'active'], ['b', 'archived']]));
+  });
   it('getDonationsByIds reads a blank Status as blank even when its text is the id-5 label', async () => {
     const client = clientReturning(itemsResponse([
       { id: 'blank', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' }, values: { status_1: null } },

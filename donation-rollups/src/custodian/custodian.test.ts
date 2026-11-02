@@ -83,6 +83,8 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     async pageHistoricalShifts() { return { items: [], cursor: null }; },
     async getItemsBoardIds() { return new Map(); },
     async pageRecurringGifts() { return { items: [], cursor: null }; },
+    async pageDonationCredits() { return { items: [], cursor: null }; },
+    async getItemsState() { return new Map(); },
   };
 }
 

@@ -3,9 +3,9 @@ import type { PendingStore } from '../db/pending';
 import type { VolunteerActivityStore } from '../db/volunteerActivity';
 import type { OwnerRecomputesStore } from '../db/ownerRecomputes';
 import type { RollCallCreditsStore } from '../db/rollCallCredits';
-import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord, ItemColumns } from '../monday/client';
+import type { RegistrationRecord, HistoricalShiftRecord, RecurringGiftRecord, DonationCreditRecord, ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, FiscalYearConfig, RecomputeQueueMessage, VolunteerBoardConfig,
-  HistoricalVolunteerBoardConfig, RecurringGiftsConfig } from '../types';
+  HistoricalVolunteerBoardConfig, RecurringGiftsConfig, RollCallConfig } from '../types';
 import { currentFiscalYear, localDateParts } from '../rollups/compute';
 import { parseGiftLedgerJson } from '../projections/giftHistory';
 import { runClassify } from './classify';
@@ -40,6 +40,9 @@ export interface CustodianMondayClient {
   pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
   getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
   pageRecurringGifts(board: RecurringGiftsConfig, cursor: string | null): Promise<{ items: RecurringGiftRecord[]; cursor: string | null }>;
+  pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null): Promise<{ items: DonationCreditRecord[]; cursor: string | null }>;
+  // A missing id is a deleted item.
+  getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>>;
 }
 
 export interface CustodianDeps {
