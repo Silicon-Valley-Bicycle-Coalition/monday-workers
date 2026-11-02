@@ -20,8 +20,14 @@
 // move_item_to_board maps connect columns by title, and people-reclassification compares titles
 // across the two boards (it ignores markers, Monday does not).
 //
+// --apply retries each rename on a transient Monday failure (a 5xx, throttling, or the HTTP-200
+// DOWNSTREAM_SERVICE_ERROR that stopped the first production run on 2026-11-02, after 109 of 160),
+// logs each rename as it lands, and if one still fails stops with how many landed. Re-running is
+// always safe: the plan is re-read, so only still-unmarked columns are renamed.
+//
 // Exit 0: nothing left to rename. Exit 1: --apply left a column unrenamed. Exit 2: usage or API
-// error. Dry run writes nothing; --apply writes only change_column_title.
+// error, including a rename that failed after retries. Dry run writes nothing; --apply writes only
+// change_column_title.
 
 import { fileURLToPath } from 'node:url';
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
@@ -140,11 +146,69 @@ export function planRenames(boards, spec = MARKED_COLUMNS, { suffix = '', remove
 
 export function formatPlan(plan, { apply }) {
   const lines = [];
-  for (const r of plan.renames) lines.push(`${apply ? 'rename' : 'would rename'}  ${r.boardName}: "${r.from}" → "${r.to}"`);
+  for (const r of plan.renames) lines.push(`${apply ? 'will rename' : 'would rename'}  ${r.boardName}: "${r.from}" → "${r.to}"`);
   if (plan.renames.length === 0) lines.push('nothing to rename');
   for (const m of plan.missing) lines.push(`not on board  ${m.boardName}: "${m.title}"`);
   for (const u of plan.unmarked) lines.push(`stray marker  ${u.boardName}: "${u.title}" is not in the list (left as-is)`);
   return lines.join('\n');
+}
+
+// A failed Monday call, with what isTransient needs: the HTTP status and every GraphQL error code
+// (Monday reports a server-side failure as HTTP 200 with errors[].extensions.code).
+export class MondayError extends Error {
+  constructor(message, status, codes) {
+    super(message);
+    this.name = 'MondayError';
+    this.status = status;
+    this.codes = codes;
+  }
+}
+
+const TRANSIENT_CODES = new Set([
+  'INTERNAL_SERVER_ERROR', 'DOWNSTREAM_SERVICE_ERROR', 'COMPLEXITY_BUDGET_EXHAUSTED', 'RATE_LIMIT_EXCEEDED',
+  'ComplexityException', 'maxConcurrencyExceeded',
+]);
+
+// Worth retrying: Monday-side failures and throttling, and our own request timeout. A request
+// Monday rejected (bad id, no permission) fails the same way every time, so it is not retried.
+export function isTransient(error) {
+  if (error?.name === 'TimeoutError') return true;
+  if (!(error instanceof MondayError)) return false;
+  return error.status >= 500 || error.status === 429 || error.codes.some((c) => TRANSIENT_CODES.has(c));
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Calls fn, retrying a transient failure once after each delay (so delaysMs.length + 1 tries).
+export async function withRetry(fn, { delaysMs = [2_000, 10_000, 30_000], sleep = sleepMs, onRetry = () => {} } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= delaysMs.length || !isTransient(error)) throw error;
+      onRetry(error, delaysMs[attempt]);
+      await sleep(delaysMs[attempt]);
+    }
+  }
+}
+
+// Applies renames one at a time, logging each as it lands, so a run that stops part-way shows
+// exactly how far it got. Stops at the first rename that still fails after retries.
+export async function applyRenames(renames, rename, { log = console.log, retry = {} } = {}) {
+  let done = 0;
+  for (const r of renames) {
+    try {
+      await withRetry(() => rename(r), {
+        ...retry,
+        onRetry: (error, ms) => log(`retrying     ${r.boardName}: "${r.from}" in ${ms / 1000}s (${error.message})`),
+      });
+    } catch (error) {
+      return { done, failed: { rename: r, error } };
+    }
+    log(`renamed  ${r.boardName}: "${r.from}" → "${r.to}"`);
+    done++;
+  }
+  return { done, failed: null };
 }
 
 async function query(token, graphql, variables) {
@@ -156,7 +220,11 @@ async function query(token, graphql, variables) {
   });
   const body = await res.json().catch(() => null);
   if (!res.ok || body === null || body.errors || !body.data) {
-    throw new Error(`monday API: HTTP ${res.status}: ${JSON.stringify(body?.errors ?? body?.error_message ?? body).slice(0, 300)}`);
+    const codes = (body?.errors ?? []).flatMap((e) => [e.extensions?.code, e.extensions?.error_code]).filter(Boolean);
+    if (body?.error_code) codes.push(body.error_code);
+    throw new MondayError(
+      `monday API: HTTP ${res.status}: ${JSON.stringify(body?.errors ?? body?.error_message ?? body).slice(0, 300)}`,
+      res.status, codes);
   }
   return body.data;
 }
@@ -195,14 +263,18 @@ async function main() {
   console.log(formatPlan(plan, args));
   if (!args.apply) return 0;
 
-  for (const r of plan.renames) {
-    await query(
-      token,
-      `mutation ($board: ID!, $column: String!, $title: String!) {
-         change_column_title(board_id: $board, column_id: $column, title: $title) { id }
-       }`,
-      { board: r.boardId, column: r.columnId, title: r.to },
-    );
+  const { done, failed } = await applyRenames(plan.renames, (r) => query(
+    token,
+    `mutation ($board: ID!, $column: String!, $title: String!) {
+       change_column_title(board_id: $board, column_id: $column, title: $title) { id }
+     }`,
+    { board: r.boardId, column: r.columnId, title: r.to },
+  ));
+  if (failed) {
+    console.error(`stopped after ${done} of ${plan.renames.length} rename(s): ${failed.rename.boardName}: ` +
+      `"${failed.rename.from}" failed: ${failed.error.message}`);
+    console.error('Re-running is safe: it renames only what is still unmarked.');
+    return 2;
   }
   const left = planRenames(await listBoards(token, args.workspace), MARKED_COLUMNS, options).renames;
   if (left.length > 0) {
