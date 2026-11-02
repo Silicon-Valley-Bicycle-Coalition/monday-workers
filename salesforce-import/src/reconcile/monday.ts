@@ -1,5 +1,6 @@
 import type { MondayClient } from '../load/monday.js';
 import { SF_ID_COLUMN } from '../load/lookup.js';
+import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 /** A Monday item as read back for reconciliation; `values` is keyed by column TITLE. */
 export interface ReadItem { id: string; state: string; boardId: string; values: Record<string, string> }
@@ -48,7 +49,7 @@ export class GraphqlMondayReader implements MondayReader {
       'query ($ids: [ID!]) { boards (ids: $ids) { columns { id title } } }', { ids: [String(boardId)] });
     const board = res.boards[0];
     if (!board) throw new Error(`reconcile: board ${boardId} not found (or not visible to this token)`);
-    return new Map(board.columns.map((c) => [c.title, c.id]));
+    return new Map(board.columns.map((c) => [bareTitle(c.title), c.id]));
   }
 
   async scan(boardId: number, cols: Record<string, string>): Promise<ReadItem[]> {

@@ -14,6 +14,10 @@ describe('columnIdByTitle', () => {
     expect(() => columnIdByTitle(columns, 'Member Until', 'People')).toThrow('People: no column titled "Member Until"');
     expect(() => columnIdByTitle(columns, 'Dup', 'People')).toThrow('2 columns titled "Dup"');
   });
+
+  it('finds a column whose Monday title carries a read-only marker by its bare title', () => {
+    expect(columnIdByTitle([col('date_1', '🔒 Last Gift Date', 'date')], 'Last Gift Date', 'People')).toBe('date_1');
+  });
 });
 
 describe('moveMapping', () => {
@@ -31,6 +35,11 @@ describe('moveMapping', () => {
       mapping: [{ source: 'date_a', target: 'date_b' }, { source: 'color_a', target: 'color_b' }],
       missing: [],
     });
+  });
+
+  it('pairs a column carrying a read-only marker with its unmarked twin, so a marker never blocks a move', () => {
+    expect(moveMapping([col('date_a', '🔒 Last Gift Date', 'date')], [col('date_b', 'Last Gift Date', 'date')]))
+      .toEqual({ mapping: [{ source: 'date_a', target: 'date_b' }], missing: [] });
   });
 
   it('reports a source column the target lacks, including a connect column, and a type mismatch', () => {

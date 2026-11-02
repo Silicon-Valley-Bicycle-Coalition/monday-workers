@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -78,7 +79,7 @@ async function ensureColumnOn(boardId, title, columnType, description, columnSet
     `query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`,
     { boardId: [boardId] }
   );
-  const existing = (boardData.boards[0]?.columns ?? []).find((c) => c.title === title);
+  const existing = (boardData.boards[0]?.columns ?? []).find((c) => bareTitle(c.title) === title);
   if (existing) {
     console.error(`column "${title}" already exists (${existing.id}) on board ${boardId} — skipping`);
     return existing.id;

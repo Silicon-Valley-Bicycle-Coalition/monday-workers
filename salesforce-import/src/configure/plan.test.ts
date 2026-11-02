@@ -52,6 +52,13 @@ describe('planBoardBase', () => {
     expect(planBoardBase(current, SPEC).columnsToCreate).toEqual([]);
   });
 
+  it('treats a column renamed with a read-only marker as existing, so no duplicate is created', () => {
+    const current: CurrentBoard = { description: null, groups: [], columns: [
+      { id: 'c1', title: '🔒 Stakeholder Type', type: 'status', description: null, settings_str: '{}' },
+    ], views: [] };
+    expect(planBoardBase(current, SPEC).columnsToCreate).toEqual([]);
+  });
+
   it('finds stray views to delete by name', () => {
     const current: CurrentBoard = { description: null, groups: [], columns: [], views: [{ id: 'v1', name: 'Build Vibe view' }, { id: 'v2', name: 'Keep me' }] };
     expect(planBoardBase(current, SPEC).viewsToDelete).toEqual([{ viewId: 'v1', name: 'Build Vibe view' }]);

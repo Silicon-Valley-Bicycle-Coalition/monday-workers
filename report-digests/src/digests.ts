@@ -1,6 +1,7 @@
 import type { DigestKey, DigestsConfig } from './config';
 import type { Board, DigestsMondayClient, Item, Rule } from './monday/client';
 import { addDays, fiscalYear, thisAndNextMonth, type LocalTime } from './schedule';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 // The five digests that replace SVBC's seven Salesforce report subscriptions (monday-migration
 // docs/35 §3.6). Each queries the same rules as the board view it links to, so the email and the
@@ -31,7 +32,7 @@ function columnIds(board: Board, titles: string[]): Map<string, string> {
   const ids = new Map<string, string>();
   const missing: string[] = [];
   for (const title of titles) {
-    const col = board.columns.find((c) => c.title === title);
+    const col = board.columns.find((c) => bareTitle(c.title) === title);
     if (col) ids.set(title, col.id);
     else missing.push(title);
   }
