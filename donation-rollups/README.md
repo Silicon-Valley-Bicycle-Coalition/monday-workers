@@ -853,18 +853,18 @@ night fills the table; no backfill is needed.
    each People board and Organizations and **Recognition Name** (text) to Organizations, looks up
    the existing columns the duty reads, creates the three saved views, and prints the
    `donationRollups.rollCall` block for `config/{sandbox,svbc}.json`. Sandbox v4 (board
-   `18438151197`) is in `config/sandbox.json`:
+   `18438156633`) is in `config/sandbox.json`:
 
    ```json
    "rollCall": {
-     "boardId": 18438151197,
+     "boardId": 18438156633,
      "firstFiscalYear": 2026,
      "excludedGiftTypes": ["Contracts"],
      "writesPerRun": 500,
-     "columns": { "fiscalYear": "text_mm8qv10g", "tier": "color_mm8qxft1", "type": "color_mm8qdsja",
-       "listed": "color_mm8qhc0q", "total": "numeric_mm8qcd2t", "gifts": "numeric_mm8qzkfg",
-       "people": "board_relation_mm8qxrg6", "organization": "board_relation_mm8qsb72",
-       "reviewNote": "long_text_mm8qna43", "rowKey": "text_mm8qmpb2" },
+     "columns": { "fiscalYear": "text_mm8qzwa", "tier": "color_mm8q7wfp", "type": "color_mm8q99m",
+       "listed": "color_mm8qk8ef", "total": "numeric_mm8qwz2e", "gifts": "numeric_mm8q7gh",
+       "people": "board_relation_mm8qkvrn", "organization": "board_relation_mm8qqr7m",
+       "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q" },
      "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "status": "color_mm8hshet",
        "fiscalYear": "text_mm8hpk76", "giftType": "text_mm8h238c", "donorLink": "board_relation_mm8hhdk7",
        "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h" } },
