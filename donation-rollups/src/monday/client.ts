@@ -65,7 +65,9 @@ export interface RecurringGiftRecord {
 
 export interface DonationCreditRecord {
   id: string;
-  fiscalYear: number; // 0 when the Fiscal Year Ending cell is blank or unparseable
+  // From Fiscal Year Ending, else derived from the Date (as getDonationsByIds does); 0 when
+  // neither gives a year.
+  fiscalYear: number;
   amountCents: number;
   status: string | null;
   giftType: string;
@@ -466,7 +468,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     };
   }
 
-  async pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null) {
+  async pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null, fiscalYearStartMonth: number) {
     const c = cfg.columns;
     const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
       await this.graphql(
@@ -475,17 +477,25 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
             items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
-        { boardId: [cfg.boardId], columnIds: [c.amount, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous], cursor },
+        { boardId: [cfg.boardId], columnIds: [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous], cursor },
       );
+    // The rollcall duty's only read of Donations: an empty read would resolve every stored
+    // credit through getItemsState, so a board Monday doesn't return is an error, not empty.
     const page = data.boards[0]?.items_page;
-    if (page === undefined) return { items: [], cursor: null };
+    if (page === undefined) throw new Error(`monday API: Donations board ${cfg.boardId} not returned (deleted, or not visible to this token)`);
     return {
       cursor: page.cursor,
       items: page.items.map((item) => {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
         const status = byId.get(c.status);
+        // A blank (or unparseable) Fiscal Year Ending falls back to the Date, as in
+        // getDonationsByIds — the ledger's year for the same gift, so the two never disagree.
+        const fyText = (byId.get(c.fiscalYear)?.text ?? '').trim();
+        const dateISO = (byId.get(c.date)?.text ?? '').trim();
+        const rawFY = fyText === '' ? NaN : Number(fyText);
+        const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
         return { id: item.id,
-          fiscalYear: Number((byId.get(c.fiscalYear)?.text ?? '').trim()) || 0,
+          fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
           amountCents: parseAmountCents(byId.get(c.amount)?.text) ?? 0,
           status: statusLabel(status?.text, status?.value),
           giftType: (byId.get(c.giftType)?.text ?? '').trim(),
@@ -568,7 +578,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
 
   // Each column's text and raw stored value (null for an empty cell); read status columns
   // through statusLabel(text, value), not text alone.
-  async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
+  async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null, opts: { requireBoard?: boolean } = {}):
     Promise<{ items: ItemColumns[]; cursor: string | null }> {
     const data: { boards: { items_page: { cursor: string | null;
       items: { id: string; name: string; group: { id: string }; column_values: ColumnValue[] }[] } }[] } =
@@ -582,6 +592,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         { boardId: [boardId], columnIds, cursor },
       );
     const page = data.boards[0]?.items_page;
+    if (page === undefined && opts.requireBoard) throw new Error(`monday API: board ${boardId} not returned (deleted, or not visible to this token)`);
     if (page === undefined) return { items: [], cursor: null };
     return {
       cursor: page.cursor,
@@ -685,11 +696,20 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     );
   }
 
+  // An item already gone counts as deleted: the transport retries a delete whose response was
+  // lost, and that retry finds nothing to delete. The codes are Monday's documented names (as in
+  // eventbrite-sync's isItemGone), not all confirmed live; a miss just throws as before.
   async deleteItem(itemId: string): Promise<void> {
-    await this.graphql<{ delete_item: { id: string } }>(
-      `mutation ($itemId: ID!) { delete_item(item_id: $itemId) { id } }`,
-      { itemId },
-    );
+    try {
+      await this.graphql<{ delete_item: { id: string } }>(
+        `mutation ($itemId: ID!) { delete_item(item_id: $itemId) { id } }`,
+        { itemId },
+      );
+    } catch (err) {
+      if (err instanceof MondayApiError && !(err instanceof AmbiguousWriteError)
+        && (/ItemNotFound|InvalidItemId|ResourceNotFound/i.test(err.code ?? '') || /item.{0,20}not found/i.test(err.message))) return;
+      throw err;
+    }
   }
 
   async archiveItem(itemId: string): Promise<void> {

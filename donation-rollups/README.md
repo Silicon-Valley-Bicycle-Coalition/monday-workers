@@ -814,7 +814,10 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
 **Mass-delete guard.** A run that would delete more than `max(10, 10% of the board's items)` rows
 as `gone`, or whose computed rows are empty while the board has items, applies nothing and says
 so in its report (a failed upstream read must never empty the board). Check the ledger and donor
-reads, then re-run with `POST /custodian/run/rollcall?force=1` to apply anyway.
+reads, then re-run with `POST /custodian/run/rollcall?force=1` to apply anyway. A board Monday
+doesn't return at all (deleted, or not visible to the token) fails the run outright, naming the
+board id, rather than reading as empty. Gifts dated after the current fiscal year (a typo'd
+Fiscal Year Ending) are ignored, so they never get a year group of their own.
 
 **`roll_call_credits`** (migration `0011`). The ledger can't credit three kinds of gift: Matched By
 isn't stored in `gifts`; gifts with no Donor never reach the ledger (the consumer finds a gift
@@ -826,7 +829,18 @@ Donor, anything with no Donor — plus an `unmatched_match` flag for an employer
 Matched By. A row is dropped when its gift no longer qualifies or is deleted. When a gift
 archives its row is **kept** and stamped `archived_at` (an archived item's connect columns read
 back empty, so it can't be recomputed from Monday); that keeps closed years reproducible. The first
-night fills the table; no backfill is needed.
+night fills the table; no backfill is needed. A gift's year is its Fiscal Year Ending, or derived
+from its Date when that cell is blank — the same fallback as the ledger (see "A blank Fiscal Year
+Ending cell" below). If the Donations read comes back empty while live rows are stored, the run
+refuses to refresh (a failed read, not every gift deleted at once). A flagged employer match whose
+ledger row isn't there yet (the consumer hasn't recomputed it) isn't counted that night; the
+report counts it as `pendingLedger`, which normally clears by the next run.
+
+**Dry runs.** With the write switch `off`, the duty runs against recording proxies, so
+`refreshCredits`'s upserts to `roll_call_credits` aren't persisted either. The plan it logs is
+computed from the table as stored, so for a gift whose credit changed since the last live run —
+newly anonymous, newly Matched By, or the very first run, before the table is filled — a dry run's
+rows can differ from what a live run would write.
 
 ### Setup
 
@@ -865,7 +879,7 @@ night fills the table; no backfill is needed.
        "listed": "color_mm8qk8ef", "total": "numeric_mm8qwz2e", "gifts": "numeric_mm8q7gh",
        "people": "board_relation_mm8qkvrn", "organization": "board_relation_mm8qqr7m",
        "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q" },
-     "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "status": "color_mm8hshet",
+     "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "date": "date_mm8hfsvm", "status": "color_mm8hshet",
        "fiscalYear": "text_mm8hpk76", "giftType": "text_mm8h238c", "donorLink": "board_relation_mm8hhdk7",
        "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h" } },
      "people": {

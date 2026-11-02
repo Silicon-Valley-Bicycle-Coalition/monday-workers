@@ -382,19 +382,40 @@ describe('status columns read by stored value (label id 5)', () => {
     const page = await client.pageRecurringGifts({ boardId: 9, columns: { donorLink: 'donor', status: 'st' }, activeStatusLabel: 'Active' }, null);
     expect(page.items.map((i) => i.statusLabel)).toEqual([null, 'Active']);
   });
+  const CREDITS_CFG = { boardId: 9, columns: { amount: 'am', date: 'dt', status: 'st', fiscalYear: 'fy', giftType: 'gt',
+    donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } };
   it('pageDonationCredits parses amount, fiscal year, links, status and the Anonymous checkbox', async () => {
-    const CFG = { boardId: 9, columns: { amount: 'am', status: 'st', fiscalYear: 'fy', giftType: 'gt', donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } };
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
       { id: 'g1', column_values: [{ id: 'am', text: '$1,250.50' }, { id: 'st', text: 'Received', value: '{"index":1}' }, { id: 'fy', text: '2026' },
+        { id: 'dt', text: '2026-08-01' },
         { id: 'gt', text: 'Matching Donation' }, { id: 'dl', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'mb', text: 'Acme', linked_item_ids: ['o1'] },
         { id: 'an', text: 'v', value: '{"checked":"true"}' }] },
       { id: 'g2', column_values: [{ id: 'am', text: '' }, { id: 'st', text: 'Received', value: null }, { id: 'fy', text: 'n/a' },
+        { id: 'dt', text: '' },
         { id: 'gt', text: '' }, { id: 'dl', text: '' }, { id: 'mb', text: '' }, { id: 'an', text: '', value: null }] }] } }] } });
-    expect((await client.pageDonationCredits(CFG, null)).items).toEqual([
+    expect((await client.pageDonationCredits(CREDITS_CFG, null, 7)).items).toEqual([
       { id: 'g1', fiscalYear: 2026, amountCents: 125050, status: 'Received', giftType: 'Matching Donation',
         donorItemIds: ['p1'], matchedByItemIds: ['o1'], anonymous: true },
       { id: 'g2', fiscalYear: 0, amountCents: 0, status: null, giftType: '',
         donorItemIds: [], matchedByItemIds: [], anonymous: false }]);
+  });
+  it('pageDonationCredits falls back to the Date for a blank Fiscal Year Ending, as getDonationsByIds does', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'g1', column_values: [{ id: 'am', text: '50' }, { id: 'fy', text: '' }, { id: 'dt', text: '2026-08-01' }] },
+      { id: 'g2', column_values: [{ id: 'am', text: '50' }, { id: 'fy', text: ' ' }, { id: 'dt', text: '2026-06-30 00:00' }] }] } }] } });
+    expect((await client.pageDonationCredits(CREDITS_CFG, null, 7)).items.map((i) => [i.id, i.fiscalYear]))
+      .toEqual([['g1', 2027], ['g2', 2026]]);
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { variables: { columnIds: string[] } };
+    expect(body.variables.columnIds).toContain('dt');
+  });
+  it('pageDonationCredits throws, naming the board, when Monday returns no board', async () => {
+    const client = clientReturning({ data: { boards: [] } });
+    await expect(client.pageDonationCredits(CREDITS_CFG, null, 7)).rejects.toThrow(/board 9/);
+  });
+  it('pageItemsColumnsText with requireBoard throws, naming the board, when Monday returns no board', async () => {
+    const client = clientReturning({ data: { boards: [] } });
+    expect(await client.pageItemsColumnsText(5, ['a'], null)).toEqual({ items: [], cursor: null });
+    await expect(client.pageItemsColumnsText(5, ['a'], null, { requireBoard: true })).rejects.toThrow(/board 5/);
   });
   it('getItemsState maps states and leaves unknown ids out', async () => {
     const client = clientReturning({ data: { items: [{ id: 'a', state: 'active' }, { id: 'b', state: 'archived' }] } });
@@ -459,6 +480,22 @@ describe('roll call board writes', () => {
     expect(calls[3]!.variables).toEqual({ boardId: '5', groupId: 'g27', itemName: 'Ada', columnValues: '{"key":"2027|item:1"}' });
     expect(calls[4]!.query).toMatch(/move_item_to_group\(item_id: \$itemId, group_id: \$groupId\)/);
     expect(calls[5]!.query).toMatch(/delete_item\(item_id: \$itemId\)/);
+  });
+
+  it('deleteItem treats an item already gone (say, deleted by an attempt whose response was lost) as deleted', async () => {
+    const gone = (message: string, code: string) => new Response(JSON.stringify({ errors: [{ message, extensions: { code } }] }), { status: 200 });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('bad gateway', { status: 502 }))
+      .mockResolvedValueOnce(gone('Item not found in board', 'ResourceNotFoundException')));
+    const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
+    await expect(client.deleteItem('9')).resolves.toBeUndefined();
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    for (const code of ['InvalidItemIdException', 'ItemNotFoundException']) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(gone('No such item', code)));
+      await expect(client.deleteItem('9'), code).resolves.toBeUndefined();
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(gone('User unauthorized to perform action', 'UserUnauthorizedException')));
+    await expect(client.deleteItem('9')).rejects.toThrow(/unauthorized/);
   });
 
   it('a group or item create that may have committed is an AmbiguousWriteError', async () => {

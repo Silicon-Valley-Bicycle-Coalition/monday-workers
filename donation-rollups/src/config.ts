@@ -282,7 +282,7 @@ function validateRollCall(raw: unknown): RollCallConfig | null {
     donations: {
       boardId: d.boardId,
       columns: {
-        amount: dcol('amount'), status: dcol('status'), fiscalYear: dcol('fiscalYear'), giftType: dcol('giftType'),
+        amount: dcol('amount'), date: dcol('date'), status: dcol('status'), fiscalYear: dcol('fiscalYear'), giftType: dcol('giftType'),
         donorLink: dcol('donorLink'), matchedBy: dcol('matchedBy'), anonymous: dcol('anonymous'),
       },
     },

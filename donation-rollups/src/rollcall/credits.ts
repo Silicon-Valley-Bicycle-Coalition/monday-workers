@@ -30,8 +30,10 @@ export function creditFor(
   return 'ledger';
 }
 
+// currentFY bounds the years counted from above: a gift dated past it (a typo like 2062) is
+// skipped rather than given a year group of its own.
 export async function refreshCredits(
-  deps: CustodianDeps, cfg: RollCallConfig, now: string,
+  deps: CustodianDeps, cfg: RollCallConfig, now: string, currentFY: number,
 ): Promise<{ upserted: number; removed: number; archived: number }> {
   const stored = new Map((await deps.rollCallCredits.all(cfg.firstFiscalYear)).map((r) => [r.giftItemId, r]));
 
@@ -40,10 +42,10 @@ export async function refreshCredits(
   const removals: string[] = [];
   let cursor: string | null = null;
   do {
-    const page = await deps.mondayClient.pageDonationCredits(cfg.donations, cursor);
+    const page = await deps.mondayClient.pageDonationCredits(cfg.donations, cursor, deps.config.fiscalYear.startMonth);
     for (const item of page.items) {
       seen.add(item.id);
-      const verdict = item.fiscalYear < cfg.firstFiscalYear ? 'skip' : creditFor(item, cfg.excludedGiftTypes);
+      const verdict = item.fiscalYear < cfg.firstFiscalYear || item.fiscalYear > currentFY ? 'skip' : creditFor(item, cfg.excludedGiftTypes);
       if (typeof verdict === 'object') {
         // archivedAt null: an item restored from the archive clears its old stamp.
         rows.set(item.id, { giftItemId: item.id, fiscalYear: item.fiscalYear, amountCents: item.amountCents,
@@ -59,6 +61,11 @@ export async function refreshCredits(
   // Rows with archived_at already set are never re-checked; an unseen live row is either archived
   // or deleted since the last run — or a paging race moved it, in which case it stays for now.
   const unseen = [...stored.values()].filter((r) => r.archivedAt === null && !seen.has(r.giftItemId)).map((r) => r.giftItemId);
+  // An empty board with live rows stored is a failed read far more often than every gift going
+  // at once; resolving them all through getItemsState would drop the lot. Refuse instead.
+  if (seen.size === 0 && unseen.length > 0) {
+    throw new Error(`rollcall: Donations board ${cfg.donations.boardId} read back no items, but ${unseen.length} stored credits rows are live — refusing to refresh`);
+  }
   const states = unseen.length > 0 ? await deps.mondayClient.getItemsState(unseen) : new Map<string, string>();
   const gone = unseen.filter((id) => (states.get(id) ?? 'deleted') === 'deleted');
   const archived = unseen.filter((id) => states.get(id) === 'archived');

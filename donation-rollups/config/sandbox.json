@@ -208,6 +208,7 @@
         "boardId": 18437342657,
         "columns": {
           "amount": "numeric_mm8hn1b2",
+          "date": "date_mm8hfsvm",
           "status": "color_mm8hshet",
           "fiscalYear": "text_mm8hpk76",
           "giftType": "text_mm8h238c",

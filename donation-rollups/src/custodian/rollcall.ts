@@ -17,6 +17,9 @@ export interface RollCallDetail {
   rows: number;
   unplaced: { gifts: number; cents: number };
   credits: { upserted: number; removed: number; archived: number };
+  // Credits rows that flag a gift for the ledger (credit null) whose ledger row isn't there yet:
+  // the consumer hasn't recomputed it. Not counted tonight; normally clears by the next run.
+  pendingLedger: number;
   applied: number;
   remaining: number;
   // Set when the mass-delete guard held back this run's writes.
@@ -29,33 +32,44 @@ const DELETE_FLOOR = 10;
 
 // Each gift counts once (spec §5 step 1): a ledger gift is credited to its owner, unless its
 // credits row names someone else; credits rows without a ledger gift (anonymous, Matched By,
-// unplaced) count from the row. Sorted by gift id so names and member order are stable.
-export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig): Promise<CountedGift[]> {
-  const counted = (status: string, giftType: string | null) =>
-    RECEIVED_LABELS.includes(status) && !(giftType !== null && cfg.excludedGiftTypes.includes(giftType));
-  const credits = (await deps.rollCallCredits.all(cfg.firstFiscalYear)).filter((r) => counted(r.status, r.giftType));
+// unplaced) count from the row. Sorted by gift id so names and member order are stable. Years
+// after currentFY are ignored, so a typo'd year never gets a group of its own.
+export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig, currentFY: number):
+  Promise<{ gifts: CountedGift[]; pendingLedger: number }> {
+  const counted = (status: string, giftType: string | null, fiscalYear: number) => fiscalYear <= currentFY
+    && RECEIVED_LABELS.includes(status) && !(giftType !== null && cfg.excludedGiftTypes.includes(giftType));
+  const credits = (await deps.rollCallCredits.all(cfg.firstFiscalYear)).filter((r) => counted(r.status, r.giftType, r.fiscalYear));
   const creditById = new Map(credits.map((r) => [r.giftItemId, r]));
 
   const gifts: CountedGift[] = [];
+  const inLedger = new Set<string>();
   for (const g of await deps.gifts.countedGifts(cfg.firstFiscalYear)) {
-    if (!counted(g.status, g.giftType)) continue;
+    if (!counted(g.status, g.giftType, g.fiscalYear)) continue;
+    inLedger.add(g.mondayItemId);
     const row = creditById.get(g.mondayItemId);
     if (row !== undefined && row.credit !== null) continue;
     gifts.push({ giftItemId: g.mondayItemId, fiscalYear: g.fiscalYear, cents: g.amountCents,
       credit: `item:${g.ownerItemId}`, unmatchedMatch: row?.unmatchedMatch ?? false });
   }
+  let pendingLedger = 0;
   for (const r of credits) {
-    if (r.credit === null) continue;
+    if (r.credit === null) {
+      if (!inLedger.has(r.giftItemId)) pendingLedger++;
+      continue;
+    }
     gifts.push({ giftItemId: r.giftItemId, fiscalYear: r.fiscalYear, cents: r.amountCents, credit: r.credit, unmatchedMatch: r.unmatchedMatch });
   }
-  return gifts.sort((a, b) => (a.giftItemId < b.giftItemId ? -1 : a.giftItemId > b.giftItemId ? 1 : 0));
+  gifts.sort((a, b) => (a.giftItemId < b.giftItemId ? -1 : a.giftItemId > b.giftItemId ? 1 : 0));
+  return { gifts, pendingLedger };
 }
 
+// requireBoard: a deleted board (or one the token can't see) must fail the run, not read as
+// empty and pass the mass-delete guard.
 async function pageAll(deps: CustodianDeps, boardId: number, columnIds: string[]): Promise<ItemColumns[]> {
   const items: ItemColumns[] = [];
   let cursor: string | null = null;
   do {
-    const page = await deps.mondayClient.pageItemsColumnsText(boardId, columnIds, cursor);
+    const page = await deps.mondayClient.pageItemsColumnsText(boardId, columnIds, cursor, { requireBoard: true });
     items.push(...page.items);
     cursor = page.cursor;
   } while (cursor !== null);
@@ -87,8 +101,9 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
   const cfg = deps.config.donationRollups.rollCall;
   if (cfg === null) return { ok: true, summary: 'rollcall: not configured, skipped' };
 
-  const credits = await refreshCredits(deps, cfg, now.toISOString());
-  const gifts = await rollCallGifts(deps, cfg);
+  const currentFY = currentFiscalYear(now, deps.config.fiscalYear);
+  const credits = await refreshCredits(deps, cfg, now.toISOString(), currentFY);
+  const { gifts, pendingLedger } = await rollCallGifts(deps, cfg, currentFY);
   const { rows, unplaced } = buildRollCall(gifts, await readDonors(deps, cfg));
 
   const items: BoardItem[] = (await pageAll(deps, cfg.boardId, Object.values(cfg.columns)))
@@ -99,7 +114,6 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
     if (year !== null) groupYearById.set(g.id, year);
   }
   // Closed years past the archive cutoff: every gift in them is archived (custodian runArchive).
-  const currentFY = currentFiscalYear(now, deps.config.fiscalYear);
   const frozenYears = new Set<number>();
   for (let y = cfg.firstFiscalYear; y <= currentFY - deps.config.custodian.activeFiscalYears; y++) frozenYears.add(y);
   const ops = planSync(rows, items, cfg.columns, frozenYears, groupYearById);
@@ -112,10 +126,11 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
     : undefined;
   const { applied, remaining } = blocked === undefined ? await applySync(deps, cfg, ops, currentFY) : { applied: 0, remaining: ops.length };
 
-  const detail: RollCallDetail = { rows: rows.length, unplaced, credits, applied, remaining, ...(blocked ? { blocked } : {}) };
+  const detail: RollCallDetail = { rows: rows.length, unplaced, credits, pendingLedger, applied, remaining, ...(blocked ? { blocked } : {}) };
   const parts = [`rollcall: ${rows.length} rows`];
   if (blocked) parts.push(`NOT applied: ${blocked} — check the ledger and donor reads, then run with ?force=1 if it's right`);
   else parts.push(`applied ${applied} writes${remaining > 0 ? `, ${remaining} left for the next run` : ''}`);
+  if (pendingLedger > 0) parts.push(`${pendingLedger} flagged gift${pendingLedger === 1 ? '' : 's'} waiting on the ledger, not counted yet`);
   if (unplaced.gifts > 0) parts.push(`${unplaced.gifts} gifts ($${formatCents(unplaced.cents)}) unplaced: no Donor on the People or Organizations boards`);
   return { ok: blocked === undefined && unplaced.gifts === 0, summary: parts.join('; '), detail };
 }

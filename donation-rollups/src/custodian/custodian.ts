@@ -35,13 +35,18 @@ export interface CustodianMondayClient {
   createItem(boardId: number, itemName: string, columnValues: Record<string, unknown>): Promise<string>;
   changeColumnValues(boardId: number, itemId: string, columnValues: Record<string, unknown>,
     opts?: { createLabelsIfMissing?: boolean }): Promise<void>;
-  pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
+  // requireBoard: throw when Monday returns no such board (deleted, or the token can't see it)
+  // rather than read it as empty.
+  pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null, opts?: { requireBoard?: boolean }):
     Promise<{ items: ItemColumns[]; cursor: string | null }>;
   pageRegistrations(board: VolunteerBoardConfig, cursor: string | null): Promise<{ items: RegistrationRecord[]; cursor: string | null }>;
   pageHistoricalShifts(board: HistoricalVolunteerBoardConfig, cursor: string | null): Promise<{ items: HistoricalShiftRecord[]; cursor: string | null }>;
   getItemsBoardIds(itemIds: string[]): Promise<Map<string, string>>;
   pageRecurringGifts(board: RecurringGiftsConfig, cursor: string | null): Promise<{ items: RecurringGiftRecord[]; cursor: string | null }>;
-  pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null): Promise<{ items: DonationCreditRecord[]; cursor: string | null }>;
+  // Throws when Monday returns no such board. fiscalYearStartMonth derives a blank Fiscal Year
+  // Ending from the Date, as getDonationsByIds does.
+  pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null, fiscalYearStartMonth: number):
+    Promise<{ items: DonationCreditRecord[]; cursor: string | null }>;
   // A missing id is a deleted item.
   getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>>;
   // The Donor Roll Call board (the `rollcall` duty). createGroup and createItemInGroup aren't

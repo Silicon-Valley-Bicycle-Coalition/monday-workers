@@ -9,7 +9,7 @@ const COLS: RollCallConfig['columns'] = { fiscalYear: 'fy', tier: 'tr', type: 't
   people: 'pe', organization: 'or', reviewNote: 'rn', rowKey: 'rk' };
 const ROLL_CALL: RollCallConfig = {
   boardId: 900, firstFiscalYear: 2026, excludedGiftTypes: ['Contracts'], writesPerRun: 500, columns: COLS,
-  donations: { boardId: 100, columns: { amount: 'am', status: 'st', fiscalYear: 'dfy', giftType: 'gt', donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } },
+  donations: { boardId: 100, columns: { amount: 'am', date: 'dt', status: 'st', fiscalYear: 'dfy', giftType: 'gt', donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } },
   people: { '201': { householdId: 'hid', householdGreeting: 'hg', householdEmail: 'he', doNotSolicit: 'dns', dontList: 'pdl' } },
   organizations: { boardId: 300, columns: { recognitionName: 'rec', dontList: 'odl' } },
 };
@@ -51,6 +51,7 @@ interface Harness {
 function harness(h: Harness) {
   const credits = new Map<string, CreditRow>();
   const writes: string[] = [];
+  const reads: { boardId: number; requireBoard: boolean }[] = [];
   const created: { groupId: string; name: string; values: Record<string, unknown> }[] = [];
   const rollCallCredits: RollCallCreditsStore = {
     async all(fromFY) { return [...credits.values()].filter((r) => r.fiscalYear >= fromFY); },
@@ -61,7 +62,12 @@ function harness(h: Harness) {
   const mondayClient = {
     async pageDonationCredits() { return { items: h.donations ?? [], cursor: null }; },
     async getItemsState() { return new Map(); },
-    async pageItemsColumnsText(boardId: number) { return { items: h.boards?.[boardId] ?? [], cursor: null }; },
+    // Like the real client: with requireBoard, a board Monday doesn't return throws.
+    async pageItemsColumnsText(boardId: number, _c: string[], _cursor: string | null, opts: { requireBoard?: boolean } = {}) {
+      reads.push({ boardId, requireBoard: opts.requireBoard === true });
+      if (h.boards?.[boardId] === undefined && opts.requireBoard) throw new Error(`monday API: board ${boardId} not returned`);
+      return { items: h.boards?.[boardId] ?? [], cursor: null };
+    },
     async listGroups() { return h.groups ?? []; },
     async createGroup(_b: number, title: string) { writes.push(`group ${title}`); return `g-${title}`; },
     async updateGroupTitle(_b: number, id: string, title: string) { writes.push(`retitle ${id} ${title}`); },
@@ -83,7 +89,7 @@ function harness(h: Harness) {
     },
     rollCallCredits, mondayClient, config: config(h.rollCall === undefined ? ROLL_CALL : h.rollCall), now: NOW,
   } as unknown as CustodianDeps;
-  return { deps, writes, created, credits };
+  return { deps, writes, created, credits, reads };
 }
 
 const PEOPLE: ItemColumns[] = [
@@ -125,7 +131,7 @@ describe('runRollCall', () => {
     const report = await runRollCall(h.deps, NOW);
     expect(report.ok).toBe(true);
     expect(report.detail).toEqual({ rows: 4, unplaced: { gifts: 0, cents: 0 }, credits: { upserted: 3, removed: 0, archived: 0 },
-      applied: 5, remaining: 0 });
+      pendingLedger: 0, applied: 5, remaining: 0 });
     expect(h.writes).toEqual(['group FY2027 (in progress)', 'create Acme Foundation', 'create Pat & Sam Lee', 'create Ada Park', 'create Anonymous']);
     const byName = new Map(h.created.map((c) => [c.name, c.values]));
     expect(byName.get('Acme Foundation')).toMatchObject({ rk: '2027|item:31', to: '1300.00', gi: '2', tr: { label: '$1,000+' },
@@ -148,6 +154,43 @@ describe('runRollCall', () => {
     expect(report.ok).toBe(false);
     expect((report.detail as { unplaced: unknown }).unplaced).toEqual({ gifts: 2, cents: 14_000 });
     expect(report.summary).toMatch(/2 gifts \(\$140\.00\) unplaced/);
+  });
+
+  it('reads every board with requireBoard, and fails on a board Monday does not return', async () => {
+    const h = harness({ ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: [] } });
+    await runRollCall(h.deps, NOW);
+    expect(h.reads.map((r) => r.boardId).sort()).toEqual([201, 300, 900]);
+    expect(h.reads.every((r) => r.requireBoard)).toBe(true);
+    const missing = harness({ ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 900: [] } });
+    await expect(runRollCall(missing.deps, NOW)).rejects.toThrow(/board 300/);
+    expect(missing.writes).toEqual([]);
+  });
+
+  it('ignores gifts dated after the current fiscal year', async () => {
+    const h = harness({
+      ledger: [gift('g1', '13', 10_000), gift('g2', '13', 50_000, { fiscalYear: 2062 })],
+      donations: [donation('a1', { anonymous: true, fiscalYear: 2062 })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+    });
+    const report = await runRollCall(h.deps, NOW);
+    expect((report.detail as { rows: number }).rows).toBe(1);
+    expect(h.writes).toEqual(['group FY2027 (in progress)', 'create Ada Park']);
+    expect(h.created[0]!.values).toMatchObject({ to: '100.00' });
+  });
+
+  it('counts a flagged gift the ledger has not caught up with as pendingLedger, not an error', async () => {
+    // g6 is a Matching Donation with no Matched By: its credits row has credit null and waits on
+    // the ledger's own row (the consumer hasn't recomputed it yet), so it isn't counted tonight.
+    const h = harness({
+      ledger: [gift('g1', '13', 10_000)],
+      donations: [donation('g6', { giftType: 'Matching Donation', donorItemIds: ['13'], amountCents: 25_000 })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+    });
+    const report = await runRollCall(h.deps, NOW);
+    expect(report.ok).toBe(true);
+    expect(report.detail).toMatchObject({ pendingLedger: 1 });
+    expect(report.summary).toMatch(/1 flagged gift waiting on the ledger/);
+    expect(h.created[0]!.values).toMatchObject({ to: '100.00' });
   });
 
   it('freezes closed years: an FY2025 row whose donor vanished stays', async () => {

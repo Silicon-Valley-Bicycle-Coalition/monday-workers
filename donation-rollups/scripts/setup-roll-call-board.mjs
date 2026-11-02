@@ -143,6 +143,7 @@ const donations = {
   boardId: Number(donationsId),
   columns: {
     amount: lookup(donationColumns, donationsId, 'Amount'),
+    date: lookup(donationColumns, donationsId, 'Date'),
     status: lookup(donationColumns, donationsId, 'Status'),
     fiscalYear: lookup(donationColumns, donationsId, 'Fiscal Year Ending'),
     giftType: lookup(donationColumns, donationsId, 'Gift Type'),

@@ -333,7 +333,7 @@ describe('validateConfig — rollCall block', () => {
     boardId: 60, firstFiscalYear: 2026, excludedGiftTypes: ['Contracts', 'In-kind'], writesPerRun: 100,
     columns: { fiscalYear: 'fy', tier: 'tr', type: 'ty', listed: 'li', total: 'to', gifts: 'gi',
       people: 'pe', organization: 'or', reviewNote: 'rn', rowKey: 'rk' },
-    donations: { boardId: 70, columns: { amount: 'am', status: 'st', fiscalYear: 'dfy', giftType: 'gt',
+    donations: { boardId: 70, columns: { amount: 'am', date: 'dt', status: 'st', fiscalYear: 'dfy', giftType: 'gt',
       donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } },
     people: { '2': { householdId: 'hid', householdGreeting: 'hg', householdEmail: 'he', doNotSolicit: 'dns', dontList: 'dl2' } },
     organizations: { boardId: 80, columns: { recognitionName: 'rec', dontList: 'dl3' } },
@@ -362,6 +362,9 @@ describe('validateConfig — rollCall block', () => {
       .toThrow(/donationRollups\.rollCall\.columns\.rowKey/);
     expect(() => validateConfig(withRollCall({ ...rollCall, people: { '2': { householdId: 'x' } } })))
       .toThrow(/donationRollups\.rollCall\.people\["2"\]\.householdGreeting/);
+    const { date: _d, ...donationColumns } = rollCall.donations.columns;
+    expect(() => validateConfig(withRollCall({ ...rollCall, donations: { ...rollCall.donations, columns: donationColumns } })))
+      .toThrow(/donationRollups\.rollCall\.donations\.columns\.date/);
   });
 
   it('rejects a non-integer firstFiscalYear', () => {

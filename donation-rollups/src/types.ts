@@ -111,7 +111,7 @@ export interface RollCallConfig {
   };
   donations: {
     boardId: number;
-    columns: { amount: string; status: string; fiscalYear: string; giftType: string; donorLink: string; matchedBy: string; anonymous: string };
+    columns: { amount: string; date: string; status: string; fiscalYear: string; giftType: string; donorLink: string; matchedBy: string; anonymous: string };
   };
   people: Record<string, { householdId: string; householdGreeting: string; householdEmail: string; doNotSolicit: string; dontList: string }>;
   organizations: { boardId: number; columns: { recognitionName: string; dontList: string } };
