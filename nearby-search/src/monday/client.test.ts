@@ -137,3 +137,42 @@ describe('HttpNearbyMondayClient', () => {
     expect([...(await client().linkedContactIds(7, 'conn'))].sort()).toEqual(['1', '2', '3']);
   });
 });
+
+describe('geocode backfill methods', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const SRC_ADDR: SourceBoard = { ...SRC, address: { street: 'st', city: 'ct', state: 'se', zip: 'zp' } };
+  const item = (id: string, vals: Record<string, string | null>) => ({ id, column_values: Object.entries(vals).map(([k, text]) => ({ id: k, text })) });
+
+  it('listMissingCoordinates filters on empty lat / non-empty street and joins the address', async () => {
+    const bodies = stub([['items_page', () => ({ boards: [{ items_page: { cursor: null, items: [item('1', { st: '1 Main St', ct: 'San Jose', se: 'CA', zp: '95113' }), item('2', { st: '2 Oak', ct: null, se: 'CA', zp: '' })] } }] })]]);
+    const out = await client().listMissingCoordinates(SRC_ADDR, 10);
+    expect(out).toEqual([{ id: '1', address: '1 Main St, San Jose, CA, 95113' }, { id: '2', address: '2 Oak, CA' }]);
+    expect(bodies[0]!.variables.qp).toEqual({
+      operator: 'and',
+      rules: [{ column_id: 'lat', compare_value: [], operator: 'is_empty' }, { column_id: 'st', compare_value: [], operator: 'is_not_empty' }],
+    });
+    expect(bodies[0]!.variables.columnIds).toEqual(['st', 'ct', 'se', 'zp']);
+  });
+  it('follows the cursor up to the limit and no further', async () => {
+    const bodies = stub([
+      ['next_items_page', () => ({ next_items_page: { cursor: 'c2', items: [item('3', { st: 'c' }), item('4', { st: 'd' })] } })],
+      ['items_page(', () => ({ boards: [{ items_page: { cursor: 'c1', items: [item('1', { st: 'a' }), item('2', { st: 'b' })] } }] })],
+    ]);
+    const out = await client().listMissingCoordinates(SRC_ADDR, 3);
+    expect(out.map((o) => o.id)).toEqual(['1', '2', '3']);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]!.query).toContain('limit: 1,');
+  });
+  it('returns nothing for a board with no address columns', async () => {
+    const bodies = stub([]);
+    expect(await client().listMissingCoordinates(SRC, 5)).toEqual([]);
+    expect(bodies).toHaveLength(0);
+  });
+  it('setCoordinates writes both columns as 6-decimal strings in one mutation', async () => {
+    const bodies = stub([['change_multiple_column_values', () => ({ change_multiple_column_values: { id: '9' } })]]);
+    await client().setCoordinates(SRC, '9', 37.3381631636, -121.88622);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.variables).toMatchObject({ boardId: '10', itemId: '9' });
+    expect(JSON.parse(bodies[0]!.variables.values)).toEqual({ lat: '37.338163', lng: '-121.886220' });
+  });
+});

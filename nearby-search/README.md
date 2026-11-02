@@ -8,15 +8,26 @@ that it was matched). Design:
 
 **Status: scaffold.** This directory holds the config, D1 migration, Wrangler shape, `/health`
 route and CI registration. The geocoder, the search, the map page and the write queue arrive in
-the following tasks of the implementation plan. The `queue` and `scheduled` handlers throw "not
-implemented" until then.
+the following tasks of the implementation plan.
 
 ## How it works
 
 * Addresses and intersections resolve through OpenStreetMap (Nominatim and Overpass), limited to
   `serviceArea` in config and sent with an identifying `osm.userAgent`.
 * Contacts come from the Lat/Lng columns on the source boards. An hourly cron (`17 * * * *`)
-  geocodes a bounded batch (`geocode.perRun`) of contacts that have an address but no coordinates.
+  geocodes a bounded batch (`geocode.perRun`) of contacts that have an address but no coordinates
+  (US Census `onelineaddress`, `geocode.censusUrl`). One budget is shared across the sources in
+  config order. An address Census cannot match is recorded in `geocode_misses` with a hash and is
+  not retried until that address changes; a Census error or timeout is not a miss (the item is
+  retried next hour, and three errors in a row end the run). `off` geocodes but writes nothing to
+  Monday; `hold` skips the run.
+
+### Geocode backfill side effects
+
+* Each write changes the Lat and Lng columns on a People item, which triggers a `mailchimp-sync`
+  outbound update for that contact. It carries merge fields only, so it is harmless.
+* The Organizations backfill finishes in roughly (organization count / `geocode.perRun`) hours,
+  200 per hour by default, then the cron has nothing left to do.
 * Point and corridor matching is `src/geometry.ts`, a byte-identical copy of
   `geo-filter/src/geometry.ts` (CI job `geo-geometry-copies`). Edit geo-filter's, then copy it.
 * Every route except `GET /health` will sit behind Cloudflare Access (planned).

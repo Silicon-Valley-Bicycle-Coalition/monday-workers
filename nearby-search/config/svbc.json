@@ -41,5 +41,5 @@
   },
   "serviceArea": [36.89, -122.53, 37.71, -121.20],
   "access": { "teamDomain": "REPLACE_WITH_ACCESS_TEAM_DOMAIN", "aud": "REPLACE_WITH_PRODUCTION_ACCESS_AUD" },
-  "geocode": { "censusUrl": "https://geocoding.geo.census.gov/geocoder/locations/address", "perRun": 200 }
+  "geocode": { "censusUrl": "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress", "perRun": 200 }
 }

@@ -1,6 +1,7 @@
 import { configFor } from './config';
 import { handleBatch, RELEASE_SQL } from './consumer';
 import { environmentOf } from './environment';
+import { runGeocode } from './geocode';
 import { readLogLevel, readWriteMode } from './flags';
 import { createOsmClient } from './locate/osm';
 import { HttpNearbyMondayClient } from './monday/client';
@@ -59,7 +60,16 @@ export default {
     });
   },
 
-  async scheduled(_controller: ScheduledController, _env: Env, _ctx: ExecutionContext): Promise<void> {
-    throw new Error('nearby-search scheduled geocode: not implemented');
+  // Hourly geocode backfill. Awaited (not waitUntil) so a failure surfaces as a failed cron run.
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const config = configFor(env);
+    // Read once per run, never cached per isolate, so a flip reaches the next hour.
+    const mode = await readWriteMode(env, WORKER);
+    await runGeocode({
+      monday: new HttpNearbyMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+      db: env.DB,
+      config,
+      mode,
+    });
   },
 };

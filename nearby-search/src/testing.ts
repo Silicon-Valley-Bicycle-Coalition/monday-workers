@@ -1,6 +1,6 @@
 // Test doubles shared by search.test.ts and routes.test.ts: fake OSM and Monday clients and an
 // in-memory D1 / queue covering just the statements the API issues (no Workers pool is set up).
-import { validateConfig, type Config } from './config';
+import { validateConfig, type Config, type SourceBoard } from './config';
 import type { OsmClient, NominatimHit } from './locate/osm';
 import type { NearbyMondayClient, ResultColumns, SourcedContact } from './monday/client';
 import type { Env, WriteMessage } from './types';
@@ -58,6 +58,8 @@ export class FakeMonday implements NearbyMondayClient {
   async ensureResultColumns(_boardId: number, _sourceBoardIds: number[]): Promise<ResultColumns> { throw new Error('preview/confirm must not write to Monday'); }
   async createResultRow(_boardId: number, _name: string, _cols: ResultColumns, _contactId: string, _label: string): Promise<string> { throw new Error('preview/confirm must not write to Monday'); }
   async addNearbyLabel(_itemId: string, _boardId: number, _columnId: string, _label: string): Promise<void> { throw new Error('preview/confirm must not write to Monday'); }
+  async listMissingCoordinates(_src: SourceBoard, _limit: number): Promise<{ id: string; address: string }[]> { return []; }
+  async setCoordinates(_src: SourceBoard, _itemId: string, _lat: number, _lng: number): Promise<void> { throw new Error('preview/confirm must not write to Monday'); }
 }
 
 export function fakeDeps(opts: { hits?: NominatimHit[]; event?: { name: string; address: string } | null } = {}) {
@@ -79,11 +81,16 @@ export class FakeD1 {
   // the claim-release DELETE throw.
   beforeTakeover?: () => void;
   failRelease = false;
+  misses = new Map<string, { address_hash: string; attempted_at: string }>();
   private row(board: unknown, contact: unknown) {
     return this.resultRows.find((r) => r.board_id === board && r.contact_id === contact);
   }
   prepare(sql: string) {
     return {
+      all: async <T>() => {
+        if (sql !== 'SELECT item_id, address_hash FROM geocode_misses') throw new Error(`unexpected SQL: ${sql}`);
+        return { results: [...this.misses].map(([item_id, m]) => ({ item_id, address_hash: m.address_hash })) as T[] };
+      },
       bind: (...args: unknown[]) => ({
         all: async () => {
           if (!sql.startsWith('SELECT contact_id FROM result_rows')) throw new Error(`unexpected SQL: ${sql}`);
@@ -96,6 +103,10 @@ export class FakeD1 {
           return this.row(args[0], args[1]) ?? null;
         },
         run: async () => {
+          if (sql.startsWith('INSERT INTO geocode_misses (item_id, address_hash, attempted_at) VALUES (?, ?, ?) ON CONFLICT(item_id) DO UPDATE')) {
+            this.misses.set(args[0] as string, { address_hash: args[1] as string, attempted_at: args[2] as string });
+            return { success: true, meta: { changes: 1 } };
+          }
           if (sql.startsWith('INSERT INTO searches')) {
             this.searches.push(args);
             return { success: true, meta: { changes: 1 } };

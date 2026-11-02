@@ -21,6 +21,9 @@ export interface NearbyMondayClient {
   ensureResultColumns(boardId: number, sourceBoardIds: number[]): Promise<ResultColumns>;
   createResultRow(boardId: number, name: string, cols: ResultColumns, contactId: string, label: string): Promise<string>;
   addNearbyLabel(itemId: string, boardId: number, columnId: string, label: string): Promise<void>;
+  // Geocode cron: items with a street but no latitude, address = street, city, state, zip joined.
+  listMissingCoordinates(src: SourceBoard, limit: number): Promise<{ id: string; address: string }[]>;
+  setCoordinates(src: SourceBoard, itemId: string, lat: number, lng: number): Promise<void>;
 }
 
 // A queue consumer's retry backoff handles long outages; in-process attempts only ride out blips.
@@ -166,6 +169,50 @@ export class HttpNearbyMondayClient implements NearbyMondayClient {
         change_column_value(board_id: $boardId, item_id: $itemId, column_id: $col, value: $value, create_labels_if_missing: true) { id }
       }`,
       { boardId: String(boardId), itemId, col: columnId, value: JSON.stringify({ labels: [...existing, label] }) },
+    );
+  }
+
+  async listMissingCoordinates(src: SourceBoard, limit: number): Promise<{ id: string; address: string }[]> {
+    if (src.address === null) return [];
+    const a = src.address;
+    const columnIds = [a.street, a.city, a.state, a.zip];
+    const fields = 'id column_values(ids: $columnIds) { id text }';
+    const queryParams = {
+      operator: 'and',
+      rules: [
+        { column_id: src.latColumn, compare_value: [], operator: 'is_empty' },
+        { column_id: a.street, compare_value: [], operator: 'is_not_empty' },
+      ],
+    };
+    const toAddress = (raw: RawContact) => {
+      const text = new Map(raw.column_values.map((cv) => [cv.id, cv.text?.trim() ?? '']));
+      return { id: raw.id, address: columnIds.map((c) => text.get(c) ?? '').filter((t) => t !== '').join(', ') };
+    };
+    const out: { id: string; address: string }[] = [];
+    const first = await this.transport.request<{ boards: { items_page: Page<RawContact> }[] }>(
+      `query ($boardId: [ID!], $columnIds: [String!], $qp: ItemsQuery) { boards(ids: $boardId) { items_page(limit: ${Math.min(limit, PAGE)}, query_params: $qp) { cursor items { ${fields} } } } }`,
+      { boardId: [String(src.boardId)], columnIds, qp: queryParams },
+    );
+    let page: Page<RawContact> | undefined = first.boards[0]?.items_page;
+    while (page) {
+      out.push(...page.items.map(toAddress));
+      if (out.length >= limit || !page.cursor) break;
+      const next: { next_items_page: Page<RawContact> } = await this.transport.request(
+        `query ($cursor: String!, $columnIds: [String!]) { next_items_page(limit: ${Math.min(limit - out.length, PAGE)}, cursor: $cursor) { cursor items { ${fields} } } }`,
+        { cursor: page.cursor, columnIds },
+      );
+      page = next.next_items_page;
+    }
+    return out.slice(0, limit);
+  }
+
+  async setCoordinates(src: SourceBoard, itemId: string, lat: number, lng: number): Promise<void> {
+    // Both columns in one request; re-setting the same values is idempotent, so retries are safe.
+    await this.transport.request(
+      `mutation ($boardId: ID!, $itemId: ID!, $values: JSON!) {
+        change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $values) { id }
+      }`,
+      { boardId: String(src.boardId), itemId, values: JSON.stringify({ [src.latColumn]: lat.toFixed(6), [src.lngColumn]: lng.toFixed(6) }) },
     );
   }
 }
