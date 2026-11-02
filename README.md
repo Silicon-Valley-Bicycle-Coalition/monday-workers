@@ -93,8 +93,13 @@ Do this **after the load and before any Worker's production deploy**:
    --workspace <id> --prefix "<board name prefix>" --sandbox-user <Sandbox Integration user id>`.
    It lists each matching board's kind, subscribers and team subscribers and changes nothing.
    Use the load user's or an admin's token, not a Worker integration user's.
-3. Re-run with `--apply`. It calls `change_board_kind(board_id, kind: PRIVATE)` and re-reads the
-   boards to confirm. (`update_board` cannot do this; its `board_attribute` has no `board_kind`.)
+3. Re-run with `--apply`. It calls `change_board_kind(board_id, kind: PRIVATE)` on API version
+   `2026-10` (the only call that overrides the pin below; the mutation doesn't exist in `2026-07`)
+   and re-reads the boards to confirm. (`update_board` cannot do this; its `board_attribute` has
+   no `board_kind`.) **As of 2026-11-02 `--apply` has never succeeded on SVBC's account:** Monday
+   answers `USER_UNAUTHORIZED` even to an admin's personal token on a public board that same user
+   just created. The production boards were made private in the Monday UI. If `--apply` fails
+   that way, change each board's kind in the UI, then re-run the dry run to confirm.
 4. In Monday, subscribe the staff team, and SVBC Integration to **only** the
    boards its Workers read or write. The script reports subscribers; it does not add them.
    The Sandbox Integration user must be on none (`--sandbox-user` makes the script exit 1 if so).

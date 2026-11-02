@@ -18,10 +18,16 @@
 //   ... --sandbox-user 12345678
 //
 // The token must belong to a user who can change the boards' kind (the board owner or an admin);
-// use the load's own user or an admin, not a Worker integration user.
+// use the load's own user or an admin, not a Worker integration user. Caveat (2026-11-02): with
+// the version fixed, Monday still answered USER_UNAUTHORIZED to an account admin's personal token,
+// even on a public board that same user had just created. So on SVBC's account `--apply` has not
+// yet succeeded; the production boards were made private in the Monday UI. If it fails that way,
+// change the kind in the UI and re-run the dry run to confirm every board reads private.
 //
 // Mutation (verified against the Monday GraphQL schema, 2026-10-09): `change_board_kind(board_id:
 // ID!, kind: BoardKindInput!)` with kind PUBLIC | PRIVATE | SHARE, returning { id board_kind }.
+// It exists only from API version 2026-10 (`BOARD_KIND_API_VERSION`); under the repo pin (2026-07)
+// Monday answers `Cannot query field "change_board_kind"`, so this one call overrides the pin.
 // `update_board` cannot do this — its `BoardAttributes` enum is only communication, description,
 // item_nickname and name. Changing a board to private leaves existing subscribers in place;
 // adding or removing subscribers is a separate step (this script only reports them).
@@ -37,6 +43,8 @@
 import { fileURLToPath } from 'node:url';
 // The repo's single API-Version pin (#39), from the canonical transport.
 import { MONDAY_API_VERSION } from '../monday-backup/src/monday/graphql.ts';
+// The one call that needs a newer version than the pin (see the header); the reads stay on the pin.
+export const BOARD_KIND_API_VERSION = '2026-10';
 
 const API_URL = 'https://api.monday.com/v2';
 const PAGE_SIZE = 100;
@@ -144,10 +152,10 @@ export function formatPlan(plan, { apply = false, applied = false, sandboxUser =
   return lines.join('\n');
 }
 
-async function query(token, graphql, variables) {
+async function query(token, graphql, variables, apiVersion = MONDAY_API_VERSION) {
   const res = await fetch(API_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': MONDAY_API_VERSION },
+    headers: { 'Content-Type': 'application/json', Authorization: token, 'API-Version': apiVersion },
     body: JSON.stringify({ query: graphql, variables }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -182,7 +190,8 @@ async function makePrivate(token, boardId) {
   const data = await query(
     token,
     'mutation ($id: ID!) { change_board_kind(board_id: $id, kind: PRIVATE) { id board_kind } }',
-    { id: boardId }
+    { id: boardId },
+    BOARD_KIND_API_VERSION
   );
   return data.change_board_kind;
 }
