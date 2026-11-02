@@ -37,9 +37,11 @@ export function buildTags(donor: DonorRecord, config: Config): string[] {
     out.push(tags.lifetimeMember);
   } else if (donor.membershipStatus === config.activeStatusValue) {
     out.push(tags.activeMember);
-  } else {
+  } else if (donor.membershipStatus !== '') {
     out.push(tags.lapsedMember);
   }
+  // A blank Membership Status is someone who has never been a member: no membership tag, so
+  // syncTags deactivates any of the three a contact still carries.
 
   const total = Number(donor.totalGiven);
   if (!Number.isNaN(total) && total > 0) {
