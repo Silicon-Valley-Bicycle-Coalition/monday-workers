@@ -17,7 +17,7 @@ function fixture() {
       eventsAddressColumn: 'location',
     },
     osm: { nominatimUrl: 'https://nominatim.example', overpassUrl: 'https://overpass.example', userAgent: 'svbc-nearby-search (test)' },
-    serviceArea: [36.9, -122.7, 37.8, -121.5],
+    serviceArea: [36.89, -122.53, 37.71, -121.2],
     access: { teamDomain: 'svbc.cloudflareaccess.com', aud: 'aud-tag' },
     geocode: { censusUrl: 'https://census.example', perRun: 200 },
   };
@@ -27,7 +27,7 @@ describe('validateConfig', () => {
   it('accepts a complete config', () => {
     const config = validateConfig(fixture());
     expect(config.monday.sources.map((s) => s.kind)).toEqual(['person', 'historical', 'organization']);
-    expect(config.serviceArea).toEqual([36.9, -122.7, 37.8, -121.5]);
+    expect(config.serviceArea).toEqual([36.89, -122.53, 37.71, -121.2]);
   });
 
   it('rejects a REPLACE_WITH_COLUMN_ID column', () => {

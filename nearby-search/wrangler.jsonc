@@ -4,7 +4,7 @@
   "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
   "compatibility_date": "2026-08-01",
   "upload_source_maps": true,
-  "workers_dev": true,
+  "workers_dev": false, // served on a custom domain behind one Access application, never workers.dev
   // Provision once, then paste the ids: `wrangler d1 create svbc-nearby-search`,
   // `wrangler queues create nearby-search-writes` and `nearby-search-writes-dlq`, then
   // `wrangler d1 migrations apply svbc-nearby-search --remote`. Until then database_id is a placeholder.
@@ -67,7 +67,7 @@
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
-      "workers_dev": true,
+      "workers_dev": false, // served on a custom domain behind one Access application, never workers.dev
       "d1_databases": [
         {
           "binding": "DB",

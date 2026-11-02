@@ -98,3 +98,10 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(sb.entrypoint).toBe(prod.entrypoint);
   });
 });
+
+describe('wrangler.jsonc workers_dev', () => {
+  it('is off in production and the sandbox (custom domain behind Access)', () => {
+    expect(wrangler.workers_dev).toBe(false);
+    expect(sandboxEnv.workers_dev).toBe(false);
+  });
+});

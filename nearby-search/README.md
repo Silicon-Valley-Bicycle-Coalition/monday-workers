@@ -19,7 +19,7 @@ implemented" until then.
   geocodes a bounded batch (`geocode.perRun`) of contacts that have an address but no coordinates.
 * Point and corridor matching is `src/geometry.ts`, a byte-identical copy of
   `geo-filter/src/geometry.ts` (CI job `geo-geometry-copies`). Edit geo-filter's, then copy it.
-* Every route except `GET /health` sits behind Cloudflare Access.
+* Every route except `GET /health` will sit behind Cloudflare Access (planned).
 * Monday access is the `monday-auth` broker's `SyncToken` entrypoint (`MONDAY_AUTH` service
   binding); the Worker holds no Monday token.
 
@@ -30,7 +30,7 @@ column ids. They ship with `null` / `REPLACE_WITH_*` placeholders, and `validate
 placeholder, so a search fails loudly until every id is wired. Sandbox and production must use
 different board ids and a different `access.aud` (`config/split.test.ts`).
 
-## Cloudflare Access setup
+## Cloudflare Access setup (planned)
 
 1. In Cloudflare One, add a self-hosted Access application for the Worker's hostname with a policy
    that allows only SVBC staff.
@@ -52,7 +52,7 @@ npm run deploy
 
 Repeat with the `-sandbox` names and `--env sandbox` / `npm run deploy:sandbox` for the sandbox.
 
-## Write switch
+## Write switch (planned: the write path lands in a later task)
 
 Every Monday write is gated on `nearby-search:writes` in the shared `FLAGS` KV namespace. A
 missing key means `off`, so turn it on **before** deploying a build that should write:
