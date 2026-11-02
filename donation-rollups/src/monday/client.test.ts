@@ -373,7 +373,7 @@ describe('status columns read by stored value (label id 5)', () => {
     expect(page.items[0]!.values).toEqual(new Map([['fs', null], ['gs', '{"index":2}'], ['fq', null]]));
     expect(page.items[0]!.text.get('fs')).toBe('Other Program Revenue');
     const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { query: string };
-    expect(body.query).toMatch(/\{ id text value \}/);
+    expect(body.query).toMatch(/\{ id text value \.\.\. on BoardRelationValue \{ linked_item_ids \} \}/);
   });
   it('pageRecurringGifts reads a blank status as null even when its text is the id-5 label', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
@@ -424,5 +424,47 @@ describe('status columns read by stored value (label id 5)', () => {
       { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed', value: null }] }] } }] } });
     expect((await shifts.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'] }, null)).items[0]!.statusLabel)
       .toBeNull();
+  });
+});
+
+describe('roll call board writes', () => {
+  const sent = () => (vi.mocked(fetch).mock.calls as [string, RequestInit][])
+    .map(([, init]) => JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> });
+
+  it('pageItemsColumnsText also reads each item\'s name, group and linked item ids', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: '7', name: 'Ada', group: { id: 'g26' },
+      column_values: [{ id: 'people', text: 'Bo, Ada', value: '{}', linked_item_ids: ['2', '1'] }, { id: 'key', text: '2026|item:1', value: '"x"' }] }] } }] } });
+    const item = (await client.pageItemsColumnsText(1, ['people', 'key'], null)).items[0]!;
+    expect(item).toMatchObject({ id: '7', name: 'Ada', groupId: 'g26' });
+    expect(item.linkedIds).toEqual(new Map([['people', ['2', '1']]]));
+    expect(sent()[0]!.query).toMatch(/name group \{ id \}/);
+  });
+
+  it('listGroups, createGroup, updateGroupTitle, createItemInGroup, moveItemToGroup and deleteItem send their mutations', async () => {
+    const client = clientReturning({ data: {
+      boards: [{ groups: [{ id: 'g26', title: 'FY2026' }] }],
+      create_group: { id: 'g27' }, update_group: { id: 'g26' }, create_item: { id: '9' }, move_item_to_group: { id: '9' }, delete_item: { id: '9' },
+    } });
+    expect(await client.listGroups(5)).toEqual([{ id: 'g26', title: 'FY2026' }]);
+    expect(await client.createGroup(5, 'FY2027 (in progress)')).toBe('g27');
+    await client.updateGroupTitle(5, 'g26', 'FY2026');
+    expect(await client.createItemInGroup(5, 'g27', 'Ada', { key: '2027|item:1' })).toBe('9');
+    await client.moveItemToGroup('9', 'g26');
+    await client.deleteItem('9');
+    const calls = sent();
+    expect(calls[1]!.query).toMatch(/create_group\(board_id: \$boardId, group_name: \$title\)/);
+    expect(calls[2]!.query).toMatch(/update_group\(board_id: \$boardId, group_id: \$groupId, group_attribute: title, new_value: \$title\)/);
+    expect(calls[2]!.variables).toEqual({ boardId: '5', groupId: 'g26', title: 'FY2026' });
+    expect(calls[3]!.query).toMatch(/create_item\(board_id: \$boardId, group_id: \$groupId, item_name: \$itemName, column_values: \$columnValues\)/);
+    expect(calls[3]!.variables).toEqual({ boardId: '5', groupId: 'g27', itemName: 'Ada', columnValues: '{"key":"2027|item:1"}' });
+    expect(calls[4]!.query).toMatch(/move_item_to_group\(item_id: \$itemId, group_id: \$groupId\)/);
+    expect(calls[5]!.query).toMatch(/delete_item\(item_id: \$itemId\)/);
+  });
+
+  it('a group or item create that may have committed is an AmbiguousWriteError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('bad gateway', { status: 502 }))));
+    const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
+    expect(await client.createGroup(5, 'FY2027').catch((e) => e)).toBeInstanceOf(AmbiguousWriteError);
+    expect(await client.createItemInGroup(5, 'g', 'Ada', {}).catch((e) => e)).toBeInstanceOf(AmbiguousWriteError);
   });
 });

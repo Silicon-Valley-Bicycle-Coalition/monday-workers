@@ -139,6 +139,16 @@ export function custodianDepsFor(disposition: 'run' | 'dry-run', deps: Custodian
       },
       changeColumnValues: undefined,
       createUpdate: undefined,
+      // The roll call board: a dry-run group id is what that run's creates go into.
+      createGroup: function (): string {
+        return `dry-run-${this.n}`;
+      },
+      createItemInGroup: function (): string {
+        return `dry-run-${this.n}`;
+      },
+      updateGroupTitle: undefined,
+      moveItemToGroup: undefined,
+      deleteItem: undefined,
     }, ctx),
     queue: recordingProxy(deps.queue, QUEUE_SINK, { sendBatch: undefined }, ctx),
   };

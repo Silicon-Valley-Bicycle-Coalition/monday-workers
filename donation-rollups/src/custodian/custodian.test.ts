@@ -85,6 +85,12 @@ function fakeClient(state: FakeClientState): CustodianMondayClient {
     async pageRecurringGifts() { return { items: [], cursor: null }; },
     async pageDonationCredits() { return { items: [], cursor: null }; },
     async getItemsState() { return new Map(); },
+    async listGroups() { return []; },
+    async createGroup() { return 'group'; },
+    async updateGroupTitle() {},
+    async createItemInGroup() { return 'item'; },
+    async moveItemToGroup() {},
+    async deleteItem() {},
   };
 }
 

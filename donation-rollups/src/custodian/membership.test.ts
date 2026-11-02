@@ -61,6 +61,8 @@ function fakeClient(f: Fake): CustodianMondayClient {
     async pageRecurringGifts() { return { items: [], cursor: null }; },
     async pageDonationCredits() { return { items: [], cursor: null }; },
     async getItemsState() { return new Map(); },
+    async listGroups() { return []; }, async createGroup() { return 'g'; }, async updateGroupTitle() {},
+    async createItemInGroup() { return 'x'; }, async moveItemToGroup() {}, async deleteItem() {},
   };
 }
 function deps(f: Fake, sent: RecomputeQueueMessage[], now = new Date('2027-12-03T10:00:00Z')): CustodianDeps {

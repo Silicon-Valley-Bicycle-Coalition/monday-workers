@@ -43,6 +43,14 @@ export interface CustodianMondayClient {
   pageDonationCredits(cfg: RollCallConfig['donations'], cursor: string | null): Promise<{ items: DonationCreditRecord[]; cursor: string | null }>;
   // A missing id is a deleted item.
   getItemsState(itemIds: string[]): Promise<Map<string, 'active' | 'archived' | 'deleted'>>;
+  // The Donor Roll Call board (the `rollcall` duty). createGroup and createItemInGroup aren't
+  // idempotent: one that may have committed throws AmbiguousWriteError.
+  listGroups(boardId: number): Promise<{ id: string; title: string }[]>;
+  createGroup(boardId: number, title: string): Promise<string>;
+  updateGroupTitle(boardId: number, groupId: string, title: string): Promise<void>;
+  createItemInGroup(boardId: number, groupId: string, name: string, columnValues: Record<string, unknown>): Promise<string>;
+  moveItemToGroup(itemId: string, groupId: string): Promise<void>;
+  deleteItem(itemId: string): Promise<void>;
 }
 
 export interface CustodianDeps {

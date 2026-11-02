@@ -39,8 +39,12 @@ export interface AffiliationSummary {
 export type ItemState = 'active' | 'archived' | 'deleted';
 
 // One item's requested columns from pageItemsColumnsText: text ('' reads as null) and the raw
-// stored value JSON (null for an empty cell).
-export interface ItemColumns { id: string; text: Map<string, string | null>; values: Map<string, string | null> }
+// stored value JSON (null for an empty cell). The real client also fills the item's name, its
+// group and each connect column's linked item ids; they're optional so fakes needn't.
+export interface ItemColumns {
+  id: string; text: Map<string, string | null>; values: Map<string, string | null>;
+  name?: string; groupId?: string; linkedIds?: Map<string, string[]>;
+}
 
 export interface RegistrationRecord {
   id: string;
@@ -566,11 +570,13 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
   // through statusLabel(text, value), not text alone.
   async pageItemsColumnsText(boardId: number, columnIds: string[], cursor: string | null):
     Promise<{ items: ItemColumns[]; cursor: string | null }> {
-    const data: { boards: { items_page: { cursor: string | null; items: { id: string; column_values: ColumnValue[] }[] } }[] } =
+    const data: { boards: { items_page: { cursor: string | null;
+      items: { id: string; name: string; group: { id: string }; column_values: ColumnValue[] }[] } }[] } =
       await this.graphql(
         `query ($boardId: [ID!], $columnIds: [String!], $cursor: String) {
           boards(ids: $boardId) {
-            items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value } } }
+            items_page(limit: 500, cursor: $cursor) { cursor items { id name group { id }
+              column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
         { boardId: [boardId], columnIds, cursor },
@@ -582,11 +588,13 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       items: page.items.map((item) => {
         const text = new Map<string, string | null>(columnIds.map((id) => [id, null]));
         const values = new Map<string, string | null>(columnIds.map((id) => [id, null]));
+        const linkedIds = new Map<string, string[]>();
         for (const cv of item.column_values) {
           text.set(cv.id, cv.text === null || cv.text === '' ? null : cv.text);
           values.set(cv.id, cv.value ?? null);
+          if (cv.linked_item_ids !== undefined) linkedIds.set(cv.id, cv.linked_item_ids);
         }
-        return { id: item.id, text, values };
+        return { id: item.id, name: item.name, groupId: item.group?.id, text, values, linkedIds };
       }),
     };
   }
@@ -625,6 +633,63 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       { idempotent: false },
     );
     return data.create_item.id;
+  }
+
+  // --- Donor Roll Call board (the `rollcall` duty) ---
+
+  async listGroups(boardId: number): Promise<{ id: string; title: string }[]> {
+    const data = await this.graphql<{ boards: { groups: { id: string; title: string }[] }[] }>(
+      `query ($boardId: [ID!]) { boards(ids: $boardId) { groups { id title } } }`,
+      { boardId: [boardId] },
+    );
+    return data.boards[0]?.groups.map((g) => ({ id: g.id, title: g.title })) ?? [];
+  }
+
+  async createGroup(boardId: number, title: string): Promise<string> {
+    const data = await this.graphql<{ create_group: { id: string } }>(
+      `mutation ($boardId: ID!, $title: String!) { create_group(board_id: $boardId, group_name: $title) { id } }`,
+      { boardId: String(boardId), title },
+      MONDAY_API_VERSION,
+      // Not idempotent: a create that may have committed throws AmbiguousWriteError.
+      { idempotent: false },
+    );
+    return data.create_group.id;
+  }
+
+  async updateGroupTitle(boardId: number, groupId: string, title: string): Promise<void> {
+    await this.graphql<{ update_group: { id: string } }>(
+      `mutation ($boardId: ID!, $groupId: String!, $title: String!) {
+        update_group(board_id: $boardId, group_id: $groupId, group_attribute: title, new_value: $title) { id }
+      }`,
+      { boardId: String(boardId), groupId, title },
+    );
+  }
+
+  async createItemInGroup(boardId: number, groupId: string, name: string, columnValues: Record<string, unknown>): Promise<string> {
+    const data = await this.graphql<{ create_item: { id: string } }>(
+      `mutation ($boardId: ID!, $groupId: String!, $itemName: String!, $columnValues: JSON!) {
+        create_item(board_id: $boardId, group_id: $groupId, item_name: $itemName, column_values: $columnValues) { id }
+      }`,
+      { boardId: String(boardId), groupId, itemName: name, columnValues: JSON.stringify(columnValues) },
+      MONDAY_API_VERSION,
+      // Not idempotent: a create that may have committed throws AmbiguousWriteError.
+      { idempotent: false },
+    );
+    return data.create_item.id;
+  }
+
+  async moveItemToGroup(itemId: string, groupId: string): Promise<void> {
+    await this.graphql<{ move_item_to_group: { id: string } }>(
+      `mutation ($itemId: ID!, $groupId: String!) { move_item_to_group(item_id: $itemId, group_id: $groupId) { id } }`,
+      { itemId, groupId },
+    );
+  }
+
+  async deleteItem(itemId: string): Promise<void> {
+    await this.graphql<{ delete_item: { id: string } }>(
+      `mutation ($itemId: ID!) { delete_item(item_id: $itemId) { id } }`,
+      { itemId },
+    );
   }
 
   async archiveItem(itemId: string): Promise<void> {

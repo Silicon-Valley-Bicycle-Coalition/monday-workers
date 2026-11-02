@@ -11,7 +11,7 @@ import { D1OwnerRecomputesStore } from './db/ownerRecomputes';
 import { D1RollCallCreditsStore } from './db/rollCallCredits';
 import { D1AffiliationsStore } from './db/affiliations';
 import { DEFAULT_PII_KEYS, type WriteMode } from './flags';
-import type { BatchSkipContext } from './writeSwitch';
+import { custodianDepsFor, type BatchSkipContext } from './writeSwitch';
 import type { DonationRollupsMondayClient } from './monday/client';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from './types';
 
@@ -133,5 +133,25 @@ describe('a dry-run delivery is never requeued as live work', () => {
     expect(m.ack).toHaveBeenCalled();
     expect(deps.mondayClient.getDonationState).toHaveBeenCalledWith('703');
     expect(await statusOf('703')).toBe('written');
+  });
+});
+
+describe('custodianDepsFor dry run: roll call board writes', () => {
+  it('mints dry-run ids for group and item creates and records the other writes without sending them', async () => {
+    const live = { createGroup: vi.fn(), createItemInGroup: vi.fn(), updateGroupTitle: vi.fn(), moveItemToGroup: vi.fn(), deleteItem: vi.fn() };
+    const deps = { gifts: new D1GiftsStore(env.DB), pending: pending(), volunteers: new D1VolunteerActivityStore(env.DB),
+      recomputes: new D1OwnerRecomputesStore(env.DB), rollCallCredits: new D1RollCallCreditsStore(env.DB),
+      mondayClient: live as unknown as CustodianMondayClient, queue: { sendBatch: vi.fn() }, config } as CustodianDeps;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const client = custodianDepsFor('dry-run', deps, { ...gate('off'), deliveryId: 'custodian:test' }).mondayClient;
+
+    expect(await client.createGroup(5, 'FY2027 (in progress)')).toBe('dry-run-1');
+    expect(await client.createItemInGroup(5, 'dry-run-1', 'Ada', {})).toBe('dry-run-2');
+    expect(await client.updateGroupTitle(5, 'g26', 'FY2026')).toBeUndefined();
+    expect(await client.moveItemToGroup('9', 'g26')).toBeUndefined();
+    expect(await client.deleteItem('9')).toBeUndefined();
+    for (const fn of Object.values(live)) expect(fn).not.toHaveBeenCalled();
+    expect(log.mock.calls.map(([line]) => JSON.parse(line as string).operation))
+      .toEqual(['createGroup', 'createItemInGroup', 'updateGroupTitle', 'moveItemToGroup', 'deleteItem']);
   });
 });
