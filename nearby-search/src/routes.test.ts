@@ -46,6 +46,45 @@ describe('auth and limits', () => {
   });
 });
 
+describe('CSRF guard on POST /api/*', () => {
+  const preview = { query: '1 Main St, San Jose', miles: 2 };
+  it.each(['/api/preview', '/api/confirm'])('%s refuses a non-JSON Content-Type with 415 JSON', async (path) => {
+    const { post, queue } = setup();
+    for (const ct of ['text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x']) {
+      const res = await post(path, valid, { 'x-test-staff': 'staff@example.org', 'content-type': ct });
+      expect(res.status).toBe(415);
+      expect(await res.json()).toEqual({ message: expect.any(String) });
+    }
+    expect(queue.sent).toEqual([]);
+  });
+
+  it('refuses a POST with no Content-Type', async () => {
+    const { app, env } = setup();
+    const res = await app.request('/api/preview', { method: 'POST', headers: { 'x-test-staff': 'staff@example.org' }, body: new Uint8Array([123, 125]) }, env);
+    expect(res.status).toBe(415);
+  });
+
+  it.each(['cross-site', 'same-site', 'none'])('refuses Sec-Fetch-Site: %s with 403 JSON', async (site) => {
+    const { post, queue } = setup();
+    const res = await post('/api/confirm', valid, { ...STAFF, 'sec-fetch-site': site });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ message: expect.any(String) });
+    expect(queue.sent).toEqual([]);
+  });
+
+  it('accepts same-origin, an absent Sec-Fetch-Site, and a charset parameter', async () => {
+    const { post } = setup();
+    expect((await post('/api/preview', preview, { ...STAFF, 'sec-fetch-site': 'same-origin' })).status).toBe(200);
+    expect((await post('/api/preview', preview)).status).toBe(200);
+    expect((await post('/api/preview', preview, { ...STAFF, 'content-type': 'Application/JSON; charset=utf-8' })).status).toBe(200);
+  });
+
+  it('leaves GET /api/boards alone', async () => {
+    const { app, env } = setup();
+    expect((await app.request('/api/boards', { headers: { 'x-test-staff': 'staff@example.org', 'sec-fetch-site': 'same-origin' } }, env)).status).toBe(200);
+  });
+});
+
 describe('POST /api/preview', () => {
   it('returns matches and counts for a point', async () => {
     const { post, queue } = setup();

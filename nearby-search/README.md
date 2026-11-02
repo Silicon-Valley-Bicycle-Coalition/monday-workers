@@ -62,6 +62,9 @@ different board ids and a different `access.aud` (`config/split.test.ts`).
    application's **AUD tag** into `access.aud`. Each environment is its own Access application
    with its own AUD tag.
 3. Exclude `/health` from the application (a Bypass policy for that path) if an uptime check needs it.
+4. Under the application's cookie settings, set **SameSite** to **Lax** or **Strict**, so a
+   cross-site request doesn't carry the Access cookie. The Worker also refuses a `POST /api/*` that
+   isn't `application/json` (415) or whose `Sec-Fetch-Site` is present and not `same-origin` (403).
 
 ## Provisioning and deploy
 

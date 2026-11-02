@@ -74,6 +74,19 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
   });
   app.use('/api/*', access);
 
+  // CSRF guard. The Access cookie rides along on a cross-site request, so a POST must prove it
+  // came from this page: a JSON body (a plain HTML form can't send one without a CORS preflight,
+  // which this Worker never answers) and, where the browser says, a same-origin fetch.
+  app.use('/api/*', async (c, next) => {
+    if (c.req.method === 'POST') {
+      const type = (c.req.header('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+      if (type !== 'application/json') return c.json({ message: 'Requests must be sent as application/json.' }, 415);
+      const site = c.req.header('sec-fetch-site');
+      if (site !== undefined && site !== 'same-origin') return c.json({ message: 'Cross-site requests are not allowed.' }, 403);
+    }
+    await next();
+  });
+
   app.onError((err, c) => {
     if (err instanceof OsmError) return c.json({ message: 'OpenStreetMap is unavailable; try again shortly.' }, 502);
     if (err instanceof SearchInputError) return c.json({ message: err.message }, 400);
