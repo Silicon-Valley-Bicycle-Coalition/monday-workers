@@ -36,7 +36,7 @@ export async function refreshCredits(
   const stored = new Map((await deps.rollCallCredits.all(cfg.firstFiscalYear)).map((r) => [r.giftItemId, r]));
 
   const seen = new Set<string>();
-  const rows: CreditRow[] = [];
+  const rows = new Map<string, CreditRow>(); // by gift id: a paging race can repeat an item
   const removals: string[] = [];
   let cursor: string | null = null;
   do {
@@ -46,10 +46,10 @@ export async function refreshCredits(
       const verdict = item.fiscalYear < cfg.firstFiscalYear ? 'skip' : creditFor(item, cfg.excludedGiftTypes);
       if (typeof verdict === 'object') {
         // archivedAt null: an item restored from the archive clears its old stamp.
-        rows.push({ giftItemId: item.id, fiscalYear: item.fiscalYear, amountCents: item.amountCents,
+        rows.set(item.id, { giftItemId: item.id, fiscalYear: item.fiscalYear, amountCents: item.amountCents,
           status: item.status ?? '', giftType: item.giftType, credit: verdict.credit,
           unmatchedMatch: verdict.unmatchedMatch, archivedAt: null });
-      } else if (stored.get(item.id)?.archivedAt === null) {
+      } else if (stored.has(item.id)) {
         removals.push(item.id);
       }
     }
@@ -63,7 +63,7 @@ export async function refreshCredits(
   const gone = unseen.filter((id) => (states.get(id) ?? 'deleted') === 'deleted');
   const archived = unseen.filter((id) => states.get(id) === 'archived');
 
-  const upserted = await deps.rollCallCredits.upsert(rows, now);
+  const upserted = await deps.rollCallCredits.upsert([...rows.values()], now);
   if (removals.length + gone.length > 0) await deps.rollCallCredits.remove([...removals, ...gone]);
   if (archived.length > 0) await deps.rollCallCredits.markArchived(archived, now);
   return { upserted, removed: removals.length + gone.length, archived: archived.length };

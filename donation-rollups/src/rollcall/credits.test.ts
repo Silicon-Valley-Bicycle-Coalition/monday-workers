@@ -111,10 +111,15 @@ describe('refreshCredits', () => {
     expect(await refreshCredits(h.deps, CFG, NOW)).toEqual({ upserted: 1, removed: 0, archived: 0 });
     expect(h.rows.get('g1')!.archivedAt).toBeNull();
   });
-  it('does not remove an archived row whose restored item now yields ledger', async () => {
-    const archived = row({ archivedAt: '2026-10-01T00:00:00Z' });
-    const h = harness([item()], [archived]);
-    expect(await refreshCredits(h.deps, CFG, NOW)).toEqual({ upserted: 0, removed: 0, archived: 0 });
-    expect(h.rows.get('g1')).toEqual(archived);
+  it('removes an archived row whose restored item now yields ledger or skip', async () => {
+    const stamp = '2026-10-01T00:00:00Z';
+    const h = harness([item({ id: 'a' }), item({ id: 'b', status: 'Pledged', anonymous: true })],
+      [row({ giftItemId: 'a', archivedAt: stamp }), row({ giftItemId: 'b', archivedAt: stamp })]);
+    expect(await refreshCredits(h.deps, CFG, NOW)).toEqual({ upserted: 0, removed: 2, archived: 0 });
+    expect(h.rows.size).toBe(0);
+  });
+  it('upserts once when a paging race repeats an item', async () => {
+    const h = harness([item({ anonymous: true }), item({ anonymous: true })], []);
+    expect(await refreshCredits(h.deps, CFG, NOW)).toEqual({ upserted: 1, removed: 0, archived: 0 });
   });
 });
