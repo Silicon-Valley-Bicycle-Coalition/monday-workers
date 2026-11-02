@@ -39,7 +39,7 @@ const config: DonationRollupsConfig = {
     donorLevel: null,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
-    recurringGifts: null,
+    recurringGifts: null, rollCall: null,
   },
 };
 
@@ -61,7 +61,7 @@ const membershipEnabled: DonationRollupsConfig = {
     membership: membershipConfig,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
-    recurringGifts: null,
+    recurringGifts: null, rollCall: null,
   },
 };
 
@@ -118,6 +118,7 @@ function fakeGiftsStore(): GiftsStore {
     setSummaryItemId: vi.fn().mockResolvedValue(undefined),
     getArchivable: vi.fn().mockResolvedValue([]),
     markArchived: vi.fn().mockResolvedValue(undefined),
+    countedGifts: vi.fn().mockResolvedValue([]),
     giftsMissingTermStart: vi.fn().mockResolvedValue([]),
     setTermStarts: vi.fn().mockResolvedValue(undefined),
     ownersOnBoards: vi.fn().mockResolvedValue([]),

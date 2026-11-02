@@ -64,11 +64,16 @@
   // flood before it reaches D1. Verified webhook deliveries are exempt (issue #27): a bulk edit
   // makes Monday itself send well over 60/min from a few IPs (src/rateLimit.ts).
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2021", "simple": { "limit": 60, "period": 60 } }],
-  // Workers Paid (this account's plan) defaults to 30s CPU/request; cap it far lower as a
-  // guardrail against a runaway invocation or a surprise bill. See the root README. CPU time
-  // excludes the D1/Monday I/O wait this Worker's recompute batches are mostly made of, so this
-  // doesn't constrain the max_batch_size subrequest sizing above.
-  "limits": { "cpu_ms": 100 },
+  // The fleet-wide 100ms cost cap (root README "Reliability: traffic and cost limits") does NOT
+  // fit this Worker's nightly cron: the rollcall duty parses every People, People (Historical),
+  // Organizations and active Donations item (~20k People alone) and computes the roll call in
+  // the same invocation as reconcile, classify, membership and recurring. A CPU-limit kill is not
+  // catchable — no custodian_runs row, no alert — so the cap would silently stop the night.
+  // 30,000ms is Workers Paid's own default (300,000 is the maximum), roughly 10x the few seconds
+  // that cron is expected to use; ruling R12 measures it in the sandbox run, and the dashboard's
+  // per-Worker CPU-time metric is the place to tune it. CPU time excludes D1/Monday I/O wait, so
+  // webhook and queue invocations still use a few ms each. Keep in step with env.sandbox below.
+  "limits": { "cpu_ms": 30000 },
   // Daily custodian trigger at 09:00 UTC (≈ 2am Pacific) — src/custodian/custodian.ts's
   // dutiesForDate decides which duties today owes.
   "triggers": {
@@ -125,7 +130,8 @@
       // The sandbox-FLAGS namespace.
       "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2022", "simple": { "limit": 60, "period": 60 } }],
-      "limits": { "cpu_ms": 100 },
+      // Same as the top-level limit: see its comment.
+      "limits": { "cpu_ms": 30000 },
       "triggers": {
         "crons": ["0 9 * * *"]
       },

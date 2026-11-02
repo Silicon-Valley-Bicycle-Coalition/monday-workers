@@ -85,6 +85,7 @@ export interface DonationRollupsConfig {
     volunteerBoards: VolunteerBoardConfig[];
     historicalVolunteerBoards: HistoricalVolunteerBoardConfig[];
     recurringGifts: RecurringGiftsConfig | null;
+    rollCall: RollCallConfig | null;
   };
 }
 
@@ -94,6 +95,26 @@ export interface RecurringGiftsConfig {
   boardId: number;
   columns: { donorLink: string; status: string };
   activeStatusLabel: string;
+}
+
+// The Donor Roll Call board the nightly `rollcall` duty maintains: one row per donor per fiscal
+// year, derived from Donations. Null = duty off. `people` is keyed by People / People (Historical)
+// board id, each with its own column-id namespace.
+export interface RollCallConfig {
+  boardId: number;
+  firstFiscalYear: number;
+  excludedGiftTypes: string[];
+  writesPerRun: number;
+  columns: {
+    fiscalYear: string; tier: string; type: string; listed: string; total: string; gifts: string;
+    people: string; organization: string; reviewNote: string; rowKey: string;
+  };
+  donations: {
+    boardId: number;
+    columns: { amount: string; date: string; status: string; fiscalYear: string; giftType: string; donorLink: string; matchedBy: string; anonymous: string };
+  };
+  people: Record<string, { householdId: string; householdGreeting: string; householdEmail: string; doNotSolicit: string; dontList: string }>;
+  organizations: { boardId: number; columns: { recognitionName: string; dontList: string } };
 }
 
 export interface OwnerColumns {

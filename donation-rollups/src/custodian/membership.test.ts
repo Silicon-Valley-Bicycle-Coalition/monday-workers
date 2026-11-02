@@ -6,6 +6,7 @@ import { D1GiftsStore } from '../db/gifts';
 import { D1PendingStore } from '../db/pending';
 import { D1VolunteerActivityStore } from '../db/volunteerActivity';
 import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
+import { D1RollCallCreditsStore } from '../db/rollCallCredits';
 import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
 
 const MEMBERSHIP = { status: 'ms', tier: 'mt', since: 'msince', until: 'muntil', currentTermStart: 'mcts', memberType: 'mtype', lapseCount: 'mlc', lastLapsed: 'mll' };
@@ -28,7 +29,7 @@ function config(): DonationRollupsConfig {
       membership: { fromISO: '2026-10-16', eligibleGiftTypes: ['Donation'], minAmountCents: 100, termMonths: 13, lifetimeThresholdCents: 100000,
         statusLabels: { active: 'Active', lapsed: 'Lapsed' }, tierLabels: { member: 'Member', lifetime: 'Lifetime' },
         typeLabels: { new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal', lifetime: 'Lifetime' } },
-      donorLevel: null, volunteerBoards: [VOL_BOARD], historicalVolunteerBoards: [HIST_BOARD], recurringGifts: null,
+      donorLevel: null, volunteerBoards: [VOL_BOARD], historicalVolunteerBoards: [HIST_BOARD], recurringGifts: null, rollCall: null,
     },
   };
 }
@@ -58,11 +59,15 @@ function fakeClient(f: Fake): CustodianMondayClient {
     async pageHistoricalShifts() { return { items: f.shifts ?? [], cursor: null }; },
     async getItemsBoardIds(ids) { return new Map(ids.flatMap((id) => (f.boardOf?.[id] ? [[id, f.boardOf[id]!] as [string, string]] : []))); },
     async pageRecurringGifts() { return { items: [], cursor: null }; },
+    async pageDonationCredits() { return { items: [], cursor: null }; },
+    async getItemsState() { return new Map(); },
+    async listGroups() { return []; }, async createGroup() { return 'g'; }, async updateGroupTitle() {},
+    async createItemInGroup() { return 'x'; }, async moveItemToGroup() {}, async deleteItem() {},
   };
 }
 function deps(f: Fake, sent: RecomputeQueueMessage[], now = new Date('2027-12-03T10:00:00Z')): CustodianDeps {
   return { gifts: new D1GiftsStore(env.DB), pending: new D1PendingStore(env.DB), volunteers: new D1VolunteerActivityStore(env.DB),
-    recomputes: new D1OwnerRecomputesStore(env.DB), mondayClient: fakeClient(f),
+    recomputes: new D1OwnerRecomputesStore(env.DB), rollCallCredits: new D1RollCallCreditsStore(env.DB), mondayClient: fakeClient(f),
     queue: { sendBatch: async (m) => { sent.push(...m); } }, config: config(), now };
 }
 

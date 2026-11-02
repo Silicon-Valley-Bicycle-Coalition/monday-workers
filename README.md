@@ -363,6 +363,8 @@ usage ever approaches it — the Cloudflare dashboard's per-Worker CPU-time metr
 of truth for that, not a guess made here. **Exception: `monday-backup`** runs at `cpu_ms: 300000`
 (the configurable maximum) — a nightly full-account snapshot cannot fit in 100ms, and a CPU-limit
 kill is uncatchable, so the cap silently killed every run (issue #29; see its `wrangler.jsonc`).
+**`donation-rollups`** runs at `cpu_ms: 30000` (Workers Paid's default) for the same reason: its
+nightly custodian cron reads every People item for the donor roll call (see its `wrangler.jsonc`).
 
 **Account-level spend alerting is not code-configurable** — Cloudflare has no API/wrangler-managed
 hard spend cap, only a dashboard Notification on a usage threshold. One already exists on this
