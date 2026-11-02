@@ -333,3 +333,16 @@ describe('createOsmClient', () => {
     expect(store.size).toBe(0);
   });
 });
+
+describe('createOsmClient: Nominatim body', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('throws OsmError 502 and caches nothing when the body is not an array', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Unable to geocode' }), { status: 200 })));
+    const put = vi.fn();
+    const cache = { match: async () => undefined, put } as unknown as Cache;
+    const error = await createOsmClient(OSM_CONFIG, cache).nominatim('q=x').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(OsmError);
+    expect((error as OsmError).status).toBe(502);
+    expect(put).not.toHaveBeenCalled();
+  });
+});

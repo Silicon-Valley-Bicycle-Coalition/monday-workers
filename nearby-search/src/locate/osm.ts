@@ -77,7 +77,10 @@ export function createOsmClient(cfg: Config['osm'], cache?: Cache): OsmClient {
   return {
     nominatim(query) {
       const url = `${cfg.nominatimUrl.replace(/\/+$/, '')}/search?${query}`;
-      return cachedJson<NominatimHit[]>(url, url, { method: 'GET' }, 'Nominatim');
+      // An error object (`{"error": …}`) in place of the hit list is a failure, never cached.
+      return cachedJson<NominatimHit[]>(url, url, { method: 'GET' }, 'Nominatim', (res) => {
+        if (!Array.isArray(res)) throw new OsmError('Nominatim returned no result array', 502);
+      });
     },
 
     async overpass(ql) {
