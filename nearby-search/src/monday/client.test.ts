@@ -113,9 +113,23 @@ describe('HttpNearbyMondayClient', () => {
   });
 
   it('listBoards returns active boards sorted by name', async () => {
-    const bodies = stub([['boards(', () => ({ boards: [{ id: '2', name: 'b' }, { id: '1', name: 'a' }] })]]);
-    expect((await client().listBoards([5])).map((b) => b.id)).toEqual(['1', '2']);
+    const bodies = stub([['boards(', () => ({ boards: [{ id: '2', name: 'b', type: 'board' }, { id: '1', name: 'a', type: 'board' }] })]]);
+    expect(await client().listBoards([5])).toEqual([{ id: '1', name: 'a' }, { id: '2', name: 'b' }]);
     expect(bodies[0]?.query).toContain('state: active');
+  });
+
+  it('listBoards keeps main boards only (no subitem boards, docs or custom objects)', async () => {
+    const bodies = stub([['boards(', () => ({
+      boards: [
+        { id: '1', name: 'Ride results', type: 'board' },
+        { id: '2', name: 'Subitems of Ride results', type: 'sub_items_board' },
+        { id: '3', name: 'Ride notes', type: 'document' },
+        { id: '4', name: 'Objects', type: 'custom_object' },
+        { id: '5', name: 'Untyped', type: null },
+      ],
+    })]]);
+    expect(await client().listBoards([5])).toEqual([{ id: '1', name: 'Ride results' }]);
+    expect(bodies[0]?.query).toMatch(/\{ id name type \}/);
   });
 
   it('getEventAddress returns null for a wrong board or blank address, else the address', async () => {

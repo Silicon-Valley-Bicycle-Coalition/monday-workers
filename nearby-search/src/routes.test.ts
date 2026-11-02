@@ -93,9 +93,22 @@ describe('POST /api/preview', () => {
   });
 });
 
+// Source boards (101-103) and the Events board (104) from CONFIG, in the results workspace.
+const WITH_SOURCES = [
+  { id: '101', name: 'People' }, { id: '102', name: 'People (Historical)' }, { id: '103', name: 'Organizations' },
+  { id: '104', name: 'Events' }, { id: '900', name: 'Results' },
+];
+
 describe('GET /api/boards', () => {
   it('lists results boards', async () => {
     const { app, env } = setup();
+    const res = await app.request('/api/boards', { headers: STAFF }, env);
+    expect(await res.json()).toEqual([{ id: '900', name: 'Results' }]);
+  });
+
+  it('never offers a source board or the Events board', async () => {
+    const { app, env, deps } = setup();
+    deps.monday.boards = WITH_SOURCES;
     const res = await app.request('/api/boards', { headers: STAFF }, env);
     expect(await res.json()).toEqual([{ id: '900', name: 'Results' }]);
   });
@@ -114,6 +127,16 @@ describe('POST /api/confirm validation', () => {
     const { post, queue, db } = setup();
     const res = await post('/api/confirm', body);
     expect(res.status).toBe(400);
+    expect(queue.sent).toEqual([]);
+    expect(db.searches).toEqual([]);
+  });
+
+  it.each([101, 102, 103, 104])('400 and nothing queued for source/Events board %i, even in the workspace', async (boardId) => {
+    const { post, queue, db, deps } = setup();
+    deps.monday.boards = WITH_SOURCES;
+    const res = await post('/api/confirm', { ...valid, boardId });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ message: 'boardId is not a results board.' });
     expect(queue.sent).toEqual([]);
     expect(db.searches).toEqual([]);
   });

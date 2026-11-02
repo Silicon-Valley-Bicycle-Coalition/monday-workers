@@ -34,6 +34,13 @@ function labelError(label: unknown): string | null {
   return null;
 }
 
+// The boards a search may write to: main boards in the results workspaces, minus every board the
+// Worker reads from (a source board or the Events board would get result rows mixed into it).
+async function resultsBoards({ monday, config }: Deps): Promise<{ id: string; name: string }[]> {
+  const reserved = new Set([...config.monday.sources.map((s) => String(s.boardId)), String(config.monday.eventsBoardId)]);
+  return (await monday.listBoards(config.monday.resultsWorkspaceIds)).filter((b) => !reserved.has(b.id));
+}
+
 // `access` exists only so src/index.local.ts can swap in a bypass; the deployed entry never passes it.
 export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler<AppEnv> = requireAccess()): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -92,8 +99,7 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
   });
 
   app.get('/api/boards', async (c) => {
-    const { monday, config } = makeDeps(c.env);
-    return c.json(await monday.listBoards(config.monday.resultsWorkspaceIds));
+    return c.json(await resultsBoards(makeDeps(c.env)));
   });
 
   app.post('/api/confirm', async (c) => {
@@ -109,7 +115,7 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
     }
 
     const deps: SearchDeps = makeDeps(c.env);
-    const boards = await deps.monday.listBoards(deps.config.monday.resultsWorkspaceIds);
+    const boards = await resultsBoards(deps);
     if (!boards.some((b) => b.id === String(boardId))) return c.json({ message: 'boardId is not a results board.' }, 400);
 
     // Re-run the search here: the client's preview is only a picture, never the list to write.

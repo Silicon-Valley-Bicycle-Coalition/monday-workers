@@ -12,6 +12,7 @@ export const LABEL_TITLE = 'Nearby search';
 // What the preview/confirm API and the queue consumer need from Monday; tests fake this surface.
 export interface NearbyMondayClient {
   listContacts(src: SourceBoard): Promise<SourcedContact[]>;
+  // Main boards in the given workspaces (no subitem boards or docs).
   listBoards(workspaceIds: number[]): Promise<{ id: string; name: string }[]>;
   getEventAddress(eventsBoardId: number, itemId: string, column: string): Promise<{ name: string; address: string } | null>;
   linkedContactIds(boardId: number, connectColumnId: string): Promise<Set<string>>;
@@ -83,12 +84,17 @@ export class HttpNearbyMondayClient implements NearbyMondayClient {
     return items.map((raw) => toContact(raw, src));
   }
 
+  // Main boards only: Monday also lists a board's subitems board, docs and custom objects here,
+  // none of which can hold result rows.
   async listBoards(workspaceIds: number[]): Promise<{ id: string; name: string }[]> {
-    const data = await this.transport.request<{ boards: { id: string; name: string }[] }>(
-      `query ($workspaceIds: [ID!]) { boards(workspace_ids: $workspaceIds, state: active, limit: 500) { id name } }`,
+    const data = await this.transport.request<{ boards: { id: string; name: string; type: string | null }[] }>(
+      `query ($workspaceIds: [ID!]) { boards(workspace_ids: $workspaceIds, state: active, limit: 500) { id name type } }`,
       { workspaceIds: workspaceIds.map(String) },
     );
-    return data.boards.map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    return data.boards
+      .filter((b) => b.type === 'board')
+      .map(({ id, name }) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async getEventAddress(eventsBoardId: number, itemId: string, column: string): Promise<{ name: string; address: string } | null> {
