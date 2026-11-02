@@ -2,6 +2,8 @@
 
 A static website built with [11ty](https://www.11ty.dev/) that tracks the total miles of bike lanes in San Mateo and Santa Clara Counties. Data is sourced from MTC Regional Bike Facilities mapping data and updated weekly.
 
+The site is **staff-only**: it's served at <https://lanes.bikesiliconvalley.org> behind Cloudflare Access, and only `@bikesiliconvalley.org` Google Workspace accounts can open it (see [Access](#access-staff-only)).
+
 ## Features
 
 - **Regional totals** with breakdown by bike lane class (I, II, III, IV)
@@ -96,6 +98,39 @@ For simpler setup without GitLab CI deployment:
    ```bash
    curl -X POST "https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/YOUR_HOOK_ID"
    ```
+
+### Access (staff-only)
+
+The site sits behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) on SVBC's Cloudflare account. Every hostname that serves it requires a Google Workspace login with an `@bikesiliconvalley.org` address. The Zero Trust organization and Google identity provider are shared with SVBC's other staff-only tools (for example the `member-map` Worker in `monday-workers`), so set them up once, not per site.
+
+| Piece | Setting |
+|-------|---------|
+| Zero Trust team domain | `bikesiliconvalley.cloudflareaccess.com` |
+| Identity provider | Google Workspace, apps domain `bikesiliconvalley.org` |
+| Access application | **SVBC Bike Lanes** (self-hosted) |
+| Hostnames covered | `lanes.bikesiliconvalley.org`, `svbc-bike-lanes.pages.dev`, `*.svbc-bike-lanes.pages.dev` |
+| Login methods | Google Workspace only, instant auth |
+| Policy | **Allow**, Include: Emails ending in `@bikesiliconvalley.org` |
+
+All three hostnames must be on the application. Pages serves every build on `svbc-bike-lanes.pages.dev` and on a per-deployment `<hash>.svbc-bike-lanes.pages.dev` URL as well as the custom domain. If only the custom domain is protected, anyone can open the site through the `pages.dev` URLs.
+
+#### Recreating it (for example on a fork)
+
+1. **Google OAuth client.** In [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services, set the OAuth consent screen to **Internal**. Then create an **OAuth client ID** (type: Web application) with:
+   - Authorized JavaScript origin: `https://<team>.cloudflareaccess.com`
+   - Authorized redirect URI: `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`
+2. **Identity provider.** In [Zero Trust](https://one.dash.cloudflare.com/) → Integrations → Identity providers → **Add** → **Google Workspace**, enter the client ID, the client secret, and your Workspace domain. Click **Test** before saving.
+3. **Access application.** In Zero Trust → Access → Applications → **Add an application** → **Self-hosted**:
+   - Add the custom domain, `<project>.pages.dev`, and `*.<project>.pages.dev` as public hostnames.
+   - Under Login methods, allow only Google Workspace and turn on **Instant Auth** to skip the provider picker.
+   - Add an **Allow** policy with Include → *Emails ending in* → `@<your-domain>`.
+4. **Check.** In a private window, each hostname should redirect to the Google login. From a shell, this should print a `302` to `<team>.cloudflareaccess.com`:
+
+   ```bash
+   for h in lanes.bikesiliconvalley.org svbc-bike-lanes.pages.dev; do curl -sI "https://$h/" | grep -iE '^(HTTP|location)'; done
+   ```
+
+Access doesn't affect deploys. `wrangler pages deploy` uploads through the Cloudflare API using `CLOUDFLARE_API_TOKEN`, not through the protected hostnames, so the GitLab CI pipeline needs no Access service token.
 
 ### Manual Deployment
 

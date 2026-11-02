@@ -44,10 +44,12 @@ deploy:
   needs: [build]
   script:
     - npm install -g wrangler
-    - wrangler pages deploy _site --project-name=svbc-bike-lanes
+    # --branch=main: CI checks out a detached HEAD, so without it wrangler deploys
+    # under the branch name "HEAD" and the build lands as a preview, not production.
+    - wrangler pages deploy _site --project-name=svbc-bike-lanes --branch=main
   environment:
     name: production
-    url: https://svbc-bike-lanes.pages.dev
+    url: https://lanes.bikesiliconvalley.org
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_COMMIT_BRANCH == "main"
