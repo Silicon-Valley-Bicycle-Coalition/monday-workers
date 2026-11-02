@@ -117,6 +117,51 @@ describe('buildRollCall', () => {
     expect(unplaced).toEqual({ gifts: 2, cents: 5_000 });
   });
 
+  it('builds thousands of households in one pass, each listing all its members', () => {
+    // 3,000 two-person households plus 2,000 individuals: a gift from one member of each
+    // household and from each individual, over two fiscal years.
+    const d = new Map<string, DonorRecord>();
+    const gifts: CountedGift[] = [];
+    for (let h = 0; h < 3_000; h++) {
+      d.set(`a${h}`, person({ name: `A ${h}`, recognitionName: `Household ${h}`, householdId: ` H${h} ` }));
+      d.set(`b${h}`, person({ name: `B ${h}`, recognitionName: `Household ${h}`, householdId: `H${h}` }));
+      gifts.push(gift({ giftItemId: `ga${h}`, credit: `item:a${h}`, fiscalYear: 2026 + (h % 2) }));
+    }
+    for (let i = 0; i < 2_000; i++) {
+      d.set(`i${i}`, person({ name: `I ${i}`, recognitionName: '', householdId: '' }));
+      gifts.push(gift({ giftItemId: `gi${i}`, credit: `item:i${i}` }));
+    }
+    const { rows } = buildRollCall(gifts, d);
+    expect(rows).toHaveLength(5_000);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    expect(byKey.get('2026|household:H0')).toMatchObject({ type: 'Household', name: 'Household 0', personIds: ['a0', 'b0'] });
+    expect(byKey.get('2027|household:H2999')).toMatchObject({ type: 'Household', personIds: ['a2999', 'b2999'] });
+    expect(byKey.get('2026|item:i1999')).toMatchObject({ type: 'Individual', personIds: ['i1999'] });
+    expect(rows.filter((r) => r.type === 'Household').every((r) => r.personIds.length === 2)).toBe(true);
+  });
+
+  it('names and notes a household the same whatever order People and the gifts were read in', () => {
+    const all = new Map<string, DonorRecord>([
+      ['p10', person({ doNotSolicit: true, householdEmail: 'smith@example.org' })],
+      ['p11', person({ name: 'John Smith', recognitionName: 'John and Jane Smith', doNotSolicit: true })],
+      ['p12', person({ name: 'Pat Lee', recognitionName: '', householdId: '', householdEmail: 'smith@example.org' })],
+      ['p13', person({ name: 'Sam Lee', recognitionName: '', householdId: 'HH2', householdEmail: 'smith@example.org' })],
+      ['p14', person({ name: 'Ann Lee', recognitionName: '', householdId: 'HH2' })],
+    ]);
+    const inOrder = (ids: string[]) => new Map(ids.map((id) => [id, all.get(id)!]));
+    const gifts = [gift({ giftItemId: 'g1', credit: 'item:p10' }), gift({ giftItemId: 'g2', credit: 'item:p11' }),
+      gift({ giftItemId: 'g3', credit: 'item:p12' }), gift({ giftItemId: 'g4', credit: 'item:p14' })];
+    const forward = buildRollCall(gifts, inOrder(['p10', 'p11', 'p12', 'p13', 'p14'])).rows;
+    const reverse = buildRollCall([...gifts].reverse(), inOrder(['p14', 'p13', 'p12', 'p11', 'p10'])).rows;
+    expect(reverse).toEqual(forward);
+    expect(forward.find((r) => r.key === '2026|household:HH1')).toMatchObject({
+      name: 'Jane and John Smith', personIds: ['p10', 'p11'],
+      reviewNote: "members' Household Greetings differ: Jane and John Smith / John and Jane Smith; "
+        + 'Do Not Solicit is checked on Jane Smith, John Smith; shares a Household Email with Pat Lee, Sam Lee & Ann Lee — same household?',
+    });
+    expect(forward.find((r) => r.key === '2026|household:HH2')).toMatchObject({ name: 'Sam Lee', personIds: ['p13', 'p14'] });
+  });
+
   it('sorts by fiscal year desc, total desc, then name', () => {
     const { rows } = buildRollCall([
       gift({ credit: 'item:p12', cents: 20_000 }), gift({ credit: 'item:p13', cents: 20_000 }),

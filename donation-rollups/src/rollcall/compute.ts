@@ -50,6 +50,11 @@ export interface RollCallRow {
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+// Item ids in numeric order (Monday ids are digit strings), so a row's name, members and notes
+// don't depend on the order People was paged or the gifts were read.
+const sortedIds = (ids: Iterable<string>): string[] =>
+  [...ids].sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0));
+
 interface Group { fiscalYear: number; totalCents: number; gifts: number; unmatchedCents: number; ids: Set<string> }
 
 export function buildRollCall(
@@ -80,11 +85,18 @@ export function buildRollCall(
     if (id !== null) group.ids.add(id);
   }
   // Every person sharing a Household ID belongs on the household row, even one who didn't give
-  // that year, so the row links the whole household.
+  // that year, so the row links the whole household. Indexed once: scanning every donor per
+  // household row is quadratic, too slow for the Worker's CPU limit at ~20k People.
+  const householdMembers = new Map<string, string[]>();
+  for (const [id, d] of donors) {
+    const key = groupKey(id, d);
+    if (!key.startsWith('household:')) continue;
+    let ids = householdMembers.get(key);
+    if (ids === undefined) householdMembers.set(key, ids = []);
+    ids.push(id);
+  }
   for (const [key, group] of groups) {
-    const household = key.slice(key.indexOf('|') + 1);
-    if (!household.startsWith('household:')) continue;
-    for (const [id, d] of donors) if (d.kind === 'person' && groupKey(id, d) === household) group.ids.add(id);
+    for (const id of householdMembers.get(key.slice(key.indexOf('|') + 1)) ?? []) group.ids.add(id);
   }
 
   // A Household Email shared across different rows of one year: a couple that wasn't grouped.
@@ -107,7 +119,7 @@ export function buildRollCall(
       rows.push({ ...base, name: 'Anonymous', type: 'Anonymous', listed: 'Listed', personIds: [], organizationId: null, reviewNote: '' });
       continue;
     }
-    const ids = [...group.ids];
+    const ids = sortedIds(group.ids);
     const members = ids.map((id) => ({ id, ...donors.get(id)! }));
     const notes: string[] = [];
     let name: string;
@@ -132,7 +144,7 @@ export function buildRollCall(
       for (const other of rowsByEmail.get(`${group.fiscalYear}|${email}`) ?? []) if (other !== key) sharing.add(other);
     }
     if (sharing.size) {
-      const names = [...sharing].map((k) => [...groups.get(k)!.ids].map((id) => oneLine(donors.get(id)!.name)).join(' & '));
+      const names = [...sharing].map((k) => sortedIds(groups.get(k)!.ids).map((id) => oneLine(donors.get(id)!.name)).join(' & ')).sort();
       notes.push(`shares a Household Email with ${names.join(', ')} — same household?`);
     }
     const isOrg = type === 'Organization';
