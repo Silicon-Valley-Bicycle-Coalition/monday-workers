@@ -813,8 +813,9 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
   'https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/custodian/run/rollcall'
 ```
 
-**Mass-delete guard.** A run that would delete more than `max(10, 10% of the board's items)` rows
-as `gone`, or whose computed rows are empty while the board has items, applies nothing and says
+**Mass-delete guard.** A run that would delete more than `max(10, 10% of the board's distinct
+items)` rows (gone and duplicate deletes together; an item a paging race reads twice counts once
+and is never its own duplicate), or whose computed rows are empty while the board has items, applies nothing and says
 so in its report (a failed upstream read must never empty the board). Check the ledger and donor
 reads, then re-run with `POST /custodian/run/rollcall?force=1` to apply anyway. A board Monday
 doesn't return at all (deleted, or not visible to the token) fails the run outright, naming the

@@ -132,6 +132,17 @@ describe('planSync', () => {
       .toEqual([{ op: 'delete', itemId: '105', reason: 'duplicate' }]);
   });
 
+  it('a board read that repeats an item (a paging race) gives no ops for an unchanged row', () => {
+    const r = row({ key: '2027|item:101' });
+    expect(planSync([r], [itemFor(r, '7'), itemFor(r, '7')], COLS, new Set(), GROUPS)).toEqual([]);
+    // Repeated and genuinely duplicated: only the other id goes.
+    expect(planSync([r], [itemFor(r, '7'), itemFor(r, '9'), itemFor(r, '7')], COLS, new Set(), GROUPS))
+      .toEqual([{ op: 'delete', itemId: '9', reason: 'duplicate' }]);
+    // A repeated item that is gone is deleted once.
+    expect(planSync([], [itemFor(r, '7'), itemFor(r, '7')], COLS, new Set(), GROUPS))
+      .toEqual([{ op: 'delete', itemId: '7', reason: 'gone' }]);
+  });
+
   it('a duplicate in a frozen year is still deleted', () => {
     const r = row({ key: '2026|item:109', personIds: ['109'] });
     expect(planSync([], [itemFor(r, '1'), itemFor(r, '2')], COLS, new Set([2026]), GROUPS))

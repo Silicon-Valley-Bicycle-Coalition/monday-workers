@@ -283,6 +283,46 @@ describe('runRollCall mass-delete guard', () => {
     expect(h.writes).toEqual([]);
   });
 
+  // FY2025 is frozen with firstFiscalYear 2025, so these rows stay put unless duplicated.
+  const frozen = (n: number, from = 5000) => Array.from({ length: n }, (_, i) =>
+    item(String(from + i), `Kept ${i}`, { rk: `2025|item:y${i}` }, { groupId: 'old' }));
+  const withFrozen = { ...ROLL_CALL, firstFiscalYear: 2025 };
+  const frozenGroups = [...groups, { id: 'old', title: 'FY2025' }];
+
+  it('counts duplicate deletes toward the limit along with gone ones', async () => {
+    // 6 genuine duplicates (same key, another id) + 5 gone = 11 deletes, over the floor of 10.
+    const dups = frozen(6).map((it) => ({ ...it, id: String(Number(it.id) + 100) }));
+    const board = [...frozen(6), ...dups, ...stale(5)];
+    const h = harness({ rollCall: withFrozen, ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: board }, groups: frozenGroups });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const report = await runDuty('rollcall', h.deps);
+    expect(report.ok).toBe(false);
+    expect(report.summary).toMatch(/11 rows would be deleted, more than the limit of 10/);
+    expect(h.writes).toEqual([]);
+
+    const forced = harness({ rollCall: withFrozen, ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: board }, groups: frozenGroups });
+    expect((await runDuty('rollcall', forced.deps, { force: true })).ok).toBe(true);
+    expect(forced.writes.filter((w) => w.startsWith('delete')).sort())
+      .toEqual([...dups.map((d) => `delete ${d.id}`), ...stale(5).map((d) => `delete ${d.id}`)].sort());
+  });
+
+  it('takes the 10% limit from distinct board items, so a repeated page neither raises it nor deletes kept rows', async () => {
+    // 100 distinct items (89 frozen, 11 gone), every one read twice: 11 > 10% of 100.
+    const once = [...frozen(89), ...stale(11)];
+    const h = harness({ rollCall: withFrozen, ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: [...once, ...once] },
+      groups: frozenGroups });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const report = await runDuty('rollcall', h.deps);
+    expect(report.ok).toBe(false);
+    expect(report.summary).toMatch(/11 rows would be deleted, more than the limit of 10/);
+    expect(h.writes).toEqual([]);
+
+    const forced = harness({ rollCall: withFrozen, ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: [...once, ...once] },
+      groups: frozenGroups });
+    await runDuty('rollcall', forced.deps, { force: true });
+    expect(forced.writes.filter((w) => w.startsWith('delete')).sort()).toEqual(stale(11).map((d) => `delete ${d.id}`).sort());
+  });
+
   it('force applies anyway', async () => {
     const h = harness({ ledger: [gift('g1', '13', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: stale(11) }, groups });
     const report = await runDuty('rollcall', h.deps, { force: true });

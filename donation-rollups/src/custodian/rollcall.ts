@@ -9,7 +9,7 @@ import { currentFiscalYear } from '../rollups/compute';
 import { formatCents } from '../money';
 import { buildRollCall, RECEIVED_LABELS, type CountedGift, type DonorRecord } from '../rollcall/compute';
 import { refreshCredits } from '../rollcall/credits';
-import { applySync, boardItemFrom, groupYearFrom, planSync, type BoardItem } from '../rollcall/sync';
+import { applySync, boardItemFrom, distinctItems, groupYearFrom, planSync, type BoardItem } from '../rollcall/sync';
 import type { ItemColumns } from '../monday/client';
 import type { RollCallConfig } from '../types';
 
@@ -112,8 +112,10 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
   const { gifts, pendingLedger } = await rollCallGifts(deps, cfg, currentFY);
   const { rows, unplaced } = buildRollCall(gifts, await readDonors(deps, cfg));
 
-  const items: BoardItem[] = (await pageAll(deps, cfg.boardId, Object.values(cfg.columns)))
-    .map((item) => boardItemFrom(item, cfg.columns));
+  // Distinct by id: a paging race can repeat an item, which must neither delete it nor raise
+  // the guard's 10% limit.
+  const items: BoardItem[] = distinctItems((await pageAll(deps, cfg.boardId, Object.values(cfg.columns)))
+    .map((item) => boardItemFrom(item, cfg.columns)));
   const groupYearById = new Map<string, number>();
   for (const g of await deps.mondayClient.listGroups(cfg.boardId)) {
     const year = groupYearFrom(g.title);
@@ -124,11 +126,12 @@ export async function runRollCall(deps: CustodianDeps, now: Date, opts: { force?
   for (let y = cfg.firstFiscalYear; y <= currentFY - deps.config.custodian.activeFiscalYears; y++) frozenYears.add(y);
   const ops = planSync(rows, items, cfg.columns, frozenYears, groupYearById);
 
-  const gone = ops.filter((op) => op.op === 'delete' && op.reason === 'gone').length;
+  // Every delete counts, duplicate or gone: either kind can empty the board.
+  const deletes = ops.filter((op) => op.op === 'delete').length;
   const limit = Math.max(DELETE_FLOOR, Math.floor(items.length / 10));
   const blocked = opts.force ? undefined
     : rows.length === 0 && items.length > 0 ? `computed no rows but the board has ${items.length}`
-    : gone > limit ? `${gone} rows would be deleted, more than the limit of ${limit}`
+    : deletes > limit ? `${deletes} rows would be deleted, more than the limit of ${limit}`
     : undefined;
   const { applied, remaining } = blocked === undefined ? await applySync(deps, cfg, ops, currentFY) : { applied: 0, remaining: ops.length };
 

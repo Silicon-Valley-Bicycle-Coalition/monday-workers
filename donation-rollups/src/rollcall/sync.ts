@@ -96,6 +96,13 @@ const keyYear = (key: string | null): number | null => {
   return m ? Number(m[1]) : null;
 };
 
+// The board's items with any repeated id dropped, first occurrence kept.
+export function distinctItems(items: BoardItem[]): BoardItem[] {
+  const byId = new Map<string, BoardItem>();
+  for (const item of items) if (!byId.has(item.id)) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
 export function planSync(rows: RollCallRow[], items: BoardItem[], cols: Columns,
   frozenYears: Set<number>, groupYearById: Map<string, number>): SyncOp[] {
   const deletes: SyncOp[] = [];
@@ -103,8 +110,10 @@ export function planSync(rows: RollCallRow[], items: BoardItem[], cols: Columns,
   const moves: SyncOp[] = [];
   const creates: SyncOp[] = [];
 
+  // A paging race can return one item twice: read it once (first occurrence wins), or the
+  // repeat would look like its own duplicate and delete the kept row.
   const byKey = new Map<string, BoardItem[]>();
-  for (const item of items) {
+  for (const item of distinctItems(items)) {
     const key = blank(item.cells.get(cols.rowKey));
     if (key === null || keyYear(key) === null) continue;
     let list = byKey.get(key);
@@ -117,7 +126,9 @@ export function planSync(rows: RollCallRow[], items: BoardItem[], cols: Columns,
   for (const [key, list] of byKey) {
     list.sort((a, b) => Number(a.id) - Number(b.id));
     kept.set(key, list[0]!);
-    for (const dup of list.slice(1)) deletes.push({ op: 'delete', itemId: dup.id, reason: 'duplicate' });
+    for (const dup of list.slice(1)) {
+      if (dup.id !== list[0]!.id) deletes.push({ op: 'delete', itemId: dup.id, reason: 'duplicate' });
+    }
   }
 
   const rowKeys = new Set<string>();
