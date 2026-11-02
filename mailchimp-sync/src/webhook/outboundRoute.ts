@@ -71,9 +71,12 @@ export function createOutboundApp(deps: OutboundAppDeps) {
 
     await deps.pendingStore.upsertPending(donorEvent.donorItemId, new Date().toISOString());
 
+    // Only the configured Email column's old address: an email-shaped value from any other
+    // column (Household Email) must not move this Donor's Mailchimp member.
+    const previousEmail = donorEvent.columnId === deps.config.monday.columns.email ? donorEvent.previousEmail : undefined;
     const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ donorItemId: donorEvent.donorItemId, ...stamp });
+      await deps.queue.send({ donorItemId: donorEvent.donorItemId, ...(previousEmail === undefined ? {} : { previousEmail }), ...stamp });
       await deps.pendingStore.updateStatus(donorEvent.donorItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);

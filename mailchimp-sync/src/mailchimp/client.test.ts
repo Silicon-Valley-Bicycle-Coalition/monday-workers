@@ -246,6 +246,57 @@ describe('HttpMailchimpClient.unsubscribeMember', () => {
   });
 });
 
+describe('HttpMailchimpClient.renameMember', () => {
+  const BASE = 'https://us1.api.mailchimp.com/3.0/lists/aud1/members';
+  const OLD_URL = `${BASE}/ef903182f04f56f4e6ed568d13872f31`;
+  const NEW_URL = `${BASE}/15799ec368544c4559fafadc4d3e2a47`;
+
+  it('checks the new address is free, then PATCHes only email_address on the old member', async () => {
+    const fetchFn = sequenceFetch({ status: 404 }, { status: 200 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'key-us1', 'aud1', fetchFn);
+
+    await expect(client.renameMember('Old@B.com ', 'new@b.com')).resolves.toBe('renamed');
+
+    expect(fetchFn).toHaveBeenNthCalledWith(1, `${NEW_URL}?fields=status`, expect.anything());
+    const [url, init] = fetchFn.mock.calls[1]!;
+    expect(url).toBe(OLD_URL);
+    expect((init as RequestInit).method).toBe('PATCH');
+    // Only the address: the member's status (its consent) is never sent, so never changed.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ email_address: 'new@b.com' });
+  });
+
+  it('returns target-exists without writing when the new address is already a member', async () => {
+    const fetchFn = sequenceFetch({ status: 200, json: { status: 'subscribed' } });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', fetchFn);
+
+    await expect(client.renameMember('old@b.com', 'new@b.com')).resolves.toBe('target-exists');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns not-in-audience when the old address is not a member (nothing to rename, nothing created)', async () => {
+    const fetchFn = sequenceFetch({ status: 404 }, { status: 404 });
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', fetchFn);
+
+    await expect(client.renameMember('old@b.com', 'new@b.com')).resolves.toBe('not-in-audience');
+  });
+
+  it('makes no request when the two addresses are the same member', async () => {
+    const fetchFn = vi.fn();
+    const client = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', fetchFn);
+
+    await expect(client.renameMember('A@B.com', ' a@b.com')).resolves.toBe('target-exists');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('throws transient on 429/5xx and permanent on other 4xx from the PATCH', async () => {
+    const transient = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 404 }, { status: 503 }));
+    await expect(transient.renameMember('old@b.com', 'new@b.com')).rejects.toBeInstanceOf(MailchimpTransientError);
+
+    const permanent = new HttpMailchimpClient('https://us1.api.mailchimp.com/3.0', 'k', 'aud1', sequenceFetch({ status: 404 }, { status: 400 }));
+    await expect(permanent.renameMember('old@b.com', 'new@b.com')).rejects.toBeInstanceOf(MailchimpPermanentError);
+  });
+});
+
 describe('HttpMailchimpClient auth failures', () => {
   function rejected(status: number) {
     return fakeFetch({ ok: false, status, text: async () => '{"title":"API Key Invalid"}' });

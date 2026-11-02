@@ -4,7 +4,7 @@
 // only the last step — the Mailchimp or Monday write, or the D1 bookkeeping that records it — is
 // swapped out here. The dead-letter consumers and their Slack alert are not gated (DLQs stay live).
 import { readOnlyProxy, recordingProxy, type SkipContext } from './flags';
-import type { MailchimpClient, UnsubscribeResult } from './mailchimp/client';
+import type { MailchimpClient, RenameMemberResult, UnsubscribeResult } from './mailchimp/client';
 import type { MondayClient } from './monday/client';
 import type { CampaignItemRow, CampaignItemsStore } from './db/campaignItems';
 import type { DnsUnsubscribeLog } from './db/dnsUnsubscribes';
@@ -24,6 +24,7 @@ const MONDAY_SINK = 'Monday';
 function dryRunMailchimp(client: MailchimpClient, ctx: SkipContext): MailchimpClient {
   return recordingProxy(client, MAILCHIMP_SINK, {
     updateMember: () => 'updated',
+    renameMember: (): RenameMemberResult => 'renamed',
     unsubscribeMember: (): UnsubscribeResult => 'unsubscribed',
   }, ctx);
 }

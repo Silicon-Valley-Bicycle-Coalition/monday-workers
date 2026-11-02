@@ -130,6 +130,25 @@ describe('POST /webhooks/monday/donors', () => {
     expect(send).toHaveBeenCalledWith({ donorItemId: '555' });
   });
 
+  it('carries the previous address when the Email column changed, so the consumer can rename the member', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
+
+    await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 'e', previousValue: { email: 'old@b.com', text: 'old@b.com' } } });
+
+    expect(send).toHaveBeenCalledWith({ donorItemId: '555', previousEmail: 'old@b.com' });
+  });
+
+  it('does not carry a previous email-shaped value from any column but the configured Email column', async () => {
+    // e.g. a Household Email edit: renaming the member after it would move the wrong address.
+    const send = vi.fn().mockResolvedValue(undefined);
+    const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
+
+    await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 'household', previousValue: { email: 'old@b.com' } } });
+
+    expect(send).toHaveBeenCalledWith({ donorItemId: '555' });
+  });
+
   it('still enqueues a create_pulse event (no columnId at all)', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const pendingStore = fakePendingStore();

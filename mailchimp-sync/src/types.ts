@@ -82,6 +82,10 @@ export interface Env {
 
 export interface OutboundSyncMessage extends WriteStamp {
   donorItemId: string;
+  // Set only for a change to the Donor's Email column: the address it held before, so the
+  // consumer can move that Mailchimp member to the new one. Absent on messages queued before it
+  // existed and on redrives, which then update by the current address as before.
+  previousEmail?: string;
 }
 
 export interface InboundSyncMessage extends WriteStamp {

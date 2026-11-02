@@ -46,6 +46,7 @@ export interface MailchimpMemberInterests {
 }
 
 export type UpdateMemberResult = 'updated' | 'not-in-audience';
+export type RenameMemberResult = 'renamed' | 'target-exists' | 'not-in-audience';
 export type UnsubscribeResult = 'unsubscribed' | 'already-unsubscribed' | 'not-in-audience';
 
 export interface MailchimpClient {
@@ -58,6 +59,14 @@ export interface MailchimpClient {
    * never touched.
    */
   updateMember(email: string, mergeFields: Record<string, unknown>, tags: string[], managedTags: string[]): Promise<UpdateMemberResult>;
+  /**
+   * Move an existing member from `oldEmail` to `newEmail` after staff change a Donor's address
+   * on Monday. Only `email_address` is sent, so the member's status (its consent), tags and
+   * history carry over unchanged. Never creates a member and never merges two: 'target-exists'
+   * (no write) when `newEmail` is already in the audience or is the same member, and
+   * 'not-in-audience' when `oldEmail` isn't.
+   */
+  renameMember(oldEmail: string, newEmail: string): Promise<RenameMemberResult>;
   /**
    * Set an existing member to unsubscribed — the one status change this worker ever makes, and
    * only for a reviewed Do Not Solicit. One-way: nothing here resubscribes anyone. Returns
@@ -146,6 +155,25 @@ export class HttpMailchimpClient implements MailchimpClient {
       },
     );
     if (!response.ok) throw await httpError('syncTags', response);
+  }
+
+  async renameMember(oldEmail: string, newEmail: string): Promise<RenameMemberResult> {
+    if (memberId(oldEmail) === memberId(newEmail)) return 'target-exists';
+    const membersUrl = `${this.apiBaseUrl}/lists/${this.audienceId}/members`;
+    // Look first: Mailchimp refuses to rename onto an address it already holds, and two members
+    // are never merged here — that address's own consent stays as it is.
+    const lookup = await this.request(`${membersUrl}/${memberId(newEmail)}?fields=status`, { headers: { Authorization: this.authHeader() } });
+    if (lookup.ok) return 'target-exists';
+    if (lookup.status !== 404) throw await httpError('renameMember lookup', lookup);
+
+    const response = await this.request(`${membersUrl}/${memberId(oldEmail)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
+      body: JSON.stringify({ email_address: newEmail.trim() }),
+    });
+    if (response.status === 404) return 'not-in-audience';
+    if (response.ok) return 'renamed';
+    throw await httpError('renameMember', response);
   }
 
   async unsubscribeMember(email: string): Promise<UnsubscribeResult> {
