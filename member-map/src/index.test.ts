@@ -45,6 +45,25 @@ describe('access gate', () => {
   it('rate-limits before the Access check', async () => expect((await setup({ limiter: false }).call('/index.html')).status).toBe(429));
 });
 
+describe('production key path', () => {
+  const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+  const headers = { 'Cf-Access-Jwt-Assertion': valid };
+  it('403s (not 500) with an empty teamDomain and no injected keys', async () => {
+    const app = createApp({ accessOverride: { teamDomain: '', aud: 'aud123', allowedEmailDomain: 'bikesiliconvalley.org' } });
+    const res = await app.fetch(new Request('https://map.bikesiliconvalley.org/index.html', { headers }), fakeEnv(), ctx);
+    expect(res.status).toBe(403);
+  });
+  it('403s with an empty aud and no injected keys', async () => {
+    const app = createApp({ accessOverride: { teamDomain: 'https://svbc.cloudflareaccess.com', aud: '', allowedEmailDomain: 'bikesiliconvalley.org' } });
+    const res = await app.fetch(new Request('https://map.bikesiliconvalley.org/index.html', { headers }), fakeEnv(), ctx);
+    expect(res.status).toBe(403);
+  });
+  it('403s with the shipped config, whose teamDomain is empty', async () => {
+    const res = await createApp().fetch(new Request('https://map.bikesiliconvalley.org/index.html', { headers }), fakeEnv(), ctx);
+    expect(res.status).toBe(403);
+  });
+});
+
 describe('/api/snapshot', () => {
   it('returns the R2 object with private no-store', async () => {
     const res = await setup().call('/api/snapshot', valid);

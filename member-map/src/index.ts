@@ -49,6 +49,8 @@ export function createApp(deps: AppDeps = {}): Hono<{ Bindings: Env }> {
     if (limited) return limited;
     if (!devBypassAllowed(c.req.raw, c.env)) {
       const access = deps.accessOverride ?? configFor(c.env).access;
+      // Access not set up yet: refuse before building a JWKS URL from an empty teamDomain.
+      if (!access.teamDomain || !access.aud) return new Response('Forbidden', { status: 403 });
       const keys = deps.keys ?? remoteKeysFor(access.teamDomain);
       if (!(await verifyAccess(c.req.raw, access, keys))) return new Response('Forbidden', { status: 403 });
     }
