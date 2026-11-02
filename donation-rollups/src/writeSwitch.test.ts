@@ -32,7 +32,7 @@ const config: DonationRollupsConfig = {
     donorLevel: null,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
-    recurringGifts: null,
+    recurringGifts: null, rollCall: null,
   },
 };
 

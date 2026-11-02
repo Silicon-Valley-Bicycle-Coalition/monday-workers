@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig, RollCallConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -235,6 +235,68 @@ function validateRecurringGifts(raw: unknown): RecurringGiftsConfig | null {
   };
 }
 
+const obj = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+
+function validateRollCall(raw: unknown): RollCallConfig | null {
+  if (raw === undefined || raw === null) return null;
+  const path = 'donationRollups.rollCall';
+  if (typeof raw !== 'object') throw new Error(`config: "${path}" must be an object or null`);
+  const v = raw as Record<string, unknown>;
+  if (typeof v.boardId !== 'number') throw new Error(`config: ${path}.boardId must be a number`);
+  if (!Number.isInteger(v.firstFiscalYear)) throw new Error(`config: ${path}.firstFiscalYear must be an integer`);
+  const excludedGiftTypes = v.excludedGiftTypes === undefined ? ['Contracts'] : nonEmptyLabels(v.excludedGiftTypes, `${path}.excludedGiftTypes`);
+  const writesPerRun = v.writesPerRun === undefined ? 500 : v.writesPerRun;
+  if (typeof writesPerRun !== 'number' || !Number.isInteger(writesPerRun) || writesPerRun <= 0) {
+    throw new Error(`config: ${path}.writesPerRun must be a positive integer`);
+  }
+  const c = obj(v.columns);
+  const col = (k: string) => columnId(c[k], `${path}.columns.${k}`);
+  const d = obj(v.donations);
+  if (typeof d.boardId !== 'number') throw new Error(`config: ${path}.donations.boardId must be a number`);
+  const dc = obj(d.columns);
+  const dcol = (k: string) => columnId(dc[k], `${path}.donations.columns.${k}`);
+  const rawPeople = obj(v.people);
+  const boardIds = Object.keys(rawPeople);
+  if (boardIds.length === 0) throw new Error(`config: ${path}.people must have at least one board entry`);
+  const people: RollCallConfig['people'] = {};
+  for (const id of boardIds) {
+    const p = obj(rawPeople[id]);
+    const pcol = (k: string) => columnId(p[k], `${path}.people["${id}"].${k}`);
+    people[id] = {
+      householdId: pcol('householdId'), householdGreeting: pcol('householdGreeting'), householdEmail: pcol('householdEmail'),
+      doNotSolicit: pcol('doNotSolicit'), dontList: pcol('dontList'),
+    };
+  }
+  const o = obj(v.organizations);
+  if (typeof o.boardId !== 'number') throw new Error(`config: ${path}.organizations.boardId must be a number`);
+  const oc = obj(o.columns);
+  return {
+    boardId: v.boardId,
+    firstFiscalYear: v.firstFiscalYear as number,
+    excludedGiftTypes,
+    writesPerRun,
+    columns: {
+      fiscalYear: col('fiscalYear'), tier: col('tier'), type: col('type'), listed: col('listed'), total: col('total'),
+      gifts: col('gifts'), people: col('people'), organization: col('organization'), reviewNote: col('reviewNote'), rowKey: col('rowKey'),
+    },
+    donations: {
+      boardId: d.boardId,
+      columns: {
+        amount: dcol('amount'), status: dcol('status'), fiscalYear: dcol('fiscalYear'), giftType: dcol('giftType'),
+        donorLink: dcol('donorLink'), matchedBy: dcol('matchedBy'), anonymous: dcol('anonymous'),
+      },
+    },
+    people,
+    organizations: {
+      boardId: o.boardId,
+      columns: {
+        recognitionName: columnId(oc.recognitionName, `${path}.organizations.columns.recognitionName`),
+        dontList: columnId(oc.dontList, `${path}.organizations.columns.dontList`),
+      },
+    },
+  };
+}
+
 function validateHistoricalVolunteerBoards(raw: unknown, membershipOn: boolean): HistoricalVolunteerBoardConfig[] {
   if (raw === undefined || raw === null) {
     if (membershipOn) throw new Error('config: "donationRollups.historicalVolunteerBoards" is required (may be []) when membership is configured');
@@ -306,6 +368,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const historicalVolunteerBoards = validateHistoricalVolunteerBoards(dr.historicalVolunteerBoards, membership !== null);
   const donorLevel = validateDonorLevel(dr.donorLevel);
   const recurringGifts = validateRecurringGifts(dr.recurringGifts);
+  const rollCall = validateRollCall(dr.rollCall);
   if (recurringGifts !== null && !Object.values(ownerColumnsByBoard).some((o) => o.hasActiveRecurringGift)) {
     throw new Error('config: at least one ownerColumnsByBoard entry must have "hasActiveRecurringGift" when donationRollups.recurringGifts is configured');
   }
@@ -328,7 +391,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
-    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards, recurringGifts },
+    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards, recurringGifts, rollCall },
   };
 }
 

@@ -28,7 +28,7 @@ function config(): DonationRollupsConfig {
       membership: { fromISO: '2026-10-16', eligibleGiftTypes: ['Donation'], minAmountCents: 100, termMonths: 13, lifetimeThresholdCents: 100000,
         statusLabels: { active: 'Active', lapsed: 'Lapsed' }, tierLabels: { member: 'Member', lifetime: 'Lifetime' },
         typeLabels: { new: 'New', continuing: 'Continuing', lapsedRenewal: 'Lapsed renewal', lifetime: 'Lifetime' } },
-      donorLevel: null, volunteerBoards: [VOL_BOARD], historicalVolunteerBoards: [HIST_BOARD], recurringGifts: null,
+      donorLevel: null, volunteerBoards: [VOL_BOARD], historicalVolunteerBoards: [HIST_BOARD], recurringGifts: null, rollCall: null,
     },
   };
 }

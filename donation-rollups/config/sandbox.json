@@ -184,7 +184,8 @@
         "status": "color_mm8hk16a"
       },
       "activeStatusLabel": "Active"
-    }
+    },
+    "rollCall": null
   },
   "custodian": {
     "activeFiscalYears": 2,
