@@ -796,7 +796,9 @@ a **Household ID**), an individual, an organization, or the pooled Anonymous row
 Organization, Review Note and Row Key (`2026|household:<Household ID>`, `2026|item:<itemId>`,
 `2026|anonymous` — the identity the Worker matches on; don't edit it). Donors with **Don't List in
 Recognition** checked stay on the board marked `Don't list`, so totals still add up; the saved
-views leave them out.
+views leave them out. A person or household member with **Do Not Solicit** checked (it carries
+Salesforce's Do Not Contact) makes the row `Don't list` too, decided 2026-11-02; its Review Note
+still says "Do Not Solicit is checked on …". Organizations have no Do Not Solicit.
 
 **The duty.** `rollcall` runs nightly from the custodian cron, behind the `donation-rollups:writes`
 switch. It reads the ledger (`gifts` for `firstFiscalYear` through the current year, archived gifts

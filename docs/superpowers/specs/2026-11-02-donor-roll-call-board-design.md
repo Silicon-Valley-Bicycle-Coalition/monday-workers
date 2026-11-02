@@ -81,7 +81,8 @@ The FY2026 script and this board must agree, so the rules are the script's:
   organization's Recognition Name (or Name).
 - **Tier:** $50,000+, $25,000+, $10,000+, $5,000+, $2,500+, $1,000+, $500+, $100+, Under $100.
 - **Review Note**, one line per finding:
-  - a member has **Do Not Solicit** checked (the old Salesforce report left them out);
+  - a member has **Do Not Solicit** checked (the old Salesforce report left them out; since
+    2026-11-02 Do Not Solicit also makes the row Don't list — see §4);
   - employer matching with no Matched By company, and how much;
   - two rows share a Household Email (same household?);
   - members' Household Greetings differ.
@@ -98,7 +99,7 @@ the year closes, the title loses "(in progress)".
 | Fiscal Year | text | "2026" (text so it never renders "2,026"; matches Donations' Fiscal Year Ending) |
 | Tier | status | the tier label, so views and charts can group by it |
 | Type | status | Household, Individual, Organization, Anonymous |
-| Listed | status | **Listed**, or **Don't list** when any member (or the organization) has Don't List in Recognition checked |
+| Listed | status | **Listed**, or **Don't list** when any member (or the organization) has Don't List in Recognition checked, or any member has Do Not Solicit checked (decided 2026-11-02: it carries Salesforce's Do Not Contact) |
 | Total | numbers ($) | the year's total |
 | Gifts | numbers | gift count |
 | People | connect → People, People (Historical) | every household member |

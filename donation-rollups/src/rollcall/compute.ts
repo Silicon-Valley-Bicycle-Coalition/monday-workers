@@ -150,7 +150,9 @@ export function buildRollCall(
     const isOrg = type === 'Organization';
     rows.push({
       ...base, name, type,
-      listed: members.some((m) => m.dontList) ? "Don't list" : 'Listed',
+      // Do Not Solicit carries Salesforce's Do Not Contact, so it also keeps the row off the
+      // printed list (decided 2026-11-02); the Review Note still says why.
+      listed: members.some((m) => m.dontList || m.doNotSolicit) ? "Don't list" : 'Listed',
       personIds: isOrg ? [] : ids,
       organizationId: isOrg ? ids[0]! : null,
       reviewNote: notes.join('; '),

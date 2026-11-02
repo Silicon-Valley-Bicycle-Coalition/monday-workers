@@ -61,6 +61,16 @@ describe('buildRollCall', () => {
     expect(rows[0]).toMatchObject({ type: 'Individual', name: 'Pat Lee', personIds: ['p12'], key: '2026|item:p12' });
   });
 
+  it("marks a household Don't list when any member has Do Not Solicit, still noting it", () => {
+    const d = donors();
+    d.set('p11', { ...d.get('p11')!, doNotSolicit: true });
+    const row = buildRollCall([gift()], d).rows[0]!;
+    expect(row).toMatchObject({ type: 'Household', listed: "Don't list", reviewNote: 'Do Not Solicit is checked on John Smith' });
+    const single = buildRollCall([gift({ credit: 'item:p12' })], new Map([['p12', person({ name: 'Pat Lee', householdId: '', doNotSolicit: true })]])).rows[0]!;
+    expect(single).toMatchObject({ type: 'Individual', listed: "Don't list" });
+    expect(buildRollCall([gift()], donors()).rows[0]!.listed).toBe('Listed');
+  });
+
   it("marks a household Don't list when any member is, and notes Do Not Solicit", () => {
     const d = donors();
     d.set('p11', { ...d.get('p11')!, dontList: true, doNotSolicit: true });
