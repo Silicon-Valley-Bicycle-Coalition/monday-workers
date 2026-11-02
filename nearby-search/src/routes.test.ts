@@ -273,6 +273,24 @@ describe('POST /api/confirm', () => {
     expect(db.searches[0]![5]).toBe(100);
   });
 
+  it('refuses (400) a confirm that would queue more than 9,000 messages, and records nothing', async () => {
+    const { post, queue, deps, db } = setup();
+    const many = Array.from({ length: 9001 }, (_, i) => ({ id: `m${i}`, name: 'N', lat: 37.3382, lng: -121.8863, zip: null, kind: 'person' as const }));
+    deps.monday.listContacts = async (src: { kind: string }) => (src.kind === 'person' ? many : []);
+    const res = await post('/api/confirm', valid);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).message).toMatch(/9,001 contacts.*9,000.*narrow the distance/i);
+    expect(queue.sent).toEqual([]);
+    expect(db.searches).toEqual([]);
+  });
+
+  it('allows exactly 9,000', async () => {
+    const { post, deps } = setup();
+    const many = Array.from({ length: 9000 }, (_, i) => ({ id: `m${i}`, name: 'N', lat: 37.3382, lng: -121.8863, zip: null, kind: 'person' as const }));
+    deps.monday.listContacts = async (src: { kind: string }) => (src.kind === 'person' ? many : []);
+    expect(((await (await post('/api/confirm', valid)).json()) as any).queued).toBe(9000);
+  });
+
   it('answers 422 for not-found and records nothing', async () => {
     const { post, queue, db } = setup('on', fakeDeps({ hits: [] }));
     expect((await post('/api/confirm', valid)).status).toBe(422);

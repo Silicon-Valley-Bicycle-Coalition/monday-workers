@@ -19,6 +19,9 @@ export interface Deps {
 
 export const WORKER = 'nearby-search';
 const SEND_BATCH = 100;
+// One confirm queues at most this many writes: past it a search is too broad to be one outreach
+// list, and the queue backlog (and Monday's daily budget) is better spent on narrower searches.
+export const MAX_QUEUED = 9_000;
 const MAX_LABEL = 60;
 const EVENT_MILES = 2;
 
@@ -142,6 +145,10 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
     const done = new Set(written.results.map((r) => r.contact_id));
 
     const fresh = preview.matches.filter((m) => !linked.has(m.id) && !done.has(m.id));
+    if (fresh.length > MAX_QUEUED) {
+      const n = (x: number) => x.toLocaleString('en-US');
+      return c.json({ message: `This search would add ${n(fresh.length)} contacts, more than the ${n(MAX_QUEUED)} one search can add. Narrow the distance and preview again.` }, 400);
+    }
     const writeMode = await readWriteMode(c.env, WORKER);
     const stamp = stampFor(writeMode);
     const messages: WriteMessage[] = fresh.map((m) => ({ boardId, label, contactId: m.id, kind: m.kind, name: m.name, stamp }));
