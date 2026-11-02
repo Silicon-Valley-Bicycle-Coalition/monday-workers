@@ -582,8 +582,8 @@ edits flow back via webhooks, and every recompute re-asserts the facts of every 
 so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs` (37,286 gifts
 loaded 2026-08-31; 32,739 Received, 33,541 archived).
 
-The **custodian** runs six duties from one daily cron (09:00 UTC; `dutiesForDate` gates them)
-and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify}`
+The **custodian** runs its duties (listed below) from one daily cron (09:00 UTC; `dutiesForDate` gates them)
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify|membership|recurring|rollcall}`
 and `GET /custodian/status` (last run per duty, from `custodian_runs`), each with
 `Authorization: Bearer <CUSTODIAN_SECRET>` (issue #63 — its own secret, never the webhook's,
 which sits in Monday's webhook URL; a `?secret=` query parameter is ignored; unset = every
@@ -618,6 +618,9 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
   flagged People board, and writes only the cells that disagree, at most 500 a run (the rest
   next night). Off until `donationRollups.recurringGifts` is configured. `salesforce-import`
   seeds the column at migration, so the first night writes little.
+* **rollcall** (nightly + on demand) — maintains the **Donor Roll Call** board (see "Donor Roll Call
+  board" below) from the D1 ledger and the donor boards. Off until `donationRollups.rollCall` is
+  configured; `rollCall: null` turns it off.
 
 **Gift-history projections (docs/20 §5.5)** ride every recompute: each owner item gets a
 `Gift Ledger (JSON)` text column — the full lifetime history as compact newest-first tuples
@@ -780,6 +783,114 @@ board's Status vocabulary is ever changed to merge those two labels back togethe
 will silently start over-counting Lifetime Giving again** by the same ~$40,659.59 that fix was
 for. Don't rename `'Received (Historical)'` to `'Received'` without updating this filter (or
 better, without re-deriving whether the two should really be merged) at the same time.
+
+## Donor Roll Call board
+
+The Annual Impact Report's donor roll call as a Monday board (spec
+`../docs/superpowers/specs/2026-11-02-donor-roll-call-board-design.md`; the rules are
+monday-migration `docs/40` §3). **Donor Roll Call** has one group per fiscal year (`FY2027 (in
+progress)`, `FY2026`, newest first) and one item per donor per year: a household (people sharing
+a **Household ID**), an individual, an organization, or the pooled Anonymous row. Columns: Name
+(the Household Greeting, or Recognition Name for an organization, else Name), Fiscal Year, Tier
+(`$50,000+` down to `Under $100`), Type, Listed (`Listed` / `Don't list`), Total, Gifts, People,
+Organization, Review Note and Row Key (`2026|household:<Household ID>`, `2026|item:<itemId>`,
+`2026|anonymous` — the identity the Worker matches on; don't edit it). Donors with **Don't List in
+Recognition** checked stay on the board marked `Don't list`, so totals still add up; the saved
+views leave them out.
+
+**The duty.** `rollcall` runs nightly from the custodian cron, behind the `donation-rollups:writes`
+switch. It reads the ledger (`gifts` for `firstFiscalYear` through the current year, archived gifts
+included, so closed years recompute without touching Donations), refreshes `roll_call_credits`,
+reads People, People (Historical) and Organizations, computes the rows, and diffs them against the
+board by Row Key: only differing cells are written, at most `writesPerRun` (500) per run, with
+`remaining` reported. Closed years recompute too, so a late correction to an old gift shows up.
+On demand:
+
+```sh
+curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
+  'https://svbc-donation-rollups-sandbox.svbc-account.workers.dev/custodian/run/rollcall'
+```
+
+**Mass-delete guard.** A run that would delete more than `max(10, 10% of the board's items)` rows
+as `gone`, or whose computed rows are empty while the board has items, applies nothing and says
+so in its report (a failed upstream read must never empty the board). Check the ledger and donor
+reads, then re-run with `POST /custodian/run/rollcall?force=1` to apply anyway.
+
+**`roll_call_credits`** (migration `0011`). The ledger can't credit three kinds of gift: Matched By
+isn't stored in `gifts`; gifts with no Donor never reach the ledger (the consumer finds a gift
+through its Donor link); and the Anonymous Donor flag isn't stored. Rather than make
+`gifts.owner_item_id` nullable (which touches every owner-keyed query), the duty owns a side
+table: each night it pages the active Donations items and upserts a row for every gift whose
+credit isn't simply its Donor — a Matching Donation with Matched By, anything marked Anonymous
+Donor, anything with no Donor — plus an `unmatched_match` flag for an employer match with no
+Matched By. A row is dropped when its gift no longer qualifies or is deleted. When a gift
+archives its row is **kept** and stamped `archived_at` (an archived item's connect columns read
+back empty, so it can't be recomputed from Monday); that keeps closed years reproducible. The first
+night fills the table; no backfill is needed.
+
+### Setup
+
+1. **Household columns.** The People boards need **Household ID** and **Household Greeting**.
+   monday-migration's `scripts/copy-household-greetings.mjs --people <id> [--people-historical <id>]
+   [--execute]` creates and fills them from Salesforce (dry run by default).
+2. **Create the board and donor-side columns** (idempotent; same-titled columns are reused, so it
+   is safe to re-run with `--board <id>`):
+
+   ```sh
+   MONDAY_API_TOKEN=... node scripts/setup-roll-call-board.mjs --workspace <id> [--name "Donor Roll Call"] \
+     [--board <existingId>] --people <id>[,<id>] --organizations <id> --donations <id>
+   ```
+
+   It creates the board with the ten columns (Tier, Type and Listed seeded with every label the duty
+   writes, since the duty never creates labels), adds **Don't List in Recognition** (checkbox) to
+   each People board and Organizations and **Recognition Name** (text) to Organizations, looks up
+   the existing columns the duty reads, creates the three saved views, and prints the
+   `donationRollups.rollCall` block for `config/{sandbox,svbc}.json`. Sandbox v4 (board
+   `18438151197`) is in `config/sandbox.json`:
+
+   ```json
+   "rollCall": {
+     "boardId": 18438151197,
+     "firstFiscalYear": 2026,
+     "excludedGiftTypes": ["Contracts"],
+     "writesPerRun": 500,
+     "columns": { "fiscalYear": "text_mm8qv10g", "tier": "color_mm8qxft1", "type": "color_mm8qdsja",
+       "listed": "color_mm8qhc0q", "total": "numeric_mm8qcd2t", "gifts": "numeric_mm8qzkfg",
+       "people": "board_relation_mm8qxrg6", "organization": "board_relation_mm8qsb72",
+       "reviewNote": "long_text_mm8qna43", "rowKey": "text_mm8qmpb2" },
+     "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "status": "color_mm8hshet",
+       "fiscalYear": "text_mm8hpk76", "giftType": "text_mm8h238c", "donorLink": "board_relation_mm8hhdk7",
+       "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h" } },
+     "people": {
+       "18437342592": { "householdId": "text_mm8qmhc8", "householdGreeting": "text_mm8qzmk6",
+         "householdEmail": "email_mm8hj3f8", "doNotSolicit": "boolean_mm8h1x0b", "dontList": "boolean_mm8qmb9v" },
+       "18437342607": { "householdId": "text_mm8qh43v", "householdGreeting": "text_mm8qqva9",
+         "householdEmail": "email_mm8hzsdg", "doNotSolicit": "boolean_mm8h56b4", "dontList": "boolean_mm8qxc1f" } },
+     "organizations": { "boardId": 18437342579, "columns": { "recognitionName": "text_mm8q3rj", "dontList": "boolean_mm8qt96y" } }
+   }
+   ```
+
+   `firstFiscalYear` is the first year the board covers; `excludedGiftTypes` defaults to
+   `["Contracts"]`; `writesPerRun` to 500. `"rollCall": null` (or omitted) turns the duty off.
+3. **Deploy order: apply migration `0011` to the remote D1 BEFORE deploying** a build that carries
+   the duty (`npx wrangler d1 migrations apply <db> --remote`), or the first nightly run fails on
+   the missing `roll_call_credits` table. Then set the write switch `on` and trigger a first run
+   with `POST /custodian/run/rollcall`.
+
+### Saved views
+
+`setup-roll-call-board.mjs` creates these three table views through `create_view_table` (filter
+plus sort worked), each sorted by Total, largest first:
+
+* **This year so far** — Fiscal Year is the in-progress year, Listed is `Listed`, Tier is not
+  `Under $100`.
+* **Last closed year** — Fiscal Year is the most recently closed year, Listed is `Listed`, Tier is
+  `$100+` or higher. This is the one to export for the report.
+* **Needs review** — Review Note is not empty.
+
+A filter can't say "the in-progress year", so the two year views name the fiscal years as of the
+day the script ran (sandbox: 2027 and 2026). **Every July, edit the Fiscal Year value in those two
+views** (and re-running the script won't — it leaves existing views alone).
 
 ## Fiscal year, not calendar year
 

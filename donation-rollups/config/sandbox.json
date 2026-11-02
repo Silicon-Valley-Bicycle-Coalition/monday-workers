@@ -185,7 +185,61 @@
       },
       "activeStatusLabel": "Active"
     },
-    "rollCall": null
+    "rollCall": {
+      "boardId": 18438151197,
+      "firstFiscalYear": 2026,
+      "excludedGiftTypes": [
+        "Contracts"
+      ],
+      "writesPerRun": 500,
+      "columns": {
+        "fiscalYear": "text_mm8qv10g",
+        "tier": "color_mm8qxft1",
+        "type": "color_mm8qdsja",
+        "listed": "color_mm8qhc0q",
+        "total": "numeric_mm8qcd2t",
+        "gifts": "numeric_mm8qzkfg",
+        "people": "board_relation_mm8qxrg6",
+        "organization": "board_relation_mm8qsb72",
+        "reviewNote": "long_text_mm8qna43",
+        "rowKey": "text_mm8qmpb2"
+      },
+      "donations": {
+        "boardId": 18437342657,
+        "columns": {
+          "amount": "numeric_mm8hn1b2",
+          "status": "color_mm8hshet",
+          "fiscalYear": "text_mm8hpk76",
+          "giftType": "text_mm8h238c",
+          "donorLink": "board_relation_mm8hhdk7",
+          "matchedBy": "board_relation_mm8hs607",
+          "anonymous": "boolean_mm8h4a5h"
+        }
+      },
+      "people": {
+        "18437342592": {
+          "householdId": "text_mm8qmhc8",
+          "householdGreeting": "text_mm8qzmk6",
+          "householdEmail": "email_mm8hj3f8",
+          "doNotSolicit": "boolean_mm8h1x0b",
+          "dontList": "boolean_mm8qmb9v"
+        },
+        "18437342607": {
+          "householdId": "text_mm8qh43v",
+          "householdGreeting": "text_mm8qqva9",
+          "householdEmail": "email_mm8hzsdg",
+          "doNotSolicit": "boolean_mm8h56b4",
+          "dontList": "boolean_mm8qxc1f"
+        }
+      },
+      "organizations": {
+        "boardId": 18437342579,
+        "columns": {
+          "recognitionName": "text_mm8q3rj",
+          "dontList": "boolean_mm8qt96y"
+        }
+      }
+    }
   },
   "custodian": {
     "activeFiscalYears": 2,
