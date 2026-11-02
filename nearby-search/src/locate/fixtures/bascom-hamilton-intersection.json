@@ -1,0 +1,16 @@
+{
+  "_note": "Real Overpass response (overpass-api.de, 2026-11-02) for the _query below, untrimmed. OSM names the streets South Bascom Avenue and East Hamilton Avenue; both are divided here, so the intersection has 4 shared nodes.",
+  "_query": "[out:json][timeout:25][bbox:36.89,-122.53,37.71,-121.2];\nway[\"highway\"][\"name\"~\"^((north|south|east|west) )?Bascom Avenue$\",i]->.a;\nway[\"highway\"][\"name\"~\"^((north|south|east|west) )?Hamilton Avenue$\",i]->.b;\nnode(w.a)(w.b);\nout;\n",
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-11-02T22:28:59Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    {"type":"node","id":65628078,"lat":37.2942561,"lon":-121.9316119,"tags":{"highway":"traffic_signals","traffic_signals":"signal"}},
+    {"type":"node","id":316558849,"lat":37.2944136,"lon":-121.931805,"tags":{"highway":"traffic_signals","traffic_signals":"signal"}},
+    {"type":"node","id":357525084,"lat":37.2942547,"lon":-121.9318061,"tags":{"highway":"traffic_signals","traffic_signals":"signal"}},
+    {"type":"node","id":1020691912,"lat":37.2944134,"lon":-121.9316093,"tags":{"highway":"traffic_signals","traffic_signals":"signal"}}
+  ]
+}
