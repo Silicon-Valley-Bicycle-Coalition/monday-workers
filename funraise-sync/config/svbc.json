@@ -2,35 +2,37 @@
   "monday": {
     "apiUrl": "https://api.monday.com/v2",
     "boards": {
-      "donations:live": null,
-      "recurring-gifts": null,
-      "people-live": null
+      "donations:live": 18437909794,
+      "recurring-gifts": 18437909789,
+      "people-live": 18437909781
     }
   },
   "funraiseSync": {
     "columnMap": {
-      "transaction.amount": "REPLACE_WITH_COLUMN_ID",
-      "transaction.status": "REPLACE_WITH_COLUMN_ID",
-      "donationDate": "REPLACE_WITH_COLUMN_ID"
+      "transaction.amount": "numeric_mm8nsb7t",
+      "transaction.status": "color_mm8nspep",
+      "donationDate": "date_mm8nty3x"
     },
     "itemNameField": "description",
     "entityIdField": "id",
-    "entityIdColumn": "REPLACE_WITH_COLUMN_ID",
-    "thankYouSentColumn": "REPLACE_WITH_COLUMN_ID",
-    "giftTypeColumn": "REPLACE_WITH_COLUMN_ID",
+    "entityIdColumn": "link_mm8nbqv8",
+    "thankYouSentColumn": "boolean_mm8q7wrr",
+    "giftTypeColumn": "text_mm8nyftg",
     "giftTypeValue": "Donation",
     "eventGiftTypeValue": "Event Ticket",
     "oldestActiveFiscalYear": 2026,
-    "fiscalYearColumn": "REPLACE_WITH_COLUMN_ID",
-    "recurringGiftLinkColumn": "REPLACE_WITH_COLUMN_ID",
+    "fiscalYearColumn": "text_mm8ngcfh",
+    "recurringGiftLinkColumn": "board_relation_mm8nn9n9",
     "rawPayloadRetentionDays": 90,
     "unresolvedPayloadRetentionDays": 365,
     "donorExternalIdField": "supporter.id",
-    "donorExternalIdColumn": "REPLACE_WITH_COLUMN_ID",
-    "donorEmailColumn": "REPLACE_WITH_COLUMN_ID",
+    "donorExternalIdColumn": "link_mm8ndb1a",
+    "donorEmailColumn": "email_mm8nx6qg",
     "donorNameField": "supporter.name",
-    "donorLinkColumn": "REPLACE_WITH_COLUMN_ID",
-    "emailFieldPrecedence": ["supporter.email"],
+    "donorLinkColumn": "board_relation_mm8n97wj",
+    "emailFieldPrecedence": [
+      "supporter.email"
+    ],
     "statusField": "transaction.status",
     "statusValueMap": {
       "Complete": "Received",
@@ -50,19 +52,28 @@
   "subscriptionsPoll": {
     "enabled": true,
     "columns": {
-      "funraiseId": "REPLACE_WITH_COLUMN_ID",
-      "donor": "REPLACE_WITH_COLUMN_ID",
-      "installmentAmount": "REPLACE_WITH_COLUMN_ID",
-      "annualizedValue": "REPLACE_WITH_COLUMN_ID",
-      "frequency": "REPLACE_WITH_COLUMN_ID",
-      "status": "REPLACE_WITH_COLUMN_ID",
-      "nextPayment": "REPLACE_WITH_COLUMN_ID",
-      "designation": "REPLACE_WITH_COLUMN_ID",
-      "companyMatch": "REPLACE_WITH_COLUMN_ID",
-      "matchEmployer": "REPLACE_WITH_COLUMN_ID"
+      "funraiseId": "link_mm8n4krv",
+      "donor": "board_relation_mm8n5hpp",
+      "installmentAmount": "numeric_mm8nqcad",
+      "annualizedValue": "numeric_mm8n69s6",
+      "frequency": "color_mm8nsjwp",
+      "status": "color_mm8n2p43",
+      "nextPayment": "date_mm8n1t4j",
+      "designation": "text_mm8nwcbs",
+      "companyMatch": "boolean_mm8nraxn",
+      "matchEmployer": "text_mm8n95xm"
     },
-    "frequencyMultiplier": { "Monthly": 12, "Quarterly": 4, "Yearly": 1 },
-    "statusLabelMap": { "Active": "Active", "Cancelled": "Cancelled", "Failed": "Failed", "Redacted": "Redacted" },
+    "frequencyMultiplier": {
+      "Monthly": 12,
+      "Quarterly": 4,
+      "Yearly": 1
+    },
+    "statusLabelMap": {
+      "Active": "Active",
+      "Cancelled": "Cancelled",
+      "Failed": "Failed",
+      "Redacted": "Redacted"
+    },
     "funraiseLinkBase": "https://platform.funraise.io/transaction/",
     "maxPagesPerRun": 1
   }

@@ -53,7 +53,7 @@ describe('mapToMondayColumns', () => {
   it('the shipped production config validates and carries the same status map', () => {
     const productionConfig = validateConfig(rawSvbcConfig);
     expect(productionConfig.funraiseSync.statusValueMap).toEqual({ Complete: 'Received', Refunded: 'Refunded', Failed: 'Failed' });
-    expect(productionConfig.monday.boards['donations:live']).toBeNull();
+    expect(productionConfig.monday.boards['donations:live']).toBe(18437909794);
   });
 
   it('denylists the card and billing PII where Funraise actually puts it, so the strip is not a no-op', () => {
