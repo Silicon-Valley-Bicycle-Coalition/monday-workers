@@ -112,9 +112,12 @@ Rows marked Don't list stay on the board, so the year's totals still add up and 
 who was left off. The saved views leave them out.
 
 **Saved views** (Total, largest first):
-- **This year so far:** the in-progress year, Listed, Under $100 hidden.
-- **Last closed year:** the most recently closed year, Listed, $100+. This is the one to export.
+- **This year so far:** the in-progress year, Listed. Every listed donor from $1 up.
+- **Last closed year:** the most recently closed year, Listed, from $1 up. This is the one to export.
 - **Needs review:** Review Note isn't empty.
+
+*Changed 2026-11-02 at the request of SVBC development: the views no longer filter on Tier (originally
+Under $100 hidden), so every listed donor appears. The Tier column still shows each level.*
 
 **Item description** on each board item (via `set_item_description_content`, best-effort like
 the gift-history projection) can list the counted gifts with deep links. That's a nice-to-have;
