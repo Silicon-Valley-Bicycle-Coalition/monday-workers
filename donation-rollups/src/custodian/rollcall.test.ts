@@ -208,6 +208,36 @@ describe('runRollCall', () => {
     expect(h.created[0]!.values).toMatchObject({ to: '100.00', gi: '1' });
   });
 
+  it('never names the donor of an anonymous gift whose Amount reads blank, night after night', async () => {
+    // The ledger (its own Amount parse) has a1 at $500 for Ada; the roll call's read of a1's
+    // Amount is blank. The Anonymous flag still wins: no credit to Ada, and the gift doesn't count.
+    const h = harness({
+      ledger: [gift('g1', '13', 10_000), gift('a1', '13', 50_000)],
+      donations: [donation('a1', { anonymous: true, amountCents: null, donorItemIds: ['13'] })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+    });
+    // The fake board never fills in, so each night creates the one row again: check it each time.
+    for (let night = 0; night < 2; night++) {
+      h.created.length = 0;
+      const report = await runRollCall(h.deps, NOW);
+      expect((report.detail as { rows: number }).rows).toBe(1);
+      expect(h.created.map((c) => [c.name, (c.values as Record<string, unknown>).to, (c.values as Record<string, unknown>).gi]))
+        .toEqual([['Ada Park', '100.00', '1']]);
+      expect(h.credits.get('a1')).toMatchObject({ credit: 'anonymous', amountCents: 0 });
+    }
+  });
+
+  it('never credits a $0 Matched By gift to the employee, even when the ledger has it above $0', async () => {
+    const h = harness({
+      ledger: [gift('g1', '13', 10_000), gift('m1', '11', 30_000, { giftType: 'Matching Donation' })],
+      donations: [donation('m1', { giftType: 'Matching Donation', matchedByItemIds: ['31'], amountCents: 0, donorItemIds: ['11'] })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+    });
+    const report = await runRollCall(h.deps, NOW);
+    expect((report.detail as { rows: number }).rows).toBe(1);
+    expect(h.writes).toEqual(['group FY2027 (in progress)', 'create Ada Park']);
+  });
+
   it('freezes closed years: an FY2025 row whose donor vanished stays', async () => {
     // FY2025 is closed and archived (current FY2027, activeFiscalYears 2); the duty's first year
     // is set back to 2025 here so the frozen rule applies.

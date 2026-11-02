@@ -17,10 +17,10 @@ const MATCHING = 'Matching Donation';
 export function creditFor(
   item: DonationCreditItem, excludedGiftTypes: string[],
 ): { credit: string | null; unmatchedMatch: boolean } | 'ledger' | 'skip' {
+  // Never on the amount: the credit (who is named, or not) comes from the flags alone, so a $0 or
+  // unreadable Amount can't drop an Anonymous or Matched By gift's row and hand it back to its
+  // Donor through the ledger. Whether the gift counts is rollCallGifts' call.
   if (!Number.isInteger(item.fiscalYear) || item.fiscalYear <= 0) return 'skip';
-  // A $0 (or blank, read as 0) or negative gift isn't a gift to recognize, as in
-  // donor-roll-call.mjs.
-  if (item.amountCents <= 0) return 'skip';
   if (item.status === null || !RECEIVED_LABELS.includes(item.status)) return 'skip';
   if (excludedGiftTypes.includes(item.giftType)) return 'skip';
   const matching = item.giftType === MATCHING;
@@ -51,7 +51,8 @@ export async function refreshCredits(
       const verdict = item.fiscalYear < cfg.firstFiscalYear || item.fiscalYear > currentFY ? 'skip' : creditFor(item, cfg.excludedGiftTypes);
       if (typeof verdict === 'object') {
         // archivedAt null: an item restored from the archive clears its old stamp.
-        rows.set(item.id, { giftItemId: item.id, fiscalYear: item.fiscalYear, amountCents: item.amountCents,
+        // amount_cents is NOT NULL: a blank Amount is stored as 0, which counts for nothing either.
+        rows.set(item.id, { giftItemId: item.id, fiscalYear: item.fiscalYear, amountCents: item.amountCents ?? 0,
           status: item.status ?? '', giftType: item.giftType, credit: verdict.credit,
           unmatchedMatch: verdict.unmatchedMatch, archivedAt: null });
       } else if (stored.has(item.id)) {

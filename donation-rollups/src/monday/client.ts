@@ -68,7 +68,9 @@ export interface DonationCreditRecord {
   // From Fiscal Year Ending, else derived from the Date (as getDonationsByIds does); 0 when
   // neither gives a year.
   fiscalYear: number;
-  amountCents: number;
+  // null for a blank or unparseable Amount: it doesn't count, but the gift's credit (anonymous,
+  // Matched By) is still decided from its flags.
+  amountCents: number | null;
   status: string | null;
   giftType: string;
   donorItemIds: string[];
@@ -496,7 +498,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const fiscalYear = !Number.isNaN(rawFY) ? rawFY : dateISO ? fiscalYearFromDate(dateISO, fiscalYearStartMonth) : 0;
         return { id: item.id,
           fiscalYear: Number.isInteger(fiscalYear) ? fiscalYear : 0,
-          amountCents: parseAmountCents(byId.get(c.amount)?.text) ?? 0,
+          amountCents: parseAmountCents(byId.get(c.amount)?.text),
           status: statusLabel(status?.text, status?.value),
           giftType: (byId.get(c.giftType)?.text ?? '').trim(),
           donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [],

@@ -396,7 +396,7 @@ describe('status columns read by stored value (label id 5)', () => {
     expect((await client.pageDonationCredits(CREDITS_CFG, null, 7)).items).toEqual([
       { id: 'g1', fiscalYear: 2026, amountCents: 125050, status: 'Received', giftType: 'Matching Donation',
         donorItemIds: ['p1'], matchedByItemIds: ['o1'], anonymous: true },
-      { id: 'g2', fiscalYear: 0, amountCents: 0, status: null, giftType: '',
+      { id: 'g2', fiscalYear: 0, amountCents: null, status: null, giftType: '',
         donorItemIds: [], matchedByItemIds: [], anonymous: false }]);
   });
   it('pageDonationCredits falls back to the Date for a blank Fiscal Year Ending, as getDonationsByIds does', async () => {

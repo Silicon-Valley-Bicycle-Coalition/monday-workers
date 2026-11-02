@@ -18,10 +18,13 @@ describe('creditFor', () => {
     expect(creditFor(item({ fiscalYear: 0 }), EXCLUDED)).toBe('skip');
     expect(creditFor(item({ fiscalYear: NaN }), EXCLUDED)).toBe('skip');
   });
-  it('skips a zero or negative amount, so no credits row is stored for it', () => {
-    expect(creditFor(item({ amountCents: 0, anonymous: true }), EXCLUDED)).toBe('skip');
-    expect(creditFor(item({ amountCents: -500, donorItemIds: [] }), EXCLUDED)).toBe('skip');
-    expect(creditFor(item({ amountCents: 0 }), EXCLUDED)).toBe('skip');
+  it('decides the credit from the flags whatever the amount reads, so a $0 or blank one still suppresses the Donor', () => {
+    expect(creditFor(item({ amountCents: 0, anonymous: true }), EXCLUDED)).toEqual({ credit: 'anonymous', unmatchedMatch: false });
+    expect(creditFor(item({ amountCents: null, anonymous: true }), EXCLUDED)).toEqual({ credit: 'anonymous', unmatchedMatch: false });
+    expect(creditFor(item({ amountCents: null, giftType: 'Matching Donation', matchedByItemIds: ['o9'] }), EXCLUDED))
+      .toEqual({ credit: 'item:o9', unmatchedMatch: false });
+    expect(creditFor(item({ amountCents: -500, donorItemIds: [] }), EXCLUDED)).toEqual({ credit: 'unplaced', unmatchedMatch: false });
+    expect(creditFor(item({ amountCents: 0 }), EXCLUDED)).toBe('ledger');
   });
   it('credits a matching gift to its Matched By company, even when anonymous', () => {
     expect(creditFor(item({ giftType: 'Matching Donation', matchedByItemIds: ['o9'] }), EXCLUDED))
@@ -146,6 +149,11 @@ describe('refreshCredits', () => {
   it('accepts an empty Donations read when every stored row is archived', async () => {
     const h = harness([], [row({ archivedAt: '2026-10-01T00:00:00Z' })]);
     expect(await refreshCredits(h.deps, CFG, NOW, FY)).toEqual({ upserted: 0, removed: 0, archived: 0 });
+  });
+  it('stores the row of an anonymous gift whose Amount reads blank, with 0 cents', async () => {
+    const h = harness([item({ id: 'a', anonymous: true, amountCents: null })], []);
+    expect(await refreshCredits(h.deps, CFG, NOW, FY)).toEqual({ upserted: 1, removed: 0, archived: 0 });
+    expect(h.rows.get('a')).toEqual(row({ giftItemId: 'a', amountCents: 0 }));
   });
   it('upserts once when a paging race repeats an item', async () => {
     const h = harness([item({ anonymous: true }), item({ anonymous: true })], []);
