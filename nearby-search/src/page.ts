@@ -44,7 +44,27 @@ const STYLE = `
   #confirmBox { margin-top:12px; display:grid; gap:8px; }
 `;
 
+// The preview/confirm bookkeeping, as plain ES5 source so the page embeds it verbatim and the unit
+// test evaluates the very same text. begin() returns a token; settle() accepts a response only if
+// that token is still the latest (no newer begin(), no clear() since); confirm posts snapshot().
+export const PREVIEW_STATE_SRC = `function createPreviewState() {
+  var seq = 0, body = null, preview = null;
+  return {
+    begin: function (b) { seq += 1; body = null; preview = null; this.pending = { token: seq, body: JSON.parse(JSON.stringify(b)) }; return seq; },
+    settle: function (token, p) {
+      if (!this.pending || this.pending.token !== token || token !== seq) return false;
+      body = this.pending.body; preview = p; this.pending = null; return true;
+    },
+    isLatest: function (token) { return token === seq; },
+    clear: function () { seq += 1; body = null; preview = null; this.pending = null; },
+    preview: function () { return preview; },
+    snapshot: function () { return body ? JSON.parse(JSON.stringify(body)) : null; },
+    pending: null
+  };
+}`;
+
 const SCRIPT = String.raw`
+${PREVIEW_STATE_SRC}
 (function () {
   var init = window.__INIT__ || {};
   var event = init.event || null;
@@ -61,6 +81,7 @@ const SCRIPT = String.raw`
     legend: $('legend'), confirm: $('confirmBtn'), historical: $('historicalNote'), done: $('done')
   };
   var map = null, layer = null, current = null, labelTouched = false, busy = false;
+  var state = createPreviewState();
 
   function say(text, isError) {
     els.status.textContent = text || '';
@@ -116,6 +137,8 @@ const SCRIPT = String.raw`
 
   function clearPreview() {
     current = null;
+    state.clear();
+    els.preview.disabled = false;
     els.result.hidden = true;
     els.done.textContent = '';
     if (layer) layer.clearLayers();
@@ -183,17 +206,22 @@ const SCRIPT = String.raw`
     var body = request();
     if (!event && !body.query) { say('Enter an address, place, or road between two cross streets.', true); return; }
     if (!(body.miles >= 0.05 && body.miles <= 10)) { say('Miles must be from 0.05 to 10.', true); return; }
-    busy = true; els.preview.disabled = true; say('Searching...');
+    var token = state.begin(body);
+    els.preview.disabled = true; say('Searching...');
     var res = await api('/api/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    busy = false; els.preview.disabled = false;
-    if (!res.ok) { say(res.message, true); return; }
+    // An input changed (or Preview was pressed again) while this was in flight: drop the response.
+    if (!state.isLatest(token)) return;
+    els.preview.disabled = false;
+    if (!res.ok) { state.clear(); say(res.message, true); return; }
+    if (!state.settle(token, res.data)) return;
     say('');
     show(res.data);
   }
 
   async function runConfirm() {
     if (!current || !labelOk() || !els.board.value) return;
-    var body = request();
+    var body = state.snapshot();
+    if (!body) return;
     body.boardId = Number(els.board.value);
     body.label = els.label.value.trim();
     busy = true; updateConfirm(); say('Adding...');

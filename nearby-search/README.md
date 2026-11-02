@@ -23,6 +23,19 @@ implemented" until then.
 * Monday access is the `monday-auth` broker's `SyncToken` entrypoint (`MONDAY_AUTH` service
   binding); the Worker holds no Monday token.
 
+## "Find nearby" link on the Events board
+
+The page opens prefilled from an Events row at `/?event=<item id>` (2 miles by default). To put a
+link on each row without touching `eventbrite-sync`, add a **Formula** column to the Events board:
+
+```
+CONCATENATE("https://<host>/?event=", {Item ID})
+```
+
+Whether Monday renders that formula result as a clickable link is **unverified until tried on a
+live board**. If it does not, the fallback is for staff to open the page directly
+(`https://<host>/`), type the event's address, or paste the event row's item id into the URL.
+
 ## Config
 
 `config/svbc.json` and `config/sandbox.json` (chosen by the `ENVIRONMENT` var) hold the board and

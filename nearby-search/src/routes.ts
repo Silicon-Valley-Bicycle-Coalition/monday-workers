@@ -49,7 +49,10 @@ export function buildApp(makeDeps: (env: Env) => Deps, access: MiddlewareHandler
       html = renderPage();
     } else {
       const { monday, config } = makeDeps(c.env);
-      const event = await monday.getEventAddress(config.monday.eventsBoardId, eventId, config.monday.eventsAddressColumn);
+      // A failed lookup shows the same notice as an unknown event rather than a JSON 500.
+      const event = await monday
+        .getEventAddress(config.monday.eventsBoardId, eventId, config.monday.eventsAddressColumn)
+        .catch(() => null);
       html = event
         ? renderPage({ event: { eventItemId: eventId, eventName: event.name, address: event.address, miles: EVENT_MILES } })
         : renderPage({ notice: 'Event not found or it has no address. Type an address below instead.' });
