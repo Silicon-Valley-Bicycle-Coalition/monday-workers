@@ -75,7 +75,7 @@ The `.gitlab-ci.yml` is already configured with build, deploy, and history updat
 2. **Create a Pipeline Schedule** (Build → Pipeline schedules):
    - Click **New schedule**
    - Description: "Weekly data update"
-   - Interval pattern: `0 6 * * 1` (Mondays at 6 AM UTC)
+   - Interval pattern: `47 22 * * 5`, timezone `America/Los_Angeles` (Fridays at 10:47 PM Pacific; the live schedule)
    - Target branch: `main`
    - Activate the schedule
 
