@@ -37,6 +37,17 @@ describe('GET /', () => {
     expect(html).toContain('OpenStreetMap contributors');
   });
 
+  it('loads every third-party asset with SRI and crossorigin=anonymous', async () => {
+    const html = await (await get('/')).text();
+    const tags = html.match(/<(?:script|link)\b[^>]*(?:unpkg\.com|cdn\.jsdelivr\.net)[^>]*>/g) ?? [];
+    expect(tags).toHaveLength(3);
+    for (const tag of tags) {
+      expect(tag).toMatch(/ integrity="sha384-[A-Za-z0-9+/]{64}"/);
+      expect(tag).toContain(' crossorigin="anonymous"');
+    }
+    expect(html).toContain('integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"');
+  });
+
   it('embeds the event for ?event=<id>', async () => {
     const html = await (await get('/?event=123', { name: 'Bike Rodeo', address: '1 Main St, San Jose' })).text();
     expect(html).toContain('"eventItemId":"123"');
