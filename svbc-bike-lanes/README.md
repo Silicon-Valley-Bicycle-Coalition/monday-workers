@@ -110,6 +110,7 @@ The site sits behind [Cloudflare Access](https://developers.cloudflare.com/cloud
 | Access application | **SVBC Bike Lanes** (self-hosted) |
 | Hostnames covered | `lanes.bikesiliconvalley.org`, `svbc-bike-lanes.pages.dev`, `*.svbc-bike-lanes.pages.dev` |
 | Login methods | Google Workspace only, instant auth |
+| Session duration | 24 hours (someone removed from Workspace loses access when their session expires) |
 | Policy | **Allow**, Include: Emails ending in `@bikesiliconvalley.org` |
 
 All three hostnames must be on the application. Pages serves every build on `svbc-bike-lanes.pages.dev` and on a per-deployment `<hash>.svbc-bike-lanes.pages.dev` URL as well as the custom domain. If only the custom domain is protected, anyone can open the site through the `pages.dev` URLs.
@@ -124,10 +125,10 @@ All three hostnames must be on the application. Pages serves every build on `svb
    - Add the custom domain, `<project>.pages.dev`, and `*.<project>.pages.dev` as public hostnames.
    - Under Login methods, allow only Google Workspace and turn on **Instant Auth** to skip the provider picker.
    - Add an **Allow** policy with Include → *Emails ending in* → `@<your-domain>`.
-4. **Check.** In a private window, each hostname should redirect to the Google login. From a shell, this should print a `302` to `<team>.cloudflareaccess.com`:
+4. **Check.** In a private window, each hostname should redirect to the Google login. From a shell, the `pages.dev` hostnames should return a `302` to `<team>.cloudflareaccess.com`. The custom domain gives curl a `403` bot challenge ("Just a moment...") from the zone's security settings before Access runs, so check it in a browser.
 
    ```bash
-   for h in lanes.bikesiliconvalley.org svbc-bike-lanes.pages.dev; do curl -sI "https://$h/" | grep -iE '^(HTTP|location)'; done
+   for h in svbc-bike-lanes.pages.dev <any-deploy-hash>.svbc-bike-lanes.pages.dev; do curl -sI "https://$h/" | grep -iE '^(HTTP|location)'; done
    ```
 
 Access doesn't affect deploys. `wrangler pages deploy` uploads through the Cloudflare API using `CLOUDFLARE_API_TOKEN`, not through the protected hostnames, so the GitLab CI pipeline needs no Access service token.
