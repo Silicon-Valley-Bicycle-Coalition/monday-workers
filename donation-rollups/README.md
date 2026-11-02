@@ -843,8 +843,11 @@ night fills the table; no backfill is needed.
 
    It creates the board **private** (it holds donor names and giving totals; a public board is
    open to every member of the account), so **subscribe only the staff who need it**: whoever owns
-   the report and whoever prints the roll call. An existing board can be made private with
-   `scripts/make-boards-private.mjs` (the token's user must own or administer the board). It creates
+   the report and whoever prints the roll call. To make an existing board private,
+   a board owner or admin sets it in the Monday UI (board menu, then settings or permissions, then
+   Private). The repo's `../scripts/make-boards-private.mjs` does the same, but only after its API
+   pin is raised to 2026-10 (`change_board_kind` doesn't exist in 2026-07) and with an account
+   admin's token; the sandbox integration token gets `USER_UNAUTHORIZED`. It creates
    the board with the ten columns (Tier, Type and Listed seeded with every label the duty
    writes, since the duty never creates labels), adds **Don't List in Recognition** (checkbox) to
    each People board and Organizations and **Recognition Name** (text) to Organizations, looks up
