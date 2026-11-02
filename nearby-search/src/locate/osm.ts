@@ -9,6 +9,8 @@ export interface NominatimHit {
   lat: string;
   lon: string;
   display_name: string;
+  // [south, north, west, east] as strings, as Nominatim's jsonv2 sends it.
+  boundingbox?: [string, string, string, string];
 }
 
 export type OverpassElement =

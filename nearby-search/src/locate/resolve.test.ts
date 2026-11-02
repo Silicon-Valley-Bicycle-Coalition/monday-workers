@@ -72,6 +72,38 @@ describe('resolveLocation: segment', () => {
     expect(result.lengthMiles).toBeCloseTo(0.8245, 2);
   });
 
+  // Main Street runs through two towns ~7 miles apart, crossed by First and Second Street in each.
+  const geomWay = (id: number, name: string, pts: [number, number, number][]) =>
+    ({ type: 'way', id, nodes: pts.map((p) => p[0]), tags: { highway: 'residential', name }, geometry: pts.map(([, lat, lon]) => ({ lat, lon })) });
+  const plain = (id: number, name: string, nodes: number[]) => ({ type: 'way', id, nodes, tags: { highway: 'residential', name } });
+  const TWO_TOWN_SEGMENT = {
+    elements: [
+      geomWay(1, 'Main Street', [[1, 37.3, -121.93], [2, 37.3, -121.925]]),
+      geomWay(2, 'Main Street', [[3, 37.4, -121.93], [4, 37.4, -121.925]]),
+      plain(11, 'First Street', [1, 91]), plain(12, 'First Street', [3, 93]),
+      plain(21, 'South Second Street', [2, 92]), plain(22, 'South Second Street', [4, 94]),
+    ],
+  };
+  const segQuery = { kind: 'segment', road: 'Main Street', from: 'First Street', to: 'Second Street' } as const;
+
+  it('refuses a segment whose crossings are found in more than one place', async () => {
+    const { osm } = fakeOsm(TWO_TOWN_SEGMENT);
+    expect(await resolveLocation(segQuery, osm, AREA)).toEqual({
+      kind: 'not-found',
+      message: 'Main Street between First Street and Second Street was found in more than one place — add the city, e.g. "Main Street between First Street and Second Street, San Jose".',
+    });
+  });
+
+  it('resolves the segment inside the named city, labelled with the matched names', async () => {
+    const oneTown = { elements: TWO_TOWN_SEGMENT.elements.filter((e) => [1, 11, 21].includes(e.id)) };
+    const hit: NominatimHit = { lat: '37.3', lon: '-121.93', display_name: 'Campbell', boundingbox: ['37.25', '37.35', '-122.0', '-121.9'] };
+    const { osm, calls } = fakeOsm(oneTown, [hit]);
+    const result = await resolveLocation({ ...segQuery, city: 'Campbell' }, osm, AREA);
+    expect(calls.overpass[0]).toContain('[bbox:37.25,-122,37.35,-121.9];');
+    if (result.kind !== 'line') throw new Error(`expected a line, got ${JSON.stringify(result)}`);
+    expect(result.label).toBe('Main Street from First Street to South Second Street');
+  });
+
   it('names the cross street that never meets the road', async () => {
     const withoutSaratoga = { ...segment, elements: (segment.elements as unknown as Way[]).filter((e) => !/Saratoga/.test(e.tags.name ?? '')) };
     const { osm } = fakeOsm(withoutSaratoga);
@@ -117,11 +149,74 @@ describe('resolveLocation: segment', () => {
 });
 
 describe('resolveLocation: intersection', () => {
-  it('returns the first node the two streets share', async () => {
+  it('returns the first node the two streets share, labelled with the names OSM matched', async () => {
     const { osm, calls } = fakeOsm(intersection);
     const result = await resolveLocation({ kind: 'intersection', a: 'Bascom Avenue', b: 'Hamilton Avenue' }, osm, AREA);
     expect(calls.overpass).toEqual([intersection._query.trim()]);
-    expect(result).toEqual({ kind: 'point', lat: 37.2942561, lng: -121.9316119, label: 'Bascom Avenue & Hamilton Avenue' });
+    expect(calls.nominatim).toEqual([]);
+    expect(result).toEqual({ kind: 'point', lat: 37.2942561, lng: -121.9316119, label: 'South Bascom Avenue & East Hamilton Avenue' });
+  });
+
+  // Main Street meets First Street in two towns ~7 miles apart.
+  const node = (id: number, lat: number, lon: number) => ({ type: 'node', id, lat, lon });
+  const way = (id: number, name: string, nodes: number[]) => ({ type: 'way', id, nodes, tags: { highway: 'residential', name } });
+  const TWO_TOWNS = {
+    elements: [
+      node(1, 37.3, -121.93), node(2, 37.4, -121.93),
+      way(10, 'Main Street', [1, 101]), way(11, 'North Main Street', [2, 102]),
+      way(20, 'First Street', [1, 201]), way(21, 'First Street', [2, 202]),
+    ],
+  };
+  const ONE_TOWN = { elements: TWO_TOWNS.elements.filter((e) => ![2, 11, 21].includes(e.id)) };
+  const SAN_JOSE: NominatimHit = { lat: '37.33', lon: '-121.89', display_name: 'San Jose, Santa Clara County, California', boundingbox: ['37.1', '37.35', '-122.0', '-121.5'] };
+
+  it('refuses a street pair that meets in more than one place, without a city', async () => {
+    const { osm } = fakeOsm(TWO_TOWNS);
+    expect(await resolveLocation({ kind: 'intersection', a: 'Main Street', b: 'First Street' }, osm, AREA)).toEqual({
+      kind: 'not-found',
+      message: 'Main Street & First Street was found in more than one place — add the city, e.g. "Main Street & First Street, San Jose".',
+    });
+  });
+
+  it('narrows the Overpass bbox to the city (clipped to the service area) and resolves one place', async () => {
+    const calls = { overpass: [] as string[], nominatim: [] as string[] };
+    const osm: OsmClient = {
+      async nominatim(q) { calls.nominatim.push(q); return [SAN_JOSE]; },
+      // Answers the city-bounded query with only the San Jose crossing.
+      async overpass(ql) { calls.overpass.push(ql); return (ql.includes('[bbox:37.1,-122,37.35,-121.5]') ? ONE_TOWN : TWO_TOWNS) as OverpassResponse; },
+    };
+    const result = await resolveLocation({ kind: 'intersection', a: 'Main Street', b: 'First Street', city: 'San Jose' }, osm, AREA);
+    expect(result).toEqual({ kind: 'point', lat: 37.3, lng: -121.93, label: 'Main Street & First Street' });
+    expect(Object.fromEntries(new URLSearchParams(calls.nominatim[0]))).toMatchObject({ q: 'San Jose, CA', bounded: '1', viewbox: '-122.53,37.71,-121.2,36.89' });
+    expect(calls.overpass[0]).toMatch(/^\[out:json\]\[timeout:25\]\[bbox:37.1,-122,37.35,-121.5\];/);
+  });
+
+  it('clips a city bbox that spills past the service area', async () => {
+    const big: NominatimHit = { ...SAN_JOSE, boundingbox: ['36.5', '37.35', '-123', '-121.5'] };
+    const { osm, calls } = fakeOsm(ONE_TOWN, [big]);
+    await resolveLocation({ kind: 'intersection', a: 'Main Street', b: 'First Street', city: 'San Jose' }, osm, AREA);
+    expect(calls.overpass[0]).toContain('[bbox:36.89,-122.53,37.35,-121.5];');
+  });
+
+  it('still refuses two places inside the named city', async () => {
+    const { osm } = fakeOsm(TWO_TOWNS, [SAN_JOSE]);
+    const result = await resolveLocation({ kind: 'intersection', a: 'Main Street', b: 'First Street', city: 'San Jose' }, osm, AREA);
+    expect(result).toEqual({ kind: 'not-found', message: 'Main Street & First Street was found in more than one place in San Jose.' });
+  });
+
+  it('reports a city OpenStreetMap cannot find, without querying Overpass', async () => {
+    const { osm, calls } = fakeOsm(ONE_TOWN, []);
+    expect(await resolveLocation({ kind: 'intersection', a: 'Main Street', b: 'First Street', city: 'Atlantis' }, osm, AREA)).toEqual({
+      kind: 'not-found',
+      message: "OpenStreetMap couldn't find the city 'Atlantis'.",
+    });
+    expect(calls.overpass).toEqual([]);
+  });
+
+  it('reports a city whose bbox lies outside the service area as not found', async () => {
+    const far: NominatimHit = { ...SAN_JOSE, boundingbox: ['40', '41', '-120', '-119'] };
+    const { osm } = fakeOsm(ONE_TOWN, [far]);
+    expect((await resolveLocation({ kind: 'intersection', a: 'Main Street', b: 'First Street', city: 'Reno' }, osm, AREA)).kind).toBe('not-found');
   });
 
   it('reports streets that never meet', async () => {

@@ -41,28 +41,80 @@ export function haversineMiles(a: [number, number], b: [number, number]): number
   return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
 }
 
+// Crossings further apart than this are different places (the same street pair in two cities),
+// not one intersection of divided roads.
+const CLUSTER_MILES = 0.5;
+
 export async function resolveLocation(q: LocationQuery, osm: OsmClient, area: Area): Promise<Resolved> {
   switch (q.kind) {
     case 'address':
     case 'place':
       return resolveSearch(q.text, osm, area);
     case 'intersection':
-      return resolveIntersection(q.a, q.b, osm, area);
-    case 'segment':
-      return resolveSegment(q.road, q.from, q.to, osm, area);
+    case 'segment': {
+      let bbox = area;
+      if (q.city !== undefined) {
+        const cityArea = await findCity(q.city, osm, area);
+        if (!cityArea) return { kind: 'not-found', message: `OpenStreetMap couldn't find the city '${q.city}'.` };
+        bbox = cityArea;
+      }
+      return q.kind === 'intersection'
+        ? resolveIntersection(q.a, q.b, q.city, osm, bbox)
+        : resolveSegment(q.road, q.from, q.to, q.city, osm, bbox);
+    }
   }
 }
 
-async function resolveSearch(text: string, osm: OsmClient, [south, west, north, east]: Area): Promise<Resolved> {
-  const params = new URLSearchParams({
+function nominatimQuery(text: string, [south, west, north, east]: Area): string {
+  return new URLSearchParams({
     q: text,
     format: 'jsonv2',
     limit: '1',
     countrycodes: 'us',
     bounded: '1',
     viewbox: `${west},${north},${east},${south}`,
-  });
-  const [hit]: (NominatimHit | undefined)[] = await osm.nominatim(params.toString());
+  }).toString();
+}
+
+// The city's bounding box clipped to the service area, or null if Nominatim doesn't know it or it
+// lies outside the area.
+async function findCity(city: string, osm: OsmClient, area: Area): Promise<Area | null> {
+  const [hit]: (NominatimHit | undefined)[] = await osm.nominatim(nominatimQuery(`${city}, CA`, area));
+  const box = hit?.boundingbox?.map(Number);
+  if (!box || box.length !== 4 || box.some((n) => !Number.isFinite(n))) return null;
+  const [s, n, w, e] = box as [number, number, number, number];
+  const clipped: Area = [Math.max(s, area[0]), Math.max(w, area[1]), Math.min(n, area[2]), Math.min(e, area[3])];
+  return clipped[0] < clipped[2] && clipped[1] < clipped[3] ? clipped : null;
+}
+
+// Single-linkage clusters of [lng, lat] points at CLUSTER_MILES; returns the number of clusters.
+function clusterCount(points: [number, number][]): number {
+  const parent = points.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      if (haversineMiles(points[i]!, points[j]!) <= CLUSTER_MILES) parent[find(i)] = find(j);
+    }
+  }
+  return new Set(points.map((_, i) => find(i))).size;
+}
+
+function ambiguous(what: string, city: string | undefined): Resolved {
+  return {
+    kind: 'not-found',
+    message: city === undefined
+      ? `${what} was found in more than one place — add the city, e.g. "${what}, San Jose".`
+      : `${what} was found in more than one place in ${city}.`,
+  };
+}
+
+// The OSM name of the first way matching `matcher` that passes through `node`, else `fallback`.
+function matchedName(ways: Way[], matcher: RegExp, node: number, fallback: string): string {
+  return ways.find((w) => w.nodes.includes(node) && matcher.test(w.tags?.name ?? ''))?.tags?.name ?? fallback;
+}
+
+async function resolveSearch(text: string, osm: OsmClient, area: Area): Promise<Resolved> {
+  const [hit]: (NominatimHit | undefined)[] = await osm.nominatim(nominatimQuery(text, area));
   const lat = Number(hit?.lat);
   const lng = Number(hit?.lon);
   if (!hit || !Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -71,23 +123,33 @@ async function resolveSearch(text: string, osm: OsmClient, [south, west, north, 
   return { kind: 'point', lat, lng, label: hit.display_name };
 }
 
-async function resolveIntersection(a: string, b: string, osm: OsmClient, area: Area): Promise<Resolved> {
+async function resolveIntersection(a: string, b: string, city: string | undefined, osm: OsmClient, area: Area): Promise<Resolved> {
+  // The shared nodes, then the ways of each street through them (for the names OSM matched).
   const ql = [
     header(area),
     `way["highway"]${nameFilter(a)}->.a;`,
     `way["highway"]${nameFilter(b)}->.b;`,
-    'node(w.a)(w.b);',
+    'node(w.a)(w.b)->.x;',
+    '.x out;',
+    'way.a(bn.x);',
+    'out;',
+    'way.b(bn.x);',
     'out;',
   ].join('\n');
   const { elements } = await osm.overpass(ql);
-  const node = elements.find((e) => e.type === 'node');
+  const nodes = elements.filter((e): e is Node => e.type === 'node');
+  const node = nodes[0];
   if (!node) return { kind: 'not-found', message: `${a} and ${b} don't meet in OpenStreetMap.` };
-  return { kind: 'point', lat: node.lat, lng: node.lon, label: `${a} & ${b}` };
+  if (clusterCount(nodes.map((n) => [n.lon, n.lat])) > 1) return ambiguous(`${a} & ${b}`, city);
+  const ways = elements.filter((e): e is Way => e.type === 'way');
+  const label = `${matchedName(ways, nameMatcher(a), node.id, a)} & ${matchedName(ways, nameMatcher(b), node.id, b)}`;
+  return { kind: 'point', lat: node.lat, lng: node.lon, label };
 }
 
 type Way = Extract<OverpassElement, { type: 'way' }>;
+type Node = Extract<OverpassElement, { type: 'node' }>;
 
-async function resolveSegment(road: string, from: string, to: string, osm: OsmClient, area: Area): Promise<Resolved> {
+async function resolveSegment(road: string, from: string, to: string, city: string | undefined, osm: OsmClient, area: Area): Promise<Resolved> {
   // The road's ways come back with geometry; the cross streets' ways only with their node ids,
   // which is enough to find the nodes they share with the road.
   const ql = [
@@ -139,6 +201,8 @@ async function resolveSegment(road: string, from: string, to: string, osm: OsmCl
   if (fromNodes.length === 0) return { kind: 'not-found', message: `${from} doesn't cross ${road} in OpenStreetMap.` };
   const toNodes = crossings(to);
   if (toNodes.length === 0) return { kind: 'not-found', message: `${to} doesn't cross ${road} in OpenStreetMap.` };
+  const spread = (ids: number[]) => clusterCount(ids.map((id) => coords.get(id)!));
+  if (spread(fromNodes) > 1 || spread(toNodes) > 1) return ambiguous(`${road} between ${from} and ${to}`, city);
 
   let best: { miles: number; path: number[] } | null = null;
   const targets = new Set(toNodes);
@@ -148,10 +212,14 @@ async function resolveSegment(road: string, from: string, to: string, osm: OsmCl
   }
   if (!best || best.path.length < 2) return { kind: 'not-found', message: `Couldn't follow ${road} from ${from} to ${to}.` };
 
+  const first = best.path[0]!;
+  const last = best.path.at(-1)!;
+  const roadName = matchedName(ways, isRoad, first, road);
+  const label = `${roadName} from ${matchedName(ways, nameMatcher(from), first, from)} to ${matchedName(ways, nameMatcher(to), last, to)}`;
   return {
     kind: 'line',
     geometry: { type: 'LineString', coordinates: best.path.map((id) => coords.get(id)!) },
-    label: `${road} from ${from} to ${to}`,
+    label,
     lengthMiles: best.miles,
   };
 }

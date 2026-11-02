@@ -6,8 +6,10 @@
 export type LocationQuery =
   | { kind: 'address'; text: string }
   | { kind: 'place'; text: string }
-  | { kind: 'intersection'; a: string; b: string }
-  | { kind: 'segment'; road: string; from: string; to: string };
+  // `city`: the trailing place an operand carried ("…, San Jose", "… in Campbell"), used to narrow
+  // the lookup when a street pair exists in more than one city.
+  | { kind: 'intersection'; a: string; b: string; city?: string }
+  | { kind: 'segment'; road: string; from: string; to: string; city?: string };
 
 const SUFFIXES: Record<string, string> = {
   st: 'Street',
@@ -50,9 +52,26 @@ export function expandStreetName(name: string): string {
 
 const clean = (s: string): string => s.trim().replace(/[\s,;]+$/, '');
 
-// The final operand can carry a trailing city/state ("Winchester Blvd, San Jose"); cut it at the
-// first comma or " in " / " near " so the street name is what gets expanded.
-const cutTail = (s: string): string => clean(s.split(/,|\s+(?:in|near)\s+/i)[0]!);
+// Any operand can carry a trailing city/state ("Winchester Blvd, San Jose", "Bascom Ave in
+// Campbell"); cut it at the first comma or " in " / " near " so the street name is what gets
+// expanded. The text right after the cut ("San Jose" from "…, San Jose, CA") is the city.
+function cutTail(s: string): { street: string; city: string | undefined } {
+  const [street, city] = s.split(/,|\s+(?:in|near)\s+/i);
+  const c = city?.trim();
+  return { street: clean(street!), city: c ? c : undefined };
+}
+
+// Cuts every operand; the first city found (in operand order) is the query's.
+function cutAll<K extends string>(operands: Record<K, string>): { names: Record<K, string>; city: string | undefined } {
+  const names = {} as Record<K, string>;
+  let city: string | undefined;
+  for (const key of Object.keys(operands) as K[]) {
+    const cut = cutTail(operands[key]);
+    names[key] = expandStreetName(cut.street);
+    city ??= cut.city;
+  }
+  return { names, city };
+}
 
 export function parseLocationText(text: string): LocationQuery | { kind: 'empty' } {
   const input = text
@@ -67,19 +86,16 @@ export function parseLocationText(text: string): LocationQuery | { kind: 'empty'
     /^(.+?)\s+between\s+(.+?)\s+(?:and|&)\s+(.+)$/i.exec(input) ??
     /^(.+?)\s+from\s+(.+?)\s+to\s+(.+)$/i.exec(input);
   if (segment) {
-    return {
-      kind: 'segment',
-      road: expandStreetName(clean(segment[1]!)),
-      from: expandStreetName(clean(segment[2]!)),
-      to: expandStreetName(cutTail(segment[3]!)),
-    };
+    const { names, city } = cutAll({ road: segment[1]!, from: segment[2]!, to: segment[3]! });
+    return { kind: 'segment', ...names, ...(city ? { city } : {}) };
   }
 
   const intersection = /^(.+?)\s*(?:&|\/)\s*(.+)$|^(.+?)\s+(?:and|at)\s+(.+)$/i.exec(input);
   if (intersection) {
     const a = intersection[1] ?? intersection[3]!;
     const b = intersection[2] ?? intersection[4]!;
-    return { kind: 'intersection', a: expandStreetName(clean(a)), b: expandStreetName(cutTail(b)) };
+    const { names, city } = cutAll({ a, b });
+    return { kind: 'intersection', ...names, ...(city ? { city } : {}) };
   }
 
   if (/^\d/.test(input)) return { kind: 'address', text: input };
