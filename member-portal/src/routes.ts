@@ -777,8 +777,7 @@ export function createApp(deps: AppDeps) {
     // origin, and without this a compromised ddplugin.js could fetch sibling /portal pages
     // (the session cookie rides along on same-origin requests — httpOnly protects the cookie
     // value, not cookie-bearing requests) and exfiltrate donor data. Verify the widget still
-    // works under this policy alongside the embed-snippet check (matchingGiftViews.ts NOTE)
-    // before provisioning a key.
+    // works under this policy on the sandbox deploy (matchingGiftViews.ts header comment).
     c.header(
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'unsafe-inline' https://doublethedonation.com; " +

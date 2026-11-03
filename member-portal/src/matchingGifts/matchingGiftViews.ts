@@ -10,12 +10,11 @@ function jsString(value: string): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-// NOTE: the embed shape below (DDCONF global + ddplugin.js/ddplugin.css + the
-// #dd-company-name-search mount div) is written from current Double the Donation plugin
-// knowledge but not yet verified against a live DTD account — written before SVBC subscribed
-// (onboarded 2026-08-20). When the key goes into config, verify against DTD's current embed
-// snippet before deploy (same caveat convention as the Monday query_params NOTEs in
-// monday/client.ts).
+// Embed matches DTD's "Standard Javascript Embed using Shadow DOM Encapsulation" snippet as
+// captured from SVBC's DTD account on 2026-11-03 (ddplugin.js + a #dd-shadow-container div with
+// DTD's attribution links + doublethedonation.plugin.v2.load_plugin(..., {isolated: true})). The
+// key comes from config instead of being pasted in. A browser check of the widget under this
+// page's CSP (routes.ts) is still pending the sandbox deploy.
 //
 // No Subresource Integrity hash on ddplugin.js, deliberately: DTD serves a mutable, unversioned
 // URL they update at will, so any pinned hash silently breaks the widget on their next release.
@@ -24,10 +23,19 @@ function jsString(value: string): string {
 // default. If DTD ever publishes versioned, hash-stable URLs, add SRI then.
 function searchWidget(publicApiKey: string): string {
   return `
-    <div id="dd-company-name-search"></div>
-    <script>var DDCONF = { API_KEY: ${jsString(publicApiKey)} };</script>
-    <link rel="stylesheet" href="https://doublethedonation.com/api/css/ddplugin.css" />
     <script src="https://doublethedonation.com/api/js/ddplugin.js"></script>
+    <div id="dd-shadow-container">
+      <a href="https://doublethedonation.com/matching-grant-resources/matching-gift-basics/">Matching Gift</a> and
+      <a href="https://doublethedonation.com/matching-grant-resources/volunteer-grant-basics/">Volunteer Grant</a> information provided by
+      <br>
+      <a href="https://doublethedonation.com">
+        <img alt="Powered by Double the Donation" src="https://doublethedonation.com/api/img/powered-by.png" />
+      </a>
+    </div>
+    <script>
+      var shadow_container = document.getElementById("dd-shadow-container");
+      doublethedonation.plugin.v2.load_plugin(shadow_container, ${jsString(publicApiKey)}, { isolated: true });
+    </script>
   `;
 }
 

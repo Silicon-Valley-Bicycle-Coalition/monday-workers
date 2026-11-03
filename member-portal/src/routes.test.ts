@@ -2087,8 +2087,8 @@ describe('GET /:locale/portal/matching-gifts', () => {
     const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('id="dd-company-name-search"');
-    expect(html).toContain('"dtd-public-key"');
+    expect(html).toContain('id="dd-shadow-container"');
+    expect(html).toContain('"dtd-public-key", { isolated: true }');
     expect(html).toContain('00-0000000');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
     // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
