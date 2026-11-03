@@ -82,7 +82,7 @@ describe('email-log write switch: consumer', () => {
   it('under off, the no-address reply and the IT Requests alert are recorded too, with no D1 alert row', async () => {
     const { store, monday, reply, deps } = await setup(true);
     const msg = fakeMessage(logMessage({ counterparts: [] }));
-    monday.boardItemsCount.mockResolvedValue(10_000);
+    monday.boardItemsCount.mockResolvedValue(100_000);
     await consumeLogBatch([msg], deps, gate('off'));
     expect(monday.createItem).not.toHaveBeenCalled();
     expect(reply.sendNoAddress).not.toHaveBeenCalled();

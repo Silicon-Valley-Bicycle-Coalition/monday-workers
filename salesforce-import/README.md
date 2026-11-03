@@ -396,6 +396,13 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   imports so the two can't drift), and `configure` then finds it present and leaves it alone.
   The other three labels have no Salesforce source — City or Agency Staff in particular is a
   Monday-side seed from the reviewed `find-city-agency-staff` CSV — so they start empty.
+* **Superseded 2026-11-03: SVBC's real board limit is 100,000 items**, the `items_limit` Monday
+  reports for its boards, not the 10,000 below. The import was sized against 10,000 and has
+  already loaded production, so its settings stay as they are: `boardMaxItems` (9000) still caps
+  the Activities slice and `transform`'s ceiling check still fails a board over 10,000. Both are
+  stricter than they need to be, and changing them only matters if the import runs again. That
+  run would then load more Activities history, which is a scope decision rather than a fix.
+  The rest of this bullet is the 2026-08 reasoning as it stood.
 * **Volume ceiling — verified 2026-08-22, redesigned 2026-08-25.** Monday's limit is a hard
   [10,000 items per board on Basic/Standard/Pro](https://support.monday.com/hc/en-us/articles/4404058746642-Item-and-subitem-limits-per-board)
   (100k on Enterprise), and the org this was built for is on Pro. That caps not just People but

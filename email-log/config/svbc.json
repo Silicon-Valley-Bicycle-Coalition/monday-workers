@@ -49,7 +49,7 @@
     }
   },
   "capacity": {
-    "activitiesMaxItems": 10000,
+    "activitiesMaxItems": 100000,
     "warnPct": 95
   },
   "alerts": {
