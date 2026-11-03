@@ -33,7 +33,7 @@ function testConfig(over: Partial<DonationRollupsConfig['custodian']> = {}): Don
       donorLevel: null,
       volunteerBoards: [],
       historicalVolunteerBoards: [],
-      recurringGifts: null, rollCall: null,
+      recurringGifts: null, rollCall: null, sponsorships: null,
     },
   };
 }

@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig, RollCallConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig, RollCallConfig, SponsorshipsConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -40,6 +40,16 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
     && (typeof columns.actingForLink !== 'string' || columns.actingForLink === '')) {
     throw new Error(`config: donationRollups.donationBoards[${index}].columns.actingForLink must be a column id string, null, or omitted`);
   }
+  for (const key of ['sponsorshipCycle', 'inKindValue'] as const) {
+    if (columns[key] !== undefined && columns[key] !== null
+      && (typeof columns[key] !== 'string' || columns[key] === '')) {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.${key} must be a column id string, null, or omitted`);
+    }
+  }
+  const links = columns.sponsorshipPipelineLinks;
+  if (links !== undefined && (!Array.isArray(links) || links.some((l) => typeof l !== 'string' || l === ''))) {
+    throw new Error(`config: donationRollups.donationBoards[${index}].columns.sponsorshipPipelineLinks must be an array of column id strings or omitted`);
+  }
   let classification: ClassificationColumns | null = null;
   if (columns.classification !== undefined && columns.classification !== null) {
     if (typeof columns.classification !== 'object') {
@@ -69,6 +79,9 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
       termEnd: (columns.termEnd ?? null) as string | null,
       membershipType: (columns.membershipType ?? null) as string | null,
       actingForLink: (columns.actingForLink ?? null) as string | null,
+      ...(columns.sponsorshipCycle !== undefined ? { sponsorshipCycle: columns.sponsorshipCycle as string | null } : {}),
+      ...(columns.inKindValue !== undefined ? { inKindValue: columns.inKindValue as string | null } : {}),
+      ...(links !== undefined ? { sponsorshipPipelineLinks: links as string[] } : {}),
       classification,
     },
   };
@@ -241,6 +254,40 @@ function validateRecurringGifts(raw: unknown): RecurringGiftsConfig | null {
 
 const obj = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
 
+function validateSponsorships(raw: unknown, ownerBoardIds: string[]): SponsorshipsConfig | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('config: "donationRollups.sponsorships" must be an object or null');
+  const s = raw as Record<string, unknown>;
+  if (typeof s.organizationsBoardId !== 'number' || !ownerBoardIds.includes(String(s.organizationsBoardId))) {
+    throw new Error('config: "donationRollups.sponsorships.organizationsBoardId" must be a board id present in donationRollups.ownerColumnsByBoard');
+  }
+  for (const key of ['giftTypes', 'inKindGiftTypes'] as const) {
+    const v = s[key];
+    if (!Array.isArray(v) || v.some((x) => typeof x !== 'string' || x === '')) {
+      throw new Error(`config: "donationRollups.sponsorships.${key}" must be an array of non-empty strings`);
+    }
+  }
+  if (s.yearBasis !== 'calendar' && s.yearBasis !== 'fiscal') {
+    throw new Error('config: "donationRollups.sponsorships.yearBasis" must be "calendar" or "fiscal"');
+  }
+  if (typeof s.windowYears !== 'number' || !Number.isInteger(s.windowYears) || s.windowYears < 1) {
+    throw new Error('config: "donationRollups.sponsorships.windowYears" must be an integer >= 1');
+  }
+  const pb = s.pipelineBoards;
+  if (typeof pb !== 'object' || pb === null || Array.isArray(pb)
+    || Object.entries(pb).some(([k, v]) => k === '' || typeof v !== 'string' || v === '')) {
+    throw new Error('config: "donationRollups.sponsorships.pipelineBoards" must map pipeline board ids to non-empty event names');
+  }
+  return {
+    organizationsBoardId: s.organizationsBoardId,
+    giftTypes: s.giftTypes as string[],
+    inKindGiftTypes: s.inKindGiftTypes as string[],
+    yearBasis: s.yearBasis,
+    windowYears: s.windowYears,
+    pipelineBoards: { ...(pb as Record<string, string>) },
+  };
+}
+
 function validateRollCall(raw: unknown): RollCallConfig | null {
   if (raw === undefined || raw === null) return null;
   const path = 'donationRollups.rollCall';
@@ -373,6 +420,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
   const donorLevel = validateDonorLevel(dr.donorLevel);
   const recurringGifts = validateRecurringGifts(dr.recurringGifts);
   const rollCall = validateRollCall(dr.rollCall);
+  const sponsorships = validateSponsorships(dr.sponsorships, boardIds);
   if (recurringGifts !== null && !Object.values(ownerColumnsByBoard).some((o) => o.hasActiveRecurringGift)) {
     throw new Error('config: at least one ownerColumnsByBoard entry must have "hasActiveRecurringGift" when donationRollups.recurringGifts is configured');
   }
@@ -395,7 +443,7 @@ export function validateConfig(raw: unknown): DonationRollupsConfig {
     fiscalYear: validateFiscalYear(cfg.fiscalYear),
     custodian: validateCustodian(cfg.custodian),
     affiliations,
-    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards, recurringGifts, rollCall },
+    donationRollups: { donationBoards, receivedStatusLabel: dr.receivedStatusLabel, ownerColumnsByBoard, membership, donorLevel, volunteerBoards, historicalVolunteerBoards, recurringGifts, rollCall, sponsorships },
   };
 }
 
