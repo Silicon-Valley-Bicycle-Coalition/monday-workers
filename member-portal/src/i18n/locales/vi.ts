@@ -198,4 +198,6 @@ export const vi: Record<TranslationKey, string> = {
   'letterReady.body': 'Thư ghi nhận đóng góp năm {{year}} của bạn đã sẵn sàng để xem trong cổng thông tin nhà tài trợ.',
   'letterReady.loginLink': 'Đăng nhập để xem',
   'letterReady.expiry': 'Liên kết này sẽ sớm hết hạn và chỉ có thể sử dụng một lần.',
+  'portal.matchedBy': '{{company}} đã đóng góp đối ứng vào {{date}}: {{amount}}',
+  'portal.startMatch': 'Chủ lao động của bạn có thể đóng góp đối ứng cho khoản quyên góp này',
 } satisfies Record<TranslationKey, string>;

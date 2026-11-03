@@ -28,7 +28,11 @@
       "volunteerHours": "numeric_mm794ggj",
       "volunteerDate": "date_mm79agc0",
       "volunteerJob": "text_mm79ax2j",
-      "volunteerStatus": "color_mm79bhta"
+      "volunteerStatus": "color_mm79bhta",
+      "donationMatchesGift": "REPLACE_WITH_COLUMN_ID",
+      "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
+      "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
+      "donorDtdLink": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {

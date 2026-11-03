@@ -26,6 +26,12 @@ export interface MondayColumns {
   volunteerDate: string;
   volunteerJob: string;
   volunteerStatus: string;
+  // DTD (Double the Donation) match columns — gated together by matchLinesEnabled: the first three
+  // live on the Donations board, donorDtdLink on the Donors board.
+  donationMatchesGift: string;
+  donationMatchStatus: string;
+  donationMatchedBy: string;
+  donorDtdLink: string;
 }
 
 // The three donor-facing communication preferences. Each maps to its own gated checkbox column
@@ -268,6 +274,11 @@ export interface DonationRecord {
   date: string;
   amount: string;
   description: string;
+  // An employer's matching gift paired to this one (the latest, if several). Absent/null when
+  // unpaired or the feature is gated off.
+  match?: { date: string; amount: string; company: string } | null;
+  // The donor's own DTD link, set only on an unmatched gift whose Match Status is "Waiting for donor".
+  matchHintUrl?: string | null;
 }
 
 export interface MemberPortalData {

@@ -29,7 +29,11 @@
       "volunteerHours": "volunteer_hours",
       "volunteerDate": "volunteer_date",
       "volunteerJob": "volunteer_job",
-      "volunteerStatus": "volunteer_status"
+      "volunteerStatus": "volunteer_status",
+      "donationMatchesGift": "REPLACE_WITH_COLUMN_ID",
+      "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
+      "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
+      "donorDtdLink": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {

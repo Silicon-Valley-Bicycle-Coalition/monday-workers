@@ -52,8 +52,19 @@ const DONORS: FakeDonor[] = [
     donations: [
       { date: '2024-03-14', amount: '75.00', description: 'Annual membership' },
       { date: '2024-09-02', amount: '150.00', description: 'Bike to Work Day sponsorship' },
-      { date: '2025-01-20', amount: '75.00', description: 'Annual membership renewal' },
-      { date: '2025-06-11', amount: '40.00', description: 'General donation' },
+      {
+        date: '2025-01-20',
+        amount: '75.00',
+        description: 'Annual membership renewal',
+        match: { date: '2025-02-10', amount: '75.00', company: 'Example Corp' },
+      },
+      { date: '2025-02-10', amount: '75.00', description: 'Matching gift' },
+      {
+        date: '2025-06-11',
+        amount: '40.00',
+        description: 'General donation',
+        matchHintUrl: 'https://example.com/match-lookup',
+      },
     ],
   },
   {

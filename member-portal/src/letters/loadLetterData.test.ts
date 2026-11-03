@@ -114,6 +114,10 @@ describe('loadLetterData with the real client (status filtering)', () => {
     volunteerDate: 'vol_date_col',
     volunteerJob: 'vol_job_col',
     volunteerStatus: 'vol_status_col',
+    donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
+    donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
+    donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
+    donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
   };
 
   const donationItem = (id: string, status: string, amount: string) => ({
