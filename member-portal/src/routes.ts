@@ -496,7 +496,7 @@ export function createApp(deps: AppDeps) {
     return c.html(
       page(
         t(locale, 'title.portal') + ' — ' + t(locale, 'site.title'),
-        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor, impact),
+        portalView(data, locale, cards, funraiseLinks(deps.config), eventsByDonor, impact, deps.config.getInvolved.links),
         locale,
         { authenticated: true }
       )

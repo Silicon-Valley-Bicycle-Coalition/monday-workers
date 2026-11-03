@@ -149,6 +149,25 @@ export interface FunraiseLinkUrls {
   renewMembershipUrl: string | null;
 }
 
+// "Get involved" dashboard links (transit-agency and city committee meetings, SVBC events,
+// volunteering). Public pages, not donor data, so production and sandbox may share them.
+export type GetInvolvedCategory = 'transit' | 'civic' | 'events' | 'volunteer';
+
+export interface GetInvolvedLink {
+  category: GetInvolvedCategory;
+  // A committee or agency name, shown untranslated. Omitted for events/volunteer links, which
+  // fall back to the category's translated link text.
+  label?: string;
+  url: string;
+  // Optional subscribable ICS feed (svbc-calendars' committees.bikesiliconvalley.org).
+  calendarUrl?: string;
+}
+
+export interface GetInvolvedConfig {
+  // Empty = the dashboard section is omitted.
+  links: GetInvolvedLink[];
+}
+
 export interface PledgeColumns {
   donorLink: string;
   pledgedAmount: string;
@@ -233,6 +252,7 @@ export interface Config {
   donations: DonationsConfig;
   eventRegistrations: EventRegistrationsConfig;
   funraise: FunraiseConfig;
+  getInvolved: GetInvolvedConfig;
   pledges: PledgesConfig;
   matchingGifts: MatchingGiftsConfig;
   impact: ImpactConfig;

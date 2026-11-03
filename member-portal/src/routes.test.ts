@@ -223,6 +223,7 @@ const config: Config = {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
   },
+  getInvolved: { links: [] },
   pledges: {
     boardId: 777,
     columns: {
