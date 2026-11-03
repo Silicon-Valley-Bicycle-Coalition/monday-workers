@@ -7,34 +7,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getCityBoundaries, findCityForPoint, getPolylineMidpoint } = require('./cityBoundaries');
-const { getCountyBoundaries, resolveCountyForPoint } = require('./countyBoundaries');
+const { getCityBoundaries } = require('./cityBoundaries');
+const { getCountyBoundaries } = require('./countyBoundaries');
 const { getSupplementalData } = require('./supplementalSources');
+const { queryAllFeatures } = require('./arcgis');
+const { buildBoundaryIndex, attributePolyline } = require('./clipping');
 
-// County bounding boxes (approximate, WGS84) - used only to fetch a superset
-// of candidate segments from the MTC API. Actual county attribution uses the
-// real polygons from countyBoundaries.js, since these boxes are much larger
-// than the counties' true shape.
-// Source: US Census TIGER/Line data
+// Counties tracked. Their real (legal) boundaries come from Census TIGERweb
+// via countyBoundaries.js; MTC segments are clipped to those polygons, so
+// every mile is counted once, in the county and city it lies in.
 const COUNTIES = {
-  'San Mateo': {
-    fips: '06081',
-    bounds: {
-      xmin: -122.52,
-      ymin: 37.11,
-      xmax: -122.08,
-      ymax: 37.71
-    }
-  },
-  'Santa Clara': {
-    fips: '06085',
-    bounds: {
-      xmin: -122.20,
-      ymin: 36.89,
-      xmax: -121.21,
-      ymax: 37.48
-    }
-  }
+  'San Mateo': { fips: '06081' },
+  'Santa Clara': { fips: '06085' }
 };
 
 // Bike lane class descriptions
@@ -45,196 +29,135 @@ const CLASS_NAMES = {
   4: 'Class IV - Separated Bikeway'
 };
 
+// Counting method, stored on each history snapshot. Totals from different
+// methods aren't comparable, so the site marks a method break in the history
+// instead of showing it as a change in miles. Snapshots without a method
+// field predate versioning and count as method 1.
+//   1: county bounding boxes, whole segments attributed by one point
+//   2: segments clipped to real county and city boundaries; paged queries
+//      (November 2026)
+const METHOD_VERSION = 2;
+
 const MTC_API_BASE = 'https://services3.arcgis.com/i2dkYWmb4wHvYPda/arcgis/rest/services/regional_bike_facilities/FeatureServer/0';
 
 /**
- * Calculate distance in miles between two coordinates using Haversine formula
+ * Query every bike facility intersecting the counties' combined extent.
+ * The extent only narrows the download; clipping decides what counts.
  */
-function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 3958.8; // Earth's radius in miles
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-/**
- * Calculate total length of a polyline in miles
- */
-function calculatePolylineLength(paths) {
-  let totalLength = 0;
-  for (const path of paths) {
-    for (let i = 0; i < path.length - 1; i++) {
-      const [lon1, lat1] = path[i];
-      const [lon2, lat2] = path[i + 1];
-      totalLength += haversineDistance(lat1, lon1, lat2, lon2);
+async function queryBikeFacilities(countyBoundaries) {
+  let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+  for (const county of Object.values(countyBoundaries)) {
+    for (const ring of county.rings) {
+      for (const [x, y] of ring) {
+        xmin = Math.min(xmin, x);
+        xmax = Math.max(xmax, x);
+        ymin = Math.min(ymin, y);
+        ymax = Math.max(ymax, y);
+      }
     }
   }
-  return totalLength;
-}
 
-/**
- * Query bike facilities within a bounding box
- */
-async function queryBikeFacilities(bounds) {
-  const geometry = JSON.stringify({
-    xmin: bounds.xmin,
-    ymin: bounds.ymin,
-    xmax: bounds.xmax,
-    ymax: bounds.ymax,
-    spatialReference: { wkid: 4326 }
-  });
-
-  const params = new URLSearchParams({
+  return queryAllFeatures(MTC_API_BASE, {
     where: '1=1',
-    geometry: geometry,
+    geometry: JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 4326 } }),
     geometryType: 'esriGeometryEnvelope',
+    inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'class',
+    outFields: 'objectid,class',
     returnGeometry: 'true',
-    f: 'json'
-  });
-
-  const url = `${MTC_API_BASE}/query?${params}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (data.error) {
-    throw new Error(`API error: ${data.error.message}`);
-  }
-
-  return data.features || [];
+    outSR: '4326'
+  }, { orderByFields: 'objectid' });
 }
 
-/**
- * Aggregate features by class type and calculate miles
- */
-function aggregateByClass(features) {
-  const byClass = {};
-
-  for (const feature of features) {
-    const classType = feature.attributes.class;
-    const miles = calculatePolylineLength(feature.geometry.paths);
-
-    if (!byClass[classType]) {
-      byClass[classType] = {
-        class: classType,
-        className: CLASS_NAMES[classType] || `Class ${classType}`,
-        miles: 0,
-        segments: 0
-      };
-    }
-
-    byClass[classType].miles += miles;
-    byClass[classType].segments += 1;
+function addMiles(byClass, classType, miles, segments) {
+  if (!byClass[classType]) {
+    byClass[classType] = {
+      class: classType,
+      className: CLASS_NAMES[classType] || `Class ${classType}`,
+      miles: 0,
+      segments: 0
+    };
   }
+  byClass[classType].miles += miles;
+  byClass[classType].segments += segments;
+}
 
-  // Round miles and sort by class
+function roundClasses(byClass) {
   return Object.values(byClass)
-    .map(item => ({
-      ...item,
-      miles: Math.round(item.miles * 100) / 100
-    }))
+    .map(item => ({ ...item, miles: Math.round(item.miles * 100) / 100 }))
     .sort((a, b) => a.class - b.class);
 }
 
 /**
- * Aggregate features by city using spatial intersection
- * Includes class breakdown per city
- * Returns both city data and features that belong to this county
+ * Clip every feature to the county and city polygons and total miles per
+ * county, city, and class. A feature that crosses a boundary contributes
+ * each part of its length to the place that part lies in; its segment
+ * count goes to the place holding most of its length, so segment counts
+ * still sum to the number of features counted. Parts outside both counties
+ * are dropped.
  */
-function aggregateByCity(features, cityBoundaries, countyName, countyBoundaries) {
-  const byCity = {};
-  const countyFeatures = []; // Track features that actually belong to this county
+function aggregateByCounty(features, index) {
+  const counties = {};
+  for (const countyName of Object.keys(COUNTIES)) {
+    counties[countyName] = { byClass: {}, byCity: {} };
+  }
 
   for (const feature of features) {
     const classType = feature.attributes.class;
-    const midpoint = getPolylineMidpoint(feature.geometry.paths);
+    const parts = attributePolyline(feature.geometry.paths, index)
+      .filter(part => counties[part.county]);
+    if (parts.length === 0) continue;
 
-    let cityName = 'Unincorporated';
-    let belongsToCounty = true;
+    const main = parts.reduce((a, b) => (b.miles > a.miles ? b : a));
 
-    if (midpoint) {
-      const [lon, lat] = midpoint;
-      const cityInfo = findCityForPoint(lon, lat, cityBoundaries);
-      if (cityInfo) {
-        if (cityInfo.county === countyName) {
-          cityName = cityInfo.name;
-        } else {
-          // This segment is in another county's city - skip it
-          // It will be counted when that county is processed
-          belongsToCounty = false;
-        }
-      } else {
-        // Not inside any known city - resolve against real county polygons
-        // (not the query bounding box) so segments in the gap between the
-        // box and the true county shape - or in the overlap between two
-        // adjacent counties' boxes - are attributed to exactly one county.
-        belongsToCounty = resolveCountyForPoint(lon, lat, countyBoundaries) === countyName;
+    for (const part of parts) {
+      const county = counties[part.county];
+      const segments = part === main ? 1 : 0;
+      if (!county.byCity[part.city]) {
+        county.byCity[part.city] = { name: part.city, miles: 0, segments: 0, byClass: {} };
       }
+      const city = county.byCity[part.city];
+      city.miles += part.miles;
+      city.segments += segments;
+      addMiles(city.byClass, classType, part.miles, segments);
+      addMiles(county.byClass, classType, part.miles, segments);
     }
-
-    // Skip segments that belong to another county
-    if (!belongsToCounty) {
-      continue;
-    }
-
-    countyFeatures.push(feature);
-    const miles = calculatePolylineLength(feature.geometry.paths);
-
-    if (!byCity[cityName]) {
-      byCity[cityName] = {
-        name: cityName,
-        miles: 0,
-        segments: 0,
-        byClass: {}
-      };
-    }
-
-    byCity[cityName].miles += miles;
-    byCity[cityName].segments += 1;
-
-    // Track by class within city
-    if (!byCity[cityName].byClass[classType]) {
-      byCity[cityName].byClass[classType] = {
-        class: classType,
-        className: CLASS_NAMES[classType] || `Class ${classType}`,
-        miles: 0,
-        segments: 0
-      };
-    }
-    byCity[cityName].byClass[classType].miles += miles;
-    byCity[cityName].byClass[classType].segments += 1;
   }
 
-  // Round miles and convert byClass to sorted array
-  const citiesArray = Object.values(byCity)
-    .map(city => ({
-      ...city,
-      miles: Math.round(city.miles * 100) / 100,
-      byClass: Object.values(city.byClass)
-        .map(item => ({
-          ...item,
-          miles: Math.round(item.miles * 100) / 100
-        }))
-        .sort((a, b) => a.class - b.class)
-    }))
-    .sort((a, b) => b.miles - a.miles);
+  for (const county of Object.values(counties)) {
+    county.byClass = roundClasses(county.byClass);
+    county.byCity = Object.values(county.byCity)
+      .map(city => ({
+        ...city,
+        miles: Math.round(city.miles * 100) / 100,
+        byClass: roundClasses(city.byClass)
+      }))
+      .sort((a, b) => b.miles - a.miles);
+  }
 
-  // Return both the city breakdown and the filtered features
-  return {
-    byCity: citiesArray,
-    countyFeatures: countyFeatures
-  };
+  return counties;
+}
+
+/**
+ * Add (sign 1) or remove (sign -1) a city's class miles from its county's
+ * byClass, so the county breakdown follows a comprehensive city source that
+ * replaces the MTC data for that city
+ */
+function adjustCountyClass(county, classData, sign) {
+  let entry = county.byClass.find(c => c.class === classData.class);
+  if (!entry) {
+    entry = {
+      class: classData.class,
+      className: CLASS_NAMES[classData.class] || `Class ${classData.class}`,
+      miles: 0,
+      segments: 0,
+      supplemental: true
+    };
+    county.byClass.push(entry);
+    county.byClass.sort((a, b) => a.class - b.class);
+  }
+  entry.miles = Math.round((entry.miles + sign * classData.miles) * 100) / 100;
+  entry.segments += sign * classData.segments;
 }
 
 /**
@@ -246,9 +169,11 @@ module.exports = async function() {
   // Load city and county boundaries for spatial intersection
   const cityBoundaries = await getCityBoundaries();
   const countyBoundaries = await getCountyBoundaries();
+  const index = buildBoundaryIndex(countyBoundaries, cityBoundaries);
 
   const results = {
     fetchedAt: new Date().toISOString(),
+    method: METHOD_VERSION,
     source: 'MTC Regional Bike Facilities',
     sourceUrl: 'https://opendata.mtc.ca.gov/datasets/regional-bike-facilities',
     counties: {},
@@ -259,51 +184,42 @@ module.exports = async function() {
     }
   };
 
+  const features = await queryBikeFacilities(countyBoundaries);
+  console.log(`  Fetched ${features.length} MTC segments in the counties' extent`);
+  const byCounty = aggregateByCounty(features, index);
+
   for (const [countyName, countyData] of Object.entries(COUNTIES)) {
-    console.log(`  Fetching ${countyName} County...`);
+    const { byClass, byCity } = byCounty[countyName];
 
-    try {
-      const features = await queryBikeFacilities(countyData.bounds);
+    const totalMiles = byClass.reduce((sum, item) => sum + item.miles, 0);
+    const totalSegments = byClass.reduce((sum, item) => sum + item.segments, 0);
 
-      // First aggregate by city to filter out segments that belong to other counties
-      const { byCity, countyFeatures } = aggregateByCity(features, cityBoundaries, countyName, countyBoundaries);
+    results.counties[countyName] = {
+      fips: countyData.fips,
+      totalMiles: Math.round(totalMiles * 100) / 100,
+      totalSegments: totalSegments,
+      byClass: byClass,
+      byCity: byCity
+    };
 
-      // Use filtered features for class aggregation (excludes other-county segments)
-      const byClass = aggregateByClass(countyFeatures);
+    // Add to grand totals
+    results.totals.miles += totalMiles;
+    results.totals.segments += totalSegments;
 
-      const totalMiles = byClass.reduce((sum, item) => sum + item.miles, 0);
-      const totalSegments = byClass.reduce((sum, item) => sum + item.segments, 0);
-
-      results.counties[countyName] = {
-        fips: countyData.fips,
-        totalMiles: Math.round(totalMiles * 100) / 100,
-        totalSegments: totalSegments,
-        byClass: byClass,
-        byCity: byCity
-      };
-
-      // Add to grand totals
-      results.totals.miles += totalMiles;
-      results.totals.segments += totalSegments;
-
-      for (const item of byClass) {
-        if (!results.totals.byClass[item.class]) {
-          results.totals.byClass[item.class] = {
-            class: item.class,
-            className: item.className,
-            miles: 0,
-            segments: 0
-          };
-        }
-        results.totals.byClass[item.class].miles += item.miles;
-        results.totals.byClass[item.class].segments += item.segments;
+    for (const item of byClass) {
+      if (!results.totals.byClass[item.class]) {
+        results.totals.byClass[item.class] = {
+          class: item.class,
+          className: item.className,
+          miles: 0,
+          segments: 0
+        };
       }
-
-      console.log(`    Found ${totalSegments} segments, ${totalMiles.toFixed(2)} miles in ${byCity.length} cities`);
-    } catch (error) {
-      console.error(`  Error fetching ${countyName} County:`, error.message);
-      throw error; // Fail the build
+      results.totals.byClass[item.class].miles += item.miles;
+      results.totals.byClass[item.class].segments += item.segments;
     }
+
+    console.log(`  ${countyName} County: ${totalSegments} segments, ${totalMiles.toFixed(2)} miles in ${byCity.length} cities`);
   }
 
   // Fetch supplemental Class IV data from city sources
@@ -365,6 +281,7 @@ module.exports = async function() {
               if (totalClassEntry) {
                 totalClassEntry.miles -= classData.miles;
               }
+              adjustCountyClass(results.counties[countyName], classData, -1);
             }
             // Remove the old MTC-based city entry
             results.counties[countyName].byCity.splice(cityIndex, 1);
@@ -389,6 +306,7 @@ module.exports = async function() {
               totalClassEntry = results.totals.byClass[classData.class];
             }
             totalClassEntry.miles += classData.miles;
+            adjustCountyClass(results.counties[countyName], classData, 1);
           }
         // Handle non-comprehensive, Class IV-only sources
         } else if (cityEntry && citySuppData.class4) {
@@ -478,6 +396,7 @@ async function appendToHistory(data) {
   const snapshot = {
     date: today,
     fetchedAt: data.fetchedAt,
+    method: data.method,
     totals: data.totals,
     counties: data.counties
   };

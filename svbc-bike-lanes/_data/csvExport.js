@@ -104,7 +104,9 @@ function generateCSV(bikelanes, history, unit) {
       const prevSnapshot = snapshots[i + 1];
 
       let change = '—';
-      if (prevSnapshot) {
+      if (prevSnapshot && (snapshot.method || 1) !== (prevSnapshot.method || 1)) {
+        change = 'method changed';
+      } else if (prevSnapshot) {
         const diff = snapshot.totals.miles - prevSnapshot.totals.miles;
         const convertedDiff = convert(diff);
         const rounded = Math.round(convertedDiff * 10) / 10;

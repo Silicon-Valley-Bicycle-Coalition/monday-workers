@@ -2,19 +2,14 @@
  * Fetches and caches real county boundary polygons for San Mateo and Santa
  * Clara Counties, from the US Census Bureau TIGERweb service.
  *
- * The MTC bike facilities query uses hand-picked rectangular bounding boxes
- * to fetch candidate segments, but those boxes are much larger than the
- * counties' true (non-rectangular) shape - roughly a third to two-fifths of
- * each box's area falls outside the actual county. Segments whose midpoint
- * isn't inside any known city polygon (rural land, bay-trail/levee
- * segments, bridge approaches) need to be checked against real county
- * geometry, not just the query bounding box, or they get attributed to
- * whichever county's box happens to contain them.
+ * These are the counties' legal boundaries, including their share of the
+ * bay, so bay-trail levees and bridge approaches fall inside the county they
+ * belong to. clipping.js cuts every MTC segment at these lines; anything
+ * outside both polygons (San Francisco, Alameda, Santa Cruz...) is dropped.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { pointInPolygon } = require('./cityBoundaries');
 
 const COUNTY_API_BASE = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/tigerWMS_Current/MapServer/82';
 
@@ -97,40 +92,6 @@ async function getCountyBoundaries() {
   return counties;
 }
 
-/**
- * Determine which county a point truly belongs to using real polygons,
- * rather than the query bounding boxes. Falls back to the nearest polygon
- * vertex when the point isn't inside any county's polygon (e.g. a bay-trail
- * levee or bridge-approach segment that sits just outside TIGER's land
- * boundary) so it still resolves to exactly one county instead of being
- * dropped or double-counted.
- */
-function resolveCountyForPoint(lon, lat, countyBoundaries) {
-  for (const county of Object.values(countyBoundaries)) {
-    for (const ring of county.rings) {
-      if (pointInPolygon(lon, lat, ring)) {
-        return county.name;
-      }
-    }
-  }
-
-  let closest = null;
-  let closestDist = Infinity;
-  for (const county of Object.values(countyBoundaries)) {
-    for (const ring of county.rings) {
-      for (const [vx, vy] of ring) {
-        const dist = Math.hypot(lon - vx, lat - vy);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closest = county.name;
-        }
-      }
-    }
-  }
-  return closest;
-}
-
 module.exports = {
-  getCountyBoundaries,
-  resolveCountyForPoint
+  getCountyBoundaries
 };

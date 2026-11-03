@@ -33,57 +33,6 @@ function pointInPolygon(x, y, polygon) {
 }
 
 /**
- * Check if a point is inside any ring of a polygon (handles holes)
- */
-function pointInPolygonWithHoles(x, y, rings) {
-  // First ring is outer boundary, subsequent rings are holes
-  if (!pointInPolygon(x, y, rings[0])) {
-    return false;
-  }
-  // Check if point is in any hole
-  for (let i = 1; i < rings.length; i++) {
-    if (pointInPolygon(x, y, rings[i])) {
-      return false; // Point is in a hole
-    }
-  }
-  return true;
-}
-
-/**
- * Find which city a point belongs to
- * Returns city name or 'Unincorporated' if not in any city
- */
-function findCityForPoint(lon, lat, cityBoundaries) {
-  for (const city of cityBoundaries) {
-    for (const polygon of city.polygons) {
-      if (pointInPolygonWithHoles(lon, lat, polygon)) {
-        return { name: city.name, county: city.county };
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Calculate the midpoint of a polyline segment
- */
-function getPolylineMidpoint(paths) {
-  // Get all points
-  const allPoints = [];
-  for (const path of paths) {
-    for (const point of path) {
-      allPoints.push(point);
-    }
-  }
-
-  if (allPoints.length === 0) return null;
-
-  // Return the middle point of the path
-  const midIndex = Math.floor(allPoints.length / 2);
-  return allPoints[midIndex];
-}
-
-/**
  * Fetch city boundaries from CA Open Data API
  */
 async function fetchCityBoundaries() {
@@ -171,7 +120,5 @@ async function getCityBoundaries() {
 
 module.exports = {
   getCityBoundaries,
-  findCityForPoint,
-  getPolylineMidpoint,
   pointInPolygon
 };
