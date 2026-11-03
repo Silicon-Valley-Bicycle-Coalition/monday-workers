@@ -5,6 +5,18 @@ export function dateCol(iso: string | null | undefined): unknown {
   return { date: iso.slice(0, 10) };
 }
 
+// en-CA formats as YYYY-MM-DD. The org and every event run on Pacific time (monday-migration docs/07 §7).
+const pacificDay = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+// For a true datetime field, which the API returns in UTC: dateCol's slice puts anything after
+// 4 or 5 pm Pacific on the next day. Same day eventbrite-sync writes (src/util/isoDate.ts).
+export function pacificDateCol(iso: string | null | undefined): unknown {
+  const ms = Date.parse(iso ?? '');
+  return Number.isNaN(ms) ? null : { date: pacificDay.format(ms) };
+}
+
 // SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes
 // into the fiscal year ending the following June once its month is July or later. Integer
 // parsing, not Date-object arithmetic — no timezone conversion needed since CloseDate/

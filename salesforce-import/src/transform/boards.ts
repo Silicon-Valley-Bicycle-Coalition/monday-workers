@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
+import { dateCol, funraiseTransactionLink, ownerAttribution, pacificDateCol, salesforceDebug } from './fields.js';
 import { attributionColumns } from './attribution.js';
 
 const ANNUAL: Record<string, number> = { Yearly: 1, Quarterly: 4, Monthly: 12 };
@@ -126,7 +126,7 @@ export function eventbriteEventToPayload(
     columns: {
       'Source': label('Eventbrite'), 'Program': label(programFromOrganizer(e['eb4sf__Organizer_Name__c'])),
       'Event Status': label(EVENTBRITE_EVENT_STATUS[status] ?? 'Completed'),
-      'Date': dateCol(e['eb4sf__Start__c'] as string), 'End': dateCol(e['eb4sf__End__c'] as string),
+      'Date': pacificDateCol(e['eb4sf__Start__c'] as string), 'End': pacificDateCol(e['eb4sf__End__c'] as string),
       'Venue': venue?.eb4sf__Name__c ?? '', 'City': venue?.eb4sf__City__c ?? '',
       'Address': venue?.eb4sf__Localized_Address_Display__c ?? '',
       'Tickets Sold': String(e['eb4sf__Total_Tickets_Sold__c'] ?? ''),
