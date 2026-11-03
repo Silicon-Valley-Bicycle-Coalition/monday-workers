@@ -2,7 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/funraise-sync.md`](../docs/uat/funraise-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
+**Status:** Decided — Option B (full retirement). Build the direct sync. **Production:** every
+id in `config/svbc.json` filled for the Donations, Recurring Gifts and People boards in workspace
+18201685 on 2026-11-01 (aa45bb1), and it created production's first Worker-written gifts on
+2026-11-02 (`donation-rollups/README.md`, "Acknowledgment Tier backstop"). This repo doesn't
+record when Funraise's webhook was repointed from the sandbox Worker to production (procedure: "Replaying one
+Worker's deliveries into another" below). The sandbox history follows. **Running as
 `svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
 2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
 `svbc-funraise-sync` is retired until cutover) — see "Deployed and verified". **Remapped to the

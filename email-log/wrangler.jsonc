@@ -72,8 +72,8 @@
         {
           "binding": "DB",
           "database_name": "svbc-email-log-sandbox",
-          // Not yet created. `wrangler d1 create svbc-email-log-sandbox` and paste the id.
-          "database_id": "REPLACE_WITH_SANDBOX_D1_ID",
+          // Created 2026-11-02.
+          "database_id": "4be38f83-8b5f-479d-b481-e4a8312ddf0d",
           "migrations_dir": "migrations"
         }
       ],

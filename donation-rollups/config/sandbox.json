@@ -29,7 +29,9 @@
             "fiscalQuarter": "color_mm8jqpx0",
             "giftFiscalYear": "color_mm8j5her",
             "acknowledgmentTier": "color_mm8j2m0m"
-          }
+          },
+          "sponsorshipCycle": "text_mm8hkfm6",
+          "inKindValue": "numeric_mm8hpt4q"
         }
       }
     ],
@@ -241,6 +243,18 @@
           "dontList": "boolean_mm8qt96y"
         }
       }
+    },
+    "sponsorships": {
+      "organizationsBoardId": 18437342579,
+      "giftTypes": [
+        "Sponsorship"
+      ],
+      "inKindGiftTypes": [
+        "In Kind Donation / Sponsorship"
+      ],
+      "yearBasis": "calendar",
+      "windowYears": 7,
+      "pipelineBoards": {}
     }
   },
   "custodian": {

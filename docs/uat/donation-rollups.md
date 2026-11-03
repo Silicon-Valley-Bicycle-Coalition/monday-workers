@@ -1,6 +1,8 @@
 # UAT script: donation rollups
 
-**Status 2026-09-30: testable now.** Live against the `(sandbox v3)` boards.
+**Status 2026-11-02: testable now, on the `(sandbox v4)` boards.** The integration moved there on
+2026-10-28. A gift added on the older `(sandbox v3)` Donations board no longer updates anyone's
+totals, so use the v4 links below.
 
 ## What it does
 
@@ -29,10 +31,10 @@ do not.
 ## Try it
 
 1. **Add a gift and watch the totals move.** On
-   [Donations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577310) add an item:
+   [Donations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342657) add an item:
    pick a person you know as **Donor**, set **Amount**, today's **Date**, Status **Received**, Gift
    Type **Donation**. Open that person on
-   [People (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577220). Within about a
+   [People (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342592). Within about a
    minute their Lifetime Giving, Gift Count, Last Gift Date and Amount, This Year Amount, and, if it
    is their biggest, Largest Gift should reflect it. Donor Level moves up if the gift crosses a
    threshold.
@@ -52,12 +54,12 @@ do not.
    Fiscal Quarter, and Gift Fiscal Year, fill in overnight (the nightly pass runs around 2 am
    Pacific). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.
 5. **Annual Giving Summary.** Open
-   [Annual Giving Summary (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431966690):
+   [Annual Giving Summary (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437530607):
    one row per closed fiscal year, FY2005 and FY2009 through FY2025, with Total Received, Gift
    Count, and the By Gift Type split. Check a year you remember. This board only changes when a
    year closes (July 15), so it won't move during UAT.
 6. **An organization's gift.** Repeat step 1 with an organization as Donor and check its totals on
-   [Organizations (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577213).
+   [Organizations (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437342579).
 
 Clean up the test gifts when you are done, or leave them named "UAT test" so they are easy to
 spot.

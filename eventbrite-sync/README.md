@@ -4,10 +4,12 @@
 
 **Status:** Built (`feat/eventbrite-orders`, 2026-10-06; design:
 [`docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md`](../docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md))
-— **not deployed anywhere yet.** Blocked on prerequisites nobody has done: the `Eventbrite Order
-ID` column's id in config (see "Prerequisite column"), an Eventbrite private token, D1 and queue
-provisioning, the three secrets, and the webhook registration. The `Refunded` Status label it
-shares with `funraise-sync` is also still missing from the board.
+— **deployed: sandbox 2026-10-26, production 2026-11-02** (see "Deploy"). Production's order path
+is filled from the live boards (Donations, People, `Eventbrite Order ID` `text_mm8n459q`; c579d0d),
+with its own D1 and queues; its attendee feed is still unset, so only the order webhook is
+registered there. The sandbox order path still can't write: `orderIdColumn` in
+`config/sandbox.json` is `REPLACE_WITH_COLUMN_ID`. This README doesn't record whether the
+`Refunded` Status label it shares with `funraise-sync` has been added to either board.
 **Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
 [`docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md`](../docs/superpowers/specs/2026-10-26-eventbrite-attendees-class-emails-design.md);
 see "Attendee feed and class emails" below). Rehearsed in the sandbox only; production still needs
@@ -474,9 +476,8 @@ outbound sink to lock; `config/split.test.ts` fails if the two configs share an 
 `env.sandbox` shares a resource with the top level. Design:
 `../docs/superpowers/specs/2026-09-18-sandbox-environment-design.md`. Local development against
 the sandbox is `npm run dev:sandbox`. The sandbox D1 now exists (created
-2026-10-26; migrations 0001–0002 applied, `svbc-eventbrite-sync-sandbox` deployed). Production is
-not provisioned: its `database_id` in `wrangler.jsonc` is a placeholder until `wrangler d1 create`
-runs.
+2026-10-26; migrations 0001–0002 applied, `svbc-eventbrite-sync-sandbox` deployed). Production's
+D1 `svbc-eventbrite-sync` was created 2026-11-02 and its id wired into `wrangler.jsonc` (c579d0d).
 
 **Workers Builds:** connect `svbc-eventbrite-sync-sandbox` to this repo with root directory
 `/eventbrite-sync` and deploy command `npx wrangler deploy --env sandbox`, as for the other

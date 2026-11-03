@@ -5,8 +5,8 @@
   },
   "window": { "years": 7, "timeZone": "America/Los_Angeles" },
   "boards": {
-    "live": { "boardId": 0, "groupId": null },
-    "historical": { "boardId": 0, "groupId": null }
+    "live": { "boardId": 18437909781, "groupId": null },
+    "historical": { "boardId": 18437909784, "groupId": null }
   },
   "peopleColumns": {
     "lastGift": "Last Gift Date",
@@ -16,14 +16,14 @@
   },
   "perpetual": { "lifetimeTierLabel": "Lifetime", "funraiseLinked": true },
   "eventRegistrations": {
-    "boardId": 0,
+    "boardId": 18437909792,
     "columns": { "attendee": "Attendee", "event": "Event", "attendance": "Attendance", "source": "Source" },
     "countedAttendanceLabels": ["Attended"],
     "countedRegisteredSources": ["Funraise"],
-    "events": { "boardId": 0, "startColumn": "Date" }
+    "events": { "boardId": 18437909790, "startColumn": "Date" }
   },
   "volunteers": {
-    "boardId": 0,
+    "boardId": 18437909797,
     "columns": { "volunteer": "Volunteer", "date": "Date" }
   },
   "thresholds": { "itemsLimit": 10000, "liveTriggerPct": 85, "historicalWarnPct": 80 },

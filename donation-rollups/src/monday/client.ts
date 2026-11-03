@@ -28,6 +28,12 @@ export interface DonationRecord {
   // The Affiliation item this donation's Acting for column points at. undefined when the
   // board has no actingForLink configured; null when the column is configured but empty.
   actingForItemId?: string | null;
+  // Sponsorship facts; each undefined when its column isn't configured on the board.
+  sponsorshipCycle?: string | null; // trimmed text, null when blank
+  inKindValueCents?: number | null; // parseAmountCents of the cell, null when blank
+  pipelineItemId?: string | null; // first linked id across sponsorshipPipelineLinks, null when none
+  // The item is archived: its board_relation columns read back empty (issue #26), so link-derived facts are unreliable.
+  archived?: boolean;
 }
 
 export interface AffiliationSummary {
@@ -90,6 +96,7 @@ export type DonationReadColumns = {
   amount: string; date: string; fiscalYear: string | null; status: string;
   giftType?: string | null; termStart?: string | null; termEnd?: string | null; membershipType?: string | null;
   actingForLink?: string | null;
+  sponsorshipCycle?: string | null; inKindValue?: string | null; sponsorshipPipelineLinks?: string[];
 };
 
 export interface DonationRollupsMondayClient {
@@ -115,6 +122,8 @@ export interface DonationRollupsMondayClient {
     columns: DonationReadColumns,
     fiscalYearStartMonth: number,
   ): Promise<DonationRecord[]>;
+  // Each item's board id and group title; an item Monday no longer returns is absent from the map.
+  getItemsBoardAndGroup(itemIds: string[]): Promise<Map<string, { boardId: string; groupTitle: string }>>;
   // The eight membership columns on a People-type owner, as label/date text — the membership
   // step's "what does the board hold" read (spec §"Merge with the board"). A missing item
   // reads as all-null so a deleted owner degrades to "never a member", not a thrown recompute.
@@ -300,7 +309,10 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       ...(columns.termStart ? [columns.termStart] : []),
       ...(columns.termEnd ? [columns.termEnd] : []),
       ...(columns.membershipType ? [columns.membershipType] : []),
-      ...(columns.actingForLink ? [columns.actingForLink] : [])];
+      ...(columns.actingForLink ? [columns.actingForLink] : []),
+      ...(columns.sponsorshipCycle ? [columns.sponsorshipCycle] : []),
+      ...(columns.inKindValue ? [columns.inKindValue] : []),
+      ...(columns.sponsorshipPipelineLinks ?? [])];
     const donations: DonationRecord[] = [];
     const optionalText = (byId: Map<string, string>, id: string | null | undefined): string | null | undefined =>
       id ? (byId.get(id) || null) : undefined;
@@ -351,16 +363,41 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
         const actingForItemId = columns.actingForLink
           ? (item.column_values.find((cv) => cv.id === columns.actingForLink)?.linked_item_ids?.[0] ?? null)
           : undefined;
+        const optionalTrimmed = (id: string | null | undefined): string | null | undefined =>
+          id ? (byId.get(id)?.trim() || null) : undefined;
+        const pipelineItemId = columns.sponsorshipPipelineLinks?.length
+          ? (columns.sponsorshipPipelineLinks
+              .flatMap((id) => item.column_values.find((cv) => cv.id === id)?.linked_item_ids ?? [])[0] ?? null)
+          : undefined;
         donations.push({
           id: item.id, amountCents, dateISO, fiscalYear, status, giftType,
           termStart: optionalDate(byId, columns.termStart),
           termEnd: optionalDate(byId, columns.termEnd),
           membershipType: optionalText(byId, columns.membershipType),
           actingForItemId,
+          sponsorshipCycle: optionalTrimmed(columns.sponsorshipCycle),
+          inKindValueCents: columns.inKindValue ? parseAmountCents(byId.get(columns.inKindValue)) : undefined,
+          pipelineItemId,
+          archived: item.state === 'archived',
         });
       }
     }
     return donations;
+  }
+
+  async getItemsBoardAndGroup(itemIds: string[]): Promise<Map<string, { boardId: string; groupTitle: string }>> {
+    const out = new Map<string, { boardId: string; groupTitle: string }>();
+    for (const chunk of chunksOf(itemIds, 100)) {
+      // limit: 100 — same silent-25 default as getDonationsByIds above.
+      const data = await this.graphql<{ items: { id: string; board: { id: string } | null; group: { title: string } | null }[] }>(
+        `query ($ids: [ID!]) { items(ids: $ids, limit: 100) { id board { id } group { title } } }`,
+        { ids: chunk },
+      );
+      for (const item of data.items) {
+        if (item.board) out.set(item.id, { boardId: item.board.id, groupTitle: item.group?.title ?? '' });
+      }
+    }
+    return out;
   }
 
   async getOwnerMembership(ownerItemId: string, columns: OwnerMembershipColumns): Promise<BoardMembership> {

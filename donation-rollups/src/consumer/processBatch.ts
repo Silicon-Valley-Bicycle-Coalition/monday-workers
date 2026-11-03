@@ -11,7 +11,7 @@ import type {
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns, DonorLevelConfig,
 } from '../types';
 import { donorLevel } from '../rollups/donorLevel';
-import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
+import { computeRollup, currentFiscalYear, localDateParts, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
@@ -25,6 +25,7 @@ import {
 } from '../membership/derive';
 import { attributedRollupFromTotals, attributedToColumnValues, organizationalGivingColumnValue } from '../rollups/attributed';
 import { formatCents } from '../money';
+import { buildSponsorshipsMarkdown } from '../projections/sponsorships';
 import { registrationQualifies } from '../membership/volunteer';
 
 export interface QueueMessageLike<T> {
@@ -407,6 +408,13 @@ async function recomputeOwner(
   }
 }
 
+// The per-board read columns; the three sponsorship columns ride along only when the feature is on.
+function readColumns(columns: DonationBoardConfig['columns'], sponsorships: boolean): DonationBoardConfig['columns'] {
+  if (sponsorships) return columns;
+  const { sponsorshipCycle: _c, inKindValue: _v, sponsorshipPipelineLinks: _p, ...rest } = columns;
+  return rest as DonationBoardConfig['columns'];
+}
+
 async function recomputeOwnerLeased(
   deps: ProcessBatchDeps, ownerItemId: string, ownerBoardId: string, donationItemId: string,
   extraAffiliations: Set<string>,
@@ -419,6 +427,7 @@ async function recomputeOwnerLeased(
   }
 
   const fetchedAt = new Date().toISOString();
+  const sponsorshipsCfg = config.donationRollups.sponsorships;
 
   // Monday has no supported filter for board_relation columns (confirmed 2026-08-24 —
   // items_page_by_column_values rejects it outright), so "every Donation this owner
@@ -428,8 +437,27 @@ async function recomputeOwnerLeased(
   const linksByBoard = await deps.linksStore.getLinksForOwner(ownerItemId);
   const perBoard = await Promise.all(donationBoards
     .filter((b) => linksByBoard.has(String(b.boardId)))
-    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, b.columns, config.fiscalYear.startMonth) })));
+    .map(async (b) => ({ board: b, items: await mondayClient.getDonationsByIds(linksByBoard.get(String(b.boardId))!, readColumns(b.columns, sponsorshipsCfg !== null), config.fiscalYear.startMonth) })));
   const donations = perBoard.flatMap((p) => p.items);
+
+  // Sponsorship facts (only when the feature is configured): the event a gift belongs to is its
+  // Sponsorship Cycle label, else the board + group of the pipeline item it links to. One lookup
+  // for every pipeline id this recompute read.
+  const eventByGift = new Map<string, string>();
+  if (sponsorshipsCfg !== null) {
+    const pipelineIds = [...new Set(donations.flatMap((d) => (d.archived || d.sponsorshipCycle ? [] : d.pipelineItemId ? [d.pipelineItemId] : [])))];
+    const placed = pipelineIds.length > 0 ? await mondayClient.getItemsBoardAndGroup(pipelineIds) : new Map<string, { boardId: string; groupTitle: string }>();
+    for (const d of donations) {
+      if (d.archived) continue;
+      let event = d.sponsorshipCycle ?? '';
+      if (event === '' && d.pipelineItemId) {
+        const at = placed.get(d.pipelineItemId);
+        const boardName = at ? sponsorshipsCfg.pipelineBoards[at.boardId] : undefined;
+        if (at && boardName !== undefined) event = `${boardName} ${at.groupTitle}`.trim();
+      }
+      eventByGift.set(d.id, event);
+    }
+  }
 
   // Affiliations phase 2 (spec "Rollups"): capture the ledger's acting_for *before* this
   // fetch overwrites it, so a gift that moved to a different affiliation still recomputes
@@ -451,6 +479,12 @@ async function recomputeOwnerLeased(
       giftType: d.giftType ?? null,
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
       termStart: d.termStart,               // undefined: no Term Start column; null: blank (leave stored)
+      ...(sponsorshipsCfg !== null ? {
+        // archived: link columns read back empty (issue #26), so leave the stored event alone
+        sponsorshipEvent: d.archived ? undefined : (eventByGift.get(d.id) ?? ''),
+        // undefined (leave stored) when the board has no In-kind Value column
+        ...(d.inKindValueCents !== undefined ? { inKindValueCents: d.inKindValueCents ?? 0 } : {}),
+      } : {}),
     })),
     'webhook', new Date().toISOString());
   if (refreshed.changed > 0) {
@@ -520,8 +554,13 @@ async function recomputeOwnerLeased(
     }
   }
   try {
+    const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven);
+    const sponsorshipsMd = sponsorshipsCfg !== null && ownerBoardId === String(sponsorshipsCfg.organizationsBoardId)
+      ? buildSponsorshipsMarkdown(history, sponsorshipsCfg, receivedStatusLabel, config.fiscalYear, config.monday.accountUrl,
+        localISODate(deps.now ?? new Date(), config.fiscalYear.timeZone))
+      : null;
     await mondayClient.setItemDescription(ownerItemId,
-      buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven));
+      sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd);
   } catch (err) {
     // Non-fatal by design: the markdown description is a redundant human rendering of the
     // Gift Ledger JSON column, and set_item_description_content 500s outright on any board
@@ -542,6 +581,12 @@ async function recomputeOwnerLeased(
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
   await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
+}
+
+// YYYY-MM-DD for `now` in `timeZone` (the Sponsorships window rolls over on the local New Year).
+function localISODate(now: Date, timeZone: string): string {
+  const { year, month, day } = localDateParts(now, timeZone);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 async function planMembershipWrites(
