@@ -4,7 +4,21 @@
 
 **Status: Deployed to sandbox, writes off** (2026-11-02). Deploy steps 1–5 are done against CRM
 Sandbox v4: one live move succeeded and kept every value and link checked (see "Move
-mechanics"), after fixing the `columns_mapping` it sends. Step 6 (writes left on) is next. Production is not provisioned: no D1, and
+mechanics"), after fixing the `columns_mapping` it sends. A full live pass followed
+(2026-11-03 01:03–01:23 UTC): **400 of 400 moved** to People (Historical), 0 failed or
+ambiguous. People went from 8,084 to 7,683 items and Historical from 8,053 to 8,454. Two moved
+people compared column by column were identical. All 86 Volunteers and 35 Event Registrations
+records linked to moved people still link to them. About 137 to-historical and 133 to-live
+moves remain for the next pass. Writes were turned off again after the pass, so the daily
+cron only plans; leaving them on (step 6) is the next decision.
+
+Two things to know when operating it:
+* **A pass reads the write switch once, at its start.** Turning writes off mid-pass does not
+  stop that pass, only the next one.
+* **`POST /reclassify/run` outlives its HTTP request.** A 400-move pass takes about 20 minutes,
+  and the client connection drops after about 2 minutes (curl reported `HTTP 000`), but the pass
+  keeps running. Follow it in `runs` and `moves` (or `GET /reclassify/status`), not the
+  response. Production is not provisioned: no D1, and
 `config/svbc.json` still holds `0` board ids (the production `svbc-people-reclassification` is
 only a placeholder created by setting `RECLASSIFY_SECRET`: no D1, no cron). Every Monday write
 ships **off** (the write switch `people-reclassification:writes` is unset, which means `off`).
@@ -282,8 +296,9 @@ and type both ways): a pass aborts on any difference, and Monday's API can't cre
 * **No-evidence people stay put.** Advocacy contacts and hand-added people are never moved; if
   the live board accumulates them, a `Stakeholder Type`-aware rule (pin some labels live, treat
   others as movable on the item's creation date) is the next step.
-* **Inbound Donor links across a move are untested live.** Step 5's person had no gifts. The
-  first full sandbox pass should spot-check one moved person who has Donations.
+* **Inbound Donor links are untested live, though the mechanism is proven.** None of the 400
+  people in the full pass had a gift on sandbox Donations. Inbound links of the same kind
+  (`Volunteer`, `Attendee`) all survived, 121 of 121, so Donor links should too.
 * **People (Historical) at 81% already** (sandbox, 2026-08-24; v4 at 80.5%, 2026-10-28). This Worker warns and refuses
   to overfill it, but the era split the plan's item 4 asks for is a separate design.
 * **Activities board** as an activity source (staff touches) — deliberately out; revisit if
