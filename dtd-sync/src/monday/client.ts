@@ -133,7 +133,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   private async findDonationByColumn(columnId: string, value: string): Promise<DonationItem | null> {
     const data = await this.transport.request<{ items_page_by_column_values: { items: RawItem[] } }>(
       `query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
-        items_page_by_column_values(board_id: $boardId, limit: 1, columns: $columns) { items { ${this.donationFields} } }
+        items_page_by_column_values(board_id: $boardId, columns: $columns) { items { ${this.donationFields} } }
       }`,
       { boardId: this.config.boards.donations, columns: [{ column_id: columnId, column_values: [value] }] },
     );
