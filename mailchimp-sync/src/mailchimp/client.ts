@@ -95,6 +95,12 @@ let sinkLogged = false;
 // requestTimeoutMs. A timeout throws a plain TimeoutError, which the consumers retry.
 const REQUEST_TIMEOUT_MS = 20_000;
 
+// The audience marks City, County, First and Last Name required, and ~1,800 contacts (mostly
+// imported from Salesforce) have one blank. Mailchimp checks every required field on every member
+// PATCH, not just the ones sent, so without this each write to such a contact fails with a 400
+// "Your merge fields were invalid", whatever it changes. Nothing here can fill those fields in.
+const SKIP_MERGE_VALIDATION = '?skip_merge_validation=true';
+
 export class HttpMailchimpClient implements MailchimpClient {
   constructor(
     private apiBaseUrl: string,
@@ -129,7 +135,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     // who never opted in (issue #28). PATCH 404s instead, and the status of an existing
     // member (subscribed, unsubscribed, cleaned…) is never sent, so never changed.
     const response = await this.request(
-      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}`,
+      `${this.apiBaseUrl}/lists/${this.audienceId}/members/${hash}${SKIP_MERGE_VALIDATION}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
@@ -171,7 +177,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     if (lookup.ok) return 'target-exists';
     if (lookup.status !== 404) throw await httpError('renameMember lookup', lookup);
 
-    const response = await this.request(`${membersUrl}/${memberId(oldEmail)}`, {
+    const response = await this.request(`${membersUrl}/${memberId(oldEmail)}${SKIP_MERGE_VALIDATION}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
       body: JSON.stringify({ email_address: newEmail.trim() }),
@@ -191,7 +197,7 @@ export class HttpMailchimpClient implements MailchimpClient {
     const { status } = (await lookup.json()) as { status: string };
     if (status === 'unsubscribed' || status === 'cleaned') return 'already-unsubscribed';
 
-    const response = await this.request(memberUrl, {
+    const response = await this.request(`${memberUrl}${SKIP_MERGE_VALIDATION}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
       body: JSON.stringify({ status: 'unsubscribed' }),
