@@ -12,7 +12,7 @@
     "matchesGift": "REPLACE_WITH_COLUMN_ID", "matchPairing": "REPLACE_WITH_COLUMN_ID", "sentToDtd": "REPLACE_WITH_COLUMN_ID"
   },
   "people": {
-    "email": "REPLACE_WITH_COLUMN_ID", "firstName": "REPLACE_WITH_COLUMN_ID", "lastName": "REPLACE_WITH_COLUMN_ID", "phone": "REPLACE_WITH_COLUMN_ID",
+    "email": "REPLACE_WITH_COLUMN_ID", "householdEmail": "REPLACE_WITH_COLUMN_ID", "phone": "REPLACE_WITH_COLUMN_ID",
     "dtdCompanyId": "REPLACE_WITH_COLUMN_ID", "dtdCompany": "REPLACE_WITH_COLUMN_ID", "dtdLink": "REPLACE_WITH_COLUMN_ID"
   },
   "programSummary": {
