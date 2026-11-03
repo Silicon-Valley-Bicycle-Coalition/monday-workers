@@ -197,17 +197,26 @@ export async function resolveLocations(
     }));
     try {
       const results = await geocoder.geocode(inputs);
+      // Only an explicit No_Match/Tie (null) is cached as nomatch. An id missing from the reply is
+      // a failure, and a reply with none of the batch's ids (error page, empty, truncated) fails
+      // the whole batch, so a bad 200 can't hide people for retryNoMatchDays.
+      if (!batch.some(({ rec }) => results.has(rec.itemId))) throw new Error('geocoder reply held none of the batch');
       const rows: GeocodeRow[] = [];
+      const found = new Map<string, LatLng>();
+      let missing = 0;
       for (const { rec, hash } of batch) {
-        const point = results.get(rec.itemId) ?? null;
+        const point = results.get(rec.itemId);
+        if (point === undefined) { missing++; continue; }
         rows.push({
           itemId: rec.itemId, addressHash: hash, status: point ? 'match' : 'nomatch',
           lat: point?.lat ?? null, lng: point?.lng ?? null, geocodedAt: now.toISOString(),
         });
-        if (point) located.set(rec.itemId, point); else unplaced++;
+        if (point) found.set(rec.itemId, point);
       }
-      await store.putMany(rows);
-      geocoded += batch.length;
+      await store.putMany(rows); // a throw here fails the whole batch before anything is applied
+      for (const [id, point] of found) located.set(id, point);
+      unplaced += rows.length - found.size + missing;
+      geocoded += rows.length;
     } catch {
       failedBatches++;
       unplaced += batch.length;

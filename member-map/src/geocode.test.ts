@@ -181,4 +181,37 @@ describe('resolveLocations', () => {
     expect(g.batches).toHaveLength(0);
     expect(r.unplaced).toBe(1);
   });
+  it('a putMany failure fails the whole batch once and the run continues', async () => {
+    const g = new FakeGeocoder(); const store = new FakeStore();
+    const real = store.putMany.bind(store); let n = 0;
+    store.putMany = async (rows) => { if (n++ === 0) throw new Error('d1 down'); return real(rows); };
+    const recs = Array.from({ length: 6 }, (_, i) => rec(String(i + 1)));
+    const r = await resolveLocations(recs, store, g, cfg, NOW);
+    expect(g.batches).toHaveLength(2);
+    expect(r.located.size).toBe(2);
+    expect([...r.located.keys()]).toEqual(['5', '6']);
+    expect(r.unplaced).toBe(4);
+    expect(store.rows.size).toBe(2);
+  });
+  it('an id missing from the reply is not cached and counts unplaced; others are cached', async () => {
+    const store = new FakeStore();
+    const g: Geocoder = { geocode: async (rows) => new Map(rows.filter((r) => r.id !== '2').map((r) => [r.id, { lat: 37.3, lng: -121.9 }])) };
+    const r = await resolveLocations([rec('1'), rec('2'), rec('3')], store, g, cfg, NOW);
+    expect([...store.rows.keys()].sort()).toEqual(['1', '3']);
+    expect(r.unplaced).toBe(1);
+    expect(r.located.size).toBe(2);
+  });
+  it('a garbage or empty 200 body fails the batch and caches nothing', async () => {
+    const orig = globalThis.fetch;
+    for (const body of ['', '<html>Service Unavailable</html>']) {
+      globalThis.fetch = (async () => new Response(body)) as typeof fetch;
+      const store = new FakeStore();
+      try {
+        const r = await resolveLocations([rec('1'), rec('2')], store, new CensusGeocoder(cfg), cfg, NOW);
+        expect(store.rows.size).toBe(0);
+        expect(r.unplaced).toBe(2);
+        expect(r.located.size).toBe(0);
+      } finally { globalThis.fetch = orig; }
+    }
+  });
 });
