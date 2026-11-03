@@ -246,25 +246,33 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     }
   }
 
+  // items(ids:) keeps returning an item in Monday's trash, state 'deleted', board and columns
+  // intact — so both reads below check state, or a deleted gift keeps its owner and a deleted
+  // owner keeps being written to (each write failing, each message retrying toward the DLQ).
   async getItemBoardId(itemId: string): Promise<string | null> {
-    const data = await this.graphql<{ items: { board: { id: string } }[] }>(
-      `query ($itemId: ID!) { items(ids: [$itemId]) { board { id } } }`,
+    const data = await this.graphql<{ items: { state?: string | null; board: { id: string } }[] }>(
+      `query ($itemId: ID!) { items(ids: [$itemId]) { state board { id } } }`,
       { itemId },
     );
-    return data.items[0]?.board.id ?? null;
+    const item = data.items[0];
+    if (item === undefined || item.state === 'deleted') return null;
+    return item.board.id;
   }
 
   async getDonorLinkForDonation(donationItemId: string, donorLinkColumnId: string): Promise<string | null> {
     const data = await this.graphql<{
-      items: { column_values: { id: string; linked_item_ids?: string[] }[] }[];
+      items: { state?: string | null; column_values: { id: string; linked_item_ids?: string[] }[] }[];
     }>(
       `query ($itemId: ID!, $columnId: [String!]) {
         items(ids: [$itemId]) {
+          state
           column_values(ids: $columnId) { id ... on BoardRelationValue { linked_item_ids } }
         }
       }`,
       { itemId: donationItemId, columnId: [donorLinkColumnId] },
     );
+    // A deleted gift links to no one: the caller's empty-link path asks getDonationState and detaches it.
+    if (data.items[0]?.state === 'deleted') return null;
     const linked = data.items[0]?.column_values[0]?.linked_item_ids ?? [];
     return linked.length > 0 ? linked[0]! : null;
   }
@@ -309,13 +317,16 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
       // even when handed 100 ids (verified live 2026-08-31; it surfaced as 75% of owners
       // "missing" in reconciliation and would have silently under-rolled any donor with
       // more than 25 gifts on one board).
-      const data = await this.graphql<{ items: { id: string; column_values: ColumnValue[] }[] }>(
+      const data = await this.graphql<{ items: { id: string; state?: string | null; column_values: ColumnValue[] }[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: 100) { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } }
+          items(ids: $ids, limit: 100) { id state column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } }
         }`,
         { ids: chunk, columnIds },
       );
       for (const item of data.items) {
+        // A trashed gift still reads its columns; returned here, refreshFacts would re-assert it
+        // (clearing removed_at) and it would keep counting toward its owner.
+        if (item.state === 'deleted') continue;
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv.text ?? '']));
         const statusCell = item.column_values.find((cv) => cv.id === columns.status);
         // A blank Amount must be treated as malformed like a blank Date — never as $0, which

@@ -10,7 +10,7 @@
       "memberUntil": "date_mm8n6xgb",
       "addr1": "text_mm8n6sap",
       "city": "text_mm8nzf3n",
-      "state": "REPLACE_WITH_COLUMN_ID",
+      "state": null,
       "zip": "text_mm8nxcm4",
       "email": "email_mm8nx6qg",
       "totalGiven": "numeric_mm8n7g4",

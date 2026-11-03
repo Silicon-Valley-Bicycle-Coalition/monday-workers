@@ -2,7 +2,8 @@
 
 **Staff UAT script:** [`docs/uat/people-reclassification.md`](../docs/uat/people-reclassification.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: Live in sandbox, writes on** (2026-11-03; Deploy step 6). The daily cron continues
+**Status: Live in production and sandbox, writes on** (2026-11-03). Production's first live
+pass is 2027-01-01 (see "Production" below). Sandbox (Deploy step 6): the daily cron continues
 the remaining work (about 270 moves) on 2026-11-04 at 10:00 UTC, then runs quarterly. Deploy steps 1–5 are done against CRM
 Sandbox v4: one live move succeeded and kept every value and link checked (see "Move
 mechanics"), after fixing the `columns_mapping` it sends. A full live pass followed

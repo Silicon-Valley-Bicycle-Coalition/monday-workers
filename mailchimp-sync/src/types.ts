@@ -25,7 +25,8 @@ export interface MondayColumnsConfig {
   memberUntil: string;
   addr1: string;
   city: string;
-  state: string;
+  // null: no State column on the board; the ADDRESS merge field takes the state from the ZIP.
+  state: string | null;
   zip: string;
   email: string;
   totalGiven: string;

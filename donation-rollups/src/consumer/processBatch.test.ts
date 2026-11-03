@@ -1204,6 +1204,56 @@ describe('totals decrease when a gift leaves its owner (issue #26)', () => {
   });
 });
 
+// A deleted Donor or Organization: its gifts' recomputes target an owner that no longer exists.
+// getItemBoardId reads it as gone (null); nothing can be written to it, so every such message
+// must finish rather than retry toward the DLQ.
+describe('a deleted owner', () => {
+  const deps = (mondayClient: DonationRollupsMondayClient, over: { linksStore?: DonationLinksStore; giftsStore?: GiftsStore;
+    pendingStore?: PendingStore } = {}): ProcessBatchDeps => ({
+    pendingStore: over.pendingStore ?? fakePendingStore(), linksStore: over.linksStore ?? fakeLinksStore(),
+    giftsStore: over.giftsStore ?? fakeGiftsStore(), affiliationsStore: fakeAffiliationsStore(),
+    recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(),
+    mondayClient, config, now: new Date('2026-01-01'),
+  });
+
+  it('a gift still linked to it is detached and acked, with no write to the deleted owner', async () => {
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(null) });
+    const linksStore = fakeLinksStore({ getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }) });
+    const giftsStore = fakeGiftsStore();
+    const pendingStore = fakePendingStore();
+    const message = fakeMessage('dnOrphan');
+    await processRecomputeBatch([message], deps(mondayClient, { linksStore, giftsStore, pendingStore }));
+    expect(giftsStore.markRemoved).toHaveBeenCalledWith('dnOrphan', expect.any(String));
+    expect(linksStore.deleteLink).toHaveBeenCalledWith('dnOrphan');
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+    expect(pendingStore.updateStatus).toHaveBeenCalledWith('dnOrphan', 'written', expect.anything());
+  });
+
+  it('a gift whose link was cleared by the deletion is detached without recomputing the deleted owner', async () => {
+    const mondayClient = fakeMondayClient({ getDonorLinkForDonation: vi.fn().mockResolvedValue(null),
+      getDonationState: vi.fn().mockResolvedValue('active'), getItemBoardId: vi.fn().mockResolvedValue(null) });
+    const linksStore = fakeLinksStore({ getLinkForDonation: vi.fn().mockResolvedValue({ ownerItemId: 'donor-1', ownerBoardId: '2' }) });
+    const message = fakeMessage('dnCleared');
+    await processRecomputeBatch([message], deps(mondayClient, { linksStore }));
+    expect(linksStore.deleteLink).toHaveBeenCalledWith('dnCleared');
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+
+  it('an owner-keyed message for it is acked without a write', async () => {
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(null) });
+    const message = { body: { donationItemId: 'dnMoved', donationBoardId: '1', ownerItemId: 'donor-old', ownerBoardId: '3' },
+      ack: vi.fn(), retry: vi.fn() };
+    await processRecomputeBatch([message], deps(mondayClient));
+    expect(mondayClient.changeColumnValues).not.toHaveBeenCalled();
+    expect(message.retry).not.toHaveBeenCalled();
+    expect(message.ack).toHaveBeenCalled();
+  });
+});
+
 describe('registration messages (kind: registration)', () => {
   const volunteerBoard = { boardId: 7, columns: { attendee: 'att', event: 'ev', attendance: 'atd', role: 'role', hours: null },
     eventBoard: { boardId: 8, columns: { start: 'start' } }, volunteerRoleLabels: ['Volunteer'], countedAttendanceLabels: ['Attended'] };

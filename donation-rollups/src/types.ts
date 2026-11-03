@@ -28,7 +28,11 @@ export interface DonationBoardConfig {
   };
 }
 
-export interface ClassificationColumns { fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string }
+export interface ClassificationColumns {
+  fundingStream: string; giftSize: string; fiscalQuarter: string; giftFiscalYear: string;
+  // Optional: the Acknowledgment Tier status column, kept nightly as a backstop to its automations.
+  acknowledgmentTier?: string;
+}
 
 export interface CustodianConfig {
   // How many fiscal years of donations stay active (unarchived) on the Donations board —

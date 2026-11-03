@@ -40,6 +40,16 @@ describe('buildMergeFields', () => {
     });
   });
 
+  it('derives the state from the ZIP when the donor has none (no State column configured)', () => {
+    expect(buildMergeFields(donor({ state: '', zip: '98101' }), CONFIG).ADDRESS)
+      .toEqual({ addr1: '1 Main St', city: 'San Jose', state: 'WA', zip: '98101', country: 'US' });
+  });
+
+  it('keeps a State column value over the ZIP, and omits ADDRESS when neither gives a state', () => {
+    expect((buildMergeFields(donor({ state: 'NV', zip: '95110' }), CONFIG).ADDRESS as { state: string }).state).toBe('NV');
+    expect(buildMergeFields(donor({ state: '', zip: 'EH9 1NR' }), CONFIG)).not.toHaveProperty('ADDRESS');
+  });
+
   it('omits the ADDRESS key entirely when any address component is blank', () => {
     const result = buildMergeFields(donor({ city: '' }), CONFIG);
     expect(result).not.toHaveProperty('ADDRESS');

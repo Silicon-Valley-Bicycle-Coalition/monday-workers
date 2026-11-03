@@ -2,9 +2,9 @@
 
 **Status:** Built (2026-10-20; design:
 [`docs/superpowers/specs/2026-10-19-email-log-design.md`](../docs/superpowers/specs/2026-10-19-email-log-design.md))
-— **not deployed anywhere yet.** Blocked on the Activities (Logged) board, D1 and queue
-provisioning, the Monday integration user and secret, Email Routing on
-`log.bikesiliconvalley.org`, and the live `Authentication-Results` check (see "Sandbox bring-up").
+— **sandbox deployed 2026-11-02** (`svbc-email-log-sandbox`, `log-sandbox@log.bikesiliconvalley.org`;
+a staff BCC logged end to end), **production not yet.** The sandbox still owes the forgery check
+(step 5) and steps 6 to 10 (see "Sandbox bring-up").
 **Priority:** Post-cutover, non-blocking. It replaces the Salesforce Gmail extension's one-click
 email logging.
 **Stack:** TypeScript + D1 + Cloudflare Queues + Email Routing (an `email()` handler; there is no
@@ -180,7 +180,9 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    ids in `activities.*` in `config/sandbox.json`. While any is a placeholder the consumer
    refuses to write and the message dead-letters. The consumer's log line on each attempt names
    the missing key (`config: activities.<key> is not configured`); the D1 row's error ends up as
-   `dead-lettered after retries`. Optionally set
+   `dead-lettered after retries`. A new board is private: subscribe the integration user
+   (Sandbox Integration in the sandbox, SVBC Integration in production) or every create fails
+   with `User unauthorized to perform action` and retries. Optionally set
    `alerts.itRequests` (board id, **column id** for `typeColumn`, label, `cooldownDays`).
 2. **D1 and queues.** `wrangler d1 create svbc-email-log-sandbox`, paste the id into
    `wrangler.jsonc` `env.sandbox.d1_databases[0].database_id`, then
@@ -198,6 +200,9 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    authserv-id only, never addresses, then remove the logging). Set `mail.trustedAuthServId` in
    `config/sandbox.json` and redeploy. **If there is no DKIM verdict in the header, stop and
    report back** (spec section 1); don't fall back to trusting From.
+   *Done 2026-11-02:* one header, authserv-id `mx.cloudflare.net`, with
+   `dkim=pass header.d=bikesiliconvalley.org` (Gmail's own verdict arrives separately as
+   `ARC-Authentication-Results`, which the parser ignores). Production uses the same id.
 
    **Then the forgery check.** From an outside (non-staff) account, send *unsigned* mail to the
    sandbox address with a staff `From:` and a forged

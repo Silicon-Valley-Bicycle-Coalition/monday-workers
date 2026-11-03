@@ -40,6 +40,15 @@ function giftSize(amountCents: number | null): string {
   return '$5k+';
 }
 
+// Acknowledgment Tier (docs/22 §3.4): Major at $200 and up. The board's native automations set
+// it on create and on Amount change; classify re-derives it nightly as a backstop. null = no
+// usable amount, so the cell is left as it is (as the automations and the one-time backfill do).
+const MAJOR_TIER_CENTS = 20000;
+export function acknowledgmentTier(amountCents: number | null): string | null {
+  if (amountCents === null || !Number.isFinite(amountCents)) return null;
+  return amountCents >= MAJOR_TIER_CENTS ? 'Major' : 'Standard';
+}
+
 function validDate(dateISO: string | null): string | null {
   if (!dateISO) return null;
   const d = dateISO.slice(0, 10);

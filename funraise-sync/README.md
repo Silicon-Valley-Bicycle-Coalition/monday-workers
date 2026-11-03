@@ -2,7 +2,12 @@
 
 **Staff UAT script:** [`docs/uat/funraise-sync.md`](../docs/uat/funraise-sync.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Decided — Option B (full retirement). Build the direct sync. **Running as
+**Status:** Decided — Option B (full retirement). Build the direct sync. **Production:** every
+id in `config/svbc.json` filled for the Donations, Recurring Gifts and People boards in workspace
+18201685 on 2026-11-01 (aa45bb1), and it created production's first Worker-written gifts on
+2026-11-02 (`donation-rollups/README.md`, "Acknowledgment Tier backstop"). This repo doesn't
+record when Funraise's webhook was repointed from the sandbox Worker to production (procedure: "Replaying one
+Worker's deliveries into another" below). The sandbox history follows. **Running as
 `svbc-funraise-sync-sandbox` against the CRM Sandbox and receiving Funraise's live webhook since
 2026-09-18** (moved onto the sandbox environment 2026-09-19; the production name
 `svbc-funraise-sync` is retired until cutover) — see "Deployed and verified". **Remapped to the
@@ -885,11 +890,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
 
 ## Related, not yet in scope here
 
-* **Double the Donation / 360MatchPro** — a *third*, independent pipeline (Salesforce AppExchange
-  managed package, writes match data directly to Salesforce, doesn't ride on Funraise's
-  connection). Not this Worker's job to replicate yet — first the actual custom fields it created
-  need identifying (Pre-Migration Deliverables), then a decision on whether to build a companion
-  sync or fold match data into `salesforce-import` as a one-time carry-over.
+* **Double the Donation / 360MatchPro** — not a donation pipeline after all. SVBC subscribed in
+  July 2026 (onboarding complete 2026-08-20); its Salesforce package was installed 2026-07-21 and
+  holds zero records, and its job is to *prompt* donors to request employer matches, not to
+  record them — matched money arrives through Benevity (see `benevity-import`). Decided
+  2026-09-08: nothing of it migrates and this Worker doesn't replicate it. DTD integrates with
+  Funraise directly, which outlives Salesforce; its Salesforce integration ends at cutover. The
+  only code touching DTD is `member-portal`'s employer-search widget.
   [Double the Donation](https://doublethedonation.com/) ·
   [360MatchPro on Salesforce AppExchange](https://appexchange.salesforce.com/appxListingDetail?listingId=a0N3A00000FR4jnUAD).
 * **Streamlabs Charity** — possible fourth donation pipeline (stream-driven donations via a Twitch/

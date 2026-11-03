@@ -4,7 +4,7 @@ const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeS
 
 const REQUIRED_MONDAY_COLUMNS: (keyof MondayColumnsConfig)[] = [
   'membershipStatus', 'membershipTier', 'memberSince', 'memberUntil',
-  'addr1', 'city', 'state', 'zip', 'email', 'totalGiven', 'mailchimpCampaigns',
+  'addr1', 'city', 'zip', 'email', 'totalGiven', 'mailchimpCampaigns',
   'doNotSolicit', 'dnsReasonStatus',
 ];
 
@@ -57,6 +57,12 @@ export function validateConfig(raw: unknown): Config {
   }
   const columns = requireObject(monday.columns, 'monday.columns');
   requireStringKeys(columns, REQUIRED_MONDAY_COLUMNS, 'monday.columns');
+  // Explicit null says "this board has no State column" (production People): the ADDRESS merge
+  // field then takes the state from the ZIP. The placeholder is rejected rather than queried:
+  // Monday silently drops an unknown column id, which left every ADDRESS unwritten.
+  if (columns.state !== null && (typeof columns.state !== 'string' || columns.state === '' || columns.state === 'REPLACE_WITH_COLUMN_ID')) {
+    throw new Error('config: "monday.columns.state" must be a column id or null');
+  }
   // Explicit null (not an absent key) says "this deployment has no Nearby column yet".
   if (columns.nearby !== null && (typeof columns.nearby !== 'string' || columns.nearby === '')) {
     throw new Error('config: "monday.columns.nearby" must be a column id or null');

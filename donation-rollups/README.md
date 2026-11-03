@@ -2,7 +2,14 @@
 
 **Staff UAT script:** [`docs/uat/donation-rollups.md`](../docs/uat/donation-rollups.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: running as `svbc-donation-rollups-sandbox` since the 2026-09-20 move onto the sandbox
+**Status (2026-11-02):** the sandbox config targets the **CRM Sandbox v4** workspace (18210301)
+since 2026-10-28 (4fe2c97, !251). The production config was filled 2026-11-01 from
+`salesforce-import`'s production load (1526652; Donor Roll Call board added 2026-11-02, fdba786);
+this repo doesn't record a production deploy yet. Note the sandbox is split: `funraise-sync`,
+`benevity-import`, `eventbrite-sync`, `member-portal` and `report-digests` still name the
+`(sandbox v3)` Donations board (18431577310) in their `config/sandbox.json`, so their sandbox
+gifts don't reach the v4 board this Worker watches. Older history follows.
+**Running as `svbc-donation-rollups-sandbox` since the 2026-09-20 move onto the sandbox
 environment** (`npm run deploy:sandbox`; own D1 `svbc-donation-rollups-sandbox`, queues
 `donation-rollups-recompute-sandbox` and `-sandbox-dlq`, secrets under `--env sandbox`; the
 production name `svbc-donation-rollups` is retired until cutover — sandbox design §9). The move:
@@ -609,8 +616,9 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
   verification" above).
-* **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board
-  (see "Chartable gift labels" below). Capped per run; re-run until `detail.remaining` is `0`.
+* **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board,
+  plus Acknowledgment Tier where configured (see "Chartable gift labels" below). Capped per run;
+  re-run until `detail.remaining` is `0`.
 * **recurring** (nightly) — keeps People's **Has Active Recurring Gift** checkbox in step with the
   Recurring Gifts board, which the Postal appeal list filters on (monday-migration docs/35 §3.1).
   Recurring Gifts isn't a Donations board, so no webhook reaches this Worker when a subscription
@@ -667,8 +675,18 @@ gift's amount, date and type. It runs nightly and on demand
 `CLASSIFY_WRITES_PER_RUN` (300) gifts per run — repeat until `detail.remaining` is `0` (~13 runs
 for the first ~3,800 gifts). Provision with `scripts/setup-classification-columns.mjs <donationsBoardId>`.
 
-**Webhook ignore rule.** The donation webhook drops any change to a classification column
-(`ignored: classification column "<id>"`). Those columns are Worker-written, and Monday delivers
+**Acknowledgment Tier backstop.** With the optional `classification.acknowledgmentTier` column id
+set, `classify` also keeps Donations' **Acknowledgment Tier** at **Major** for an Amount of $200
+and up and **Standard** below (`acknowledgmentTier` in `rollups/classify.ts`). The board's own
+automations set Tier when a gift is created and when its Amount changes; this is the nightly
+backstop for any they miss. Production's first Worker-created gifts (`funraise-sync`, 2026-11-02)
+all landed with a blank Tier, because the automations then fired only on an Amount *change*,
+so a major online gift never reached "Major gifts to thank". A gift with no Amount keeps
+whatever Tier it has; classify never clears the column. Both configs set it (production
+`color_mm8qwcbp`, sandbox v4 `color_mm8j2m0m`).
+
+**Webhook ignore rule.** The donation webhook drops any change to a classification column,
+Acknowledgment Tier included (`ignored: classification column "<id>"`). Those columns are Worker-written, and Monday delivers
 a webhook for every API write; without the rule each classify write would enqueue a recompute
 for the gift's owner — the same self-inflicted flood as 09-03.
 
@@ -829,7 +847,13 @@ through its Donor link); and the Anonymous Donor flag isn't stored. Rather than 
 table: each night it pages the active Donations items and upserts a row for every gift whose
 credit isn't simply its Donor — a Matching Donation with Matched By, anything marked Anonymous
 Donor, anything with no Donor — plus an `unmatched_match` flag for an employer match with no
-Matched By. A row is dropped when its gift no longer qualifies or is deleted. When a gift
+Matched By. A row is dropped when its gift no longer qualifies or is deleted. An Anonymous or
+Matched By row is kept whether or not its gift counts tonight (any year, any status or gift type,
+a blank Date), and only clearing the flag or deleting the gift drops it: the ledger keeps its own
+copy of a gift's facts, which can lag the board or (for a gift whose Date was cleared) never
+refresh, so it may still count a gift the board says doesn't. Dropping the row there would credit
+the gift to its Donor by name. Whether a gift counts is decided once, when the roll call is
+computed, from whichever copy it has. When a gift
 archives its row is **kept** and stamped `archived_at` (an archived item's connect columns read
 back empty, so it can't be recomputed from Monday); that keeps closed years reproducible. The first
 night fills the table; no backfill is needed. A gift's year is its Fiscal Year Ending, or derived

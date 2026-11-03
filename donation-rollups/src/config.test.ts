@@ -281,6 +281,16 @@ describe('classification and donor level config', () => {
       .toThrow(/classification\.giftSize must be a Monday column id string/);
   });
 
+  it('accepts an optional acknowledgmentTier column in the classification block', () => {
+    const cfg = validateConfig(withBoard({ classification: { ...classification, acknowledgmentTier: 'at' } }));
+    expect(cfg.donationRollups.donationBoards[0]!.columns.classification).toEqual({ ...classification, acknowledgmentTier: 'at' });
+  });
+
+  it('rejects an empty acknowledgmentTier column id', () => {
+    expect(() => validateConfig(withBoard({ classification: { ...classification, acknowledgmentTier: '' } })))
+      .toThrow(/classification\.acknowledgmentTier must be a Monday column id string or omitted/);
+  });
+
   it('accepts donorLevel thresholds and an owner donorLevel column', () => {
     const raw = { ...base, donationRollups: { ...base.donationRollups, donorLevel: donorLevelCfg,
       ownerColumnsByBoard: { ...base.donationRollups.ownerColumnsByBoard,

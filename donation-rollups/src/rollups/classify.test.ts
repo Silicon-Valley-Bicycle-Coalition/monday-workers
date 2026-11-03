@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyGift, FUNDING_STREAMS, GIFT_SIZES } from './classify';
+import { classifyGift, acknowledgmentTier, FUNDING_STREAMS, GIFT_SIZES } from './classify';
 
 const g = (over: Partial<Parameters<typeof classifyGift>[0]> = {}) =>
   classifyGift({ amountCents: 5000, dateISO: '2025-08-01', giftType: 'Donation', ...over }, 7);
@@ -78,5 +78,23 @@ describe('classifyGift — fiscal quarter and year (July fiscal year)', () => {
   it('calendar fiscal year (startMonth 1) puts January in Q1', () => {
     expect(classifyGift({ amountCents: 1, dateISO: '2025-01-05', giftType: null }, 1))
       .toMatchObject({ fiscalQuarter: 'FY25 Q1', giftFiscalYear: 'FY2025' });
+  });
+});
+
+describe('acknowledgmentTier', () => {
+  it.each([
+    [20000, 'Major'],
+    [500000, 'Major'],
+    [19999, 'Standard'],
+    [1000, 'Standard'],
+    [0, 'Standard'],
+    [-5000, 'Standard'],
+  ])('%s cents → %s', (cents, tier) => {
+    expect(acknowledgmentTier(cents)).toBe(tier);
+  });
+
+  it('is null without a usable amount, so the cell is left alone', () => {
+    expect(acknowledgmentTier(null)).toBeNull();
+    expect(acknowledgmentTier(NaN)).toBeNull();
   });
 });
