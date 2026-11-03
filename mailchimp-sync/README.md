@@ -322,7 +322,10 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
 
 **Monday side:**
 * Donors board columns: Membership Status, Membership Tier, Member Since, Member Until, Address
-  (addr1/city/state/zip), Email — written by `salesforce-import`.
+  (addr1/city/zip, plus an optional State), Email — written by `salesforce-import`. With
+  `monday.columns.state` set to `null` (production People has no State column) the ADDRESS
+  merge field takes the state from the ZIP's first three digits (`src/consumer/zipState.ts`);
+  a ZIP that isn't a 5-digit US one leaves ADDRESS out, as any incomplete address does.
 * The Total Given / Last Gift rollup columns `donation-rollups` maintains.
 * Do Not Solicit (checkbox) and DNS Reason Status (status) — both built by `salesforce-import`'s
   `configure` step — with a **Confirmed** label added to DNS Reason Status next to OK / Missing.
@@ -372,9 +375,10 @@ with a `-dlq`), and secrets. Local development against the sandbox uses `npm run
 reconcile interests only in the sandbox audience — `config/split.test.ts` fails if the two
 configs ever share `mailchimp.audienceId`, and the Mailchimp API key cannot enforce it (keys
 are account-scoped), so that test is the guard. Sandbox-specific facts: the sandbox People board gained a `State`
-text column on 2026-09-18 (the migrated boards had none — the production People board will need
-one too before this Worker can send the ADDRESS merge field, which `src/consumer/mapDonor.ts`
-omits unless all four address parts are present); the sandbox "Mailchimp Campaigns (sandbox)"
+text column on 2026-09-18 (the migrated boards had none). Production never got one, and its
+`state` stayed `REPLACE_WITH_COLUMN_ID`: Monday silently ignores an unknown column id, so no
+production contact got an ADDRESS until 2026-11-02, when `state: null` and the ZIP lookup
+replaced it (config validation now rejects the placeholder for `state`); the sandbox "Mailchimp Campaigns (sandbox)"
 board and the People board's "Mailchimp Campaigns" connect column were created 2026-09-18 by the
 step 3 plan's Task 2.
 Staff prerequisites before the first sandbox deploy (the step 3 plan's Task 15): the sandbox

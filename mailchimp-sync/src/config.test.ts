@@ -85,6 +85,25 @@ describe('validateConfig', () => {
     }
   });
 
+  it('accepts a null or string monday.columns.state and rejects anything else', () => {
+    const withState = (value: unknown) => {
+      const raw = validRaw();
+      (raw.monday.columns as Record<string, unknown>).state = value;
+      return raw;
+    };
+    expect(validateConfig(withState(null)).monday.columns.state).toBeNull();
+    expect(validateConfig(withState('text_x')).monday.columns.state).toBe('text_x');
+    for (const bad of [undefined, '', 5]) {
+      expect(() => validateConfig(withState(bad))).toThrow('config: "monday.columns.state" must be a column id or null');
+    }
+  });
+
+  it('rejects a REPLACE_WITH_COLUMN_ID placeholder for monday.columns.state', () => {
+    const raw = validRaw();
+    (raw.monday.columns as Record<string, unknown>).state = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(raw)).toThrow('config: "monday.columns.state" must be a column id or null');
+  });
+
   it('rejects a missing mailchimp.tags key', () => {
     const raw = validRaw();
     delete (raw.mailchimp.tags as Record<string, unknown>).hasDonated;
