@@ -148,6 +148,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     getItemBoardId: vi.fn().mockResolvedValue('2'),
     getDonorLinkForDonation: vi.fn().mockResolvedValue('donor-1'),
     getDonationState: vi.fn().mockResolvedValue('active'),
+    getItemsBoardAndGroup: vi.fn().mockResolvedValue(new Map()),
     getDonationsByIds: vi.fn().mockResolvedValue([]),
     getOwnerMembership: vi.fn().mockResolvedValue({ statusLabel: null, tierLabel: null, since: null, until: null,
       currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null }),
