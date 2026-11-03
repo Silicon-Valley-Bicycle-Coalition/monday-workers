@@ -205,7 +205,8 @@
         "people": "board_relation_mm8q7pg3",
         "organization": "board_relation_mm8qe1f2",
         "reviewNote": "long_text_mm8q772n",
-        "rowKey": "text_mm8q6kfn"
+        "rowKey": "text_mm8q6kfn",
+        "householdName": "text_mm8rpbah"
       },
       "donations": {
         "boardId": 18437909794,
@@ -218,7 +219,8 @@
           "donorLink": "board_relation_mm8n97wj",
           "matchedBy": "board_relation_mm8nkc1g",
           "anonymous": "boolean_mm8ng6gp",
-          "inKindValue": "numeric_mm8n933h"
+          "inKindValue": "numeric_mm8n933h",
+          "recognitionFiscalYear": "text_mm8rrqyw"
         }
       },
       "people": {
