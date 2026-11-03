@@ -169,6 +169,12 @@ Copied from the spec. None of this is done in code.
 * People and People (Historical) show both boards: either their Activities connect/mirror column
   links to both, or a second one is added for Activities (Logged). Pick whichever Monday allows
   for a two-way connect column; the goal is that a person's item shows old and new activity.
+  *Done in production 2026-11-03:* Activities (Logged)'s Person column is two-way
+  (`allowCreateReflectionColumn`), which added an `Activities (Logged)` connect column to People
+  (`board_relation_mm8r6c2r`) and People (Historical) (`board_relation_mm8rp0gn`), back-filled
+  for existing items. Keep both titles identical: people-reclassification matches columns by
+  title and type, and aborts a pass when the two People boards disagree. (The sandbox board isn't
+  two-way yet.)
 * A dedicated Monday integration user for this Worker that can read People, People (Historical),
   Affiliations, and the users list, and write only Activities (Logged) (and IT Requests, if
   `alerts.itRequests` is set). Run `scripts/check-monday-token-scope.mjs` against it before
