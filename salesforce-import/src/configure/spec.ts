@@ -21,7 +21,7 @@ import { STAKEHOLDER_TYPE_LABELS } from '../load/boards.js';
 
 export interface ColumnSpec {
   title: string;
-  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people';
+  type: 'status' | 'dropdown' | 'tags' | 'text' | 'checkbox' | 'numbers' | 'people' | 'date';
   labels?: string[]; // status/dropdown only, in display order
 }
 
@@ -500,7 +500,16 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       "gift (Payment). Eventbrite registrants who never checked in have no Attendee link — they " +
       `aren't People. Process overview & how-to: ${DOC('46299447')}`,
     groupTitle: 'Registrations',
+    // Written per attendee by eventbrite-sync. The load leaves them blank, so migrated history
+    // has no Class Date and stays out of the Class roster view.
+    columns: [
+      { title: 'First Name', type: 'text' },
+      { title: 'Class Date', type: 'date' },
+      { title: 'Class Day', type: 'text' },
+      { title: 'Class Location', type: 'text' },
+    ],
     columnDescriptions: {
+      'Class Date': "The event's start date, from Eventbrite. Blank on registrations from before the Eventbrite integration.",
       'Attendee': "The registrant's People item, when they're a known person. Blank for " +
         'Eventbrite registrants who never became contacts; Attendee Name / Email keep what the platform had.',
       'Attendance': 'Registered, Attended, Canceled. No Show is never set by the import — staff ' +
@@ -512,6 +521,12 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     views: [
       { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'Role', 'Attendance', 'Ticket Amount'],
         groupBy: { columnTitle: 'Event' } },
+      { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Role', 'Attendance', 'Class Date', 'Class Location'],
+        filter: { rules: [
+          { columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Registered'] },
+          { columnTitle: 'Class Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+        ] },
+        groupBy: { columnTitle: 'Event' }, sort: [{ columnTitle: 'Class Date' }] },
       { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
       { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'Role'],

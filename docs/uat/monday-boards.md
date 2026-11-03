@@ -249,7 +249,8 @@ Salesforce. Ongoing Eventbrite check-ins flow to the live workspace's Event Part
 
 **Events tabs:** **Upcoming** (opens here) · **All events**. Calendar (by Date) and Kanban (by
 Program) views are still to be added by hand.
-**Registrations tabs:** **By event** (opens here; grouped by Event) · **Volunteers** ·
+**Registrations tabs:** **By event** (opens here; grouped by Event) · **Class roster** (who is
+registered right now for each upcoming class; needs the Eventbrite attendee feed) · **Volunteers** ·
 **Attended** · **Unlinked attendees** (Worklist: registrations with no People match) · **Needs
 review**.
 
