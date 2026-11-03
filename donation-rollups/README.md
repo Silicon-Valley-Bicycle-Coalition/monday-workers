@@ -609,8 +609,9 @@ curl -X POST -H "Authorization: Bearer $CUSTODIAN_SECRET" \
 * **requeue** (nightly) — re-enqueues pending rows the queue never finished (`queued`/`received`
   older than 24 h); quiet when there are none, alerts when there were (fix 5 in "Status and
   verification" above).
-* **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board
-  (see "Chartable gift labels" below). Capped per run; re-run until `detail.remaining` is `0`.
+* **classify** (nightly + on demand) — fills the four chartable gift labels on the Donations board,
+  plus Acknowledgment Tier where configured (see "Chartable gift labels" below). Capped per run;
+  re-run until `detail.remaining` is `0`.
 * **recurring** (nightly) — keeps People's **Has Active Recurring Gift** checkbox in step with the
   Recurring Gifts board, which the Postal appeal list filters on (monday-migration docs/35 §3.1).
   Recurring Gifts isn't a Donations board, so no webhook reaches this Worker when a subscription
@@ -667,8 +668,18 @@ gift's amount, date and type. It runs nightly and on demand
 `CLASSIFY_WRITES_PER_RUN` (300) gifts per run — repeat until `detail.remaining` is `0` (~13 runs
 for the first ~3,800 gifts). Provision with `scripts/setup-classification-columns.mjs <donationsBoardId>`.
 
-**Webhook ignore rule.** The donation webhook drops any change to a classification column
-(`ignored: classification column "<id>"`). Those columns are Worker-written, and Monday delivers
+**Acknowledgment Tier backstop.** With the optional `classification.acknowledgmentTier` column id
+set, `classify` also keeps Donations' **Acknowledgment Tier** at **Major** for an Amount of $200
+and up and **Standard** below (`acknowledgmentTier` in `rollups/classify.ts`). The board's own
+automations set Tier when a gift is created and when its Amount changes; this is the nightly
+backstop for any they miss. Production's first Worker-created gifts (`funraise-sync`, 2026-11-02)
+all landed with a blank Tier, because the automations then fired only on an Amount *change*,
+so a major online gift never reached "Major gifts to thank". A gift with no Amount keeps
+whatever Tier it has; classify never clears the column. Both configs set it (production
+`color_mm8qwcbp`, sandbox v4 `color_mm8j2m0m`).
+
+**Webhook ignore rule.** The donation webhook drops any change to a classification column,
+Acknowledgment Tier included (`ignored: classification column "<id>"`). Those columns are Worker-written, and Monday delivers
 a webhook for every API write; without the rule each classify write would enqueue a recompute
 for the gift's owner — the same self-inflicted flood as 09-03.
 

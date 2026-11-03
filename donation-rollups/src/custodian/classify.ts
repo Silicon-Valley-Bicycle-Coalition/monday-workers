@@ -1,11 +1,11 @@
-import { classifyGift, type GiftClassification } from '../rollups/classify';
+import { acknowledgmentTier, classifyGift, type GiftClassification } from '../rollups/classify';
 import { parseAmountCents } from '../money';
 import { MondayRateLimitError, statusLabel, type ItemColumns } from '../monday/client';
 import type { DonationRollupsConfig, ClassificationColumns } from '../types';
 import type { DutyReport } from './custodian';
 
 // Nightly: keep Funding Stream / Gift Size / Fiscal Quarter / Gift Fiscal Year current on
-// every active gift (spec 2026-09-29 §10.1). Reads are cheap (500 items a page); writes are
+// every active gift (spec 2026-09-29 §10.1), and Acknowledgment Tier where it's configured. Reads are cheap (500 items a page); writes are
 // diffed and capped per run, and the webhook ignores these columns (webhook/route.ts), so a
 // full backfill is a handful of runs rather than a recompute flood. Archived gifts aren't
 // returned by items_page and aren't visible to dashboards either — nothing to classify.
@@ -22,13 +22,17 @@ const FAILED_IDS_IN_REPORT = 20;
 
 const KEYS = ['fundingStream', 'giftSize', 'fiscalQuarter', 'giftFiscalYear'] as const;
 
-// All four are status columns, so they're compared by stored value — a blank cell's text can be
+// All are status columns, so they're compared by stored value — a blank cell's text can be
 // a real label (label id 5), which would skip a write the gift needs.
-function diff(want: GiftClassification, cols: ClassificationColumns, have: ItemColumns): Record<string, unknown> {
+function diff(want: GiftClassification, tier: string | null, cols: ClassificationColumns, have: ItemColumns): Record<string, unknown> {
   const out: Record<string, unknown> = {};
+  const current = (col: string): string => statusLabel(have.text.get(col), have.values.get(col)) ?? '';
   for (const key of KEYS) {
-    const current = statusLabel(have.text.get(cols[key]), have.values.get(cols[key])) ?? '';
-    if (current !== want[key]) out[cols[key]] = want[key] === '' ? '' : { label: want[key] };
+    if (current(cols[key]) !== want[key]) out[cols[key]] = want[key] === '' ? '' : { label: want[key] };
+  }
+  // Tier is never cleared: a gift without an amount keeps whatever it has.
+  if (cols.acknowledgmentTier && tier !== null && current(cols.acknowledgmentTier) !== tier) {
+    out[cols.acknowledgmentTier] = { label: tier };
   }
   return out;
 }
@@ -40,19 +44,21 @@ export async function runClassify(client: ClassifyClient, config: DonationRollup
     const cl = board.columns.classification;
     if (!cl) continue;
     const readCols = [board.columns.amount, board.columns.date,
-      ...(board.columns.giftType ? [board.columns.giftType] : []), ...KEYS.map((k) => cl[k])];
+      ...(board.columns.giftType ? [board.columns.giftType] : []), ...KEYS.map((k) => cl[k]),
+      ...(cl.acknowledgmentTier ? [cl.acknowledgmentTier] : [])];
     let cursor: string | null = null;
     do {
       const page = await client.pageItemsColumnsText(board.boardId, readCols, cursor);
       for (const item of page.items) {
         scanned++;
         const amountText = item.text.get(board.columns.amount) ?? null;
+        const amountCents = amountText === null ? null : parseAmountCents(amountText);
         const want = classifyGift({
-          amountCents: amountText === null ? null : parseAmountCents(amountText),
+          amountCents,
           dateISO: item.text.get(board.columns.date) ?? null,
           giftType: board.columns.giftType ? item.text.get(board.columns.giftType) ?? null : null,
         }, config.fiscalYear.startMonth);
-        const values = diff(want, cl, item);
+        const values = diff(want, acknowledgmentTier(amountCents), cl, item);
         if (Object.keys(values).length === 0) continue;
         changed++;
         if (written + failed.length < CLASSIFY_WRITES_PER_RUN) {

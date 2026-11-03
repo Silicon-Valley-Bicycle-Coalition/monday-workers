@@ -51,8 +51,12 @@ function validateDonationBoard(raw: unknown, index: number): DonationBoardConfig
         throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.${key} must be a Monday column id string`);
       }
     }
+    if (cl.acknowledgmentTier !== undefined && (typeof cl.acknowledgmentTier !== 'string' || cl.acknowledgmentTier === '')) {
+      throw new Error(`config: donationRollups.donationBoards[${index}].columns.classification.acknowledgmentTier must be a Monday column id string or omitted`);
+    }
     classification = { fundingStream: cl.fundingStream as string, giftSize: cl.giftSize as string,
-      fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string };
+      fiscalQuarter: cl.fiscalQuarter as string, giftFiscalYear: cl.giftFiscalYear as string,
+      ...(cl.acknowledgmentTier !== undefined ? { acknowledgmentTier: cl.acknowledgmentTier as string } : {}) };
   }
   return {
     boardId: b.boardId,
