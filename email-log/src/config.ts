@@ -111,6 +111,11 @@ export function validateConfig(raw: unknown): EmailLogConfig {
   }
   if (!isNonEmptyString(replyFrom.name)) throw new Error('config: "mail.replyFrom.name" must be a non-empty string');
 
+  const timeline = section(raw, 'timeline', 'timeline');
+  if (!('customActivityId' in timeline) || (timeline.customActivityId !== null && !isNonEmptyString(timeline.customActivityId))) {
+    throw new Error('config: "timeline.customActivityId" must be a custom activity id string, or null to turn the timeline entry off');
+  }
+
   const capacity = section(raw, 'capacity', 'capacity');
   if (!isPositiveInt(capacity.activitiesMaxItems)) {
     throw new Error('config: "capacity.activitiesMaxItems" must be a positive integer');

@@ -41,6 +41,9 @@ export interface EmailLogConfig {
     forwardTimeZone: string;
     replyFrom: { email: string; name: string };
   };
+  // The Emails & Activities custom activity ("Logged email") posted on each matched person; null
+  // turns the timeline entry off.
+  timeline: { customActivityId: string | null };
   capacity: { activitiesMaxItems: number; warnPct: number };
   alerts: { itRequests: { boardId: number; typeColumn: string; typeLabel: string; cooldownDays: number } | null };
 }

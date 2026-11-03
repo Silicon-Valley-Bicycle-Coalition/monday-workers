@@ -75,4 +75,21 @@ describe('HttpMondayClient', () => {
     expect(body.variables.itemName).toBe('Email: hi');
     expect(JSON.parse(body.variables.columnValues)).toEqual({ a: 'b' });
   });
+  it('createTimelineItem sends the entry non-idempotent and returns the id', async () => {
+    const fetchMock = mockFetchOnce({ data: { create_timeline_item: { id: 'tl-1' } } });
+    const input = { itemId: '11', customActivityId: 'act-1', title: 'Hi', summary: 'Hello', content: 'Hello<br>there', timestamp: '2026-10-19T17:05:09.000Z', url: 'https://example.monday.com/boards/1/pulses/2' };
+    expect(await newClient().createTimelineItem(input)).toBe('tl-1');
+    const body = bodyOf(fetchMock);
+    expect(body.query).toContain('create_timeline_item(');
+    expect(body.variables).toEqual(input);
+  });
+
+  it('createTimelineItem is not retried in-process on a 5xx', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      newClient().createTimelineItem({ itemId: '1', customActivityId: 'a', title: 't', summary: 's', content: 'c', timestamp: '2026-10-19T17:05:09.000Z', url: 'u' })
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

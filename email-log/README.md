@@ -39,6 +39,8 @@ email stays in email.
   forward the Worker couldn't parse), the reply says so and the item is `Needs Person`: open it
   and link the person by hand. You'll also hear back if the item couldn't be written after
   several tries.
+* **Where it shows:** on the Activities (Logged) board, in the person's **Activities (Logged)**
+  column, and as a `Logged email` entry on their **Emails & Activities** timeline.
 * A clean log is silent. Mail with no one outside SVBC on it (staff to staff) is dropped without
   a reply.
 
@@ -91,6 +93,15 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
   then `+N more`, and Notes as a whole is cut to 2,000 characters), Message Hash = the dedupe
   hash. Inline images the HTML shows in place (signature logos) aren't listed as attachments.
 * **If nothing matched, the item is still created**, with an empty Person link and `Needs Person`.
+* **The timeline entry** (one per matched person, when `timeline.customActivityId` is set): a
+  `Logged email` custom activity on the person's **Emails & Activities** timeline, so the email
+  shows where staff look for email, not only in the person's Activities (Logged) column. Title =
+  the item's name, summary = the body on one line (255 characters), content = the item's Notes,
+  timestamp = the email's date, URL = the Activity item. Best effort, after the item is logged: a
+  failure is logged with the item and person ids and isn't retried (a retry would adopt the item
+  without re-posting, and an entry can't be looked up to dedupe). The entry is a copy: fixing the
+  item's Person link later doesn't move it. Works on People and People (Historical) items alike
+  (checked in the sandbox 2026-11-03), though only People shows the Emails & Activities view.
 
 ## Matching
 
@@ -122,6 +133,7 @@ still unset until the board and live mail exist.
 | `activities.*Column` | column ids on Activities (Logged): activity type, date, status, owner, person, notes, message hash |
 | `activities.activityTypeLabel`, `doneLabel`, `needsPersonLabel` | status/label text written (`Email`, `Done`, `Needs Person`) |
 | `matching.*` | email column ids on People, People (Historical), and Affiliations (Work Email + Person link) |
+| `timeline.customActivityId` | the Emails & Activities custom activity posted on each matched person (`Logged email`, `79eba48d-…`, created 2026-11-03; one account, so both configs share it); `null` turns the entry off |
 | `mail.loggingAddress` | the address staff BCC; must not be on a staff domain |
 | `mail.staffDomains` | exact domain match; subdomains are not staff |
 | `mail.staffSenders` | optional allowlist of addresses; `[]` = the whole staff domain |
@@ -151,8 +163,10 @@ still unset until the board and live mail exist.
 
 Standard Monday GraphQL through the canonical transport copy `src/monday/graphql.ts`
 (byte-identical to `monday-backup`'s; the `monday-graphql-copies` CI job enforces it). The Worker
-reads People, People (Historical), Affiliations and the users list, and writes Activities (Logged)
-plus, if alerts are on, IT Requests. Use a dedicated integration user and run
+reads People, People (Historical), Affiliations and the users list, and writes Activities (Logged),
+Emails & Activities timeline entries on matched People items (`create_timeline_item`, which needs a
+CRM seat; API-created entries don't fire "new timeline item" automations) and, if alerts are on, IT
+Requests. Use a dedicated integration user and run
 `node ../scripts/check-monday-token-scope.mjs --workspace <id>` before calling the token scoped.
 
 ## Prerequisites (board work nobody has done)

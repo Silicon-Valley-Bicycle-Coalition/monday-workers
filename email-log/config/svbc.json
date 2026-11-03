@@ -48,6 +48,9 @@
       "name": "SVBC Monday Log"
     }
   },
+  "timeline": {
+    "customActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
+  },
   "capacity": {
     "activitiesMaxItems": 100000,
     "warnPct": 95

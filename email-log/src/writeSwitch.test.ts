@@ -90,6 +90,14 @@ describe('email-log write switch: consumer', () => {
     expect(skips().map((s) => `${s.sink}.${s.operation}`)).toEqual(['Monday.createItem', 'Monday.createItem', 'Email.sendNoAddress']);
   });
 
+  it('under off, the timeline entry is recorded as a skip, not written', async () => {
+    const { monday, deps } = await setup();
+    deps.config.timeline.customActivityId = 'act-1';
+    await consumeLogBatch([fakeMessage(logMessage())], deps, gate('off'));
+    expect(monday.createTimelineItem).not.toHaveBeenCalled();
+    expect(skips().map((s) => `${s.sink}.${s.operation}`)).toEqual(['Monday.createItem', 'Monday.createTimelineItem', 'Email.sendUnmatched']);
+  });
+
   it('under off, closes the row out as failed (dropped) so a staff re-send is not swallowed as a duplicate', async () => {
     const { store, deps } = await setup();
     await consumeLogBatch([fakeMessage(logMessage())], deps, gate('off'));

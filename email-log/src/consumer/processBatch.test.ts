@@ -253,6 +253,58 @@ describe('processLogBatch', () => {
     expect(second.ack).toHaveBeenCalled();
   });
 
+  it('posts a Logged email timeline entry on each matched person, after the item is logged', async () => {
+    const { store, monday, reply, deps } = await setup({ ...PAT, ...LEE }, { timeline: { customActivityId: 'act-1' } });
+    const msg = fakeMessage(logMessage());
+    await processLogBatch([msg], deps);
+
+    expect(monday.createTimelineItem).toHaveBeenCalledTimes(2);
+    expect(monday.createTimelineItem.mock.calls.map(([input]) => input.itemId)).toEqual(['11', '22']);
+    expect(monday.createTimelineItem.mock.calls[0]![0]).toMatchObject({
+      customActivityId: 'act-1',
+      title: 'Ride planning',
+      timestamp: '2026-10-19T17:05:09.000Z',
+      url: `https://example.monday.com/boards/${BOARD}/pulses/1000`,
+    });
+    expect(store.logged.get(HASH)).toBe('1000');
+    expect(reply.sendUnmatched).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('posts no timeline entry while timeline.customActivityId is null', async () => {
+    const { monday, deps } = await setup({ ...PAT, ...LEE });
+    await processLogBatch([fakeMessage(logMessage())], deps);
+    expect(monday.createTimelineItem).not.toHaveBeenCalled();
+  });
+
+  it('posts no timeline entry when nobody matched', async () => {
+    const { monday, deps } = await setup({}, { timeline: { customActivityId: 'act-1' } });
+    await processLogBatch([fakeMessage(logMessage())], deps);
+    expect(monday.createTimelineItem).not.toHaveBeenCalled();
+  });
+
+  it('posts no timeline entry when adopting an existing item', async () => {
+    const { monday, deps } = await setup({ ...PAT, [`${BOARD}:hash_col:${HASH}`]: ['555'] }, { timeline: { customActivityId: 'act-1' } });
+    await processLogBatch([fakeMessage(logMessage(), 2)], deps);
+    expect(monday.createTimelineItem).not.toHaveBeenCalled();
+  });
+
+  it('a timeline failure does not fail the message, skips no other person, and still replies', async () => {
+    const { store, monday, reply, deps } = await setup({ ...PAT, ...LEE }, { timeline: { customActivityId: 'act-1' } });
+    monday.createTimelineItem.mockRejectedValueOnce(new Error('timeline down'));
+    const msg = fakeMessage(logMessage({ counterparts: ['pat@gmail.com', 'lee@corp.com', 'kim@x.org'] }));
+    await processLogBatch([msg], deps);
+
+    expect(monday.createTimelineItem).toHaveBeenCalledTimes(2);
+    expect(store.logged.get(HASH)).toBe('1000');
+    expect(reply.sendUnmatched).toHaveBeenCalledTimes(1);
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+    expect(msg.retry).not.toHaveBeenCalled();
+    const lines = error.mock.calls.map((args: unknown[]) => args.map(String).join(' ')).join('\n');
+    expect(lines).toContain('timeline');
+    expect(lines).not.toMatch(/@|Ride planning/);
+  });
+
   it('never logs an address or subject', async () => {
     const { monday, reply, deps } = await setup();
     monday.createItem.mockRejectedValueOnce(new Error('boom'));

@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import type { AlertKind, LoggedMessageStore } from '../db/loggedMessages';
 import type { ReplySender } from '../email/reply';
-import type { MondayClient } from '../monday/client';
+import type { MondayClient, TimelineItemInput } from '../monday/client';
 
 // In-memory LoggedMessageStore: records each call so a test can assert on the ledger writes.
 // `status` mirrors D1's claim semantics (insert, or re-open only a failed row).
@@ -41,7 +41,7 @@ export class FakeStore implements LoggedMessageStore {
 }
 
 // Monday fake: column lookups answer from `lookups` keyed "board:column:value"; createItem
-// returns sequential ids unless a test overrides it.
+// and createTimelineItem return sequential ids unless a test overrides them.
 export function fakeMonday(lookups: Record<string, string[]> = {}, opts: { count?: number; userId?: number | null } = {}) {
   let next = 1000;
   return {
@@ -50,6 +50,7 @@ export function fakeMonday(lookups: Record<string, string[]> = {}, opts: { count
     getConnectedItemIds: vi.fn(async () => [] as string[]),
     boardItemsCount: vi.fn(async () => opts.count ?? 10),
     createItem: vi.fn(async (_boardId: number, _name: string, _columnValues: Record<string, unknown>) => String(next++)),
+    createTimelineItem: vi.fn(async (_input: TimelineItemInput) => `tl-${next++}`),
   } satisfies MondayClient;
 }
 

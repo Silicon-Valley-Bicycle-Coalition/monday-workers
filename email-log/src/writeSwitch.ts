@@ -28,10 +28,13 @@ export function dryRunDeps(deps: ConsumerDeps, ctx: SkipContext): ConsumerDeps {
   return {
     ...deps,
     store: readOnlyProxy(deps.store, STORE_MUTATORS),
-    // Covers the Activity item and the IT Requests alert. The placeholder is only ever used to
+    // Covers the Activity item, its timeline entries and the IT Requests alert. The placeholder is only ever used to
     // build the item URL in the (also recorded) reply, and is stored nowhere.
     monday: recordingProxy(deps.monday, MONDAY_SINK, {
       createItem: function () {
+        return `dry-run-${this.n}`;
+      },
+      createTimelineItem: function () {
         return `dry-run-${this.n}`;
       },
     }, ctx),
