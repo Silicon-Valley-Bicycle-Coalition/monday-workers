@@ -12,7 +12,7 @@ function rec(over: Partial<StoredRecord> = {}): StoredRecord {
     donationIdentifier: 'd-1', mondayItemId: 'm-1', source: 'funraise', status: 'matched',
     matchingGiftStatus: 'paid', employerStatus: 'eligible', companyId: 'c-1', companyName: 'Example Org',
     matchedAmount: 25.5, donationDatetime: '2026-03-01T10:00:00Z', updatedSeenAt: '2026-03-02T00:00:00Z',
-    unmatched: false, ...over,
+    unmatched: false, donorEmailHash: 'abc123', donationAmount: 25, ...over,
   };
 }
 
@@ -21,7 +21,7 @@ describe('records', () => {
     await upsertRecord(env.DB, rec());
     expect(await getRecord(env.DB, 'd-1')).toEqual(rec());
     const sparse = rec({ donationIdentifier: 'd-2', mondayItemId: null, source: null, status: null, matchingGiftStatus: null,
-      employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null, unmatched: true });
+      employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null, unmatched: true, donorEmailHash: null, donationAmount: null });
     await upsertRecord(env.DB, sparse);
     expect(await getRecord(env.DB, 'd-2')).toEqual(sparse);
     expect(await getRecord(env.DB, 'nope')).toBeNull();

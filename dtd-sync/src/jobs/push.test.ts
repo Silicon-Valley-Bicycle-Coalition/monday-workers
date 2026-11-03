@@ -20,7 +20,7 @@ function item(over: Partial<DonationItem> = {}): DonationItem {
   };
 }
 function person(over: Partial<PersonItem> = {}): PersonItem {
-  return { id: '900', email: 'staff@example.org', firstName: 'Sam', lastName: 'Okafor', phone: null, dtdCompanyId: null, ...over };
+  return { id: '900', email: 'staff@example.org', householdEmail: null, firstName: 'Sam', lastName: 'Okafor', phone: null, dtdCompanyId: null, ...over };
 }
 
 interface Harness {
@@ -124,7 +124,7 @@ describe('runPush', () => {
     await upsertRecord(env.DB, {
       donationIdentifier: 'fr-9', mondayItemId: '500', source: null, status: null, matchingGiftStatus: null,
       employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
-      updatedSeenAt: NOW.toISOString(), unmatched: false,
+      updatedSeenAt: NOW.toISOString(), unmatched: false, donorEmailHash: null, donationAmount: null,
     });
     expect(await runPush(h.deps, NOW)).toEqual({ considered: 1, sent: 0, failed: 0 });
     expect(h.sent).toEqual([]);

@@ -2,6 +2,9 @@ import type { DtdSyncConfig } from '../config';
 import { DtdAuthError, type DtdClient } from '../dtd/client';
 import type { DtdDonation } from '../dtd/types';
 import type { DonationItem, DtdMondayClient } from '../monday/client';
+import { getPush } from '../db/pushes';
+import { emailHash } from '../hash';
+import type { PersonItem } from '../monday/client';
 import { getRecord, listUnmatched, upsertRecord, type StoredRecord } from '../db/records';
 import { getWatermark, setWatermark } from '../db/state';
 import { matchStatusLabel } from '../mapping/status';
@@ -31,10 +34,35 @@ function str(value: string | number | null): string | null {
   return value === null || value === '' ? null : String(value);
 }
 
-/** The Monday Donations item a DTD record belongs to, or null while it can't be found. */
-async function resolve(monday: DtdMondayClient, identifier: string, source: string | null): Promise<DonationItem | null> {
-  if (identifier.startsWith(MONDAY_PREFIX)) return monday.getDonation(identifier.slice(MONDAY_PREFIX.length));
+/**
+ * The Monday Donations item a DTD record claims, or null while it can't be found. A `monday-<id>`
+ * identifier counts only when this Worker pushed that item: DTD's plugin key is public, so anyone
+ * can register a record with an identifier of their choosing.
+ */
+async function resolve(deps: PullDeps, identifier: string, source: string | null): Promise<DonationItem | null> {
+  const { monday, db } = deps;
+  if (identifier.startsWith(MONDAY_PREFIX)) {
+    const id = identifier.slice(MONDAY_PREFIX.length);
+    return (await getPush(db, id))?.state === 'sent' ? monday.getDonation(id) : null;
+  }
   return source === null ? monday.findDonationByFunraiseId(identifier) : monday.findDonationBySalesforceId(identifier);
+}
+
+const AMOUNT_TOLERANCE = 0.01;
+
+/**
+ * Whether the DTD record provably belongs to this item: its donor email is the item's donor's
+ * People (personal or household) email, and its amount, when both sides have one, is within 1%.
+ * Returns the donor so the caller needn't fetch it again.
+ */
+async function ownedBy(deps: PullDeps, item: DonationItem, hash: string | null, amount: number | null): Promise<PersonItem | null> {
+  if (hash === null || item.donorItemId === null) return null;
+  const [person] = await deps.monday.getPeople([item.donorItemId]);
+  if (!person) return null;
+  const emails = [person.email, person.householdEmail].filter((e): e is string => e !== null && e.trim() !== '');
+  if (!(await Promise.all(emails.map(emailHash))).includes(hash)) return null;
+  if (amount !== null && item.amount !== null && Math.abs(amount - item.amount) > AMOUNT_TOLERANCE * Math.abs(item.amount)) return null;
+  return person;
 }
 
 function differs(prev: StoredRecord | null, next: StoredRecord): boolean {
@@ -57,9 +85,12 @@ interface Handled { written: boolean; unmatched: boolean; error?: unknown }
  * record as unmatched (keeping any known item id) so the retry pass re-handles it, and comes back
  * as `error`; only a D1 failure (or DtdAuthError) throws.
  */
-async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, nowISO: string): Promise<Handled> {
+async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, nowISO: string, storedHash: string | null = null): Promise<Handled> {
   const { monday, db, config } = deps;
   const prev = await getRecord(db, d.donation_identifier);
+
+  // A retried row has no email, only the hash stored when it was first seen.
+  const hash = d.donor_email !== null && d.donor_email.trim() !== '' ? await emailHash(d.donor_email) : storedHash;
 
   const next: StoredRecord = {
     donationIdentifier: d.donation_identifier,
@@ -74,16 +105,27 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
     donationDatetime: toISO(d.donation_datetime),
     updatedSeenAt: nowISO,
     unmatched: true, // a carried-forward item id stays retryable until it resolves
+    donorEmailHash: hash,
+    donationAmount: d.donation_amount,
   };
 
   let written = false;
   try {
-    const item = await resolve(monday, d.donation_identifier, d.source);
+    let item = await resolve(deps, d.donation_identifier, d.source);
+    let donor: PersonItem | null = null;
     if (item) {
+      donor = await ownedBy(deps, item, hash, d.donation_amount);
+      if (donor === null) {
+        console.log(`dtd-sync: pull item ${item.id} skipped: donor mismatch`);
+        item = null;
+        next.mondayItemId = null; // a forged record must not claim the item (push skips items DTD has a record for)
+      }
+    }
+    if (item && donor) {
       next.mondayItemId = item.id;
       next.unmatched = false;
     }
-    if (item && differs(prev, next)) {
+    if (item && donor && differs(prev, next)) {
       if (item.matchStatus !== MATCHED) {
         const keyword = d.matching_gift_status ?? d.status;
         await monday.updateDonation(item.id, {
@@ -93,7 +135,7 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
         });
         written = true;
       }
-      await writePerson(deps, item, next.companyId, d.company_name, plugin);
+      await writePerson(deps, donor, next.companyId, d.company_name, plugin);
     }
   } catch (err) {
     if (err instanceof DtdAuthError) throw err;
@@ -106,10 +148,8 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
   return { written, unmatched: next.unmatched };
 }
 
-async function writePerson(deps: PullDeps, item: DonationItem, companyId: string | null, companyName: string | null, link: string | null): Promise<void> {
-  if (companyId === null || item.donorItemId === null) return;
-  const [person] = await deps.monday.getPeople([item.donorItemId]);
-  if (!person || person.dtdCompanyId === companyId) return;
+async function writePerson(deps: PullDeps, person: PersonItem, companyId: string | null, companyName: string | null, link: string | null): Promise<void> {
+  if (companyId === null || person.dtdCompanyId === companyId) return;
   const p = deps.config.people;
   const values: Record<string, unknown> = { [p.dtdCompanyId]: companyId, [p.dtdCompany]: companyName ?? '' };
   if (link !== null && /^https:\/\//i.test(link)) values[p.dtdLink] = { url: link, text: 'Start your match' };
@@ -118,7 +158,7 @@ async function writePerson(deps: PullDeps, item: DonationItem, companyId: string
 
 function asDonation(r: StoredRecord): DtdDonation {
   return {
-    donation_identifier: r.donationIdentifier, source: r.source, donation_datetime: r.donationDatetime, donor_email: null,
+    donation_identifier: r.donationIdentifier, source: r.source, donation_datetime: r.donationDatetime, donor_email: null, donation_amount: r.donationAmount,
     company_name: r.companyName, doublethedonation_company_id: r.companyId, status: r.status,
     matching_gift_status: r.matchingGiftStatus, employer_identification_status: r.employerStatus,
     matched_amount: r.matchedAmount, plugin_link: null,
@@ -174,7 +214,7 @@ export async function runPull(deps: PullDeps, now: Date): Promise<PullResult> {
   for (const r of await listUnmatched(deps.db, UNMATCHED_RETRY_LIMIT)) {
     if (seen.has(r.donationIdentifier)) continue;
     try {
-      const out = await handle(deps, asDonation(r), null, nowISO);
+      const out = await handle(deps, asDonation(r), null, nowISO, r.donorEmailHash);
       if (out.written) written++;
       if (out.unmatched) unmatched++;
       if (out.error !== undefined) {

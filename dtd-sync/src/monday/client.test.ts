@@ -196,7 +196,7 @@ describe('HttpDtdMondayClient people and organizations', () => {
   it('getPeople splits the name and prefers the personal email', async () => {
     const { client, calls } = mondayFetch([{ items: [person('1', 'Pat Example', 'pat@example.org', 'home@example.org')] }]);
     const [p] = await client.getPeople(['1']);
-    expect(p).toEqual({ id: '1', email: 'pat@example.org', firstName: 'Pat', lastName: 'Example', phone: '+15551230000', dtdCompanyId: 'co_1' });
+    expect(p).toEqual({ id: '1', email: 'pat@example.org', householdEmail: 'home@example.org', firstName: 'Pat', lastName: 'Example', phone: '+15551230000', dtdCompanyId: 'co_1' });
     expect(calls[0]!.variables.ids).toEqual(['1']);
   });
 

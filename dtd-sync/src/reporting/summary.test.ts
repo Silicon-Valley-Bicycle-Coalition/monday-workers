@@ -7,7 +7,7 @@ function rec(over: Partial<StoredRecord> = {}): StoredRecord {
   return {
     donationIdentifier: 'monday-1', mondayItemId: '1', source: null, status: ':in-progress', matchingGiftStatus: null,
     employerStatus: ':complete', companyId: null, companyName: null, matchedAmount: null,
-    donationDatetime: '2026-09-01T00:00:00Z', updatedSeenAt: '', unmatched: false, ...over,
+    donationDatetime: '2026-09-01T00:00:00Z', updatedSeenAt: '', unmatched: false, donorEmailHash: null, donationAmount: null, ...over,
   };
 }
 function match(over: Partial<DonationItem> = {}): DonationItem {

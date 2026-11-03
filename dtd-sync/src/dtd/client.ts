@@ -29,6 +29,7 @@ function toDonation(raw: Record<string, unknown>): DtdDonation {
     source: str(raw.source),
     donation_datetime: str(raw.donation_datetime),
     donor_email: str(raw.donor_email),
+    donation_amount: num(raw.donation_amount),
     company_name: str(raw.company_name),
     doublethedonation_company_id:
       typeof raw.doublethedonation_company_id === 'number' ? raw.doublethedonation_company_id : str(raw.doublethedonation_company_id),

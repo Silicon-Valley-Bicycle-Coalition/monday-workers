@@ -37,7 +37,8 @@ Cron 15 * * * *  (hourly, UTC)
   │
   ├─ pull     DTD get_updated_donations(since watermark − overlap; first run: July 1 of the
   │             previous fiscal year)
-  │             → find the Donations item (Funraise ID, else Salesforce ID, else our own pushed id;
+  │             → find the Donations item (Funraise ID, else Salesforce ID, else our own pushed id,
+  │               which counts only if the push ledger shows we sent it;
   │               an item on another board doesn't count)
   │             → Match Status / DTD Status (raw) / Match Company on Donations
   │             → DTD Company ID / DTD Company / DTD match link on the donor's People item
@@ -59,6 +60,17 @@ Cron 0 10 * * *  (nightly, UTC)
   └─ summary  Matching Gift Program board: one row per fiscal year (current and previous),
               recomputed from scratch each run
 ```
+
+**Ownership check.** DTD's plugin key is public (browsers receive it) and `register_donation` accepts
+it, so anyone can register a record with an identifier of their choosing. Pull therefore writes
+Monday only for a record it can tie to the item: a `monday-<id>` identifier counts only if the push
+ledger shows this Worker sent that item, and for every resolved item the record's donor email
+(trimmed, case-insensitive) must equal the donor's People personal or household email, and the
+amounts (when DTD sends one) must agree within 1%. A record that fails is stored as unmatched
+without an item id and logged as `dtd-sync: pull item <id> skipped: donor mismatch` (never the
+email); retries re-apply the check from a stored SHA-256 of the email (migration
+`0002_add_donor_email_hash.sql`), never the address itself. Donors on Organizations or People
+(Historical) can't be verified, so their gifts get no DTD status written.
 
 Every job has its own try/catch, so one failing job is logged by name and the run continues, with
 one exception: push runs only after a pull that completed this run (push skips gifts DTD already
@@ -114,7 +126,7 @@ run re-checks this for each linked Matching Donation in the window, Staff links 
 |---|---|---|
 | DTD | Base `https://doublethedonation.com/api/360matchpro/v1/` (`dtd.apiBase`). The private key is the Worker secret `DTD_PRIVATE_KEY`, sent as the `key` query parameter. | `register_donation` also carries the public key (`dtd.publicKey`, not a secret; the same one the member-portal employer-search widget uses). Never logged. |
 | Monday | The `monday-auth` broker's Staff sync app, bound as `MONDAY_AUTH` (`SyncToken` entrypoint). | Same arrangement as the other Workers; no Monday secret here. |
-| D1 | `DB`: `dtd_records` (DTD records seen), `pushes` (sent ledger), `sync_state` (pull watermark). | Migration `migrations/0001_create_tables.sql`. |
+| D1 | `DB`: `dtd_records` (DTD records seen), `pushes` (sent ledger), `sync_state` (pull watermark). | Migrations `migrations/0001_create_tables.sql`, `0002_add_donor_email_hash.sql`. |
 
 Endpoints used: `get_updated_donations` (pull, capped at 100,000 per call), `register_donation`
 (push). DTD's docs label the custom API **Enterprise-only**; it worked on SVBC's **Standard** plan

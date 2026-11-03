@@ -16,7 +16,7 @@ function item(over: Partial<DonationItem> = {}): DonationItem {
   };
 }
 function donor(over: Partial<PersonItem> = {}): PersonItem {
-  return { id: '900', email: 'pat@example.org', firstName: 'Pat', lastName: 'Rivera', phone: null, dtdCompanyId: null, ...over };
+  return { id: '900', email: 'pat@example.org', householdEmail: null, firstName: 'Pat', lastName: 'Rivera', phone: null, dtdCompanyId: null, ...over };
 }
 const no = (reason?: string) => expect.objectContaining({ send: false, ...(reason ? { reason } : {}) });
 
