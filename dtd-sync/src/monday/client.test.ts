@@ -114,6 +114,7 @@ describe('HttpDtdMondayClient donation lookups', () => {
     const all = await client.listDonationsDatedSince('2026-10-01');
     expect(all.map((d) => d.id)).toEqual(['1', '2', '3']);
     expect(calls[0]!.variables.since).toEqual(['EXACT', '2026-10-01']);
+    expect(calls[0]!.query).toContain('$since: CompareValue!');
     expect(calls[1]!.variables.cursor).toBe('c1');
     expect(calls[2]!.variables.cursor).toBe('c2');
   });
@@ -132,6 +133,27 @@ describe('HttpDtdMondayClient donation lookups', () => {
     expect(gifts.map((g) => g.id)).toEqual(['2']);
     expect(calls[0]!.query).toContain(`column_id: "${D.donor}"`);
     expect(calls[0]!.variables.donorItemId).toBe(111);
+  });
+});
+
+describe('deleted items', () => {
+  it('paged and by-column reads drop deleted items but keep archived ones', async () => {
+    const gone = { ...donationItem('1'), state: 'deleted' };
+    const archived = { ...donationItem('2'), state: 'archived' };
+    const { client } = mondayFetch([
+      { boards: [{ items_page: { cursor: null, items: [gone, archived] } }] },
+      { items_page_by_column_values: { items: [gone] } },
+    ]);
+    expect((await client.listDonationsDatedSince('2026-10-01')).map((d) => d.id)).toEqual(['2']);
+    expect(await client.findDonationByFunraiseId('12345')).toBeNull();
+  });
+
+  it('getPeople drops a deleted person', async () => {
+    const { client } = mondayFetch([{ items: [
+      { id: '1', name: 'Pat Example', state: 'deleted', column_values: [] },
+      { id: '2', name: 'Sam Lee', state: 'active', column_values: [] },
+    ] }]);
+    expect((await client.getPeople(['1', '2'])).map((p) => p.id)).toEqual(['2']);
   });
 });
 

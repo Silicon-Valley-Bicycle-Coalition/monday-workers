@@ -66,6 +66,12 @@ function amount(cv: ColumnValue | undefined): number | null {
   return Number.isFinite(n) && /\d/.test(t) ? n : null;
 }
 
+// Trashed items keep coming back with state 'deleted'; archived ones are kept (older fiscal years
+// live archived on the same board and pairing may need them).
+function live(item: { state?: string | null }): boolean {
+  return item.state !== 'deleted';
+}
+
 function chunksOf<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -131,7 +137,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
       }`,
       { boardId: this.config.boards.donations, columns: [{ column_id: columnId, column_values: [value] }] },
     );
-    const item = data.items_page_by_column_values.items[0];
+    const item = data.items_page_by_column_values.items.find(live);
     return item ? this.donationFrom(item) : null;
   }
 
@@ -151,8 +157,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
       { ids: [itemId] },
     );
     const item = data.items[0];
-    // items(ids:) keeps returning a trashed item with state 'deleted'.
-    return item && item.state !== 'deleted' ? this.donationFrom(item) : null;
+    return item && live(item) ? this.donationFrom(item) : null;
   }
 
   // Runs a board query with `rules`, then follows next_items_page cursors to the end.
@@ -170,7 +175,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
     let page = first.boards[0]?.items_page;
     const out: DonationItem[] = [];
     while (page) {
-      out.push(...page.items.map((i) => this.donationFrom(i)));
+      out.push(...page.items.filter(live).map((i) => this.donationFrom(i)));
       if (page.cursor === null) break;
       const next: { next_items_page: ItemsPage } = await this.transport.request(
         `query ($cursor: String!) { next_items_page(limit: 500, cursor: $cursor) { cursor items { ${this.donationFields} } } }`,
@@ -184,7 +189,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   async listDonationsDatedSince(dateISO: string): Promise<DonationItem[]> {
     const col = this.config.donations.date;
     const items = await this.pageDonations(
-      '$since: CompareValue',
+      '$since: CompareValue!',
       `{ column_id: "${col}", compare_value: $since, operator: greater_than_or_equals }`,
       { since: ['EXACT', dateISO] },
     );
@@ -209,11 +214,11 @@ export class HttpDtdMondayClient implements DtdMondayClient {
     for (const chunk of chunksOf(ids, 100)) {
       const data = await this.transport.request<{ items: RawItem[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: 100) { id name column_values(ids: $columnIds) { id text value } }
+          items(ids: $ids, limit: 100) { id name state column_values(ids: $columnIds) { id text value } }
         }`,
         { ids: chunk, columnIds: [p.email, p.householdEmail, p.phone, p.dtdCompanyId] },
       );
-      for (const item of data.items) {
+      for (const item of data.items.filter(live)) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
         out.push({
           id: item.id,
