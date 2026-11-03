@@ -62,13 +62,13 @@
     "benefitTiers": []
   },
   "changeRequests": {
-    "boardId": null,
+    "boardId": 18438337985,
     "columns": {
-      "donorLink": "REPLACE_WITH_COLUMN_ID",
-      "field": "REPLACE_WITH_COLUMN_ID",
-      "oldValue": "REPLACE_WITH_COLUMN_ID",
-      "newValue": "REPLACE_WITH_COLUMN_ID",
-      "submittedAt": "REPLACE_WITH_COLUMN_ID"
+      "donorLink": "board_relation_mm8rkkjt",
+      "field": "text_mm8rvptd",
+      "oldValue": "text_mm8r4g5p",
+      "newValue": "text_mm8r7sep",
+      "submittedAt": "date_mm8rrgmn"
     },
     "dedupeWindowHours": 72,
     "retentionDays": 180
@@ -94,12 +94,22 @@
     "retentionDays": 30
   },
   "letterCron": {
-    "boardId": null,
+    "boardId": 18438338071,
     "columns": {
-      "autoSend": "REPLACE_WITH_COLUMN_ID",
-      "startDate": "REPLACE_WITH_COLUMN_ID",
-      "bodyTemplate": "REPLACE_WITH_COLUMN_ID",
-      "bodyTemplatesByLocale": {}
+      "autoSend": "boolean_mm8ry902",
+      "startDate": "date_mm8r153z",
+      "bodyTemplate": "long_text_mm8r1v12",
+      "bodyTemplatesByLocale": {
+        "es": "long_text_mm8rhh4z",
+        "zh-Hans": "long_text_mm8r2ydp",
+        "zh-Hant": "long_text_mm8rn7bp",
+        "fil": "long_text_mm8rt8w6",
+        "hi": "long_text_mm8ry6x5",
+        "ja": "long_text_mm8r1wvq",
+        "ko": "long_text_mm8rt1g4",
+        "pt-BR": "long_text_mm8r8jms",
+        "vi": "long_text_mm8rn0bq"
+      }
     },
     "settingsItemName": "Letter emails",
     "maxTriggersPerRun": 200
