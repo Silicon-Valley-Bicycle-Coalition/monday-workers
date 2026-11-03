@@ -112,10 +112,11 @@ export function parseGiftLedgerJson(text: string): ParsedGiftLedger | null {
   return { entries, truncated };
 }
 
-const dollars = (cents: number): string =>
+export const dollars = (cents: number): string =>
   (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
-const cell = (text: string): string => text.replace(/\|/g, '\\|');
+// Newlines collapse to a space: a line break would end the markdown table row.
+export const cell = (text: string): string => text.replace(/\r?\n|\r/g, ' ').replace(/\|/g, '\\|');
 
 export function buildGiftHistoryMarkdown(
   rows: GiftHistoryRow[], accountUrl: string,
