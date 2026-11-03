@@ -39,11 +39,11 @@ export async function rollCallGifts(deps: CustodianDeps, cfg: RollCallConfig, cu
   // A gift of zero or negative cents never counts (donor-roll-call.mjs skips it too): it would
   // make a $0 row, or add to a row's Gifts without adding to its Total.
   const counted = (status: string, giftType: string | null, fiscalYear: number, cents: number) => fiscalYear <= currentFY
-    && cents > 0 && RECEIVED_LABELS.includes(status) && !(giftType !== null && cfg.excludedGiftTypes.includes(giftType));
+    && fiscalYear >= cfg.firstFiscalYear && cents > 0 && RECEIVED_LABELS.includes(status) && !(giftType !== null && cfg.excludedGiftTypes.includes(giftType));
   // Who a gift is credited to comes from every credits row, before any counting filter: a gift
   // with a named credit (anonymous, Matched By, unplaced) is never its ledger owner's, even when
-  // that row doesn't count tonight ($0, not received). Fail closed on the donor's name.
-  const allCredits = await deps.rollCallCredits.all(cfg.firstFiscalYear);
+  // that row doesn't count tonight ($0, not received, another year). Fail closed on the donor's name.
+  const allCredits = await deps.rollCallCredits.all();
   const creditById = new Map(allCredits.map((r) => [r.giftItemId, r]));
   const credits = allCredits.filter((r) => counted(r.status, r.giftType, r.fiscalYear, r.amountCents));
 
