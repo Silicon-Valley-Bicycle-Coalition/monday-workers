@@ -94,6 +94,16 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).toThrow('alerts.itRequests.cooldownDays');
   });
 
+  it('requires timeline.customActivityId: a string, or null to turn the timeline entry off', () => {
+    const cfg = clone();
+    cfg.timeline.customActivityId = 'act-1';
+    expect(() => validateConfig(cfg)).not.toThrow();
+    cfg.timeline.customActivityId = '';
+    expect(() => validateConfig(cfg)).toThrow('timeline.customActivityId');
+    delete (cfg as Partial<typeof cfg>).timeline;
+    expect(() => validateConfig(cfg)).toThrow('timeline');
+  });
+
   it('rejects a non-object config', () => {
     expect(() => validateConfig(null)).toThrow('expected an object');
   });

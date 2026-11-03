@@ -39,18 +39,19 @@ export function buildActivity(
   match: MatchResult,
   ownerUserId: number | null,
   config: EmailLogConfig,
-): { name: string; columnValues: Record<string, unknown> } {
+): { name: string; columnValues: Record<string, unknown>; notes: string } {
   const a = config.activities;
   const [date, timeZ] = new Date(msg.dateISO).toISOString().split('T') as [string, string];
+  const notes = notesText(msg.body, footerLines(msg, match, ownerUserId).join('\n'));
   const columnValues: Record<string, unknown> = {
     [a.activityTypeColumn]: { label: a.activityTypeLabel },
     [a.dateColumn]: { date, time: timeZ.slice(0, 8) },
     [a.statusColumn]: { label: match.personItemIds.length ? a.doneLabel : a.needsPersonLabel },
-    [a.notesColumn]: { text: notesText(msg.body, footerLines(msg, match, ownerUserId).join('\n')) },
+    [a.notesColumn]: { text: notes },
     [a.messageHashColumn]: msg.messageIdHash,
   };
   if (ownerUserId !== null) columnValues[a.ownerColumn] = { personsAndTeams: [{ id: ownerUserId, kind: 'person' }] };
   if (match.personItemIds.length) columnValues[a.personColumn] = { item_ids: match.personItemIds.map(Number) };
 
-  return { name: truncate(msg.subject, MAX_ITEM_NAME), columnValues };
+  return { name: truncate(msg.subject, MAX_ITEM_NAME), columnValues, notes };
 }

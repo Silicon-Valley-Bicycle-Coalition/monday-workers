@@ -5,6 +5,7 @@ import type { ReplySender } from '../email/reply';
 import type { LogQueueMessage } from '../inbound/extract';
 import { errorText } from '../logSafe';
 import { buildActivity } from '../mapping/activity';
+import { buildTimelineEntry } from '../mapping/timeline';
 import { matchAddresses } from '../matching/people';
 import type { MondayClient } from '../monday/client';
 import type { EmailLogConfig } from '../types';
@@ -127,7 +128,7 @@ async function processOne(msg: LogQueueMessage, deps: ConsumerDeps): Promise<voi
 
   const match = await matchAddresses(msg.counterparts, monday, config);
   const ownerUserId = await monday.findUserIdByEmail(msg.staffEmail);
-  const { name, columnValues } = buildActivity(msg, match, ownerUserId, config);
+  const { name, columnValues, notes } = buildActivity(msg, match, ownerUserId, config);
 
   let itemId: string;
   try {
@@ -141,9 +142,25 @@ async function processOne(msg: LogQueueMessage, deps: ConsumerDeps): Promise<voi
   await store.markLogged(hash, itemId, deps.now().toISOString());
   console.log(JSON.stringify({ emailLog: 'logged', id: shortId(hash), unmatched: match.unmatched.length }));
 
+  const itemUrl = `${config.monday.accountUrl}/boards/${board}/pulses/${itemId}`;
+
+  // The same email on each matched person's Emails & Activities timeline. Best effort, like the
+  // reply: the item is the record, and a retry would adopt it without re-posting, so a failed entry
+  // is logged with the item and person ids (to add it by hand) rather than retried.
+  const activityId = config.timeline.customActivityId;
+  if (activityId !== null && match.personItemIds.length > 0) {
+    const entry = buildTimelineEntry(msg, notes, itemUrl, activityId);
+    for (const personItemId of match.personItemIds) {
+      try {
+        await monday.createTimelineItem({ itemId: personItemId, ...entry });
+      } catch (err) {
+        console.error(`email-log consumer: ${shortId(hash)} logged as item ${itemId}, but the timeline entry on person ${personItemId} failed: ${errorText(err)}`);
+      }
+    }
+  }
+
   // Anything left Needs Person, or with an address not on file, gets a reply saying what to fix.
   if (match.personItemIds.length === 0 || match.unmatched.length > 0) {
-    const itemUrl = `${config.monday.accountUrl}/boards/${board}/pulses/${itemId}`;
     try {
       if (msg.counterparts.length === 0) await deps.reply.sendNoAddress(msg.staffEmail, msg.subject, itemUrl);
       else await deps.reply.sendUnmatched(msg.staffEmail, msg.subject, itemUrl, match.unmatched, match.personItemIds.length === 0);

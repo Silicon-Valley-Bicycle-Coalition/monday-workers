@@ -51,6 +51,7 @@ export function testConfig(overrides: DeepPartial<EmailLogConfig> = {}): EmailLo
       forwardTimeZone: 'America/Los_Angeles',
       replyFrom: { email: 'noreply@mail.example.org', name: 'Monday Log' },
     },
+    timeline: { customActivityId: null },
     capacity: { activitiesMaxItems: 100000, warnPct: 95 },
     alerts: { itRequests: null },
   };
