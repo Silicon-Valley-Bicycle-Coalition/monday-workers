@@ -148,7 +148,8 @@ const organizations = {
 const donationColumns = await columnsOf(donationsId);
 const recognitionFiscalYear = await ensureColumn(donationsId, donationColumns, RECOGNITION_FISCAL_YEAR);
 // Optional (spec §10.3): counted when Amount is blank; left out of the config if the board has none.
-const inKindValue = donationColumns.get('In-Kind Value');
+// Migrated columns carry a 📜 prefix (salesforce-import's marker for Salesforce-sourced fields).
+const inKindValue = donationColumns.get('📜 In-Kind Value') ?? donationColumns.get('In-Kind Value');
 const donations = {
   boardId: Number(donationsId),
   columns: {

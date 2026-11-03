@@ -217,7 +217,8 @@
           "giftType": "text_mm8nyftg",
           "donorLink": "board_relation_mm8n97wj",
           "matchedBy": "board_relation_mm8nkc1g",
-          "anonymous": "boolean_mm8ng6gp"
+          "anonymous": "boolean_mm8ng6gp",
+          "inKindValue": "numeric_mm8n933h"
         }
       },
       "people": {
