@@ -1,15 +1,16 @@
 # UAT script: People board housekeeping (reclassification)
 
-**Status 2026-10-09: nothing to test yet.** The integration is built but not running anywhere,
-and when it is first switched on it will only *report* what it would do, not move anything.
-This script will be updated when it is live in the sandbox.
+**Status 2026-11-03: live.** In the sandbox, the first live pass moved 400 people to People
+(Historical) and every value and link checked survived the move. In production it runs for
+the first time on 2027-01-01, and quarterly after that.
 
 ## What it does
 
-Monday.com allows at most 10,000 items on one board. That is why there are two People boards:
-**People** (everyone with activity in recent years) and **People (Historical)** (everyone
-else). The migration decides who goes where once; nothing keeps it right afterwards. This
-integration does: every quarter (or sooner, if People gets close to full) it looks at each
+There are two People boards: **People** (everyone with activity in recent years) and **People
+(Historical)** (everyone else). The split keeps your day-to-day board to people you're likely to
+work with. (It was first made because a board was thought to hold at most 10,000 items. SVBC's
+real limit is 100,000, so neither board is close to full.) The migration decides who goes where
+once; nothing keeps it right afterwards. This integration does: every quarter it looks at each
 person's most recent activity — their last gift, their membership term, an event they attended
 or a ticket they bought, volunteer hours — and moves anyone with nothing in the last **seven
 years** to People (Historical). It also moves people the other way: a lapsed donor on

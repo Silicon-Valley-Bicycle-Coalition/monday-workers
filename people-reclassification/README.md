@@ -33,18 +33,21 @@ max(Last Gift Date, Member Until), no Lifetime tier, no Funraise profile. It fir
 column parity (`Campaign` tags and a hand-added `monday Doc v2` on People only); the spec now
 gives both People boards the same columns (`salesforce-import` `PEOPLE_COLUMNS`), `Campaign` was
 added to both Historical boards, and the sandbox-only doc column was deleted.
-**Priority:** Post-cutover. The import lands People at ~74% of the ceiling; the plan's own
-trigger line is 85%, and the growth analysis puts a 7-year window at ~71% today, so this is
-headroom maintenance rather than a cutover blocker — but it is the only thing that will ever
-move anyone between the two boards.
+**Priority:** Post-cutover, and low. SVBC's board limit is **100,000 items** (Monday's
+reported `items_limit`, confirmed as the limit that applies, 2026-11-03), not the 10,000 this
+Worker was first sized against. Each People board is at about 8%, so headroom is not a concern
+for years. The Worker's real job is keeping the live board to people with recent activity
+(the rolling 7-year window), so staff aren't working through lapsed contacts. It is the only
+thing that will ever move anyone between the two boards.
 **Owner:** David (decided 2026-10-09).
 **Stack:** Hono + TypeScript + D1 (the shared stack, see `../README.md`); a daily cron and an
 authenticated HTTP trigger; no queue (a failed pass is continued by the next day's cron).
 
 ## The ask
 
-Monday caps a board at 10,000 items on SVBC's Pro plan. `salesforce-import` keeps the People
-board under it by splitting people between **People** (activity since a fixed date,
+The plan assumed Monday caps a board at 10,000 items on SVBC's plan. The real limit is 100,000
+(decided 2026-11-03, see "Priority"), but the split it led to stands. `salesforce-import`
+splits people between **People** (activity since a fixed date,
 `peopleActiveSinceISO: 2019-01-01`) and **People (Historical)**, but that split is computed once
 at import: a fixed cutoff only ever adds people to the live board, nobody ages out, and a lapsed
 donor on Historical who gives again stays where staff don't look day to day. The private
@@ -234,7 +237,8 @@ expected types, and the two People boards' columns agree. The Events start date 
 `Date`, not `Start` — `Start` is the Campaigns and Affiliations column — so the config's
 original `startColumn: "Start"` would have failed every pass at the Events schema read.
 
-Other config: `window` (`years: 7`, `timeZone`), `thresholds` (`itemsLimit: 10000`,
+Other config: `window` (`years: 7`, `timeZone`), `thresholds` (`itemsLimit: 100000`, the
+board limit Monday reports for SVBC; also the move headroom cap,
 `liveTriggerPct: 85`, `historicalWarnPct: 80`), `run` (`maxMovesPerRun: 400` — with the
 ~60 page reads a pass makes, well inside Workers Paid's 1,000 subrequests per invocation;
 `quarterlyMonths`), `perpetual`. `groupId: null` on a board means its first group.
@@ -304,12 +308,6 @@ and type both ways): a pass aborts on any difference, and Monday's API can't cre
   started in the UTC evening can make the next morning's 10:00 UTC cron think it already ran
   "today", so the continuation slips a day. That's harmless, but it's why the 2026-11-03 01:03
   UTC pass continues on 11-04, not 11-03.
-* **Which item limit?** Monday reports each People board's `items_limit` as **100,000**
-  (sandbox v4, 2026-11-02). The threshold trigger prefers that over `thresholds.itemsLimit`
-  (10,000; `src/index.ts`, `src/pass.ts` `countOf`), so it would fire at about 85,000 items.
-  The Historical warning still uses 10,000. If 100,000 is the real ceiling on SVBC's plan, the
-  headroom this Worker manages is far larger than the plan assumed: decide which number rules,
-  then make the trigger and the warning agree.
 * **Window granularity.** The sizing analysis compared calendar years (`refYear − year < N`);
   this Worker uses a rolling date (`today − 7 years`, same month/day), so people age out through
   the year in quarterly batches rather than all at once each January. The counts differ only at
@@ -324,8 +322,9 @@ and type both ways): a pass aborts on any difference, and Monday's API can't cre
 * **Inbound Donor links are untested live, though the mechanism is proven.** None of the 400
   people in the full pass had a gift on sandbox Donations. Inbound links of the same kind
   (`Volunteer`, `Attendee`) all survived, 121 of 121, so Donor links should too.
-* **People (Historical) at 81% already** (sandbox, 2026-08-24; v4 at 80.5%, 2026-10-28). This Worker warns and refuses
-  to overfill it, but the era split the plan's item 4 asks for is a separate design.
+* **The era split for People (Historical)** (the plan's "Still open" item 4) assumed a
+  10,000-item ceiling, at which Historical was already at 80–81%. At 100,000 it is at about 8%,
+  so the split is no longer needed for capacity. Revisit it only if there's another reason.
 * **Activities board** as an activity source (staff touches) — deliberately out; revisit if
   staff expect a recent call to keep someone live.
 

@@ -54,6 +54,13 @@ describe('config split: board ids', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
   });
+
+  it('both use the 100,000-item board limit Monday reports for SVBC (decided 2026-11-03)', () => {
+    // 10,000 made the Historical warning, its IT Requests alert and the move headroom fire at a
+    // tenth of the real ceiling (production Historical was already at "80%" with 8,037 items).
+    expect(production.thresholds.itemsLimit).toBe(100_000);
+    expect(sandbox.thresholds.itemsLimit).toBe(100_000);
+  });
 });
 
 describe('wrangler.jsonc env.sandbox', () => {
