@@ -7,13 +7,36 @@ const keys = async () => publicKey;
 const valid = await new SignJWT({ email: 'pat@bikesiliconvalley.org' })
   .setProtectedHeader({ alg: 'RS256' }).setIssuer('https://svbc.cloudflareaccess.com').setAudience('aud123').setExpirationTime('5m').sign(privateKey);
 
-// A small in-memory R2: just head/get/put/delete, with an upload time per key.
+// A small in-memory R2: head/get/put/delete, with an upload time and etag per key, and put's
+// onlyIf etagMatches / etagDoesNotMatch ('*' = any object), answering null when the condition
+// fails, as the R2 binding does (checked against local workerd via getPlatformProxy).
 class FakeBucket {
-  objects = new Map<string, { body: string; uploaded: Date }>();
-  set(key: string, uploaded: Date, body = '{"ok":true}') { this.objects.set(key, { body, uploaded }); }
-  async head(key: string) { const o = this.objects.get(key); return o ? { uploaded: o.uploaded } : null; }
+  objects = new Map<string, { body: string; uploaded: Date; etag: string }>();
+  private n = 0;
+  // Race tests: a read of the marker (head) waits until `barrier` reads have started (or 50 ms,
+  // when fewer come), so two requests that check before writing both look before either writes:
+  // the interleaving a real double click can hit.
+  barrier = 0;
+  private waiting: (() => void)[] = [];
+  private async rendezvous(key: string) {
+    if (key !== 'refresh-pending.json' || this.barrier === 0) return;
+    await new Promise<void>((resolve) => {
+      this.waiting.push(resolve);
+      setTimeout(resolve, 50);
+      if (this.waiting.length >= this.barrier) { this.barrier = 0; for (const w of this.waiting.splice(0)) w(); }
+    });
+  }
+  set(key: string, uploaded: Date, body = '{"ok":true}') { this.objects.set(key, { body, uploaded, etag: `e${++this.n}` }); }
+  async head(key: string) { await this.rendezvous(key); const o = this.objects.get(key); return o ? { uploaded: o.uploaded, etag: o.etag } : null; }
   async get(key: string) { const o = this.objects.get(key); return o ? { uploaded: o.uploaded, body: new Response(o.body).body } : null; }
-  async put(key: string, body: string) { this.objects.set(key, { body, uploaded: new Date() }); return {}; }
+  async put(key: string, body: string, opts: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } } = {}) {
+    const cur = this.objects.get(key);
+    const { etagMatches, etagDoesNotMatch } = opts.onlyIf ?? {};
+    if (etagMatches !== undefined && cur?.etag !== etagMatches) return null;
+    if (etagDoesNotMatch !== undefined && cur && (etagDoesNotMatch === '*' || cur.etag === etagDoesNotMatch)) return null;
+    this.set(key, new Date(), body);
+    return {};
+  }
   async delete(key: string) { this.objects.delete(key); }
 }
 
@@ -115,10 +138,27 @@ describe('POST /api/refresh', () => {
     expect(await again.json()).toEqual({ error: 'a refresh is already running' });
     expect(s.env.send).toHaveBeenCalledTimes(1);
   });
-  it('a marker older than 20 minutes no longer blocks a refresh', async () => {
+  it('a marker older than 20 minutes no longer blocks a refresh, and is replaced', async () => {
     const s = setup({ snapshotUploadedAt: null });
     s.env.bucket.set('refresh-pending.json', new Date(Date.now() - 21 * 60_000));
+    const staleEtag = s.env.bucket.objects.get('refresh-pending.json')!.etag;
     expect((await s.call('/api/refresh', valid, 'POST')).status).toBe(202);
+    expect(s.env.send).toHaveBeenCalledTimes(1);
+    expect(s.env.bucket.objects.get('refresh-pending.json')!.etag).not.toBe(staleEtag);
+  });
+  it('two simultaneous clicks: exactly one enqueues, the other is 429', async () => {
+    const s = setup({ snapshotUploadedAt: null });
+    s.env.bucket.barrier = 2;
+    const statuses = (await Promise.all([s.call('/api/refresh', valid, 'POST'), s.call('/api/refresh', valid, 'POST')])).map((r) => r.status);
+    expect(statuses.sort()).toEqual([202, 429]);
+    expect(s.env.send).toHaveBeenCalledTimes(1);
+  });
+  it('two simultaneous clicks over a stale marker: exactly one enqueues', async () => {
+    const s = setup({ snapshotUploadedAt: null });
+    s.env.bucket.set('refresh-pending.json', new Date(Date.now() - 21 * 60_000));
+    s.env.bucket.barrier = 2;
+    const statuses = (await Promise.all([s.call('/api/refresh', valid, 'POST'), s.call('/api/refresh', valid, 'POST')])).map((r) => r.status);
+    expect(statuses.sort()).toEqual([202, 429]);
     expect(s.env.send).toHaveBeenCalledTimes(1);
   });
   it('clears the marker and answers 503 when the enqueue fails', async () => {

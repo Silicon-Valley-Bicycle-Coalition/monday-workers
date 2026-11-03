@@ -89,6 +89,21 @@ async function refreshOrThrow(env: Env, refresh: (env: Env) => Promise<void>): P
   }
 }
 
+// Creates the marker atomically, so of two simultaneous clicks exactly one enqueues. R2's
+// conditional put answers null (doesn't throw) when its condition fails. A marker older than
+// PENDING_TTL_MS is replaced, but only that exact object (etagMatches), so two requests that both
+// find the same stale marker can't both win either.
+async function claimRefreshMarker(bucket: R2Bucket, message: RefreshMessage, now: number): Promise<boolean> {
+  const body = JSON.stringify(message);
+  const httpMetadata = { contentType: 'application/json' };
+  if (await bucket.put(PENDING_KEY, body, { httpMetadata, onlyIf: { etagDoesNotMatch: '*' } })) return true;
+  const pending = await bucket.head(PENDING_KEY);
+  if (pending && now - pending.uploaded.getTime() < PENDING_TTL_MS) return false;
+  // Stale, or deleted since the put by a consumer finishing: one more conditional attempt.
+  const onlyIf = pending ? { etagMatches: pending.etag } : { etagDoesNotMatch: '*' };
+  return (await bucket.put(PENDING_KEY, body, { httpMetadata, onlyIf })) !== null;
+}
+
 export function createApp(deps: AppDeps = {}): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
 
@@ -121,12 +136,10 @@ export function createApp(deps: AppDeps = {}): Hono<{ Bindings: Env }> {
     if (snapshot && now - snapshot.uploaded.getTime() < REFRESH_COOLDOWN_MS) {
       return c.json({ error: 'snapshot is under 10 minutes old' }, 429, { 'Cache-Control': NO_STORE });
     }
-    const pending = await c.env.SNAPSHOTS.head(PENDING_KEY);
-    if (pending && now - pending.uploaded.getTime() < PENDING_TTL_MS) {
+    const message: RefreshMessage = { requestedAt: new Date(now).toISOString() };
+    if (!(await claimRefreshMarker(c.env.SNAPSHOTS, message, now))) {
       return c.json({ error: 'a refresh is already running' }, 429, { 'Cache-Control': NO_STORE });
     }
-    const message: RefreshMessage = { requestedAt: new Date(now).toISOString() };
-    await c.env.SNAPSHOTS.put(PENDING_KEY, JSON.stringify(message), { httpMetadata: { contentType: 'application/json' } });
     try {
       await c.env.REFRESH_QUEUE.send(message);
     } catch (err) {

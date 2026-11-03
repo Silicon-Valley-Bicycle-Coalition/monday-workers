@@ -78,8 +78,10 @@ The weekly cron and the **Refresh now** button run the same refresh (read the bo
 write `snapshot.json`). A refresh takes minutes, longer than the ~30 s an HTTP request's
 `waitUntil` may keep running, so the button doesn't run it in the request:
 
-1. `POST /api/refresh` writes the `refresh-pending.json` marker to R2 and sends one message to the
-   `svbc-member-map-refresh` queue (`-sandbox` in the sandbox), then answers 202.
+1. `POST /api/refresh` creates the `refresh-pending.json` marker in R2 with a conditional put
+   (only if none exists, or replacing exactly the stale one it found), so of two simultaneous
+   clicks only one gets past it. That request sends one message to the `svbc-member-map-refresh`
+   queue (`-sandbox` in the sandbox) and answers 202; the other gets 429.
 2. The same Worker consumes the queue (`max_batch_size` 1, `max_retries` 0) and runs the refresh,
    with a queue consumer's 15 minutes. It deletes the marker when it finishes, whether or not the
    refresh succeeded. A marker older than 20 minutes is ignored, in case a consumer died.
