@@ -242,7 +242,9 @@ browser (behind Access) ─▶ Worker ─▶ static page + Leaflet + reference l
 
 ## Gap scoring
 
-- **Population gap:** active members per 1,000 residents. Lower means a bigger gap.
+- **Population gap:** active members per 1,000 residents. Lower means a bigger gap. Built: ranked,
+  not value breaks, with ties (above all the many block groups with no members) broken by
+  population, since the first sandbox snapshot put 1,087 of 1,672 block groups in the darkest class.
 - **Warm-lead gap:** warm-lead count. Higher means a bigger gap. (Optionally warm leads per
   active member; the builder may try both on real data and pick the clearer one.)
 - **Shading:** a few classes (e.g. quantiles across the two counties). The "no gap" class is left

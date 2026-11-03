@@ -8,7 +8,7 @@ import type { MapConfig } from './config';
 import { resolveLocations, type GeocodeStore, type Geocoder, type LatLng } from './geocode';
 import type { BoardKey, BoardRecord, MapMondayClient } from './monday/client';
 import type { BlockGroupProps } from './reference/types';
-import { classify, populationRate, type GapClass } from './score';
+import { classify, populationGapClasses, type GapClass } from './score';
 import referenceConfig from '../config/reference.json';
 
 export type PointKind = 'member' | 'lapsed' | 'never' | 'org';
@@ -53,8 +53,8 @@ export function buildSnapshot(
     else if (kind === 'never') counts.never++;
   }
 
-  const popClasses = classify(
-    reference.map((bg) => populationRate(tally.get(bg.GEOID)?.members ?? 0, bg.population, minPopulation)), 'low-is-gap',
+  const popClasses = populationGapClasses(
+    reference.map((bg) => ({ members: tally.get(bg.GEOID)?.members ?? 0, population: bg.population })), minPopulation,
   );
   const leadClasses = classify(
     reference.map((bg) => {

@@ -43,3 +43,27 @@ export function classify(values: (number | null)[], direction: Direction): GapCl
     return v >= b3 ? 3 : v >= b2 ? 2 : v >= b1 ? 1 : 0;
   });
 }
+
+/**
+ * Population-gap classes by rank rather than by value breaks. Most block groups can have no
+ * members at all, and as a tie at rate 0 they would all take the worst class. Worst first: lowest
+ * rate, then (on equal rates) more residents. The first fifth is 3, then 2, then 1, the rest 0. A
+ * block group with no members is always at least 1. Under `minPopulation` is null.
+ */
+export function populationGapClasses(rows: { members: number; population: number }[], minPopulation: number): GapClass[] {
+  const scored: { i: number; rate: number; population: number }[] = [];
+  rows.forEach((r, i) => {
+    const rate = populationRate(r.members, r.population, minPopulation);
+    if (rate !== null) scored.push({ i, rate, population: r.population });
+  });
+  scored.sort((a, b) => a.rate - b.rate || b.population - a.population);
+
+  const out: GapClass[] = rows.map(() => null);
+  const n = scored.length;
+  scored.forEach((s, rank) => {
+    const p = rank / n;
+    const cls: GapClass = p < 0.2 ? 3 : p < 0.4 ? 2 : p < 0.6 ? 1 : 0;
+    out[s.i] = rows[s.i]!.members === 0 && cls === 0 ? 1 : cls;
+  });
+  return out;
+}

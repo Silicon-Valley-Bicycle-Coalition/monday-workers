@@ -17,7 +17,11 @@ Status: **sandbox deployed 2026-11-03** on `map.sandbox.bikesiliconvalley.org`, 
 
 One shading at a time (radio buttons):
 
-* **Population gap** (default): few active members per 1,000 residents.
+* **Population gap** (default): few active members per 1,000 residents. Block groups are ranked
+  worst-first (lowest rate; on a tie, more residents), the first fifth darkest, then the next two
+  fifths, the rest unshaded. A block group with no members is never unshaded. Ranking instead of
+  value breaks matters because most block groups have no members (65% in the sandbox's first
+  snapshot): as a tie at zero they'd all have taken the darkest class.
 * **Warm-lead gap**: many people SVBC already knows who are not active members.
 * **Bike lane density**: class-weighted bike lane miles per mile of road. Low is the gap end.
 * **None**.
