@@ -123,7 +123,7 @@ For each row:
 | `monday-backup` | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, `SLACK_WEBHOOK_URL` |
 | `benevity-import` | `MONDAY_API_TOKEN`, `BENEVITY_WEBHOOK_SECRET` |
 | `bp-feedback-notify` | `WEBHOOK_SECRET`; optional `MONDAY_API_TOKEN` (only if the Sent/Failed write-back is enabled) |
-| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET` |
+| `eventbrite-sync` | `MONDAY_API_TOKEN`, `EVENTBRITE_PRIVATE_TOKEN`, `EVENTBRITE_WEBHOOK_SECRET`, `CLASS_EMAIL_SECRET` (header `X-Class-Email-Secret` from the class email send page; not a webhook secret, never in a URL) |
 
 Webhook secrets must be **fresh production values**, never the sandbox ones. Save each in the
 password manager before `wrangler secret put` — the same value goes into the registration URL

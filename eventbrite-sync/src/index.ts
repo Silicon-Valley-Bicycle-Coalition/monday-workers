@@ -6,6 +6,7 @@ import { createApp } from './webhook/route';
 import { D1OrderStore } from './db/orders';
 import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
+import { D1ClassEmailStore } from './db/classEmails';
 import { HttpEventbriteClient } from './eventbrite/client';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
@@ -63,6 +64,13 @@ export default {
         },
         webhookSecret: env.EVENTBRITE_WEBHOOK_SECRET,
         writeMode: () => readWriteMode(env, WORKER),
+        classEmails: {
+          store: new D1ClassEmailStore(env.DB),
+          // A plain client, never the write switch's dry-run wrapper: the routes refuse before
+          // any write unless the mode is `on`. Built only after the secret passes.
+          mondayClient: () => new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+          secret: env.CLASS_EMAIL_SECRET,
+        },
       });
       return app.fetch(request, env, ctx);
     });

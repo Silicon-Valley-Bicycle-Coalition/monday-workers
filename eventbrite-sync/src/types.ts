@@ -184,6 +184,10 @@ export interface Env extends Omit<Cloudflare.Env, 'MONDAY_AUTH'> {
   // X-Webhook-Secret header (`wrangler secret put EVENTBRITE_WEBHOOK_SECRET`). The route fails
   // closed (401 on every delivery) until it is set.
   EVENTBRITE_WEBHOOK_SECRET?: string;
+  // Shared secret the class email send page presents in X-Class-Email-Secret (`wrangler secret put
+  // CLASS_EMAIL_SECRET`; the same value goes in the Apps Script's Script Properties). The
+  // /class-emails routes answer 401 to everything while it is unset.
+  CLASS_EMAIL_SECRET?: string;
   // Set only by wrangler.jsonc's env.sandbox.vars. Unset = production. See src/environment.ts.
   ENVIRONMENT?: string;
 }

@@ -42,6 +42,23 @@ describe('worker entry point', () => {
   });
 });
 
+describe('class email routes', () => {
+  const ctx = {} as ExecutionContext;
+  const withSecret = { ...env, CLASS_EMAIL_SECRET: 'class-secret' } as unknown as Env;
+
+  it('answers 401 without the secret, and to everyone while it is unset', async () => {
+    expect((await worker.fetch(new Request('https://x.example/class-emails/e1'), withSecret, ctx)).status).toBe(401);
+    const unset = { ...env, CLASS_EMAIL_SECRET: undefined } as unknown as Env;
+    const res = await worker.fetch(new Request('https://x.example/class-emails/e1', { headers: { 'X-Class-Email-Secret': 'anything' } }), unset, ctx);
+    expect(res.status).toBe(401);
+  });
+
+  it('reaches the D1 ledger with the secret: an unknown class is a 404', async () => {
+    const res = await worker.fetch(new Request('https://x.example/class-emails/no-such-event', { headers: { 'X-Class-Email-Secret': 'class-secret' } }), withSecret, ctx);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('scheduled (daily missed-order check)', () => {
   afterEach(() => vi.restoreAllMocks());
 
