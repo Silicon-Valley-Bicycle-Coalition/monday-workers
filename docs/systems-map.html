@@ -170,7 +170,7 @@
 
 <h1>SVBC Systems Map</h1>
 <p class="lede">How Silicon Valley Bicycle Coalition's Monday.com CRM and its Cloudflare Workers fit together once Salesforce retires in October 2026. Monday.com becomes the single system of record; every Worker either feeds it once, keeps it current, or reads from it.</p>
-<div class="meta">as of 2026-11-02 &middot; production cutover weekend 2026-10-23 to 25 &middot; production deploys began 2026-11-02 (benevity-import, eventbrite-sync; funraise-sync writing gifts) &mdash; see status table</div>
+<div class="meta">as of 2026-11-03 &middot; production cutover weekend 2026-10-23 to 25 &middot; production deploys began 2026-11-02 (benevity-import, eventbrite-sync; funraise-sync writing gifts) &mdash; see status table</div>
 
 <div class="legend">
   <span class="item"><span class="swatch" style="background:var(--orange)"></span>Cloudflare Worker</span>
@@ -605,6 +605,7 @@
     <tr><td class="worker">member-portal</td><td><span class="pill pill-sandbox">sandbox; production config</span></td><td>live at member.sandbox.bikesiliconvalley.org (2026-09-22); production board and column ids filled 2026-11-02 (813261b), the repo doesn't record a production deploy. Deploy order: monday-auth, then the portal, then member-portal-writer</td></tr>
     <tr><td class="worker">mailchimp-sync</td><td><span class="pill pill-sandbox">sandbox</span></td><td>verified against a live "SVBC Sandbox" audience (2026-09-22); production needs the People board plus a Mailchimp audience with the merge fields / Interest Categories</td></tr>
     <tr><td class="worker">benevity-import</td><td><span class="pill pill-live">production</span></td><td>deployed to production 2026-11-02 with writes on (ddfccfe): Benevity Uploads board, Benevity Disbursement Date column and both webhooks created that day; no report uploaded to production yet. Sandbox still on the (sandbox v3) Donations board</td></tr>
+    <tr><td class="worker">dtd-sync</td><td><span class="pill pill-pending">built; sandbox not yet deployed</span></td><td>built 2026-11-03, not deployed anywhere: hourly pull of Double the Donation match status onto Donations and People, push of eligible non-Funraise gifts to DTD (replacing the lapsed Salesforce feed), Matching Donation pairing, nightly Matching Gift Program summary. Columns created on CRM Sandbox v4; production ids are placeholders. Needs the rotated DTD private key, D1 migrations and a deploy</td></tr>
     <tr><td class="worker">bp-feedback-notify</td><td><span class="pill pill-sandbox">sandbox</span></td><td>end-to-end on BP Request Form (sandbox) (2026-09-21); production needs WEBHOOK_SECRET, then the Post-Event Feedback column + automation on the live board</td></tr>
     <tr><td class="worker">quickbooks-sync</td><td><span class="pill pill-sandbox">postponed</span></td><td>postponed indefinitely (decided 2026-10-28): not shipping at migration; sandbox write switch <code>off</code>, CI no longer redeploys it, nothing planned for production</td></tr>
     <tr><td class="worker">monday-backup</td><td><span class="pill pill-sandbox">sandbox</span></td><td>deployed since 2026-09-22 but has never completed a backup: Drive destination folder, Google service account on the Shared Drive, Slack secret; production D1 exists (2026-10-08), production also needs a backup integration user</td></tr>
