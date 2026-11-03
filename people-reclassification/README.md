@@ -2,10 +2,20 @@
 
 **Staff UAT script:** [`docs/uat/people-reclassification.md`](../docs/uat/people-reclassification.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: Built, not deployed** (`feat/people-reclassification`, 2026-10-09). Nothing is
-provisioned: no D1, no secrets, no sandbox deployment, and the production `config/svbc.json`
-still holds `0` board ids. Every Monday write ships **off** (the write switch
-`people-reclassification:writes` is unset, which means `off`) — the first deployment's passes only record what they would move. See "Deploy".
+**Status: Deployed to sandbox, writes off** (2026-11-02). Deploy steps 1–4 are done against CRM
+Sandbox v4; step 5 (one live move) is next. Production is not provisioned: no D1, and
+`config/svbc.json` still holds `0` board ids (the production `svbc-people-reclassification` is
+only a placeholder created by setting `RECLASSIFY_SECRET`: no D1, no cron). Every Monday write
+ships **off** (the write switch `people-reclassification:writes` is unset, which means `off`).
+
+First sandbox dry run (2026-11-02, cutoff 2019-11-02): 8,084 People / 8,053 Historical scanned;
+538 people decided to-historical and 133 to-live; 400 to-historical planned (the
+`maxMovesPerRun` cap; to-historical is planned first), all `aged-out` with latest activity
+2001-01-01 to 2019-05-10. Three sampled items checked by hand: the latest activity matched
+max(Last Gift Date, Member Until), no Lifetime tier, no Funraise profile. It first aborted on
+column parity (`Campaign` tags and a hand-added `monday Doc v2` on People only); the spec now
+gives both People boards the same columns (`salesforce-import` `PEOPLE_COLUMNS`), `Campaign` was
+added to both Historical boards, and the sandbox-only doc column was deleted.
 **Priority:** Post-cutover. The import lands People at ~74% of the ceiling; the plan's own
 trigger line is 85%, and the growth analysis puts a 7-year window at ~71% today, so this is
 headroom maintenance rather than a cutover blocker — but it is the only thing that will ever
@@ -213,7 +223,11 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 ## Deploy
 
-Nothing below has been done.
+Steps 1–4 are done in sandbox (2026-11-02; the sandbox operator secret is
+`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). Step 5 onward has not been done.
+Before step 1 in any environment, check that the two People boards' columns match (same title
+and type both ways): a pass aborts on any difference, and Monday's API can't create a
+`direct_doc` column to fix one.
 
 1. `wrangler d1 create svbc-people-reclassification-sandbox`; paste the id into
    `env.sandbox.d1_databases[0].database_id`; `wrangler d1 migrations apply
@@ -238,6 +252,12 @@ Nothing below has been done.
 
 ## Open
 
+* **Which item limit?** Monday reports each People board's `items_limit` as **100,000**
+  (sandbox v4, 2026-11-02). The threshold trigger prefers that over `thresholds.itemsLimit`
+  (10,000; `src/index.ts`, `src/pass.ts` `countOf`), so it would fire at about 85,000 items.
+  The Historical warning still uses 10,000. If 100,000 is the real ceiling on SVBC's plan, the
+  headroom this Worker manages is far larger than the plan assumed: decide which number rules,
+  then make the trigger and the warning agree.
 * **Window granularity.** The sizing analysis compared calendar years (`refYear − year < N`);
   this Worker uses a rolling date (`today − 7 years`, same month/day), so people age out through
   the year in quarterly batches rather than all at once each January. The counts differ only at
