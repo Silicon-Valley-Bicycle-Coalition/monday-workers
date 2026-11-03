@@ -82,6 +82,11 @@ export interface DonationCreditRecord {
   donorItemIds: string[];
   matchedByItemIds: string[];
   anonymous: boolean;
+  // null when blank, unparseable or not configured; counted only when Amount is blank (spec §10.3).
+  inKindValueCents: number | null;
+  // The Recognition Fiscal Year cell as typed, trimmed; '' when blank or not configured. Parsed by
+  // the rollcall duty (recognitionYear), which reports a value it can't read.
+  recognitionFiscalYear: string;
 }
 
 export interface HistoricalShiftRecord {
@@ -527,7 +532,8 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
             items_page(limit: 500, cursor: $cursor) { cursor items { id column_values(ids: $columnIds) { id text value ... on BoardRelationValue { linked_item_ids } } } }
           }
         }`,
-        { boardId: [cfg.boardId], columnIds: [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous], cursor },
+        { boardId: [cfg.boardId], columnIds: [c.amount, c.date, c.status, c.fiscalYear, c.giftType, c.donorLink, c.matchedBy, c.anonymous,
+          ...(c.inKindValue ? [c.inKindValue] : []), ...(c.recognitionFiscalYear ? [c.recognitionFiscalYear] : [])], cursor },
       );
     // The rollcall duty's only read of Donations: an empty read would resolve every stored
     // credit through getItemsState, so a board Monday doesn't return is an error, not empty.
@@ -551,7 +557,9 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
           giftType: (byId.get(c.giftType)?.text ?? '').trim(),
           donorItemIds: byId.get(c.donorLink)?.linked_item_ids ?? [],
           matchedByItemIds: byId.get(c.matchedBy)?.linked_item_ids ?? [],
-          anonymous: checkboxChecked(byId.get(c.anonymous)?.value) };
+          anonymous: checkboxChecked(byId.get(c.anonymous)?.value),
+          inKindValueCents: c.inKindValue ? parseAmountCents(byId.get(c.inKindValue)?.text) : null,
+          recognitionFiscalYear: c.recognitionFiscalYear ? (byId.get(c.recognitionFiscalYear)?.text ?? '').trim() : '' };
       }),
     };
   }

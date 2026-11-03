@@ -321,6 +321,11 @@ function validateRollCall(raw: unknown): RollCallConfig | null {
   const o = obj(v.organizations);
   if (typeof o.boardId !== 'number') throw new Error(`config: ${path}.organizations.boardId must be a number`);
   const oc = obj(o.columns);
+  // Optional columns (spec §10): omitted means off, but present must be a column id.
+  const optional = (raw: unknown, at: string): string | undefined => (raw === undefined ? undefined : columnId(raw, at));
+  const householdName = optional(c.householdName, `${path}.columns.householdName`);
+  const inKindValue = optional(dc.inKindValue, `${path}.donations.columns.inKindValue`);
+  const recognitionFiscalYear = optional(dc.recognitionFiscalYear, `${path}.donations.columns.recognitionFiscalYear`);
   return {
     boardId: v.boardId,
     firstFiscalYear: v.firstFiscalYear as number,
@@ -329,12 +334,15 @@ function validateRollCall(raw: unknown): RollCallConfig | null {
     columns: {
       fiscalYear: col('fiscalYear'), tier: col('tier'), type: col('type'), listed: col('listed'), total: col('total'),
       gifts: col('gifts'), people: col('people'), organization: col('organization'), reviewNote: col('reviewNote'), rowKey: col('rowKey'),
+      ...(householdName !== undefined ? { householdName } : {}),
     },
     donations: {
       boardId: d.boardId,
       columns: {
         amount: dcol('amount'), date: dcol('date'), status: dcol('status'), fiscalYear: dcol('fiscalYear'), giftType: dcol('giftType'),
         donorLink: dcol('donorLink'), matchedBy: dcol('matchedBy'), anonymous: dcol('anonymous'),
+        ...(inKindValue !== undefined ? { inKindValue } : {}),
+        ...(recognitionFiscalYear !== undefined ? { recognitionFiscalYear } : {}),
       },
     },
     people,

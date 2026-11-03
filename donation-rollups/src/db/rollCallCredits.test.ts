@@ -7,7 +7,7 @@ beforeEach(async () => {
 });
 
 const row = (over: Partial<CreditRow>): CreditRow => ({
-  giftItemId: 'g1', fiscalYear: 2026, amountCents: 5000, status: 'Received', giftType: 'Individual',
+  giftItemId: 'g1', fiscalYear: 2026, recognitionFiscalYear: null, amountCents: 5000, status: 'Received', giftType: 'Individual',
   credit: 'p1', unmatchedMatch: false, archivedAt: null, ...over,
 });
 
@@ -29,12 +29,22 @@ describe('D1RollCallCreditsStore', () => {
     expect((await store.all()).find((r) => r.giftItemId === 'b')?.amountCents).toBe(9000);
   });
 
-  it('markArchived stamps archived_at', async () => {
+  it('stores a Recognition Fiscal Year, and a change to it alone is a rewrite', async () => {
     const store = new D1RollCallCreditsStore(env.DB);
-    await store.upsert([row({ giftItemId: 'a' }), row({ giftItemId: 'b' })], 'now');
+    await store.upsert([row({ giftItemId: 'a', credit: null, fiscalYear: 2025, recognitionFiscalYear: 2026 })], 'now');
+    expect((await store.all())[0]!.recognitionFiscalYear).toBe(2026);
+    expect(await store.upsert([row({ giftItemId: 'a', credit: null, fiscalYear: 2025, recognitionFiscalYear: 2027 })], 'later')).toBe(1);
+    expect(await store.upsert([row({ giftItemId: 'a', credit: null, fiscalYear: 2025, recognitionFiscalYear: null })], 'later')).toBe(1);
+    expect((await store.all())[0]!.recognitionFiscalYear).toBeNull();
+  });
+
+  it('markArchived stamps archived_at, keeping the Recognition Fiscal Year', async () => {
+    const store = new D1RollCallCreditsStore(env.DB);
+    await store.upsert([row({ giftItemId: 'a', recognitionFiscalYear: 2026 }), row({ giftItemId: 'b' })], 'now');
     await store.markArchived(['a'], '2026-11-03T00:00:00Z');
     const rows = await store.all();
     expect(rows.find((r) => r.giftItemId === 'a')?.archivedAt).toBe('2026-11-03T00:00:00Z');
+    expect(rows.find((r) => r.giftItemId === 'a')?.recognitionFiscalYear).toBe(2026);
     expect(rows.find((r) => r.giftItemId === 'b')?.archivedAt).toBeNull();
   });
 

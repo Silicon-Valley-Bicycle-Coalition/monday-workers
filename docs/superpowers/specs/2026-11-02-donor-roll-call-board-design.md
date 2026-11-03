@@ -1,6 +1,6 @@
 # Donor Roll Call board — design
 
-**Date:** 2026-11-02 · **Status:** reviewed (builder check 2026-11-02), awaiting approval · **Worker:** `donation-rollups` (new custodian
+**Date:** 2026-11-02, amended 2026-11-03 (§10) · **Status:** built; §10 approved by David 2026-11-03 · **Worker:** `donation-rollups` (new custodian
 duty) · **Background:** monday-migration `docs/40-donor-roll-call.md` and
 `protocols/monday/donor-roll-call.md`
 
@@ -105,6 +105,7 @@ the year closes, the title loses "(in progress)".
 | People | connect → People, People (Historical) | every household member |
 | Organization | connect → Organizations | for an Organization row |
 | Review Note | long text | §3's notes, blank when there's nothing to check |
+| Household Name | text | the same Recognition Name as the item's Name, in a column of its own so it survives exports and sorting apart from the title (added 2026-11-03, §10.2) |
 | Row Key | text | identity the Worker matches on: `2026|household:<Household ID>`, `2026|item:<itemId>`, `2026|anonymous` |
 
 Rows marked Don't list stay on the board, so the year's totals still add up and Felicia can see
@@ -188,8 +189,9 @@ which risks the rollups for a feature that doesn't need them. Instead:
 A Matched By or Anonymous edit reaches the board the next night through this pass. No consumer
 change is needed.
 - **In-kind value.** The script counted In-Kind Value when Amount was blank. The ledger stores
-  Amount only. My call: count Amount only. FY2026 has one in-kind gift and it has an Amount.
-  Revisit if Felicia finds in-kind donors missing.
+  Amount only. ~~My call: count Amount only.~~ **Superseded 2026-11-03 (§10.3):** Felicia found
+  Lumos missing (in-kind $2,000, no Amount), the stated revisit trigger, so the board now counts
+  In-Kind Value when Amount is blank, as the script did.
 
 ## 7. Setup
 
@@ -226,3 +228,99 @@ the README's setup steps.
 - How the duty tells "archived" from "deleted" when an item drops out of the active read
   (`items(ids:)` returns archived items with their `state`).
 - Group titling and moving rows between groups at the year boundary.
+
+## 10. Amendments (2026-11-03)
+
+Felicia reviewed the FY2026 export on 2026-11-03 and David approved two changes the same day, plus
+the in-kind revisit §6 already anticipated. (Her other finding, individuals coded as
+organizations, was data, fixed on production by hand: Donor relinked, Acting for cleared.)
+
+### 10.1 Per-gift Recognition Fiscal Year
+
+**Why.** Sponsors prepay. Zoox paid $5,000 on 2025-02-17 for 2026 Bike to Work Day, which puts the
+gift in FY2025, so eight sponsors Felicia expected are missing from FY2026. The fix is a staff
+decision per gift, not a rule: some prepayments belong to the year paid.
+
+**The column.** **Recognition Fiscal Year**, a text column on Donations (text for the same reason
+as Fiscal Year Ending: a numbers column renders "2,026"). Blank means the gift's own fiscal year.
+`2026` or `FY2026` (case and spaces ignored) credits the gift to FY2026 on the roll call instead.
+Staff set it; the Worker never writes it. It changes nothing else: rollups, Fiscal Year Ending,
+the annual summaries and the archive cutoff all keep the gift's own year.
+
+**Rules.**
+
+- **Exactly one year.** The override replaces the gift's year; it never adds one. Each gift is one
+  `CountedGift` with one year, so it can't count in both (§1 anti-goal, double counting).
+- **Counted as if dated then.** The override year must fall in `firstFiscalYear`..current year.
+  An override to a future year (a sponsor prepaying next year's event) counts nowhere until that
+  year begins, then counts there. An override equal to the gift's own year is no override.
+- **An unreadable value is ignored, and said so.** The gift counts in its own year and the run's
+  report lists the item ids (`badRecognitionYears`), so a typo is visible without guessing.
+- **Credit is unchanged.** The override moves the year, not the donor. Anonymous, Matched By and
+  the ledger's owner still decide who is credited.
+
+**Reaching an archived gift (the hard part).** Gifts before `current − activeFiscalYears + 1` are
+archived on Donations, the duty pages active items only, and staff can't edit an archived item in
+Monday's UI anyway. Four of Felicia's six gifts are archived FY2025 gifts. Options considered:
+
+1. *Duty reads archived items too* (`items(ids:)` returns them). It would have to know which ids
+   to read, i.e. every archived gift, and staff still couldn't type into one. Rejected.
+2. *A separate override list* (a small board, or a column on the roll-call board). Puts a staff
+   decision either on a Worker-written board (§1 anti-goal) or on a fourth board to maintain.
+   Rejected.
+3. **Chosen: staff restore the gift, set the override, and `roll_call_credits` keeps it.** The
+   table already exists to remember facts about gifts that later archive (§6): a row is kept,
+   never rewritten, once its item archives. The override becomes one more such fact:
+   - `refreshCredits` writes a credits row for every active gift with an override, alongside the
+     Anonymous / Matched By rows. For an ordinary donor gift it's a `credit: null` row (the ledger
+     still names the donor) carrying `recognition_fiscal_year` (migration `0013`).
+   - The override row is written before any counting check, like the Anonymous and Matched By
+     rows: the ledger's copy of status and year may differ from the board, and a missing row
+     would quietly put the gift back in its own year.
+   - When the item archives (staff archive it again by hand, or a later year-end run), the row
+     is stamped `archived_at` and kept. The override keeps working for closed years.
+   - `rollCallGifts` reads the ledger gift by id when its override row points into the covered
+     years but its own year is older (`countedGifts(fromFY, alsoIds)`), because the ledger read
+     otherwise starts at `firstFiscalYear`.
+
+   **Re-archiving.** A restored gift is never re-archived by the custodian: the ledger still has
+   `archived_at` set, so `getArchivable` skips it. That's harmless (one active item each toward
+   the 10k cap), and staff may archive it again by hand any time after the next nightly run has
+   recorded the override; the night it disappears from the active read, the row is stamped
+   archived and kept. So no change to the archive duty is needed. On July 15 the nightly duties,
+   `rollcall` included, run before `archive`, so a value set the day before is recorded first.
+
+   **Staff steps** (protocol): Donations → board menu → Archive → find the gift → Restore; set
+   Recognition Fiscal Year; next morning check the roll-call row; optionally archive it again.
+
+**A frozen year losing a gift.** §5's rule keeps a row in a fully archived closed year unless one
+of its donors is on another row that year. An override that moves a donor's only gift out of a
+frozen year would leave that row printed and the gift counted again in the override year. So
+`planSync` also deletes a frozen-year row whose donor has a counted gift whose own year is that
+year but which is now credited to another year. (Not reachable before FY2028, when FY2026
+freezes; built now so the rule can't be broken later.) The anonymous row has no donor ids and is
+not covered; an override on an anonymous gift in a frozen year leaves the anonymous row's old
+total until the next change to that year.
+
+### 10.2 Household Name column
+
+A **Household Name** text column on the roll-call board, written by the Worker, holding the row's
+Recognition Name: the Household Greeting, else the person's Name, else for an organization its
+Recognition Name, else Name; `Anonymous` for the anonymous row. It's the value the item title
+already gets. Felicia's export tools sort and filter on columns, and a title edit by hand would be
+silently undone; the column makes the name a first-class cell. The Worker owns it like every other
+cell, so it's compared and written like them, and existing rows backfill on the next run (each
+row's first update; with `writesPerRun` 250 on production, about 1,400 rows a year take a few
+nights, `remaining` reported). Optional in config (`columns.householdName`): absent, nothing is
+written, so a build can deploy before the column exists.
+
+### 10.3 In-kind value
+
+Count **In-Kind Value when Amount is blank or zero**, as the script did. The ledger has an
+`in_kind_value_cents` column (migration `0012`) but production never filled it (every row is NULL
+on 2026-11-03), so the duty reads In-Kind Value itself on its nightly pass: a gift with no Amount
+and an In-Kind Value gets a credits row carrying the in-kind cents (`credit: null` when the ledger
+names the donor), kept when the gift archives like any other row. For a ledger gift, the ledger's
+Amount wins when it's positive; otherwise the row's in-kind cents count. Configured by
+`donations.columns.inKindValue` (optional; absent = Amount only). FY2026 and FY2027 gifts are all
+active today, so the first night fills every covered year.

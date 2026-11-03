@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Creates the Donor Roll Call board (spec 2026-11-02-donor-roll-call-board-design §4/§7) that the
 // custodian's nightly `rollcall` duty maintains, adds the Don't List in Recognition checkbox to
-// each People board and Organizations (and Recognition Name to Organizations), and prints the
+// each People board and Organizations (and Recognition Name to Organizations), adds Recognition
+// Fiscal Year to Donations (spec §10.1), and prints the
 // complete `donationRollups.rollCall` config block. Idempotent: same-titled columns are reused,
 // so re-running against an existing board (--board) only fills in what's missing.
 //
@@ -48,6 +49,9 @@ const DONT_LIST = { title: "Don't List in Recognition", type: 'checkbox',
   description: 'Check to leave this donor off the donor roll call printed in the Annual Impact Report. Their giving still counts toward the totals.' };
 const RECOGNITION_NAME = { title: 'Recognition Name', type: 'text',
   description: 'How this organization is named in donor recognition. Blank means use Name. The donor roll call prints it.' };
+// Text, like Fiscal Year Ending: a numbers column would render 2026 as "2,026".
+const RECOGNITION_FISCAL_YEAR = { title: 'Recognition Fiscal Year', type: 'text',
+  description: 'Blank: the donor roll call counts this gift in its own fiscal year. Type a year (2026 or FY2026) to count it in that year instead, e.g. a sponsor who prepaid for next year\'s event. Archived gifts: restore the item first.' };
 
 const monday = new MondayGraphQL('https://api.monday.com/v2', token);
 // Mutations here create boards and columns, so a failure that may have committed throws
@@ -112,6 +116,9 @@ const FIELDS = {
   organization: { title: 'Organization', type: 'board_relation', defaults: connect([organizationsId]) },
   reviewNote: { title: 'Review Note', type: 'long_text' },
   rowKey: { title: 'Row Key', type: 'text' },
+  // Spec §10.2: the item's Name again, as a cell exports and sorts keep.
+  householdName: { title: 'Household Name', type: 'text',
+    description: 'Written by the Worker: the name printed on the roll call (Household Greeting, else Name; an organization\'s Recognition Name). Edit it on the donor, not here.' },
 };
 const columns = {};
 for (const [field, spec] of Object.entries(FIELDS)) columns[field] = await ensureColumn(boardId, boardColumns, spec);
@@ -139,6 +146,9 @@ const organizations = {
 };
 
 const donationColumns = await columnsOf(donationsId);
+const recognitionFiscalYear = await ensureColumn(donationsId, donationColumns, RECOGNITION_FISCAL_YEAR);
+// Optional (spec §10.3): counted when Amount is blank; left out of the config if the board has none.
+const inKindValue = donationColumns.get('In-Kind Value');
 const donations = {
   boardId: Number(donationsId),
   columns: {
@@ -150,6 +160,8 @@ const donations = {
     donorLink: lookup(donationColumns, donationsId, 'Donor'),
     matchedBy: lookup(donationColumns, donationsId, 'Matched By'),
     anonymous: lookup(donationColumns, donationsId, 'Anonymous Donor'),
+    ...(inKindValue ? { inKindValue } : {}),
+    recognitionFiscalYear,
   },
 };
 

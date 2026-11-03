@@ -359,6 +359,17 @@ describe('validateConfig — rollCall block', () => {
     expect(validateConfig(withRollCall(rollCall)).donationRollups.rollCall).toEqual(rollCall);
   });
 
+  it('accepts the optional §10 columns, and rejects one that is present but not a column id', () => {
+    const full = { ...rollCall, columns: { ...rollCall.columns, householdName: 'text_hn' },
+      donations: { ...rollCall.donations, columns: { ...rollCall.donations.columns, inKindValue: 'numeric_ik', recognitionFiscalYear: 'text_rfy' } } };
+    expect(validateConfig(withRollCall(full)).donationRollups.rollCall).toEqual(full);
+    expect(validateConfig(withRollCall(rollCall)).donationRollups.rollCall!.columns).not.toHaveProperty('householdName');
+    expect(() => validateConfig(withRollCall({ ...rollCall, columns: { ...rollCall.columns, householdName: '' } })))
+      .toThrow(/donationRollups\.rollCall\.columns\.householdName/);
+    expect(() => validateConfig(withRollCall({ ...rollCall, donations: { ...rollCall.donations,
+      columns: { ...rollCall.donations.columns, recognitionFiscalYear: 7 } } }))).toThrow(/donations\.columns\.recognitionFiscalYear/);
+  });
+
   it('defaults excludedGiftTypes to ["Contracts"] and writesPerRun to 500', () => {
     const { excludedGiftTypes: _e, writesPerRun: _w, ...bare } = rollCall;
     const cfg = validateConfig(withRollCall(bare)).donationRollups.rollCall!;

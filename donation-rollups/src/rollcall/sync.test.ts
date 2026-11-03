@@ -34,6 +34,26 @@ describe('columnValuesFor', () => {
   });
 });
 
+describe('Household Name (spec §10.2)', () => {
+  const WITH = { ...COLS, householdName: 'hn' };
+  it('writes the row name into the Household Name column when it is configured', () => {
+    expect(columnValuesFor(row({ key: '2026|item:101' }), WITH)).toMatchObject({ hn: 'Ada Lovelace' });
+    expect(columnValuesFor(row({ key: '2026|item:101' }), COLS)).not.toHaveProperty('hn');
+  });
+  it('backfills a blank Household Name on an otherwise unchanged row, and then leaves it alone', () => {
+    const r = row({ key: '2026|item:101' });
+    expect(planSync([r], [itemFor(r, '1')], WITH, new Set(), GROUPS)).toEqual([
+      { op: 'update', itemId: '1', row: r, values: { hn: 'Ada Lovelace' } }]);
+    expect(planSync([r], [itemFor(r, '1', { hn: 'Ada Lovelace' })], WITH, new Set(), GROUPS)).toEqual([]);
+  });
+  it('rewrites a hand-edited Household Name along with the title', () => {
+    const r = row({ key: '2026|item:101', name: 'Ada & Bo Lovelace' });
+    const item = { ...itemFor(row({ key: '2026|item:101' }), '1', { hn: 'Ada L.' }) };
+    expect(planSync([r], [item], WITH, new Set(), GROUPS)).toEqual([
+      { op: 'update', itemId: '1', row: r, values: { name: 'Ada & Bo Lovelace', hn: 'Ada & Bo Lovelace' } }]);
+  });
+});
+
 describe('boardItemFrom', () => {
   it('reads statuses by stored value and connect columns as sorted linked ids', () => {
     const item = boardItemFrom({
@@ -113,6 +133,14 @@ describe('planSync', () => {
     const rows = [row({ key: '2026|household:H9', personIds: [], organizationId: '209', type: 'Organization' })];
     expect(planSync(rows, items, COLS, new Set([2026]), GROUPS)).toEqual([
       { op: 'delete', itemId: '1', reason: 'gone' }, { op: 'create', row: rows[0] }]);
+  });
+
+  it('a frozen year\'s item goes when a Recognition Fiscal Year moved its donor\'s gift of that year to another', () => {
+    const items = [itemFor(row({ key: '2026|item:109', personIds: ['109'] }), '1'), itemFor(row({ key: '2026|item:110', personIds: ['110'] }), '2')];
+    const rows = [row({ key: '2027|item:109', personIds: ['109'] })];
+    // 109's only 2026 gift now counts in 2027; 110 just vanished, so its printed row stays.
+    expect(planSync(rows, [...items, itemFor(rows[0]!, '3')], COLS, new Set([2026]), GROUPS, new Map([[2026, new Set(['109'])]])))
+      .toEqual([{ op: 'delete', itemId: '1', reason: 'gone' }]);
   });
 
   it('an open year\'s item whose key is no longer computed is deleted', () => {
