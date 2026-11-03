@@ -45,6 +45,43 @@ function clientReturningSequence(bodies: unknown[]): HttpMondayClient {
 
 afterEach(() => vi.unstubAllGlobals());
 
+// items(ids:) keeps returning an item in Monday's trash, state 'deleted', with its columns intact
+// (the same read processRegistration already guards) — so a deleted gift still shows its Donor
+// link, and a deleted owner still resolves to its board.
+describe('items in the trash read as gone', () => {
+  it('getDonorLinkForDonation: a deleted gift links to no one', async () => {
+    const client = clientReturning({ data: { items: [
+      { state: 'deleted', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'] }] }] } });
+    expect(await client.getDonorLinkForDonation('dn1', 'donor_link')).toBeNull();
+  });
+
+  it('getDonorLinkForDonation: an active gift still returns its owner', async () => {
+    const client = clientReturning({ data: { items: [
+      { state: 'active', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'] }] }] } });
+    expect(await client.getDonorLinkForDonation('dn1', 'donor_link')).toBe('donor-1');
+  });
+
+  it('getItemBoardId: a deleted item has no board', async () => {
+    const client = clientReturning({ data: { items: [{ state: 'deleted', board: { id: '2' } }] } });
+    expect(await client.getItemBoardId('donor-1')).toBeNull();
+  });
+
+  it('getItemBoardId: an archived item keeps its board', async () => {
+    const client = clientReturning({ data: { items: [{ state: 'archived', board: { id: '2' } }] } });
+    expect(await client.getItemBoardId('donor-1')).toBe('2');
+  });
+
+  it('getDonationsByIds: skips a deleted gift so a recompute never re-asserts it', async () => {
+    const response = itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'dn2', cells: { amount_1: '75', date_1: '2020-02-15', status_1: 'Received' } },
+    ]);
+    (response.data.items[1] as Record<string, unknown>).state = 'deleted';
+    const result = await clientReturning(response).getDonationsByIds(['dn1', 'dn2'], COLUMNS, 7);
+    expect(result.map((d) => d.id)).toEqual(['dn1']);
+  });
+});
+
 describe('getDonationsByIds', () => {
   it('parses a well-formed donation', async () => {
     const client = clientReturning(itemsResponse([
