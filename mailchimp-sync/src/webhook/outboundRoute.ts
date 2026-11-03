@@ -4,6 +4,7 @@ import { validateMondayWebhookBody } from './validateMonday';
 import type { Config, OutboundSyncMessage } from '../types';
 import { stampFor, type WriteMode } from '../flags';
 import { secretsMatch } from '../secret';
+import { donorColumnIds } from '../monday/client';
 
 export interface OutboundQueueLike {
   send(message: OutboundSyncMessage): Promise<void>;
@@ -62,10 +63,12 @@ export function createOutboundApp(deps: OutboundAppDeps) {
       return c.json({ ok: false, error: errMsg }, 200);
     }
 
-    // Self-inflicted event: the inbound consumer's own write to the mailchimpCampaigns
-    // connect-column just triggered this webhook. Not an error — skip without enqueueing to
-    // avoid an outbound→Mailchimp→inbound feedback loop.
-    if (donorEvent.columnId !== undefined && donorEvent.columnId === deps.config.monday.columns.mailchimpCampaigns) {
+    // A change to a column the sync doesn't read can't change what it would send: skip without
+    // enqueueing. That covers the inbound consumer's own write to the mailchimpCampaigns
+    // connect-column (an outbound→Mailchimp→inbound feedback loop otherwise), and bulk writes to
+    // unrelated columns, such as a Location backfill. Item creation carries no columnId and
+    // always enqueues.
+    if (donorEvent.columnId !== undefined && !donorColumnIds(deps.config.monday.columns).includes(donorEvent.columnId)) {
       return c.json({ ok: true, skipped: true }, 200);
     }
 
