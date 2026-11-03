@@ -12,6 +12,7 @@ import { environmentOf } from './environment';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition, type SkipContext } from './flags';
 import { DtdAuthError, DtdClient } from './dtd/client';
 import { HttpDtdMondayClient, type DtdMondayClient } from './monday/client';
+import { redactText } from './logSafe';
 import { tokenProviderFor, type MondayTokenSource } from './monday/graphql';
 import { runPull, type PullDeps } from './jobs/pull';
 import { runPush, type PushDeps } from './jobs/push';
@@ -45,9 +46,9 @@ export interface Jobs {
 
 const LIVE_JOBS: Jobs = { pull: runPull, push: runPush, pairing: runPairing, summary: runSummary };
 
-// Messages from our clients carry no key or address, and a stack could; log the message only.
+// Log the message only (a stack could carry more), scrubbed: Monday errors can echo submitted values.
 function logFailure(job: string, err: unknown): void {
-  console.log(`dtd-sync: ${job} failed ${err instanceof Error ? err.message : 'unknown error'}`);
+  console.log(`dtd-sync: ${job} failed ${err instanceof Error ? redactText(err.message) : 'unknown error'}`);
 }
 
 /** Runs the jobs one cron owes. `mode` 'dry-run' swaps every write for a skip line. */

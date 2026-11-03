@@ -5,6 +5,8 @@
 //   Monday  - updateDonation / updatePerson / upsertProgramSummary (recordingProxy)
 //   DTD     - registerDonation (recordingProxy)
 //   D1      - every statement that isn't a SELECT (dryRunDb)
+//
+// A dry run never advances the watermark or records pushes, so each dry-run hour re-reads the same window.
 import { logSkip, recordingProxy, type SkipContext } from './flags';
 import type { DtdClient } from './dtd/client';
 import type { DtdMondayClient } from './monday/client';
@@ -45,12 +47,9 @@ function writeStub(sql: string, ctx: SkipContext): D1PreparedStatement {
   return stub as unknown as D1PreparedStatement;
 }
 
-/**
- * The database with every non-SELECT statement dropped. SELECTs run against the real database, so
- * the jobs still read what a live run would; INSERT/UPDATE/DELETE resolve an empty success result
- * and log a skip line. The job code is unchanged, which keeps the stores plain module functions.
- */
-export function dryRunDb(db: D1Database, ctx: SkipContext): D1Database {
+type Statements = Pick<D1Database, 'prepare' | 'batch'>;
+
+function wrapStatements<T extends Statements>(db: T, ctx: SkipContext, extra: (target: T, prop: string | symbol) => unknown): T {
   const stubs = new WeakSet<object>();
   return new Proxy(db, {
     get(target, prop) {
@@ -71,8 +70,36 @@ export function dryRunDb(db: D1Database, ctx: SkipContext): D1Database {
           return results;
         };
       }
+      const handled = extra(target, prop);
+      if (handled !== undefined) return handled;
       const value = Reflect.get(target, prop, target);
       return typeof value === 'function' ? (value as (...a: never[]) => unknown).bind(target) : value;
     },
+  });
+}
+
+/**
+ * The database with every non-SELECT statement dropped. SELECTs run against the real database, so
+ * the jobs still read what a live run would; INSERT/UPDATE/DELETE resolve an empty success result
+ * and log a skip line. exec is logged and dropped, withSession returns a wrapped session, and dump
+ * is refused, so no path reaches a write. The job code is unchanged, which keeps the stores plain
+ * module functions.
+ */
+export function dryRunDb(db: D1Database, ctx: SkipContext): D1Database {
+  return wrapStatements(db, ctx, (target, prop) => {
+    if (prop === 'exec') {
+      return async (sql: string) => {
+        logSkip(ctx, 'D1', 'exec', [sql]);
+        return { count: 0, duration: 0 };
+      };
+    }
+    if (prop === 'withSession') {
+      return (constraint?: D1SessionBookmark | D1SessionConstraint) =>
+        wrapStatements(target.withSession(constraint), ctx, () => undefined);
+    }
+    if (prop === 'dump') {
+      return async () => { throw new Error('dtd-sync: D1 dump is not available in a dry run'); };
+    }
+    return undefined;
   });
 }

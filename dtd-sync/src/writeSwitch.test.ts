@@ -54,4 +54,19 @@ describe('dryRunDb', () => {
     expect(await env.DB.prepare("SELECT value FROM sync_state WHERE key = 'b'").first()).toBeNull();
     expect(logs).toHaveLength(1);
   });
+
+  it('exec is logged and not executed', async () => {
+    const db = dryRunDb(env.DB, ctx);
+    const result = await db.exec("INSERT INTO sync_state (key, value) VALUES ('ex', '1')");
+    expect(result).toEqual({ count: 0, duration: 0 });
+    expect(await env.DB.prepare("SELECT value FROM sync_state WHERE key = 'ex'").first()).toBeNull();
+    expect(JSON.parse(logs[0]!)).toMatchObject({ sink: 'D1', operation: 'exec' });
+  });
+
+  it('withSession returns a session that also drops writes', async () => {
+    const session = dryRunDb(env.DB, ctx).withSession();
+    await session.prepare("INSERT INTO sync_state (key, value) VALUES ('ws', '1')").run();
+    expect(await env.DB.prepare("SELECT value FROM sync_state WHERE key = 'ws'").first()).toBeNull();
+    expect(JSON.parse(logs[0]!)).toMatchObject({ sink: 'D1', operation: 'INSERT' });
+  });
 });

@@ -81,6 +81,14 @@ describe('runCron', () => {
     expect(logs.join('\n')).toContain('boom');
   });
 
+  it('scrubs email addresses from the logged error message', async () => {
+    const j = jobs({ pull: async () => { throw new Error('bad value {"email":"ada@example.org"}'); } });
+    await runCron(HOURLY_CRON, clients([]), config, 'run', ctx('on'), NOW, j);
+    const out = logs.join('\n');
+    expect(out).toContain('[email]');
+    expect(out).not.toContain('ada@example.org');
+  });
+
   it('auth error skips push but still runs pairing', async () => {
     const j = jobs({ pull: async () => { throw new DtdAuthError('DTD rejected the key'); } });
     await runCron(HOURLY_CRON, clients([]), config, 'run', ctx('on'), NOW, j);
