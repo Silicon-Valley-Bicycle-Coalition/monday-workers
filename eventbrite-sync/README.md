@@ -325,7 +325,8 @@ Worker   POST /webhooks/eventbrite/attendee   (same shared secret: X-Webhook-Sec
 Events board (one item per Eventbrite event, program from the organizer name)
 Event Registrations board (one item per attendee: Attendance, Class Type/Date/Day/Location, People link)
   ▲
-Hourly cron  0 * * * *  → follow-up job sets Event Registrations → Follow-up Email
+Hourly cron  0 * * * *  → ended-event sweep re-queues events that have ended, for Event Status
+                       → follow-up job sets Event Registrations → Follow-up Email
   ▼
 Monday automation (label → Sequence enrollment) → email from learn@
 ```
@@ -357,6 +358,26 @@ delivery.
 Same dashboard route as the order webhook: Payload URL
 `https://<worker-host>/webhooks/eventbrite/attendee?secret=<EVENTBRITE_WEBHOOK_SECRET>`, Event =
 *All events*, Actions = the list in `attendeeSync.actions` in config. Sandbox keeps its own.
+
+### Event Status after the event ends
+
+`mapEvent` writes **Completed** once the event's end (else its start) has passed, whatever Eventbrite
+says: `live` and `started` mean Upcoming only until then. `started` can outlive the event (84 of them
+in the 2026-11-02 Salesforce org, every one over), so a replay would otherwise write Upcoming back
+over a corrected row. Canceled and Draft stay as they are.
+
+Whether Eventbrite sends `event.updated` when an event ends is unconfirmed: we found nothing in its
+docs that says so, and no ledger yet has an event that ended with the webhook registered. So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event
+in the last 30 days that ended, was last seen `live` or `started`, is `written`, and whose
+`written_at` is before its `ends_at`. The ordinary event consumer then fetches it and writes it, so a
+class canceled or moved since is written as that, and failures get the usual retries and DLQ. The
+consumer's write moves `written_at` past `ends_at`, which is the run-once guard; if a real delivery
+does arrive at the end, it does the same and the sweep finds nothing to do.
+
+It only sees this Worker's own ledger, with `ends_at` set: **an item `salesforce-import` loaded has no
+row until a delivery for that event arrives**, so a future event imported at cutover that hears
+nothing stays Upcoming. Run `scripts/backfill-attendees.mjs` for those events to give them rows. An
+event older than 30 days (a longer `hold`, say) needs the same.
 
 ### Follow-up rules
 
@@ -548,13 +569,20 @@ beyond the table above:
   cursor: its run-once guard is the event's Follow-ups column, which a dry run never sets, so a
   due class is logged again every hour until it ages out of `maxAgeDays`. `hold` or an unreadable
   switch skips the run with one `eventbrite-sync scheduled: write mode is …` line.
+- **The hourly ended-event sweep** (`sweepEndedEvents`). `on` re-queues each event through the
+  consumer. `off` changes nothing: each would-be send is a `Write queue` skip line and the ledger is
+  untouched, so an ended event is logged again every hour until it ages out of the 30-day window,
+  and any still inside it are re-queued on the first `on` run. Only a correction to an event that
+  has already ended, so unlike a poller's cursor nothing is skipped for good. `hold` or an unreadable
+  switch skips the run with the same line, and the first `on` run walks what it missed.
 - **The daily missed-order check.** Reads Eventbrite and the orders ledger and only logs, so it
   runs unchanged under `on` and `off`; under `hold` or an unreadable switch it is skipped with the
   sweep (the same line). Its 26-hour lookback does not reach back over a long hold, so after a
   multi-day `hold` compare the orders ledger against Eventbrite by hand (or run
   `scripts/backfill-orders.mjs --dry-run` per event) for the held days.
 - No path re-enqueues "stuck" ledger rows automatically, so a row ingested under `off` is never
-  resurrected later; re-driving stays the backfill scripts' job.
+  resurrected later; re-driving stays the backfill scripts' job. The ended-event sweep is no
+  exception: it takes only `written` rows, and a row an `off` delivery left `queued` isn't one.
 
 ## Open
 

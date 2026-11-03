@@ -12,11 +12,12 @@ import { tokenProviderFor, type TokenProvider } from './monday/graphql';
 import { consumeWriteBatch, type WriteQueueMessage } from './consumer/processBatch';
 import { runFollowups, type FollowupResult } from './followups/run';
 import { checkMissedOrders, isCheckHour, logMissedOrders } from './missedOrders/check';
+import { sweepEndedEvents, type EndedEventSweepResult } from './endedEvents/sweep';
 import { errorMessage } from './util/errorMessage';
 import { processDeadLetters } from './consumer/processDeadLetters';
 import { checkRequestRateLimit } from './rateLimit';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition } from './flags';
-import { followupDepsFor, type BatchSkipContext } from './writeSwitch';
+import { dryRunEndedEventDeps, followupDepsFor, type BatchSkipContext } from './writeSwitch';
 import type { Env } from './types';
 
 // This Worker's name in the FLAGS KV keys (`eventbrite-sync:writes`, `eventbrite-sync:log`) — the
@@ -49,6 +50,12 @@ export function logFollowupSummary(result: FollowupResult): void {
   const counts = `sent ${result.sent.length}, held ${result.held.length}, skipped ${result.skipped.length}, failed ${result.failed.length}`;
   if (result.failed.length > 0) console.error(`eventbrite-sync follow-ups: ${counts} (${result.failed.join(', ')})`);
   else console.log(`eventbrite-sync follow-ups: ${counts}`);
+}
+
+// Quiet when there is nothing to re-drive, which is most hours.
+function logEndedEventSummary(result: EndedEventSweepResult): void {
+  if (result.failed.length > 0) console.error(`eventbrite-sync ended events: queued ${result.queued.length}, failed ${result.failed.length} (${result.failed.join(', ')})`);
+  else if (result.queued.length > 0) console.log(`eventbrite-sync ended events: queued ${result.queued.length}`);
 }
 
 export default {
@@ -108,21 +115,23 @@ export default {
     }, gate);
   },
 
-  // Hourly (wrangler.jsonc triggers): the morning-after class follow-ups. Cheap when idle: one D1
-  // read of events that ended in the last few days, and Monday is touched only for those. Once a
-  // day it also runs the missed-order check (src/missedOrders/check.ts).
+  // Hourly (wrangler.jsonc triggers): the morning-after class follow-ups and the ended-event status
+  // sweep (src/endedEvents/sweep.ts). Cheap when idle: one D1 read each of events that ended
+  // recently, and Monday is touched only for those. Once a day it also runs the missed-order check
+  // (src/missedOrders/check.ts).
   scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     return runScheduled(controller, env, ctx, runFollowups);
   },
 };
 
-// `run` and `check` are parameters so a test can observe the calls without module mocking.
+// `run`, `check` and `sweep` are parameters so a test can observe the calls without module mocking.
 export async function runScheduled(
   controller: ScheduledController,
   env: Env,
   ctx: ExecutionContext,
   run: typeof runFollowups,
-  check: typeof checkMissedOrders = checkMissedOrders
+  check: typeof checkMissedOrders = checkMissedOrders,
+  sweep: typeof sweepEndedEvents = sweepEndedEvents
 ): Promise<void> {
   const config = configFor(env);
   // The broker binding, else the fixed token (an empty one counts as unset, as it always has here).
@@ -133,14 +142,14 @@ export async function runScheduled(
     throw new Error('neither the MONDAY_AUTH service binding (monday-auth) nor MONDAY_API_TOKEN (wrangler secret put MONDAY_API_TOKEN) is set; cannot run class follow-ups');
   }
   const now = new Date(controller.scheduledTime);
-  // The write switch, read once for this cron run. Both jobs follow runDisposition: `on` runs them,
-  // `off` dry-runs them (every Monday write and notification logged, none made), `hold` or an
-  // unreadable switch skips them with one line each.
+  // The write switch, read once for this cron run. Every job follows runDisposition: `on` runs it,
+  // `off` dry-runs it (every Monday write, notification and queue send logged, none made), `hold` or
+  // an unreadable switch skips it, all in one line.
   const gate = await skipContext(env);
   const disposition = runDisposition(gate.mode);
   const isCheck = isCheckHour(now);
   if (disposition === 'skip') {
-    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping the class follow-ups${isCheck ? ' and the missed-order check' : ''}`);
+    console.warn(`eventbrite-sync scheduled: write mode is "${gate.mode}"; skipping ${isCheck ? 'the class follow-ups, the ended-event sweep and the missed-order check' : 'the class follow-ups and the ended-event sweep'}`);
     return;
   }
   const liveDeps = {
@@ -154,6 +163,17 @@ export async function runScheduled(
       .then(logFollowupSummary)
       // A sweep-level throw (config, D1) must be logged, not become an unhandled waitUntil rejection.
       .catch((err) => console.error(`eventbrite-sync follow-ups: sweep failed: ${errorMessage(err)}`))
+  );
+
+  const sweepCtx = { ...gate, deliveryId: `ended-events:${now.toISOString()}` };
+  const sweepDeps = {
+    eventStore: liveDeps.eventStore,
+    queue: { send: (message: WriteQueueMessage) => env.WRITE_QUEUE.send(message).then(() => undefined) },
+  };
+  ctx.waitUntil(
+    sweep(now, disposition === 'run' ? sweepDeps : dryRunEndedEventDeps(sweepDeps, sweepCtx))
+      .then(logEndedEventSummary)
+      .catch((err) => console.error(`eventbrite-sync ended events: sweep failed: ${errorMessage(err)}`))
   );
 
   if (!isCheck) return;

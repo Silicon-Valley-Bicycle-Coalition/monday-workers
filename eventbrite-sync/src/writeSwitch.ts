@@ -1,5 +1,5 @@
 // eventbrite-sync's side of the write switch (src/flags.ts, spec 2026-10-26): the dry-run versions
-// of the consumer's and the hourly follow-up sweep's deps. The business logic runs unchanged against them, so a dry run fetches,
+// of the consumer's and the hourly sweeps' deps. The business logic runs unchanged against them, so a dry run fetches,
 // maps and matches exactly as a live run would; only the last step — the Monday write or the D1
 // bookkeeping that records it — is swapped out here. The Eventbrite client is GET-only and passes
 // through untouched.
@@ -10,6 +10,7 @@ import type { AttendeeStore } from './db/attendees';
 import type { MondayClient, MondayItem } from './monday/client';
 import type { ConsumerQueue, ProcessBatchDeps } from './consumer/processBatch';
 import type { FollowupDeps } from './followups/run';
+import type { EndedEventSweepDeps } from './endedEvents/sweep';
 import type { EventRow, MondayBoards } from './types';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
 
@@ -141,5 +142,15 @@ export function followupDepsFor(disposition: 'run' | 'dry-run', deps: FollowupDe
     eventStore: dryRunEventStore(deps.eventStore),
     attendeeStore: dryRunAttendeeStore(deps.attendeeStore),
     mondayClient: dryRunMondayClient(deps.mondayClient, deps.config.monday.boards, ctx),
+  };
+}
+
+// The ended-event sweep's deps under `off`: each event it would re-drive is a `Write queue` skip
+// line and the ledger stays as it is. Like the follow-up sweep it has no cursor, so an ended event
+// is logged again every hour until it ages out of the sweep's window.
+export function dryRunEndedEventDeps(deps: EndedEventSweepDeps, ctx: SkipContext): EndedEventSweepDeps {
+  return {
+    eventStore: dryRunEventStore(deps.eventStore),
+    queue: recordingProxy(deps.queue, 'Write queue', { send: undefined }, ctx),
   };
 }
