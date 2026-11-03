@@ -54,7 +54,7 @@ function harness(h: Harness) {
   const reads: { boardId: number; requireBoard: boolean }[] = [];
   const created: { groupId: string; name: string; values: Record<string, unknown> }[] = [];
   const rollCallCredits: RollCallCreditsStore = {
-    async all(fromFY) { return [...credits.values()].filter((r) => r.fiscalYear >= fromFY); },
+    async all() { return [...credits.values()]; },
     async upsert(rows) { for (const r of rows) credits.set(r.giftItemId, r); return rows.length; },
     async remove(ids) { for (const id of ids) credits.delete(id); },
     async markArchived() {},
@@ -130,7 +130,8 @@ describe('runRollCall', () => {
     });
     const report = await runRollCall(h.deps, NOW);
     expect(report.ok).toBe(true);
-    expect(report.detail).toEqual({ rows: 4, unplaced: { gifts: 0, cents: 0 }, credits: { upserted: 3, removed: 0, archived: 0 },
+    // upserted 4: c1 keeps its anonymous row though Contracts never counts (credits follow the flags).
+    expect(report.detail).toEqual({ rows: 4, unplaced: { gifts: 0, cents: 0 }, credits: { upserted: 4, removed: 0, archived: 0 },
       pendingLedger: 0, applied: 5, remaining: 0 });
     expect(h.writes).toEqual(['group FY2027 (in progress)', 'create Acme Foundation', 'create Pat & Sam Lee', 'create Ada Park', 'create Anonymous']);
     const byName = new Map(h.created.map((c) => [c.name, c.values]));
@@ -225,6 +226,52 @@ describe('runRollCall', () => {
         .toEqual([['Ada Park', '100.00', '1']]);
       expect(h.credits.get('a1')).toMatchObject({ credit: 'anonymous', amountCents: 0 });
     }
+  });
+
+  // The ledger keeps a gift's facts from the consumer's last read, and that read skips a gift
+  // with a blank Date (getDonationsByIds), so it can still count a gift the nightly read sees
+  // as not counting. The flag must keep winning in every such case, night after night.
+  describe.each([
+    ['its Date is cleared (fiscal year unreadable)', { fiscalYear: 0 }],
+    ['it reads Pledged', { status: 'Pledged' }],
+    ['its Status is blank', { status: null }],
+    ['its gift type is now excluded', { giftType: 'Contracts' }],
+    ['it is redated before the first fiscal year', { fiscalYear: 2025 }],
+    ['it is redated past the current fiscal year', { fiscalYear: 2062 }],
+  ] as [string, Partial<DonationCreditRecord>][])('while the ledger still counts a gift after %s', (_label, change) => {
+    it('never names the donor of the anonymous gift', async () => {
+      const h = harness({
+        ledger: [gift('g1', '13', 10_000), gift('a1', '13', 50_000)],
+        donations: [donation('a1', { anonymous: true, donorItemIds: ['13'] })],
+        boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+      });
+      await runRollCall(h.deps, NOW); // night one: the gift counts, credited anonymously
+      h.created.length = 0;
+      h.writes.length = 0;
+      (h.deps.mondayClient as unknown as { pageDonationCredits: () => Promise<unknown> }).pageDonationCredits =
+        async () => ({ items: [donation('a1', { anonymous: true, donorItemIds: ['13'], ...change })], cursor: null });
+      for (let night = 0; night < 2; night++) {
+        h.created.length = 0;
+        await runRollCall(h.deps, NOW);
+        expect(h.created.find((c) => c.name === 'Ada Park')?.values).toMatchObject({ to: '100.00', gi: '1' });
+        expect(h.credits.get('a1')).toMatchObject({ credit: 'anonymous' });
+      }
+    });
+    // A type that isn't Matching Donation clears the Matched By flag itself, so no company credit.
+    it.skipIf(change.giftType !== undefined)('never credits the Matched By gift to the employee', async () => {
+      const h = harness({
+        ledger: [gift('g1', '13', 10_000), gift('m1', '13', 30_000, { giftType: 'Matching Donation' })],
+        donations: [donation('m1', { giftType: 'Matching Donation', matchedByItemIds: ['31'], donorItemIds: ['13'] })],
+        boards: { 201: PEOPLE, 300: ORGS, 900: [] },
+      });
+      (h.deps.mondayClient as unknown as { pageDonationCredits: () => Promise<unknown> }).pageDonationCredits =
+        async () => ({ items: [donation('m1', { giftType: 'Matching Donation', matchedByItemIds: ['31'], donorItemIds: ['13'], ...change })], cursor: null });
+      for (let night = 0; night < 2; night++) {
+        h.created.length = 0;
+        await runRollCall(h.deps, NOW);
+        expect(h.created.find((c) => c.name === 'Ada Park')?.values).toMatchObject({ to: '100.00', gi: '1' });
+      }
+    });
   });
 
   it('never credits a $0 Matched By gift to the employee, even when the ledger has it above $0', async () => {
