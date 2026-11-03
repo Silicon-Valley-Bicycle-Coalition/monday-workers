@@ -5,8 +5,11 @@ import sandboxConfig from '../config/sandbox.json';
 import { devBypassAllowed, remoteKeysFor, verifyAccess } from './access';
 import { validateConfig, type MapConfig } from './config';
 import { createConfigSelector } from './environment';
-import type { MondayTokenSource } from './monday/graphql';
+import { CensusGeocoder, D1GeocodeStore } from './geocode';
+import { HttpMondayClient } from './monday/client';
+import { tokenProviderFor, type MondayTokenSource } from './monday/graphql';
 import { checkRequestRateLimit } from './rateLimit';
+import { runRefresh } from './snapshot';
 
 export interface Env {
   DB: D1Database;
@@ -34,13 +37,27 @@ const NO_STORE = 'private, no-store';
 
 const configFor = createConfigSelector({ production: productionConfig, sandbox: sandboxConfig, validate: validateConfig });
 
-// Replaced by Task 8's snapshot build.
-async function notImplemented(_env: Env): Promise<void> {
-  throw new Error('not implemented');
+export async function refreshSnapshot(env: Env): Promise<void> {
+  const config = configFor(env);
+  await runRefresh({
+    monday: new HttpMondayClient(config.monday.apiUrl, tokenProviderFor(env)),
+    store: new D1GeocodeStore(env.DB),
+    geocoder: new CensusGeocoder(config.geocoder),
+    assets: env.ASSETS,
+    bucket: env.SNAPSHOTS,
+    config,
+    now: new Date(),
+  });
+}
+
+// A background refresh has no caller to see a throw, so log it: error name only, never a message
+// (which could echo a Monday response).
+export function logRefreshFailure(err: unknown): void {
+  console.error(`member-map: refresh failed: ${err instanceof Error ? err.name : 'unknown'}`);
 }
 
 export function createApp(deps: AppDeps = {}): Hono<{ Bindings: Env }> {
-  const refresh = deps.refresh ?? notImplemented;
+  const refresh = deps.refresh ?? refreshSnapshot;
   const app = new Hono<{ Bindings: Env }>();
 
   // Rate limit first, then the Access gate in front of every route, assets included.
@@ -68,7 +85,7 @@ export function createApp(deps: AppDeps = {}): Hono<{ Bindings: Env }> {
     if (head && Date.now() - head.uploaded.getTime() < REFRESH_COOLDOWN_MS) {
       return c.json({ error: 'snapshot is under 10 minutes old' }, 429, { 'Cache-Control': NO_STORE });
     }
-    c.executionCtx.waitUntil(refresh(c.env));
+    c.executionCtx.waitUntil(refresh(c.env).catch(logRefreshFailure));
     return c.json({ status: 'refresh started' }, 202, { 'Cache-Control': NO_STORE });
   });
 
@@ -81,6 +98,7 @@ const app = createApp();
 
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
-  // Task 8 builds the weekly snapshot here.
-  async scheduled(_controller: ScheduledController, _env: Env): Promise<void> {},
+  scheduled: (_controller: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(refreshSnapshot(env).catch(logRefreshFailure));
+  },
 };

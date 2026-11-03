@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SignJWT, generateKeyPair } from 'jose';
-import { createApp, type Env } from './index';
+import worker, { createApp, type Env } from './index';
 
 const { publicKey, privateKey } = await generateKeyPair('RS256');
 const keys = async () => publicKey;
@@ -96,5 +96,33 @@ describe('POST /api/refresh', () => {
     const s = setup();
     expect((await s.call('/api/refresh', undefined, 'POST')).status).toBe(403);
     expect(s.refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('background failures', () => {
+  it('a rejected refresh is caught and logged by error name only', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const refresh = vi.fn(async () => { throw new TypeError('secret detail pat@example.org'); });
+    const app = createApp({ keys, refresh, accessOverride: { teamDomain: 'https://svbc.cloudflareaccess.com', aud: 'aud123', allowedEmailDomain: 'bikesiliconvalley.org' } });
+    let pending: Promise<unknown> | undefined;
+    const ctx = { waitUntil: (p: Promise<unknown>) => { pending = p; }, passThroughOnException: () => {} } as unknown as ExecutionContext;
+    const res = await app.fetch(new Request('https://map.bikesiliconvalley.org/api/refresh', { method: 'POST', headers: { 'Cf-Access-Jwt-Assertion': valid } }), fakeEnv(), ctx);
+    expect(res.status).toBe(202);
+    await expect(pending).resolves.toBeUndefined();
+    expect(err).toHaveBeenCalledWith('member-map: refresh failed: TypeError');
+    err.mockRestore();
+  });
+
+  it('scheduled hands the refresh to waitUntil and logs a failure without throwing', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let pending: Promise<unknown> | undefined;
+    const ctx = { waitUntil: (p: Promise<unknown>) => { pending = p; } } as unknown as ExecutionContext;
+    // No Monday token source: the real refresh fails fast, before any network call.
+    const env = { ...fakeEnv(), MONDAY_AUTH: undefined } as unknown as Env;
+    worker.scheduled({} as ScheduledController, env, ctx);
+    expect(pending).toBeDefined();
+    await expect(pending).resolves.toBeUndefined();
+    expect(err).toHaveBeenCalledWith('member-map: refresh failed: Error');
+    err.mockRestore();
   });
 });
