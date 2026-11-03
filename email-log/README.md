@@ -259,8 +259,8 @@ Started 2026-11-03, post-cutover.
 7. **Smoke test — done 2026-11-03.** One staff BCC to `log@` went through: D1 row `logged` 12 s
    after receipt, and an Activities (Logged) item with Activity Type `Email`, Owner the sender and
    the Message Hash set. The recipient was a personal address not on any People record, so the item
-   is `Needs Person` with the address in Notes. That is correct behaviour, but a matched Person link
-   is still unseen in production; the next real BCC to a contact on file shows it.
+   is `Needs Person` with the address in Notes. That is correct behaviour. A second BCC, to an address on a People record, logged as `Done`
+   with Person linked to that People item: the matched path works in production too.
 8. **Staff note:** one paragraph in the staff guide (significant touches only).
 
 The sandbox's forgery check (step 5) and steps 6 to 10 are still owed. They test the code, not the
