@@ -20,6 +20,8 @@ export default defineConfig(async () => {
     ],
     test: {
       setupFiles: ['./test/apply-migrations.ts'],
+      // scripts/*.test.mjs are node:test files, run with `node --test scripts/*.test.mjs`.
+      exclude: ['**/node_modules/**', 'scripts/**'],
     },
   });
 });

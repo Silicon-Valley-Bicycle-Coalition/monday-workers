@@ -4,31 +4,73 @@
     "campaign": "SVBC Sandbox Test",
     "pullOverlapMinutes": 120
   },
-  "boards": { "donations": 18437342657, "people": 18437342592, "organizations": 18437342579, "programSummary": 0 },
+  "boards": {
+    "donations": 18437342657,
+    "people": 18437342592,
+    "organizations": 18437342579,
+    "programSummary": 18438332611
+  },
   "donations": {
-    "amount": "REPLACE_WITH_COLUMN_ID", "date": "REPLACE_WITH_COLUMN_ID", "status": "REPLACE_WITH_COLUMN_ID", "giftType": "REPLACE_WITH_COLUMN_ID", "funraiseId": "REPLACE_WITH_COLUMN_ID",
-    "salesforceId": "REPLACE_WITH_COLUMN_ID", "benevityTransactionId": "REPLACE_WITH_COLUMN_ID", "anonymousDonor": "REPLACE_WITH_COLUMN_ID", "donor": "REPLACE_WITH_COLUMN_ID",
-    "matchedBy": "REPLACE_WITH_COLUMN_ID", "matchStatus": "REPLACE_WITH_COLUMN_ID", "dtdStatusRaw": "REPLACE_WITH_COLUMN_ID", "matchCompany": "REPLACE_WITH_COLUMN_ID",
-    "matchesGift": "REPLACE_WITH_COLUMN_ID", "matchPairing": "REPLACE_WITH_COLUMN_ID", "sentToDtd": "REPLACE_WITH_COLUMN_ID"
+    "amount": "numeric_mm8hn1b2",
+    "date": "date_mm8hfsvm",
+    "status": "color_mm8hshet",
+    "giftType": "text_mm8h238c",
+    "funraiseId": "link_mm8hqhsx",
+    "salesforceId": "text_mm8hweb1",
+    "benevityTransactionId": "text_mm8hm74r",
+    "anonymousDonor": "boolean_mm8h4a5h",
+    "donor": "board_relation_mm8hhdk7",
+    "matchedBy": "board_relation_mm8hs607",
+    "matchStatus": "color_mm8rpsq0",
+    "dtdStatusRaw": "text_mm8rbs84",
+    "matchCompany": "text_mm8r1ygq",
+    "matchesGift": "board_relation_mm8rnsj4",
+    "matchPairing": "color_mm8rhd6r",
+    "sentToDtd": "date_mm8rw3te"
   },
   "people": {
-    "email": "REPLACE_WITH_COLUMN_ID", "firstName": "REPLACE_WITH_COLUMN_ID", "lastName": "REPLACE_WITH_COLUMN_ID", "phone": "REPLACE_WITH_COLUMN_ID",
-    "dtdCompanyId": "REPLACE_WITH_COLUMN_ID", "dtdCompany": "REPLACE_WITH_COLUMN_ID", "dtdLink": "REPLACE_WITH_COLUMN_ID"
+    "email": "email_mm8h4kkb",
+    "firstName": "REPLACE_WITH_COLUMN_ID",
+    "lastName": "REPLACE_WITH_COLUMN_ID",
+    "phone": "phone_mm8ht3gd",
+    "dtdCompanyId": "text_mm8rbnx0",
+    "dtdCompany": "text_mm8r5jac",
+    "dtdLink": "link_mm8rdcn5"
   },
   "programSummary": {
-    "fiscalYear": "REPLACE_WITH_COLUMN_ID", "screened": "REPLACE_WITH_COLUMN_ID", "employerIdentified": "REPLACE_WITH_COLUMN_ID", "eligible": "REPLACE_WITH_COLUMN_ID",
-    "submitted": "REPLACE_WITH_COLUMN_ID", "matchesPaid": "REPLACE_WITH_COLUMN_ID", "matchDollars": "REPLACE_WITH_COLUMN_ID", "matchedGiftDollars": "REPLACE_WITH_COLUMN_ID",
-    "newMatchingCompanies": "REPLACE_WITH_COLUMN_ID", "firstTimeMatchedDonors": "REPLACE_WITH_COLUMN_ID", "asOf": "REPLACE_WITH_COLUMN_ID"
+    "fiscalYear": "text_mm8rcdjd",
+    "screened": "numeric_mm8rphxy",
+    "employerIdentified": "numeric_mm8r9pg1",
+    "eligible": "numeric_mm8rrwzd",
+    "submitted": "numeric_mm8rcdtp",
+    "matchesPaid": "numeric_mm8rm4mf",
+    "matchDollars": "numeric_mm8rktd",
+    "matchedGiftDollars": "numeric_mm8rack1",
+    "newMatchingCompanies": "numeric_mm8rthth",
+    "firstTimeMatchedDonors": "numeric_mm8rerpk",
+    "asOf": "date_mm8r1fmr"
   },
   "push": {
-    "giftTypes": ["Donation", "Event Ticket"],
-    "excludeGiftTypes": ["Matching Donation", "Sponsorship", "Grant", "Contract", "Membership"],
+    "giftTypes": [
+      "Donation",
+      "Event Ticket"
+    ],
+    "excludeGiftTypes": [
+      "Matching Donation",
+      "Sponsorship",
+      "Grant",
+      "Contract",
+      "Membership"
+    ],
     "receivedStatus": "Received",
     "windowDays": 30,
     "backfillFromISO": null,
     "allowEmails": null
   },
-  "pairing": { "windowMonths": 18, "amountTolerance": 0.01 },
+  "pairing": {
+    "windowMonths": 18,
+    "amountTolerance": 0.01
+  },
   "statusLabels": {
     ":identification-in-progress": "Identifying employer",
     ":waiting-for-donor-action": "Waiting for donor",
