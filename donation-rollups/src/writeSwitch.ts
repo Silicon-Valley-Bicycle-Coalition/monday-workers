@@ -26,7 +26,7 @@ const QUEUE_SINK = 'RECOMPUTE_QUEUE';
 
 const PENDING_MUTATORS = ['upsertPending', 'updateStatus'] as const satisfies readonly (keyof PendingStore)[];
 const LINKS_MUTATORS = ['upsertLink', 'bulkUpsert', 'deleteLink'] as const satisfies readonly (keyof DonationLinksStore)[];
-const GIFTS_MUTATORS = ['refreshFacts', 'markRemoved', 'setSummaryItemId', 'markArchived', 'setTermStarts',
+const GIFTS_MUTATORS = ['refreshFacts', 'markRemoved', 'setSummaryItemId', 'markArchived', 'setTermStarts', 'setSponsorshipFacts',
   'upsertAnnualSummaries', 'recordRun'] as const satisfies readonly (keyof GiftsStore)[];
 const RECOMPUTES_MUTATORS = ['record', 'acquireLease', 'releaseLease'] as const satisfies readonly (keyof OwnerRecomputesStore)[];
 const AFFILIATIONS_MUTATORS = ['upsert', 'bulkUpsert'] as const satisfies readonly (keyof AffiliationsStore)[];

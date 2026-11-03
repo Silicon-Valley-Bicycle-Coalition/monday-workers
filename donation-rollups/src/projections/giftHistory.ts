@@ -18,6 +18,8 @@ export interface GiftHistoryRow {
   giftType: string | null;
   actingForItemId: string | null;
   termStart?: string | null;
+  sponsorshipEvent: string | null;   // null = never read
+  inKindValueCents: number | null;
   archived: boolean;
 }
 

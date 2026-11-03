@@ -130,7 +130,7 @@ describe('D1GiftsStore', () => {
     const rows = await store.giftsForOwner('oJ');
     expect(rows).toEqual([{
       mondayItemId: 'j1', donationBoardId: '100', amountCents: 1000, giftDateISO: '2020-01-15',
-      fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, termStart: null, archived: true,
+      fiscalYear: 2020, status: 'Received', giftType: 'Donation', actingForItemId: null, termStart: null, sponsorshipEvent: null, inKindValueCents: null, archived: true,
     }]);
   });
 
@@ -328,5 +328,56 @@ describe('term_start (membership activity rule)', () => {
     await store.markRemoved('cg-gone', 'later');
     expect(await store.countedGifts(2026)).toEqual([
       { mondayItemId: 'cg-new', ownerItemId: 'cg-o', fiscalYear: 2026, amountCents: 700, status: 'Received', giftType: 'Individual' }]);
+  });
+});
+
+describe('sponsorship facts (sponsorship_event, in_kind_value_cents)', () => {
+  const base = { ownerItemId: 'o-sp', ownerBoardId: 'b1', amountCents: 500, giftDateISO: '2024-05-01', fiscalYear: 2024, status: 'Received' };
+  const find = async (store: D1GiftsStore, id: string) => (await store.giftsForOwner('o-sp')).find((g) => g.mondayItemId === id);
+  it('refreshFacts stores sponsorshipEvent and inKindValueCents', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'sp-1', sponsorshipEvent: '2024 Summit', inKindValueCents: 25000 }], 'import', 'now');
+    expect(await find(store, 'sp-1')).toMatchObject({ sponsorshipEvent: '2024 Summit', inKindValueCents: 25000 });
+  });
+  it('refreshFacts with them undefined leaves stored values', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'sp-2', sponsorshipEvent: '2024 Summit', inKindValueCents: 100 }], 'import', 'now');
+    await store.refreshFacts([{ ...base, mondayItemId: 'sp-2' }], 'webhook', 'later');
+    expect(await find(store, 'sp-2')).toMatchObject({ sponsorshipEvent: '2024 Summit', inKindValueCents: 100 });
+  });
+  it('a changed sponsorshipEvent counts as a change', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'sp-3', sponsorshipEvent: 'A', inKindValueCents: 0 }], 'import', 'now');
+    expect(await store.refreshFacts([{ ...base, mondayItemId: 'sp-3', sponsorshipEvent: 'B', inKindValueCents: 0 }], 'webhook', 'later')).toEqual({ changed: 1 });
+    expect(await store.refreshFacts([{ ...base, mondayItemId: 'sp-3', sponsorshipEvent: 'B', inKindValueCents: 0 }], 'webhook', 'later')).toEqual({ changed: 0 });
+  });
+  it('giftsForOwner returns null for never-read facts', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'sp-4' }], 'import', 'now');
+    expect(await find(store, 'sp-4')).toMatchObject({ sponsorshipEvent: null, inKindValueCents: null });
+  });
+  it('giftsMissingSponsorshipFacts returns only NULL rows of the given types, archived included, removed excluded, ordered by id after the cursor', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([
+      { ...base, mondayItemId: 'sm-a', giftType: 'Sponsorship' },
+      { ...base, mondayItemId: 'sm-b', giftType: 'Sponsorship' },
+      { ...base, mondayItemId: 'sm-c', giftType: 'Sponsorship' },
+      { ...base, mondayItemId: 'sm-d', giftType: 'Donation' },
+      { ...base, mondayItemId: 'sm-e', giftType: 'Sponsorship', sponsorshipEvent: '', inKindValueCents: 0 },
+      { ...base, mondayItemId: 'sm-f', giftType: 'Sponsorship' },
+    ], 'import', 'now');
+    await env.DB.prepare(`UPDATE gifts SET archived_at='2025-01-01' WHERE monday_item_id='sm-b'`).run();
+    await store.markRemoved('sm-c', 'now');
+    expect(await store.giftsMissingSponsorshipFacts(['Sponsorship'], '', 10)).toEqual(['sm-a', 'sm-b', 'sm-f']);
+    expect(await store.giftsMissingSponsorshipFacts(['Sponsorship'], 'sm-a', 1)).toEqual(['sm-b']);
+    expect(await store.giftsMissingSponsorshipFacts(['Sponsorship', 'Donation'], 'sm-b', 10)).toEqual(['sm-d', 'sm-f']);
+    expect(await store.giftsMissingSponsorshipFacts([], '', 10)).toEqual([]);
+  });
+  it("setSponsorshipFacts writes '' and 0 so the row is no longer missing", async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'sw-1', giftType: 'Sponsorship' }], 'import', 'now');
+    await store.setSponsorshipFacts([{ mondayItemId: 'sw-1', sponsorshipEvent: '', inKindValueCents: 0 }], 'later');
+    expect(await store.giftsMissingSponsorshipFacts(['Sponsorship'], '', 10)).toEqual([]);
+    expect(await find(store, 'sw-1')).toMatchObject({ sponsorshipEvent: '', inKindValueCents: 0 });
   });
 });

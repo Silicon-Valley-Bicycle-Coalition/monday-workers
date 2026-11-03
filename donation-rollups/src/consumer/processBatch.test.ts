@@ -121,6 +121,8 @@ function fakeGiftsStore(): GiftsStore {
     countedGifts: vi.fn().mockResolvedValue([]),
     giftsMissingTermStart: vi.fn().mockResolvedValue([]),
     setTermStarts: vi.fn().mockResolvedValue(undefined),
+    giftsMissingSponsorshipFacts: vi.fn().mockResolvedValue([]),
+    setSponsorshipFacts: vi.fn().mockResolvedValue(undefined),
     ownersOnBoards: vi.fn().mockResolvedValue([]),
     ownersWithOneGift: vi.fn().mockResolvedValue([]),
     ownerTotals: vi.fn().mockResolvedValue(new Map()),
@@ -542,7 +544,7 @@ describe('processRecomputeBatch', () => {
 const BLANK_BOARD: BoardMembership = { statusLabel: null, tierLabel: null, since: null, until: null, currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null };
 const ledgerGift = (over: Partial<GiftHistoryRow> = {}): GiftHistoryRow => ({
   mondayItemId: 'dn1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2026-11-05', fiscalYear: 2027,
-  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, termStart: null, ...over });
+  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, termStart: null, sponsorshipEvent: null, inKindValueCents: null, ...over });
 
 describe('membership step (spec 2026-10-09 — full-history fold)', () => {
   function deps(over: {
