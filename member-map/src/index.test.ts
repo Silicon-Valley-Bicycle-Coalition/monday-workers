@@ -1,26 +1,37 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SignJWT, generateKeyPair } from 'jose';
-import worker, { createApp, type Env } from './index';
+import worker, { createApp, createWorker, type Env, type RefreshMessage } from './index';
 
 const { publicKey, privateKey } = await generateKeyPair('RS256');
 const keys = async () => publicKey;
 const valid = await new SignJWT({ email: 'pat@bikesiliconvalley.org' })
   .setProtectedHeader({ alg: 'RS256' }).setIssuer('https://svbc.cloudflareaccess.com').setAudience('aud123').setExpirationTime('5m').sign(privateKey);
 
+// A small in-memory R2: just head/get/put/delete, with an upload time per key.
+class FakeBucket {
+  objects = new Map<string, { body: string; uploaded: Date }>();
+  set(key: string, uploaded: Date, body = '{"ok":true}') { this.objects.set(key, { body, uploaded }); }
+  async head(key: string) { const o = this.objects.get(key); return o ? { uploaded: o.uploaded } : null; }
+  async get(key: string) { const o = this.objects.get(key); return o ? { uploaded: o.uploaded, body: new Response(o.body).body } : null; }
+  async put(key: string, body: string) { this.objects.set(key, { body, uploaded: new Date() }); return {}; }
+  async delete(key: string) { this.objects.delete(key); }
+}
+
 // Configs ship with teamDomain "" until Access is set up, so tests inject the access settings.
-function fakeEnv(opts: { snapshotUploadedAt?: Date | null; limiter?: boolean } = {}): Env {
+function fakeEnv(opts: { snapshotUploadedAt?: Date | null; limiter?: boolean } = {}) {
   const uploaded = opts.snapshotUploadedAt === undefined ? new Date(Date.now() - 3600_000) : opts.snapshotUploadedAt;
-  const object = uploaded && { uploaded, body: '{"ok":true}', httpEtag: '"x"' };
-  return {
+  const bucket = new FakeBucket();
+  if (uploaded) bucket.set('snapshot.json', uploaded);
+  const send = vi.fn(async (_msg: unknown) => {});
+  const env: Env = {
     DB: {} as D1Database,
-    SNAPSHOTS: {
-      get: async () => (object ? { ...object, body: new Response('{"ok":true}').body } : null),
-      head: async () => (object ? { uploaded } : null),
-    } as unknown as R2Bucket,
-    ASSETS: { fetch: async () => new Response('asset') } as unknown as Fetcher,
+    SNAPSHOTS: bucket as unknown as R2Bucket,
+    ASSETS: { fetch: async () => new Response('asset', { headers: { 'Content-Type': 'text/html' } }) } as unknown as Fetcher,
     MONDAY_AUTH: { token: async () => 't' },
     REQUEST_RATE_LIMITER: { limit: async () => ({ success: opts.limiter ?? true }) } as unknown as RateLimit,
+    REFRESH_QUEUE: { send } as unknown as Queue<RefreshMessage>,
   };
+  return Object.assign(env, { bucket, send });
 }
 
 function setup(opts: Parameters<typeof fakeEnv>[0] = {}) {
@@ -30,7 +41,7 @@ function setup(opts: Parameters<typeof fakeEnv>[0] = {}) {
   const ctx = { waitUntil: vi.fn(), passThroughOnException: () => {} } as unknown as ExecutionContext;
   const call = (path: string, token?: string, method = 'GET') =>
     app.fetch(new Request(`https://map.bikesiliconvalley.org${path}`, { method, headers: token ? { 'Cf-Access-Jwt-Assertion': token } : {} }), env, ctx);
-  return { call, refresh, ctx };
+  return { call, refresh, ctx, env };
 }
 
 describe('access gate', () => {
@@ -79,50 +90,134 @@ describe('/api/snapshot', () => {
 });
 
 describe('POST /api/refresh', () => {
-  it('starts a refresh and returns 202', async () => {
+  it('enqueues a refresh, writes the in-progress marker and returns 202 without running it inline', async () => {
     const s = setup();
     const res = await s.call('/api/refresh', valid, 'POST');
     expect(res.status).toBe(202);
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(s.refresh).toHaveBeenCalledTimes(1);
+    expect(s.env.send).toHaveBeenCalledTimes(1);
+    expect(s.env.send.mock.calls[0]![0]).toMatchObject({ requestedAt: expect.any(String) });
+    expect(s.env.bucket.objects.has('refresh-pending.json')).toBe(true);
+    expect(s.refresh).not.toHaveBeenCalled();
+    expect(s.ctx.waitUntil).not.toHaveBeenCalled();
   });
   it('is 429 within 10 minutes of the last snapshot', async () => {
     const s = setup({ snapshotUploadedAt: new Date(Date.now() - 5 * 60_000) });
     const res = await s.call('/api/refresh', valid, 'POST');
     expect(res.status).toBe(429);
-    expect(s.refresh).not.toHaveBeenCalled();
+    expect(s.env.send).not.toHaveBeenCalled();
+  });
+  it('a second click while a refresh is pending is 429 and enqueues nothing more', async () => {
+    const s = setup({ snapshotUploadedAt: null });
+    expect((await s.call('/api/refresh', valid, 'POST')).status).toBe(202);
+    const again = await s.call('/api/refresh', valid, 'POST');
+    expect(again.status).toBe(429);
+    expect(await again.json()).toEqual({ error: 'a refresh is already running' });
+    expect(s.env.send).toHaveBeenCalledTimes(1);
+  });
+  it('a marker older than 20 minutes no longer blocks a refresh', async () => {
+    const s = setup({ snapshotUploadedAt: null });
+    s.env.bucket.set('refresh-pending.json', new Date(Date.now() - 21 * 60_000));
+    expect((await s.call('/api/refresh', valid, 'POST')).status).toBe(202);
+    expect(s.env.send).toHaveBeenCalledTimes(1);
+  });
+  it('clears the marker and answers 503 when the enqueue fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = setup();
+    s.env.send.mockRejectedValueOnce(new Error('queue down'));
+    const res = await s.call('/api/refresh', valid, 'POST');
+    expect(res.status).toBe(503);
+    expect(s.env.bucket.objects.has('refresh-pending.json')).toBe(false);
+    err.mockRestore();
   });
   it('403s without a token', async () => {
     const s = setup();
     expect((await s.call('/api/refresh', undefined, 'POST')).status).toBe(403);
-    expect(s.refresh).not.toHaveBeenCalled();
+    expect(s.env.send).not.toHaveBeenCalled();
   });
 });
 
-describe('background failures', () => {
-  it('a rejected refresh is caught and logged by error name only', async () => {
+describe('security headers', () => {
+  it('asset responses carry a Content-Security-Policy', async () => {
+    const res = await setup().call('/index.html', valid);
+    const csp = res.headers.get('Content-Security-Policy') ?? '';
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' https://cdnjs.cloudflare.com");
+    expect(csp).toContain('img-src \'self\' data: https://tile.openstreetmap.org');
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("base-uri 'none'");
+    expect(res.headers.get('Content-Type')).toBe('text/html');
+  });
+});
+
+const EMAIL_ERROR = () => new TypeError('secret detail pat@example.org');
+const batch = (n = 1) => ({
+  queue: 'svbc-member-map-refresh',
+  messages: Array.from({ length: n }, () => ({ body: { requestedAt: 'x' }, ack: () => {}, retry: () => {} })),
+}) as unknown as MessageBatch<RefreshMessage>;
+const noCtx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
+
+describe('queue consumer', () => {
+  it('runs the refresh and clears the marker on success', async () => {
+    const refresh = vi.fn(async () => {});
+    const env = fakeEnv();
+    env.bucket.set('refresh-pending.json', new Date());
+    await createWorker({ refresh }).queue(batch(), env, noCtx);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(env.bucket.objects.has('refresh-pending.json')).toBe(false);
+  });
+
+  it('runs the refresh once per batch, however many clicks it holds', async () => {
+    const refresh = vi.fn(async () => {});
+    await createWorker({ refresh }).queue(batch(3), fakeEnv(), noCtx);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('on failure logs the name only, clears the marker and throws a sanitized error', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const refresh = vi.fn(async () => { throw new TypeError('secret detail pat@example.org'); });
-    const app = createApp({ keys, refresh, accessOverride: { teamDomain: 'https://svbc.cloudflareaccess.com', aud: 'aud123', allowedEmailDomain: 'bikesiliconvalley.org' } });
-    let pending: Promise<unknown> | undefined;
-    const ctx = { waitUntil: (p: Promise<unknown>) => { pending = p; }, passThroughOnException: () => {} } as unknown as ExecutionContext;
-    const res = await app.fetch(new Request('https://map.bikesiliconvalley.org/api/refresh', { method: 'POST', headers: { 'Cf-Access-Jwt-Assertion': valid } }), fakeEnv(), ctx);
-    expect(res.status).toBe(202);
-    await expect(pending).resolves.toBeUndefined();
+    const env = fakeEnv();
+    env.bucket.set('refresh-pending.json', new Date());
+    const thrown = await createWorker({ refresh: async () => { throw EMAIL_ERROR(); } }).queue(batch(), env, noCtx).catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe('member-map: refresh failed: TypeError');
+    expect((thrown as Error).message).not.toMatch(/secret|@|example/);
+    expect(env.bucket.objects.has('refresh-pending.json')).toBe(false);
+    expect(err).toHaveBeenCalledWith('member-map: refresh failed: TypeError');
+    err.mockRestore();
+  });
+});
+
+describe('cron', () => {
+  it('awaits the refresh', async () => {
+    const refresh = vi.fn(async () => {});
+    await createWorker({ refresh }).scheduled({} as ScheduledController, fakeEnv(), noCtx);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a failure by name and rethrows a sanitized error, so the Cron Event shows failed', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const thrown = await createWorker({ refresh: async () => { throw EMAIL_ERROR(); } })
+      .scheduled({} as ScheduledController, fakeEnv(), noCtx).catch((e: unknown) => e);
+    expect((thrown as Error).message).toBe('member-map: refresh failed: TypeError');
+    expect((thrown as Error).message).not.toMatch(/secret|pat@example\.org/);
     expect(err).toHaveBeenCalledWith('member-map: refresh failed: TypeError');
     err.mockRestore();
   });
 
-  it('scheduled hands the refresh to waitUntil and logs a failure without throwing', async () => {
+  it('the default export runs the real refresh, which fails fast without a token source', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-    let pending: Promise<unknown> | undefined;
-    const ctx = { waitUntil: (p: Promise<unknown>) => { pending = p; } } as unknown as ExecutionContext;
-    // No Monday token source: the real refresh fails fast, before any network call.
     const env = { ...fakeEnv(), MONDAY_AUTH: undefined } as unknown as Env;
-    worker.scheduled({} as ScheduledController, env, ctx);
-    expect(pending).toBeDefined();
-    await expect(pending).resolves.toBeUndefined();
-    expect(err).toHaveBeenCalledWith('member-map: refresh failed: Error');
+    await expect(worker.scheduled({} as ScheduledController, env, noCtx)).rejects.toThrow('member-map: refresh failed: Error');
     err.mockRestore();
+  });
+});
+
+describe('main module exports', () => {
+  it('are all functions besides the default handler (workerd refuses to start otherwise)', async () => {
+    const mod = (await import('./index')) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(mod)) {
+      if (name !== 'default') expect(typeof value, name).toBe('function');
+    }
   });
 });

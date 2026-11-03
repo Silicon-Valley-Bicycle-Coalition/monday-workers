@@ -41,6 +41,20 @@ describe('wrangler.jsonc env.sandbox', () => {
     expect(sandboxEnv.limits).toEqual(wrangler.limits);
   });
 
+  it('has its own refresh queue, produced and consumed by this Worker, with no retries', () => {
+    type Queues = { producers: { queue: string; binding: string }[]; consumers: { queue: string; max_batch_size?: number; max_retries?: number }[] };
+    const prod = wrangler.queues as Queues;
+    const sb = sandboxEnv.queues as Queues;
+    expect(prod.producers).toEqual([{ queue: 'svbc-member-map-refresh', binding: 'REFRESH_QUEUE' }]);
+    expect(sb.producers).toEqual([{ queue: 'svbc-member-map-refresh-sandbox', binding: 'REFRESH_QUEUE' }]);
+    expect(prod.consumers.map((c) => c.queue)).toEqual(['svbc-member-map-refresh']);
+    expect(sb.consumers.map((c) => c.queue)).toEqual(['svbc-member-map-refresh-sandbox']);
+    for (const c of [...prod.consumers, ...sb.consumers]) {
+      expect(c.max_batch_size).toBe(1);
+      expect(c.max_retries).toBe(0);
+    }
+  });
+
   it('derives its own name', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-member-map');

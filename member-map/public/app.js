@@ -148,7 +148,7 @@ function showNoData() {
     try {
       const res = await fetch('api/refresh', { method: 'POST' });
       if (res.status === 202) showStatus('Refresh started. Reload this page in a few minutes.');
-      else if (res.status === 429) showStatus('A refresh ran in the last 10 minutes. Reload this page shortly.');
+      else if (res.status === 429) showStatus('A refresh is already running or ran in the last 10 minutes. Reload this page in a few minutes.');
       else { showStatus(`Refresh failed (HTTP ${res.status}).`); }
     } catch {
       showStatus('Refresh failed: the network request didn’t complete.');

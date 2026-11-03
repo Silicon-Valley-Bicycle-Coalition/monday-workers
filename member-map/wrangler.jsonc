@@ -16,6 +16,13 @@
     { "binding": "DB", "database_name": "svbc-member-map", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
   ],
   "r2_buckets": [{ "binding": "SNAPSHOTS", "bucket_name": "svbc-member-map" }],
+  // POST /api/refresh enqueues; this Worker's queue() runs the refresh (a queue consumer gets 15
+  // minutes, an HTTP waitUntil about 30 s). One refresh per batch, and no retries: a failed
+  // refresh waits for the next click or the weekly cron. Operator creates it (README Provisioning).
+  "queues": {
+    "producers": [{ "queue": "svbc-member-map-refresh", "binding": "REFRESH_QUEUE" }],
+    "consumers": [{ "queue": "svbc-member-map-refresh", "max_batch_size": 1, "max_retries": 0 }]
+  },
   // Traffic/cost guardrails — see the root README "Reliability: traffic and cost limits".
   "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2093", "simple": { "limit": 120, "period": 60 } }],
   // The weekly snapshot reads every member and scores census tracts in one invocation.
@@ -45,6 +52,10 @@
         { "binding": "DB", "database_name": "svbc-member-map-sandbox", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
       ],
       "r2_buckets": [{ "binding": "SNAPSHOTS", "bucket_name": "svbc-member-map-sandbox" }],
+      "queues": {
+        "producers": [{ "queue": "svbc-member-map-refresh-sandbox", "binding": "REFRESH_QUEUE" }],
+        "consumers": [{ "queue": "svbc-member-map-refresh-sandbox", "max_batch_size": 1, "max_retries": 0 }]
+      },
       "ratelimits": [{ "name": "REQUEST_RATE_LIMITER", "namespace_id": "2094", "simple": { "limit": 120, "period": 60 } }],
       "limits": { "cpu_ms": 300000 },
       "triggers": {
