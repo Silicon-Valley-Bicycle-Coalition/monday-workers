@@ -81,6 +81,12 @@ describe('OVERVIEW_SPECS', () => {
     expect(rules('people-live', 'Gave last year, not this year (list)')).toEqual(rules('people-live', 'Gave last year, not this year'));
   });
 
+  it('the Events Upcoming tile counts what the Upcoming view lists', () => {
+    const tile = OVERVIEW_SPECS['events']!.widgets.find((w) => w.name === 'Upcoming')!;
+    const tab = BOARD_SPECS['events']!.views!.find((v) => v.name === 'Upcoming')!;
+    expect(tile.filter!.rules).toEqual(tab.filter!.rules);
+  });
+
   it('writes fiscal years as @FY / @FY-1 and { fiscalYear } ranges, never literal years, dates or bare numbers', () => {
     for (const [board, s] of entries) for (const w of s.widgets) for (const r of w.filter?.rules ?? []) {
       const where = `${board} / ${w.name} / ${r.columnTitle}`;
