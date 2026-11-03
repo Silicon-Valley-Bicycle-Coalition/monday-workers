@@ -131,6 +131,47 @@ describe('runClassify', () => {
     expect(d.failedItemIds).toHaveLength(20);
   });
 
+  describe('Acknowledgment Tier', () => {
+    const tierConfig = { ...config, donationRollups: { donationBoards: [
+      { boardId: 100, columns: { amount: 'am', date: 'dt', giftType: 'gt', classification: { ...CL, acknowledgmentTier: 'at' } } },
+    ] } } as unknown as DonationRollupsConfig;
+    const labelled = { dt: '2025-08-01', gt: 'Donation', fs: 'Individual Giving', fq: 'FY26 Q1', gfy: 'FY2026' };
+
+    it('sets Major at $200 and Standard below, alongside the other labels', async () => {
+      const { client, writes } = fakeClient([
+        { id: '1', am: '200', ...labelled, gs: '$100–249' },
+        { id: '2', am: '199.99', ...labelled, gs: '$100–249' },
+      ]);
+      await runClassify(client, tierConfig);
+      expect(writes.map((w) => [w.itemId, w.values])).toEqual([
+        ['1', { at: { label: 'Major' } }],
+        ['2', { at: { label: 'Standard' } }],
+      ]);
+    });
+
+    it('fixes a wrong tier and skips a right one', async () => {
+      const { client, writes } = fakeClient([
+        { id: '1', am: '250', ...labelled, gs: '$250–999', at: 'Standard' },
+        { id: '2', am: '250', ...labelled, gs: '$250–999', at: 'Major' },
+      ]);
+      await runClassify(client, tierConfig);
+      expect(writes.map((w) => [w.itemId, w.values])).toEqual([['1', { at: { label: 'Major' } }]]);
+    });
+
+    it('leaves the tier alone on a gift with no amount', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: null, ...labelled, at: 'Major' }]);
+      await runClassify(client, tierConfig);
+      expect(writes).toEqual([]);
+    });
+
+    it('reads the tier only when it is configured', async () => {
+      const { client, writes } = fakeClient([{ id: '1', am: '250', ...labelled, gs: '$250–999' }]);
+      const report = await runClassify(client, config);
+      expect(writes).toEqual([]);
+      expect(report.detail).toMatchObject({ changed: 0 });
+    });
+  });
+
   it('rethrows a rate limit so the run stops', async () => {
     const rows = ['1', '2', '3'].map((id) => ({ id, am: '10', dt: '2025-08-01', gt: 'Donation' }));
     const { client, writes } = fakeClient(rows, 500);
