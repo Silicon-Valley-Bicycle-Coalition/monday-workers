@@ -25,6 +25,7 @@ export const EXPECTED = {
   'member-portal-writer': 'SyncToken',
   'funraise-sync': 'SyncToken',
   'donation-rollups': 'SyncToken',
+  'dtd-sync': 'SyncToken',
   'mailchimp-sync': 'SyncToken',
   'benevity-import': 'SyncToken',
   'email-log': 'SyncToken',

@@ -233,7 +233,7 @@ Every Worker that writes to Monday (or sends email) reads a per-Worker mode from
 Workers KV namespace, `FLAGS`, so a migration or an incident can stop writes in seconds without a
 deploy. Design: [`docs/superpowers/specs/2026-10-26-write-switch-design.md`](docs/superpowers/specs/2026-10-26-write-switch-design.md);
 the migration procedure: [`docs/runbooks/migration-hold.md`](docs/runbooks/migration-hold.md).
-In scope, thirteen Workers: `benevity-import`, `bp-feedback-notify`, `donation-rollups`,
+In scope, fourteen Workers: `benevity-import`, `bp-feedback-notify`, `donation-rollups`, `dtd-sync`,
 `email-log`, `eventbrite-sync`, `funraise-sync`, `mailchimp-sync`, `member-portal`,
 `monday-backup`, `nearby-search`, `people-reclassification`, `quickbooks-sync` and
 `report-digests` (`svbc-calendars` excluded).

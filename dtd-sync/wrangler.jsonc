@@ -1,0 +1,65 @@
+{
+  "name": "svbc-dtd-sync",
+  "main": "src/index.ts",
+  "account_id": "f323cb191edeb5d30acc4d289427a010", // SVBC Account — forks: replace with your own
+  "compatibility_date": "2026-08-01",
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "svbc-dtd-sync",
+      "database_id": "85837229-98c6-46c2-ab09-775e0ae3ab56",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Write-switch flags (scripts/flags.mjs). The namespace is `FLAGS` (`sandbox-FLAGS` under
+  // env.sandbox); every in-scope Worker carries the same two ids, which
+  // scripts/check-worker-flags.mjs verifies.
+  "kv_namespaces": [{ "binding": "FLAGS", "id": "1dec1f10ebcc41e7a464179ba2b37628" }],
+  // Cron-only Worker, no routes. Hourly at :15 pushes eligible gifts to Double the Donation and
+  // pulls match status back; 10:00 UTC daily refreshes the Matching Gift Program summary.
+  "triggers": {
+    "crons": ["15 * * * *", "0 10 * * *"]
+  },
+  // The daily run walks Donations and People; CPU time excludes DTD/Monday/D1 I/O wait. Keep in
+  // step with env.sandbox below.
+  "limits": { "cpu_ms": 30000 },
+  "observability": {
+    "enabled": true,
+    "issues": { "enabled": true }
+  },
+  // Monday access: the monday-auth broker's Staff sync app (SyncToken entrypoint), which owns
+  // the OAuth token and its refresh. DTD_PRIVATE_KEY is a Worker secret (wrangler secret put).
+  "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth", "entrypoint": "SyncToken" }],
+  // ── Sandbox environment ───────────────────────────────────────────────────────────────────
+  // `wrangler deploy --env sandbox` deploys svbc-dtd-sync-sandbox against the CRM Sandbox boards
+  // (config/sandbox.json, selected by the ENVIRONMENT var). Everything here is non-inheritable in
+  // Wrangler and deliberately restated: the sandbox shares nothing with production. DTD has no
+  // sandbox, so config/sandbox.json's push.allowEmails is the guard against reaching real donors.
+  // Secrets exist twice — set the sandbox copy with `wrangler secret put DTD_PRIVATE_KEY --env sandbox`.
+  "env": {
+    "sandbox": {
+      "vars": { "ENVIRONMENT": "sandbox" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "svbc-dtd-sync-sandbox",
+          "database_id": "f5d5fad2-fa10-43f7-8b1e-9bcd269a2a66",
+          "migrations_dir": "migrations"
+        }
+      ],
+      // The sandbox-FLAGS namespace.
+      "kv_namespaces": [{ "binding": "FLAGS", "id": "a80c21a348064e07bb9c1bff16bee1a4" }],
+      "triggers": {
+        "crons": ["15 * * * *", "0 10 * * *"]
+      },
+      "limits": { "cpu_ms": 30000 },
+      "observability": {
+        "enabled": true,
+        "issues": { "enabled": true }
+      },
+      // The sandbox broker, consented as Sandbox Integration.
+      "services": [{ "binding": "MONDAY_AUTH", "service": "svbc-monday-auth-sandbox", "entrypoint": "SyncToken" }]
+    }
+  }
+}

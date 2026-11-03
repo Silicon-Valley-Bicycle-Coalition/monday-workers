@@ -1,0 +1,41 @@
+{
+  "dtd": {
+    "apiBase": "https://doublethedonation.com/api/360matchpro/v1/",
+    "campaign": "SVBC Sandbox Test",
+    "pullOverlapMinutes": 120
+  },
+  "boards": { "donations": 18437342657, "people": 18437342592, "organizations": 18437342579, "programSummary": 0 },
+  "donations": {
+    "amount": "REPLACE_WITH_COLUMN_ID", "date": "REPLACE_WITH_COLUMN_ID", "status": "REPLACE_WITH_COLUMN_ID", "giftType": "REPLACE_WITH_COLUMN_ID", "funraiseId": "REPLACE_WITH_COLUMN_ID",
+    "salesforceId": "REPLACE_WITH_COLUMN_ID", "benevityTransactionId": "REPLACE_WITH_COLUMN_ID", "anonymousDonor": "REPLACE_WITH_COLUMN_ID", "donor": "REPLACE_WITH_COLUMN_ID",
+    "matchedBy": "REPLACE_WITH_COLUMN_ID", "matchStatus": "REPLACE_WITH_COLUMN_ID", "dtdStatusRaw": "REPLACE_WITH_COLUMN_ID", "matchCompany": "REPLACE_WITH_COLUMN_ID",
+    "matchesGift": "REPLACE_WITH_COLUMN_ID", "matchPairing": "REPLACE_WITH_COLUMN_ID", "sentToDtd": "REPLACE_WITH_COLUMN_ID"
+  },
+  "people": {
+    "email": "REPLACE_WITH_COLUMN_ID", "firstName": "REPLACE_WITH_COLUMN_ID", "lastName": "REPLACE_WITH_COLUMN_ID", "phone": "REPLACE_WITH_COLUMN_ID",
+    "dtdCompanyId": "REPLACE_WITH_COLUMN_ID", "dtdCompany": "REPLACE_WITH_COLUMN_ID", "dtdLink": "REPLACE_WITH_COLUMN_ID"
+  },
+  "programSummary": {
+    "fiscalYear": "REPLACE_WITH_COLUMN_ID", "screened": "REPLACE_WITH_COLUMN_ID", "employerIdentified": "REPLACE_WITH_COLUMN_ID", "eligible": "REPLACE_WITH_COLUMN_ID",
+    "submitted": "REPLACE_WITH_COLUMN_ID", "matchesPaid": "REPLACE_WITH_COLUMN_ID", "matchDollars": "REPLACE_WITH_COLUMN_ID", "matchedGiftDollars": "REPLACE_WITH_COLUMN_ID",
+    "newMatchingCompanies": "REPLACE_WITH_COLUMN_ID", "firstTimeMatchedDonors": "REPLACE_WITH_COLUMN_ID", "asOf": "REPLACE_WITH_COLUMN_ID"
+  },
+  "push": {
+    "giftTypes": ["Donation", "Event Ticket"],
+    "excludeGiftTypes": ["Matching Donation", "Sponsorship", "Grant", "Contract", "Membership"],
+    "receivedStatus": "Received",
+    "windowDays": 30,
+    "backfillFromISO": null,
+    "allowEmails": null
+  },
+  "pairing": { "windowMonths": 18, "amountTolerance": 0.01 },
+  "statusLabels": {
+    ":identification-in-progress": "Identifying employer",
+    ":waiting-for-donor-action": "Waiting for donor",
+    ":waiting-for-verification": "Submitted",
+    ":closed-program-eligibility": "Not eligible",
+    ":closed-no-matching-gift-program": "No program",
+    ":ineligible": "Not eligible",
+    ":unknown-employer": "Employer unknown"
+  }
+}
