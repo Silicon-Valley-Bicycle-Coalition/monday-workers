@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { queryAllFeatures } = require('./arcgis');
 
 // Cache settings
 const CACHE_FILE = path.join(__dirname, 'supplementalSources.cache.json');
@@ -51,29 +52,18 @@ function parseClassNumber(className, pattern) {
 
 /**
  * Query San Jose bikeways for all existing classes
+ *
+ * Records marked INCORPORATED='No' are bikeways the city mapped outside its
+ * limits (county pockets). They aren't San Jose miles, and the MTC data
+ * already counts them under the county's unincorporated area, so they're
+ * excluded here to avoid counting them twice.
  */
 async function querySanJoseBikeways() {
-  const params = new URLSearchParams({
-    where: "STATUS='Existing'",
-    outFields: 'EXISTINGBIKEWAYCLASS,SEGMENTMILES',
-    returnGeometry: 'false',
-    f: 'json'
-  });
-
-  const url = `${SAN_JOSE_API}/query?${params}`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`San Jose API request failed: ${response.status}`);
-  }
-
-  const data = await response.json();
-
-  if (data.error) {
-    throw new Error(`San Jose API error: ${data.error.message}`);
-  }
-
-  return data.features || [];
+  return queryAllFeatures(SAN_JOSE_API, {
+    where: "STATUS='Existing' AND (INCORPORATED IS NULL OR INCORPORATED <> 'No')",
+    outFields: 'OBJECTID,EXISTINGBIKEWAYCLASS,SEGMENTMILES',
+    returnGeometry: 'false'
+  }, { orderByFields: 'OBJECTID' });
 }
 
 /**

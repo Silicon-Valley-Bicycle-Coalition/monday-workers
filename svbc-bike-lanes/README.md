@@ -17,7 +17,14 @@ The site is **staff-only**: it's served at <https://lanes.bikesiliconvalley.org>
 
 - **Primary:** [MTC Regional Bike Facilities](https://opendata.mtc.ca.gov/datasets/regional-bike-facilities) ArcGIS REST API
 - **Supplemental:** [San Jose Open Data - Bikeways](https://data.sanjoseca.gov/dataset/bikeways) for Class IV separated bikeways
-- **City Boundaries:** US Census TIGER/Line data for spatial attribution
+- **City Boundaries:** [California Cities and Identifiers](https://gis.data.ca.gov/) (CA Open Data) for city attribution
+- **County Boundaries:** US Census TIGERweb (legal boundaries, including bay waters)
+
+### How miles are counted
+
+Every MTC segment is cut wherever it crosses a county or city boundary, and each piece is counted in the county and city it lies in (or the county's unincorporated area). Pieces outside San Mateo and Santa Clara Counties are dropped, so lines in San Francisco, Alameda, or Santa Cruz County don't count, and no mile is counted twice. Every ArcGIS query is paged, so results past a service's 2,000-record limit aren't silently cut off.
+
+San José's own bikeway inventory replaces the MTC data inside San José city limits. Records the city marks as outside its limits (`INCORPORATED = 'No'`) are left out there, since MTC already counts them in unincorporated Santa Clara County.
 
 ## Tech Stack
 
@@ -169,8 +176,9 @@ To add Class IV data from additional cities, modify `_data/supplementalSources.j
 
 To add additional counties, modify `_data/bikelanes.js`:
 
-1. Add the county name to the `COUNTIES` object with its FIPS code and bounding box
-2. The data fetching will automatically include the new county
+1. Add the county name and FIPS code to `COUNTIES` in `_data/bikelanes.js`
+2. Add the same pair to `TARGET_COUNTIES` in `_data/countyBoundaries.js`, and the county to the city query in `_data/cityBoundaries.js`
+3. Delete `_data/*.cache.json` so the boundaries are re-fetched. MTC segments are clipped to the new county's TIGERweb boundary automatically
 
 ## Directory Structure
 
@@ -178,7 +186,10 @@ To add additional counties, modify `_data/bikelanes.js`:
 svbc_bike_lanes/
 ├── _data/
 │   ├── bikelanes.js           # Fetches MTC data at build time
-│   ├── cityBoundaries.js      # Census TIGER city boundaries
+│   ├── arcgis.js              # Paged ArcGIS REST queries
+│   ├── cityBoundaries.js      # CA Open Data city boundaries
+│   ├── countyBoundaries.js    # Census TIGERweb county boundaries
+│   ├── clipping.js            # Cuts segments at county/city lines
 │   ├── supplementalSources.js # Class IV data from city sources
 │   ├── csvExport.js           # CSV generation
 │   └── history.json           # Historical snapshots
