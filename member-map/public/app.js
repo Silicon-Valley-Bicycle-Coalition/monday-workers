@@ -9,7 +9,7 @@ const color = (name) => css.getPropertyValue(`--${name}`).trim();
 const GAP_OPACITY = Number(color('gap-opacity')) || 0.6;
 
 const LEGENDS = {
-  pop: 'Darker = fewer members per resident. Unshaded: no gap, or under 100 residents.',
+  pop: 'Darker = fewer members per resident; with no members, darker = more residents. Unshaded: no gap, or under 100 residents.',
   lead: 'Darker = more warm leads (lapsed and never members) living there. Unshaded: no gap, or under 100 residents.',
   bike: 'Darker = fewer bike facilities per street mile. Unshaded: no gap, or under 100 residents.',
   none: 'No shading. Click a neighborhood for its numbers.',

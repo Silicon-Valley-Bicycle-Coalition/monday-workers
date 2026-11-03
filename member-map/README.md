@@ -8,17 +8,20 @@ their exact address, each linking to their Monday item. Design:
 It is for staff choosing places for membership drives, events and group rides. It is not public and
 not for members. It reads Monday and **never writes it**.
 
-Status: built, **not deployed**. Blocked on the Cloudflare Access setup below (Zero Trust
-organization, Google Workspace identity provider, two Access applications), D1, R2 and queue
-provisioning, and production board ids in `config/svbc.json`. The `deploy-sandbox:member-map` CI
-job is held back (commented out in `.gitlab-ci.yml`) until the sandbox resources exist; see
+Status: **sandbox deployed 2026-11-03** on `map.sandbox.bikesiliconvalley.org`, behind the
+"SVBC Member Map (sandbox)" Access application. Production is not deployed: it needs board ids in
+`config/svbc.json`, its own D1, R2 bucket and queue, and its own Access application; see
 [Provisioning](#provisioning).
 
 ## What staff see
 
 One shading at a time (radio buttons):
 
-* **Population gap** (default): few active members per 1,000 residents.
+* **Population gap** (default): few active members per 1,000 residents. Block groups are ranked
+  worst-first (lowest rate; on a tie, more residents), the first fifth darkest, then the next two
+  fifths, the rest unshaded. A block group with no members is never unshaded. Ranking instead of
+  value breaks matters because most block groups have no members (65% in the sandbox's first
+  snapshot): as a tie at zero they'd all have taken the darkest class.
 * **Warm-lead gap**: many people SVBC already knows who are not active members.
 * **Bike lane density**: class-weighted bike lane miles per mile of road. Low is the gap end.
 * **None**.
@@ -122,7 +125,7 @@ There is no Access setup today. Do this before any staff testing.
 4. Put each application's **team domain and AUD** into the Worker's config (production and
    sandbox) for the JWT check.
 
-For step 4: set `access.teamDomain` (for example `https://svbc.cloudflareaccess.com`) and
+For step 4: set `access.teamDomain` (SVBC's is `https://bikesiliconvalley.cloudflareaccess.com`) and
 `access.aud` (the application's Audience tag, shown on its overview page) in `config/svbc.json`
 for the production application and in `config/sandbox.json` for the sandbox one. **Until both are
 set, every request gets a 403**, which is deliberate: a misconfigured route never serves
@@ -146,11 +149,9 @@ npx wrangler queues create svbc-member-map-refresh-sandbox
 npm run deploy:sandbox
 ```
 
-**CI deploy is held back.** The `deploy-sandbox:member-map` job in `.gitlab-ci.yml` is commented
-out, because until the commands above have run, a merge to `main` would deploy against the
-placeholder D1 id and a bucket and queue that don't exist. Re-enable it (uncomment the job) in the
-same change that commits the real sandbox `database_id` to `wrangler.jsonc`, once the sandbox D1,
-R2 bucket and queue exist.
+The sandbox resources exist (2026-11-03) and `deploy-sandbox:member-map` in `.gitlab-ci.yml`
+redeploys the sandbox on each merge to `main` that touches `member-map/`. Production has no CI
+deploy job.
 
 Then, signed in through Access in a browser on `map.sandbox.bikesiliconvalley.org`, trigger the
 first snapshot with the **Refresh now** button on the page's "No data yet" screen, or with

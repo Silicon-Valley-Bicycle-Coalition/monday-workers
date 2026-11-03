@@ -30,8 +30,8 @@
     "budgetMs": 480000
   },
   "access": {
-    "teamDomain": "",
-    "aud": "",
+    "teamDomain": "https://bikesiliconvalley.cloudflareaccess.com",
+    "aud": "b1a0e2193d5e8e0f61a58df7253bc6805cd6b852285b72c7f0bc438d929340ca",
     "allowedEmailDomain": "bikesiliconvalley.org"
   }
 }

@@ -49,7 +49,7 @@
       "routes": [{ "pattern": "map.sandbox.bikesiliconvalley.org", "custom_domain": true }],
       "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
       "d1_databases": [
-        { "binding": "DB", "database_name": "svbc-member-map-sandbox", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+        { "binding": "DB", "database_name": "svbc-member-map-sandbox", "database_id": "fc87c3f0-e2b3-47dd-8b8d-7397a5021141", "migrations_dir": "migrations" }
       ],
       "r2_buckets": [{ "binding": "SNAPSHOTS", "bucket_name": "svbc-member-map-sandbox" }],
       "queues": {

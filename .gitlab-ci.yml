@@ -369,17 +369,15 @@ deploy-sandbox:people-reclassification:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
 
-# Held back: re-enable after the sandbox D1/R2/queue exist and real ids are committed
-# (member-map/README.md, "Provisioning"). Until then a deploy would fail on the placeholder D1 id.
-# deploy-sandbox:member-map:
-#   extends: .deploy_sandbox_job
-#   variables:
-#     WORKER_DIR: member-map
-#   rules:
-#     - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
-#       changes:
-#         - "$WORKER_DIR/**/*"
-#         - scripts/lib/**/*
+deploy-sandbox:member-map:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: member-map
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 deploy-sandbox:report-digests:
   extends: .deploy_sandbox_job
