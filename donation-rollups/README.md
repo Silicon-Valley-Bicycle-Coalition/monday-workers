@@ -724,18 +724,21 @@ account is on Workers Paid (see the operational findings above).
 (also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
 `yearBasis: "calendar"` a January 1 sweep re-renders every Organization so the window rolls over.
 
-**Owner check (read-only).** Sponsorships are only shown on Organizations, so confirm nearly all
-paid sponsorship gifts are owned by one (substitute the configured `giftTypes`; sandbox adds
+**Owner check (read-only).** Sponsorships are only shown on Organizations, so check who owns the
+paid sponsorship gifts (substitute the configured `giftTypes` plus `inKindGiftTypes`; sandbox adds
 `--env sandbox`):
 
 ```sh
 npx wrangler d1 execute svbc-donation-rollups --remote --command \
-  "SELECT owner_board_id, COUNT(*) AS n FROM gifts WHERE status = 'Received' AND gift_type IN ('Sponsorship') GROUP BY owner_board_id"
+  "SELECT owner_board_id, gift_type, COUNT(*) AS n FROM gifts WHERE status = 'Received' AND gift_type IN ('Sponsorship', 'In Kind Donation / Sponsorship') GROUP BY owner_board_id, gift_type"
 ```
 
-Expected: all but a handful on the Organizations board. Production load: 848 of 865
-`Sponsorship`; the other 17 are person-owned with no Organizations match, so list them for staff
-by item id, year and amount only (no names in logs or tickets).
+Expected for `Sponsorship`: all but a handful on the Organizations board. Production load: 848 of
+865; the other 17 are person-owned with no Organizations match, so list them for staff by item
+id, year and amount only (no names in logs or tickets). That figure is for `Sponsorship` alone.
+Many `In Kind Donation / Sponsorship` gifts are legitimately person-owned, because that Gift Type
+also covers individuals' in-kind donations (which is why the section renders on Organizations
+only); only the Organizations-owned in-kind rows matter for the section.
 
 **Rollout, in order** (after merge; none of it is automated):
 
