@@ -8,7 +8,7 @@ import { D1OwnerRecomputesStore } from '../db/ownerRecomputes';
 import { D1RollCallCreditsStore } from '../db/rollCallCredits';
 import { dutiesForDate, runDuty, runScheduled, RECONCILE_AFFILIATIONS_PER_RUN,
   type CustodianDeps, type CustodianMondayClient, type BoardCapacity } from './custodian';
-import type { DonationRollupsConfig, RecomputeQueueMessage } from '../types';
+import type { DonationRollupsConfig, RecomputeQueueMessage, SponsorshipsConfig } from '../types';
 import { DEFAULT_PII_KEYS, type WriteMode } from '../flags';
 import type { BatchSkipContext } from '../writeSwitch';
 
@@ -154,6 +154,35 @@ describe('dutiesForDate', () => {
     expect(dutiesForDate(new Date('2026-08-03T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'capacity']); // a Monday
     expect(dutiesForDate(new Date('2026-07-01T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'sweep']);
     expect(dutiesForDate(new Date('2026-07-15T09:00:00Z'), FY)).toEqual(['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall', 'archive']);
+  });
+
+  const SPON = (yearBasis: 'calendar' | 'fiscal'): SponsorshipsConfig =>
+    ({ organizationsBoardId: 5, giftTypes: ['Sponsorship'], inKindGiftTypes: [], yearBasis, windowYears: 3, pipelineBoards: {} });
+  const NIGHTLY = ['reconcile', 'requeue', 'classify', 'membership', 'recurring', 'rollcall'];
+
+  it('dutiesForDate runs sponsorships nightly when configured', () => {
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY, [], SPON('fiscal'))).toEqual([...NIGHTLY, 'sponsorships']);
+  });
+
+  it('re-runs sponsorships while its last report has remaining > 0 (once)', () => {
+    const lastRuns = [{ duty: 'sponsorships', report: { detail: { backfilled: 5000, remaining: 40 } } }];
+    expect(dutiesForDate(new Date('2026-08-05T09:00:00Z'), FY, lastRuns, SPON('fiscal')).filter((d) => d === 'sponsorships')).toEqual(['sponsorships']);
+  });
+
+  it('adds sweep on January 1 when yearBasis is calendar', () => {
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), FY, [], SPON('calendar'))).toEqual([...NIGHTLY, 'sponsorships', 'sweep']);
+    // 2027-01-01T06:00Z is still Dec 31 in Los Angeles
+    expect(dutiesForDate(new Date('2027-01-01T06:00:00Z'), FY, [], SPON('calendar'))).toEqual([...NIGHTLY, 'sponsorships']);
+  });
+
+  it('does not double the sweep when January 1 is also the fiscal start', () => {
+    const jan = { startMonth: 1, timeZone: 'America/Los_Angeles' };
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), jan, [], SPON('calendar')).filter((d) => d === 'sweep')).toEqual(['sweep']);
+  });
+
+  it('does not add a January sweep for fiscal basis or when sponsorships is null', () => {
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), FY, [], SPON('fiscal'))).toEqual([...NIGHTLY, 'sponsorships']);
+    expect(dutiesForDate(new Date('2027-01-01T09:00:00Z'), FY)).toEqual(NIGHTLY);
   });
 
   it('continues an incomplete sweep on subsequent days while its last run reports remaining > 0', async () => {
