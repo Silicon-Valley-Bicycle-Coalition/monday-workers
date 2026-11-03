@@ -2,10 +2,36 @@
 
 **Staff UAT script:** [`docs/uat/people-reclassification.md`](../docs/uat/people-reclassification.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: Built, not deployed** (`feat/people-reclassification`, 2026-10-09). Nothing is
-provisioned: no D1, no secrets, no sandbox deployment, and the production `config/svbc.json`
-still holds `0` board ids. Every Monday write ships **off** (the write switch
-`people-reclassification:writes` is unset, which means `off`) — the first deployment's passes only record what they would move. See "Deploy".
+**Status: Live in sandbox, writes on** (2026-11-03; Deploy step 6). The daily cron continues
+the remaining work (about 270 moves) on 2026-11-04 at 10:00 UTC, then runs quarterly. Deploy steps 1–5 are done against CRM
+Sandbox v4: one live move succeeded and kept every value and link checked (see "Move
+mechanics"), after fixing the `columns_mapping` it sends. A full live pass followed
+(2026-11-03 01:03–01:23 UTC): **400 of 400 moved** to People (Historical), 0 failed or
+ambiguous. People went from 8,084 to 7,683 items and Historical from 8,053 to 8,454. Two moved
+people compared column by column were identical. All 86 Volunteers and 35 Event Registrations
+records linked to moved people still link to them. About 137 to-historical and 133 to-live
+moves remain for the next pass. Writes were then turned back on and left on (step 6,
+2026-11-03).
+
+Two things to know when operating it:
+* **A pass reads the write switch once, at its start.** Turning writes off mid-pass does not
+  stop that pass, only the next one.
+* **`POST /reclassify/run` outlives its HTTP request.** A 400-move pass takes about 20 minutes,
+  and the client connection drops after about 2 minutes (curl reported `HTTP 000`), but the pass
+  keeps running. Follow it in `runs` and `moves` (or `GET /reclassify/status`), not the
+  response. Production is not provisioned: no D1, and
+`config/svbc.json` still holds `0` board ids (the production `svbc-people-reclassification` is
+only a placeholder created by setting `RECLASSIFY_SECRET`: no D1, no cron). Every Monday write
+ships **off** (the write switch `people-reclassification:writes` is unset, which means `off`).
+
+First sandbox dry run (2026-11-02, cutoff 2019-11-02): 8,084 People / 8,053 Historical scanned;
+538 people decided to-historical and 133 to-live; 400 to-historical planned (the
+`maxMovesPerRun` cap; to-historical is planned first), all `aged-out` with latest activity
+2001-01-01 to 2019-05-10. Three sampled items checked by hand: the latest activity matched
+max(Last Gift Date, Member Until), no Lifetime tier, no Funraise profile. It first aborted on
+column parity (`Campaign` tags and a hand-added `monday Doc v2` on People only); the spec now
+gives both People boards the same columns (`salesforce-import` `PEOPLE_COLUMNS`), `Campaign` was
+added to both Historical boards, and the sandbox-only doc column was deleted.
 **Priority:** Post-cutover. The import lands People at ~74% of the ceiling; the plan's own
 trigger line is 85%, and the growth analysis puts a 7-year window at ~71% today, so this is
 headroom maintenance rather than a cutover blocker — but it is the only thing that will ever
@@ -95,16 +121,23 @@ board, ~250, supplies the dates).
 ### Move mechanics — what a move keeps
 
 `move_item_to_board` keeps the item id, its updates and its description; what it does to column
-values depends on `columns_mapping`. The API docs say an unmapped column "will lose the column's
-data" and that an omitted mapping is matched "based on the best match"; community reports add
-that connect-boards columns are mapped by Monday itself, by title and matching board connection,
-and cannot be listed in the mapping. So:
+values depends on `columns_mapping`. **The rules, probed against sandbox v4 on 2026-11-02**
+(the API docs say most of this; the community advice this Worker first followed did not):
+
+* Given at all, `columns_mapping` must have an entry for **every source column except the name
+  column**. Leaving any column out, or including the name, fails with "Columns mapping is not in
+  the expected format". So does any mapping on API versions 2026-07, 2026-10 and 2027-01 alike.
+* A `target: null` entry is accepted and drops that column's data. Formula columns can't be
+  mapped, so they are always null.
+* Connect columns **are** mapped explicitly, like any other column.
+
+So:
 
 * The two People boards are created by the import from one column spec, so titles agree while
-  ids differ per board. Each pass reads both schemas and builds an **explicit, exhaustive
-  mapping** of every value-bearing column by title + type (`src/columns.ts`), leaving nothing
-  to "best match". Connect columns (`Organization`, `Affiliations`) are checked for parity but
-  not mapped; formula/mirror/auto-number/etc. hold no value of their own.
+  ids differ per board. Each pass reads both schemas and builds an **explicit mapping of every
+  column but the name** by title + type (`src/columns.ts`), leaving nothing to "best match";
+  a column with no counterpart maps to null, which is only allowed for types holding no value
+  of their own (formula, mirror, auto-number, …).
 * **If either board lacks a column the other has, the pass refuses to move anything** and names
   the columns — a column added to one board by hand (as happened to Donations in the v3
   rebuild) would otherwise silently lose values.
@@ -114,14 +147,18 @@ and cannot be listed in the mapping. So:
   and the item id does not change, so a Donation's Donor link still resolves after the move.
   donation-rollups already handles the board change: it reads an owner's board at recompute
   time (`getItemBoardId` → `ownerColumnsByBoard`).
-* **Not verified against a live board yet** — nothing here has run outside the test suite. The
-  first live pass in the sandbox should be one item (`maxMovesPerRun: 1` temporarily, or a
-  `writes on` run after a dry run that plans exactly one), followed by a check that its
-  Donor-linked gifts, Organization link, Affiliations link and updates are intact. If a move
-  does lose a link, the fallback is to restore it from the ledger row (item id, both boards)
-  and the Donations board's Donor column, and to prefer archive-in-place on the live board
-  (archived items don't count toward the ceiling) over moving — a design change, not a config
-  one.
+* **Verified on one live move** (sandbox v4, 2026-11-02, item `13398233886`, People →
+  People (Historical), `maxMovesPerRun: 1` and writes on for that one pass). After the move:
+  same item id; all 64 columns compared by title, and all 41 with a value were identical;
+  `Organization` (one-way, stored on the person) and `Affiliations` links intact, and the
+  Affiliation's `Person` still links back; a test update kept its id. Neither People board has
+  webhooks (donation-rollups listens on Donations only), so a move triggers no recompute.
+  **Not covered:** that person had no gifts, so inbound `Donor` links weren't exercised. They
+  rest on the item id not changing (above).
+  If a later move does lose a link, the fallback is to restore it from the ledger row (item id,
+  both boards) and the Donations board's Donor column, and to prefer archive-in-place on the
+  live board (archived items don't count toward the ceiling) over moving. That is a design
+  change, not a config one.
 
 ### Dry run, ledger, idempotence
 
@@ -213,7 +250,12 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 ## Deploy
 
-Nothing below has been done.
+Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
+`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
+Production has not been started.
+Before step 1 in any environment, check that the two People boards' columns match (same title
+and type both ways): a pass aborts on any difference, and Monday's API can't create a
+`direct_doc` column to fix one.
 
 1. `wrangler d1 create svbc-people-reclassification-sandbox`; paste the id into
    `env.sandbox.d1_databases[0].database_id`; `wrangler d1 migrations apply
@@ -238,6 +280,17 @@ Nothing below has been done.
 
 ## Open
 
+* **Continuation compares a UTC date with a Pacific one.** `decideCron` (`src/duties.ts`)
+  checks `lastRun.startedAt.slice(0, 10)` (UTC) against `todayISO` (America/Los_Angeles). A pass
+  started in the UTC evening can make the next morning's 10:00 UTC cron think it already ran
+  "today", so the continuation slips a day. That's harmless, but it's why the 2026-11-03 01:03
+  UTC pass continues on 11-04, not 11-03.
+* **Which item limit?** Monday reports each People board's `items_limit` as **100,000**
+  (sandbox v4, 2026-11-02). The threshold trigger prefers that over `thresholds.itemsLimit`
+  (10,000; `src/index.ts`, `src/pass.ts` `countOf`), so it would fire at about 85,000 items.
+  The Historical warning still uses 10,000. If 100,000 is the real ceiling on SVBC's plan, the
+  headroom this Worker manages is far larger than the plan assumed: decide which number rules,
+  then make the trigger and the warning agree.
 * **Window granularity.** The sizing analysis compared calendar years (`refYear − year < N`);
   this Worker uses a rolling date (`today − 7 years`, same month/day), so people age out through
   the year in quarterly batches rather than all at once each January. The counts differ only at
@@ -249,9 +302,9 @@ Nothing below has been done.
 * **No-evidence people stay put.** Advocacy contacts and hand-added people are never moved; if
   the live board accumulates them, a `Stakeholder Type`-aware rule (pin some labels live, treat
   others as movable on the item's creation date) is the next step.
-* **Move behaviour is unverified live** — connect-column survival, `columns_mapping` acceptance
-  for every column type the boards carry, and whether Monday fires donation-rollups' webhooks on
-  a move (it shouldn't; the Donations board is untouched). Step 5 of Deploy is that check.
+* **Inbound Donor links are untested live, though the mechanism is proven.** None of the 400
+  people in the full pass had a gift on sandbox Donations. Inbound links of the same kind
+  (`Volunteer`, `Attendee`) all survived, 121 of 121, so Donor links should too.
 * **People (Historical) at 81% already** (sandbox, 2026-08-24; v4 at 80.5%, 2026-10-28). This Worker warns and refuses
   to overfill it, but the era split the plan's item 4 asks for is a separate design.
 * **Activities board** as an activity source (staff touches) — deliberately out; revisit if
