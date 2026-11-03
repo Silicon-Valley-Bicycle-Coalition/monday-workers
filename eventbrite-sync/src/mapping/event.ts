@@ -71,6 +71,12 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig): 
   if (city !== null) columnValues[cols.cityColumn] = city;
   const url = nonEmpty(event.url);
   if (url !== null) columnValues[cols.urlColumn] = { url, text: 'Eventbrite' };
+  // Only Public classes get the send link, and never before the page is deployed (pageUrl null).
+  const pageUrl = config.attendeeSync.classEmails.pageUrl;
+  if (pageUrl !== null && program === 'Public') {
+    const sep = pageUrl.includes('?') ? '&' : '?';
+    columnValues[cols.sendLinkColumn] = { url: `${pageUrl}${sep}event=${encodeURIComponent(event.id)}`, text: 'Send class email' };
+  }
 
   return {
     itemName: nonEmpty(event.name?.text) ?? `Eventbrite event ${event.id}`,
