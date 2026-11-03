@@ -2,8 +2,9 @@
 
 **Staff UAT script:** [`docs/uat/people-reclassification.md`](../docs/uat/people-reclassification.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: Deployed to sandbox, writes off** (2026-11-02). Deploy steps 1–4 are done against CRM
-Sandbox v4; step 5 (one live move) is next. Production is not provisioned: no D1, and
+**Status: Deployed to sandbox, writes off** (2026-11-02). Deploy steps 1–5 are done against CRM
+Sandbox v4: one live move succeeded and kept every value and link checked (see "Move
+mechanics"), after fixing the `columns_mapping` it sends. Step 6 (writes left on) is next. Production is not provisioned: no D1, and
 `config/svbc.json` still holds `0` board ids (the production `svbc-people-reclassification` is
 only a placeholder created by setting `RECLASSIFY_SECRET`: no D1, no cron). Every Monday write
 ships **off** (the write switch `people-reclassification:writes` is unset, which means `off`).
@@ -105,16 +106,23 @@ board, ~250, supplies the dates).
 ### Move mechanics — what a move keeps
 
 `move_item_to_board` keeps the item id, its updates and its description; what it does to column
-values depends on `columns_mapping`. The API docs say an unmapped column "will lose the column's
-data" and that an omitted mapping is matched "based on the best match"; community reports add
-that connect-boards columns are mapped by Monday itself, by title and matching board connection,
-and cannot be listed in the mapping. So:
+values depends on `columns_mapping`. **The rules, probed against sandbox v4 on 2026-11-02**
+(the API docs say most of this; the community advice this Worker first followed did not):
+
+* Given at all, `columns_mapping` must have an entry for **every source column except the name
+  column**. Leaving any column out, or including the name, fails with "Columns mapping is not in
+  the expected format". So does any mapping on API versions 2026-07, 2026-10 and 2027-01 alike.
+* A `target: null` entry is accepted and drops that column's data. Formula columns can't be
+  mapped, so they are always null.
+* Connect columns **are** mapped explicitly, like any other column.
+
+So:
 
 * The two People boards are created by the import from one column spec, so titles agree while
-  ids differ per board. Each pass reads both schemas and builds an **explicit, exhaustive
-  mapping** of every value-bearing column by title + type (`src/columns.ts`), leaving nothing
-  to "best match". Connect columns (`Organization`, `Affiliations`) are checked for parity but
-  not mapped; formula/mirror/auto-number/etc. hold no value of their own.
+  ids differ per board. Each pass reads both schemas and builds an **explicit mapping of every
+  column but the name** by title + type (`src/columns.ts`), leaving nothing to "best match";
+  a column with no counterpart maps to null, which is only allowed for types holding no value
+  of their own (formula, mirror, auto-number, …).
 * **If either board lacks a column the other has, the pass refuses to move anything** and names
   the columns — a column added to one board by hand (as happened to Donations in the v3
   rebuild) would otherwise silently lose values.
@@ -124,14 +132,18 @@ and cannot be listed in the mapping. So:
   and the item id does not change, so a Donation's Donor link still resolves after the move.
   donation-rollups already handles the board change: it reads an owner's board at recompute
   time (`getItemBoardId` → `ownerColumnsByBoard`).
-* **Not verified against a live board yet** — nothing here has run outside the test suite. The
-  first live pass in the sandbox should be one item (`maxMovesPerRun: 1` temporarily, or a
-  `writes on` run after a dry run that plans exactly one), followed by a check that its
-  Donor-linked gifts, Organization link, Affiliations link and updates are intact. If a move
-  does lose a link, the fallback is to restore it from the ledger row (item id, both boards)
-  and the Donations board's Donor column, and to prefer archive-in-place on the live board
-  (archived items don't count toward the ceiling) over moving — a design change, not a config
-  one.
+* **Verified on one live move** (sandbox v4, 2026-11-02, item `13398233886`, People →
+  People (Historical), `maxMovesPerRun: 1` and writes on for that one pass). After the move:
+  same item id; all 64 columns compared by title, and all 41 with a value were identical;
+  `Organization` (one-way, stored on the person) and `Affiliations` links intact, and the
+  Affiliation's `Person` still links back; a test update kept its id. Neither People board has
+  webhooks (donation-rollups listens on Donations only), so a move triggers no recompute.
+  **Not covered:** that person had no gifts, so inbound `Donor` links weren't exercised. They
+  rest on the item id not changing (above).
+  If a later move does lose a link, the fallback is to restore it from the ledger row (item id,
+  both boards) and the Donations board's Donor column, and to prefer archive-in-place on the
+  live board (archived items don't count toward the ceiling) over moving. That is a design
+  change, not a config one.
 
 ### Dry run, ledger, idempotence
 
@@ -223,8 +235,9 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 ## Deploy
 
-Steps 1–4 are done in sandbox (2026-11-02; the sandbox operator secret is
-`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). Step 5 onward has not been done.
+Steps 1–5 are done in sandbox (2026-11-02; the sandbox operator secret is
+`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). Step 6 has not been done. The
+sandbox write switch is `off`.
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.
@@ -269,9 +282,8 @@ and type both ways): a pass aborts on any difference, and Monday's API can't cre
 * **No-evidence people stay put.** Advocacy contacts and hand-added people are never moved; if
   the live board accumulates them, a `Stakeholder Type`-aware rule (pin some labels live, treat
   others as movable on the item's creation date) is the next step.
-* **Move behaviour is unverified live** — connect-column survival, `columns_mapping` acceptance
-  for every column type the boards carry, and whether Monday fires donation-rollups' webhooks on
-  a move (it shouldn't; the Donations board is untouched). Step 5 of Deploy is that check.
+* **Inbound Donor links across a move are untested live.** Step 5's person had no gifts. The
+  first full sandbox pass should spot-check one moved person who has Donations.
 * **People (Historical) at 81% already** (sandbox, 2026-08-24; v4 at 80.5%, 2026-10-28). This Worker warns and refuses
   to overfill it, but the era split the plan's item 4 asks for is a separate design.
 * **Activities board** as an activity source (staff touches) — deliberately out; revisit if
