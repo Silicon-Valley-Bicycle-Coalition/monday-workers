@@ -1,0 +1,364 @@
+{
+  "asOf": "2026-11-02T13:00:00Z",
+  "accountUrl": "https://bikesiliconvalley.monday.com",
+  "unplaced": 212,
+  "outsideArea": 3,
+  "blockGroups": {
+    "060855058002": {
+      "members": 2,
+      "lapsed": 1,
+      "never": 0,
+      "popClass": 0,
+      "leadClass": 3
+    },
+    "060816022012": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 1,
+      "popClass": 1,
+      "leadClass": 2
+    },
+    "060855114002": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 1,
+      "popClass": 2,
+      "leadClass": 1
+    },
+    "060816019012": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 1,
+      "popClass": 3,
+      "leadClass": 0
+    },
+    "060816064001": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 0,
+      "popClass": null,
+      "leadClass": 3
+    },
+    "060855032192": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 0,
+      "popClass": 0,
+      "leadClass": 2
+    },
+    "060816105004": {
+      "members": 1,
+      "lapsed": 0,
+      "never": 0,
+      "popClass": 1,
+      "leadClass": 1
+    },
+    "060855084013": {
+      "members": 2,
+      "lapsed": 0,
+      "never": 0,
+      "popClass": 2,
+      "leadClass": 0
+    },
+    "060855001002": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 0,
+      "popClass": 3,
+      "leadClass": 3
+    },
+    "060855070041": {
+      "members": 0,
+      "lapsed": 1,
+      "never": 1,
+      "popClass": null,
+      "leadClass": 2
+    },
+    "060816016031": {
+      "members": 1,
+      "lapsed": 0,
+      "never": 1,
+      "popClass": 0,
+      "leadClass": 1
+    },
+    "060855119123": {
+      "members": 1,
+      "lapsed": 1,
+      "never": 0,
+      "popClass": 1,
+      "leadClass": 0
+    }
+  },
+  "points": [
+    {
+      "id": "1000",
+      "boardId": 9000000001,
+      "name": "Test Person 1",
+      "lat": 37.32473,
+      "lng": -121.94368,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1001",
+      "boardId": 9000000001,
+      "name": "Test Person 2",
+      "lat": 37.32589,
+      "lng": -121.94652,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1002",
+      "boardId": 9000000001,
+      "name": "<b>x</b>",
+      "lat": 37.32765,
+      "lng": -121.94524,
+      "kind": "lapsed",
+      "dns": true
+    },
+    {
+      "id": "1003",
+      "boardId": 9000000001,
+      "name": "Test Person 4",
+      "lat": 37.65657,
+      "lng": -122.41855,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1004",
+      "boardId": 9000000001,
+      "name": "Test Person 5",
+      "lat": 37.65828,
+      "lng": -122.41938,
+      "kind": "lapsed",
+      "dns": true
+    },
+    {
+      "id": "1005",
+      "boardId": 9000000001,
+      "name": "Test Person 6",
+      "lat": 37.65799,
+      "lng": -122.41901,
+      "kind": "never",
+      "dns": false
+    },
+    {
+      "id": "1006",
+      "boardId": 9000000001,
+      "name": "Test Person 7",
+      "lat": 37.43851,
+      "lng": -122.14595,
+      "kind": "lapsed",
+      "dns": false
+    },
+    {
+      "id": "1007",
+      "boardId": 9000000001,
+      "name": "Test Person 8",
+      "lat": 37.43674,
+      "lng": -122.14408,
+      "kind": "never",
+      "dns": false
+    },
+    {
+      "id": "1008",
+      "boardId": 9000000001,
+      "name": "Test Person 9",
+      "lat": 37.43804,
+      "lng": -122.1467,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1009",
+      "boardId": 9000000001,
+      "name": "Test Person 10",
+      "lat": 37.66454,
+      "lng": -122.43037,
+      "kind": "never",
+      "dns": false
+    },
+    {
+      "id": "1010",
+      "boardId": 9000000001,
+      "name": "Test Person 11",
+      "lat": 37.66549,
+      "lng": -122.42901,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1011",
+      "boardId": 9000000001,
+      "name": "Test Person 12",
+      "lat": 37.6623,
+      "lng": -122.43019,
+      "kind": "lapsed",
+      "dns": false
+    },
+    {
+      "id": "1012",
+      "boardId": 9000000001,
+      "name": "Test Person 13",
+      "lat": 37.568,
+      "lng": -122.33146,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1013",
+      "boardId": 9000000001,
+      "name": "Test Person 14",
+      "lat": 37.56689,
+      "lng": -122.3319,
+      "kind": "lapsed",
+      "dns": true
+    },
+    {
+      "id": "1014",
+      "boardId": 9000000003,
+      "name": "Test Person 15",
+      "lat": 37.56796,
+      "lng": -122.33058,
+      "kind": "org",
+      "dns": false
+    },
+    {
+      "id": "1015",
+      "boardId": 9000000001,
+      "name": "Test Person 16",
+      "lat": 37.29021,
+      "lng": -121.84482,
+      "kind": "lapsed",
+      "dns": false
+    },
+    {
+      "id": "1016",
+      "boardId": 9000000003,
+      "name": "Test Person 17",
+      "lat": 37.29207,
+      "lng": -121.84483,
+      "kind": "org",
+      "dns": false
+    },
+    {
+      "id": "1017",
+      "boardId": 9000000001,
+      "name": "Test Person 18",
+      "lat": 37.28933,
+      "lng": -121.84497,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1018",
+      "boardId": 9000000003,
+      "name": "Test Person 19",
+      "lat": 37.47899,
+      "lng": -122.19593,
+      "kind": "org",
+      "dns": false
+    },
+    {
+      "id": "1019",
+      "boardId": 9000000001,
+      "name": "Test Person 20",
+      "lat": 37.48102,
+      "lng": -122.19488,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1020",
+      "boardId": 9000000001,
+      "name": "Test Person 21",
+      "lat": 37.35774,
+      "lng": -122.05338,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1021",
+      "boardId": 9000000001,
+      "name": "Test Person 22",
+      "lat": 37.35506,
+      "lng": -122.0558,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1022",
+      "boardId": 9000000001,
+      "name": "Test Person 23",
+      "lat": 37.36026,
+      "lng": -121.88865,
+      "kind": "member",
+      "dns": true
+    },
+    {
+      "id": "1023",
+      "boardId": 9000000001,
+      "name": "Test Person 24",
+      "lat": 37.35971,
+      "lng": -121.88992,
+      "kind": "lapsed",
+      "dns": false
+    },
+    {
+      "id": "1024",
+      "boardId": 9000000001,
+      "name": "Test Person 25",
+      "lat": 37.22625,
+      "lng": -121.98574,
+      "kind": "lapsed",
+      "dns": false
+    },
+    {
+      "id": "1025",
+      "boardId": 9000000001,
+      "name": "Test Person 26",
+      "lat": 37.22407,
+      "lng": -121.98459,
+      "kind": "never",
+      "dns": false
+    },
+    {
+      "id": "1026",
+      "boardId": 9000000001,
+      "name": "Test Person 27",
+      "lat": 37.65935,
+      "lng": -122.46152,
+      "kind": "never",
+      "dns": false
+    },
+    {
+      "id": "1027",
+      "boardId": 9000000001,
+      "name": "Test Person 28",
+      "lat": 37.65875,
+      "lng": -122.46455,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1028",
+      "boardId": 9000000001,
+      "name": "Test Person 29",
+      "lat": 37.20646,
+      "lng": -121.82952,
+      "kind": "member",
+      "dns": false
+    },
+    {
+      "id": "1029",
+      "boardId": 9000000001,
+      "name": "Test Person 30",
+      "lat": 37.2063,
+      "lng": -121.82896,
+      "kind": "lapsed",
+      "dns": false
+    }
+  ]
+}

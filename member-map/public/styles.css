@@ -1,0 +1,146 @@
+/* Map colors are read by app.js from these properties, so this file is the one place to change them. */
+:root {
+  --gap-1: #fdd0a2;
+  --gap-2: #fd8d3c;
+  --gap-3: #d94801;
+  --gap-opacity: 0.6;
+  --bg-border: #9ca3af;
+  --epc: #5b21b6;
+  --dot-member: #1d4ed8;
+  --dot-lead: #0f766e;
+  --dot-org: #15803d;
+  --lane-1: #166534;
+  --lane-2: #65a30d;
+  --lane-3: #a3a3a3;
+  --lane-4: #16a34a;
+
+  --panel-bg: #ffffff;
+  --panel-fg: #111827;
+  --panel-muted: #4b5563;
+  --panel-border: #d1d5db;
+  --accent: #1d4ed8;
+  --accent-fg: #ffffff;
+  --focus: #1d4ed8;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel-bg: #111827;
+    --panel-fg: #f3f4f6;
+    --panel-muted: #d1d5db;
+    --panel-border: #374151;
+    --accent: #93c5fd;
+    --accent-fg: #111827;
+    --focus: #93c5fd;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--panel-bg);
+  color: var(--panel-fg);
+}
+
+body { display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  min-width: 0;
+}
+.topbar h1 { font-size: 1.05rem; margin: 0; white-space: nowrap; }
+.status { margin: 0; flex: 1; min-width: 0; color: var(--panel-muted); }
+.status button { margin-left: 8px; }
+
+button {
+  font: inherit;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+button:focus-visible, input:focus-visible, a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.panel-toggle { display: none; }
+
+.layout { position: relative; flex: 1; min-height: 0; display: flex; }
+.map { flex: 1; min-width: 0; background: #e5e7eb; }
+
+.panel {
+  width: 300px;
+  flex: none;
+  overflow-y: auto;
+  padding: 12px 16px;
+  border-left: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+}
+
+fieldset { border: 0; margin: 0 0 12px; padding: 0; }
+fieldset legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+fieldset label { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+input[type="radio"], input[type="checkbox"] { margin: 0; accent-color: var(--accent); }
+
+.legend { margin: 0 0 16px; color: var(--panel-muted); font-size: 0.9rem; }
+.legend p { margin: 0 0 6px; }
+
+.swatches, .lane-key { list-style: none; margin: 0; padding: 0; font-size: 0.9rem; color: var(--panel-muted); }
+.swatches { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.swatches li, .lane-key li { display: flex; align-items: center; gap: 6px; }
+.swatches[hidden], .lane-key[hidden] { display: none; }
+
+.swatch { width: 18px; height: 12px; border: 1px solid var(--bg-border); opacity: calc(var(--gap-opacity) + 0.2); }
+.fill-1 { background: var(--gap-1); }
+.fill-2 { background: var(--gap-2); }
+.fill-3 { background: var(--gap-3); }
+
+.key { display: inline-block; flex: none; }
+.key-dot { width: 10px; height: 10px; border-radius: 50%; }
+.key-square { width: 9px; height: 9px; }
+.key-member { background: var(--dot-member); }
+.key-lead { background: var(--dot-lead); }
+.key-org { background: var(--dot-org); }
+.key-epc { width: 16px; height: 12px; border: 3px solid var(--epc); }
+.key-line { width: 18px; height: 0; border-top: 3px solid; }
+.key-lane, .lane-1 { border-top-color: var(--lane-1); }
+.lane-2 { border-top-color: var(--lane-2); }
+.lane-3 { border-top-color: var(--lane-3); border-top-style: dashed; }
+.lane-4 { border-top-color: var(--lane-4); }
+
+/* Organization markers are DOM markers (Leaflet circleMarkers can't be square). */
+.org-marker { background: var(--dot-org); border: 1px solid #ffffff; }
+
+.dns { color: #b91c1c; font-weight: 600; }
+
+/* Phone: the panel collapses behind the Layers button and opens over the map. */
+@media (max-width: 720px) {
+  .topbar { flex-wrap: wrap; gap: 4px 12px; }
+  .status { order: 3; flex-basis: 100%; font-size: 0.85rem; }
+  .panel-toggle { display: inline-block; margin-left: auto; }
+  .panel {
+    position: absolute;
+    inset: 0 0 auto auto;
+    width: min(300px, 100%);
+    max-height: 100%;
+    z-index: 1000;
+    border: 1px solid var(--panel-border);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+    display: none;
+  }
+  .panel.open { display: block; }
+}

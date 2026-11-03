@@ -84,6 +84,7 @@ report again.
 | [People board housekeeping](people-reclassification.md) | Moves people between People and People (Historical) on a rolling seven-year activity window, so People stays under the 10,000-item ceiling | Nothing to test yet (built, not deployed; will run on v4) |
 | [QuickBooks sync](quickbooks-sync.md) | Two-way sync of customers, invoices, and products | Postponed indefinitely (2026-10-28) — nothing to test |
 | [Monday backup](monday-backup.md) | Nightly copy of every board to Google Drive | Nothing to test yet |
+| [Member map](member-map.md) | A staff-only map of where SVBC members live, shaded to show the neighborhoods where membership is thin | Nothing to test yet (built 2026-11-02, not deployed) |
 | [Public calendars](svbc-calendars.md) | The events widget and committee calendar feeds on bikesiliconvalley.org | Live in production; a five-minute smoke check |
 
 ## How to give feedback

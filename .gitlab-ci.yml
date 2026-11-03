@@ -84,7 +84,7 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
@@ -241,6 +241,15 @@ people-reclassification:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
 
+member-map:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: member-map
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+
 quickbooks-sync:
   extends: .worker_job
   variables:
@@ -359,6 +368,18 @@ deploy-sandbox:people-reclassification:
       changes:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
+
+# Held back: re-enable after the sandbox D1/R2/queue exist and real ids are committed
+# (member-map/README.md, "Provisioning"). Until then a deploy would fail on the placeholder D1 id.
+# deploy-sandbox:member-map:
+#   extends: .deploy_sandbox_job
+#   variables:
+#     WORKER_DIR: member-map
+#   rules:
+#     - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+#       changes:
+#         - "$WORKER_DIR/**/*"
+#         - scripts/lib/**/*
 
 deploy-sandbox:report-digests:
   extends: .deploy_sandbox_job

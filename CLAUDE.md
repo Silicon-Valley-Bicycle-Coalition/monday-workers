@@ -182,7 +182,7 @@ When a Worker starts writing a new column, add it to `MARKED_COLUMNS` and re-run
 **Sandbox environment — inbound only, no outbound data.** Every migration Worker (`member-portal`,
 `funraise-sync`, `donation-rollups`, `mailchimp-sync`, `quickbooks-sync`, `monday-backup`,
 `benevity-import`, `eventbrite-sync`, `email-log`, `people-reclassification`, `report-digests`,
-`nearby-search`, `member-portal-writer`, `monday-auth`; not `svbc-calendars`) carries a
+`nearby-search`, `member-portal-writer`, `monday-auth`, `member-map`; not `svbc-calendars`) carries a
 `sandbox` Wrangler environment: `wrangler.jsonc` `env.sandbox` with its own name, D1, queues,
 secrets and vars, plus a `config/sandbox.json` chosen at request time by `env.ENVIRONMENT`
 (`src/environment.ts`). Outbound sinks are locked at the platform where possible (the
@@ -197,7 +197,8 @@ environment to another Worker, copy `member-portal`'s `environment.ts`, split te
 missing key or any other value = `off`, KV read error = `unknown`, which acts like `hold`). All 13
 migration/integration Workers carry it — the eleven listed in the spec plus `report-digests` and
 `nearby-search`
-(`svbc-calendars` excluded). `member-portal/src/flags.ts` is
+(`svbc-calendars` excluded; `member-map` carries no switch because it only reads Monday and never
+writes). `member-portal/src/flags.ts` is
 canonical; every other in-scope Worker holds a byte-identical `src/flags.ts`, enforced by the CI
 job `worker-flags-copies` (`node scripts/check-worker-flags.mjs --strict`, which also checks the
 FLAGS KV ids match across `wrangler.jsonc` files). Same rule as `graphql.ts`: edit the canonical
@@ -232,7 +233,7 @@ writes). Workers that use it carry a byte-identical copy at `src/monday/graphql.
 through constructor options in their own `client.ts`, never by editing the copy. The
 `monday-graphql-copies` CI job fails on drift, so edit the canonical file, copy it to every path
 that job lists, and add a Worker's path there when moving it over. So far: benevity-import,
-donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-portal,
+donation-rollups, email-log, eventbrite-sync, funraise-sync, geo-filter, mailchimp-sync, member-map, member-portal,
 nearby-search, people-reclassification, quickbooks-sync and report-digests;
 `nearby-search` also carries a byte-identical copy of `geo-filter/src/geometry.ts` (the corridor and
 point logic), enforced by the `geo-geometry-copies` CI job; edit geo-filter's, then copy it over.

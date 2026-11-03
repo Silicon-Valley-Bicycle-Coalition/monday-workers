@@ -34,6 +34,7 @@ export const EXPECTED = {
   'quickbooks-sync': 'SyncToken',
   'monday-backup': 'ReadOnlyToken',
   'report-digests': 'ReadOnlyToken',
+  'member-map': 'ReadOnlyToken',
   'nearby-search': 'SyncToken',
 };
 
