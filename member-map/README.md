@@ -190,8 +190,10 @@ the two counties by class (I / II / III) are 171 / 602 / 347, against 229 / 764 
 `svbc-bike-lanes`' history (25% / 21% / 21% lower). That report sums whole features inside each
 county's bounding box, which pulls in features from neighboring counties and counts the overlap
 between the two boxes twice. This build clips to the legal county boundaries and counts each mile
-once, so expect different totals. (With San Jose's own layer replacing MTC there, the map's final
-totals are 221 / 710 / 429 miles for I / II / III, plus 76 miles of Class IV.)
+once, so expect different totals. (With San Jose's own layer replacing MTC there, the in-county totals are 221 / 710 / 429 / 76 miles
+for Class I / II / III / IV. Of that, 218 / 709 / 429 / 76 is credited to block groups; the rest
+runs along the shoreline and county edge, where the block-group boundaries stop short of the
+county boundary.)
 
 ## Privacy
 

@@ -53,7 +53,7 @@ can open it.
 * **A plain "Forbidden" page?** You are not signed in with an allowed account, or Access isn't set
   up for the address yet. Tell whoever asked you to test.
 * **"No data yet. The first weekly refresh hasn't run."?** Press the **Refresh now** button under
-  it, wait a few minutes, and reload. If it says the data is under 10 minutes old, just reload.
+  it, wait a few minutes, and reload. If the page says "A refresh ran in the last 10 minutes. Reload this page shortly.", just reload.
 
 Report problems on the
 **[IT Requests board](https://bikesiliconvalley.monday.com/boards/8846215481)** as described in the
