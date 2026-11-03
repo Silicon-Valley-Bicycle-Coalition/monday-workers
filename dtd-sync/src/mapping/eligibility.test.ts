@@ -36,6 +36,9 @@ describe('pushDecision', () => {
     const c = { ...cfg, giftTypes: ['Donation', 'Grant'] };
     expect(pushDecision(item({ giftType: 'Grant' }), donor(), c, NOW)).toEqual(no('gift-type'));
   });
+  it('does not send an item already marked Sent to DTD', () => {
+    expect(pushDecision(item({ sentToDtd: '2026-10-31' }), donor(), cfg, NOW)).toEqual(no('already-sent'));
+  });
   it('does not send an item with a Funraise ID', () => {
     expect(pushDecision(item({ funraiseId: 'fr-1' }), donor(), cfg, NOW)).toEqual(no('funraise'));
   });
@@ -85,6 +88,6 @@ describe('pushDecision allow-list', () => {
     expect(pushDecision(item(), donor(), { ...cfg, allowEmails: null }, NOW)).toEqual(no('not-allow-listed'));
   });
   it('the shipped sandbox config cannot reach a real donor', () => {
-    expect(pushDecision(item(), donor({ email: 'someone@gmail.com' }), { ...base, backfillFromISO: null }, NOW)).toEqual(no('not-allow-listed'));
+    expect(pushDecision(item(), donor({ email: 'someone@example.org' }), { ...base, backfillFromISO: null }, NOW)).toEqual(no('not-allow-listed'));
   });
 });

@@ -27,6 +27,10 @@ function allowed(email: string, allow: PushConfig['allowEmails']): boolean {
 export function pushDecision(item: DonationItem, donor: PersonItem | null, cfg: PushConfig, now: Date): PushDecision {
   const no = (reason: string): PushDecision => ({ send: false, reason });
 
+  // Sent to DTD is set after a successful register; the D1 pushes ledger is the primary guard, this
+  // one also covers a ledger that was reset or an item staff marked by hand.
+  if (item.sentToDtd) return no('already-sent');
+
   if (item.giftType === null || !cfg.giftTypes.includes(item.giftType) || cfg.excludeGiftTypes.includes(item.giftType)) return no('gift-type');
   if (item.funraiseId) return no('funraise');
   if (item.benevityTransactionId) return no('benevity');

@@ -50,6 +50,14 @@ describe('computeSummary', () => {
     ];
     expect(sum(r).eligible).toBe(1);
   });
+  it('eligible reads matching_gift_status before status, like pull', () => {
+    const r = [
+      rec({ status: ':in-progress', matchingGiftStatus: ':ineligible' }),
+      rec({ status: ':in-progress', matchingGiftStatus: ':closed-no-matching-gift-program' }),
+      rec({ status: ':ineligible', matchingGiftStatus: ':waiting-for-verification' }),
+    ];
+    expect(sum(r).eligible).toBe(1);
+  });
   it('submitted counts waiting-for-verification or paired, once each', () => {
     const r = [
       rec({ mondayItemId: '1', matchingGiftStatus: ':waiting-for-verification' }),

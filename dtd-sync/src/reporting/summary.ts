@@ -41,7 +41,11 @@ export function computeSummary(
   return {
     screened: records.length,
     employerIdentified: identified.length,
-    eligible: identified.filter((r) => r.status === null || !NOT_ELIGIBLE.has(r.status)).length,
+    // Same keyword rule as pull's Match Status: matching_gift_status when DTD sent one, else status.
+    eligible: identified.filter((r) => {
+      const keyword = r.matchingGiftStatus ?? r.status;
+      return keyword === null || !NOT_ELIGIBLE.has(keyword);
+    }).length,
     submitted: records.filter(
       (r) => r.matchingGiftStatus === WAITING_FOR_VERIFICATION || (r.mondayItemId !== null && pairedGiftIds.has(r.mondayItemId)),
     ).length,
