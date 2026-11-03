@@ -5,7 +5,7 @@ const PLACEHOLDER = 'REPLACE_WITH_COLUMN_ID';
 
 function validRaw(): Record<string, any> {
   return {
-    dtd: { apiBase: 'https://doublethedonation.com/api/360matchpro/v1/', campaign: 'Test', pullOverlapMinutes: 120 },
+    dtd: { apiBase: 'https://doublethedonation.com/api/360matchpro/v1/', campaign: 'Test', publicKey: 'test-public-key', pullOverlapMinutes: 120 },
     boards: { donations: 1, people: 2, organizations: 3, programSummary: 4 },
     donations: {
       amount: 'a', date: 'd', status: 's', giftType: 'gt', funraiseId: 'fi', salesforceId: 'si',
@@ -39,6 +39,12 @@ describe('validateConfig', () => {
         expect(() => validateConfig(raw), `${group}.${key}`).toThrow(/REPLACE_WITH_COLUMN_ID|column id/);
       }
     }
+  });
+
+  it('requires dtd.publicKey', () => {
+    const raw = validRaw();
+    delete raw.dtd.publicKey;
+    expect(() => validateConfig(raw)).toThrow(/dtd\.publicKey/);
   });
 
   it('rejects push.allowEmails missing', () => {

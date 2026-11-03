@@ -3,7 +3,7 @@ import productionConfig from '../config/svbc.json';
 import sandboxConfig from '../config/sandbox.json';
 
 export interface DtdSyncConfig {
-  dtd: { apiBase: string; campaign: string; pullOverlapMinutes: number };
+  dtd: { apiBase: string; campaign: string; publicKey: string; pullOverlapMinutes: number };
   boards: { donations: number; people: number; organizations: number; programSummary: number };
   donations: {
     amount: string; date: string; status: string; giftType: string; funraiseId: string;
@@ -93,6 +93,7 @@ export function validateConfig(raw: unknown): DtdSyncConfig {
     dtd: {
       apiBase: string(dtd, 'apiBase', 'dtd'),
       campaign: string(dtd, 'campaign', 'dtd'),
+      publicKey: string(dtd, 'publicKey', 'dtd'),
       pullOverlapMinutes: positiveNumber(dtd, 'pullOverlapMinutes', 'dtd'),
     },
     boards: {

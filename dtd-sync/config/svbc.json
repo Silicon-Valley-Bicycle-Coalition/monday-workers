@@ -2,6 +2,7 @@
   "dtd": {
     "apiBase": "https://doublethedonation.com/api/360matchpro/v1/",
     "campaign": "SVBC",
+    "publicKey": "mw47OxaEInD5J4MD",
     "pullOverlapMinutes": 120
   },
   "boards": { "donations": 18437909794, "people": 18437909781, "organizations": 18437909779, "programSummary": 0 },
