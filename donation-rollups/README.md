@@ -891,8 +891,10 @@ progress)`, `FY2026`, newest first) and one item per donor per year: a household
 a **Household ID**), an individual, an organization, or the pooled Anonymous row. Columns: Name
 (the Household Greeting, or Recognition Name for an organization, else Name), Fiscal Year, Tier
 (`$50,000+` down to `Under $100`), Type, Listed (`Listed` / `Don't list`), Total, Gifts, People,
-Organization, Review Note and Row Key (`2026|household:<Household ID>`, `2026|item:<itemId>`,
-`2026|anonymous` — the identity the Worker matches on; don't edit it). Donors with **Don't List in
+Organization, Review Note, Row Key (`2026|household:<Household ID>`, `2026|item:<itemId>`,
+`2026|anonymous` — the identity the Worker matches on; don't edit it) and Household Name (the
+item's Name again, as a cell that exports and sorting keep; optional `columns.householdName`,
+spec §10.2, backfilled by the first runs after it's configured). Donors with **Don't List in
 Recognition** checked stay on the board marked `Don't list`, so totals still add up; the saved
 views leave them out. A person or household member with **Do Not Solicit** checked (it carries
 Salesforce's Do Not Contact) makes the row `Don't list` too, decided 2026-11-02; its Review Note
@@ -943,6 +945,22 @@ refuses to refresh (a failed read, not every gift deleted at once). A flagged em
 ledger row isn't there yet (the consumer hasn't recomputed it) isn't counted that night; the
 report counts it as `pendingLedger`, which normally clears by the next run.
 
+**Recognition Fiscal Year** (spec §10.1). A text column on Donations, set by staff, never by the
+Worker. Blank counts the gift in its own fiscal year; `2026` or `FY2026` counts it in FY2026
+instead (sponsors who prepay for next year's event). It moves the year, never the donor, and the
+gift counts in exactly one year. A future year waits until that year begins; an unreadable value
+is ignored and listed in the run's summary (`badRecognitionYears` in the detail). The value rides
+on a `roll_call_credits` row (`recognition_fiscal_year`, migration `0013`), so it survives the gift
+archiving. **An archived gift:** restore it (Donations → board menu → Archive → Restore), set the
+column, and leave it active at least until the next nightly run has recorded it; it may then be
+archived again by hand (the custodian never re-archives a restored gift itself, since the ledger
+still marks it archived). Optional `donations.columns.recognitionFiscalYear`.
+
+**In-kind value** (spec §10.3). A gift with no Amount counts its In-Kind Value, as the old
+script did. The duty reads In-Kind Value on its nightly pass (the ledger's `in_kind_value_cents`
+was never filled on production) and carries it on a credits row, kept when the gift archives.
+Optional `donations.columns.inKindValue`; absent, Amount only.
+
 **Dry runs.** With the write switch `off`, the duty runs against recording proxies, so
 `refreshCredits`'s upserts to `roll_call_credits` aren't persisted either. The plan it logs is
 computed from the table as stored, so for a gift whose credit changed since the last live run —
@@ -972,7 +990,8 @@ rows can differ from what a live run would write.
    the board with the ten columns (Tier, Type and Listed seeded with every label the duty
    writes, since the duty never creates labels), adds **Don't List in Recognition** (checkbox) to
    each People board and Organizations and **Recognition Name** (text) to Organizations, looks up
-   the existing columns the duty reads, creates the three saved views, and prints the
+   the existing columns the duty reads, adds **Recognition Fiscal Year** (text) to Donations and
+   **Household Name** (text) to the board (2026-11-03, spec §10), creates the three saved views, and prints the
    `donationRollups.rollCall` block for `config/{sandbox,svbc}.json`. Sandbox v4 (board
    `18438156633`) is in `config/sandbox.json`:
 
@@ -985,10 +1004,11 @@ rows can differ from what a live run would write.
      "columns": { "fiscalYear": "text_mm8qzwa", "tier": "color_mm8q7wfp", "type": "color_mm8q99m",
        "listed": "color_mm8qk8ef", "total": "numeric_mm8qwz2e", "gifts": "numeric_mm8q7gh",
        "people": "board_relation_mm8qkvrn", "organization": "board_relation_mm8qqr7m",
-       "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q" },
+       "reviewNote": "long_text_mm8qwxsq", "rowKey": "text_mm8qz41q", "householdName": "text_mm8rga06" },
      "donations": { "boardId": 18437342657, "columns": { "amount": "numeric_mm8hn1b2", "date": "date_mm8hfsvm", "status": "color_mm8hshet",
        "fiscalYear": "text_mm8hpk76", "giftType": "text_mm8h238c", "donorLink": "board_relation_mm8hhdk7",
-       "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h" } },
+       "matchedBy": "board_relation_mm8hs607", "anonymous": "boolean_mm8h4a5h",
+       "inKindValue": "numeric_mm8hpt4q", "recognitionFiscalYear": "text_mm8rsesm" } },
      "people": {
        "18437342592": { "householdId": "text_mm8qmhc8", "householdGreeting": "text_mm8qzmk6",
          "householdEmail": "email_mm8hj3f8", "doNotSolicit": "boolean_mm8h1x0b", "dontList": "boolean_mm8qmb9v" },
@@ -999,10 +1019,12 @@ rows can differ from what a live run would write.
    ```
 
    `firstFiscalYear` is the first year the board covers; `excludedGiftTypes` defaults to
-   `["Contracts"]`; `writesPerRun` to 500. `"rollCall": null` (or omitted) turns the duty off.
-3. **Deploy order: apply migration `0011` to the remote D1 BEFORE deploying** a build that carries
-   the duty (`npx wrangler d1 migrations apply <db> --remote`), or the first nightly run fails on
-   the missing `roll_call_credits` table. Then set the write switch `on` and trigger a first run
+   `["Contracts"]`; `writesPerRun` to 500. `columns.householdName`, `donations.columns.inKindValue`
+   and `donations.columns.recognitionFiscalYear` are optional (absent = off), so a build can
+   deploy before the setup run adds them. `"rollCall": null` (or omitted) turns the duty off.
+3. **Deploy order: apply migrations `0011` and `0013` to the remote D1 BEFORE deploying** a build that carries
+   the duty (`npx wrangler d1 migrations apply <db> --remote`), or the nightly run fails on the
+   missing `roll_call_credits` table or its `recognition_fiscal_year` column. Then set the write switch `on` and trigger a first run
    with `POST /custodian/run/rollcall`.
 
 ### Saved views

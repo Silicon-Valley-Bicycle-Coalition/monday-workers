@@ -117,10 +117,18 @@ export interface RollCallConfig {
   columns: {
     fiscalYear: string; tier: string; type: string; listed: string; total: string; gifts: string;
     people: string; organization: string; reviewNote: string; rowKey: string;
+    // Optional (spec §10.2): the row's Recognition Name as a cell of its own. Absent = not written.
+    householdName?: string;
   };
   donations: {
     boardId: number;
-    columns: { amount: string; date: string; status: string; fiscalYear: string; giftType: string; donorLink: string; matchedBy: string; anonymous: string };
+    columns: {
+      amount: string; date: string; status: string; fiscalYear: string; giftType: string; donorLink: string; matchedBy: string; anonymous: string;
+      // Optional (spec §10.3): counted when Amount is blank. Absent = Amount only.
+      inKindValue?: string;
+      // Optional (spec §10.1): the staff-set year a gift is recognized in. Absent = every gift in its own year.
+      recognitionFiscalYear?: string;
+    };
   };
   people: Record<string, { householdId: string; householdGreeting: string; householdEmail: string; doNotSolicit: string; dontList: string }>;
   organizations: { boardId: number; columns: { recognitionName: string; dontList: string } };

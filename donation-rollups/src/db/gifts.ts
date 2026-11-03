@@ -65,8 +65,9 @@ export interface GiftsStore {
   getArchivable(cutoffFY: number): Promise<{ mondayItemId: string; fiscalYear: number }[]>;
   markArchived(mondayItemIds: string[], now: string): Promise<void>;
   // Every live gift (not removed) from a fiscal year on, archived or not — the donor roll call's
-  // source for the credits it computes.
-  countedGifts(fromFY: number): Promise<{ mondayItemId: string; ownerItemId: string; fiscalYear: number;
+  // source for the credits it computes — plus any of alsoIds from an earlier year (a gift whose
+  // Recognition Fiscal Year moves it into the covered years, spec §10.1).
+  countedGifts(fromFY: number, alsoIds?: string[]): Promise<{ mondayItemId: string; ownerItemId: string; fiscalYear: number;
     amountCents: number; status: string; giftType: string | null }[]>;
   // Pre-cutover gifts whose migrated Term Start has never been read from the board (NULL, not
   // '' — a read blank is stored as '' so the backfill never re-reads it).
@@ -382,14 +383,26 @@ export class D1GiftsStore implements GiftsStore {
     }
   }
 
-  async countedGifts(fromFY: number): Promise<{ mondayItemId: string; ownerItemId: string; fiscalYear: number;
+  async countedGifts(fromFY: number, alsoIds: string[] = []): Promise<{ mondayItemId: string; ownerItemId: string; fiscalYear: number;
     amountCents: number; status: string; giftType: string | null }[]> {
+    type Row = { monday_item_id: string; owner_item_id: string; fiscal_year: number; amount_cents: number; status: string; gift_type: string | null };
+    const cols = 'monday_item_id, owner_item_id, fiscal_year, amount_cents, status, gift_type';
     const res = await this.db
-      .prepare(`SELECT monday_item_id, owner_item_id, fiscal_year, amount_cents, status, gift_type
-                FROM gifts WHERE removed_at IS NULL AND fiscal_year >= ?1 ORDER BY monday_item_id`)
+      .prepare(`SELECT ${cols} FROM gifts WHERE removed_at IS NULL AND fiscal_year >= ?1 ORDER BY monday_item_id`)
       .bind(fromFY)
-      .all<{ monday_item_id: string; owner_item_id: string; fiscal_year: number; amount_cents: number; status: string; gift_type: string | null }>();
-    return res.results.map((r) => ({ mondayItemId: r.monday_item_id, ownerItemId: r.owner_item_id,
+      .all<Row>();
+    const rows = res.results;
+    // Earlier-year extras only: a later one is already in the read above.
+    for (let i = 0; i < alsoIds.length; i += READ_CHUNK) {
+      const ids = alsoIds.slice(i, i + READ_CHUNK);
+      const extra = await this.db
+        .prepare(`SELECT ${cols} FROM gifts WHERE removed_at IS NULL AND fiscal_year < ?1
+                  AND monday_item_id IN (${ids.map((_, n) => `?${n + 2}`).join(', ')})`)
+        .bind(fromFY, ...ids)
+        .all<Row>();
+      rows.push(...extra.results);
+    }
+    return rows.map((r) => ({ mondayItemId: r.monday_item_id, ownerItemId: r.owner_item_id,
       fiscalYear: r.fiscal_year, amountCents: r.amount_cents, status: r.status, giftType: r.gift_type }));
   }
 
