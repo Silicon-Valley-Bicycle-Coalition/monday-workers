@@ -33,30 +33,40 @@ This Worker:
 ## Data flow
 
 ```
-Cron 15 * * * *  (hourly)
+Cron 15 * * * *  (hourly, UTC)
   │
-  ├─ pull     DTD get_updated_donations(since watermark − overlap)
-  │             → find the Donations item (Funraise ID, else Salesforce ID, else our own pushed id)
+  ├─ pull     DTD get_updated_donations(since watermark − overlap; first run: July 1 of the
+  │             previous fiscal year)
+  │             → find the Donations item (Funraise ID, else Salesforce ID, else our own pushed id;
+  │               an item on another board doesn't count)
   │             → Match Status / DTD Status (raw) / Match Company on Donations
   │             → DTD Company ID / DTD Company / DTD match link on the donor's People item
-  │           unmatched records are stored in D1 and retried next run, never created in Monday
+  │               (only when the donor is on People, not Organizations or People (Historical))
+  │           unmatched records, and records whose Monday write failed, are stored in D1 and
+  │           retried next run (50 a run, oldest first, rotating), never created in Monday
   │
-  ├─ push     Donations items that pass the send rules and are not yet sent
+  ├─ push     only when pull completed this run: Donations items that pass the send rules and
+  │           are not yet sent
   │             → DTD register_donation (id `monday-<itemId>`)
   │             → D1 `pushes` ledger first, then Donations → Sent to DTD
   │
-  └─ pairing  Matching Donation items with no link → Matches gift + Match pairing
-              (runs even when DTD_PRIVATE_KEY is missing; it only reads and writes Monday)
+  └─ pairing  Matching Donation items with no link → Matches gift + Match pairing; then every
+              linked Matching Donation (Staff included) → its gift's Match Status `Matched`
+              (runs even when DTD_PRIVATE_KEY is missing or pull failed; it only reads and
+              writes Monday)
 
-Cron 0 10 * * *  (nightly)
+Cron 0 10 * * *  (nightly, UTC)
   └─ summary  Matching Gift Program board: one row per fiscal year (current and previous),
               recomputed from scratch each run
 ```
 
-Every job has its own try/catch, so one failing job is logged by name and the run continues. The
-exception is a bad DTD key (`DtdAuthError`), which drops the other DTD job for that run since it
-would fail the same way. Monday gifts are never created by this Worker: each gift is created by its
-own source integration.
+Every job has its own try/catch, so one failing job is logged by name and the run continues, with
+one exception: push runs only after a pull that completed this run (push skips gifts DTD already
+has a record for, which it learns from pull, and a bad DTD key would fail push the same way).
+Inside pull and pairing, one item's failure is logged as `dtd-sync: <job> item <id> failed
+<message>` (emails scrubbed) and the job goes on; a failed pull record doesn't hold the watermark,
+since it's stored for retry. Monday gifts are never created by this Worker: each gift is created by
+its own source integration.
 
 ### Push: which gifts are sent
 
@@ -71,6 +81,7 @@ Person with an email; the gift date is inside the window (30 days, `push.windowD
 * anything with a Funraise ID (Funraise already sends it) or a Benevity Transaction ID (workplace
   giving, matched inside Benevity);
 * Anonymous Donor items, and any Status other than `Received` (refunded, failed, pending);
+* an item whose Sent to DTD date is already set (the D1 `pushes` ledger is the main guard);
 * a donor with no email;
 * a donor whose email is not in the sandbox allow-list (below).
 
@@ -83,15 +94,19 @@ A Matching Donation is linked to the gift it matched (Donations → **Matches gi
 pairing** records how:
 
 1. **Certain:** the same Benevity row. A Matching Donation whose Benevity Transaction ID is
-   `<id>-match` links the gift with Transaction ID `<id>`.
+   `<id>-match` links the gift with Transaction ID `<id>`. "Certain" names the rule; the Match
+   pairing value written is `Auto`, as for rule 2.
 2. **Auto:** exactly one candidate gift from the same company (normalized name) within 18 months
    before the match (`pairing.windowMonths`) whose amount is at least the match amount × (1 − 0.01)
-   (`pairing.amountTolerance`).
-3. **Needs review:** anything else (no candidate, or several). Staff pick the gift by hand.
+   (`pairing.amountTolerance`). A match with no Amount can't be size-checked, so it goes to review.
+3. **Needs review:** anything else (no candidate, several, or no match Amount). Staff pick the gift
+   by hand.
 4. **Staff:** a link made by hand and locked by setting Match pairing to `Staff`; the Worker never
    overwrites it.
 
-A paired gift's Match Status is `Matched`, and the pull stops overwriting Match Status on it.
+A paired gift's Match Status is `Matched`, and the pull stops overwriting Match Status on it. Every
+run re-checks this for each linked Matching Donation in the window, Staff links included, and sets
+`Matched` where it is missing (a hand link, or a write that failed after its link was made).
 
 ## APIs & auth
 
@@ -149,11 +164,14 @@ writing them there would quietly break that matching.
 Gated by the fleet write switch (`dtd-sync:writes`, set with `scripts/flags.mjs`):
 
 * `on`: live.
+An unset flag reads as `off`, so a new deployment starts as a dry run.
+
 * `off`: **dry run.** Reads both systems and logs one line per would-be write. D1 writes are
   dropped too, so a dry run never advances the watermark or records pushes.
 * `hold` or unknown: the run is skipped.
 
 ```sh
+# from the repo root
 node scripts/flags.mjs dtd-sync writes off --env sandbox    # dry run
 node scripts/flags.mjs dtd-sync writes on --env sandbox
 node scripts/flags.mjs status --env sandbox
@@ -170,21 +188,32 @@ afterwards from DTD's Donations page.
 
 ## Operator setup
 
-Not yet done; in order:
+Not yet done; in order. Commands marked *(dtd-sync/)* run from the `dtd-sync/` directory, the
+rest from the repo root. Both crons are UTC: the hourly run is at :15 past each hour.
 
 1. Rotate the DTD private key (the old one was exposed in a working session on 2026-11-03).
-2. `npx wrangler secret put DTD_PRIVATE_KEY --env sandbox` (and without `--env` for production).
-3. `npx wrangler d1 migrations apply svbc-dtd-sync-sandbox --remote --env sandbox`
-   (production: `svbc-dtd-sync --remote`).
-4. `npm run deploy:sandbox` (production: `npm run deploy`).
-5. Set the flag `off` and read one hourly run's logs: pull should resolve sandbox gifts by Funraise
-   ID, push should list what it would send (only allow-listed emails), no errors.
-6. Add staff test addresses to `push.allowEmails` in `config/sandbox.json` and redeploy.
-7. Set the flag `on`. Verify on the sandbox board: Match Status and DTD Status (raw) filled for
-   recent Funraise gifts; a hand-entered test gift for an allow-listed donor shows Sent to DTD and
-   appears in DTD under the test campaign; a test Matching Donation with Matched By set gets
-   Matches gift and `Matched`. Remove the test items and the DTD test donations.
-8. **Production:** run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --workspace <id> --config dtd-sync/config/svbc.json`
+2. *(dtd-sync/)* `npx wrangler secret put DTD_PRIVATE_KEY --env sandbox` (and without `--env` for
+   production).
+3. *(dtd-sync/)* `npx wrangler d1 migrations apply svbc-dtd-sync-sandbox --remote --env sandbox`
+   (production: `npx wrangler d1 migrations apply svbc-dtd-sync --remote`).
+4. Add staff test addresses to `push.allowEmails` in `dtd-sync/config/sandbox.json` (while it is
+   `null`, push sends nothing, so a dry run would only log "not-allow-listed").
+5. *(dtd-sync/)* `npm run deploy:sandbox` (production: `npm run deploy`).
+6. `node scripts/flags.mjs dtd-sync writes off --env sandbox` (an unset flag is already `off`, a
+   dry run) and read one hourly run's logs. The first pull reaches back to July 1 of the previous
+   fiscal year, so expect a large first batch. Pull should resolve sandbox gifts by Funraise ID;
+   push should list what it would send (only allow-listed emails); no errors.
+7. During that dry run, confirm the Salesforce-fed DTD records (`source` set, older gifts) resolve
+   by Salesforce ID: DTD may carry the 15-character Id where Monday's Salesforce ID column holds the
+   18-character one (or the reverse). The pull summary line's `unmatched` count should be small, and
+   a few known Salesforce-era gifts should show a would-be Donations write; if they don't resolve,
+   fix the lookup before going live.
+8. `node scripts/flags.mjs dtd-sync writes on --env sandbox`. Verify on the sandbox board: Match
+   Status and DTD Status (raw) filled for recent Funraise gifts; a hand-entered test gift for an
+   allow-listed donor shows Sent to DTD and appears in DTD under the test campaign; a test Matching
+   Donation with Matched By set gets Matches gift and `Matched`. Remove the test items and the DTD
+   test donations.
+9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --workspace <id> --config dtd-sync/config/svbc.json`
    against the production boards, paste the printed ids into `config/svbc.json`, set the
    campaign, deploy, run with the flag `off` and read the logs, then turn it `on`.
 

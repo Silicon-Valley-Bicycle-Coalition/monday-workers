@@ -24,6 +24,9 @@
   // The daily run walks Donations and People; CPU time excludes DTD/Monday/D1 I/O wait. Keep in
   // step with env.sandbox below.
   "limits": { "cpu_ms": 30000 },
+  // DTD takes its private key (DTD_PRIVATE_KEY) as the `key` query parameter, so every outbound
+  // DTD URL carries it. Keep observability to logs + Issues: don't enable request traces or a
+  // Logpush job that captures subrequest URLs, here or in env.sandbox.
   "observability": {
     "enabled": true,
     "issues": { "enabled": true }
