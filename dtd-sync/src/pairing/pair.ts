@@ -47,12 +47,14 @@ export function pairMatch(
 
   if (matchCompanyName === null) return { kind: 'review', candidates: [] };
   const wanted = normalizeCompany(matchCompanyName);
-  const floor = match.amount === null ? null : match.amount * (1 - cfg.amountTolerance);
-  const hits = eligible.filter((c) => {
+  const sameCompany = eligible.filter((c) => {
     const company = companyOf(c.id);
-    if (company === null || normalizeCompany(company) !== wanted) return false;
-    return floor === null || (c.amount !== null && c.amount >= floor);
+    return company !== null && normalizeCompany(company) === wanted;
   });
+  // Without the match's amount the size check can't run, so a company-only pairing is never automatic.
+  if (match.amount === null) return { kind: 'review', candidates: sameCompany.map((c) => c.id) };
+  const floor = match.amount * (1 - cfg.amountTolerance);
+  const hits = sameCompany.filter((c) => c.amount !== null && c.amount >= floor);
   if (hits.length === 1) return { kind: 'auto', giftItemId: hits[0]!.id };
   return { kind: 'review', candidates: hits.map((c) => c.id) };
 }

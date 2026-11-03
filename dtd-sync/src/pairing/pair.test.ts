@@ -35,6 +35,12 @@ describe('pairMatch', () => {
     expect(r).toEqual({ kind: 'auto', giftItemId: '1' });
   });
 
+  it('a match with no amount → review, though a same-row Benevity match stays certain', () => {
+    const noAmount = { ...match, amount: null, benevityTransactionId: null };
+    expect(pairMatch(noAmount, 'Example Corp', [gift({ id: '1' })], companyOf, CFG)).toEqual({ kind: 'review', candidates: ['1'] });
+    const certain = pairMatch({ ...match, amount: null }, null, [gift({ id: '9', benevityTransactionId: 'bv-1' })], companyOf, CFG);
+    expect(certain).toEqual({ kind: 'certain', giftItemId: '9' });
+  });
   it('two candidates → review', () => {
     const r = pairMatch(match, 'Example Corp', [gift({ id: '1' }), gift({ id: '2' })], companyOf, CFG);
     expect(r).toEqual({ kind: 'review', candidates: ['1', '2'] });

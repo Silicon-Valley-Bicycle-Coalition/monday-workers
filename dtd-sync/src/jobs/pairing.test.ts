@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { runPairing } from './pairing';
 import { validateConfig } from '../config';
@@ -33,6 +33,7 @@ function setup(items: DonationItem[], failOn?: string) {
   const monday: Partial<DtdMondayClient> = {
     listDonationsDatedSince: async () => items,
     listGiftsForDonor: async (donor) => items.filter((i) => i.donorItemId === donor),
+    getDonation: async (id) => items.find((i) => i.id === id) ?? null,
     getOrganizationName: async () => 'Example Corp, Inc.',
     updateDonation: async (id, values) => {
       if (id === failOn) throw new Error('monday down');
@@ -45,6 +46,7 @@ function setup(items: DonationItem[], failOn?: string) {
 beforeEach(async () => {
   await env.DB.prepare('DELETE FROM dtd_records').run();
 });
+afterEach(() => vi.restoreAllMocks());
 
 describe('runPairing', () => {
   it('marks the original gift Matched and links the match', async () => {
@@ -64,8 +66,8 @@ describe('runPairing', () => {
     expect(writes).toEqual([]);
   });
 
-  it('skips matches that already have a gift', async () => {
-    const { deps, writes } = setup([item(), matchItem({ matchesGiftItemId: '1' })]);
+  it('skips matches that already have a gift (and writes nothing when the gift is already Matched)', async () => {
+    const { deps, writes } = setup([item({ matchStatus: 'Matched' }), matchItem({ matchesGiftItemId: '1' })]);
     expect(await runPairing(deps, NOW)).toEqual({ linked: 0, review: 0 });
     expect(writes).toEqual([]);
   });
@@ -83,6 +85,47 @@ describe('runPairing', () => {
     const { deps, writes } = setup([matchItem({ donorItemId: null })]);
     expect(await runPairing(deps, NOW)).toEqual({ linked: 0, review: 1 });
     expect(writes).toHaveLength(1);
+  });
+
+  it('sets the gift of a Staff-linked match to Matched', async () => {
+    const { deps, writes } = setup([item(), matchItem({ matchPairing: 'Staff', matchesGiftItemId: '1' })]);
+    expect(await runPairing(deps, NOW)).toEqual({ linked: 0, review: 0 });
+    expect(writes).toEqual([{ id: '1', values: { [D.matchStatus]: { label: 'Matched' } } }]);
+  });
+
+  it('skips the self-heal when the linked gift is missing or off the Donations board', async () => {
+    const { deps, writes } = setup([matchItem({ matchesGiftItemId: '404' })]);
+    expect(await runPairing(deps, NOW)).toEqual({ linked: 0, review: 0 });
+    expect(writes).toEqual([]);
+  });
+
+  it('heals a gift whose Matched write failed on an earlier run', async () => {
+    await seedCompany('1', 'Example Corp');
+    const first = setup([item(), matchItem()], '1');
+    await runPairing(first.deps, NOW);
+    expect(first.writes.map((w) => w.id)).toEqual(['50']); // link written, gift write failed
+
+    const next = setup([item(), matchItem({ matchesGiftItemId: '1', matchPairing: 'Auto' })]);
+    await runPairing(next.deps, NOW);
+    expect(next.writes).toEqual([{ id: '1', values: { [D.matchStatus]: { label: 'Matched' } } }]);
+  });
+
+  it('sends a match with no amount to review rather than auto-linking by company', async () => {
+    await seedCompany('1', 'Example Corp');
+    const { deps, writes } = setup([item(), matchItem({ amount: null })]);
+    expect(await runPairing(deps, NOW)).toEqual({ linked: 0, review: 1 });
+    expect(writes).toEqual([{ id: '50', values: { [D.matchPairing]: { label: 'Needs review' } } }]);
+  });
+
+  it('logs a failed match by item id with the message scrubbed', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await seedCompany('1', 'Example Corp');
+    const { deps } = setup([item(), matchItem()]);
+    deps.monday.updateDonation = async () => { throw new Error('rejected for pat@example.org'); };
+    await runPairing(deps, NOW);
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines).toContain('dtd-sync: pairing item 50 failed rejected for [email]');
+    expect(lines.join('\n')).not.toContain('pat@example.org');
   });
 
   it('continues past a failing Monday write', async () => {

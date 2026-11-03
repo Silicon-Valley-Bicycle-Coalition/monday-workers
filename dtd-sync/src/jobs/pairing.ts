@@ -2,23 +2,28 @@ import type { DtdSyncConfig } from '../config';
 import type { DtdMondayClient } from '../monday/client';
 import { companyForItem } from '../db/records';
 import { MATCHING_GIFT_TYPE, monthsBefore, pairMatch } from '../pairing/pair';
+import { logItemFailure } from '../logSafe';
 
 export interface PairingDeps { monday: DtdMondayClient; db: D1Database; config: DtdSyncConfig }
 
 const STAFF = 'Staff';
 const NEEDS_REVIEW = 'Needs review';
+const MATCHED = 'Matched';
 
 /**
  * Link each unpaired employer match to the donor's gift it matched. Every run re-evaluates the open
  * matches; Monday is written only on a change. A `Staff` pairing is never touched.
+ *
+ * Then, for every Matching Donation already linked to a gift (any pairing, Staff included), make sure
+ * that gift's Match Status is `Matched`: this covers staff links and heals a Matched write that failed
+ * after its link was written.
  */
 export async function runPairing(deps: PairingDeps, now: Date): Promise<{ linked: number; review: number }> {
   const { monday, db, config } = deps;
   const d = config.donations;
   const since = monthsBefore(now.toISOString(), config.pairing.windowMonths);
-  const open = (await monday.listDonationsDatedSince(since)).filter(
-    (i) => i.giftType === MATCHING_GIFT_TYPE && i.matchesGiftItemId === null && i.matchPairing !== STAFF,
-  );
+  const matches = (await monday.listDonationsDatedSince(since)).filter((i) => i.giftType === MATCHING_GIFT_TYPE);
+  const open = matches.filter((i) => i.matchesGiftItemId === null && i.matchPairing !== STAFF);
 
   let linked = 0;
   let review = 0;
@@ -44,12 +49,25 @@ export async function runPairing(deps: PairingDeps, now: Date): Promise<{ linked
         [d.matchesGift]: { item_ids: [Number(result.giftItemId)] },
         [d.matchPairing]: { label: 'Auto' },
       });
-      await monday.updateDonation(result.giftItemId, { [d.matchStatus]: { label: 'Matched' } });
+      await monday.updateDonation(result.giftItemId, { [d.matchStatus]: { label: MATCHED } });
       linked++;
-    } catch {
-      console.log(JSON.stringify({ job: 'pairing', event: 'match-failed', itemId: match.id }));
+    } catch (err) {
+      logItemFailure('pairing', match.id, err);
     }
   }
-  console.log(JSON.stringify({ job: 'pairing', considered: open.length, linked, review }));
+
+  let healed = 0;
+  for (const match of matches) {
+    if (match.matchesGiftItemId === null) continue;
+    try {
+      const gift = await monday.getDonation(match.matchesGiftItemId); // null: gone, or not on Donations
+      if (gift === null || gift.matchStatus === MATCHED) continue;
+      await monday.updateDonation(gift.id, { [d.matchStatus]: { label: MATCHED } });
+      healed++;
+    } catch (err) {
+      logItemFailure('pairing', match.id, err);
+    }
+  }
+  console.log(JSON.stringify({ job: 'pairing', considered: open.length, linked, review, healed }));
   return { linked, review };
 }
