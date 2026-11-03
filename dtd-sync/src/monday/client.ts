@@ -27,7 +27,7 @@ export interface DtdMondayClient {
 const DEFAULT_OPTIONS: MondayGraphQLOptions = { maxAttempts: 3, requestTimeoutMs: 30_000 };
 
 interface ColumnValue { id: string; text: string | null; value?: string | null; linked_item_ids?: string[] }
-interface RawItem { id: string; name?: string; state?: string | null; updated_at?: string | null; column_values: ColumnValue[] }
+interface RawItem { id: string; name?: string; state?: string | null; updated_at?: string | null; board?: { id: string } | null; column_values: ColumnValue[] }
 interface ItemsPage { cursor: string | null; items: RawItem[] }
 
 // A status cell's label, or null when empty. Monday returns label id 5's text for an EMPTY status
@@ -72,6 +72,12 @@ function live(item: { state?: string | null }): boolean {
   return item.state !== 'deleted';
 }
 
+// `items(ids:)` reads any item the token can see, whatever its board; an id from a connect column
+// or a `monday-<id>` identifier can point elsewhere (Organizations, People (Historical)).
+function onBoard(item: RawItem, boardId: number): boolean {
+  return item.board?.id !== undefined && String(item.board.id) === String(boardId);
+}
+
 function chunksOf<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -103,7 +109,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   // Interpolated into queries only as config-supplied column ids / JSON-encoded id lists — never
   // a caller's value; those are always GraphQL variables.
   private get donationFields(): string {
-    return `id state updated_at column_values(ids: ${JSON.stringify(this.donationColumnIds)}) { id text value ... on BoardRelationValue { linked_item_ids } }`;
+    return `id state updated_at board { id } column_values(ids: ${JSON.stringify(this.donationColumnIds)}) { id text value ... on BoardRelationValue { linked_item_ids } }`;
   }
 
   private donationFrom(item: RawItem): DonationItem {
@@ -157,7 +163,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
       { ids: [itemId] },
     );
     const item = data.items[0];
-    return item && live(item) ? this.donationFrom(item) : null;
+    return item && live(item) && onBoard(item, this.config.boards.donations) ? this.donationFrom(item) : null;
   }
 
   // Runs a board query with `rules`, then follows next_items_page cursors to the end.
@@ -210,15 +216,17 @@ export class HttpDtdMondayClient implements DtdMondayClient {
 
   async getPeople(ids: string[]): Promise<PersonItem[]> {
     const p = this.config.people;
+    const peopleBoard = this.config.boards.people;
     const out: PersonItem[] = [];
     for (const chunk of chunksOf(ids, 100)) {
       const data = await this.transport.request<{ items: RawItem[] }>(
         `query ($ids: [ID!], $columnIds: [String!]) {
-          items(ids: $ids, limit: 100) { id name state column_values(ids: $columnIds) { id text value } }
+          items(ids: $ids, limit: 100) { id name state board { id } column_values(ids: $columnIds) { id text value } }
         }`,
         { ids: chunk, columnIds: [p.email, p.householdEmail, p.phone, p.dtdCompanyId] },
       );
-      for (const item of data.items.filter(live)) {
+      // Only People-board donors: an Organizations or People (Historical) donor has no DTD columns.
+      for (const item of data.items.filter((i) => live(i) && onBoard(i, peopleBoard))) {
         const byId = new Map(item.column_values.map((cv) => [cv.id, cv]));
         out.push({
           id: item.id,

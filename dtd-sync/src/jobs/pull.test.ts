@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { env } from 'cloudflare:workers';
 import { runPull, type PullDeps } from './pull';
 import { validateConfig } from '../config';
@@ -68,6 +68,15 @@ beforeEach(async () => {
   await env.DB.prepare('DELETE FROM dtd_records').run();
   await env.DB.prepare('DELETE FROM sync_state').run();
 });
+afterEach(() => vi.restoreAllMocks());
+
+function unmatchedRow(identifier: string, seenAt: string) {
+  return {
+    donationIdentifier: identifier, mondayItemId: null, source: null, status: ':pending', matchingGiftStatus: null,
+    employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
+    updatedSeenAt: seenAt, unmatched: true,
+  };
+}
 
 describe('runPull', () => {
   it('writes Match Status, raw status and company for a Funraise record', async () => {
@@ -150,29 +159,96 @@ describe('runPull', () => {
     expect(h.donationWrites[0]!.id).toBe('500');
   });
 
-  it('does not move the watermark when a Monday write throws', async () => {
+  it('stores a record whose Monday write throws as retryable, advances the watermark, and retries it next run', async () => {
     await setWatermark(env.DB, '2026-11-01T00:00:00.000Z');
     const h = harness([dtd(), dtd({ donation_identifier: 'fr-2' })]);
     h.items.set('500', item());
     h.items.set('501', item({ id: '501', funraiseId: 'fr-2' }));
     h.state.failDonationWrite = true;
     await runPull(h.deps, NOW);
-    expect(await getWatermark(env.DB)).toBe('2026-11-01T00:00:00.000Z');
-    expect(await getRecord(env.DB, 'fr-1')).toBeNull();
-    // The next run (Monday back up) re-handles it.
+    expect(await getWatermark(env.DB)).toBe(NOW.toISOString());
+    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ mondayItemId: '500', unmatched: true, status: ':waiting-for-donor-action' });
+    expect(await getRecord(env.DB, 'fr-2')).toMatchObject({ mondayItemId: '501', unmatched: true });
+    // The next run (Monday back up, DTD reporting nothing new) retries both from D1.
     h.state.failDonationWrite = false;
+    h.state.donations = [];
+    await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+    expect(h.donationWrites.map((w) => w.id).sort()).toEqual(['500', '501']);
+    expect(h.donationWrites[0]!.values[D.dtdStatusRaw]).toBe(':waiting-for-donor-action');
+    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ unmatched: false });
+    expect(await getRecord(env.DB, 'fr-2')).toMatchObject({ unmatched: false });
+  });
+
+  it('logs a failed record by identifier with the error message scrubbed', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const h = harness([dtd()]);
+    h.items.set('500', item());
+    h.deps.monday.updateDonation = async () => { throw new Error('column rejected value pat@example.org'); };
     await runPull(h.deps, NOW);
-    expect(h.donationWrites).toHaveLength(2);
+    const lines = log.mock.calls.map((c) => String(c[0]));
+    expect(lines).toContain('dtd-sync: pull item fr-1 failed column rejected value [email]');
+    expect(lines.join('\n')).not.toContain('pat@example.org');
+  });
+
+  it('holds the watermark only when a failed record could not be stored either', async () => {
+    await setWatermark(env.DB, '2026-11-01T00:00:00.000Z');
+    const h = harness([dtd()]);
+    h.items.set('500', item());
+    h.state.failDonationWrite = true;
+    const db = h.deps.db;
+    h.deps.db = new Proxy(db, {
+      get(target, prop) {
+        if (prop !== 'prepare') return Reflect.get(target, prop);
+        return (sql: string) => {
+          if (sql.includes('INSERT INTO dtd_records')) throw new Error('d1 down');
+          return target.prepare(sql);
+        };
+      },
+    });
+    await runPull(h.deps, NOW);
+    expect(await getWatermark(db)).toBe('2026-11-01T00:00:00.000Z');
+  });
+
+  it('retries 50 unmatched rows a run and rotates, so the 51st is tried next run', async () => {
+    for (let i = 0; i <= 50; i++) await upsertRecord(env.DB, unmatchedRow(`fr-${String(i).padStart(2, '0')}`, '2026-10-01T00:00:00.000Z'));
+    const h = harness([]);
+    await runPull(h.deps, NOW);
+    expect(h.lookups).toHaveLength(50);
+    expect(h.lookups).not.toContain('fr:fr-50');
+    expect(await getRecord(env.DB, 'fr-00')).toMatchObject({ updatedSeenAt: NOW.toISOString(), unmatched: true });
+    h.lookups.length = 0;
+    await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+    expect(h.lookups[0]).toBe('fr:fr-50');
+  });
+
+  it('skips the People write for a donor that is not on People (an Organizations donor)', async () => {
+    const h = harness([dtd()]);
+    h.items.set('500', item({ donorItemId: '777' })); // getPeople drops off-board ids, so 777 comes back empty
+    const result = await runPull(h.deps, NOW);
+    expect(result).toEqual({ fetched: 1, written: 1, unmatched: 0 });
+    expect(h.personWrites).toEqual([]);
     expect(await getWatermark(env.DB)).toBe(NOW.toISOString());
   });
 
-  it('uses the watermark minus the overlap, or 90 days back on the first run', async () => {
+  it('treats a monday- identifier whose item is on another board as unresolved', async () => {
+    // getDonation returns null for an item that isn't on the Donations board.
+    const h = harness([dtd({ donation_identifier: 'monday-888', source: 'monday' })]);
+    const result = await runPull(h.deps, NOW);
+    expect(result).toEqual({ fetched: 1, written: 0, unmatched: 1 });
+    expect(await getRecord(env.DB, 'monday-888')).toMatchObject({ mondayItemId: null, unmatched: true });
+  });
+
+  it('uses the watermark minus the overlap, or the previous fiscal year start on the first run', async () => {
     const h = harness([]);
     await runPull(h.deps, NOW);
-    expect(h.fetched[0]).toEqual({ since: new Date(NOW.getTime() - 90 * 86_400_000 - config.dtd.pullOverlapMinutes * 60_000).toISOString(), to: NOW.toISOString() });
+    expect(h.fetched[0]).toEqual({ since: '2025-07-01T00:00:00.000Z', to: NOW.toISOString() });
+    await env.DB.prepare('DELETE FROM sync_state').run();
+    await runPull(h.deps, new Date('2026-06-30T23:00:00Z')); // still FY2026 → FY2025 started 2024-07-01
+    expect(h.fetched[1]!.since).toBe('2024-07-01T00:00:00.000Z');
+    await env.DB.prepare('DELETE FROM sync_state').run();
     await setWatermark(env.DB, '2026-11-02T00:00:00.000Z');
     await runPull(h.deps, NOW);
-    expect(h.fetched[1]!.since).toBe(new Date(Date.parse('2026-11-02T00:00:00.000Z') - config.dtd.pullOverlapMinutes * 60_000).toISOString());
+    expect(h.fetched[2]!.since).toBe(new Date(Date.parse('2026-11-02T00:00:00.000Z') - config.dtd.pullOverlapMinutes * 60_000).toISOString());
   });
 
   it('never writes People Employer, only the three DTD columns', async () => {
@@ -244,15 +320,22 @@ describe('runPull', () => {
     expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ unmatched: false });
   });
 
-  it('stores nothing and holds the watermark when updatePerson throws after updateDonation', async () => {
+  it('keeps a record retryable when updatePerson throws after updateDonation, then finishes it next run', async () => {
     const h = harness([dtd()]);
     h.items.set('500', item());
     h.people.set('900', { id: '900', email: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null });
+    const updatePerson = h.deps.monday.updatePerson;
     h.deps.monday.updatePerson = async () => { throw new Error('monday down'); };
     await runPull(h.deps, NOW);
     expect(h.donationWrites).toHaveLength(1);
-    expect(await getRecord(env.DB, 'fr-1')).toBeNull();
-    expect(await getWatermark(env.DB)).toBeNull();
+    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ mondayItemId: '500', unmatched: true, companyId: 'c-7' });
+    expect(await getWatermark(env.DB)).toBe(NOW.toISOString());
+
+    h.deps.monday.updatePerson = updatePerson;
+    h.state.donations = [];
+    await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+    expect(h.personWrites.map((w) => w.id)).toEqual(['900']);
+    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ unmatched: false });
   });
 
   it('propagates DtdAuthError and leaves the watermark alone', async () => {

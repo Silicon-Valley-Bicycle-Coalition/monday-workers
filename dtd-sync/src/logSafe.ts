@@ -7,3 +7,8 @@ export function redactText(text: string): string {
   const scrubbed = text.replace(EMAIL_PATTERN, '[email]');
   return scrubbed.length > MAX_LENGTH ? `${scrubbed.slice(0, MAX_LENGTH)}…` : scrubbed;
 }
+
+/** One line for a per-item job failure: `dtd-sync: <job> item <id> failed <scrubbed message>`. */
+export function logItemFailure(job: string, id: string, err: unknown): void {
+  console.log(`dtd-sync: ${job} item ${id} failed ${err instanceof Error ? redactText(err.message) : 'unknown error'}`);
+}

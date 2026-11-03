@@ -1,10 +1,12 @@
 import type { DtdSyncConfig } from '../config';
-import type { DtdClient } from '../dtd/client';
+import { DtdAuthError, type DtdClient } from '../dtd/client';
 import type { DtdDonation } from '../dtd/types';
 import type { DonationItem, DtdMondayClient } from '../monday/client';
 import { getRecord, listUnmatched, upsertRecord, type StoredRecord } from '../db/records';
 import { getWatermark, setWatermark } from '../db/state';
 import { matchStatusLabel } from '../mapping/status';
+import { fiscalYearBounds, fiscalYearOf } from '../reporting/summary';
+import { logItemFailure } from '../logSafe';
 
 export interface PullDeps {
   dtd: Pick<DtdClient, 'getUpdatedDonations'>;
@@ -15,7 +17,6 @@ export interface PullDeps {
 
 export interface PullResult { fetched: number; written: number; unmatched: number }
 
-const FIRST_RUN_DAYS = 90;
 const UNMATCHED_RETRY_LIMIT = 50;
 const MONDAY_PREFIX = 'monday-';
 const MATCHED = 'Matched';
@@ -49,18 +50,20 @@ function differs(prev: StoredRecord | null, next: StoredRecord): boolean {
   );
 }
 
-interface Handled { written: boolean; unmatched: boolean }
+interface Handled { written: boolean; unmatched: boolean; error?: unknown }
 
-/** Resolve, write (when changed) and store one DTD record. Throws if a Monday call fails; nothing is stored then. */
+/**
+ * Resolve, write (when changed) and store one DTD record. A Monday failure part-way stores the
+ * record as unmatched (keeping any known item id) so the retry pass re-handles it, and comes back
+ * as `error`; only a D1 failure (or DtdAuthError) throws.
+ */
 async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, nowISO: string): Promise<Handled> {
   const { monday, db, config } = deps;
   const prev = await getRecord(db, d.donation_identifier);
-  const item = await resolve(monday, d.donation_identifier, d.source);
-  const itemId = item?.id ?? prev?.mondayItemId ?? null;
 
   const next: StoredRecord = {
     donationIdentifier: d.donation_identifier,
-    mondayItemId: itemId,
+    mondayItemId: prev?.mondayItemId ?? null,
     source: d.source,
     status: d.status,
     matchingGiftStatus: d.matching_gift_status,
@@ -70,21 +73,33 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
     matchedAmount: d.matched_amount,
     donationDatetime: toISO(d.donation_datetime),
     updatedSeenAt: nowISO,
-    unmatched: item === null, // a carried-forward item id stays retryable until it resolves
+    unmatched: true, // a carried-forward item id stays retryable until it resolves
   };
 
   let written = false;
-  if (item && differs(prev, next)) {
-    if (item.matchStatus !== MATCHED) {
-      const keyword = d.matching_gift_status ?? d.status;
-      await monday.updateDonation(item.id, {
-        [config.donations.matchStatus]: { label: matchStatusLabel(keyword, config.statusLabels, false) },
-        [config.donations.dtdStatusRaw]: keyword ?? '',
-        [config.donations.matchCompany]: d.company_name ?? '',
-      });
-      written = true;
+  try {
+    const item = await resolve(monday, d.donation_identifier, d.source);
+    if (item) {
+      next.mondayItemId = item.id;
+      next.unmatched = false;
     }
-    await writePerson(deps, item, next.companyId, d.company_name, plugin);
+    if (item && differs(prev, next)) {
+      if (item.matchStatus !== MATCHED) {
+        const keyword = d.matching_gift_status ?? d.status;
+        await monday.updateDonation(item.id, {
+          [config.donations.matchStatus]: { label: matchStatusLabel(keyword, config.statusLabels, false) },
+          [config.donations.dtdStatusRaw]: keyword ?? '',
+          [config.donations.matchCompany]: d.company_name ?? '',
+        });
+        written = true;
+      }
+      await writePerson(deps, item, next.companyId, d.company_name, plugin);
+    }
+  } catch (err) {
+    if (err instanceof DtdAuthError) throw err;
+    // Retryable: unmatched rows always count as changed, so the retry pass rewrites everything.
+    await upsertRecord(db, { ...next, unmatched: true });
+    return { written, unmatched: false, error: err };
   }
 
   await upsertRecord(db, next);
@@ -110,21 +125,30 @@ function asDonation(r: StoredRecord): DtdDonation {
   };
 }
 
+/** First run (no watermark): July 1 00:00 UTC of the previous fiscal year, so a whole FY of matches comes back. */
+export function firstPullSince(now: Date): string {
+  const fy = fiscalYearOf(now.toISOString());
+  return fiscalYearBounds(`FY${Number(fy.slice(2)) - 1}`).startISO;
+}
+
 /**
- * Pull DTD changes onto Monday. The watermark advances only when every fetched record was
- * handled; unmatched records are stored and retried next run without blocking it.
+ * Pull DTD changes onto Monday. Unmatched records, and records whose Monday write failed, are
+ * stored and retried next run without blocking the watermark; it is held back only when a
+ * fetched record could not be stored at all.
  */
 export async function runPull(deps: PullDeps, now: Date): Promise<PullResult> {
   const nowISO = now.toISOString();
   const watermark = await getWatermark(deps.db);
-  const base = watermark ? new Date(watermark).getTime() : now.getTime() - FIRST_RUN_DAYS * 86_400_000;
-  const since = new Date(base - deps.config.dtd.pullOverlapMinutes * 60_000).toISOString();
+  const since = watermark
+    ? new Date(new Date(watermark).getTime() - deps.config.dtd.pullOverlapMinutes * 60_000).toISOString()
+    : firstPullSince(now);
 
   const donations = await deps.dtd.getUpdatedDonations(since, nowISO); // DtdAuthError propagates
 
   let written = 0;
   let unmatched = 0;
-  let failed = 0;
+  let failed = 0; // Monday failed; stored for retry
+  let lost = 0; // couldn't be stored either; holds the watermark
   const seen = new Set<string>();
   for (const d of donations) {
     seen.add(d.donation_identifier);
@@ -132,25 +156,39 @@ export async function runPull(deps: PullDeps, now: Date): Promise<PullResult> {
       const r = await handle(deps, d, d.plugin_link, nowISO);
       if (r.written) written++;
       if (r.unmatched) unmatched++;
-    } catch {
+      if (r.error !== undefined) {
+        failed++;
+        logItemFailure('pull', d.donation_identifier, r.error);
+      }
+    } catch (err) {
+      if (err instanceof DtdAuthError) throw err;
       failed++;
+      lost++;
+      logItemFailure('pull', d.donation_identifier, err);
     }
   }
 
-  // Retry records that had no Monday item last time; these never block the watermark.
+  // Retry stored unmatched/failed records; these never block the watermark. Each retried row's
+  // updatedSeenAt moves to now, so listUnmatched (oldest first) rotates past rows that keep failing.
   let retryFailed = 0;
   for (const r of await listUnmatched(deps.db, UNMATCHED_RETRY_LIMIT)) {
     if (seen.has(r.donationIdentifier)) continue;
     try {
-      const out = await handle(deps, asDonation(r), null, r.updatedSeenAt);
+      const out = await handle(deps, asDonation(r), null, nowISO);
       if (out.written) written++;
       if (out.unmatched) unmatched++;
-    } catch {
+      if (out.error !== undefined) {
+        retryFailed++;
+        logItemFailure('pull', r.donationIdentifier, out.error);
+      }
+    } catch (err) {
+      if (err instanceof DtdAuthError) throw err;
       retryFailed++;
+      logItemFailure('pull', r.donationIdentifier, err);
     }
   }
 
-  if (failed === 0) await setWatermark(deps.db, nowISO);
-  console.log(JSON.stringify({ job: 'pull', fetched: donations.length, written, unmatched, failed, retryFailed }));
+  if (lost === 0) await setWatermark(deps.db, nowISO);
+  console.log(JSON.stringify({ job: 'pull', fetched: donations.length, written, unmatched, failed, lost, retryFailed }));
   return { fetched: donations.length, written, unmatched };
 }

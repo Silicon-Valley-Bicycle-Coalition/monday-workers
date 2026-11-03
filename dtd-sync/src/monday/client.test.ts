@@ -44,7 +44,10 @@ function donationItem(id: string, over: Record<string, unknown> = {}) {
     [D.matchStatus]: cv(D.matchStatus, 'Pending', { value: null }),
     [D.sentToDtd]: cv(D.sentToDtd, '2026-10-31'),
   };
-  return { id, updated_at: '2026-11-01T00:00:00Z', state: 'active', column_values: Object.values({ ...base, ...over }) };
+  return {
+    id, updated_at: '2026-11-01T00:00:00Z', state: 'active', board: { id: String(config.boards.donations) },
+    column_values: Object.values({ ...base, ...over }),
+  };
 }
 
 describe('splitName', () => {
@@ -103,6 +106,13 @@ describe('HttpDtdMondayClient donation lookups', () => {
     expect(calls[0]!.variables.ids).toEqual(['9']);
     expect(await client.getDonation('7')).toBeNull();
     expect(await client.getDonation('8')).toBeNull();
+  });
+
+  it('getDonation asks for the board and returns null for an item on another board', async () => {
+    const elsewhere = { ...donationItem('6'), board: { id: String(config.boards.people) } };
+    const { client, calls } = mondayFetch([{ items: [elsewhere] }]);
+    expect(await client.getDonation('6')).toBeNull();
+    expect(calls[0]!.query).toContain('board { id }');
   });
 
   it('listDonationsDatedSince follows cursors', async () => {
@@ -169,8 +179,8 @@ describe('deleted items', () => {
 
   it('getPeople drops a deleted person', async () => {
     const { client } = mondayFetch([{ items: [
-      { id: '1', name: 'Pat Example', state: 'deleted', column_values: [] },
-      { id: '2', name: 'Sam Lee', state: 'active', column_values: [] },
+      { id: '1', name: 'Pat Example', state: 'deleted', board: { id: String(config.boards.people) }, column_values: [] },
+      { id: '2', name: 'Sam Lee', state: 'active', board: { id: String(config.boards.people) }, column_values: [] },
     ] }]);
     expect((await client.getPeople(['1', '2'])).map((p) => p.id)).toEqual(['2']);
   });
@@ -178,7 +188,7 @@ describe('deleted items', () => {
 
 describe('HttpDtdMondayClient people and organizations', () => {
   const person = (id: string, name: string, email: string, household: string) => ({
-    id, name, column_values: [
+    id, name, board: { id: String(config.boards.people) }, column_values: [
       cv(P.email, email), cv(P.householdEmail, household), cv(P.phone, '+15551230000'), cv(P.dtdCompanyId, 'co_1'),
     ],
   });
@@ -188,6 +198,14 @@ describe('HttpDtdMondayClient people and organizations', () => {
     const [p] = await client.getPeople(['1']);
     expect(p).toEqual({ id: '1', email: 'pat@example.org', firstName: 'Pat', lastName: 'Example', phone: '+15551230000', dtdCompanyId: 'co_1' });
     expect(calls[0]!.variables.ids).toEqual(['1']);
+  });
+
+  it('getPeople asks for the board and drops donors that are not on People (Organizations, People (Historical))', async () => {
+    const org = { ...person('2', 'Example Corp', '', ''), board: { id: String(config.boards.organizations) } };
+    const historical = { ...person('3', 'Sam Lee', '', ''), board: { id: '99' } };
+    const { client, calls } = mondayFetch([{ items: [person('1', 'Pat Example', '', ''), org, historical] }]);
+    expect((await client.getPeople(['1', '2', '3'])).map((p) => p.id)).toEqual(['1']);
+    expect(calls[0]!.query).toContain('board { id }');
   });
 
   it('getPeople falls back to the household email, then null', async () => {
