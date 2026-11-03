@@ -97,7 +97,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
   }
 
   const attendance = mergeAttendance(currentAttendance, attendanceFromEventbrite(attendee));
-  const mapping = mapAttendee(attendee, mapEvent(event, config), config, attendance);
+  const mapping = mapAttendee(attendee, mapEvent(event, config, new Date()), config, attendance);
   const columnValues = { ...mapping.columnValues, [cols.eventLinkColumn]: { item_ids: [linkedItemId(eventRow.mondayItemId)] } };
 
   // People only once they have actually attended (spec decision D). Cached on the ledger so retries

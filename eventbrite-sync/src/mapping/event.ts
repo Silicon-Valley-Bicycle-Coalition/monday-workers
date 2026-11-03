@@ -40,7 +40,15 @@ function programFromOrganizer(organizer: unknown): string {
   return (suffix && ORGANIZER_PROGRAMS[suffix]) || 'Public';
 }
 
-export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig): EventMapping {
+// `started` can outlive the event (84 of them in the 2026-11-02 Salesforce org, all over), so Upcoming is a matter of the clock as well as the
+// status. Same rule as salesforce-import's transform, to the minute rather than the day.
+function eventStatusLabel(status: string | undefined | null, endsAt: string | null, startsAt: string | null, now: Date): string {
+  const label = EVENT_STATUS[status ?? ''] ?? 'Completed';
+  const lastMoment = endsAt ?? startsAt;
+  return label === 'Upcoming' && lastMoment !== null && Date.parse(lastMoment) <= now.getTime() ? 'Completed' : label;
+}
+
+export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig, now: Date): EventMapping {
   const cols = config.attendeeSync.events;
   const startsAt = isoOrNull(event.start?.utc);
   const endsAt = isoOrNull(event.end?.utc);
@@ -59,7 +67,7 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig): 
   const columnValues: Record<string, unknown> = {
     [cols.eventbriteIdColumn]: event.id,
     [cols.programColumn]: program,
-    [cols.eventStatusColumn]: EVENT_STATUS[event.status ?? ''] ?? 'Completed',
+    [cols.eventStatusColumn]: eventStatusLabel(event.status, endsAt, startsAt, now),
     [cols.sourceColumn]: 'Eventbrite',
   };
   if (classDate !== null) columnValues[cols.dateColumn] = { date: classDate };

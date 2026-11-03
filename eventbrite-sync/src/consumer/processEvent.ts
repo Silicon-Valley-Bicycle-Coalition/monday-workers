@@ -45,7 +45,7 @@ export async function processEvent(message: EventQueueMessage, deps: ProcessBatc
     }
   }
 
-  const mapping = mapEvent(event, config);
+  const mapping = mapEvent(event, config, new Date());
   const facts = {
     ...(mapping.startsAt !== null && { startsAt: mapping.startsAt }),
     ...(mapping.endsAt !== null && { endsAt: mapping.endsAt }),

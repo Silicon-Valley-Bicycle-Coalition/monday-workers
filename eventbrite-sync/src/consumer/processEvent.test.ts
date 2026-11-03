@@ -85,6 +85,15 @@ describe('processEvent', () => {
     expect(queue.send).not.toHaveBeenCalled();
   });
 
+  it('writes Completed for a finished event Eventbrite still reports as started', async () => {
+    const { deps, mondayClient } = setup({
+      row: eventRow({ mondayItemId: 'item-9' }),
+      event: event({ status: 'started', start: { utc: '2020-01-01T02:00:00Z' }, end: { utc: '2020-01-01T04:00:00Z' } }),
+    });
+    await processEvent(message, deps);
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Completed' }));
+  });
+
   it('adopts an existing item found by the Eventbrite id column: changes values, never creates', async () => {
     const { deps, mondayClient, eventStore } = setup({ monday: { findItemByColumnValue: vi.fn().mockResolvedValue({ id: 'staff-7' }) } });
     await processEvent(message, deps);
