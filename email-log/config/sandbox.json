@@ -39,7 +39,7 @@
       "bikesiliconvalley.org"
     ],
     "staffSenders": [],
-    "trustedAuthServId": "REPLACE_WITH_AUTHSERV_ID",
+    "trustedAuthServId": "mx.cloudflare.net",
     "bodyMaxChars": 1900,
     "maxRawBytes": 10000000,
     "forwardTimeZone": "America/Los_Angeles",
