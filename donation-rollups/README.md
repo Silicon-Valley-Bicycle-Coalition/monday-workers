@@ -690,6 +690,69 @@ Organizations (`ownerColumnsByBoard[id].donorLevel`; created by `setup-owner-col
 Thresholds and labels live in `donationRollups.donorLevel` (both configs); absent column id means
 nothing is written. It is a status column, not a formula, so board views can group by it.
 
+## Sponsorships section (spec `docs/superpowers/specs/2026-11-02-sponsorship-audit-history-design.md`)
+
+Every Organizations recompute also writes a `## Sponsorships` section above `## Gift History` in
+the item description: the paid (`Received`) cash and in-kind sponsorships of the last
+`windowYears` years (calendar or fiscal, per `yearBasis`), one row each with date, event and
+amount, plus per-year and overall totals (cash and in-kind kept separate). It exists to be copied
+into an email reply to a sponsor's auditor. **Organizations only**; People get no section.
+Prerequisite: the **Item description** widget on the Organizations item view (see "Gift-history
+projections" above; there is no API for it).
+
+**Config.** The `donationRollups.sponsorships` block: `organizationsBoardId`, `giftTypes` (cash
+sponsorship types), `inKindGiftTypes`, `yearBasis` (`"calendar"` or `"fiscal"`), `windowYears`,
+`pipelineBoards`. Three optional Donations-board columns feed it: `sponsorshipCycle` (text),
+`inKindValue` and `sponsorshipPipelineLinks` (connect to the sponsorship pipelines). An absent
+block changes nothing. `sponsorshipPipelineLinks` is **not configured yet in either
+environment**: the pipelines' reverse connect columns don't exist until the board-linking backfill
+(monday-migration `docs/29`) runs, so until then post-go-live sponsorships show `—` as their
+event unless Sponsorship Cycle is typed.
+
+**Event, in order:** the Sponsorship Cycle text; else the linked pipeline item's
+`<event name> <group title>`; else blank (`—`). Archived gifts keep their stored event (their
+links read back empty). **In-kind value:** In-Kind Value, falling back to Amount when blank or 0.
+Known limitation: a gift with a blank Amount is skipped by the recompute read entirely
+(pre-existing), so staff must fill Amount on in-kind sponsorships.
+
+**D1.** Migration `0012_gift_sponsorship_facts.sql` adds `gifts.sponsorship_event` and
+`in_kind_value_cents` (NULL = not read yet; `''` / `0` = read and blank). The first recompute
+after deploy rewrites each touched gift row once (`''` vs NULL), a one-time D1 write cost; the
+account is on Workers Paid (see the operational findings above).
+
+**Duties.** The custodian duty `sponsorships` backfills the facts nightly while there is work
+(also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
+`yearBasis: "calendar"` a January 1 sweep re-renders every Organization so the window rolls over.
+
+**Owner check (read-only).** Sponsorships are only shown on Organizations, so confirm nearly all
+paid sponsorship gifts are owned by one (substitute the configured `giftTypes`; sandbox adds
+`--env sandbox`):
+
+```sh
+npx wrangler d1 execute svbc-donation-rollups --remote --command \
+  "SELECT owner_board_id, COUNT(*) AS n FROM gifts WHERE status = 'Received' AND gift_type IN ('Sponsorship') GROUP BY owner_board_id"
+```
+
+Expected: all but a handful on the Organizations board. Production load: 848 of 865
+`Sponsorship`; the other 17 are person-owned with no Organizations match, so list them for staff
+by item id, year and amount only (no names in logs or tickets).
+
+**Rollout, in order** (after merge; none of it is automated):
+
+1. Confirm the Item description widget on the production Organizations item view.
+2. Set `donation-rollups:writes` per `docs/runbooks/migration-hold.md` (`scripts/flags.mjs`).
+3. Sandbox: `npm run deploy:sandbox`; apply migration 0012 to the sandbox D1; run
+   `POST /custodian/run/sponsorships` until `remaining: 0`, then `POST /custodian/run/sweep`
+   until done; paste one company's section into a Gmail draft and confirm it stays a table.
+4. Production: the same with `npm run deploy` and the production D1; then spot-check three
+   long-history sponsors against the sponsor history sheet.
+5. Update the staff protocols in `monday-migration`: `reporting-grants-and-sponsorships.md` gets an
+   "Answering a sponsor's audit request" part (in-kind sponsorships need Amount filled and the
+   gift connected to its pipeline item); check `entering-payments.md` and
+   `donor-data-entry-and-acknowledgement.md` say a sponsorship's Donor is the company and it is
+   connected to its pipeline item. Copy them into their Box Notes, and point the five pipeline
+   boards' "earlier years" description line at the company card.
+
 ## Affiliation model (Plan 2)
 
 A gift a Primary Contact drove **for an organization** — rather than personally — carries an
