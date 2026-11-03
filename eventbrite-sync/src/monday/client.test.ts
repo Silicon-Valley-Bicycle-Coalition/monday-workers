@@ -164,8 +164,24 @@ describe('HttpMondayClient transport (#35)', () => {
       // Without a limit items(ids:) returns at most 25 items (Monday's default page size).
       expect(body.query).toMatch(/items\(ids: \$ids, limit: 100\)/);
       expect(body.query).toMatch(/\bstate\b/);
-      expect(body.query).toMatch(/column_values\(ids: \$columnIds\) \{ id text value \}/);
+      expect(body.query).toMatch(/column_values\(ids: \$columnIds\) \{\s+id\s+text\s+value\s+\.\.\. on BoardRelationValue \{ linked_item_ids \}\s+\}/);
       expect(body.variables).toEqual({ ids: ['1'], columnIds: ['status', 'blank', 'default'] });
+    });
+
+    it('reads a board relation cell as its linked item ids, since Monday gives it no text or value', async () => {
+      mockFetchOnce({
+        data: { items: [{ id: '1', name: 'Jane', state: 'active', column_values: [
+          { id: 'linked', text: null, value: null, linked_item_ids: ['5550001'], display_value: 'Pat Example' },
+          { id: 'two', text: null, value: null, linked_item_ids: ['5', '6'] },
+          { id: 'unlinked', text: null, value: null, linked_item_ids: [] },
+          { id: 'plain', text: 'x', value: null },
+        ] }] },
+      });
+
+      const [item] = await newClient().getItems(999, ['1'], ['linked', 'two', 'unlinked', 'plain']);
+
+      expect(item!.columns).toEqual({ linked: '5550001', two: '5,6', unlinked: '', plain: 'x' });
+      expect(item!.values.linked).toBeNull();
     });
 
     it('passes archived and deleted items through with their state', async () => {

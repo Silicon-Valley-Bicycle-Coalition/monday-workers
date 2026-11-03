@@ -170,7 +170,7 @@ describe('processAttendee', () => {
   it('existing item with a link already set + check-in: link not written, matchPerson not called', async () => {
     const { deps, mondayClient } = setup({
       row: attendeeRow({ mondayItemId: 'reg-9', matchedPersonItemId: '888' }), att: attendee({ checked_in: true }),
-      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered', att_person_col: 'Staff Chosen' })]) },
+      monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered', att_person_col: '5550001' })]) },
     });
     await processAttendee(message, deps);
     expect(mondayClient.findItemByColumnValue).not.toHaveBeenCalled();

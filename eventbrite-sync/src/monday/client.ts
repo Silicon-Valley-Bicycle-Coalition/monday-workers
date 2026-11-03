@@ -114,7 +114,7 @@ export class HttpMondayClient implements MondayClient {
     const result: MondayItemColumns[] = [];
     for (let i = 0; i < itemIds.length; i += ITEMS_BATCH_SIZE) {
       const data = await this.transport.request<{
-        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null }[] }[] | null;
+        items: { id: string; name: string; state: string; column_values: { id: string; text: string | null; value: string | null; linked_item_ids?: string[] }[] }[] | null;
       }>(
         // limit: without it items(ids:) returns at most 25 (Monday's default page size).
         `query ($ids: [ID!], $columnIds: [String!]) {
@@ -122,7 +122,12 @@ export class HttpMondayClient implements MondayClient {
             id
             name
             state
-            column_values(ids: $columnIds) { id text value }
+            column_values(ids: $columnIds) {
+              id
+              text
+              value
+              ... on BoardRelationValue { linked_item_ids }
+            }
           }
         }`,
         { ids: itemIds.slice(i, i + ITEMS_BATCH_SIZE), columnIds }
@@ -132,7 +137,9 @@ export class HttpMondayClient implements MondayClient {
           id: item.id,
           name: item.name,
           state: item.state,
-          columns: Object.fromEntries(item.column_values.map((c) => [c.id, c.text ?? ''])),
+          // A linked board_relation cell has no text or value, only linked_item_ids: expose them as
+          // comma-joined ids ('' when none) so every caller's blank check on a link column holds.
+          columns: Object.fromEntries(item.column_values.map((c) => [c.id, Array.isArray(c.linked_item_ids) ? c.linked_item_ids.join(',') : (c.text ?? '')])),
           values: Object.fromEntries(item.column_values.map((c) => [c.id, c.value ?? null])),
         });
       }

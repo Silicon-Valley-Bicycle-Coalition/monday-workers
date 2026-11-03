@@ -274,7 +274,7 @@ describe('POST result', () => {
   });
 
   it('writes no Attendance for a reminder or a thank-you', async () => {
-    const h = harness({ items: [reg('10', { [rc.attendanceColumn]: 'Attended', [rc.attendeeLinkColumn]: 'Al' })], ledger: [row('thank-you', '10'), row('reminder', '10')] });
+    const h = harness({ items: [reg('10', { [rc.attendanceColumn]: 'Attended', [rc.attendeeLinkColumn]: '5550001' })], ledger: [row('thank-you', '10'), row('reminder', '10')] });
     await post(h, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }]));
     await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }]));
     expect(h.client.changeColumnValues).not.toHaveBeenCalled();
@@ -282,7 +282,7 @@ describe('POST result', () => {
 
   it('result on a thank-you links People when Attendee is blank, and never overwrites a link', async () => {
     const h = harness({
-      items: [reg('10', { [rc.attendanceColumn]: 'Attended' }), reg('11', { [rc.attendanceColumn]: 'Attended', [rc.attendeeLinkColumn]: 'Existing Person' })],
+      items: [reg('10', { [rc.attendanceColumn]: 'Attended' }), reg('11', { [rc.attendanceColumn]: 'Attended', [rc.attendeeLinkColumn]: '5550001' })],
       ledger: [row('thank-you', '10'), row('thank-you', '11')],
     });
     await post(h, 'result', sendResult('thank-you', [{ registrationId: '10', status: 'sent' }, { registrationId: '11', status: 'sent' }]));
@@ -340,6 +340,35 @@ describe('POST result', () => {
       'Failed: p11@real.org (Invalid recipient)',
       `Failed: p12@real.org (${'x'.repeat(200)})`,
     ]);
+  });
+
+  it('result posts Unconfirmed lines for claimed rows left over, even when this call recorded nothing new', async () => {
+    const h = harness({ items: [reg('10'), reg('11'), reg('12')], ledger: [row('reminder', '10'), row('reminder', '11'), row('reminder', '77'), row('thank-you', '12')] });
+    await post(h, 'result', sendResult('reminder', [{ registrationId: '12', status: 'sent' }]));
+    expect(h.client.postUpdate).toHaveBeenCalledTimes(1);
+    expect((h.client.postUpdate.mock.calls[0] as unknown as [string, string])[1].split('\n')).toEqual([
+      'Class email: Reminder, "See you soon". Sent by coach@svbc.org to 0 people.',
+      'Unconfirmed: p10@real.org, check Sent mail',
+      'Unconfirmed: p11@real.org, check Sent mail',
+      'Unconfirmed: registration 77, check Sent mail',
+    ]);
+  });
+
+  it('lists only still-claimed rows as unconfirmed, with the sandbox address in the sandbox', async () => {
+    const h = harness({ sandbox: 'sink@svbc.org', ledger: [row('reminder', '10'), row('reminder', '11')] });
+    await post(h, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }]));
+    const text = (h.client.postUpdate.mock.calls[0] as unknown as [string, string])[1];
+    expect(text.split('\n')).toEqual([
+      'Class email: Reminder, "See you soon". Sent by coach@svbc.org to 1 person.',
+      'Unconfirmed: sink@svbc.org, check Sent mail',
+    ]);
+    expect(text).not.toContain('real.org');
+  });
+
+  it('posts no update when nothing was acted on and nothing is unconfirmed', async () => {
+    const h = harness({ ledger: [row('reminder', '10', 'sent')] });
+    await post(h, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }]));
+    expect(h.client.postUpdate).not.toHaveBeenCalled();
   });
 
   it('says "people" for a plural count and omits Failed lines when none failed', async () => {

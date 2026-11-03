@@ -232,7 +232,11 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
     const unresolved = ledger.filter((r) => r.kind === kind && (acted.get(r.registrationId)?.status ?? r.status) !== 'sent').length;
     console.log(`eventbrite-sync class emails: result for event "${eventId}" ${kind}: ${sentIds.length} sent, ${failed.length} failed, ${results.length - acted.size} ignored`);
 
-    if (acted.size > 0) {
+    // Still `claimed` after this call: handed out, never confirmed. The update names them so staff
+    // check Sent mail; the page shows them too (GET's `unresolved`).
+    const unconfirmed = ledger.filter((r) => r.kind === kind && !acted.has(r.registrationId) && r.status === 'claimed').map((r) => r.registrationId);
+
+    if (acted.size > 0 || unconfirmed.length > 0) {
       let client: MondayClient | null = null;
       try {
         client = deps.mondayClient();
@@ -241,7 +245,7 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
       }
       if (client !== null) {
         await followUp(client, kind, sentIds, eventId);
-        await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed);
+        await postResultUpdate(client, event.mondayItemId, eventId, kind, sender, subject, sentIds.length, failed, unconfirmed);
       }
     }
     return json(c, { ok: true, sent: sentIds.length, failed: failed.length, unresolved });
@@ -318,10 +322,10 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
   }
 
   async function postResultUpdate(
-    client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sent: number, failed: SendResult[]
+    client: MondayClient, itemId: string, eventId: string, kind: ClassEmailKind, sender: string, subject: string, sent: number, failed: SendResult[], unconfirmed: string[]
   ): Promise<void> {
     const lines = [`Class email: ${KIND_LABEL[kind]}, "${oneLine(subject)}". Sent by ${sender} to ${sent} ${sent === 1 ? 'person' : 'people'}.`];
-    if (failed.length > 0) {
+    if (failed.length > 0 || unconfirmed.length > 0) {
       // Addresses come from Monday now, not from the page; in the sandbox they are the replaced one.
       let addresses = new Map<string, string>();
       try {
@@ -329,11 +333,11 @@ export function registerClassEmailRoutes(app: Hono, deps: ClassEmailRouteDeps): 
         const shown = sandboxRecipients(roster.map((e) => ({ registrationId: e.registrationId, email: e.email, firstName: e.firstName, name: e.name })), config);
         addresses = new Map(shown.map((r) => [r.registrationId, r.email]));
       } catch (err) {
-        console.error(`eventbrite-sync class emails: could not look up failed addresses for event "${eventId}": ${errorKind(err)}`);
+        console.error(`eventbrite-sync class emails: could not look up addresses for event "${eventId}": ${errorKind(err)}`);
       }
-      for (const f of failed) {
-        lines.push(`Failed: ${addresses.get(f.registrationId) || `registration ${f.registrationId}`} (${oneLine(f.error) || 'no reason given'})`);
-      }
+      const who = (id: string) => addresses.get(id) || `registration ${id}`;
+      for (const f of failed) lines.push(`Failed: ${who(f.registrationId)} (${oneLine(f.error) || 'no reason given'})`);
+      for (const id of unconfirmed) lines.push(`Unconfirmed: ${who(id)}, check Sent mail`);
     }
     await postUpdate(itemId, eventId, lines.join('\n'), client);
   }
