@@ -101,9 +101,11 @@ confirm** with nothing in it is a leftover from the load and will be removed.
 ## People (Historical)
 
 [People (Historical) (sandbox v3)](https://bikesiliconvalley.monday.com/boards/18431577228),
-8,062 items, same shape as People: everyone with **no** activity since about 2019. A Monday board
-tops out at 10,000 items and SVBC has about 16,000 contacts, so the split is by recency, not
-importance. Nothing is lost.
+8,062 items, same shape as People: everyone with **no** activity since about 2019. The split is
+by recency, not importance, so People stays focused on people you're likely to work with. It
+was first made to fit a 10,000-item board limit; SVBC's real limit is 100,000. Nothing is lost.
+Each quarter, people with no activity in seven years move here, and anyone here who becomes
+active again moves back.
 
 **Tabs:** **People** (opens here, all grey) · **Active again** (Worklist: anyone here who has
 given or renewed since the split, and so belongs on People) · **Do Not Solicit** · **DNS reason

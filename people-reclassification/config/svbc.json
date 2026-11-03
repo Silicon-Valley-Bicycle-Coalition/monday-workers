@@ -26,7 +26,7 @@
     "boardId": 18437909797,
     "columns": { "volunteer": "Volunteer", "date": "Date" }
   },
-  "thresholds": { "itemsLimit": 10000, "liveTriggerPct": 85, "historicalWarnPct": 80 },
+  "thresholds": { "itemsLimit": 100000, "liveTriggerPct": 85, "historicalWarnPct": 80 },
   "run": { "maxMovesPerRun": 400, "quarterlyMonths": [1, 4, 7, 10], "cronHourUTC": 10 },
   "alerts": {
     "itRequests": { "boardId": 8846215481, "typeColumn": "Type", "typeLabel": "IT Support", "cooldownDays": 30 }
