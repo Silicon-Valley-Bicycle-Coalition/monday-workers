@@ -5,7 +5,6 @@ import { D1OrderStore } from './db/orders';
 import { D1EventStore } from './db/events';
 import { D1AttendeeStore } from './db/attendees';
 import { processOrderQueueBatch, type OrderQueueMessage } from './consumer/processBatch';
-import { runFollowups } from './followups/run';
 import type { EventbriteClient } from './eventbrite/client';
 import type { MondayClient } from './monday/client';
 import { mondayItem } from './test/mondayItem';
@@ -110,8 +109,8 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
   });
 });
 
-describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> Monday, then the hourly follow-up', () => {
-  it('writes the Events item and a registration, then labels the registration at 08:00 Pacific the next day', async () => {
+describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> Monday', () => {
+  it('writes the Events item and a registration', async () => {
     const eventStore = new D1EventStore(env.DB);
     const attendeeStore = new D1AttendeeStore(env.DB);
     const orderStore = new D1OrderStore(env.DB);
@@ -127,7 +126,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
         headers: { 'Content-Type': 'application/json' },
       });
 
-    // Monday mock: items created by the consumers are readable back by the follow-up job.
+    // Monday mock: items created by the consumers are readable back.
     const items = new Map<string, { board: number; name: string; columns: Record<string, string> }>();
     let next = 0;
     // Monday's `text` for a column: a string stays, a status/email object reads as its label/address.
@@ -185,19 +184,5 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
     // Nothing personal reached D1.
     expect(JSON.stringify(attendeeRow)).not.toContain('pat@example.com');
 
-    // The staff-set Class Type on the Events item is what the follow-up job needs.
-    items.get(eventRow!.mondayItemId!)!.columns['ev_class_type_col'] = 'Adult Learn to Ride';
-
-    const followDeps = { eventStore, attendeeStore, mondayClient, config: cfg };
-    // 07:00 Pacific the next day (PST): not yet due.
-    expect(await runFollowups(new Date('2026-11-01T15:00:00Z'), followDeps)).toEqual({ sent: [], held: [], skipped: [], failed: [] });
-    // 09:00 Pacific: due.
-    const result = await runFollowups(new Date('2026-11-01T17:00:00Z'), followDeps);
-    expect(result).toEqual({ sent: ['9001'], held: [], skipped: [], failed: [] });
-    expect(items.get(registrationId)!.columns['att_followup_col']).toBe('Thank-you: Adult Learn to Ride');
-    expect(items.get(eventRow!.mondayItemId!)!.columns['ev_followups_col']).toBe('Sent');
-
-    // Run-once: the next hourly sweep skips it.
-    expect(await runFollowups(new Date('2026-11-01T18:00:00Z'), followDeps)).toEqual({ sent: [], held: [], skipped: ['9001'], failed: [] });
   });
 });

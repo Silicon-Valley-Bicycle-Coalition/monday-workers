@@ -129,12 +129,6 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.registrations.attendanceColumn" must be a Monday column id string');
     });
 
-    it('requires events.classTypeColumn to be a column id string', () => {
-      const cfg = valid();
-      cfg.attendeeSync.events.classTypeColumn = '';
-      expect(() => validateConfig(cfg)).toThrow('config: "attendeeSync.events.classTypeColumn" must be a Monday column id string');
-    });
-
     it('requires attendeeSync and peopleEmailColumn', () => {
       const cfg = valid();
       delete cfg.attendeeSync.peopleEmailColumn;
@@ -150,36 +144,6 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).not.toThrow();
       delete cfg.monday.boards['events'];
       expect(() => validateConfig(cfg)).toThrow('monday.boards.events');
-    });
-
-    it('requires followups.maxAgeDays to be a positive number', () => {
-      const cfg = valid();
-      for (const bad of [0, -1, '3']) {
-        cfg.attendeeSync.followups.maxAgeDays = bad;
-        expect(() => validateConfig(cfg)).toThrow('attendeeSync.followups.maxAgeDays');
-      }
-    });
-
-    it('requires followups.sendHourLocal to be an integer from 0 to 23', () => {
-      const cfg = valid();
-      for (const bad of [-1, 24, 8.5, '8']) {
-        cfg.attendeeSync.followups.sendHourLocal = bad;
-        expect(() => validateConfig(cfg)).toThrow('attendeeSync.followups.sendHourLocal');
-      }
-      cfg.attendeeSync.followups.sendHourLocal = 0;
-      expect(() => validateConfig(cfg)).not.toThrow();
-      cfg.attendeeSync.followups.sendHourLocal = 23;
-      expect(() => validateConfig(cfg)).not.toThrow();
-    });
-
-    it('accepts notifyUserId null or an integer, and rejects anything else', () => {
-      const cfg = valid();
-      cfg.attendeeSync.followups.notifyUserId = null;
-      expect(() => validateConfig(cfg)).not.toThrow();
-      cfg.attendeeSync.followups.notifyUserId = 74336833;
-      expect(() => validateConfig(cfg)).not.toThrow();
-      cfg.attendeeSync.followups.notifyUserId = '74336833';
-      expect(() => validateConfig(cfg)).toThrow('attendeeSync.followups.notifyUserId');
     });
 
     it('requires well-formed actions, string-to-string programByOrganizer and string volunteerPrograms', () => {

@@ -137,8 +137,6 @@ export interface EventbriteSyncConfig {
       eventStatusColumn: string;
       sourceColumn: string;
       urlColumn: string;
-      classTypeColumn: string;
-      followupsColumn: string;
     };
     registrations: {
       attendeeIdColumn: string;
@@ -153,19 +151,9 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
-      classTypeColumn: string;
-      followupEmailColumn: string;
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;
-    followups: {
-      // Events that ended more than this many days ago are not sent follow-ups.
-      maxAgeDays: number;
-      // Local (America/Los_Angeles) hour at which the daily follow-up sweep sends.
-      sendHourLocal: number;
-      // Monday user notified when follow-ups are Held; null disables the notification.
-      notifyUserId: number | null;
-    };
   };
 }
 

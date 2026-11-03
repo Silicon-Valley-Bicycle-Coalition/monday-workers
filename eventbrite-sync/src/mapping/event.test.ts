@@ -46,8 +46,6 @@ describe('mapEvent', () => {
       ev_source_col: 'Eventbrite',
       ev_url_col: { url: 'https://www.eventbrite.com/e/9001', text: 'Eventbrite' },
     });
-    expect(m.columnValues).not.toHaveProperty('ev_class_type_col');
-    expect(m.columnValues).not.toHaveProperty('ev_followups_col');
   });
 
   it('is online for online events', () => {

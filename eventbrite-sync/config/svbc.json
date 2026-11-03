@@ -57,9 +57,7 @@
       "programColumn": "color_mm8nqqdv",
       "eventStatusColumn": "color_mm8n8y5v",
       "sourceColumn": "color_mm8nbh4t",
-      "urlColumn": "link_mm8njbkh",
-      "classTypeColumn": "REPLACE_WITH_COLUMN_ID",
-      "followupsColumn": "REPLACE_WITH_COLUMN_ID"
+      "urlColumn": "link_mm8njbkh"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8ng6d5",
@@ -73,15 +71,8 @@
       "attendeeLinkColumn": "board_relation_mm8nbcw7",
       "classDateColumn": "date_mm8reqgs",
       "classDayColumn": "text_mm8rh4f4",
-      "classLocationColumn": "text_mm8rpb9h",
-      "classTypeColumn": "REPLACE_WITH_COLUMN_ID",
-      "followupEmailColumn": "REPLACE_WITH_COLUMN_ID"
+      "classLocationColumn": "text_mm8rpb9h"
     },
-    "peopleEmailColumn": "email_mm8nx6qg",
-    "followups": {
-      "maxAgeDays": 3,
-      "sendHourLocal": 8,
-      "notifyUserId": null
-    }
+    "peopleEmailColumn": "email_mm8nx6qg"
   }
 }

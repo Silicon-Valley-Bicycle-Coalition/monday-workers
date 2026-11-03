@@ -4,7 +4,6 @@ import { toISODate } from '../util/isoDate';
 
 export interface EventMapping {
   itemName: string;
-  // Never includes classTypeColumn or followupsColumn: staff own those on the Events board.
   columnValues: Record<string, unknown>;
   // Normalized ISO UTC (`toISOString`), because the D1 ledger compares `ends_at` as text.
   startsAt: string | null;

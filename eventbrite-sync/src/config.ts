@@ -19,12 +19,12 @@ const NULLABLE_COLUMN_KEYS = {
 
 const ATTENDEE_EVENT_COLUMN_KEYS = [
   'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
-  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'classTypeColumn', 'followupsColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn',
 ] as const;
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
-  'classLocationColumn', 'classTypeColumn', 'followupEmailColumn',
+  'classLocationColumn',
 ] as const;
 
 const AMOUNT_SOURCES = ['gross', 'base_price'] as const;
@@ -140,17 +140,4 @@ function validateAttendeeSync(raw: unknown): void {
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
   requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
 
-  if (!isObject(a.followups)) {
-    throw new Error('config: missing required key "attendeeSync.followups"');
-  }
-  const f = a.followups;
-  if (typeof f.maxAgeDays !== 'number' || !Number.isFinite(f.maxAgeDays) || f.maxAgeDays <= 0) {
-    throw new Error('config: "attendeeSync.followups.maxAgeDays" must be a positive number of days');
-  }
-  if (typeof f.sendHourLocal !== 'number' || !Number.isInteger(f.sendHourLocal) || f.sendHourLocal < 0 || f.sendHourLocal > 23) {
-    throw new Error('config: "attendeeSync.followups.sendHourLocal" must be an integer hour from 0 to 23');
-  }
-  if (f.notifyUserId !== null && (typeof f.notifyUserId !== 'number' || !Number.isInteger(f.notifyUserId))) {
-    throw new Error('config: "attendeeSync.followups.notifyUserId" must be a Monday user id number, or null to skip the notification');
-  }
 }
