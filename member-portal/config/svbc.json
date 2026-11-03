@@ -28,7 +28,11 @@
       "volunteerHours": "numeric_mm8nc22",
       "volunteerDate": "date_mm8nyac2",
       "volunteerJob": "text_mm8nvrsn",
-      "volunteerStatus": "color_mm8neqqe"
+      "volunteerStatus": "color_mm8neqqe",
+      "donationMatchesGift": "REPLACE_WITH_COLUMN_ID",
+      "donationMatchStatus": "REPLACE_WITH_COLUMN_ID",
+      "donationMatchedBy": "REPLACE_WITH_COLUMN_ID",
+      "donorDtdLink": "REPLACE_WITH_COLUMN_ID"
     }
   },
   "email": {
@@ -142,7 +146,7 @@
     }
   },
   "matchingGifts": {
-    "doubleTheDonationPublicKey": null
+    "doubleTheDonationPublicKey": "mw47OxaEInD5J4MD"
   },
   "impact": {
     "statementsByYear": {}

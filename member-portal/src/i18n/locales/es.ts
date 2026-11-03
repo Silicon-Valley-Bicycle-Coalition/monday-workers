@@ -198,4 +198,6 @@ export const es: Record<TranslationKey, string> = {
   'letterReady.body': 'Tu carta de donaciones de {{year}} ya está disponible en el portal de donantes.',
   'letterReady.loginLink': 'Inicia sesión para verla',
   'letterReady.expiry': 'Este enlace caduca pronto y solo se puede usar una vez.',
+  'portal.matchedBy': 'Igualado por {{company}} el {{date}}: {{amount}}',
+  'portal.startMatch': 'Tu empleador podría igualar esta donación',
 } satisfies Record<TranslationKey, string>;

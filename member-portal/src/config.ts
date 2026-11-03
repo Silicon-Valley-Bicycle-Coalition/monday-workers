@@ -61,6 +61,16 @@ const VOLUNTEER_COLUMNS: (keyof MondayColumns)[] = [
   'volunteerStatus',
 ];
 
+// MATCH_COLUMNS deliberately aren't merged into REQUIRED_COLUMNS: they only matter to the DTD
+// match-line feature, which is gated as a set (matchLinesEnabled), not deploy-blocking. Checked
+// for *presence* only, not placeholder-freedom — same treatment as VOLUNTEER_COLUMNS.
+const MATCH_COLUMNS: (keyof MondayColumns)[] = [
+  'donationMatchesGift',
+  'donationMatchStatus',
+  'donationMatchedBy',
+  'donorDtdLink',
+];
+
 // COMM_PREF_COLUMNS deliberately isn't merged into REQUIRED_COLUMNS: each column only matters to
 // the communication-preferences feature, which is gated per column (configuredPrefFields), not
 // deploy-blocking. Checked for *presence* only, not placeholder-freedom — same treatment as
@@ -173,6 +183,7 @@ export function validateConfig(raw: unknown): Config {
   requireKeys(columns, 'monday.columns', CARD_COLUMNS);
   requireKeys(columns, 'monday.columns', PREFERRED_LANGUAGE_COLUMN);
   requireKeys(columns, 'monday.columns', VOLUNTEER_COLUMNS);
+  requireKeys(columns, 'monday.columns', MATCH_COLUMNS);
   requireKeys(columns, 'monday.columns', COMM_PREF_COLUMNS);
 
   const email = requireObject(cfg, 'email');
@@ -417,6 +428,12 @@ export function configuredPrefFields(config: Config): PrefField[] {
     const columnId = config.monday.columns[PREF_FIELD_COLUMNS[field]];
     return typeof columnId === 'string' && columnId !== PLACEHOLDER_COLUMN_VALUE;
   });
+}
+
+// All four DTD match columns must be real: one placeholder turns the whole feature off, so the
+// literal placeholder never reaches Monday.
+export function matchLinesEnabled(config: Config): boolean {
+  return MATCH_COLUMNS.every((key) => config.monday.columns[key] !== PLACEHOLDER_COLUMN_VALUE);
 }
 
 export function cardEnabled(config: Config): boolean {

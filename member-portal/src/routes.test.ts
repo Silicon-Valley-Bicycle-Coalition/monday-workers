@@ -2087,8 +2087,8 @@ describe('GET /:locale/portal/matching-gifts', () => {
     const res = await app.request('/en/portal/matching-gifts', { headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('id="dd-company-name-search"');
-    expect(html).toContain('"dtd-public-key"');
+    expect(html).toContain('id="dd-shadow-container"');
+    expect(html).toContain('"dtd-public-key", { isolated: true }');
     expect(html).toContain('00-0000000');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
     // The exfil guard: same-origin fetch from a compromised widget script must be CSP-blocked.
@@ -2178,6 +2178,10 @@ describe('GET /:locale/portal volunteer history gate', () => {
       volunteerDate: 'vol_date_col',
       volunteerJob: 'vol_job_col',
       volunteerStatus: 'vol_status_col',
+      donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
+      donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
+      donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
+      donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
     } as never;
     const enabledConfig = { ...config, monday: { ...config.monday, volunteersBoardId: 4, columns: volunteerColumns } };
     const app = createApp(makeDeps({ monday, emailSender, config: enabledConfig }));

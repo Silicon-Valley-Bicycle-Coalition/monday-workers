@@ -565,9 +565,26 @@ function donationRow(donation: PortalView['donors'][number]['donations'][number]
     <tr>
       <td>${escapeHtml(formatShortDate(donation.date))}</td>
       <td class="col-amount">${escapeHtml(formatUsdText(donation.amount))}</td>
-      <td>${escapeHtml(donation.description)}</td>
+      <td>${escapeHtml(donation.description)}${matchLine(donation, locale)}</td>
     </tr>
   `;
+}
+
+// Under the description: the paired employer match, or (for a gift still waiting on the donor) a
+// link to start one. Every interpolated value is escaped; the link opens the donor's own DTD page.
+function matchLine(donation: PortalView['donors'][number]['donations'][number], locale: Locale): string {
+  if (donation.match) {
+    const text = t(locale, 'portal.matchedBy', {
+      company: donation.match.company,
+      date: formatShortDate(donation.match.date),
+      amount: formatUsdText(donation.match.amount),
+    });
+    return `<div class="match-line">${escapeHtml(text)}</div>`;
+  }
+  if (donation.matchHintUrl) {
+    return `<div class="match-line"><a href="${escapeHtml(donation.matchHintUrl)}" target="_blank" rel="noopener">${escapeHtml(t(locale, 'portal.startMatch'))}</a></div>`;
+  }
+  return '';
 }
 
 // One tab of a donor's dashboard section. `label` is pre-translated (not a TranslationKey)

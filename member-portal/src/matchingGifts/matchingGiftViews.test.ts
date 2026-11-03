@@ -12,9 +12,12 @@ describe('matchingGiftsView', () => {
 
   it('embeds the DTD widget when a public key is configured', () => {
     const html = matchingGiftsView({ publicApiKey: 'dtd-abc123', ein: null }, 'en');
-    expect(html).toContain('id="dd-company-name-search"');
-    expect(html).toContain('var DDCONF = { API_KEY: "dtd-abc123" };');
-    expect(html).toContain('https://doublethedonation.com/api/js/ddplugin.js');
+    expect(html).toContain('<script src="https://doublethedonation.com/api/js/ddplugin.js"></script>');
+    expect(html).toContain('id="dd-shadow-container"');
+    expect(html).toContain('doublethedonation.plugin.v2.load_plugin(shadow_container, "dtd-abc123", { isolated: true });');
+    expect(html).toContain('<a href="https://doublethedonation.com">');
+    expect(html).toContain('https://doublethedonation.com/api/img/powered-by.png');
+    expect(html).not.toContain('DDCONF');
     expect(html).toContain('Search for your employer below');
   });
 

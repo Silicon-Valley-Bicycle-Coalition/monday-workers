@@ -131,7 +131,7 @@ describe('applyCommand', () => {
     assert.ok(!calls.includes('queues pause-delivery donation-rollups-recompute'));
     assert.ok(calls.includes('queues pause-delivery email-log-writes'));
     assert.ok(calls.includes('kv key put --namespace-id prod-id --remote report-digests:writes hold'));
-    assert.match(result.message, /^1 of 13 Workers failed:/);
+    assert.match(result.message, /^1 of 14 Workers failed:/);
     assert.match(result.message, /donation-rollups: kv-put donation-rollups:writes failed \(boom\)/);
   });
   it('all reports a mid-worker queue failure with its KV/queue mismatch, and keeps going', async () => {

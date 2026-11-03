@@ -39,6 +39,7 @@ interface MondayColumnValue {
   value?: string | null; // raw JSON; requested only where noted
   checked?: boolean; // CheckboxValue fragment
   linked_item_ids?: string[]; // BoardRelationValue fragment
+  linked_items?: { name: string }[]; // BoardRelationValue fragment, only where noted
 }
 
 interface MondayItem {
@@ -67,6 +68,20 @@ function columnEmail(item: MondayItem, columnId: string): string {
     // fall through to text
   }
   return column.text ?? '';
+}
+
+// The https URL on a link column (value is {"url","text"} JSON), or null. Only https: this href
+// is rendered into the portal, so javascript:/http: and malformed values are dropped.
+function columnLinkUrl(item: MondayItem, columnId: string): string | null {
+  const raw = (item.column_values ?? []).find((c) => c.id === columnId)?.value;
+  if (!raw) return null;
+  try {
+    const url = (JSON.parse(raw) as { url?: unknown } | null)?.url;
+    if (typeof url !== 'string') return null;
+    return new URL(url).protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 // Monday checkbox columns render as text "v" when checked and "" (or an absent column_value)
@@ -217,6 +232,11 @@ export class HttpMondayClient implements MondayClient {
     if (this.columns.membershipExpiry !== 'REPLACE_WITH_COLUMN_ID') {
       donorColumnIds.push(this.columns.membershipExpiry);
     }
+    // The DTD link is only read when the whole match-line feature is on and donations are loaded.
+    const matchLines = this.matchLinesOn();
+    if (matchLines && options.includeDonations !== false) {
+      donorColumnIds.push(this.columns.donorDtdLink);
+    }
     const donorQuery = `
       query ($itemId: ID!) {
         items(ids: [$itemId]) {
@@ -225,6 +245,7 @@ export class HttpMondayClient implements MondayClient {
           column_values(ids: ${JSON.stringify(donorColumnIds)}) {
             id
             text
+            value
           }
         }
       }
@@ -236,7 +257,7 @@ export class HttpMondayClient implements MondayClient {
     }
 
     const includeDonations = options.includeDonations ?? true;
-    const donations = includeDonations ? await this.getDonationsForDonor(donorItemId) : [];
+    const donations = includeDonations ? await this.getDonationsForDonor(donorItemId, matchLines ? columnLinkUrl(donorItem, this.columns.donorDtdLink) : null) : [];
     // With a history floor, the Lifetime Giving rollup would exceed the rows the donor can see,
     // so the total becomes the sum of the kept gifts. Without one, the rollup column is the
     // total, as before. Not loaded at all → '' rather than a misleading zero.
@@ -303,9 +324,13 @@ export class HttpMondayClient implements MondayClient {
     // Reading a board_relation column's linked_item_ids via the `... on BoardRelationValue`
     // fragment was verified in the same live check — the fragment shape itself was already
     // correct.
-    includeLinkedItemIds = false
+    includeLinkedItemIds = false,
+    // Also the linked items' names (DTD "Matched By"); implies linked ids.
+    includeLinkedItemNames = false
   ): Promise<MondayItem[]> {
-    const valueFields = includeLinkedItemIds ? '{ id text ... on BoardRelationValue { linked_item_ids } }' : '{ id text }';
+    const relationFields = includeLinkedItemNames ? 'linked_item_ids linked_items { name }' : 'linked_item_ids';
+    const valueFields =
+      includeLinkedItemIds || includeLinkedItemNames ? `{ id text ... on BoardRelationValue { ${relationFields} } }` : '{ id text }';
     const itemFields = `id ${includeName ? 'name ' : ''}column_values(ids: ${JSON.stringify(columnIds)}) ${valueFields}`;
     const firstPageQuery = `
       query ($boardId: ID!, $donorItemId: CompareValue) {
@@ -329,18 +354,34 @@ export class HttpMondayClient implements MondayClient {
     return [...(firstPage?.items ?? []), ...(await this.remainingPages(firstPage?.cursor ?? null, `items { ${itemFields} }`))];
   }
 
-  private async getDonationsForDonor(donorItemId: string): Promise<DonationRecord[]> {
+  // True once all four DTD match columns hold real ids (mirrors matchLinesEnabled in config.ts,
+  // which the client can't import a Config for); otherwise nothing match-related is requested.
+  private matchLinesOn(): boolean {
+    const c = this.columns;
+    return [c.donationMatchesGift, c.donationMatchStatus, c.donationMatchedBy, c.donorDtdLink].every(
+      (id) => id !== 'REPLACE_WITH_COLUMN_ID'
+    );
+  }
+
+  private async getDonationsForDonor(donorItemId: string, dtdUrl: string | null = null): Promise<DonationRecord[]> {
+    const matchLines = this.matchLinesOn();
+    const columnIds = [
+      this.columns.donationAmount,
+      this.columns.donationDate,
+      this.columns.donationDescription,
+      this.columns.donationStatus,
+    ];
+    if (matchLines) {
+      columnIds.push(this.columns.donationMatchesGift, this.columns.donationMatchStatus, this.columns.donationMatchedBy);
+    }
     const items = await this.fetchItemsLinkedToDonor(
       this.donationsBoardId,
       this.columns.donationDonorLink,
       donorItemId,
-      [
-        this.columns.donationAmount,
-        this.columns.donationDate,
-        this.columns.donationDescription,
-        this.columns.donationStatus,
-      ],
-      false
+      columnIds,
+      false,
+      false,
+      matchLines
     );
     // Only countable statuses (strict: an item with a blank/unknown status is dropped too —
     // for money that ends up on a tax letter, "not provably received" means "doesn't count").
@@ -348,14 +389,38 @@ export class HttpMondayClient implements MondayClient {
     // be on or after the floor, so it's dropped whenever one is set.
     const countable = new Set(this.donations.countableStatuses);
     const floor = this.donations.historyStartISO;
-    return items
+    const kept = items
       .filter((item) => countable.has(columnText(item, this.columns.donationStatus)))
-      .filter((item) => floor === null || columnText(item, this.columns.donationDate) >= floor)
-      .map((item) => ({
-        amount: columnText(item, this.columns.donationAmount),
-        date: columnText(item, this.columns.donationDate),
-        description: columnText(item, this.columns.donationDescription),
-      }));
+      .filter((item) => floor === null || columnText(item, this.columns.donationDate) >= floor);
+    const records = kept.map((item): DonationRecord => ({
+      amount: columnText(item, this.columns.donationAmount),
+      date: columnText(item, this.columns.donationDate),
+      description: columnText(item, this.columns.donationDescription),
+    }));
+    if (!matchLines) return records;
+
+    // The donor's Matching Donation rows are already in `kept` (linked to the employee as Donor).
+    // Each points at its original gift through Matches gift; attach the latest per gift, and only
+    // when that gift is in this donor's list. Match rows stay listed and counted as before.
+    const indexById = new Map(kept.map((item, i) => [item.id, i] as const));
+    const matchRowIndexes = new Set<number>();
+    kept.forEach((item, i) => {
+      const column = (item.column_values ?? []).find((c) => c.id === this.columns.donationMatchesGift);
+      const company = (item.column_values ?? []).find((c) => c.id === this.columns.donationMatchedBy)?.linked_items?.[0]?.name;
+      const giftId = column?.linked_item_ids?.[0];
+      if (giftId === undefined) return;
+      matchRowIndexes.add(i);
+      const target = indexById.get(giftId);
+      if (target === undefined || !company) return;
+      const record = records[target]!;
+      const candidate = { date: records[i]!.date, amount: records[i]!.amount, company };
+      if (!record.match || candidate.date > record.match.date) record.match = candidate;
+    });
+    records.forEach((record, i) => {
+      if (record.match || matchRowIndexes.has(i) || dtdUrl === null) return;
+      if (columnText(kept[i]!, this.columns.donationMatchStatus) === 'Waiting for donor') record.matchHintUrl = dtdUrl;
+    });
+    return records;
   }
 
   async getVolunteerShiftsForDonor(donorItemId: string): Promise<VolunteerShift[]> {

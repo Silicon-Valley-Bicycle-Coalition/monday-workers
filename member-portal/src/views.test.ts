@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkEmailView, errorView, loginFormView, page, portalView } from './views';
+import { formatUsdText } from './money';
+import { formatShortDate } from './dates';
 import type { FunraiseLinkUrls, PortalView } from './types';
 import type { PortalCard } from './card/loadCardData';
 import { t } from './i18n/t';
@@ -736,5 +738,64 @@ describe('portalView funraise deep links', () => {
       renewMembershipUrl: null,
     });
     expect(html).toContain(t('es', 'portal.manageRecurringLink'));
+  });
+});
+
+describe('portalView match lines', () => {
+  const noFunraise: FunraiseLinkUrls = { manageRecurringUrl: null, renewMembershipUrl: null };
+  const viewWith = (donation: PortalView['donors'][number]['donations'][number]): PortalView => ({
+    donors: [
+      {
+        id: 'donor-1',
+        name: 'Jane Donor',
+        membershipStatus: 'Active',
+        membershipTier: 'Member',
+        totalDonated: '100',
+        donations: [donation],
+        membershipExpiry: '',
+      },
+    ],
+    discounts: [],
+    donationHistoryEnabled: true,
+    volunteerHistory: null,
+  });
+  const base = { date: '2026-03-01', amount: '100', description: 'Annual gift' };
+
+  it('renders the matched-by line', () => {
+    const html = portalView(viewWith({ ...base, match: { date: '2026-04-01', amount: '100', company: 'Acme Corp' } }), 'en', {}, noFunraise);
+    expect(html).toContain(
+      t('en', 'portal.matchedBy', { company: 'Acme Corp', date: formatShortDate('2026-04-01'), amount: formatUsdText('100') })
+    );
+    expect(html).toContain('Matched by Acme Corp on');
+  });
+
+  it('renders the start-match link only when waiting for donor', () => {
+    const waiting = portalView(viewWith({ ...base, matchHintUrl: 'https://dtd.example/abc' }), 'en', {}, noFunraise);
+    expect(waiting).toContain('href="https://dtd.example/abc"');
+    expect(waiting).toContain(t('en', 'portal.startMatch'));
+    expect(waiting).toContain('rel="noopener"');
+    expect(waiting).toContain('target="_blank"');
+    const plain = portalView(viewWith(base), 'en', {}, noFunraise);
+    expect(plain).not.toContain(t('en', 'portal.startMatch'));
+    expect(plain).not.toContain('Matched by');
+  });
+
+  it('prefers the matched line over the link', () => {
+    const html = portalView(
+      viewWith({ ...base, match: { date: '2026-04-01', amount: '100', company: 'Acme Corp' }, matchHintUrl: 'https://dtd.example/abc' }),
+      'en', {}, noFunraise
+    );
+    expect(html).not.toContain(t('en', 'portal.startMatch'));
+  });
+
+  it('escapes company names', () => {
+    const html = portalView(viewWith({ ...base, match: { date: '2026-04-01', amount: '100', company: '<img src=x onerror=alert(1)>' } }), 'en', {}, noFunraise);
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x');
+  });
+
+  it('escapes the hint URL', () => {
+    const html = portalView(viewWith({ ...base, matchHintUrl: 'https://dtd.example/a"onmouseover="x' }), 'en', {}, noFunraise);
+    expect(html).not.toContain('"onmouseover=');
   });
 });

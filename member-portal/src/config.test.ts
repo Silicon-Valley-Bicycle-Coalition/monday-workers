@@ -10,6 +10,7 @@ import {
   signedOffEin,
   configuredPrefFields,
   volunteerHistoryEnabled,
+  matchLinesEnabled,
   donationHistoryEnabled,
   eventsEnabled,
   letterCronConfigured,
@@ -46,6 +47,10 @@ const validConfig = {
       volunteerDate: 'vol_date_col',
       volunteerJob: 'vol_job_col',
       volunteerStatus: 'vol_status_col',
+      donationMatchesGift: 'REPLACE_WITH_COLUMN_ID',
+      donationMatchStatus: 'REPLACE_WITH_COLUMN_ID',
+      donationMatchedBy: 'REPLACE_WITH_COLUMN_ID',
+      donorDtdLink: 'REPLACE_WITH_COLUMN_ID',
     },
   },
   email: { fromAddress: 'login@example.org', fromName: 'Test Portal', logoUrl: 'https://example.org/email/logo.png' },
@@ -956,5 +961,31 @@ describe('donationHistoryEnabled', () => {
     const raw = structuredClone(validConfig);
     (raw.donations as { historyVisibleFromISO: string | null }).historyVisibleFromISO = null;
     expect(donationHistoryEnabled(validateConfig(raw), at('2030-01-01T00:00:00Z'))).toBe(false);
+  });
+});
+
+describe('matchLinesEnabled', () => {
+  const keys = ['donationMatchesGift', 'donationMatchStatus', 'donationMatchedBy', 'donorDtdLink'] as const;
+
+  it('is false while the four DTD match columns are placeholders', () => {
+    expect(matchLinesEnabled(validateConfig(validConfig))).toBe(false);
+  });
+
+  it('is true once all four are real column ids', () => {
+    const raw = structuredClone(validConfig);
+    for (const k of keys) raw.monday.columns[k] = `${k}_col`;
+    expect(matchLinesEnabled(validateConfig(raw))).toBe(true);
+  });
+
+  it.each(keys)('stays off when only %s is still the placeholder', (missing) => {
+    const raw = structuredClone(validConfig);
+    for (const k of keys) raw.monday.columns[k] = k === missing ? 'REPLACE_WITH_COLUMN_ID' : `${k}_col`;
+    expect(matchLinesEnabled(validateConfig(raw))).toBe(false);
+  });
+
+  it('rejects a config missing one of the keys entirely', () => {
+    const raw = structuredClone(validConfig);
+    delete (raw.monday.columns as Record<string, unknown>).donorDtdLink;
+    expect(() => validateConfig(raw)).toThrow(/monday\.columns\.donorDtdLink/);
   });
 });
