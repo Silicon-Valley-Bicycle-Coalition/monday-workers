@@ -144,7 +144,16 @@ So:
   of their own (formula, mirror, auto-number, …).
 * **If either board lacks a column the other has, the pass refuses to move anything** and names
   the columns — a column added to one board by hand (as happened to Donations in the v3
-  rebuild) would otherwise silently lose values.
+  rebuild) would otherwise silently lose values. **Any column added to one People board must be
+  added to the other with the same title and type.** Production, 2026-11-03: a `Location`
+  (location) column added to People alone for the Map view (migration issue #96) failed the dry
+  run within hours, and a matching empty one was added to People (Historical)
+  (`location_mm8r8m6y`). The same day, the two-way Person connection on Activities (Logged) added
+  a connect column titled `Activities (Logged)` to both boards; keep those two titles identical.
+  Also that day, member-portal's new Donor Portal Change Requests board connected its `Donor`
+  column to People only, and the two-way back-link failed the next dry run; the column now
+  connects to both People boards, like every connect column that points at people, and the
+  setup script (`member-portal/scripts/setup-production-boards.mjs`) does the same.
 * **Inbound links survive by construction, not by the move:** the import creates every connect
   column that points at people (`Donor`, `Soft Credit`, `Attendee`, `Volunteer`, `Person`)
   connected to **both** People boards (`CONNECT_TARGETS` in `salesforce-import/src/load/boards.ts`),
