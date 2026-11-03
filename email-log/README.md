@@ -5,8 +5,8 @@
 — **sandbox deployed 2026-11-02** (`svbc-email-log-sandbox`, `log-sandbox@log.bikesiliconvalley.org`;
 a staff BCC logged end to end); **production live 2026-11-03** (`svbc-email-log`,
 `log@log.bikesiliconvalley.org`, writes on; a staff BCC logged end to end, see "Production
-bring-up"). The sandbox still owes the forgery check (step 5) and steps 6 to 10 (see "Sandbox
-bring-up"), and the staff note isn't written yet.
+bring-up"). The sandbox still owes steps 6 to 10 (see "Sandbox bring-up"), and the staff note
+isn't written yet. The forgery check (step 5) is closed from Cloudflare's docs, not a live send.
 **Priority:** Post-cutover, non-blocking. It replaces the Salesforce Gmail extension's one-click
 email logging.
 **Stack:** TypeScript + D1 + Cloudflare Queues + Email Routing (an `email()` handler; there is no
@@ -237,6 +237,24 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    making two, which the parser rejects. Confirm the message is rejected. **If Cloudflare does not
    add its own `Authentication-Results` header to unsigned mail, stop and report back before going
    live:** the parser's single-header rule is then forgeable.
+   *Closed from the docs 2026-11-03; no forged message was sent* (port 25 is blocked from the
+   machine this was done on). The evidence:
+   * Cloudflare's [email handler docs](https://developers.cloudflare.com/email-service/api/route-emails/email-handler/#authentication-results)
+     say Email Routing validates DMARC before invoking the Worker and prepends its own
+     `Authentication-Results` header from `mx.cloudflare.net`, warning that other such headers may
+     come from the sender. They don't single out unsigned mail, so "adds it to unsigned mail" is
+     read from that general statement. Only signed mail has been seen doing it here.
+   * Cloudflare's [postmaster docs](https://developers.cloudflare.com/email-service/reference/postmaster/#dmarc-enforcing)
+     say incoming mail failing the claimed sender's DMARC policy is rejected, and mail failing both
+     SPF and DKIM is rejected too. `bikesiliconvalley.org` publishes `p=reject; adkim=s; aspf=s`,
+     so unsigned mail with a staff `From:` from an unauthorized server shouldn't reach the Worker.
+   * `authenticate.test.ts` covers the Worker's half: two headers with the trusted id are rejected,
+     whichever comes first.
+
+   **Send the forged message after all if** that DMARC record is ever relaxed, or if Cloudflare's
+   documented behavior changes. Mail from a server the domain's SPF record authorizes can pass
+   DMARC on SPF alone, so for that sender only the prepended header stands between a forged header
+   and the parser.
 6. **Live check: email lookup case.** Does `items_page_by_column_values` on an email column
    ignore case? The Worker looks up lowercased addresses. If Monday's lookup is case-sensitive,
    record that here and open an issue: a person stored with a mixed-case address shows as
@@ -284,9 +302,9 @@ Started 2026-11-03, post-cutover.
    works in production too.
 8. **Staff note:** one paragraph in the staff guide (significant touches only).
 
-The sandbox's forgery check (step 5) and steps 6 to 10 are still owed. They test the code, not the
-deployment, so they apply to production as they stand; until the forgery check is done, keep the
-`log@` address internal.
+The sandbox's steps 6 to 10 are still owed. They test the code, not the deployment, so they apply
+to production as they stand. The forgery check (step 5) is closed from Cloudflare's docs rather
+than a live send; see step 5 for the evidence and for when to send it after all.
 
 ## Failures and alerts
 
