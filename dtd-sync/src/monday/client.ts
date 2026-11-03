@@ -133,7 +133,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   private async findDonationByColumn(columnId: string, value: string): Promise<DonationItem | null> {
     const data = await this.transport.request<{ items_page_by_column_values: { items: RawItem[] } }>(
       `query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
-        items_page_by_column_values(board_id: $boardId, columns: $columns) { items { ${this.donationFields} } }
+        items_page_by_column_values(board_id: $boardId, limit: 100, columns: $columns) { items { ${this.donationFields} } }
       }`,
       { boardId: this.config.boards.donations, columns: [{ column_id: columnId, column_values: [value] }] },
     );
@@ -261,13 +261,13 @@ export class HttpDtdMondayClient implements DtdMondayClient {
   async upsertProgramSummary(fiscalYear: string, values: Record<string, unknown>): Promise<void> {
     const boardId = this.config.boards.programSummary;
     const fyColumn = this.config.programSummary.fiscalYear;
-    const found = await this.transport.request<{ items_page_by_column_values: { items: { id: string }[] } }>(
+    const found = await this.transport.request<{ items_page_by_column_values: { items: { id: string; state?: string | null }[] } }>(
       `query ($boardId: ID!, $columns: [ItemsPageByColumnValuesQuery!]!) {
-        items_page_by_column_values(board_id: $boardId, limit: 1, columns: $columns) { items { id } }
+        items_page_by_column_values(board_id: $boardId, limit: 100, columns: $columns) { items { id state } }
       }`,
       { boardId, columns: [{ column_id: fyColumn, column_values: [fiscalYear] }] },
     );
-    const existing = found.items_page_by_column_values.items[0];
+    const existing = found.items_page_by_column_values.items.find(live);
     if (existing) {
       await this.changeColumnValues(boardId, existing.id, values);
       return;

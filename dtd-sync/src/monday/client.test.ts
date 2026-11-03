@@ -148,6 +148,25 @@ describe('deleted items', () => {
     expect(await client.findDonationByFunraiseId('12345')).toBeNull();
   });
 
+  it('by-column lookups skip a deleted item ahead of a live one and ask for limit 100', async () => {
+    const gone = { ...donationItem('1'), state: 'deleted' };
+    const { client, calls } = mondayFetch([
+      { items_page_by_column_values: { items: [gone, donationItem('2')] } },
+      { items_page_by_column_values: { items: [gone, donationItem('3')] } },
+      { items_page_by_column_values: { items: [{ id: '8', state: 'deleted' }, { id: '9', state: 'active' }] } },
+      { change_multiple_column_values: { id: '9' } },
+      { items_page_by_column_values: { items: [{ id: '8', state: 'deleted' }] } },
+      { create_item: { id: '10' } },
+    ]);
+    expect((await client.findDonationByFunraiseId('12345'))?.id).toBe('2');
+    expect((await client.findDonationBySalesforceId('003EXAMPLE'))?.id).toBe('3');
+    await client.upsertProgramSummary('FY2026', { [S.screened]: 1 });
+    expect(calls[3]!.variables.itemId).toBe('9');
+    await client.upsertProgramSummary('FY2026', { [S.screened]: 2 });
+    expect(calls[5]!.query).toContain('create_item');
+    for (const i of [0, 1, 2, 4]) expect(calls[i]!.query).toContain('limit: 100');
+  });
+
   it('getPeople drops a deleted person', async () => {
     const { client } = mondayFetch([{ items: [
       { id: '1', name: 'Pat Example', state: 'deleted', column_values: [] },
