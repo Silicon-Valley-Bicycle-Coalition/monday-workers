@@ -8,7 +8,7 @@ export interface DonationItem {
   matchesGiftItemId: string | null; matchPairing: string | null; matchStatus: string | null;
   sentToDtd: string | null; updatedAt: string;
 }
-export interface PersonItem { id: string; email: string | null; firstName: string; lastName: string; phone: string | null; dtdCompanyId: string | null }
+export interface PersonItem { id: string; email: string | null; householdEmail: string | null; firstName: string; lastName: string; phone: string | null; dtdCompanyId: string | null }
 
 export interface DtdMondayClient {
   findDonationByFunraiseId(id: string): Promise<DonationItem | null>;
@@ -231,6 +231,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
         out.push({
           id: item.id,
           email: text(byId.get(p.email)) ?? text(byId.get(p.householdEmail)),
+          householdEmail: text(byId.get(p.householdEmail)),
           ...splitName(item.name ?? ''),
           phone: text(byId.get(p.phone)),
           dtdCompanyId: text(byId.get(p.dtdCompanyId)),

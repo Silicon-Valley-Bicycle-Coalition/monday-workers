@@ -30,6 +30,7 @@ describe('DtdClient.getUpdatedDonations', () => {
     const [d] = await client(fetchFn as unknown as typeof fetch).getUpdatedDonations('a', 'b');
     expect(d!.donation_identifier).toBe('12345678');
     expect(d!.donor_email).toBeNull();
+    expect(d!.donation_amount).toBeNull();
   });
 
   it('auth failure raises DtdAuthError without the key in the message', async () => {

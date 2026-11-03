@@ -12,6 +12,9 @@ export interface StoredRecord {
   donationDatetime: string | null;
   updatedSeenAt: string;
   unmatched: boolean;
+  /** SHA-256 hex of the DTD donor email (trimmed, lowercased); the raw email is never stored. */
+  donorEmailHash: string | null;
+  donationAmount: number | null;
 }
 
 interface Row {
@@ -27,6 +30,8 @@ interface Row {
   donation_datetime: string | null;
   updated_seen_at: string;
   unmatched: number;
+  donor_email_hash: string | null;
+  donation_amount: number | null;
 }
 
 function fromRow(r: Row): StoredRecord {
@@ -43,6 +48,8 @@ function fromRow(r: Row): StoredRecord {
     donationDatetime: r.donation_datetime,
     updatedSeenAt: r.updated_seen_at,
     unmatched: r.unmatched === 1,
+    donorEmailHash: r.donor_email_hash,
+    donationAmount: r.donation_amount,
   };
 }
 
@@ -55,18 +62,20 @@ export async function upsertRecord(db: D1Database, r: StoredRecord): Promise<voi
   await db
     .prepare(
       `INSERT INTO dtd_records (donation_identifier, monday_item_id, source, status, matching_gift_status, employer_status,
-         company_id, company_name, matched_amount, donation_datetime, updated_seen_at, unmatched)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         company_id, company_name, matched_amount, donation_datetime, updated_seen_at, unmatched, donor_email_hash, donation_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(donation_identifier) DO UPDATE SET
          monday_item_id = excluded.monday_item_id, source = excluded.source, status = excluded.status,
          matching_gift_status = excluded.matching_gift_status, employer_status = excluded.employer_status,
          company_id = excluded.company_id, company_name = excluded.company_name, matched_amount = excluded.matched_amount,
          donation_datetime = excluded.donation_datetime, updated_seen_at = excluded.updated_seen_at,
-         unmatched = excluded.unmatched`,
+         unmatched = excluded.unmatched, donor_email_hash = excluded.donor_email_hash,
+         donation_amount = excluded.donation_amount`,
     )
     .bind(
       r.donationIdentifier, r.mondayItemId, r.source, r.status, r.matchingGiftStatus, r.employerStatus,
       r.companyId, r.companyName, r.matchedAmount, r.donationDatetime, r.updatedSeenAt, r.unmatched ? 1 : 0,
+      r.donorEmailHash, r.donationAmount,
     )
     .run();
 }
@@ -80,10 +89,13 @@ export async function listUnmatched(db: D1Database, limit: number): Promise<Stor
   return results.map(fromRow);
 }
 
-/** Records whose donation_datetime is in [startISO, endISO), compared as ISO strings. */
+/**
+ * Verified records (unmatched = 0 with an item link) whose donation_datetime is in [startISO, endISO),
+ * compared as ISO strings. Unverified records, possibly forged via DTD's public key, are never counted.
+ */
 export async function recordsForFiscalYear(db: D1Database, startISO: string, endISO: string): Promise<StoredRecord[]> {
   const { results } = await db
-    .prepare('SELECT * FROM dtd_records WHERE donation_datetime >= ? AND donation_datetime < ? ORDER BY donation_datetime ASC')
+    .prepare('SELECT * FROM dtd_records WHERE donation_datetime >= ? AND donation_datetime < ? AND unmatched = 0 AND monday_item_id IS NOT NULL ORDER BY donation_datetime ASC')
     .bind(startISO, endISO)
     .all<Row>();
   return results.map(fromRow);
@@ -94,10 +106,10 @@ export async function hasDtdRecordForItem(db: D1Database, mondayItemId: string):
   return row !== null;
 }
 
-/** company_name of the most recently seen record linked to this Monday item, or null. */
+/** company_name of the most recently seen verified record linked to this Monday item, or null. */
 export async function companyForItem(db: D1Database, mondayItemId: string): Promise<string | null> {
   const row = await db
-    .prepare('SELECT company_name FROM dtd_records WHERE monday_item_id = ? ORDER BY updated_seen_at DESC LIMIT 1')
+    .prepare('SELECT company_name FROM dtd_records WHERE monday_item_id = ? AND unmatched = 0 ORDER BY updated_seen_at DESC LIMIT 1')
     .bind(mondayItemId)
     .first<{ company_name: string | null }>();
   return row?.company_name ?? null;

@@ -1,6 +1,6 @@
 export interface DtdDonation {
   donation_identifier: string; source: string | null; donation_datetime: string | null;
-  donor_email: string | null; company_name: string | null; doublethedonation_company_id: string | number | null;
+  donor_email: string | null; donation_amount: number | null; company_name: string | null; doublethedonation_company_id: string | number | null;
   status: string | null; matching_gift_status: string | null; employer_identification_status: string | null;
   matched_amount: number | null; plugin_link: string | null;
 }
