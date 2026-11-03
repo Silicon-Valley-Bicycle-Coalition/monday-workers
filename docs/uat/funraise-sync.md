@@ -16,9 +16,10 @@ Salesforce sync that posts Opportunities today.
 
 ## Where it runs, and why real gifts show up here
 
-Funraise allows one webhook per organization, and until cutover it points at this sandbox copy.
-So **a real donation made on Funraise today is supposed to land on Donations (sandbox v3)**, not
-in some test area. This is safe: the board is a disposable copy, and the integration only writes
+Funraise allows one webhook per organization. Until it is repointed at the production copy (a
+cutover step; production began writing gifts 2026-11-02), it points at this sandbox copy, so **a
+real donation made on Funraise lands on Donations (sandbox v3)**, not in some test area. Once
+it is repointed, no new real gifts arrive here; the Recurring Gifts copy still refreshes hourly. This is safe: the board is a disposable copy, and the integration only writes
 to Monday. It sends no email and touches nothing in Funraise.
 
 ## Try it

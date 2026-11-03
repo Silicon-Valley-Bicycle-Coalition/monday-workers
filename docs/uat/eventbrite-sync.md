@@ -2,12 +2,11 @@
 
 **Class emails (attendee feed): see the last two sections.** Orders below are unchanged.
 
-**Status 2026-10-19: nothing to test yet.** The integration is built but not running anywhere.
-Before it can be switched on in the sandbox, the next sandbox load needs to create the
-**Eventbrite Order ID** column on the Donations board, someone needs to add the **Refunded**
-Status label there, create the sandbox D1 and queue, and set up its Eventbrite and Cloudflare
-credentials. This script
-will be updated when it is live.
+**Status 2026-11-02: nothing to test yet for orders.** The sandbox copy has been deployed since
+2026-10-26, but it can't write a gift until the **Eventbrite Order ID** column exists on
+Donations (sandbox v3) and its id is in the sandbox config, and a refund can't be recorded until
+someone adds the **Refunded** Status label there. Production went live on 2026-11-02. This
+script will be updated when the sandbox can take an order.
 
 ## What it does
 
@@ -54,8 +53,8 @@ create Event Registrations items; that is a separate, later integration.
 
 ## Not testable yet
 
-Everything above. The Worker is code-complete but not deployed; see `eventbrite-sync/README.md`
-"Deploy" for what has to happen first.
+Everything above about orders: the sandbox copy is deployed but has no Eventbrite Order ID
+column to write to. See `eventbrite-sync/README.md` "Deploy".
 
 ## Class emails: try it (sandbox)
 
