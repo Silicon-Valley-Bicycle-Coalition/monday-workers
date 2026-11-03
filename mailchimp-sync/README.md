@@ -40,7 +40,9 @@ Three independent flows — see the design doc for full sequence diagrams:
 
 1. **Outbound:** Donor column change on Monday → webhook → D1 idempotency → Cloudflare Queue →
    Mailchimp contact update (merge fields: Member Since/Until, Tier, Status, Address, Total
-   Given; tags: active/lapsed/lifetime-member, has-donated). **Update only — never creates a
+   Given; tags: active/lapsed/lifetime-member, has-donated). A change to a column the sync doesn't
+   read (`donorColumnIds` in `src/monday/client.ts`) is skipped at the webhook, so a bulk write to
+   another People column, like the 2026-11-03 Location backfill, sends nothing to Mailchimp. **Update only — never creates a
    contact.** Mailchimp is the consent system of record, so a Donor whose address isn't already
    in the audience (they never opted in) is recorded as `skipped` and left out; the write is a
    `PATCH`, which 404s rather than creating, and never sends a `status`, so an unsubscribed or
