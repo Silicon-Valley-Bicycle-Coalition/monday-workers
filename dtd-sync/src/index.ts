@@ -5,12 +5,12 @@
 //
 // Write mode `on` runs live, `off` is a dry run (reads everything, logs each write it would make),
 // `hold`/unknown skips the run. Each job has its own try/catch: one failing job is logged by name
-// and the run goes on, except that a DtdAuthError (a bad key) drops the other DTD job, since it
-// would fail the same way.
+// and the run goes on, except that push runs only after a pull that completed this run (push skips
+// items DTD already knows about, which it learns from pull's records), and pairing always runs.
 import { configFor, type DtdSyncConfig } from './config';
 import { environmentOf } from './environment';
 import { DEFAULT_PII_KEYS, readLogLevel, readWriteMode, runDisposition, type SkipContext } from './flags';
-import { DtdAuthError, DtdClient } from './dtd/client';
+import { DtdClient } from './dtd/client';
 import { HttpDtdMondayClient, type DtdMondayClient } from './monday/client';
 import { redactText } from './logSafe';
 import { tokenProviderFor, type MondayTokenSource } from './monday/graphql';
@@ -79,17 +79,17 @@ export async function runCron(
     return;
   }
 
-  let dtdUsable = dtd !== null;
+  let pulled = false;
   if (dtd === null) console.log('dtd-sync: DTD_PRIVATE_KEY is not set');
   if (dtd !== null) {
     try {
       await jobs.pull({ dtd, monday, db, config }, now);
+      pulled = true;
     } catch (err) {
       logFailure('pull', err);
-      if (err instanceof DtdAuthError) dtdUsable = false;
     }
   }
-  if (dtd !== null && dtdUsable) {
+  if (dtd !== null && pulled) {
     try {
       await jobs.push({ dtd, monday, db, config }, now);
     } catch (err) {

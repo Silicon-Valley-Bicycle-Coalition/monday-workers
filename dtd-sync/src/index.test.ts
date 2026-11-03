@@ -73,10 +73,10 @@ describe('runCron', () => {
     expect(order).toEqual([]);
   });
 
-  it('a pull failure still runs push and pairing, and logs the job name and message', async () => {
+  it('a pull failure skips push but still runs pairing, and logs the job name and message', async () => {
     const j = jobs({ pull: async () => { throw new Error('boom'); } });
     await runCron(HOURLY_CRON, clients([]), config, 'run', ctx('on'), NOW, j);
-    expect(order).toEqual(['push', 'pairing']);
+    expect(order).toEqual(['pairing']);
     expect(logs.join('\n')).toContain('dtd-sync: pull failed');
     expect(logs.join('\n')).toContain('boom');
   });
