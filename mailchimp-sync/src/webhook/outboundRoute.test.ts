@@ -119,7 +119,20 @@ describe('POST /webhooks/monday/donors', () => {
     expect(pendingStore.upsertPending).not.toHaveBeenCalled();
   });
 
-  it('still enqueues a change_column_value event for a different column', async () => {
+  it('skips a change to a column the sync never reads, such as a Location backfill', async () => {
+    const send = vi.fn();
+    const pendingStore = fakePendingStore();
+    const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
+
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, boardId: 1, columnId: 'location_xyz' } });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: true });
+    expect(send).not.toHaveBeenCalled();
+    expect(pendingStore.upsertPending).not.toHaveBeenCalled();
+  });
+
+  it('still enqueues a change_column_value event for a column the sync reads', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const pendingStore = fakePendingStore();
     const app = createOutboundApp({ pendingStore, queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
@@ -144,8 +157,13 @@ describe('POST /webhooks/monday/donors', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const app = createOutboundApp({ pendingStore: fakePendingStore(), queue: { send }, webhookSecret: SECRET, config: CONFIG, writeMode: async () => 'on' });
 
-    await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 'household', previousValue: { email: 'old@b.com' } } });
+    // Household Email itself isn't read by the sync, so it's skipped outright; the guard still
+    // matters for any column the sync does read.
+    const res = await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 'household', previousValue: { email: 'old@b.com' } } });
+    expect(await res.json()).toEqual({ ok: true, skipped: true });
 
+    await post(app, { event: { type: 'update_column_value', pulseId: 555, columnId: 's', previousValue: { email: 'old@b.com' } } });
+    expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith({ donorItemId: '555' });
   });
 

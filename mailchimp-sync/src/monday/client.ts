@@ -26,6 +26,18 @@ function splitDropdownLabels(text: string): string[] {
   return text.split(', ').map((label) => label.trim()).filter((label) => label !== '');
 }
 
+// Every Donor column the outbound sync reads. outboundRoute.ts skips a column change outside this
+// list, so a bulk write to an unrelated column (a backfill) doesn't PATCH every Mailchimp contact.
+export function donorColumnIds(columns: MondayColumnsConfig): string[] {
+  return [
+    columns.email, columns.membershipStatus, columns.membershipTier,
+    columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
+    columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
+    ...(columns.state === null ? [] : [columns.state]),
+    ...(columns.nearby === null ? [] : [columns.nearby]),
+  ];
+}
+
 export class HttpMondayClient implements MondayClient {
   private readonly transport: MondayGraphQL;
 
@@ -36,13 +48,7 @@ export class HttpMondayClient implements MondayClient {
   }
 
   async getDonorById(itemId: string, columns: MondayColumnsConfig): Promise<DonorRecord | null> {
-    const columnIds = [
-      columns.email, columns.membershipStatus, columns.membershipTier,
-      columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
-      columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
-      ...(columns.state === null ? [] : [columns.state]),
-      ...(columns.nearby === null ? [] : [columns.nearby]),
-    ];
+    const columnIds = donorColumnIds(columns);
     const data = await this.transport.request<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
       `query ($itemId: ID!, $columnIds: [String!]) {
         items(ids: [$itemId]) { id column_values(ids: $columnIds) { id text } }
