@@ -29,6 +29,15 @@ const CLASS_NAMES = {
   4: 'Class IV - Separated Bikeway'
 };
 
+// Counting method, stored on each history snapshot. Totals from different
+// methods aren't comparable, so the site marks a method break in the history
+// instead of showing it as a change in miles. Snapshots without a method
+// field predate versioning and count as method 1.
+//   1: county bounding boxes, whole segments attributed by one point
+//   2: segments clipped to real county and city boundaries; paged queries
+//      (November 2026)
+const METHOD_VERSION = 2;
+
 const MTC_API_BASE = 'https://services3.arcgis.com/i2dkYWmb4wHvYPda/arcgis/rest/services/regional_bike_facilities/FeatureServer/0';
 
 /**
@@ -164,6 +173,7 @@ module.exports = async function() {
 
   const results = {
     fetchedAt: new Date().toISOString(),
+    method: METHOD_VERSION,
     source: 'MTC Regional Bike Facilities',
     sourceUrl: 'https://opendata.mtc.ca.gov/datasets/regional-bike-facilities',
     counties: {},
@@ -386,6 +396,7 @@ async function appendToHistory(data) {
   const snapshot = {
     date: today,
     fetchedAt: data.fetchedAt,
+    method: data.method,
     totals: data.totals,
     counties: data.counties
   };
