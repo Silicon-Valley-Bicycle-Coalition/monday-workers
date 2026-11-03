@@ -244,6 +244,20 @@ describe('sponsorships section in the recompute path', () => {
       { sponsorshipCycle: 'sc_1', inKindValue: 'ikv_1', sponsorshipPipelineLinks: ['pl_1'] });
   });
 
+  it('an archived gift with blank cycle and no link does not send sponsorshipEvent to refreshFacts', async () => {
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: null, archived: true })]);
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+  });
+
+  it('an archived gift with a Sponsorship Cycle also leaves the stored event untouched', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map());
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala', pipelineItemId: 'p1', archived: true })], { getItemsBoardAndGroup });
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+    expect(getItemsBoardAndGroup).not.toHaveBeenCalled();
+  });
+
   it('with sponsorships null the description is exactly the gift history and the facts carry no sponsorship fields', async () => {
     const { buildGiftHistoryMarkdown } = await import('../projections/giftHistory');
     const hist = sponsorHistory();

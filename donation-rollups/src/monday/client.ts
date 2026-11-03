@@ -32,6 +32,8 @@ export interface DonationRecord {
   sponsorshipCycle?: string | null; // trimmed text, null when blank
   inKindValueCents?: number | null; // parseAmountCents of the cell, null when blank
   pipelineItemId?: string | null; // first linked id across sponsorshipPipelineLinks, null when none
+  // The item is archived: its board_relation columns read back empty (issue #26), so link-derived facts are unreliable.
+  archived?: boolean;
 }
 
 export interface AffiliationSummary {
@@ -376,6 +378,7 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
           sponsorshipCycle: optionalTrimmed(columns.sponsorshipCycle),
           inKindValueCents: columns.inKindValue ? parseAmountCents(byId.get(columns.inKindValue)) : undefined,
           pipelineItemId,
+          archived: item.state === 'archived',
         });
       }
     }

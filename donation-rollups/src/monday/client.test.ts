@@ -82,6 +82,19 @@ describe('items in the trash read as gone', () => {
   });
 });
 
+describe('getDonationsByIds archived state', () => {
+  it('getDonationsByIds marks archived items', async () => {
+    const response = itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'dn2', cells: { amount_1: '75', date_1: '2020-02-15', status_1: 'Received' } },
+    ]);
+    (response.data.items[0] as Record<string, unknown>).state = 'archived';
+    (response.data.items[1] as Record<string, unknown>).state = 'active';
+    const result = await clientReturning(response).getDonationsByIds(['dn1', 'dn2'], COLUMNS, 7);
+    expect(result.map((d) => [d.id, d.archived])).toEqual([['dn1', true], ['dn2', false]]);
+  });
+});
+
 describe('getDonationsByIds', () => {
   it('parses a well-formed donation', async () => {
     const client = clientReturning(itemsResponse([
@@ -89,7 +102,7 @@ describe('getDonationsByIds', () => {
     ]));
     const result = await client.getDonationsByIds(['dn1'], COLUMNS, 7);
     expect(result).toEqual([
-      { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined },
+      { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined, archived: false },
     ]);
   });
 

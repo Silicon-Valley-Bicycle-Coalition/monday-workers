@@ -445,9 +445,10 @@ async function recomputeOwnerLeased(
   // for every pipeline id this recompute read.
   const eventByGift = new Map<string, string>();
   if (sponsorshipsCfg !== null) {
-    const pipelineIds = [...new Set(donations.flatMap((d) => (d.sponsorshipCycle ? [] : d.pipelineItemId ? [d.pipelineItemId] : [])))];
+    const pipelineIds = [...new Set(donations.flatMap((d) => (d.archived || d.sponsorshipCycle ? [] : d.pipelineItemId ? [d.pipelineItemId] : [])))];
     const placed = pipelineIds.length > 0 ? await mondayClient.getItemsBoardAndGroup(pipelineIds) : new Map<string, { boardId: string; groupTitle: string }>();
     for (const d of donations) {
+      if (d.archived) continue;
       let event = d.sponsorshipCycle ?? '';
       if (event === '' && d.pipelineItemId) {
         const at = placed.get(d.pipelineItemId);
@@ -479,7 +480,8 @@ async function recomputeOwnerLeased(
       actingForItemId: d.actingForItemId,   // undefined when no actingForLink is configured
       termStart: d.termStart,               // undefined: no Term Start column; null: blank (leave stored)
       ...(sponsorshipsCfg !== null ? {
-        sponsorshipEvent: eventByGift.get(d.id) ?? '',
+        // archived: link columns read back empty (issue #26), so leave the stored event alone
+        sponsorshipEvent: d.archived ? undefined : (eventByGift.get(d.id) ?? ''),
         // undefined (leave stored) when the board has no In-kind Value column
         ...(d.inKindValueCents !== undefined ? { inKindValueCents: d.inKindValueCents ?? 0 } : {}),
       } : {}),
