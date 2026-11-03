@@ -89,10 +89,13 @@ export async function listUnmatched(db: D1Database, limit: number): Promise<Stor
   return results.map(fromRow);
 }
 
-/** Records whose donation_datetime is in [startISO, endISO), compared as ISO strings. */
+/**
+ * Verified records (unmatched = 0 with an item link) whose donation_datetime is in [startISO, endISO),
+ * compared as ISO strings. Unverified records, possibly forged via DTD's public key, are never counted.
+ */
 export async function recordsForFiscalYear(db: D1Database, startISO: string, endISO: string): Promise<StoredRecord[]> {
   const { results } = await db
-    .prepare('SELECT * FROM dtd_records WHERE donation_datetime >= ? AND donation_datetime < ? ORDER BY donation_datetime ASC')
+    .prepare('SELECT * FROM dtd_records WHERE donation_datetime >= ? AND donation_datetime < ? AND unmatched = 0 AND monday_item_id IS NOT NULL ORDER BY donation_datetime ASC')
     .bind(startISO, endISO)
     .all<Row>();
   return results.map(fromRow);

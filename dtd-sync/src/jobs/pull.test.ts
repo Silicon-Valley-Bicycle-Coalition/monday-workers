@@ -464,6 +464,22 @@ describe('runPull', () => {
       noWrites(h);
     });
 
+    it('keeps a verified row unchanged when a later DTD update has a different email', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd()]);
+      h.items.set('500', item());
+      await runPull(h.deps, NOW);
+      const before = await getRecord(env.DB, 'fr-1');
+      expect(before).toMatchObject({ mondayItemId: '500', unmatched: false });
+      h.donationWrites.length = 0;
+      h.personWrites.length = 0;
+      h.state.donations = [dtd({ donor_email: 'attacker@evil.example', status: ':ineligible', company_name: 'Evil Co' })];
+      await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+      noWrites(h);
+      expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+      expect(log).toHaveBeenCalledWith('dtd-sync: pull item 500 skipped: donor mismatch');
+    });
+
     it('still writes on retry when a failed record belongs to the item', async () => {
       vi.spyOn(console, 'log').mockImplementation(() => {});
       const h = harness([dtd({ donation_amount: 50 })]);

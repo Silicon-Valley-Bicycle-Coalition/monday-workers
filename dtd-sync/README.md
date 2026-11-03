@@ -70,7 +70,10 @@ amounts (when DTD sends one) must agree within 1%. A record that fails is stored
 without an item id and logged as `dtd-sync: pull item <id> skipped: donor mismatch` (never the
 email); retries re-apply the check from a stored SHA-256 of the email (migration
 `0002_add_donor_email_hash.sql`), never the address itself. Donors on Organizations or People
-(Historical) can't be verified, so their gifts get no DTD status written.
+(Historical) can't be verified, so their gifts get no DTD status written. A mismatch on a record
+that was already verified leaves its stored row and link untouched. The Program Summary counts only
+DTD records verified against a Monday gift. Residual risk: someone who knows a donor's email and the
+gift amount can still pass the check; the public key can't prevent that.
 
 Every job has its own try/catch, so one failing job is logged by name and the run continues, with
 one exception: push runs only after a pull that completed this run (push skips gifts DTD already

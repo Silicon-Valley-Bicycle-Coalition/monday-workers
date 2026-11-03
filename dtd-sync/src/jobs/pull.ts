@@ -117,6 +117,7 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
       donor = await ownedBy(deps, item, hash, d.donation_amount);
       if (donor === null) {
         console.log(`dtd-sync: pull item ${item.id} skipped: donor mismatch`);
+        if (prev && !prev.unmatched && prev.mondayItemId) return { written: false, unmatched: false }; // keep the verified row as is
         item = null;
         next.mondayItemId = null; // a forged record must not claim the item (push skips items DTD has a record for)
       }

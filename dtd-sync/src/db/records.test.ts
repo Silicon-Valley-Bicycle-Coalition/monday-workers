@@ -47,6 +47,14 @@ describe('records', () => {
     const rows = await recordsForFiscalYear(env.DB, '2025-07-01T00:00:00Z', '2026-07-01T00:00:00Z');
     expect(rows.map((r) => r.donationIdentifier).sort()).toEqual(['mid', 'start']);
   });
+  it('recordsForFiscalYear counts only verified rows (matched, with an item link)', async () => {
+    await upsertRecord(env.DB, rec({ donationIdentifier: 'ok' }));
+    await upsertRecord(env.DB, rec({ donationIdentifier: 'forged', mondayItemId: null, unmatched: true }));
+    await upsertRecord(env.DB, rec({ donationIdentifier: 'retry', unmatched: true }));
+    await upsertRecord(env.DB, rec({ donationIdentifier: 'nolink', mondayItemId: null }));
+    const rows = await recordsForFiscalYear(env.DB, '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z');
+    expect(rows.map((r) => r.donationIdentifier)).toEqual(['ok']);
+  });
   it('hasDtdRecordForItem checks monday_item_id', async () => {
     await upsertRecord(env.DB, rec());
     expect(await hasDtdRecordForItem(env.DB, 'm-1')).toBe(true);
