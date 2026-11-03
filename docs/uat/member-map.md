@@ -44,15 +44,16 @@ can open it.
 
 * Data is refreshed weekly (Mondays), so someone added today won't show until the next refresh.
 * People with no usable address are counted in the header but have no dot.
-* Bike lane miles will differ from the `svbc-bike-lanes` report; the map counts each mile once and
-  clips to the county line.
+* Bike lane miles will be lower than the public `svbc-bike-lanes` report; see the
+  [README](../../member-map/README.md#reference-data) for why.
 * Do Not Solicit people still appear: the map is for choosing places, not contacting people.
 
 ## If something seems stuck
 
 * **A plain "Forbidden" page?** You are not signed in with an allowed account, or Access isn't set
   up for the address yet. Tell whoever asked you to test.
-* **"No snapshot yet" or an empty map?** The first refresh hasn't run. Ask an operator to start one.
+* **"No data yet. The first weekly refresh hasn't run."?** Press the **Refresh now** button under
+  it, wait a few minutes, and reload. If it says the data is under 10 minutes old, just reload.
 
 Report problems on the
 **[IT Requests board](https://bikesiliconvalley.monday.com/boards/8846215481)** as described in the

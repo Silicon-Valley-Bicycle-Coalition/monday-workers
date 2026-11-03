@@ -77,7 +77,7 @@ validated at startup (`src/config.ts`). `config/split.test.ts` fails if the two 
 | Key | Meaning |
 |---|---|
 | `monday.apiUrl`, `monday.accountUrl` | Monday API and the account URL used to build item links |
-| `boards.peopleLive`, `peopleHistorical`, `organizations` | Board ids. `0` in the sandbox file until its boards are filled in |
+| `boards.peopleLive`, `peopleHistorical`, `organizations` | Board ids. The sandbox file holds the CRM Sandbox ids; `svbc.json` holds `0` placeholders until production ids exist |
 | `columns.*` | Column titles (address, city, zip, lat, lng, membership status, do not solicit). Matched with `bareTitle`, so the 🔒/📜 markers don't matter |
 | `activeLabel` | Membership Status label that counts as an active member (`Active`) |
 | `geocoder.*` | Census batch geocoder URL, benchmark, default state, `batchSize` (1,000), `maxPerRun` (5,000), `retryNoMatchDays` (90) |
@@ -123,7 +123,8 @@ npm run deploy:sandbox
 ```
 
 Then, signed in through Access in a browser on `map.sandbox.bikesiliconvalley.org`, trigger the
-first snapshot with `POST /api/refresh` (for example from the browser console:
+first snapshot with the **Refresh now** button on the page's "No data yet" screen, or with
+`POST /api/refresh` (for example from the browser console:
 `fetch('/api/refresh', { method: 'POST' })`). Without it the page shows no data until the weekly
 cron fires (Mondays). Production needs the real board ids in `config/svbc.json` first.
 
@@ -184,11 +185,13 @@ commit the result. Notes on the sources:
 * **Bike lanes** are MTC's regional bike facilities, except inside San Jose, where **San Jose's own
   bikeways layer replaces MTC**. Segments are split at block-group edges so each mile counts once.
 
-**Bike miles differ from `svbc-bike-lanes`.** For the two counties, this build's MTC miles come out
-about 21 to 25 percent below `svbc-bike-lanes`' history. That report sums whole features inside
-each county's bounding box, which pulls in features from neighboring counties and counts the
-overlap between the two boxes twice. This build clips to the legal county boundaries and counts
-each mile once, so expect different totals; neither number is a bug.
+**Bike miles differ from `svbc-bike-lanes`.** Measured in the 2026-11-02 build, MTC miles inside
+the two counties by class (I / II / III) are 171 / 602 / 347, against 229 / 764 / 439 in
+`svbc-bike-lanes`' history (25% / 21% / 21% lower). That report sums whole features inside each
+county's bounding box, which pulls in features from neighboring counties and counts the overlap
+between the two boxes twice. This build clips to the legal county boundaries and counts each mile
+once, so expect different totals. (With San Jose's own layer replacing MTC there, the map's final
+totals are 221 / 710 / 429 miles for I / II / III, plus 76 miles of Class IV.)
 
 ## Privacy
 
