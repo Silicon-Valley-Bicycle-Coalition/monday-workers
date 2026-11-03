@@ -75,6 +75,7 @@ export interface GiftsStore {
   // Live gifts (archived included) of the given types whose sponsorship facts were never read
   // (NULL, not ''/0 — a read blank is stored so the backfill never re-reads it).
   giftsMissingSponsorshipFacts(giftTypes: string[], afterItemId: string, limit: number): Promise<string[]>;
+  // Overwrites only NULL facts, so a row selected for one missing fact can't clobber the other.
   setSponsorshipFacts(rows: { mondayItemId: string; sponsorshipEvent: string; inKindValueCents: number }[], now: string): Promise<void>;
   // Distinct owners with at least one live (not removed) gift, on the given owner boards — the
   // membership duty's all=true enqueue set, alongside owners with a qualifying check-in.
@@ -265,7 +266,7 @@ export class D1GiftsStore implements GiftsStore {
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
       await this.db.batch(chunk.map((r) => this.db
-        .prepare(`UPDATE gifts SET sponsorship_event = ?2, in_kind_value_cents = ?3, updated_at = ?4 WHERE monday_item_id = ?1`)
+        .prepare(`UPDATE gifts SET sponsorship_event = COALESCE(sponsorship_event, ?2), in_kind_value_cents = COALESCE(in_kind_value_cents, ?3), updated_at = ?4 WHERE monday_item_id = ?1`)
         .bind(r.mondayItemId, r.sponsorshipEvent, r.inKindValueCents, now)));
     }
   }

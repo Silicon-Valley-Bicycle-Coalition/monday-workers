@@ -380,4 +380,10 @@ describe('sponsorship facts (sponsorship_event, in_kind_value_cents)', () => {
     expect(await store.giftsMissingSponsorshipFacts(['Sponsorship'], '', 10)).toEqual([]);
     expect(await find(store, 'sw-1')).toMatchObject({ sponsorshipEvent: '', inKindValueCents: 0 });
   });
+  it('setSponsorshipFacts leaves an already-stored value alone', async () => {
+    const store = new D1GiftsStore(env.DB);
+    await store.refreshFacts([{ ...base, mondayItemId: 'sw-2', giftType: 'Sponsorship', sponsorshipEvent: 'BTWD 2026' }], 'import', 'now');
+    await store.setSponsorshipFacts([{ mondayItemId: 'sw-2', sponsorshipEvent: '', inKindValueCents: 500 }], 'later');
+    expect(await find(store, 'sw-2')).toMatchObject({ sponsorshipEvent: 'BTWD 2026', inKindValueCents: 500 });
+  });
 });

@@ -583,7 +583,7 @@ so the ledger self-heals. Bootstrap: `scripts/bootstrap-gifts-from-artifacts.mjs
 loaded 2026-08-31; 32,739 Received, 33,541 archived).
 
 The **custodian** runs its duties (listed below) from one daily cron (09:00 UTC; `dutiesForDate` gates them)
-and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify|membership|recurring|rollcall}`
+and mirrors each as an authenticated route — `POST /custodian/run/{archive|capacity|sweep|reconcile|requeue|classify|membership|recurring|rollcall|sponsorships}`
 and `GET /custodian/status` (last run per duty, from `custodian_runs`), each with
 `Authorization: Bearer <CUSTODIAN_SECRET>` (issue #63 — its own secret, never the webhook's,
 which sits in Monday's webhook URL; a `?secret=` query parameter is ignored; unset = every
@@ -718,11 +718,14 @@ Known limitation: a gift with a blank Amount is skipped by the recompute read en
 **D1.** Migration `0012_gift_sponsorship_facts.sql` adds `gifts.sponsorship_event` and
 `in_kind_value_cents` (NULL = not read yet; `''` / `0` = read and blank). The first recompute
 after deploy rewrites each touched gift row once (`''` vs NULL), a one-time D1 write cost; the
-account is on Workers Paid (see the operational findings above).
+account is on Workers Paid (see the operational findings above). `refreshFacts` and
+`giftsForOwner` name both columns unconditionally, whether or not the `sponsorships` block is
+configured, so every deployment, forks included, must apply 0012 before the new build goes live.
 
 **Duties.** The custodian duty `sponsorships` backfills the facts nightly while there is work
 (also `POST /custodian/run/sponsorships`; 5,000 gifts per run, repeat until `remaining: 0`). For
-`yearBasis: "calendar"` a January 1 sweep re-renders every Organization so the window rolls over.
+`yearBasis: "calendar"` a January 1 sweep runs the regular sweep (one recompute per owner, People
+included) so the Organizations' window rolls over.
 
 **Owner check (read-only).** Sponsorships are only shown on Organizations, so check who owns the
 paid sponsorship gifts (substitute the configured `giftTypes` plus `inKindGiftTypes`; sandbox adds
@@ -736,20 +739,31 @@ npx wrangler d1 execute svbc-donation-rollups --remote --command \
 Expected for `Sponsorship`: all but a handful on the Organizations board. Production load: 848 of
 865; the other 17 are person-owned with no Organizations match, so list them for staff by item
 id, year and amount only (no names in logs or tickets). That figure is for `Sponsorship` alone.
+List them (substitute the configured `giftTypes`; `18437909779` is the production Organizations
+board id):
+
+```sh
+npx wrangler d1 execute svbc-donation-rollups --remote --command \
+  "SELECT monday_item_id, substr(gift_date, 1, 4) AS year, amount_cents FROM gifts WHERE status = 'Received' AND gift_type = 'Sponsorship' AND removed_at IS NULL AND owner_board_id <> '18437909779' ORDER BY monday_item_id"
+```
+
 Many `In Kind Donation / Sponsorship` gifts are legitimately person-owned, because that Gift Type
 also covers individuals' in-kind donations (which is why the section renders on Organizations
 only); only the Organizations-owned in-kind rows matter for the section.
 
 **Rollout, in order** (after merge; none of it is automated):
 
-1. Confirm the Item description widget on the production Organizations item view.
-2. Set `donation-rollups:writes` per `docs/runbooks/migration-hold.md` (`scripts/flags.mjs`).
-3. Sandbox: `npm run deploy:sandbox`; apply migration 0012 to the sandbox D1; run
+1. **Before merging or deploying**, apply migration 0012 to the remote D1s (sandbox
+   `svbc-donation-rollups-sandbox` and production `svbc-donation-rollups`): `.gitlab-ci.yml`
+   deploys the sandbox on merge to `main`, and an unmigrated D1 breaks every consumer message.
+2. Confirm the Item description widget on the production Organizations item view.
+3. Set `donation-rollups:writes` per `docs/runbooks/migration-hold.md` (`scripts/flags.mjs`).
+4. Sandbox: migration 0012 already applied (step 1); `npm run deploy:sandbox`; run
    `POST /custodian/run/sponsorships` until `remaining: 0`, then `POST /custodian/run/sweep`
    until done; paste one company's section into a Gmail draft and confirm it stays a table.
-4. Production: the same with `npm run deploy` and the production D1; then spot-check three
+5. Production: the same with `npm run deploy`; then spot-check three
    long-history sponsors against the sponsor history sheet.
-5. Update the staff protocols in `monday-migration`: `reporting-grants-and-sponsorships.md` gets an
+6. Update the staff protocols in `monday-migration`: `reporting-grants-and-sponsorships.md` gets an
    "Answering a sponsor's audit request" part (in-kind sponsorships need Amount filled and the
    gift connected to its pipeline item); check `entering-payments.md` and
    `donor-data-entry-and-acknowledgement.md` say a sponsorship's Donor is the company and it is

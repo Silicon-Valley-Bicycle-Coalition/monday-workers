@@ -205,6 +205,22 @@ describe('sponsorships section in the recompute path', () => {
     expect(md).toContain('\n\n## Gift History');
   });
 
+  it('the window year is the local date in the fiscal-year time zone, not UTC', async () => {
+    const cfg = { ...sponsorshipsConfig, donationRollups: { ...sponsorshipsConfig.donationRollups,
+      sponsorships: { ...sponsorshipsCfg, windowYears: 7 } } };
+    const history = [{ ...sponsorHistory()[0]!, mondayItemId: 'old', giftDateISO: '2020-03-01', fiscalYear: 2020 } as GiftHistoryRow];
+    const giftsStore = fakeGiftsStore();
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
+    const setItemDescription = vi.fn().mockResolvedValue(undefined);
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue('2'), setItemDescription,
+      getDonationsByIds: vi.fn().mockResolvedValue([sponsorDonation()]) });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: new Date('2027-01-01T05:00:00Z') });
+    const md = setItemDescription.mock.calls[0]![1] as string;
+    expect(md).toContain('## Sponsorships');
+    expect(md).toContain('2020-03-01');
+  });
+
   it('a People owner with an in-kind Received gift gets no Sponsorships section', async () => {
     const cfg = { ...sponsorshipsConfig, donationRollups: { ...sponsorshipsConfig.donationRollups, ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns } } };
     const { setItemDescription } = await runSponsor(cfg, '3', sponsorHistory(), [sponsorDonation()]);

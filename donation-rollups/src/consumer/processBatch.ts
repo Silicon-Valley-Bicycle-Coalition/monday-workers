@@ -11,7 +11,7 @@ import type {
   DonationBoardConfig, MembershipConfig, OwnerMembershipColumns, DonorLevelConfig,
 } from '../types';
 import { donorLevel } from '../rollups/donorLevel';
-import { computeRollup, currentFiscalYear, type Rollup } from '../rollups/compute';
+import { computeRollup, currentFiscalYear, localDateParts, type Rollup } from '../rollups/compute';
 import {
   buildGiftLedgerJson, buildGiftHistoryMarkdown,
   GIFT_LEDGER_ALERT_BYTES, type GiftLedgerProjection, type GiftHistoryRow,
@@ -557,7 +557,7 @@ async function recomputeOwnerLeased(
     const giftHistoryMd = buildGiftHistoryMarkdown(history, deps.config.monday.accountUrl, driven);
     const sponsorshipsMd = sponsorshipsCfg !== null && ownerBoardId === String(sponsorshipsCfg.organizationsBoardId)
       ? buildSponsorshipsMarkdown(history, sponsorshipsCfg, receivedStatusLabel, config.fiscalYear, config.monday.accountUrl,
-        (deps.now ?? new Date()).toISOString().slice(0, 10))
+        localISODate(deps.now ?? new Date(), config.fiscalYear.timeZone))
       : null;
     await mondayClient.setItemDescription(ownerItemId,
       sponsorshipsMd !== null ? `${sponsorshipsMd}\n\n${giftHistoryMd}` : giftHistoryMd);
@@ -581,6 +581,12 @@ async function recomputeOwnerLeased(
   // predates this fetch; without a fresh row it can't match). The description write above is
   // non-fatal and deliberately doesn't gate this.
   await deps.recomputesStore.record({ ownerItemId, ownerBoardId, fetchedAt, writtenAt: new Date().toISOString() });
+}
+
+// YYYY-MM-DD for `now` in `timeZone` (the Sponsorships window rolls over on the local New Year).
+function localISODate(now: Date, timeZone: string): string {
+  const { year, month, day } = localDateParts(now, timeZone);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 async function planMembershipWrites(
