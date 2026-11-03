@@ -21,6 +21,8 @@ export interface CountedGift {
   credit: string;
   // A matching gift with no Matched By company: credited to the employee, flagged for review.
   unmatchedMatch: boolean;
+  // Set when a Recognition Fiscal Year moved the gift here: the year it was dated (spec §10.1).
+  ownFiscalYear?: number;
 }
 
 export interface DonorRecord {

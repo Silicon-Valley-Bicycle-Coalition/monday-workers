@@ -44,7 +44,9 @@ describe('HttpMailchimpClient.updateMember', () => {
     expect(result).toBe('updated');
     expect(fetchFn).toHaveBeenCalledWith(
       // md5('donor@example.com') === 'b5abe4cfed3adc382b3292a791f6faa3'
-      'https://us1.api.mailchimp.com/3.0/lists/aud1/members/b5abe4cfed3adc382b3292a791f6faa3',
+      // skip_merge_validation: the audience's required fields (City, County, names) are blank on
+      // ~1,800 contacts, and Mailchimp refuses any PATCH to one of them without it.
+      'https://us1.api.mailchimp.com/3.0/lists/aud1/members/b5abe4cfed3adc382b3292a791f6faa3?skip_merge_validation=true',
       expect.objectContaining({
         method: 'PATCH',
         body: JSON.stringify({ merge_fields: { MTIER: 'Standard' } }),
@@ -231,7 +233,7 @@ describe('HttpMailchimpClient.unsubscribeMember', () => {
 
     expect(fetchFn).toHaveBeenNthCalledWith(1, `${HASH_URL}?fields=status`, expect.anything());
     const [url, init] = fetchFn.mock.calls[1]!;
-    expect(url).toBe(HASH_URL);
+    expect(url).toBe(`${HASH_URL}?skip_merge_validation=true`);
     expect((init as RequestInit).method).toBe('PATCH');
     // Only the status — never merge fields or anything that could re-subscribe.
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ status: 'unsubscribed' });
@@ -286,7 +288,7 @@ describe('HttpMailchimpClient.renameMember', () => {
 
     expect(fetchFn).toHaveBeenNthCalledWith(1, `${NEW_URL}?fields=status`, expect.anything());
     const [url, init] = fetchFn.mock.calls[1]!;
-    expect(url).toBe(OLD_URL);
+    expect(url).toBe(`${OLD_URL}?skip_merge_validation=true`);
     expect((init as RequestInit).method).toBe('PATCH');
     // Only the address: the member's status (its consent) is never sent, so never changed.
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ email_address: 'new@b.com' });

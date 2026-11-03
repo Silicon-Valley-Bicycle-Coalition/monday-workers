@@ -445,9 +445,19 @@ describe('status columns read by stored value (label id 5)', () => {
         { id: 'gt', text: '' }, { id: 'dl', text: '' }, { id: 'mb', text: '' }, { id: 'an', text: '', value: null }] }] } }] } });
     expect((await client.pageDonationCredits(CREDITS_CFG, null, 7)).items).toEqual([
       { id: 'g1', fiscalYear: 2026, amountCents: 125050, status: 'Received', giftType: 'Matching Donation',
-        donorItemIds: ['p1'], matchedByItemIds: ['o1'], anonymous: true },
+        donorItemIds: ['p1'], matchedByItemIds: ['o1'], anonymous: true, inKindValueCents: null, recognitionFiscalYear: '' },
       { id: 'g2', fiscalYear: 0, amountCents: null, status: null, giftType: '',
-        donorItemIds: [], matchedByItemIds: [], anonymous: false }]);
+        donorItemIds: [], matchedByItemIds: [], anonymous: false, inKindValueCents: null, recognitionFiscalYear: '' }]);
+  });
+  it('pageDonationCredits reads In-Kind Value and Recognition Fiscal Year only when configured', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'g1', column_values: [{ id: 'am', text: '' }, { id: 'fy', text: '2027' }, { id: 'ik', text: '2000' }, { id: 'rfy', text: ' FY2026 ' }] },
+      { id: 'g2', column_values: [{ id: 'am', text: '50' }, { id: 'fy', text: '2025' }, { id: 'ik', text: '' }, { id: 'rfy', text: '' }] }] } }] } });
+    const cfg = { ...CREDITS_CFG, columns: { ...CREDITS_CFG.columns, inKindValue: 'ik', recognitionFiscalYear: 'rfy' } };
+    expect((await client.pageDonationCredits(cfg, null, 7)).items.map((i) => [i.id, i.inKindValueCents, i.recognitionFiscalYear]))
+      .toEqual([['g1', 200000, 'FY2026'], ['g2', null, '']]);
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { variables: { columnIds: string[] } };
+    expect(body.variables.columnIds).toEqual(expect.arrayContaining(['ik', 'rfy']));
   });
   it('pageDonationCredits falls back to the Date for a blank Fiscal Year Ending, as getDonationsByIds does', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [

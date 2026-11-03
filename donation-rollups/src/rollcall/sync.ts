@@ -56,6 +56,8 @@ export function columnValuesFor(row: RollCallRow, cols: Columns): Record<string,
     [cols.organization]: itemIds(row.organizationId === null ? [] : [row.organizationId]),
     [cols.reviewNote]: { text: row.reviewNote },
     [cols.rowKey]: row.key,
+    // The item's Name again, as a cell that survives exports and sorting (spec §10.2).
+    ...(cols.householdName !== undefined ? { [cols.householdName]: row.name } : {}),
   };
 }
 
@@ -79,11 +81,12 @@ function expectedCells(row: RollCallRow, cols: Columns): [keyof Columns, string 
     ['people', idSet(row.personIds.join(','))],
     ['organization', row.organizationId],
     ['reviewNote', blank(row.reviewNote)],
+    ...(cols.householdName !== undefined ? [['householdName', blank(row.name)] as [keyof Columns, string | null]] : []),
   ];
 }
 
 function boardCell(item: BoardItem, cols: Columns, col: keyof Columns): string | null {
-  const raw = item.cells.get(cols[col]);
+  const raw = item.cells.get(cols[col]!);
   if (col === 'total' || col === 'gifts') return number(raw);
   if (col === 'people' || col === 'organization') return idSet(raw);
   return blank(raw);
@@ -103,8 +106,10 @@ export function distinctItems(items: BoardItem[]): BoardItem[] {
   return [...byId.values()];
 }
 
+// movedOut: per fiscal year, the donors with a counted gift dated that year that a Recognition
+// Fiscal Year credits to another year (spec §10.1) — positive news for a frozen year's row.
 export function planSync(rows: RollCallRow[], items: BoardItem[], cols: Columns,
-  frozenYears: Set<number>, groupYearById: Map<string, number>): SyncOp[] {
+  frozenYears: Set<number>, groupYearById: Map<string, number>, movedOut: Map<number, Set<string>> = new Map()): SyncOp[] {
   const deletes: SyncOp[] = [];
   const updates: SyncOp[] = [];
   const moves: SyncOp[] = [];
@@ -143,15 +148,16 @@ export function planSync(rows: RollCallRow[], items: BoardItem[], cols: Columns,
     const values: Record<string, unknown> = {};
     if (item.name !== row.name) values.name = row.name;
     for (const [col, want] of expectedCells(row, cols)) {
-      if (boardCell(item, cols, col) !== want) values[cols[col]] = all[cols[col]];
+      if (boardCell(item, cols, col) !== want) values[cols[col]!] = all[cols[col]!];
     }
     if (Object.keys(values).length) updates.push({ op: 'update', itemId: item.id, row, values });
     if (groupYearById.get(item.groupId) !== row.fiscalYear) moves.push({ op: 'move', itemId: item.id, fiscalYear: row.fiscalYear });
   }
 
   // A frozen (closed, fully archived) year's row goes only when one of its donors is on a
-  // different computed row that year — a household join, say. A donor who simply vanished from
-  // the inputs keeps the row as printed.
+  // different computed row that year — a household join, say — or had a gift of that year moved
+  // to another by a Recognition Fiscal Year. A donor who simply vanished from the inputs keeps
+  // the row as printed.
   const donorsByYear = new Map<number, Set<string>>();
   for (const row of rows) {
     let ids = donorsByYear.get(row.fiscalYear);
@@ -166,7 +172,7 @@ export function planSync(rows: RollCallRow[], items: BoardItem[], cols: Columns,
       const donors = donorsByYear.get(year);
       const ids = [idSet(item.cells.get(cols.people)), idSet(item.cells.get(cols.organization))]
         .flatMap((s) => (s === null ? [] : s.split(',')));
-      if (!ids.some((id) => donors?.has(id))) continue;
+      if (!ids.some((id) => donors?.has(id) || movedOut.get(year)?.has(id))) continue;
     }
     deletes.push({ op: 'delete', itemId: item.id, reason: 'gone' });
   }

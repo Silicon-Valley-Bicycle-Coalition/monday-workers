@@ -36,7 +36,7 @@ const gift = (id: string, owner: string, cents: number, over: Partial<LedgerGift
   ({ mondayItemId: id, ownerItemId: owner, fiscalYear: 2027, amountCents: cents, status: 'Received', giftType: 'Individual Donation', ...over });
 const donation = (id: string, over: Partial<DonationCreditRecord> = {}): DonationCreditRecord =>
   ({ id, fiscalYear: 2027, amountCents: 10_000, status: 'Received', giftType: 'Individual Donation', donorItemIds: ['11'],
-    matchedByItemIds: [], anonymous: false, ...over });
+    matchedByItemIds: [], anonymous: false, inKindValueCents: null, recognitionFiscalYear: '', ...over });
 const item = (id: string, name: string, text: Record<string, string | null>, over: Partial<ItemColumns> = {}): ItemColumns =>
   ({ id, name, text: new Map(Object.entries(text)), values: new Map(), ...over });
 
@@ -83,7 +83,9 @@ function harness(h: Harness) {
   };
   const deps = {
     gifts: {
-      async countedGifts(fromFY: number) { return (h.ledger ?? []).filter((g) => g.fiscalYear >= fromFY); },
+      async countedGifts(fromFY: number, alsoIds: string[] = []) {
+        return (h.ledger ?? []).filter((g) => g.fiscalYear >= fromFY || alsoIds.includes(g.mondayItemId));
+      },
       async recordRun() {},
       async lastRuns() { return []; },
     },
@@ -201,7 +203,7 @@ describe('runRollCall', () => {
       boards: { 201: PEOPLE, 300: ORGS, 900: [] },
     });
     // A $0 anonymous gift stored before this rule: it must not count either.
-    h.credits.set('a0', { giftItemId: 'a0', fiscalYear: 2027, amountCents: 0, status: 'Received', giftType: 'Individual Donation',
+    h.credits.set('a0', { giftItemId: 'a0', fiscalYear: 2027, recognitionFiscalYear: null, amountCents: 0, status: 'Received', giftType: 'Individual Donation',
       credit: 'anonymous', unmatchedMatch: false, archivedAt: '2026-10-01T00:00:00Z' });
     const report = await runRollCall(h.deps, NOW);
     expect((report.detail as { rows: number }).rows).toBe(1);
@@ -297,6 +299,94 @@ describe('runRollCall', () => {
     });
     await runRollCall(h.deps, NOW);
     expect(h.writes).toEqual(['create Ada Park']);
+  });
+});
+
+describe('runRollCall: Recognition Fiscal Year and in-kind (spec §10)', () => {
+  const FY26 = [{ id: 'c26', title: 'FY2026' }, { id: 'cur', title: 'FY2027 (in progress)' }];
+
+  it('credits an archived FY2025 gift to FY2026 through its kept credits row, read from the ledger by id', async () => {
+    // Zoox's case: paid 2025-02-17 for 2026 BTWD, so FY2025 and archived. Staff restored it, set
+    // 2026, and it was archived again: Donations no longer shows it, only the kept row does.
+    const h = harness({
+      ledger: [gift('zoox', '31', 500_000, { fiscalYear: 2025 }), gift('other25', '31', 70_000, { fiscalYear: 2025 })],
+      donations: [donation('x', { donorItemIds: ['13'] })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    h.credits.set('zoox', { giftItemId: 'zoox', fiscalYear: 2025, recognitionFiscalYear: 2026, amountCents: 500_000, status: 'Received',
+      giftType: 'Sponsorship', credit: null, unmatchedMatch: false, archivedAt: '2026-11-04T00:00:00Z' });
+    const report = await runRollCall(h.deps, NOW);
+    expect(report.ok).toBe(true);
+    expect(report.detail).toMatchObject({ pendingLedger: 0 });
+    // Only the overridden gift: other25 stays in FY2025, which the board doesn't cover.
+    expect(h.created).toEqual([expect.objectContaining({ groupId: 'c26', name: 'Acme Foundation',
+      values: expect.objectContaining({ rk: '2026|item:31', to: '5000.00', gi: '1', tr: { label: '$5,000+' } }) })]);
+  });
+
+  it('counts an active FY2027 gift moved to FY2026 once, in FY2026 only', async () => {
+    // Walkup Melodia's case: an active FY2027 gift for a FY2026 event. Acme also gave in 2027.
+    const h = harness({
+      ledger: [gift('wm', '31', 150_000), gift('acme27', '31', 20_000)],
+      donations: [donation('wm', { donorItemIds: ['31'], amountCents: 150_000, recognitionFiscalYear: 'FY2026' }),
+        donation('acme27', { donorItemIds: ['31'], amountCents: 20_000 })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    await runRollCall(h.deps, NOW);
+    const byKey = new Map(h.created.map((c) => [c.values.rk, c.values]));
+    expect(byKey.get('2026|item:31')).toMatchObject({ to: '1500.00', gi: '1' });
+    expect(byKey.get('2027|item:31')).toMatchObject({ to: '200.00', gi: '1' });
+    expect(h.credits.get('wm')).toMatchObject({ credit: null, fiscalYear: 2027, recognitionFiscalYear: 2026 });
+  });
+
+  it('moves an anonymous gift\'s year without naming its donor', async () => {
+    const h = harness({
+      ledger: [gift('a1', '13', 5_000)],
+      donations: [donation('a1', { anonymous: true, donorItemIds: ['13'], amountCents: 5_000, recognitionFiscalYear: '2026' })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    await runRollCall(h.deps, NOW);
+    expect(h.created.map((c) => [c.groupId, c.name, c.values.rk])).toEqual([['c26', 'Anonymous', '2026|anonymous']]);
+  });
+
+  it('holds a gift moved to a future year until that year begins', async () => {
+    const h = harness({
+      ledger: [gift('pre', '31', 100_000)],
+      donations: [donation('pre', { donorItemIds: ['31'], amountCents: 100_000, recognitionFiscalYear: '2028' })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    const report = await runRollCall(h.deps, NOW);
+    expect((report.detail as { rows: number }).rows).toBe(0);
+    expect(h.created).toEqual([]);
+  });
+
+  it('counts the In-Kind Value of a gift with no Amount (Lumos), from the duty\'s own read', async () => {
+    const h = harness({
+      ledger: [gift('lumos', '31', 0)],
+      donations: [donation('lumos', { donorItemIds: ['31'], amountCents: null, inKindValueCents: 200_000 })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    await runRollCall(h.deps, NOW);
+    expect(h.created.map((c) => [c.values.rk, c.values.to])).toEqual([['2027|item:31', '2000.00']]);
+  });
+
+  it('reports an unreadable Recognition Fiscal Year and counts the gift in its own year', async () => {
+    const h = harness({
+      ledger: [gift('g1', '13', 10_000)],
+      donations: [donation('g1', { donorItemIds: ['13'], recognitionFiscalYear: 'FY26' })],
+      boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    const report = await runRollCall(h.deps, NOW);
+    expect(report.summary).toMatch(/1 gift has a Recognition Fiscal Year that isn't a year \(counted in their own year\): g1/);
+    expect(h.created.map((c) => c.values.rk)).toEqual(['2027|item:13']);
+  });
+
+  it('writes Household Name with the item name when configured', async () => {
+    const h = harness({
+      rollCall: { ...ROLL_CALL, columns: { ...COLS, householdName: 'hn' } },
+      ledger: [gift('g1', '11', 10_000)], boards: { 201: PEOPLE, 300: ORGS, 900: [] }, groups: FY26,
+    });
+    await runRollCall(h.deps, NOW);
+    expect(h.created[0]).toMatchObject({ name: 'Pat & Sam Lee', values: { hn: 'Pat & Sam Lee' } });
   });
 });
 

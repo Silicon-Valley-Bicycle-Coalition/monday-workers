@@ -329,6 +329,20 @@ describe('term_start (membership activity rule)', () => {
     expect(await store.countedGifts(2026)).toEqual([
       { mondayItemId: 'cg-new', ownerItemId: 'cg-o', fiscalYear: 2026, amountCents: 700, status: 'Received', giftType: 'Individual' }]);
   });
+  it('countedGifts adds the named earlier-year gifts, once, never a removed one', async () => {
+    const store = new D1GiftsStore(env.DB);
+    const g = { ownerItemId: 'cx-o', ownerBoardId: 'cx-b', amountCents: 500_000, status: 'Received' };
+    await store.refreshFacts([
+      { ...g, mondayItemId: 'cx-prepaid', giftDateISO: '2025-02-17', fiscalYear: 2025 },
+      { ...g, mondayItemId: 'cx-other', giftDateISO: '2025-03-01', fiscalYear: 2025 },
+      { ...g, mondayItemId: 'cx-gone', giftDateISO: '2025-03-02', fiscalYear: 2025 },
+      { ...g, mondayItemId: 'cx-new', giftDateISO: '2026-01-01', fiscalYear: 2026 },
+    ], 'import', 'now');
+    await store.markRemoved('cx-gone', 'later');
+    const ids = (await store.countedGifts(2026, ['cx-prepaid', 'cx-gone', 'cx-new', 'cx-missing']))
+      .map((r) => r.mondayItemId).filter((id) => id.startsWith('cx-'));
+    expect(ids.sort()).toEqual(['cx-new', 'cx-prepaid']);
+  });
 });
 
 describe('sponsorship facts (sponsorship_event, in_kind_value_cents)', () => {

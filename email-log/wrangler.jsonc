@@ -16,9 +16,8 @@
     {
       "binding": "DB",
       "database_name": "svbc-email-log",
-      // Not yet created. `wrangler d1 create svbc-email-log` on the SVBC account and paste
-      // the id here; forks: create your own.
-      "database_id": "REPLACE_WITH_D1_ID",
+      // SVBC account production D1 (created 2026-11-03); forks: create your own.
+      "database_id": "5e2475bd-4166-4ec2-a105-c510be9491e1",
       "migrations_dir": "migrations"
     }
   ],

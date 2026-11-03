@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { creditFor, refreshCredits, type DonationCreditItem } from './credits';
+import { countedCents, creditFor, recognitionYear, refreshCredits, type DonationCreditItem } from './credits';
 import type { CustodianDeps } from '../custodian/custodian';
 import type { CreditRow, RollCallCreditsStore } from '../db/rollCallCredits';
 import type { RollCallConfig } from '../types';
@@ -8,7 +8,30 @@ const EXCLUDED = ['Contracts'];
 const YEARS = { first: 2026, current: 2027 };
 const item = (over: Partial<DonationCreditItem> = {}): DonationCreditItem => ({
   id: 'g1', fiscalYear: 2026, amountCents: 10_000, status: 'Received', giftType: 'Individual Donation',
-  donorItemIds: ['p1'], matchedByItemIds: [], anonymous: false, ...over,
+  donorItemIds: ['p1'], matchedByItemIds: [], anonymous: false, inKindValueCents: null, recognitionFiscalYear: '', ...over,
+});
+
+describe('recognitionYear', () => {
+  it('reads 2026 or FY2026 in any case and spacing; blank or the own year is no override', () => {
+    expect(recognitionYear('2026', 2025)).toBe(2026);
+    expect(recognitionYear(' fy 2026 ', 2025)).toBe(2026);
+    expect(recognitionYear('FY2026', 2027)).toBe(2026);
+    expect(recognitionYear('', 2025)).toBeNull();
+    expect(recognitionYear('2025', 2025)).toBeNull();
+  });
+  it('calls anything else invalid', () => {
+    for (const t of ['FY26', '26', '2026-27', 'next year', '2,026']) expect(recognitionYear(t, 2025)).toBe('invalid');
+  });
+});
+
+describe('countedCents', () => {
+  it('counts Amount, or In-Kind Value when Amount is blank or zero', () => {
+    expect(countedCents({ amountCents: 5_000, inKindValueCents: 200_000 })).toBe(5_000);
+    expect(countedCents({ amountCents: null, inKindValueCents: 200_000 })).toBe(200_000);
+    expect(countedCents({ amountCents: 0, inKindValueCents: 200_000 })).toBe(200_000);
+    expect(countedCents({ amountCents: null, inKindValueCents: null })).toBeNull();
+    expect(countedCents({ amountCents: 0, inKindValueCents: 0 })).toBe(0);
+  });
 });
 
 describe('creditFor', () => {
@@ -54,6 +77,33 @@ describe('creditFor', () => {
   it('flags a matching gift with no Matched By but a Donor, carrying no credit', () => {
     expect(creditFor(item({ giftType: 'Matching Donation' }), EXCLUDED, YEARS)).toEqual({ credit: null, unmatchedMatch: true });
   });
+  it('carries a Recognition Fiscal Year on a credit-null row whatever decides counting, own year in or out of range', () => {
+    const carry = { credit: null, unmatchedMatch: false };
+    expect(creditFor(item({ fiscalYear: 2025, recognitionFiscalYear: '2026' }), EXCLUDED, YEARS)).toEqual(carry);
+    expect(creditFor(item({ fiscalYear: 2027, recognitionFiscalYear: 'FY2026' }), EXCLUDED, YEARS)).toEqual(carry);
+    expect(creditFor(item({ fiscalYear: 2025, recognitionFiscalYear: '2026', status: 'Pledged' }), EXCLUDED, YEARS)).toEqual(carry);
+    expect(creditFor(item({ recognitionFiscalYear: '2028' }), EXCLUDED, YEARS)).toEqual(carry);
+    expect(creditFor(item({ giftType: 'Matching Donation', recognitionFiscalYear: '2027' }), EXCLUDED, YEARS))
+      .toEqual({ credit: null, unmatchedMatch: true });
+  });
+  it('keeps Anonymous and Matched By credits under a Recognition Fiscal Year: it moves the year, not the donor', () => {
+    expect(creditFor(item({ anonymous: true, recognitionFiscalYear: '2027' }), EXCLUDED, YEARS)).toEqual({ credit: 'anonymous', unmatchedMatch: false });
+  });
+  it('judges a donorless gift by its Recognition Fiscal Year', () => {
+    expect(creditFor(item({ fiscalYear: 2025, donorItemIds: [], recognitionFiscalYear: '2026' }), EXCLUDED, YEARS))
+      .toEqual({ credit: 'unplaced', unmatchedMatch: false });
+    expect(creditFor(item({ donorItemIds: [], recognitionFiscalYear: '2025' }), EXCLUDED, YEARS)).toBe('skip');
+    expect(creditFor(item({ donorItemIds: [], recognitionFiscalYear: '2028' }), EXCLUDED, YEARS)).toBe('skip');
+  });
+  it('ignores an unreadable or own-year Recognition Fiscal Year', () => {
+    expect(creditFor(item({ recognitionFiscalYear: 'FY26' }), EXCLUDED, YEARS)).toBe('ledger');
+    expect(creditFor(item({ recognitionFiscalYear: '2026' }), EXCLUDED, YEARS)).toBe('ledger');
+    expect(creditFor(item({ fiscalYear: 2025, recognitionFiscalYear: 'FY26' }), EXCLUDED, YEARS)).toBe('skip');
+  });
+  it('carries an in-kind amount for a gift with no Amount on a credit-null row', () => {
+    expect(creditFor(item({ amountCents: null, inKindValueCents: 200_000 }), EXCLUDED, YEARS)).toEqual({ credit: null, unmatchedMatch: false });
+    expect(creditFor(item({ amountCents: 5_000, inKindValueCents: 200_000 }), EXCLUDED, YEARS)).toBe('ledger');
+  });
   it('leaves an ordinary donor gift to the ledger', () => {
     expect(creditFor(item(), EXCLUDED, YEARS)).toBe('ledger');
     expect(creditFor(item({ status: 'Received (Historical)' }), EXCLUDED, YEARS)).toBe('ledger');
@@ -64,7 +114,7 @@ const CFG = { firstFiscalYear: 2026, excludedGiftTypes: EXCLUDED, donations: { b
 const NOW = '2026-11-02T00:00:00Z';
 const FY = 2027; // NOW's fiscal year
 const row = (over: Partial<CreditRow> = {}): CreditRow => ({
-  giftItemId: 'g1', fiscalYear: 2026, amountCents: 10_000, status: 'Received', giftType: 'Individual Donation',
+  giftItemId: 'g1', fiscalYear: 2026, recognitionFiscalYear: null, amountCents: 10_000, status: 'Received', giftType: 'Individual Donation',
   credit: 'anonymous', unmatchedMatch: false, archivedAt: null, ...over,
 });
 
@@ -175,6 +225,27 @@ describe('refreshCredits', () => {
     const h = harness([item({ id: 'a', anonymous: true, amountCents: null })], []);
     expect(await refreshCredits(h.deps, CFG, NOW, FY)).toEqual({ upserted: 1, removed: 0, archived: 0 });
     expect(h.rows.get('a')).toEqual(row({ giftItemId: 'a', amountCents: 0 }));
+  });
+  it('stores a Recognition Fiscal Year and an in-kind amount, and reports an unreadable year', async () => {
+    const h = harness([item({ id: 'z', fiscalYear: 2025, recognitionFiscalYear: '2026' }),
+      item({ id: 'k', fiscalYear: 2027, amountCents: null, inKindValueCents: 200_000 }),
+      item({ id: 'bad', recognitionFiscalYear: 'FY26' })], []);
+    expect(await refreshCredits(h.deps, CFG, NOW, FY)).toEqual({ upserted: 2, removed: 0, archived: 0, badRecognitionYears: ['bad'] });
+    expect(h.rows.get('z')).toEqual(row({ giftItemId: 'z', fiscalYear: 2025, recognitionFiscalYear: 2026, credit: null }));
+    expect(h.rows.get('k')).toEqual(row({ giftItemId: 'k', fiscalYear: 2027, amountCents: 200_000, credit: null }));
+  });
+  it('drops the row when staff clear the Recognition Fiscal Year on an active gift', async () => {
+    const h = harness([item({ id: 'z', fiscalYear: 2026 })], [row({ giftItemId: 'z', recognitionFiscalYear: 2027, credit: null })]);
+    expect(await refreshCredits(h.deps, CFG, NOW, FY)).toEqual({ upserted: 0, removed: 1, archived: 0 });
+  });
+  it('keeps the Recognition Fiscal Year of a gift that archives again after staff restored it to set one', async () => {
+    // Night 1: restored and set. Night 2: archived again by hand — the row is stamped, not dropped.
+    const h = harness([item({ id: 'z', fiscalYear: 2025, recognitionFiscalYear: '2026' }), item({ id: 'x' })], []);
+    await refreshCredits(h.deps, CFG, NOW, FY);
+    const later = harness([item({ id: 'x' })], [...h.rows.values()], { z: 'archived' });
+    expect(await refreshCredits(later.deps, CFG, '2026-11-04T00:00:00Z', FY)).toEqual({ upserted: 0, removed: 0, archived: 1 });
+    expect(later.rows.get('z')).toEqual(row({ giftItemId: 'z', fiscalYear: 2025, recognitionFiscalYear: 2026, credit: null,
+      archivedAt: '2026-11-04T00:00:00Z' }));
   });
   it('upserts once when a paging race repeats an item', async () => {
     const h = harness([item({ anonymous: true }), item({ anonymous: true })], []);

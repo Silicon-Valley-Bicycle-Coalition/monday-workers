@@ -3,8 +3,10 @@
 **Status:** Built (2026-10-20; design:
 [`docs/superpowers/specs/2026-10-19-email-log-design.md`](../docs/superpowers/specs/2026-10-19-email-log-design.md))
 — **sandbox deployed 2026-11-02** (`svbc-email-log-sandbox`, `log-sandbox@log.bikesiliconvalley.org`;
-a staff BCC logged end to end), **production not yet.** The sandbox still owes the forgery check
-(step 5) and steps 6 to 10 (see "Sandbox bring-up").
+a staff BCC logged end to end); **production live 2026-11-03** (`svbc-email-log`,
+`log@log.bikesiliconvalley.org`, writes on; a staff BCC logged end to end, see "Production
+bring-up"). The sandbox still owes the forgery check (step 5) and steps 6 to 10 (see "Sandbox
+bring-up"), and the staff note isn't written yet.
 **Priority:** Post-cutover, non-blocking. It replaces the Salesforce Gmail extension's one-click
 email logging.
 **Stack:** TypeScript + D1 + Cloudflare Queues + Email Routing (an `email()` handler; there is no
@@ -167,6 +169,12 @@ Copied from the spec. None of this is done in code.
 * People and People (Historical) show both boards: either their Activities connect/mirror column
   links to both, or a second one is added for Activities (Logged). Pick whichever Monday allows
   for a two-way connect column; the goal is that a person's item shows old and new activity.
+  *Done in production 2026-11-03:* Activities (Logged)'s Person column is two-way
+  (`allowCreateReflectionColumn`), which added an `Activities (Logged)` connect column to People
+  (`board_relation_mm8r6c2r`) and People (Historical) (`board_relation_mm8rp0gn`), back-filled
+  for existing items. Keep both titles identical: people-reclassification matches columns by
+  title and type, and aborts a pass when the two People boards disagree. (The sandbox board isn't
+  two-way yet.)
 * A dedicated Monday integration user for this Worker that can read People, People (Historical),
   Affiliations, and the users list, and write only Activities (Logged) (and IT Requests, if
   `alerts.itRequests` is set). Run `scripts/check-monday-token-scope.mjs` against it before
@@ -232,9 +240,39 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
     (dropped, no item), a message to an unmatched address (item with `Needs Person`, plus the
     reply to the sink), and a duplicate (the same message again makes no second item).
 
-Production follows after cutover: production boards and column ids in `config/svbc.json`, the
-production D1/queues/secret, Email Routing for `log@log.bikesiliconvalley.org`, then a one-paragraph
-staff note (significant touches only) in the staff guide.
+## Production bring-up
+
+Started 2026-11-03, post-cutover.
+
+1. **Config — done.** `config/svbc.json` points at the production boards: Activities (Logged)
+   18438042551, People 18437909781, People (Historical) 18437909784, Affiliations 18437909787,
+   with their column ids. Activities (Logged) already existed with the sandbox board's columns
+   (plus a `Topic` tag column the Worker doesn't write), Person connected to both People boards,
+   and SVBC Integration subscribed. `mail.trustedAuthServId` is `mx.cloudflare.net`, the id the
+   sandbox found in step 5. `alerts.itRequests` files to IT Requests (8846215481, Type
+   `status_11` = `IT Support`) with a one-day cooldown per alert kind.
+2. **D1 and queues — done.** D1 `svbc-email-log` (`5e2475bd-…`, migration 0001 applied) and the
+   queues `email-log-writes` and `email-log-writes-dlq`.
+3. **Monday access.** Nothing to set: `MONDAY_AUTH` binds `svbc-monday-auth`, whose Staff Sync app
+   is already consented for the other production Workers.
+4. **Write switch — done 2026-11-03:** `node scripts/flags.mjs email-log writes on --env production`
+   (run from the repo root). Missing means off, and an off Worker dry-runs every message.
+5. **Deploy — done 2026-11-03:** `cd email-log && npx wrangler deploy --env=""` (version
+   `4198adc6`).
+6. **Email Routing — done 2026-11-03:** on `log.bikesiliconvalley.org`, the rule
+   `log@log.bikesiliconvalley.org` → Worker `svbc-email-log` is active. The route can only be
+   created once the Worker exists, so it comes after the deploy.
+7. **Smoke test — done 2026-11-03.** One staff BCC to `log@` went through: D1 row `logged` 12 s
+   after receipt, and an Activities (Logged) item with Activity Type `Email`, Owner the sender and
+   the Message Hash set. The recipient was a personal address not on any People record, so the item
+   is `Needs Person` with the address in Notes, which is correct. A second BCC, to an address on
+   a People record, logged as `Done` with Person linked to that People item, so the matched path
+   works in production too.
+8. **Staff note:** one paragraph in the staff guide (significant touches only).
+
+The sandbox's forgery check (step 5) and steps 6 to 10 are still owed. They test the code, not the
+deployment, so they apply to production as they stand; until the forgery check is done, keep the
+`log@` address internal.
 
 ## Failures and alerts
 
@@ -326,7 +364,9 @@ dry-runs everything.
   it by hand.
 * A message BCC'd and then also forwarded may make two items (a forward has no shared key with the
   original). Staff delete the duplicate.
-* **Open question: is a separate Activities (Logged) board still needed?** The design
+* **Resolved 2026-11-03: keep the separate Activities (Logged) board.** Production already has it
+  (18438042551), staff-subscribed and connected to both People boards, so the Worker writes there.
+  The original question, kept for the record: **is a separate Activities (Logged) board still needed?** The design
   (Constraints, Decision 1) sends go-forward logs to a new board because the imported Activities
   board was "full" at a ~10,000-item ceiling. SVBC's real limit is 100,000 (decided 2026-11-03),
   so the imported board (about 10,000 items) has room for years of significant-touch logging.
