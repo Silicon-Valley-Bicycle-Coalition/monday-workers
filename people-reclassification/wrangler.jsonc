@@ -54,7 +54,7 @@
         {
           "binding": "DB",
           "database_name": "svbc-people-reclassification-sandbox",
-          "database_id": "REPLACE_WITH_SANDBOX_D1_ID", // wrangler d1 create svbc-people-reclassification-sandbox
+          "database_id": "6a6f6e19-f663-4d35-90ce-122a18a86543", // svbc-people-reclassification-sandbox, created 2026-11-02
           "migrations_dir": "migrations"
         }
       ],

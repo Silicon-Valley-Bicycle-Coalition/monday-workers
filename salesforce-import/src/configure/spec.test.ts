@@ -10,6 +10,13 @@ describe('BOARD_SPECS columns', () => {
     expect(col.labels).toEqual(STATUS_LABELS['Stakeholder Type']);
     expect(col.labels).toContain('Elected Official');
   });
+
+  it('the two People boards get the same columns, so people-reclassification can move between them', () => {
+    // A column on one People board but not the other makes every reclassification pass abort
+    // (it would drop that column's values). Campaign (tags) was live-only until 2026-11-02.
+    const cols = (key: string) => (BOARD_SPECS[key]!.columns ?? []).map((c) => `${c.title} (${c.type})`).sort();
+    expect(cols('people-historical')).toEqual(cols('people-live'));
+  });
 });
 
 describe('BOARD_SPECS views', () => {
