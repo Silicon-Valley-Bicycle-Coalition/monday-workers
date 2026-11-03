@@ -253,10 +253,13 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
 `RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
 
-**Production: deployed with writes off** (2026-11-03). Done so far:
+**Production: live, writes on** (2026-11-03). The first live pass is the quarterly one on
+**2027-01-01 at 10:00 UTC**. Until then no trigger is due: operator dry runs don't count, People
+is at 8% of the 100,000 limit Monday reports, and there's no earlier live pass to continue.
+Starting one by hand (`POST /reclassify/run`) would move people now. Done so far:
 * The D1 `svbc-people-reclassification` was created and migrations 0001–0002 applied.
 * `config/svbc.json` has the board ids, and the two People boards' columns match.
-* The Worker is deployed, and its write switch is unset, which means `off`.
+* The Worker is deployed. Its write switch was turned `on` on 2026-11-03, after the dry run below.
 * `RECLASSIFY_SECRET` was replaced on 2026-11-03, because the 10-31 value wasn't recoverable.
   The current value is `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env`, and belongs
   in the secure note too.
@@ -266,8 +269,8 @@ items. It decided 543 to-historical and 131 to-live, and planned 400 to-historic
 `aged-out` with latest activity 2001-01-01 to 2019-05-10. Three sampled items matched
 max(Last Gift Date, Member Until), with no Lifetime tier and no Funraise profile.
 
-Turning writes on is the remaining decision. With writes on, the cron moves nothing until a
-trigger is due (next: 2027-01-01, quarterly), unless a pass is started by hand.
+When that first pass runs, check `runs`/`moves` for failures, and spot-check one moved person
+who has gifts. Inbound Donor links are the one link type not yet seen across a live move.
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.
