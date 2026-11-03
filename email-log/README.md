@@ -3,9 +3,10 @@
 **Status:** Built (2026-10-20; design:
 [`docs/superpowers/specs/2026-10-19-email-log-design.md`](../docs/superpowers/specs/2026-10-19-email-log-design.md))
 — **sandbox deployed 2026-11-02** (`svbc-email-log-sandbox`, `log-sandbox@log.bikesiliconvalley.org`;
-a staff BCC logged end to end); **production provisioned 2026-11-03, not yet deployed** (config, D1
-and queues done; Email Routing, deploy and the write switch remain, see "Production bring-up"). The
-sandbox still owes the forgery check (step 5) and steps 6 to 10 (see "Sandbox bring-up").
+a staff BCC logged end to end); **production live 2026-11-03** (`svbc-email-log`,
+`log@log.bikesiliconvalley.org`, writes on; a staff BCC logged end to end, see "Production
+bring-up"). The sandbox still owes the forgery check (step 5) and steps 6 to 10 (see "Sandbox
+bring-up"), and the staff note isn't written yet.
 **Priority:** Post-cutover, non-blocking. It replaces the Salesforce Gmail extension's one-click
 email logging.
 **Stack:** TypeScript + D1 + Cloudflare Queues + Email Routing (an `email()` handler; there is no
@@ -248,14 +249,18 @@ Started 2026-11-03, post-cutover.
    queues `email-log-writes` and `email-log-writes-dlq`.
 3. **Monday access.** Nothing to set: `MONDAY_AUTH` binds `svbc-monday-auth`, whose Staff Sync app
    is already consented for the other production Workers.
-4. **Write switch** (operator): `node scripts/flags.mjs email-log writes on --env production`.
-   Missing means off, and an off Worker dry-runs every message.
-5. **Deploy** (operator): `cd email-log && npx wrangler deploy --env=""`.
-6. **Email Routing** (operator, Cloudflare dashboard): on `log.bikesiliconvalley.org` (already
-   enabled for the sandbox), route `log@log.bikesiliconvalley.org` to the Worker `svbc-email-log`.
-   The route can only be created once the Worker exists, so it comes after the deploy.
-7. **Smoke test:** one staff BCC to `log@` about a real contact. Expect an Activities (Logged) item
-   linked to that person and no reply.
+4. **Write switch — done 2026-11-03:** `node scripts/flags.mjs email-log writes on --env production`
+   (run from the repo root). Missing means off, and an off Worker dry-runs every message.
+5. **Deploy — done 2026-11-03:** `cd email-log && npx wrangler deploy --env=""` (version
+   `4198adc6`).
+6. **Email Routing — done 2026-11-03:** on `log.bikesiliconvalley.org`, the rule
+   `log@log.bikesiliconvalley.org` → Worker `svbc-email-log` is active. The route can only be
+   created once the Worker exists, so it comes after the deploy.
+7. **Smoke test — done 2026-11-03.** One staff BCC to `log@` went through: D1 row `logged` 12 s
+   after receipt, and an Activities (Logged) item with Activity Type `Email`, Owner the sender and
+   the Message Hash set. The recipient was a personal address not on any People record, so the item
+   is `Needs Person` with the address in Notes. That is correct behaviour, but a matched Person link
+   is still unseen in production; the next real BCC to a contact on file shows it.
 8. **Staff note:** one paragraph in the staff guide (significant touches only).
 
 The sandbox's forgery check (step 5) and steps 6 to 10 are still owed. They test the code, not the
