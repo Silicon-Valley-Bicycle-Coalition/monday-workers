@@ -106,10 +106,10 @@ export async function hasDtdRecordForItem(db: D1Database, mondayItemId: string):
   return row !== null;
 }
 
-/** company_name of the most recently seen record linked to this Monday item, or null. */
+/** company_name of the most recently seen verified record linked to this Monday item, or null. */
 export async function companyForItem(db: D1Database, mondayItemId: string): Promise<string | null> {
   const row = await db
-    .prepare('SELECT company_name FROM dtd_records WHERE monday_item_id = ? ORDER BY updated_seen_at DESC LIMIT 1')
+    .prepare('SELECT company_name FROM dtd_records WHERE monday_item_id = ? AND unmatched = 0 ORDER BY updated_seen_at DESC LIMIT 1')
     .bind(mondayItemId)
     .first<{ company_name: string | null }>();
   return row?.company_name ?? null;

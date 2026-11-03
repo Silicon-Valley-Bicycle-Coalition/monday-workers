@@ -305,7 +305,7 @@ describe('runPull', () => {
     await upsertRecord(env.DB, {
       donationIdentifier: 'fr-1', mondayItemId: '500', source: null, status: ':old', matchingGiftStatus: null,
       employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
-      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: false, donorEmailHash: null, donationAmount: null,
+      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: true, donorEmailHash: null, donationAmount: null,
     });
     const h = harness([dtd()]);
     await runPull(h.deps, NOW);
@@ -316,7 +316,7 @@ describe('runPull', () => {
     await upsertRecord(env.DB, {
       donationIdentifier: 'fr-1', mondayItemId: '500', source: null, status: ':old', matchingGiftStatus: null,
       employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
-      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: false, donorEmailHash: null, donationAmount: null,
+      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: true, donorEmailHash: null, donationAmount: null,
     });
     const h = harness([dtd()]);
     await runPull(h.deps, NOW);
@@ -477,7 +477,56 @@ describe('runPull', () => {
       await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
       noWrites(h);
       expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
-      expect(log).toHaveBeenCalledWith('dtd-sync: pull item 500 skipped: donor mismatch');
+      expect(log).toHaveBeenCalledWith('dtd-sync: pull item 500 kept: unverified update');
+    });
+
+    describe('a verified row changes only after re-verification', () => {
+      async function verified() {
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+        const h = harness([dtd()]);
+        h.items.set('500', item());
+        await runPull(h.deps, NOW);
+        const before = await getRecord(env.DB, 'fr-1');
+        expect(before).toMatchObject({ mondayItemId: '500', unmatched: false });
+        h.donationWrites.length = 0;
+        h.personWrites.length = 0;
+        h.state.donations = [dtd({ status: ':ineligible', company_name: 'Other Co' })];
+        return { h, before };
+      }
+      const LATER = new Date('2026-11-03T13:00:00Z');
+
+      it('keeps the row when the record no longer resolves', async () => {
+        const { h, before } = await verified();
+        h.items.clear();
+        await runPull(h.deps, LATER);
+        noWrites(h);
+        expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+      });
+
+      it('keeps the row when the record resolves to a different item', async () => {
+        const { h, before } = await verified();
+        h.items.set('500', item({ funraiseId: null }));
+        h.items.set('501', item({ id: '501' }));
+        await runPull(h.deps, LATER);
+        noWrites(h);
+        expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+      });
+
+      it('keeps the row when the lookup throws, and the watermark still advances', async () => {
+        const { h, before } = await verified();
+        h.deps.monday.findDonationByFunraiseId = async () => { throw new Error('monday down'); };
+        await runPull(h.deps, LATER);
+        noWrites(h);
+        expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+        expect(await getWatermark(env.DB)).toBe(LATER.toISOString());
+      });
+
+      it('updates as before when the same item verifies', async () => {
+        const { h } = await verified();
+        await runPull(h.deps, LATER);
+        expect(h.donationWrites).toHaveLength(1);
+        expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ mondayItemId: '500', unmatched: false, status: ':ineligible', companyName: 'Other Co' });
+      });
     });
 
     it('still writes on retry when a failed record belongs to the item', async () => {

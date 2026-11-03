@@ -60,6 +60,11 @@ describe('records', () => {
     expect(await hasDtdRecordForItem(env.DB, 'm-1')).toBe(true);
     expect(await hasDtdRecordForItem(env.DB, 'm-2')).toBe(false);
   });
+  it('companyForItem ignores unverified rows', async () => {
+    await upsertRecord(env.DB, rec({ donationIdentifier: 'ok', companyName: 'Real Co', updatedSeenAt: '2026-01-01T00:00:00Z' }));
+    await upsertRecord(env.DB, rec({ donationIdentifier: 'bad', companyName: 'Forged Co', unmatched: true, updatedSeenAt: '2026-02-01T00:00:00Z' }));
+    expect(await companyForItem(env.DB, 'm-1')).toBe('Real Co');
+  });
   it('companyForItem returns the most recently seen company, or null', async () => {
     await upsertRecord(env.DB, rec({ donationIdentifier: 'old', companyName: 'Old Co', updatedSeenAt: '2026-01-01T00:00:00Z' }));
     await upsertRecord(env.DB, rec({ donationIdentifier: 'new', companyName: 'New Co', updatedSeenAt: '2026-02-01T00:00:00Z' }));

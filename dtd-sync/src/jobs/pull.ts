@@ -109,17 +109,35 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
     donationAmount: d.donation_amount,
   };
 
+  // A verified row changes only if the incoming record re-verifies against the very same item.
+  // Anything else (no match, another item, mismatch, lookup error) leaves the row and Monday alone.
+  let item: DonationItem | null = null;
+  let donor: PersonItem | null = null;
+  if (prev && !prev.unmatched && prev.mondayItemId) {
+    try {
+      item = await resolve(deps, d.donation_identifier, d.source);
+      donor = item ? await ownedBy(deps, item, hash, d.donation_amount) : null;
+    } catch (err) {
+      if (err instanceof DtdAuthError) throw err;
+      item = null;
+    }
+    if (!item || !donor || item.id !== prev.mondayItemId) {
+      console.log(`dtd-sync: pull item ${prev.mondayItemId} kept: unverified update`);
+      return { written: false, unmatched: false };
+    }
+  }
+
   let written = false;
   try {
-    let item = await resolve(deps, d.donation_identifier, d.source);
-    let donor: PersonItem | null = null;
-    if (item) {
-      donor = await ownedBy(deps, item, hash, d.donation_amount);
-      if (donor === null) {
-        console.log(`dtd-sync: pull item ${item.id} skipped: donor mismatch`);
-        if (prev && !prev.unmatched && prev.mondayItemId) return { written: false, unmatched: false }; // keep the verified row as is
-        item = null;
-        next.mondayItemId = null; // a forged record must not claim the item (push skips items DTD has a record for)
+    if (!prev || prev.unmatched || !prev.mondayItemId) {
+      item = await resolve(deps, d.donation_identifier, d.source);
+      if (item) {
+        donor = await ownedBy(deps, item, hash, d.donation_amount);
+        if (donor === null) {
+          console.log(`dtd-sync: pull item ${item.id} skipped: donor mismatch`);
+          item = null;
+          next.mondayItemId = null; // a forged record must not claim the item (push skips items DTD has a record for)
+        }
       }
     }
     if (item && donor) {
