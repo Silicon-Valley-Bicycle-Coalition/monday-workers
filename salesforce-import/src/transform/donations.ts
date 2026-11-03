@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, fiscalYear, funraiseTransactionLink, ownerAttribution, salesforceDebug } from './fields.js';
+import { dateCol, fiscalYear, funraiseTransactionLink, pacificDay, ownerAttribution, salesforceDebug } from './fields.js';
 import { attributionColumns, MATCHING_GIFT_TYPE } from './attribution.js';
 
 // Closed Won is a distinct label, not plain "Received", on purpose: it's the same
@@ -271,18 +271,25 @@ export function cnpOverlapCheck(
   return { duplicateTransactionIds, unique };
 }
 
+// TransactionDate is a true datetime, unlike CloseDate. Its Pacific day is the gift date: it's what
+// Salesforce displays, and the CloseDate on all 929 of the paired Opportunities whose UTC and Pacific
+// days differ (2026-11-03).
+export const cnpGiftDay = (tx: Record<string, unknown>): string | null =>
+  pacificDay(tx['CnP_PaaS__TransactionDate__c'] as string | null);
+
 export function cnpToPayload(tx: Record<string, unknown>, donorAlias?: Map<string, string>,
   personAccountIds?: ReadonlySet<string>): ItemPayload {
   const resolved = resolveDonor(tx['CnP_PaaS__Contact__c'] ?? tx['CnP_PaaS__Account__c'], donorAlias);
   const donorId = resolved && !personAccountIds?.has(resolved) ? resolved : null;
+  const day = cnpGiftDay(tx);
   return {
     board: 'donations',
     sfId: tx['Id'] as string,
     name: (tx['Name'] as string) ?? '(C&P transaction)',
     columns: {
       'Amount': tx['CnP_PaaS__TotalCharged__c'] != null ? String(tx['CnP_PaaS__TotalCharged__c']) : '',
-      'Date': dateCol(tx['CnP_PaaS__TransactionDate__c'] as string),
-      'Fiscal Year Ending': fiscalYear(tx['CnP_PaaS__TransactionDate__c'] as string | null),
+      'Date': dateCol(day),
+      'Fiscal Year Ending': fiscalYear(day),
       'Status': { label: 'Received' },
       'Gift Type': 'Click & Pledge (historical)',
       ...salesforceDebug(tx),

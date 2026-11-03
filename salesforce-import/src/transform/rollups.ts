@@ -1,6 +1,6 @@
 import type { ItemPayload } from './types.js';
 import { dateCol } from './fields.js';
-import { giftDonorSfId, isEventbriteTicketOrder } from './donations.js';
+import { cnpGiftDay, giftDonorSfId, isEventbriteTicketOrder } from './donations.js';
 
 // Posted only, not Closed Won — matches Salesforce's own IsWon flag (Posted: true,
 // Closed Won: false, per monday-migration docs/07 gotcha #10), which is what its legacy
@@ -45,7 +45,7 @@ export function donorRollups(
   }
   for (const t of cnpUnique) {
     add((t['CnP_PaaS__Contact__c'] ?? t['CnP_PaaS__Account__c']) as string | null,
-      t['CnP_PaaS__TotalCharged__c'], t['CnP_PaaS__TransactionDate__c'] as string | null);
+      t['CnP_PaaS__TotalCharged__c'], cnpGiftDay(t));
   }
   const out = new Map<string, DonorRollup>();
   for (const [donor, c] of cents) {
