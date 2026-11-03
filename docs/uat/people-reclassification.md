@@ -18,7 +18,12 @@ Historical who gives again comes back to People, so you see them where you work.
 
 A person's item keeps its id, its Updates thread and its links to gifts and organizations when
 it moves. Someone with **no** activity recorded at all (a city staff contact, someone added by
-hand) is never moved.
+hand) is never moved by the quarterly pass.
+
+**If someone can't wait for the next pass,** file an IT Request with a link to their item. IT can
+move one person to People right away. If their latest activity is more than seven years old, IT
+can't move them until the new activity is recorded, because the next pass would only send them
+back.
 
 ## Try it (once it is live in the sandbox)
 

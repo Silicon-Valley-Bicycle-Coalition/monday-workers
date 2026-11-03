@@ -3,7 +3,7 @@
 // already finished is not re-run; a 'planned' row from an interrupted pass is settled, not
 // repeated). See migrations/0001_create_ledger.sql.
 
-export type RunTrigger = 'quarterly' | 'threshold' | 'continuation' | 'http';
+export type RunTrigger = 'quarterly' | 'threshold' | 'continuation' | 'http' | 'single-move';
 export type RunStatus = 'running' | 'ok' | 'failed';
 export type MoveStatus = 'dry-run' | 'planned' | 'moved' | 'failed' | 'ambiguous';
 export type Direction = 'to-historical' | 'to-live';
@@ -43,9 +43,9 @@ export interface Ledger {
   startRun(run: { runId: string; trigger: RunTrigger; dryRun: boolean; startedAt: string }): Promise<{ created: boolean; existing: RunRow | null }>;
   finishRun(runId: string, status: Exclude<RunStatus, 'running'>, finishedAt: string, summary: unknown): Promise<void>;
   recentRuns(limit: number): Promise<RunRow[]>;
-  // skipPreviews leaves out HTTP dry runs (an operator's `?dryRun=true` preview), which must not
-  // count as "the last pass" when the cron decides whether one is due.
-  lastRun(filter?: { trigger?: RunTrigger; dryRun?: boolean; skipPreviews?: boolean }): Promise<RunRow | null>;
+  // passesOnly leaves out HTTP dry runs (an operator's `?dryRun=true` preview) and single-person
+  // moves, which must not count as "the last pass" when the cron decides whether one is due.
+  lastRun(filter?: { trigger?: RunTrigger; dryRun?: boolean; passesOnly?: boolean }): Promise<RunRow | null>;
   insertMove(move: NewMove): Promise<number>;
   setMoveStatus(id: number, status: MoveStatus, at: string, error?: string | null): Promise<void>;
   unsettledMoves(): Promise<MoveRow[]>;
@@ -94,12 +94,12 @@ export class D1Ledger implements Ledger {
     return results.map(toRun);
   }
 
-  async lastRun(filter: { trigger?: RunTrigger; dryRun?: boolean; skipPreviews?: boolean } = {}): Promise<RunRow | null> {
+  async lastRun(filter: { trigger?: RunTrigger; dryRun?: boolean; passesOnly?: boolean } = {}): Promise<RunRow | null> {
     const where: string[] = [];
     const binds: unknown[] = [];
     if (filter.trigger !== undefined) { where.push('trigger = ?'); binds.push(filter.trigger); }
     if (filter.dryRun !== undefined) { where.push('dry_run = ?'); binds.push(filter.dryRun ? 1 : 0); }
-    if (filter.skipPreviews) where.push("NOT (trigger = 'http' AND dry_run = 1)");
+    if (filter.passesOnly) where.push("NOT (trigger = 'http' AND dry_run = 1) AND trigger <> 'single-move'");
     const sql = `SELECT * FROM runs${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY started_at DESC LIMIT 1`;
     const row = await this.db.prepare(sql).bind(...binds).first<RawRun>();
     return row === null ? null : toRun(row);

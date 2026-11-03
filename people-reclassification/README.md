@@ -199,12 +199,46 @@ So:
 * A pass stops after five consecutive move failures (Monday is unhappy, not one odd item) and
   reports `remaining`; the next day's cron continues.
 
+### Moving one person now
+
+For someone who can't wait for the next pass, `POST /reclassify/move-to-people/<itemId>` moves one
+person from People (Historical) to People. Unlike `POST /reclassify/run`, it touches nobody else.
+The item id is the number in the person's Monday URL. Preview first:
+
+```sh
+curl -X POST -H "Authorization: Bearer $RECLASSIFY_SECRET" "https://<worker>/reclassify/move-to-people/<itemId>?dryRun=true"
+```
+
+It follows the write switch like `/reclassify/run`: `off` is a dry run, `hold` and `unknown` answer
+409, and `?dryRun=true` forces a preview in any mode but `unknown` (503). It holds the same lease,
+refuses on the same column check, and records a `moves` row under a run with trigger `single-move`.
+The cron ignores those runs when deciding whether a pass is due, so a single move can't stop a
+continuation or use up a quarterly pass.
+
+It applies the liveness rule first, so it reads Event Registrations, Events and Volunteers in full.
+That's a few dozen page reads.
+
+| `outcome` | HTTP | Meaning |
+|---|---|---|
+| `moved`, `dry-run` | 200 | Moved, or would move. `reason` and `latestActivity` say why |
+| `already-on-people` | 200 | Nothing to do |
+| `refused` | 409 | Latest activity is before `cutoffISO`, so the next pass would send them straight back. Record the qualifying activity first (a gift, a term, a registration, volunteer hours), then retry. There is no override |
+| `not-found` | 404 | Deleted or not visible |
+| `wrong-board` | 409 | The item isn't on either People board, so nothing was touched |
+| `skipped` | 409 | A pass holds the lease; try again later |
+| `failed`, `error` | 502 | The move failed, or a read or check stopped it first. See `error` |
+| `ambiguous` | 502 | Monday may have applied it. The next pass settles the row; check the item's board in the meantime |
+
+Someone with no evidence at all may move, and stays moved, since no pass moves such a person.
+There's no route for the other direction, because a pass handles that.
+
 ## APIs & auth
 
 * **Monday GraphQL** (`src/monday/graphql.ts`, the canonical transport copy; `src/monday/client.ts`
   tunes it to 4 attempts / 30 s per request). Reads: `boards { items_count items_limit columns
   groups }`, `items_page(limit: 500)` with `column_values` (+ `linked_item_ids` on connect
-  columns), `items(ids:) { board { id } }`. Writes: `move_item_to_board`, and `create_item` on IT
+  columns), `items(ids:) { board { id } }`, `items(ids:) { column_values }` (a single-person
+  move). Writes: `move_item_to_board`, and `create_item` on IT
   Requests when configured — both sent non-idempotent so a timeout is recorded, never retried blind.
 * **Monday access:** from the `monday-auth` broker, not a stored token. Both deployments bind
   `MONDAY_AUTH` (`wrangler.jsonc` `services`) to its `SyncToken` entrypoint — the *SVBC Staff Sync*
