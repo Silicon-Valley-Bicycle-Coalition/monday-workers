@@ -246,6 +246,9 @@ staff note (significant touches only) in the staff guide.
 * Capacity: when Activities (Logged) holds `warnPct` percent of `activitiesMaxItems`, the
   consumer still writes and raises a `capacity` alert. A "Board has reached its max size" error
   raises `board-full`.
+  `activitiesMaxItems` is 100,000 in both configs: SVBC's Monday board limit, the `items_limit`
+  Monday reports (decided 2026-11-03; it was 10,000, which would have raised a false `capacity`
+  alert at 9,500 items).
 * Each alert kind has a per-kind cooldown (`alerts.itRequests.cooldownDays`), tracked in D1.
 * Logs carry an outcome and the first 12 hex chars of the hash as a correlation id, never an
   address, subject or body (`node ../scripts/check-log-safety.mjs`).
@@ -323,6 +326,13 @@ dry-runs everything.
   it by hand.
 * A message BCC'd and then also forwarded may make two items (a forward has no shared key with the
   original). Staff delete the duplicate.
+* **Open question: is a separate Activities (Logged) board still needed?** The design
+  (Constraints, Decision 1) sends go-forward logs to a new board because the imported Activities
+  board was "full" at a ~10,000-item ceiling. SVBC's real limit is 100,000 (decided 2026-11-03),
+  so the imported board (about 10,000 items) has room for years of significant-touch logging.
+  Writing to Activities itself would put all activity on one board. Keeping Activities (Logged)
+  keeps imported history apart from new entries. Nothing has changed yet: the Worker still
+  writes only `monday.boards.activities-logged`. SVBC to decide before production bring-up.
 
 ## Commands
 

@@ -81,7 +81,7 @@ report again.
 | [Report emails](report-digests.md) | Five scheduled emails replacing the Salesforce report subscriptions | **Views testable now; emails blocked**: sandbox sends bounce at the shared inbox |
 | [Eventbrite ticket orders](eventbrite-sync.md) | Paid Eventbrite ticket orders land on the Donations board as gifts | Nothing to test yet: sandbox deployed 2026-10-26, but it can't write a gift until its order column is set up |
 | [Logging an email](email-log.md) | BCC or forward an email to one address and it becomes an Activities (Logged) item | Nothing to test yet (built 2026-10-20, not deployed) |
-| [People board housekeeping](people-reclassification.md) | Moves people between People and People (Historical) on a rolling seven-year activity window, so People stays under the 10,000-item ceiling | Nothing to test yet (built, not deployed; will run on v4) |
+| [People board housekeeping](people-reclassification.md) | Moves people between People and People (Historical) on a rolling seven-year activity window, so People holds only the last seven years of activity | Nothing to test yet (built, not deployed; will run on v4) |
 | [QuickBooks sync](quickbooks-sync.md) | Two-way sync of customers, invoices, and products | Postponed indefinitely (2026-10-28) — nothing to test |
 | [Monday backup](monday-backup.md) | Nightly copy of every board to Google Drive | Nothing to test yet |
 | [Member map](member-map.md) | A staff-only map of where SVBC members live, shaded to show the neighborhoods where membership is thin | Nothing to test yet (built 2026-11-02, not deployed) |
