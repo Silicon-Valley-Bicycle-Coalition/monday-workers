@@ -885,11 +885,13 @@ migration `0004`, `src/scheduled.ts`). How it runs:
 
 ## Related, not yet in scope here
 
-* **Double the Donation / 360MatchPro** — a *third*, independent pipeline (Salesforce AppExchange
-  managed package, writes match data directly to Salesforce, doesn't ride on Funraise's
-  connection). Not this Worker's job to replicate yet — first the actual custom fields it created
-  need identifying (Pre-Migration Deliverables), then a decision on whether to build a companion
-  sync or fold match data into `salesforce-import` as a one-time carry-over.
+* **Double the Donation / 360MatchPro** — not a donation pipeline after all. SVBC subscribed in
+  July 2026 (onboarding complete 2026-08-20); its Salesforce package was installed 2026-07-21 and
+  holds zero records, and its job is to *prompt* donors to request employer matches, not to
+  record them — matched money arrives through Benevity (see `benevity-import`). Decided
+  2026-09-08: nothing of it migrates and this Worker doesn't replicate it. DTD integrates with
+  Funraise directly, which outlives Salesforce; its Salesforce integration ends at cutover. The
+  only code touching DTD is `member-portal`'s employer-search widget.
   [Double the Donation](https://doublethedonation.com/) ·
   [360MatchPro on Salesforce AppExchange](https://appexchange.salesforce.com/appxListingDetail?listingId=a0N3A00000FR4jnUAD).
 * **Streamlabs Charity** — possible fourth donation pipeline (stream-driven donations via a Twitch/

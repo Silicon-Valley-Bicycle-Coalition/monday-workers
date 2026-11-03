@@ -556,15 +556,18 @@ features, both read-only — no new D1 tables, queues, secrets, or Monday write 
   generic "ask your HR team whether gifts are matched" guidance is useful with no vendor at
   all, plus SVBC's EIN once `taxLetter.ein` is signed off. **The embedded Double the Donation
   employer-search widget is gated on `matchingGifts.doubleTheDonationPublicKey`** (null until
-  SVBC buys a DTD subscription, which it currently has not — the board item notes this was
-  "discussed, not prioritized"). This is the only portal page that may load third-party
-  JavaScript, so it deliberately renders **zero donor PII** and ships its own full
+  an operator fills in SVBC's public plugin key: SVBC subscribed to DTD's Workplace Giving
+  Platform – Standard, quoted 2026-07-07 for two years, and DTD confirmed onboarding complete
+  2026-08-20, but the key hasn't been copied into config yet). This is the only portal page
+  that may load third-party JavaScript, so it deliberately renders **zero donor PII** and ships
+  its own full
   Content-Security-Policy in place of the app-wide baseline (see Security notes) — the
   load-bearing directive is `connect-src` excluding `'self'`, so
   a compromised widget script can't fetch sibling `/portal` pages (which carry the session
   cookie on same-origin requests) and exfiltrate donor data. Keep both properties; the embed
   shape carries a verify-before-deploy NOTE in `src/matchingGifts/matchingGiftViews.ts`, since
-  it couldn't be checked against a live DTD account — verify the widget under the CSP at the
+  it was written before SVBC had a DTD account and hasn't been checked against one yet — verify
+  the widget under the CSP at the
   same time. No Subresource Integrity hash on the DTD script by their design (mutable
   unversioned URL); the PII-free page plus the CSP are the compensating controls.
 
@@ -578,8 +581,9 @@ Operator setup for v4, in addition to the v1 steps — each feature independentl
 
 1. Pledges: create the Pledges board, grant the portal's integration user **read** access to
    it, and fill in `pledges.boardId` and all five `pledges.columns` ids in `config/svbc.json`.
-2. Matching gifts: obtain a Double the Donation subscription, then set
-   `matchingGifts.doubleTheDonationPublicKey` to the **public** plugin key (never a private API
+2. Matching gifts: get the public plugin key from SVBC's Double the Donation account (development
+   staff hold it; a fork needs its own subscription), then set
+   `matchingGifts.doubleTheDonationPublicKey` to that **public** plugin key (never a private API
    key — this value is served to every logged-in browser), after verifying the embed snippet
    against DTD's current docs.
 ## v5 — Event registrations
