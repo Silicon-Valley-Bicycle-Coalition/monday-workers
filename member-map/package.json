@@ -5,8 +5,8 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run && node --test scripts/*.test.mjs",
-    "dev": "wrangler dev",
-    "dev:sandbox": "wrangler dev --env sandbox",
+    "dev": "wrangler dev --infer-origin-from-routes=false",
+    "dev:sandbox": "wrangler dev --env sandbox --infer-origin-from-routes=false",
     "deploy": "wrangler deploy",
     "deploy:sandbox": "wrangler deploy --env sandbox",
     "build:reference": "node scripts/build-reference.mjs",
