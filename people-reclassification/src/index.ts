@@ -6,7 +6,7 @@ import { readLogLevel, readWriteMode, runDisposition } from './flags';
 import { D1Ledger } from './db/ledger';
 import { HttpMondayClient } from './monday/client';
 import { tokenProviderFor } from './monday/graphql';
-import { runPass, type PassDeps } from './pass';
+import { moveOneToPeople, runPass, type PassDeps } from './pass';
 import { decideCron } from './duties';
 import { createApp } from './routes';
 import { checkRequestRateLimit } from './rateLimit';
@@ -35,6 +35,7 @@ export default {
       const deps = passDeps(env);
       const app = createApp({
         runPass: (opts) => runPass(deps, { ...opts, trigger: 'http' }),
+        moveToPeople: (opts) => moveOneToPeople(deps, opts),
         recentRuns: () => deps.ledger.recentRuns(10),
         mode: () => readWriteMode(env, WORKER),
         secret: env.RECLASSIFY_SECRET,
@@ -66,7 +67,7 @@ export default {
     const decision = decideCron({
       todayISO: todayInZone(new Date(), config.window.timeZone),
       liveItemsCount: live.itemsCount, liveItemsLimit: live.itemsLimit ?? config.thresholds.itemsLimit,
-      lastRun: await deps.ledger.lastRun({ skipPreviews: true }), config,
+      lastRun: await deps.ledger.lastRun({ passesOnly: true }), config,
     });
     if (decision === null) {
       console.log(`reclassify cron: no pass due (People at ${live.itemsCount}/${live.itemsLimit ?? config.thresholds.itemsLimit})`);

@@ -34,9 +34,16 @@ describe('D1Ledger', () => {
     await ledger.startRun({ runId: 'http-live', trigger: 'http', dryRun: false, startedAt: '2026-10-02T10:00:00Z' });
     await ledger.startRun({ runId: 'preview', trigger: 'http', dryRun: true, startedAt: '2026-10-03T10:00:00Z' });
     expect(await ledger.lastRun()).toMatchObject({ runId: 'preview' });
-    expect(await ledger.lastRun({ skipPreviews: true })).toMatchObject({ runId: 'http-live' });
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'http-live' });
     await env.DB.prepare("DELETE FROM runs WHERE run_id = 'http-live'").run();
-    expect(await ledger.lastRun({ skipPreviews: true })).toMatchObject({ runId: 'cron-dry' });
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'cron-dry' });
+  });
+
+  it('passesOnly also skips single-person moves, which must not stop a continuation or use up a pass', async () => {
+    await ledger.startRun({ runId: 'pass', trigger: 'quarterly', dryRun: false, startedAt: '2026-10-01T10:00:00Z' });
+    await ledger.startRun({ runId: 'one', trigger: 'single-move', dryRun: false, startedAt: '2026-10-02T10:00:00Z' });
+    expect(await ledger.lastRun()).toMatchObject({ runId: 'one' });
+    expect(await ledger.lastRun({ passesOnly: true })).toMatchObject({ runId: 'pass' });
   });
 
   it('records moves, advances their status, and lists only the unsettled ones', async () => {
