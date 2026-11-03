@@ -77,6 +77,19 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(body.variables.columnIds).toEqual(expect.arrayContaining(['dns', 'dnsStatus']));
   });
 
+  it('never requests a State column when state is null, and leaves the state blank', async () => {
+    const fetchFn = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'email', text: 'a@b.com' }, { id: 'zip', text: '95110' }] }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+
+    const donor = await client.getDonorById('42', { ...COLUMNS, state: null });
+
+    expect(donor?.state).toBe('');
+    expect(donor?.zip).toBe('95110');
+    const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).not.toContain(null);
+    expect(body.variables.columnIds).not.toContain('state');
+  });
+
   it('reads the Nearby column when configured, splitting its text on ", " and dropping empties', async () => {
     const fetchFn = fakeFetch({
       items: [{ id: '42', column_values: [{ id: 'email', text: 'a@b.com' }, { id: 'nearby', text: 'Stevens Creek bikeway,  Bay Trail, , Lawrence Expy' }] }],

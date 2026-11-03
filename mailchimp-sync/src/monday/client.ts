@@ -39,7 +39,8 @@ export class HttpMondayClient implements MondayClient {
     const columnIds = [
       columns.email, columns.membershipStatus, columns.membershipTier,
       columns.memberSince, columns.memberUntil, columns.addr1, columns.city,
-      columns.state, columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
+      columns.zip, columns.totalGiven, columns.doNotSolicit, columns.dnsReasonStatus,
+      ...(columns.state === null ? [] : [columns.state]),
       ...(columns.nearby === null ? [] : [columns.nearby]),
     ];
     const data = await this.transport.request<{ items: { id: string; column_values: { id: string; text: string | null }[] }[] }>(
@@ -61,7 +62,7 @@ export class HttpMondayClient implements MondayClient {
       memberUntil: byId.get(columns.memberUntil) ?? '',
       addr1: byId.get(columns.addr1) ?? '',
       city: byId.get(columns.city) ?? '',
-      state: byId.get(columns.state) ?? '',
+      state: columns.state === null ? '' : byId.get(columns.state) ?? '',
       zip: byId.get(columns.zip) ?? '',
       totalGiven: byId.get(columns.totalGiven) ?? '',
       // A checkbox column's text is "v" when checked and "" when not.

@@ -1,4 +1,5 @@
 import type { Config, DonorRecord } from '../types';
+import { stateFromZip } from './zipState';
 
 export function buildMergeFields(donor: DonorRecord, config: Config): Record<string, unknown> {
   const fields = config.mailchimp.mergeFields;
@@ -16,11 +17,13 @@ export function buildMergeFields(donor: DonorRecord, config: Config): Record<str
   // fields above). Only send it once all four components are present; omitting a merge
   // field from the payload entirely leaves it at its current Mailchimp value rather than
   // clearing it, same as every other field here that isn't explicitly zeroed out.
-  if (donor.addr1 !== '' && donor.city !== '' && donor.state !== '' && donor.zip !== '') {
+  // A State column wins; without one (production People) the ZIP gives the state.
+  const state = donor.state !== '' ? donor.state : stateFromZip(donor.zip);
+  if (donor.addr1 !== '' && donor.city !== '' && state !== '' && donor.zip !== '') {
     mergeFields[fields.address] = {
       addr1: donor.addr1,
       city: donor.city,
-      state: donor.state,
+      state,
       zip: donor.zip,
       country: 'US',
     };
