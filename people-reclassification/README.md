@@ -2,15 +2,16 @@
 
 **Staff UAT script:** [`docs/uat/people-reclassification.md`](../docs/uat/people-reclassification.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: Deployed to sandbox, writes off** (2026-11-02). Deploy steps 1–5 are done against CRM
+**Status: Live in sandbox, writes on** (2026-11-03; Deploy step 6). The daily cron continues
+the remaining work (about 270 moves) on 2026-11-04 at 10:00 UTC, then runs quarterly. Deploy steps 1–5 are done against CRM
 Sandbox v4: one live move succeeded and kept every value and link checked (see "Move
 mechanics"), after fixing the `columns_mapping` it sends. A full live pass followed
 (2026-11-03 01:03–01:23 UTC): **400 of 400 moved** to People (Historical), 0 failed or
 ambiguous. People went from 8,084 to 7,683 items and Historical from 8,053 to 8,454. Two moved
 people compared column by column were identical. All 86 Volunteers and 35 Event Registrations
 records linked to moved people still link to them. About 137 to-historical and 133 to-live
-moves remain for the next pass. Writes were turned off again after the pass, so the daily
-cron only plans; leaving them on (step 6) is the next decision.
+moves remain for the next pass. Writes were then turned back on and left on (step 6,
+2026-11-03).
 
 Two things to know when operating it:
 * **A pass reads the write switch once, at its start.** Turning writes off mid-pass does not
@@ -249,9 +250,9 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 ## Deploy
 
-Steps 1–5 are done in sandbox (2026-11-02; the sandbox operator secret is
-`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). Step 6 has not been done. The
-sandbox write switch is `off`.
+Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
+`RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
+Production has not been started.
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.
@@ -279,6 +280,11 @@ and type both ways): a pass aborts on any difference, and Monday's API can't cre
 
 ## Open
 
+* **Continuation compares a UTC date with a Pacific one.** `decideCron` (`src/duties.ts`)
+  checks `lastRun.startedAt.slice(0, 10)` (UTC) against `todayISO` (America/Los_Angeles). A pass
+  started in the UTC evening can make the next morning's 10:00 UTC cron think it already ran
+  "today", so the continuation slips a day. That's harmless, but it's why the 2026-11-03 01:03
+  UTC pass continues on 11-04, not 11-03.
 * **Which item limit?** Monday reports each People board's `items_limit` as **100,000**
   (sandbox v4, 2026-11-02). The threshold trigger prefers that over `thresholds.itemsLimit`
   (10,000; `src/index.ts`, `src/pass.ts` `countOf`), so it would fire at about 85,000 items.
