@@ -40,6 +40,12 @@ describe('verifyAccess', () => {
       .setProtectedHeader({ alg: 'RS256' }).setIssuer(access.teamDomain).setAudience('aud123').setExpirationTime('5m').sign(other.privateKey);
     expect(await verifyAccess(req(bad), access, keys)).toBeNull();
   });
+  it('rejects an HS256 token even when the key would verify it', async () => {
+    const secret = new TextEncoder().encode('0123456789abcdef0123456789abcdef');
+    const hs = await new SignJWT({ email: 'pat@bikesiliconvalley.org' })
+      .setProtectedHeader({ alg: 'HS256' }).setIssuer(access.teamDomain).setAudience('aud123').setExpirationTime('5m').sign(secret);
+    expect(await verifyAccess(req(hs), access, async () => secret)).toBeNull();
+  });
   it('rejects a missing header', async () => expect(await verifyAccess(req(), access, keys)).toBeNull());
   it('rejects everything when teamDomain or aud is empty', async () => {
     const t = await tok({ email: 'pat@bikesiliconvalley.org' });
@@ -57,5 +63,10 @@ describe('devBypassAllowed', () => {
     expect(devBypassAllowed(new Request('http://localhost:8787/'), { ACCESS_DEV_BYPASS: '1' })).toBe(true);
     expect(devBypassAllowed(new Request('https://map.bikesiliconvalley.org/'), { ACCESS_DEV_BYPASS: '1' })).toBe(false);
     expect(devBypassAllowed(new Request('http://localhost:8787/'), {})).toBe(false);
+  });
+  it('needs the var to be exactly "1"', () => {
+    for (const v of ['0', 'false', 'true', 'yes', ' 1', '']) {
+      expect(devBypassAllowed(new Request('http://localhost:8787/'), { ACCESS_DEV_BYPASS: v }), v).toBe(false);
+    }
   });
 });
