@@ -253,13 +253,21 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
 `RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
 
-Production, 2026-11-03: the D1 `svbc-people-reclassification` was created and migrations
-0001–0002 applied; `config/svbc.json` has the board ids; the two People boards' columns match.
-`RECLASSIFY_SECRET` was set on 10-31 by `set-prod-worker-secrets.sh`, and its value is in the
-secure note. The production write switch is unset, which means `off`. **Not yet deployed:** run
-`npx wrangler deploy` from this directory. Then run a dry pass with
-`POST /reclassify/run?dryRun=true` and the production secret. The cron won't run one until
-2027-01-01, because no trigger is due in November.
+**Production: deployed with writes off** (2026-11-03). Done so far:
+* The D1 `svbc-people-reclassification` was created and migrations 0001–0002 applied.
+* `config/svbc.json` has the board ids, and the two People boards' columns match.
+* The Worker is deployed, and its write switch is unset, which means `off`.
+* `RECLASSIFY_SECRET` was replaced on 2026-11-03, because the 10-31 value wasn't recoverable.
+  The current value is `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env`, and belongs
+  in the secure note too.
+
+The first production dry run (cutoff 2019-11-02) scanned 8,361 People and 8,037 Historical
+items. It decided 543 to-historical and 131 to-live, and planned 400 to-historical, all
+`aged-out` with latest activity 2001-01-01 to 2019-05-10. Three sampled items matched
+max(Last Gift Date, Member Until), with no Lifetime tier and no Funraise profile.
+
+Turning writes on is the remaining decision. With writes on, the cron moves nothing until a
+trigger is due (next: 2027-01-01, quarterly), unless a pass is started by hand.
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.
