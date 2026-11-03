@@ -22,6 +22,10 @@ export interface DonationBoardConfig {
     termEnd?: string | null;
     membershipType?: string | null;
     actingForLink: string | null;
+    // Sponsorship audit history (spec 2026-11-02): optional, null/omitted = not configured.
+    sponsorshipCycle?: string | null;
+    inKindValue?: string | null;
+    sponsorshipPipelineLinks?: string[]; // Donations-side reverse connect columns, one per pipeline board
     // The four chartable labels the custodian's classify duty writes (spec 2026-09-29 §10.1).
     // null = classification off for this board. The webhook ignores changes to these columns.
     classification: ClassificationColumns | null;
@@ -90,6 +94,7 @@ export interface DonationRollupsConfig {
     historicalVolunteerBoards: HistoricalVolunteerBoardConfig[];
     recurringGifts: RecurringGiftsConfig | null;
     rollCall: RollCallConfig | null;
+    sponsorships: SponsorshipsConfig | null;
   };
 }
 
@@ -246,4 +251,15 @@ export interface RecomputeQueueMessage extends WriteStamp {
   // that left, kept for logs. Always recomputed — never coalesced away.
   ownerItemId?: string;
   ownerBoardId?: string;
+}
+
+// donationRollups.sponsorships — the Sponsorships section on Organizations items' descriptions.
+// Null = duty off.
+export interface SponsorshipsConfig {
+  organizationsBoardId: number;
+  giftTypes: string[];
+  inKindGiftTypes: string[];
+  yearBasis: 'calendar' | 'fiscal';
+  windowYears: number;              // integer >= 1
+  pipelineBoards: Record<string, string>; // pipeline board id -> event name, e.g. "18391037433": "BTWD"
 }

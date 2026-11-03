@@ -29,7 +29,9 @@
             "fiscalQuarter": "color_mm8pd404",
             "giftFiscalYear": "color_mm8p8asv",
             "acknowledgmentTier": "color_mm8qwcbp"
-          }
+          },
+          "sponsorshipCycle": "text_mm8nnqf1",
+          "inKindValue": "numeric_mm8n933h"
         }
       }
     ],
@@ -240,6 +242,24 @@
           "recognitionName": "text_mm8qpeyn",
           "dontList": "boolean_mm8qe5ne"
         }
+      }
+    },
+    "sponsorships": {
+      "organizationsBoardId": 18437909779,
+      "giftTypes": [
+        "Sponsorship"
+      ],
+      "inKindGiftTypes": [
+        "In Kind Donation / Sponsorship"
+      ],
+      "yearBasis": "calendar",
+      "windowYears": 7,
+      "pipelineBoards": {
+        "18391037433": "BTWD",
+        "18390869107": "Advocacy Summit",
+        "18390883634": "Fundraising Ride",
+        "18391037577": "Misc.",
+        "18423176514": "Annual Gala"
       }
     }
   },

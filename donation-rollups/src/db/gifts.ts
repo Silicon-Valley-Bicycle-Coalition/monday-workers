@@ -12,6 +12,9 @@ export interface GiftFact {
   actingForItemId?: string | null; // undefined = column not configured, leave stored value
   // Migrated Term Start — undefined = column not configured, leave stored
   termStart?: string | null;
+  // Sponsorship facts — undefined = not configured, leave stored (same rule as termStart).
+  sponsorshipEvent?: string | null;   // resolved label, '' when read and blank
+  inKindValueCents?: number | null;   // 0 when read and blank
 }
 
 export interface AnnualSummaryRow {
@@ -69,6 +72,11 @@ export interface GiftsStore {
   // '' — a read blank is stored as '' so the backfill never re-reads it).
   giftsMissingTermStart(beforeISO: string, afterItemId: string, limit: number): Promise<string[]>;
   setTermStarts(rows: { mondayItemId: string; termStart: string }[], now: string): Promise<void>;
+  // Live gifts (archived included) of the given types whose sponsorship facts were never read
+  // (NULL, not ''/0 — a read blank is stored so the backfill never re-reads it).
+  giftsMissingSponsorshipFacts(giftTypes: string[], afterItemId: string, limit: number): Promise<string[]>;
+  // Overwrites only NULL facts, so a row selected for one missing fact can't clobber the other.
+  setSponsorshipFacts(rows: { mondayItemId: string; sponsorshipEvent: string; inKindValueCents: number }[], now: string): Promise<void>;
   // Distinct owners with at least one live (not removed) gift, on the given owner boards — the
   // membership duty's all=true enqueue set, alongside owners with a qualifying check-in.
   ownersOnBoards(boardIds: string[]): Promise<{ ownerItemId: string; ownerBoardId: string }[]>;
@@ -102,6 +110,8 @@ interface StoredFacts {
   gift_type: string | null;
   acting_for_item_id: string | null;
   term_start: string | null;
+  sponsorship_event: string | null;
+  in_kind_value_cents: number | null;
   archived_at: string | null;
   removed_at: string | null;
 }
@@ -124,7 +134,9 @@ function factsDiffer(stored: StoredFacts | undefined, g: GiftFact): boolean {
     || stored.status !== g.status
     || (g.giftType != null && g.giftType !== stored.gift_type)
     || (g.actingForItemId !== undefined && stored.archived_at === null && g.actingForItemId !== stored.acting_for_item_id)
-    || (g.termStart != null && g.termStart !== stored.term_start);
+    || (g.termStart != null && g.termStart !== stored.term_start)
+    || (g.sponsorshipEvent != null && g.sponsorshipEvent !== stored.sponsorship_event)
+    || (g.inKindValueCents != null && g.inKindValueCents !== stored.in_kind_value_cents);
 }
 
 export class D1GiftsStore implements GiftsStore {
@@ -137,7 +149,7 @@ export class D1GiftsStore implements GiftsStore {
       const res = await this.db
         .prepare(
           `SELECT monday_item_id, owner_item_id, owner_board_id, amount_cents, gift_date, fiscal_year, status, gift_type,
-             acting_for_item_id, term_start, archived_at, removed_at
+             acting_for_item_id, term_start, sponsorship_event, in_kind_value_cents, archived_at, removed_at
            FROM gifts WHERE monday_item_id IN (${ids.map((_, n) => `?${n + 1}`).join(', ')})`,
         )
         .bind(...ids)
@@ -151,8 +163,8 @@ export class D1GiftsStore implements GiftsStore {
       await this.db.batch(chunk.map((g) => this.db
         .prepare(
           `INSERT INTO gifts (monday_item_id, owner_item_id, owner_board_id, amount_cents,
-             gift_date, fiscal_year, status, gift_type, acting_for_item_id, term_start, source, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?13, ?10, ?11)
+             gift_date, fiscal_year, status, gift_type, acting_for_item_id, term_start, sponsorship_event, in_kind_value_cents, source, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?13, ?14, ?15, ?10, ?11)
            ON CONFLICT (monday_item_id) DO UPDATE SET
              owner_item_id = excluded.owner_item_id,
              owner_board_id = excluded.owner_board_id,
@@ -162,6 +174,8 @@ export class D1GiftsStore implements GiftsStore {
              status = excluded.status,
              gift_type = COALESCE(excluded.gift_type, gifts.gift_type),
              term_start = COALESCE(excluded.term_start, gifts.term_start),
+             sponsorship_event = COALESCE(excluded.sponsorship_event, gifts.sponsorship_event),
+             in_kind_value_cents = COALESCE(excluded.in_kind_value_cents, gifts.in_kind_value_cents),
              -- ?12 = 1 when the caller supplied acting_for (even null). Active gifts take the new value verbatim (staff may clear it); archived gifts always keep D1's — an archived item's board_relation reads back empty on Monday, and nothing else may rewrite history.
              acting_for_item_id = CASE
                WHEN ?12 = 0 THEN gifts.acting_for_item_id
@@ -174,7 +188,7 @@ export class D1GiftsStore implements GiftsStore {
         )
         .bind(g.mondayItemId, g.ownerItemId, g.ownerBoardId, g.amountCents,
           g.giftDateISO, g.fiscalYear, g.status, g.giftType ?? null,
-          g.actingForItemId ?? null, source, now, g.actingForItemId === undefined ? 0 : 1, g.termStart ?? null)));
+          g.actingForItemId ?? null, source, now, g.actingForItemId === undefined ? 0 : 1, g.termStart ?? null, g.sponsorshipEvent ?? null, g.inKindValueCents ?? null)));
     }
     return { changed: changed.length };
   }
@@ -184,18 +198,19 @@ export class D1GiftsStore implements GiftsStore {
     // duplicate it. LEFT JOIN so a link-less row still renders (without a link).
     const res = await this.db
       .prepare(`SELECT g.monday_item_id, l.donation_board_id, g.amount_cents, g.gift_date,
-                       g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.term_start, g.archived_at
+                       g.fiscal_year, g.status, g.gift_type, g.acting_for_item_id, g.term_start, g.sponsorship_event, g.in_kind_value_cents, g.archived_at
                 FROM gifts g LEFT JOIN donation_links l ON l.donation_item_id = g.monday_item_id
                 WHERE g.owner_item_id = ?1 AND g.removed_at IS NULL`)
       .bind(ownerItemId)
       .all<{ monday_item_id: string; donation_board_id: string | null; amount_cents: number;
         gift_date: string; fiscal_year: number; status: string; gift_type: string | null;
-        acting_for_item_id: string | null; term_start: string | null; archived_at: string | null }>();
+        acting_for_item_id: string | null; term_start: string | null; sponsorship_event: string | null;
+        in_kind_value_cents: number | null; archived_at: string | null }>();
     return res.results.map((r) => ({
       mondayItemId: r.monday_item_id, donationBoardId: r.donation_board_id,
       amountCents: r.amount_cents, giftDateISO: r.gift_date, fiscalYear: r.fiscal_year,
       status: r.status, giftType: r.gift_type, actingForItemId: r.acting_for_item_id,
-      termStart: r.term_start,
+      termStart: r.term_start, sponsorshipEvent: r.sponsorship_event, inKindValueCents: r.in_kind_value_cents,
       archived: r.archived_at !== null,
     }));
   }
@@ -231,6 +246,28 @@ export class D1GiftsStore implements GiftsStore {
       await this.db.batch(chunk.map((r) => this.db
         .prepare(`UPDATE gifts SET term_start = ?2, updated_at = ?3 WHERE monday_item_id = ?1`)
         .bind(r.mondayItemId, r.termStart, now)));
+    }
+  }
+
+  async giftsMissingSponsorshipFacts(giftTypes: string[], afterItemId: string, limit: number): Promise<string[]> {
+    if (giftTypes.length === 0) return [];
+    // ?1 = cursor, ?2 = limit, types from ?3 (D1 caps bound parameters at 100).
+    const res = await this.db
+      .prepare(`SELECT monday_item_id FROM gifts
+                WHERE (sponsorship_event IS NULL OR in_kind_value_cents IS NULL) AND removed_at IS NULL
+                  AND gift_type IN (${giftTypes.map((_, n) => `?${n + 3}`).join(', ')}) AND monday_item_id > ?1
+                ORDER BY monday_item_id LIMIT ?2`)
+      .bind(afterItemId, limit, ...giftTypes)
+      .all<{ monday_item_id: string }>();
+    return res.results.map((r) => r.monday_item_id);
+  }
+
+  async setSponsorshipFacts(rows: { mondayItemId: string; sponsorshipEvent: string; inKindValueCents: number }[], now: string): Promise<void> {
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      await this.db.batch(chunk.map((r) => this.db
+        .prepare(`UPDATE gifts SET sponsorship_event = COALESCE(sponsorship_event, ?2), in_kind_value_cents = COALESCE(in_kind_value_cents, ?3), updated_at = ?4 WHERE monday_item_id = ?1`)
+        .bind(r.mondayItemId, r.sponsorshipEvent, r.inKindValueCents, now)));
     }
   }
 

@@ -39,7 +39,7 @@ const config: DonationRollupsConfig = {
     donorLevel: null,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
-    recurringGifts: null, rollCall: null,
+    recurringGifts: null, rollCall: null, sponsorships: null,
   },
 };
 
@@ -61,7 +61,7 @@ const membershipEnabled: DonationRollupsConfig = {
     membership: membershipConfig,
     volunteerBoards: [],
     historicalVolunteerBoards: [],
-    recurringGifts: null, rollCall: null,
+    recurringGifts: null, rollCall: null, sponsorships: null,
   },
 };
 
@@ -121,6 +121,8 @@ function fakeGiftsStore(): GiftsStore {
     countedGifts: vi.fn().mockResolvedValue([]),
     giftsMissingTermStart: vi.fn().mockResolvedValue([]),
     setTermStarts: vi.fn().mockResolvedValue(undefined),
+    giftsMissingSponsorshipFacts: vi.fn().mockResolvedValue([]),
+    setSponsorshipFacts: vi.fn().mockResolvedValue(undefined),
     ownersOnBoards: vi.fn().mockResolvedValue([]),
     ownersWithOneGift: vi.fn().mockResolvedValue([]),
     ownerTotals: vi.fn().mockResolvedValue(new Map()),
@@ -146,6 +148,7 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     getItemBoardId: vi.fn().mockResolvedValue('2'),
     getDonorLinkForDonation: vi.fn().mockResolvedValue('donor-1'),
     getDonationState: vi.fn().mockResolvedValue('active'),
+    getItemsBoardAndGroup: vi.fn().mockResolvedValue(new Map()),
     getDonationsByIds: vi.fn().mockResolvedValue([]),
     getOwnerMembership: vi.fn().mockResolvedValue({ statusLabel: null, tierLabel: null, since: null, until: null,
       currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null }),
@@ -162,6 +165,126 @@ function fakeMondayClient(overrides: Partial<DonationRollupsMondayClient> = {}):
     ...overrides,
   };
 }
+
+const sponsorshipsCfg = { organizationsBoardId: 2, giftTypes: ['Sponsorship'], inKindGiftTypes: ['In-kind'], yearBasis: 'calendar' as const,
+  windowYears: 3, pipelineBoards: { '700': 'Bike Fest' } };
+const sponsorshipsConfig: DonationRollupsConfig = {
+  ...config,
+  donationRollups: {
+    ...config.donationRollups,
+    donationBoards: [{ boardId: 1, columns: { ...config.donationRollups.donationBoards[0]!.columns,
+      giftType: 'gt_1', sponsorshipCycle: 'sc_1', inKindValue: 'ikv_1', sponsorshipPipelineLinks: ['pl_1'] } }],
+    sponsorships: sponsorshipsCfg,
+  },
+};
+const sponsorHistory = (): GiftHistoryRow[] => [
+  { mondayItemId: 'dn1', donationBoardId: '1', amountCents: 250000, giftDateISO: '2026-05-01', fiscalYear: 2026,
+    status: 'Received', giftType: 'Sponsorship', actingForItemId: null, archived: false, sponsorshipEvent: 'Bike Fest 2026', inKindValueCents: null } as GiftHistoryRow,
+  { mondayItemId: 'dn2', donationBoardId: '1', amountCents: 0, giftDateISO: '2026-06-01', fiscalYear: 2026,
+    status: 'Received', giftType: 'In-kind', actingForItemId: null, archived: false, sponsorshipEvent: '', inKindValueCents: 30000 } as GiftHistoryRow,
+];
+const sponsorDonation = (extra: Partial<DonationRecord> = {}): DonationRecord => ({
+  id: 'dn1', amountCents: 250000, dateISO: '2026-05-01', fiscalYear: 2026, status: 'Received', giftType: 'Sponsorship', ...extra } as DonationRecord);
+async function runSponsor(cfg: DonationRollupsConfig, ownerBoard: string, history: GiftHistoryRow[], donations: DonationRecord[], clientOver: Partial<DonationRollupsMondayClient> = {}) {
+  const giftsStore = fakeGiftsStore();
+  (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
+  const setItemDescription = vi.fn().mockResolvedValue(undefined);
+  const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue(ownerBoard), setItemDescription,
+    getDonationsByIds: vi.fn().mockResolvedValue(donations), ...clientOver });
+  await processRecomputeBatch([fakeMessage('dn1')],
+    { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: NOW });
+  return { giftsStore, setItemDescription, mondayClient };
+}
+
+describe('sponsorships section in the recompute path', () => {
+  it("an Organizations owner's description starts with ## Sponsorships then ## Gift History", async () => {
+    const { setItemDescription } = await runSponsor(sponsorshipsConfig, '2', sponsorHistory(), [sponsorDonation()]);
+    const md = setItemDescription.mock.calls[0]![1] as string;
+    expect(md.startsWith('## Sponsorships')).toBe(true);
+    expect(md.indexOf('## Gift History')).toBeGreaterThan(md.indexOf('## Sponsorships'));
+    expect(md).toContain('\n\n## Gift History');
+  });
+
+  it('the window year is the local date in the fiscal-year time zone, not UTC', async () => {
+    const cfg = { ...sponsorshipsConfig, donationRollups: { ...sponsorshipsConfig.donationRollups,
+      sponsorships: { ...sponsorshipsCfg, windowYears: 7 } } };
+    const history = [{ ...sponsorHistory()[0]!, mondayItemId: 'old', giftDateISO: '2020-03-01', fiscalYear: 2020 } as GiftHistoryRow];
+    const giftsStore = fakeGiftsStore();
+    (giftsStore.giftsForOwner as ReturnType<typeof vi.fn>).mockResolvedValue(history);
+    const setItemDescription = vi.fn().mockResolvedValue(undefined);
+    const mondayClient = fakeMondayClient({ getItemBoardId: vi.fn().mockResolvedValue('2'), setItemDescription,
+      getDonationsByIds: vi.fn().mockResolvedValue([sponsorDonation()]) });
+    await processRecomputeBatch([fakeMessage('dn1')],
+      { pendingStore: fakePendingStore(), linksStore: fakeLinksStore(), affiliationsStore: fakeAffiliationsStore(), giftsStore, recomputesStore: fakeRecomputesStore(), volunteerStore: fakeVolunteerStore(), mondayClient, config: cfg, now: new Date('2027-01-01T05:00:00Z') });
+    const md = setItemDescription.mock.calls[0]![1] as string;
+    expect(md).toContain('## Sponsorships');
+    expect(md).toContain('2020-03-01');
+  });
+
+  it('a People owner with an in-kind Received gift gets no Sponsorships section', async () => {
+    const cfg = { ...sponsorshipsConfig, donationRollups: { ...sponsorshipsConfig.donationRollups, ownerColumnsByBoard: { '2': ownerColumns, '3': ownerColumns } } };
+    const { setItemDescription } = await runSponsor(cfg, '3', sponsorHistory(), [sponsorDonation()]);
+    expect(setItemDescription.mock.calls[0]![1] as string).not.toContain('## Sponsorships');
+  });
+
+  it('event falls back to pipeline board name + group title when Sponsorship Cycle is blank', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map([['p1', { boardId: '700', groupTitle: '2026' }]]));
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: 'p1', inKindValueCents: 0 })], { getItemsBoardAndGroup });
+    expect(getItemsBoardAndGroup).toHaveBeenCalledTimes(1);
+    expect(getItemsBoardAndGroup).toHaveBeenCalledWith(['p1']);
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ sponsorshipEvent: 'Bike Fest 2026', inKindValueCents: 0 })], 'webhook', expect.any(String));
+  });
+
+  it('a non-empty Sponsorship Cycle wins over the pipeline link', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map([['p1', { boardId: '700', groupTitle: '2026' }]]));
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala 2026', pipelineItemId: 'p1', inKindValueCents: 12300 })], { getItemsBoardAndGroup });
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ sponsorshipEvent: 'Gala 2026', inKindValueCents: 12300 })], 'webhook', expect.any(String));
+  });
+
+  it('an unmapped pipeline board or missing item resolves to an empty event, and no pipeline ids means no lookup', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map([['p1', { boardId: '999', groupTitle: '2026' }]]));
+    const a = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: 'p1' })], { getItemsBoardAndGroup });
+    expect(a.giftsStore.refreshFacts).toHaveBeenCalledWith([expect.objectContaining({ sponsorshipEvent: '' })], 'webhook', expect.any(String));
+    const none = vi.fn().mockResolvedValue(new Map());
+    await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: null })], { getItemsBoardAndGroup: none });
+    expect(none).not.toHaveBeenCalled();
+  });
+
+  it('refreshFacts receives sponsorshipEvent and inKindValueCents for configured boards; getDonationsByIds gets the new columns', async () => {
+    const { giftsStore, mondayClient } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala', inKindValueCents: 500 })]);
+    expect(giftsStore.refreshFacts).toHaveBeenCalledWith(
+      [expect.objectContaining({ sponsorshipEvent: 'Gala', inKindValueCents: 500 })], 'webhook', expect.any(String));
+    expect((mondayClient.getDonationsByIds as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toMatchObject(
+      { sponsorshipCycle: 'sc_1', inKindValue: 'ikv_1', sponsorshipPipelineLinks: ['pl_1'] });
+  });
+
+  it('an archived gift with blank cycle and no link does not send sponsorshipEvent to refreshFacts', async () => {
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: null, pipelineItemId: null, archived: true })]);
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+  });
+
+  it('an archived gift with a Sponsorship Cycle also leaves the stored event untouched', async () => {
+    const getItemsBoardAndGroup = vi.fn().mockResolvedValue(new Map());
+    const { giftsStore } = await runSponsor(sponsorshipsConfig, '2', [], [sponsorDonation({ sponsorshipCycle: 'Gala', pipelineItemId: 'p1', archived: true })], { getItemsBoardAndGroup });
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+    expect(getItemsBoardAndGroup).not.toHaveBeenCalled();
+  });
+
+  it('with sponsorships null the description is exactly the gift history and the facts carry no sponsorship fields', async () => {
+    const { buildGiftHistoryMarkdown } = await import('../projections/giftHistory');
+    const hist = sponsorHistory();
+    const { setItemDescription, giftsStore, mondayClient } = await runSponsor(config, '2', hist, [sponsorDonation()]);
+    expect(setItemDescription).toHaveBeenCalledWith('donor-1', buildGiftHistoryMarkdown(hist, config.monday.accountUrl, undefined));
+    const fact = (giftsStore.refreshFacts as ReturnType<typeof vi.fn>).mock.calls[0]![0][0];
+    expect(fact.sponsorshipEvent).toBeUndefined();
+    expect(fact.inKindValueCents).toBeUndefined();
+    expect((mondayClient.getDonationsByIds as ReturnType<typeof vi.fn>).mock.calls[0]![1]).not.toHaveProperty('sponsorshipCycle');
+  });
+});
 
 // Enough ledger rows that the JSON projection blows past the ~60KB write budget.
 const oversizedHistory = Array.from({ length: 2_000 }, (_, i) => ({
@@ -542,7 +665,7 @@ describe('processRecomputeBatch', () => {
 const BLANK_BOARD: BoardMembership = { statusLabel: null, tierLabel: null, since: null, until: null, currentTermStart: null, memberTypeLabel: null, lapseCount: null, lastLapsed: null };
 const ledgerGift = (over: Partial<GiftHistoryRow> = {}): GiftHistoryRow => ({
   mondayItemId: 'dn1', donationBoardId: '1', amountCents: 5000, giftDateISO: '2026-11-05', fiscalYear: 2027,
-  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, termStart: null, ...over });
+  status: 'Received', giftType: 'Donation', actingForItemId: null, archived: false, termStart: null, sponsorshipEvent: null, inKindValueCents: null, ...over });
 
 describe('membership step (spec 2026-10-09 — full-history fold)', () => {
   function deps(over: {

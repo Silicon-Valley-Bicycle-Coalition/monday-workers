@@ -383,3 +383,58 @@ describe('validateConfig — rollCall block', () => {
     }
   });
 });
+
+describe('sponsorships config', () => {
+  const sponsorships = {
+    organizationsBoardId: 2,
+    giftTypes: ['Sponsorship'],
+    inKindGiftTypes: ['In Kind Donation / Sponsorship'],
+    yearBasis: 'calendar',
+    windowYears: 7,
+    pipelineBoards: { '18391037433': 'BTWD', '18390869107': 'Advocacy Summit' },
+  };
+  const withSponsorships = (s: unknown) =>
+    ({ ...base, donationRollups: { ...base.donationRollups, sponsorships: s } });
+
+  it('validates a sponsorships block', () => {
+    const cfg = validateConfig(withSponsorships(sponsorships));
+    expect(cfg.donationRollups.sponsorships).toEqual(sponsorships);
+  });
+
+  it('sponsorships null or missing parses as null', () => {
+    expect(validateConfig(base).donationRollups.sponsorships).toBeNull();
+    expect(validateConfig(withSponsorships(null)).donationRollups.sponsorships).toBeNull();
+  });
+
+  it('rejects windowYears 0', () => {
+    expect(() => validateConfig(withSponsorships({ ...sponsorships, windowYears: 0 })))
+      .toThrow(/donationRollups\.sponsorships\.windowYears/);
+  });
+
+  it('rejects yearBasis "weekly"', () => {
+    expect(() => validateConfig(withSponsorships({ ...sponsorships, yearBasis: 'weekly' })))
+      .toThrow(/donationRollups\.sponsorships\.yearBasis/);
+  });
+
+  it('rejects organizationsBoardId not in ownerColumnsByBoard', () => {
+    expect(() => validateConfig(withSponsorships({ ...sponsorships, organizationsBoardId: 99 })))
+      .toThrow(/donationRollups\.sponsorships\.organizationsBoardId/);
+  });
+
+  it('accepts the optional sponsorship board columns', () => {
+    const cfg = validateConfig(withBoardCols({ sponsorshipCycle: 'sc', inKindValue: 'ikv', sponsorshipPipelineLinks: ['pl1', 'pl2'] }));
+    const c = cfg.donationRollups.donationBoards[0]!.columns;
+    expect(c.sponsorshipCycle).toBe('sc');
+    expect(c.inKindValue).toBe('ikv');
+    expect(c.sponsorshipPipelineLinks).toEqual(['pl1', 'pl2']);
+  });
+
+  it('rejects an empty pipeline link id', () => {
+    expect(() => validateConfig(withBoardCols({ sponsorshipPipelineLinks: [''] })))
+      .toThrow(/sponsorshipPipelineLinks/);
+  });
+
+  function withBoardCols(columns: Record<string, unknown>) {
+    return { ...base, donationRollups: { ...base.donationRollups, donationBoards: [{ ...donationBoard, columns: { ...donationBoard.columns, ...columns } }] } };
+  }
+});

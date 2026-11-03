@@ -23,7 +23,7 @@ function config(rollCall: RollCallConfig | null = ROLL_CALL): DonationRollupsCon
     affiliations: null,
     donationRollups: {
       donationBoards: [], receivedStatusLabel: 'Received', ownerColumnsByBoard: {}, membership: null, donorLevel: null,
-      volunteerBoards: [], historicalVolunteerBoards: [], recurringGifts: null, rollCall,
+      volunteerBoards: [], historicalVolunteerBoards: [], recurringGifts: null, rollCall, sponsorships: null,
     },
   };
 }

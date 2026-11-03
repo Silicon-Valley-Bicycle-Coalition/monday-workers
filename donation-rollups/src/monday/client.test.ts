@@ -82,6 +82,19 @@ describe('items in the trash read as gone', () => {
   });
 });
 
+describe('getDonationsByIds archived state', () => {
+  it('getDonationsByIds marks archived items', async () => {
+    const response = itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'dn2', cells: { amount_1: '75', date_1: '2020-02-15', status_1: 'Received' } },
+    ]);
+    (response.data.items[0] as Record<string, unknown>).state = 'archived';
+    (response.data.items[1] as Record<string, unknown>).state = 'active';
+    const result = await clientReturning(response).getDonationsByIds(['dn1', 'dn2'], COLUMNS, 7);
+    expect(result.map((d) => [d.id, d.archived])).toEqual([['dn1', true], ['dn2', false]]);
+  });
+});
+
 describe('getDonationsByIds', () => {
   it('parses a well-formed donation', async () => {
     const client = clientReturning(itemsResponse([
@@ -89,7 +102,7 @@ describe('getDonationsByIds', () => {
     ]));
     const result = await client.getDonationsByIds(['dn1'], COLUMNS, 7);
     expect(result).toEqual([
-      { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined },
+      { id: 'dn1', amountCents: 5000, dateISO: '2020-01-15', fiscalYear: 2020, status: 'Received', giftType: undefined, archived: false },
     ]);
   });
 
@@ -540,5 +553,78 @@ describe('roll call board writes', () => {
     const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
     expect(await client.createGroup(5, 'FY2027').catch((e) => e)).toBeInstanceOf(AmbiguousWriteError);
     expect(await client.createItemInGroup(5, 'g', 'Ada', {}).catch((e) => e)).toBeInstanceOf(AmbiguousWriteError);
+  });
+});
+
+describe('HttpMondayClient — sponsorship reads', () => {
+  const base = { amount: 'amount_1', date: 'date_1', status: 'status_1', fiscalYear: null };
+  const sponsorCols = {
+    ...base, sponsorshipCycle: 'cycle_1', inKindValue: 'ik_1', sponsorshipPipelineLinks: ['pl_a', 'pl_b'],
+  };
+  const respond = (cols: unknown[]) => ({ data: { items: [{ id: 'dn1', column_values: [
+    { id: 'amount_1', text: '50' }, { id: 'date_1', text: '2024-02-02' }, { id: 'status_1', text: 'Received' }, ...cols] }] } });
+
+  it('reads sponsorship cycle, in-kind value and pipeline link when configured', async () => {
+    const client = clientReturning(respond([
+      { id: 'cycle_1', text: ' 2026 Bike Fest ' }, { id: 'ik_1', text: '1,234.50' },
+      { id: 'pl_a', text: '', linked_item_ids: [] }, { id: 'pl_b', text: 'Deal', linked_item_ids: ['pipe-9'] }]));
+    const [d] = await client.getDonationsByIds(['dn1'], sponsorCols, 7);
+    expect(d!.sponsorshipCycle).toBe('2026 Bike Fest');
+    expect(d!.inKindValueCents).toBe(123450);
+    expect(d!.pipelineItemId).toBe('pipe-9');
+  });
+
+  it('reads blank cycle and in-kind value as null, and no pipeline link as null', async () => {
+    const client = clientReturning(respond([
+      { id: 'cycle_1', text: '  ' }, { id: 'ik_1', text: '' }, { id: 'pl_a', text: '', linked_item_ids: [] }]));
+    const [d] = await client.getDonationsByIds(['dn1'], sponsorCols, 7);
+    expect(d!.sponsorshipCycle).toBeNull();
+    expect(d!.inKindValueCents).toBeNull();
+    expect(d!.pipelineItemId).toBeNull();
+  });
+
+  it('leaves them undefined when not configured, and does not request their columns', async () => {
+    const client = clientReturning(respond([]));
+    const [d] = await client.getDonationsByIds(['dn1'], base, 7);
+    expect(d!.sponsorshipCycle).toBeUndefined();
+    expect(d!.inKindValueCents).toBeUndefined();
+    expect(d!.pipelineItemId).toBeUndefined();
+    const sent = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
+    expect(sent.variables.columnIds).toEqual(['amount_1', 'date_1', 'status_1']);
+  });
+
+  it('requests the configured sponsorship columns', async () => {
+    const client = clientReturning(respond([]));
+    await client.getDonationsByIds(['dn1'], sponsorCols, 7);
+    const sent = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string);
+    expect(sent.variables.columnIds).toEqual(expect.arrayContaining(['cycle_1', 'ik_1', 'pl_a', 'pl_b']));
+  });
+
+  it('still skips an item with blank Amount even when In-Kind Value is set', async () => {
+    const client = clientReturning({ data: { items: [{ id: 'dn1', column_values: [
+      { id: 'amount_1', text: '' }, { id: 'date_1', text: '2024-02-02' }, { id: 'status_1', text: 'Received' },
+      { id: 'ik_1', text: '500' }] }] } });
+    expect(await client.getDonationsByIds(['dn1'], sponsorCols, 7)).toEqual([]);
+  });
+
+  it('getItemsBoardAndGroup maps item id to board id and group title, chunking by 100 with limit 100', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `i${i}`);
+    const client = clientReturningSequence([
+      { data: { items: [{ id: 'i0', board: { id: '20' }, group: { title: 'Sponsors' } }] } },
+      { data: { items: [{ id: 'i100', board: { id: '28' }, group: { title: 'Prospects' } }] } },
+    ]);
+    const out = await client.getItemsBoardAndGroup(ids);
+    expect(out).toEqual(new Map([['i0', { boardId: '20', groupTitle: 'Sponsors' }], ['i100', { boardId: '28', groupTitle: 'Prospects' }]]));
+    const calls = vi.mocked(fetch).mock.calls.map((c) => JSON.parse((c[1] as RequestInit).body as string));
+    expect(calls).toHaveLength(2);
+    expect(calls[0].variables.ids).toHaveLength(100);
+    expect(calls[1].variables.ids).toHaveLength(50);
+    expect(calls[0].query).toContain('limit: 100');
+  });
+
+  it('getItemsBoardAndGroup omits items that are missing', async () => {
+    const client = clientReturning({ data: { items: [] } });
+    expect(await client.getItemsBoardAndGroup(['gone'])).toEqual(new Map());
+    expect(await client.getItemsBoardAndGroup([])).toEqual(new Map());
   });
 });
