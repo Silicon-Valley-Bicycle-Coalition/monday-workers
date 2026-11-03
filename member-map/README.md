@@ -9,8 +9,10 @@ It is for staff choosing places for membership drives, events and group rides. I
 not for members. It reads Monday and **never writes it**.
 
 Status: built, **not deployed**. Blocked on the Cloudflare Access setup below (Zero Trust
-organization, Google Workspace identity provider, two Access applications), D1 and R2
-provisioning, and production board ids in `config/svbc.json`.
+organization, Google Workspace identity provider, two Access applications), D1, R2 and queue
+provisioning, and production board ids in `config/svbc.json`. The `deploy-sandbox:member-map` CI
+job is held back (commented out in `.gitlab-ci.yml`) until the sandbox resources exist; see
+[Provisioning](#provisioning).
 
 ## What staff see
 
@@ -61,13 +63,31 @@ Routes (every one sits behind Access **and** a Worker-side check of the Access J
 
 * `GET /api/snapshot`: the weekly snapshot from R2, `Cache-Control: private, no-store`. 503 until
   the first snapshot exists.
-* `POST /api/refresh`: starts a refresh now. 202 on start, 429 if the snapshot is under 10 minutes
-  old.
+* `POST /api/refresh`: queues a refresh now. 202 when queued; 429 if the snapshot is under 10
+  minutes old or a refresh is already queued or running (an R2 `refresh-pending.json` marker under
+  20 minutes old). See [Refresh](#refresh).
 * Everything else: the static page and reference data in `public/`.
 
 The cron is `0 13 * * 1` (Mondays 13:00 UTC). Monday access goes through the `monday-auth`
 broker's Read-only app (`MONDAY_AUTH` service binding, `ReadOnlyToken`); the Worker holds no
-Monday token. It has no queue and no write switch, because it never writes to Monday.
+Monday token. It has no write switch, because it never writes to Monday.
+
+### Refresh
+
+The weekly cron and the **Refresh now** button run the same refresh (read the boards, geocode,
+write `snapshot.json`). A refresh takes minutes, longer than the ~30 s an HTTP request's
+`waitUntil` may keep running, so the button doesn't run it in the request:
+
+1. `POST /api/refresh` writes the `refresh-pending.json` marker to R2 and sends one message to the
+   `svbc-member-map-refresh` queue (`-sandbox` in the sandbox), then answers 202.
+2. The same Worker consumes the queue (`max_batch_size` 1, `max_retries` 0) and runs the refresh,
+   with a queue consumer's 15 minutes. It deletes the marker when it finishes, whether or not the
+   refresh succeeded. A marker older than 20 minutes is ignored, in case a consumer died.
+3. A failed refresh is not retried: the next click or the next cron tries again.
+
+A failed cron or queue run logs `member-map: refresh failed: <error name>` and then fails the
+invocation with that same message (never the original error text), so it shows as failed in Cron
+Events and the queue's metrics.
 
 ## Config
 
@@ -80,7 +100,8 @@ validated at startup (`src/config.ts`). `config/split.test.ts` fails if the two 
 | `boards.peopleLive`, `peopleHistorical`, `organizations` | Board ids. The sandbox file holds the CRM Sandbox ids; `svbc.json` holds `0` placeholders until production ids exist |
 | `columns.*` | Column titles (address, city, zip, lat, lng, membership status, do not solicit). Matched with `bareTitle`, so the 🔒/📜 markers don't matter |
 | `activeLabel` | Membership Status label that counts as an active member (`Active`) |
-| `geocoder.*` | Census batch geocoder URL, benchmark, default state, `batchSize` (1,000), `maxPerRun` (5,000), `retryNoMatchDays` (90) |
+| `lapsedLabel` | Membership Status label that counts as a lapsed member (`Lapsed`); any other value is a never-member |
+| `geocoder.*` | Census batch geocoder URL, benchmark, default state, `batchSize` (1,000), `maxPerRun` (5,000), `retryNoMatchDays` (90), `timeoutMs` (120,000: one Census request is abandoned after this), `budgetMs` (480,000: total geocoding time per run) |
 | `access.teamDomain`, `access.aud`, `access.allowedEmailDomain` | Cloudflare Access values for the JWT check (below) |
 
 Reference-build settings (counties, ACS/TIGER year, road classes, bike class weights) live in
@@ -119,8 +140,15 @@ cd member-map
 npx wrangler d1 create svbc-member-map-sandbox        # put the id in wrangler.jsonc env.sandbox
 npx wrangler d1 migrations apply svbc-member-map-sandbox --remote --env sandbox
 npx wrangler r2 bucket create svbc-member-map-sandbox
+npx wrangler queues create svbc-member-map-refresh-sandbox
 npm run deploy:sandbox
 ```
+
+**CI deploy is held back.** The `deploy-sandbox:member-map` job in `.gitlab-ci.yml` is commented
+out, because until the commands above have run, a merge to `main` would deploy against the
+placeholder D1 id and a bucket and queue that don't exist. Re-enable it (uncomment the job) in the
+same change that commits the real sandbox `database_id` to `wrangler.jsonc`, once the sandbox D1,
+R2 bucket and queue exist.
 
 Then, signed in through Access in a browser on `map.sandbox.bikesiliconvalley.org`, trigger the
 first snapshot with the **Refresh now** button on the page's "No data yet" screen, or with
@@ -161,6 +189,11 @@ is written back to Monday. Board Lat/Lng always wins when present.
 * At most 5,000 lookups per run (`maxPerRun`), in batches of 1,000 (`batchSize`). A large backlog
   clears over several weeks of runs or manual refreshes. A failed batch is not cached, so it is
   retried.
+* Each Census request is abandoned after 2 minutes (`timeoutMs`), which fails that batch only. Once
+  8 minutes of geocoding have gone by (`budgetMs`), no more batches are sent and the rest wait
+  for the next run, so the snapshot is always written within the 15-minute limit.
+* Organizations are placed from their board Lat/Lng only. One without coordinates is skipped: not
+  geocoded, and not counted in "people with no usable address".
 
 ## Reference data
 
