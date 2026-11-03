@@ -39,6 +39,7 @@ async function resolve(monday: DtdMondayClient, identifier: string, source: stri
 function differs(prev: StoredRecord | null, next: StoredRecord): boolean {
   return (
     prev === null ||
+    prev.unmatched ||
     prev.mondayItemId !== next.mondayItemId ||
     prev.status !== next.status ||
     prev.matchingGiftStatus !== next.matchingGiftStatus ||
@@ -69,7 +70,7 @@ async function handle(deps: PullDeps, d: DtdDonation, plugin: string | null, now
     matchedAmount: d.matched_amount,
     donationDatetime: toISO(d.donation_datetime),
     updatedSeenAt: nowISO,
-    unmatched: itemId === null,
+    unmatched: item === null, // a carried-forward item id stays retryable until it resolves
   };
 
   let written = false;

@@ -7,6 +7,7 @@ describe('matchStatusLabel', () => {
   it('maps known, unknown and null keywords', () => {
     expect(matchStatusLabel(':waiting-for-donor-action', labels, false)).toBe('Waiting for donor');
     expect(matchStatusLabel(':brand-new-keyword', labels, false)).toBe('Other');
+    expect(matchStatusLabel('constructor', labels, false)).toBe('Other');
     expect(matchStatusLabel(null, labels, false)).toBe('Identifying employer');
   });
   it('returns Matched when paired, whatever the keyword', () => {

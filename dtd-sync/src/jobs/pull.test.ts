@@ -224,7 +224,35 @@ describe('runPull', () => {
     });
     const h = harness([dtd()]);
     await runPull(h.deps, NOW);
-    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ mondayItemId: '500', unmatched: false, status: ':waiting-for-donor-action' });
+    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ mondayItemId: '500', unmatched: true, status: ':waiting-for-donor-action' });
+  });
+
+  it('writes the stored status once a carried-forward record resolves on retry', async () => {
+    await upsertRecord(env.DB, {
+      donationIdentifier: 'fr-1', mondayItemId: '500', source: null, status: ':old', matchingGiftStatus: null,
+      employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
+      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: false,
+    });
+    const h = harness([dtd()]);
+    await runPull(h.deps, NOW);
+    expect(h.donationWrites).toEqual([]);
+    h.state.donations = [];
+    h.items.set('500', item());
+    await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+    expect(h.donationWrites).toHaveLength(1);
+    expect(h.donationWrites[0]!.values[D.dtdStatusRaw]).toBe(':waiting-for-donor-action');
+    expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ unmatched: false });
+  });
+
+  it('stores nothing and holds the watermark when updatePerson throws after updateDonation', async () => {
+    const h = harness([dtd()]);
+    h.items.set('500', item());
+    h.people.set('900', { id: '900', email: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null });
+    h.deps.monday.updatePerson = async () => { throw new Error('monday down'); };
+    await runPull(h.deps, NOW);
+    expect(h.donationWrites).toHaveLength(1);
+    expect(await getRecord(env.DB, 'fr-1')).toBeNull();
+    expect(await getWatermark(env.DB)).toBeNull();
   });
 
   it('propagates DtdAuthError and leaves the watermark alone', async () => {

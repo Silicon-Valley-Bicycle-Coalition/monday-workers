@@ -5,5 +5,5 @@
 export function matchStatusLabel(keyword: string | null, labels: Record<string, string>, paired: boolean): string {
   if (paired) return 'Matched';
   if (keyword === null) return 'Identifying employer';
-  return labels[keyword] ?? 'Other';
+  return Object.hasOwn(labels, keyword) ? labels[keyword]! : 'Other';
 }
