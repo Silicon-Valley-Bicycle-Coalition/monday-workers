@@ -6,7 +6,7 @@ import type { MondayColumnsConfig } from '../types';
 const COLUMNS: MondayColumnsConfig = {
   membershipStatus: 'status', membershipTier: 'tier', memberSince: 'since', memberUntil: 'until',
   addr1: 'addr1', city: 'city', state: 'state', zip: 'zip', email: 'email', totalGiven: 'given',
-  mailchimpCampaigns: 'campaigns', doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
+  mailchimpCampaigns: 'campaigns', doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
 };
 
 // The transport's retries don't really wait in tests.
@@ -59,7 +59,7 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor).toEqual({
       id: '42', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
       memberSince: '2026-01-01', memberUntil: '', addr1: '1 Main St', city: 'San Jose',
-      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '',
+      state: 'CA', zip: '95110', totalGiven: '150', doNotSolicit: false, dnsReasonStatus: '', nearby: [],
     });
   });
 
@@ -75,6 +75,44 @@ describe('HttpMondayClient.getDonorById', () => {
     expect(donor?.dnsReasonStatus).toBe('Confirmed');
     const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.variables.columnIds).toEqual(expect.arrayContaining(['dns', 'dnsStatus']));
+  });
+
+  it('never requests a State column when state is null, and leaves the state blank', async () => {
+    const fetchFn = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'email', text: 'a@b.com' }, { id: 'zip', text: '95110' }] }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+
+    const donor = await client.getDonorById('42', { ...COLUMNS, state: null });
+
+    expect(donor?.state).toBe('');
+    expect(donor?.zip).toBe('95110');
+    const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).not.toContain(null);
+    expect(body.variables.columnIds).not.toContain('state');
+  });
+
+  it('reads the Nearby column when configured, splitting its text on ", " and dropping empties', async () => {
+    const fetchFn = fakeFetch({
+      items: [{ id: '42', column_values: [{ id: 'email', text: 'a@b.com' }, { id: 'nearby', text: 'Stevens Creek bikeway,  Bay Trail, , Lawrence Expy' }] }],
+    });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+
+    const donor = await client.getDonorById('42', { ...COLUMNS, nearby: 'nearby' });
+
+    expect(donor?.nearby).toEqual(['Stevens Creek bikeway', 'Bay Trail', 'Lawrence Expy']);
+    const body = JSON.parse((fetchFn.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).toContain('nearby');
+  });
+
+  it('gives an empty Nearby list for a blank column, and never requests the column when nearby is null', async () => {
+    const fetchFn = fakeFetch({ items: [{ id: '42', column_values: [{ id: 'nearby', text: null }] }] });
+    const client = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn, sleepFn: noSleep });
+    expect((await client.getDonorById('42', { ...COLUMNS, nearby: 'nearby' }))?.nearby).toEqual([]);
+
+    const nullFetch = fakeFetch({ items: [{ id: '42', column_values: [] }] });
+    const nullClient = new HttpMondayClient('https://api.monday.com/v2', 'token', { fetchFn: nullFetch, sleepFn: noSleep });
+    expect((await nullClient.getDonorById('42', COLUMNS))?.nearby).toEqual([]);
+    const body = JSON.parse((nullFetch.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.variables.columnIds).not.toContain(null);
   });
 
   it('returns null when the item no longer exists', async () => {

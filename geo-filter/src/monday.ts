@@ -4,6 +4,7 @@
 
 import type { Contact } from './geometry.js';
 import { MondayGraphQL, type MondayGraphQLOptions } from './monday/graphql.js';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const API_URL = 'https://api.monday.com/v2';
 
@@ -33,11 +34,11 @@ export async function fetchContacts(
 ): Promise<Contact[]> {
   const transport = new MondayGraphQL(API_URL, token, options);
   const boardData: any = await transport.request<any>(`query ($boardId: [ID!]) { boards(ids: $boardId) { columns { id title } } }`, { boardId: [boardId] });
-  const byTitle = new Map<string, string>((boardData.boards[0]?.columns ?? []).map((c: { id: string; title: string }) => [c.title, c.id]));
-  const latId = byTitle.get(columns.lat);
-  const lngId = byTitle.get(columns.lng);
-  const zipId = byTitle.get(columns.zip);
-  const nameId = columns.name === undefined ? ITEM_NAME_COLUMN_ID : byTitle.get(columns.name);
+  const byTitle = new Map<string, string>((boardData.boards[0]?.columns ?? []).map((c: { id: string; title: string }) => [bareTitle(c.title), c.id]));
+  const latId = byTitle.get(bareTitle(columns.lat));
+  const lngId = byTitle.get(bareTitle(columns.lng));
+  const zipId = byTitle.get(bareTitle(columns.zip));
+  const nameId = columns.name === undefined ? ITEM_NAME_COLUMN_ID : byTitle.get(bareTitle(columns.name));
   if (!latId || !lngId || !zipId || !nameId) {
     const missing = [
       !latId && `lat column "${columns.lat}"`,

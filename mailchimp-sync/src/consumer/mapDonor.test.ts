@@ -5,7 +5,7 @@ import type { Config, DonorRecord } from '../types';
 const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, columns: {} as never },
   mailchimp: {
-    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'],
+    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
     mergeFields: {
       memberSince: 'MEMBERSINCE', memberUntil: 'MEMBERUNTIL', membershipTier: 'MTIER',
       membershipStatus: 'MSTATUS', address: 'ADDRESS', totalGiven: 'TOTALGIVE',
@@ -24,7 +24,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '2027-01-01', addr1: '1 Main St', city: 'San Jose',
-    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', ...overrides,
+    state: 'CA', zip: '95110', totalGiven: '0', doNotSolicit: false, dnsReasonStatus: '', nearby: [], ...overrides,
   };
 }
 
@@ -38,6 +38,16 @@ describe('buildMergeFields', () => {
       ADDRESS: { addr1: '1 Main St', city: 'San Jose', state: 'CA', zip: '95110', country: 'US' },
       TOTALGIVE: '0',
     });
+  });
+
+  it('derives the state from the ZIP when the donor has none (no State column configured)', () => {
+    expect(buildMergeFields(donor({ state: '', zip: '98101' }), CONFIG).ADDRESS)
+      .toEqual({ addr1: '1 Main St', city: 'San Jose', state: 'WA', zip: '98101', country: 'US' });
+  });
+
+  it('keeps a State column value over the ZIP, and omits ADDRESS when neither gives a state', () => {
+    expect((buildMergeFields(donor({ state: 'NV', zip: '95110' }), CONFIG).ADDRESS as { state: string }).state).toBe('NV');
+    expect(buildMergeFields(donor({ state: '', zip: 'EH9 1NR' }), CONFIG)).not.toHaveProperty('ADDRESS');
   });
 
   it('omits the ADDRESS key entirely when any address component is blank', () => {
@@ -96,7 +106,25 @@ describe('buildTags — Do Not Solicit', () => {
   });
 });
 
+describe('buildTags: Nearby labels', () => {
+  it('appends the prefix plus each Nearby label', () => {
+    const tags = buildTags(donor({ nearby: ['Stevens Creek bikeway', 'Bay Trail'] }), CONFIG);
+    expect(tags).toContain('Near: Stevens Creek bikeway');
+    expect(tags).toContain('Near: Bay Trail');
+  });
+
+  it('adds no Near: tag when the donor has no labels', () => {
+    expect(buildTags(donor(), CONFIG).some((t) => t.startsWith('Near: '))).toBe(false);
+  });
+});
+
 describe('managedTags', () => {
+  it('adds the member\'s current prefixed tags (so a removed label can be deactivated), and no others', () => {
+    const managed = managedTags(CONFIG, ['Near: Old', 'VIP']);
+    expect(managed).toContain('Near: Old');
+    expect(managed).not.toContain('VIP');
+  });
+
   it('enumerates every configured tag this worker owns, and only those', () => {
     expect(managedTags(CONFIG).sort()).toEqual(
       ['active-member', 'do-not-solicit', 'has-donated', 'lapsed-member', 'lifetime-member'],

@@ -2,12 +2,16 @@
 
 **Staff UAT script:** [`docs/uat/benevity-import.md`](../docs/uat/benevity-import.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Built (`feat/benevity-import`) — production not deployed; sandbox provisioned and
-verified end to end 2026-09-19, remapped to the `(sandbox v3)` boards and re-verified 2026-09-30
-(see "Sandbox environment" below); production D1 provisioned and
-sandbox board/column ids wired 2026-09-18 (c28c224); still needs production board/column ids at cutover,
-the two `salesforce-import` Donations-board columns it depends on (see Related changes
-elsewhere), and Monday webhook + integration-user token setup.
+**Status:** **Deployed to production 2026-11-02** (runbook step 6.5), `writes on`. That day the
+`Benevity Uploads` board (`18438204360`, Donors & Contacts; same subscribers as Donations plus
+SVBC Integration; groups Uploads / Review, Retry and Key columns as on the sandbox) and a
+`Benevity Disbursement Date` column on Donations (`date_mm8rtv9y`) were created; every other id in
+`config/svbc.json` was read by title from the live boards. `BENEVITY_WEBHOOK_SECRET` was rotated
+and both webhooks registered: `662183019` (file column `file_mm8rz1v8` →
+`/webhooks/monday/benevity-upload`) and `662183020` (Retry `color_mm8rfchp` →
+`/webhooks/monday/benevity-retry`). No report has been uploaded to production yet. Sandbox
+provisioned and verified end to end 2026-09-19, remapped to the `(sandbox v3)` boards and
+re-verified 2026-09-30 (see "Sandbox environment" below).
 **Priority:** Post-migration, non-blocking — staff can keep hand-entering matching gifts on the
 Donations board in the meantime, exactly as they do in Salesforce today. Two small
 `salesforce-import` changes it depends on (see Related changes) *are* pre-cutover.

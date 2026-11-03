@@ -67,11 +67,12 @@ describe('config split: Monday ids', () => {
   });
 
   it('no real sandbox column id appears in production', () => {
-    const sb = sandbox.monday.columns as Record<string, string>;
-    const prod = production.monday.columns as Record<string, string>;
+    const sb = sandbox.monday.columns as Record<string, string | null>;
+    const prod = production.monday.columns as Record<string, string | null>;
     let real = 0;
     for (const [key, id] of Object.entries(sb)) {
-      if (id === PLACEHOLDER) continue;
+      // A null id (nearby, until its column exists) is unset, not a shared id.
+      if (id === PLACEHOLDER || id === null) continue;
       real += 1;
       expect(prod[key], `monday.columns.${key}`).not.toBe(id);
     }

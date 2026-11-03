@@ -84,13 +84,22 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-portal/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
       # must stay loadable without a TypeScript compile step.
       node --input-type=module -e "await import('./monday-backup/src/monday/graphql.ts')" || status=1
       exit $status
+
+# geo-filter/src/geometry.ts is the canonical corridor/point-in-polygon logic; nearby-search carries
+# a byte-identical copy (the Worker stays self-contained). Edit geo-filter's, then copy it over.
+geo-geometry-copies:
+  stage: test
+  rules:
+    - changes: ["*/src/geometry.ts", .gitlab-ci.yml]
+  script:
+    - cmp geo-filter/src/geometry.ts nearby-search/src/geometry.ts
 
 # The write switch (off/hold/on) lives in one module, member-portal/src/flags.ts. Every in-scope
 # Worker carries a byte-identical copy and the same FLAGS KV namespace ids; edit the canonical file,
@@ -137,9 +146,11 @@ log-safety:
         - scripts/**/*
         - .gitlab-ci.yml
   script:
-    - node --test "scripts/*.test.mjs"
+    - node --test "scripts/*.test.mjs" "scripts/lib/*.test.mjs"
     - node scripts/check-log-safety.mjs
 
+# Workers whose code imports scripts/lib/column-titles.mjs (read-only column markers) add
+# scripts/lib/** to their rules below, as monday-auth does for token-scope.mjs.
 benevity-import:
   extends: .worker_job
   variables:
@@ -154,6 +165,10 @@ donation-rollups:
   extends: .worker_job
   variables:
     WORKER_DIR: donation-rollups
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 email-log:
   extends: .worker_job
@@ -169,6 +184,10 @@ member-portal:
   extends: .worker_job
   variables:
     WORKER_DIR: member-portal
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 funraise-sync:
   extends: .worker_job
@@ -181,6 +200,10 @@ geo-filter:
   extends: .worker_job
   variables:
     WORKER_DIR: geo-filter
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 mailchimp-sync:
   extends: .worker_job
@@ -204,10 +227,19 @@ monday-backup:
   variables:
     WORKER_DIR: monday-backup
 
+nearby-search:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: nearby-search
+
 people-reclassification:
   extends: .worker_job
   variables:
     WORKER_DIR: people-reclassification
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 quickbooks-sync:
   extends: .worker_job
@@ -218,11 +250,19 @@ report-digests:
   extends: .worker_job
   variables:
     WORKER_DIR: report-digests
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 salesforce-import:
   extends: .worker_job
   variables:
     WORKER_DIR: salesforce-import
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 svbc-calendars:
   extends: .worker_job
@@ -305,12 +345,27 @@ deploy-sandbox:monday-backup:
   variables:
     WORKER_DIR: monday-backup
 
+deploy-sandbox:nearby-search:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: nearby-search
+
 deploy-sandbox:people-reclassification:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: people-reclassification
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
 
 deploy-sandbox:report-digests:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: report-digests
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CLOUDFLARE_API_TOKEN'
+      changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*

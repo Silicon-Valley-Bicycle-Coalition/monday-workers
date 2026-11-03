@@ -317,4 +317,16 @@ describe('term_start (membership activity rule)', () => {
     expect(owners.sort((a, b) => (a.ownerItemId < b.ownerItemId ? -1 : 1))).toEqual([
       { ownerItemId: 'ob-p1', ownerBoardId: 'ob-20' }, { ownerItemId: 'ob-p2', ownerBoardId: 'ob-28' }]);
   });
+  it('countedGifts lists live gifts from the given fiscal year on, leaving out removed gifts and earlier years', async () => {
+    const store = new D1GiftsStore(env.DB);
+    const g = { ownerItemId: 'cg-o', ownerBoardId: 'cg-b', amountCents: 700, status: 'Received' };
+    await store.refreshFacts([
+      { ...g, mondayItemId: 'cg-old', giftDateISO: '2025-01-01', fiscalYear: 2025 },
+      { ...g, mondayItemId: 'cg-new', giftDateISO: '2026-01-01', fiscalYear: 2026, giftType: 'Individual' },
+      { ...g, mondayItemId: 'cg-gone', giftDateISO: '2026-02-01', fiscalYear: 2026 },
+    ], 'import', 'now');
+    await store.markRemoved('cg-gone', 'later');
+    expect(await store.countedGifts(2026)).toEqual([
+      { mondayItemId: 'cg-new', ownerItemId: 'cg-o', fiscalYear: 2026, amountCents: 700, status: 'Received', giftType: 'Individual' }]);
+  });
 });

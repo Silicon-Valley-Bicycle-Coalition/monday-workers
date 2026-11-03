@@ -5,6 +5,10 @@
 // separately generated id sets for the same twelve rollup columns for exactly this reason).
 // Resolving once per pass from `boards { columns { id title type } }` also gives the move its
 // mapping for free — and a title missing on either board fails the pass before anything moves.
+// Titles compare without their read-only marker (🔒/📜, scripts/lib/column-titles.mjs), so config
+// names the bare title and a marker on one board but not the other never blocks a move.
+
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 export interface BoardColumn { id: string; title: string; type: string }
 
@@ -16,7 +20,7 @@ export class ColumnLookupError extends Error {
 }
 
 export function columnIdByTitle(columns: BoardColumn[], title: string, boardLabel: string): string {
-  const matches = columns.filter((c) => c.title === title);
+  const matches = columns.filter((c) => bareTitle(c.title) === bareTitle(title));
   if (matches.length === 0) throw new ColumnLookupError(`${boardLabel}: no column titled "${title}"`);
   if (matches.length > 1) throw new ColumnLookupError(`${boardLabel}: ${matches.length} columns titled "${title}" — rename one`);
   return matches[0]!.id;
@@ -43,12 +47,12 @@ export interface ParityResult {
 // have a same-title, same-type target column; the mapping is exhaustive over those so Monday's
 // "best match" guessing never runs. Connect columns are checked but not mapped (see above).
 export function moveMapping(source: BoardColumn[], target: BoardColumn[]): ParityResult {
-  const targetByKey = new Map(target.map((c) => [`${c.title}\u0000${c.type}`, c]));
+  const targetByKey = new Map(target.map((c) => [`${bareTitle(c.title)}\u0000${c.type}`, c]));
   const mapping: ColumnMapping[] = [];
   const missing: { title: string; type: string }[] = [];
   for (const col of source) {
     if (VALUELESS_TYPES.has(col.type)) continue;
-    const match = targetByKey.get(`${col.title}\u0000${col.type}`);
+    const match = targetByKey.get(`${bareTitle(col.title)}\u0000${col.type}`);
     if (match === undefined) {
       missing.push({ title: col.title, type: col.type });
       continue;

@@ -61,6 +61,10 @@ export interface GiftsStore {
   // Active gifts older than the retention cutoff — the year-end archive run's work list.
   getArchivable(cutoffFY: number): Promise<{ mondayItemId: string; fiscalYear: number }[]>;
   markArchived(mondayItemIds: string[], now: string): Promise<void>;
+  // Every live gift (not removed) from a fiscal year on, archived or not — the donor roll call's
+  // source for the credits it computes.
+  countedGifts(fromFY: number): Promise<{ mondayItemId: string; ownerItemId: string; fiscalYear: number;
+    amountCents: number; status: string; giftType: string | null }[]>;
   // Pre-cutover gifts whose migrated Term Start has never been read from the board (NULL, not
   // '' — a read blank is stored as '' so the backfill never re-reads it).
   giftsMissingTermStart(beforeISO: string, afterItemId: string, limit: number): Promise<string[]>;
@@ -339,6 +343,17 @@ export class D1GiftsStore implements GiftsStore {
         .prepare(`UPDATE gifts SET archived_at = ?2, updated_at = ?2 WHERE monday_item_id = ?1`)
         .bind(id, now)));
     }
+  }
+
+  async countedGifts(fromFY: number): Promise<{ mondayItemId: string; ownerItemId: string; fiscalYear: number;
+    amountCents: number; status: string; giftType: string | null }[]> {
+    const res = await this.db
+      .prepare(`SELECT monday_item_id, owner_item_id, fiscal_year, amount_cents, status, gift_type
+                FROM gifts WHERE removed_at IS NULL AND fiscal_year >= ?1 ORDER BY monday_item_id`)
+      .bind(fromFY)
+      .all<{ monday_item_id: string; owner_item_id: string; fiscal_year: number; amount_cents: number; status: string; gift_type: string | null }>();
+    return res.results.map((r) => ({ mondayItemId: r.monday_item_id, ownerItemId: r.owner_item_id,
+      fiscalYear: r.fiscal_year, amountCents: r.amount_cents, status: r.status, giftType: r.gift_type }));
   }
 
   async ownersWithOneGift(afterOwnerId = '', limit = 100_000): Promise<{ ownerItemId: string; mondayItemId: string; donationBoardId: string }[]> {

@@ -8,6 +8,7 @@
 //   MONDAY_API_TOKEN=... node scripts/setup-membership-columns.mjs <peopleBoardId> [<peopleBoardId> ...] [--registrations <boardId>]
 
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const token = process.env.MONDAY_API_TOKEN;
 if (!token) { console.error('setup-membership-columns: MONDAY_API_TOKEN is required'); process.exit(1); }
@@ -41,7 +42,7 @@ async function boardColumns(boardId) {
   const data = await graphql('query ($ids: [ID!]) { boards(ids: $ids) { name columns { id title type } } }', { ids: [boardId] });
   const board = data.boards?.[0];
   if (!board) throw new Error(`setup-membership-columns: board ${boardId} not found`);
-  return { name: board.name, byTitle: new Map(board.columns.map((c) => [c.title, c])) };
+  return { name: board.name, byTitle: new Map(board.columns.map((c) => [bareTitle(c.title), c])) };
 }
 async function ensure(boardId, name, byTitle, spec) {
   const existing = byTitle.get(spec.title);

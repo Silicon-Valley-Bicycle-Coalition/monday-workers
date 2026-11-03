@@ -12,9 +12,10 @@ function jsString(value: string): string {
 
 // NOTE: the embed shape below (DDCONF global + ddplugin.js/ddplugin.css + the
 // #dd-company-name-search mount div) is written from current Double the Donation plugin
-// knowledge but not verified against a live DTD account — SVBC has no subscription yet. When a
-// key is provisioned, verify against DTD's current embed snippet before deploy (same caveat
-// convention as the Monday query_params NOTEs in monday/client.ts).
+// knowledge but not yet verified against a live DTD account — written before SVBC subscribed
+// (onboarded 2026-08-20). When the key goes into config, verify against DTD's current embed
+// snippet before deploy (same caveat convention as the Monday query_params NOTEs in
+// monday/client.ts).
 //
 // No Subresource Integrity hash on ddplugin.js, deliberately: DTD serves a mutable, unversioned
 // URL they update at will, so any pinned hash silently breaks the widget on their next release.

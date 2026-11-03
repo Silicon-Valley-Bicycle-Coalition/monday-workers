@@ -281,6 +281,16 @@ describe('classification and donor level config', () => {
       .toThrow(/classification\.giftSize must be a Monday column id string/);
   });
 
+  it('accepts an optional acknowledgmentTier column in the classification block', () => {
+    const cfg = validateConfig(withBoard({ classification: { ...classification, acknowledgmentTier: 'at' } }));
+    expect(cfg.donationRollups.donationBoards[0]!.columns.classification).toEqual({ ...classification, acknowledgmentTier: 'at' });
+  });
+
+  it('rejects an empty acknowledgmentTier column id', () => {
+    expect(() => validateConfig(withBoard({ classification: { ...classification, acknowledgmentTier: '' } })))
+      .toThrow(/classification\.acknowledgmentTier must be a Monday column id string or omitted/);
+  });
+
   it('accepts donorLevel thresholds and an owner donorLevel column', () => {
     const raw = { ...base, donationRollups: { ...base.donationRollups, donorLevel: donorLevelCfg,
       ownerColumnsByBoard: { ...base.donationRollups.ownerColumnsByBoard,
@@ -324,6 +334,52 @@ describe('validateConfig — recurringGifts block (monday-migration docs/35 §3.
     for (const bad of [{ ...recurringGifts, columns: { donorLink: 'rdl' } }, { ...recurringGifts, activeStatusLabel: '' }]) {
       expect(() => validateConfig({ ...base, donationRollups: { ...base.donationRollups, recurringGifts: bad,
         ownerColumnsByBoard: withFlag } })).toThrow(/recurringGifts/);
+    }
+  });
+});
+
+describe('validateConfig — rollCall block', () => {
+  const rollCall = {
+    boardId: 60, firstFiscalYear: 2026, excludedGiftTypes: ['Contracts', 'In-kind'], writesPerRun: 100,
+    columns: { fiscalYear: 'fy', tier: 'tr', type: 'ty', listed: 'li', total: 'to', gifts: 'gi',
+      people: 'pe', organization: 'or', reviewNote: 'rn', rowKey: 'rk' },
+    donations: { boardId: 70, columns: { amount: 'am', date: 'dt', status: 'st', fiscalYear: 'dfy', giftType: 'gt',
+      donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } },
+    people: { '2': { householdId: 'hid', householdGreeting: 'hg', householdEmail: 'he', doNotSolicit: 'dns', dontList: 'dl2' } },
+    organizations: { boardId: 80, columns: { recognitionName: 'rec', dontList: 'dl3' } },
+  };
+  const withRollCall = (rc: unknown) => ({ ...base, donationRollups: { ...base.donationRollups, rollCall: rc } });
+
+  it('defaults to null (duty off) when omitted or null', () => {
+    expect(validateConfig(base).donationRollups.rollCall).toBeNull();
+    expect(validateConfig(withRollCall(null)).donationRollups.rollCall).toBeNull();
+  });
+
+  it('accepts a full block', () => {
+    expect(validateConfig(withRollCall(rollCall)).donationRollups.rollCall).toEqual(rollCall);
+  });
+
+  it('defaults excludedGiftTypes to ["Contracts"] and writesPerRun to 500', () => {
+    const { excludedGiftTypes: _e, writesPerRun: _w, ...bare } = rollCall;
+    const cfg = validateConfig(withRollCall(bare)).donationRollups.rollCall!;
+    expect(cfg.excludedGiftTypes).toEqual(['Contracts']);
+    expect(cfg.writesPerRun).toBe(500);
+  });
+
+  it('names the path of a missing column id', () => {
+    const { rowKey: _r, ...columns } = rollCall.columns;
+    expect(() => validateConfig(withRollCall({ ...rollCall, columns })))
+      .toThrow(/donationRollups\.rollCall\.columns\.rowKey/);
+    expect(() => validateConfig(withRollCall({ ...rollCall, people: { '2': { householdId: 'x' } } })))
+      .toThrow(/donationRollups\.rollCall\.people\["2"\]\.householdGreeting/);
+    const { date: _d, ...donationColumns } = rollCall.donations.columns;
+    expect(() => validateConfig(withRollCall({ ...rollCall, donations: { ...rollCall.donations, columns: donationColumns } })))
+      .toThrow(/donationRollups\.rollCall\.donations\.columns\.date/);
+  });
+
+  it('rejects a non-integer firstFiscalYear', () => {
+    for (const bad of [2026.5, '2026', undefined]) {
+      expect(() => validateConfig(withRollCall({ ...rollCall, firstFiscalYear: bad }))).toThrow(/firstFiscalYear/);
     }
   });
 });

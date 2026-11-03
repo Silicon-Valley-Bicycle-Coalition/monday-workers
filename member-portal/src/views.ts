@@ -4,6 +4,8 @@ import type {
   DonorVolunteerHistory,
   EventRegistrationRecord,
   FunraiseLinkUrls,
+  GetInvolvedCategory,
+  GetInvolvedLink,
   PortalView,
 } from './types';
 import { SUPPORTED_LOCALES, LOCALE_NATIVE_LABELS, type Locale } from './i18n/locales';
@@ -815,6 +817,42 @@ function funraiseSection(links: FunraiseLinkUrls, locale: Locale): string {
   `;
 }
 
+// Category order and copy for getInvolvedSection. `fallbackLink` is the link text for a link
+// with no configured label (events/volunteer); config validation requires a label on the others.
+const GET_INVOLVED_GROUPS: { category: GetInvolvedCategory; heading: TranslationKey; fallbackLink?: TranslationKey }[] = [
+  { category: 'civic', heading: 'portal.getInvolvedCivic' },
+  { category: 'transit', heading: 'portal.getInvolvedTransit' },
+  { category: 'events', heading: 'portal.getInvolvedEvents', fallbackLink: 'portal.getInvolvedEventsLink' },
+  { category: 'volunteer', heading: 'portal.getInvolvedVolunteer', fallbackLink: 'portal.getInvolvedVolunteerLink' },
+];
+
+// Public meeting, event, and volunteer links from config's getInvolved.links — the same for
+// every donor. A category with no links is skipped; no links at all omits the section.
+function getInvolvedSection(links: GetInvolvedLink[], locale: Locale): string {
+  const groups = GET_INVOLVED_GROUPS.map(({ category, heading, fallbackLink }) => {
+    const rows = links
+      .filter((link) => link.category === category)
+      .map((link) => {
+        const text = link.label ?? (fallbackLink === undefined ? link.url : t(locale, fallbackLink));
+        const calendar =
+          link.calendarUrl === undefined
+            ? ''
+            : ` · <a href="${escapeHtml(link.calendarUrl)}" rel="noopener noreferrer">${escapeHtml(t(locale, 'portal.addToCalendar'))}</a>`;
+        return `<li><a href="${escapeHtml(link.url)}" rel="noopener noreferrer">${escapeHtml(text)}</a>${calendar}</li>`;
+      })
+      .join('');
+    return rows === '' ? '' : `<h3>${escapeHtml(t(locale, heading))}</h3><ul>${rows}</ul>`;
+  }).join('');
+  if (groups === '') return '';
+  return `
+    <section>
+      <h2>${escapeHtml(t(locale, 'portal.getInvolvedHeading'))}</h2>
+      <p>${escapeHtml(t(locale, 'portal.getInvolvedIntro'))}</p>
+      ${groups}
+    </section>
+  `;
+}
+
 // Shown when some of a household's donor items failed to load (issue #31) — the page renders the
 // rest rather than failing, but must not silently look complete.
 export function someRecordsUnavailableNote(count: number, locale: Locale): string {
@@ -832,7 +870,8 @@ export function portalView(
   funraise: FunraiseLinkUrls,
   events: Record<string, EventRegistrationListing> | null = null,
   // Keyed by donor id, like cards — a donor without an entry has no impact summary to show.
-  impact: Record<string, DonorImpact> = {}
+  impact: Record<string, DonorImpact> = {},
+  getInvolved: GetInvolvedLink[] = []
 ): string {
   return `
     <h1>${escapeHtml(t(locale, 'portal.heading'))}</h1>
@@ -849,6 +888,7 @@ export function portalView(
       </ul>
     </section>`
     }
+    ${getInvolvedSection(getInvolved, locale)}
     <p><a href="/${locale}/portal/events">${escapeHtml(t(locale, 'portal.eventsLink'))}</a></p>
     <p><a href="/${locale}/portal/letters">${escapeHtml(t(locale, 'portal.taxDocumentsLink'))}</a></p>
     <p><a href="/${locale}/portal/change-request">${escapeHtml(t(locale, 'portal.changeRequestLink'))}</a></p>

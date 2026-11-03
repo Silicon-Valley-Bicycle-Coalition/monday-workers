@@ -45,6 +45,43 @@ function clientReturningSequence(bodies: unknown[]): HttpMondayClient {
 
 afterEach(() => vi.unstubAllGlobals());
 
+// items(ids:) keeps returning an item in Monday's trash, state 'deleted', with its columns intact
+// (the same read processRegistration already guards) — so a deleted gift still shows its Donor
+// link, and a deleted owner still resolves to its board.
+describe('items in the trash read as gone', () => {
+  it('getDonorLinkForDonation: a deleted gift links to no one', async () => {
+    const client = clientReturning({ data: { items: [
+      { state: 'deleted', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'] }] }] } });
+    expect(await client.getDonorLinkForDonation('dn1', 'donor_link')).toBeNull();
+  });
+
+  it('getDonorLinkForDonation: an active gift still returns its owner', async () => {
+    const client = clientReturning({ data: { items: [
+      { state: 'active', column_values: [{ id: 'donor_link', linked_item_ids: ['donor-1'] }] }] } });
+    expect(await client.getDonorLinkForDonation('dn1', 'donor_link')).toBe('donor-1');
+  });
+
+  it('getItemBoardId: a deleted item has no board', async () => {
+    const client = clientReturning({ data: { items: [{ state: 'deleted', board: { id: '2' } }] } });
+    expect(await client.getItemBoardId('donor-1')).toBeNull();
+  });
+
+  it('getItemBoardId: an archived item keeps its board', async () => {
+    const client = clientReturning({ data: { items: [{ state: 'archived', board: { id: '2' } }] } });
+    expect(await client.getItemBoardId('donor-1')).toBe('2');
+  });
+
+  it('getDonationsByIds: skips a deleted gift so a recompute never re-asserts it', async () => {
+    const response = itemsResponse([
+      { id: 'dn1', cells: { amount_1: '50', date_1: '2020-01-15', status_1: 'Received' } },
+      { id: 'dn2', cells: { amount_1: '75', date_1: '2020-02-15', status_1: 'Received' } },
+    ]);
+    (response.data.items[1] as Record<string, unknown>).state = 'deleted';
+    const result = await clientReturning(response).getDonationsByIds(['dn1', 'dn2'], COLUMNS, 7);
+    expect(result.map((d) => d.id)).toEqual(['dn1']);
+  });
+});
+
 describe('getDonationsByIds', () => {
   it('parses a well-formed donation', async () => {
     const client = clientReturning(itemsResponse([
@@ -373,7 +410,7 @@ describe('status columns read by stored value (label id 5)', () => {
     expect(page.items[0]!.values).toEqual(new Map([['fs', null], ['gs', '{"index":2}'], ['fq', null]]));
     expect(page.items[0]!.text.get('fs')).toBe('Other Program Revenue');
     const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { query: string };
-    expect(body.query).toMatch(/\{ id text value \}/);
+    expect(body.query).toMatch(/\{ id text value \.\.\. on BoardRelationValue \{ linked_item_ids \} \}/);
   });
   it('pageRecurringGifts reads a blank status as null even when its text is the id-5 label', async () => {
     const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
@@ -381,6 +418,45 @@ describe('status columns read by stored value (label id 5)', () => {
       { id: 'r2', column_values: [{ id: 'donor', text: 'Bo', linked_item_ids: ['p2'] }, { id: 'st', text: 'Active', value: '{"index":5}' }] }] } }] } });
     const page = await client.pageRecurringGifts({ boardId: 9, columns: { donorLink: 'donor', status: 'st' }, activeStatusLabel: 'Active' }, null);
     expect(page.items.map((i) => i.statusLabel)).toEqual([null, 'Active']);
+  });
+  const CREDITS_CFG = { boardId: 9, columns: { amount: 'am', date: 'dt', status: 'st', fiscalYear: 'fy', giftType: 'gt',
+    donorLink: 'dl', matchedBy: 'mb', anonymous: 'an' } };
+  it('pageDonationCredits parses amount, fiscal year, links, status and the Anonymous checkbox', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'g1', column_values: [{ id: 'am', text: '$1,250.50' }, { id: 'st', text: 'Received', value: '{"index":1}' }, { id: 'fy', text: '2026' },
+        { id: 'dt', text: '2026-08-01' },
+        { id: 'gt', text: 'Matching Donation' }, { id: 'dl', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'mb', text: 'Acme', linked_item_ids: ['o1'] },
+        { id: 'an', text: 'v', value: '{"checked":"true"}' }] },
+      { id: 'g2', column_values: [{ id: 'am', text: '' }, { id: 'st', text: 'Received', value: null }, { id: 'fy', text: 'n/a' },
+        { id: 'dt', text: '' },
+        { id: 'gt', text: '' }, { id: 'dl', text: '' }, { id: 'mb', text: '' }, { id: 'an', text: '', value: null }] }] } }] } });
+    expect((await client.pageDonationCredits(CREDITS_CFG, null, 7)).items).toEqual([
+      { id: 'g1', fiscalYear: 2026, amountCents: 125050, status: 'Received', giftType: 'Matching Donation',
+        donorItemIds: ['p1'], matchedByItemIds: ['o1'], anonymous: true },
+      { id: 'g2', fiscalYear: 0, amountCents: null, status: null, giftType: '',
+        donorItemIds: [], matchedByItemIds: [], anonymous: false }]);
+  });
+  it('pageDonationCredits falls back to the Date for a blank Fiscal Year Ending, as getDonationsByIds does', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [
+      { id: 'g1', column_values: [{ id: 'am', text: '50' }, { id: 'fy', text: '' }, { id: 'dt', text: '2026-08-01' }] },
+      { id: 'g2', column_values: [{ id: 'am', text: '50' }, { id: 'fy', text: ' ' }, { id: 'dt', text: '2026-06-30 00:00' }] }] } }] } });
+    expect((await client.pageDonationCredits(CREDITS_CFG, null, 7)).items.map((i) => [i.id, i.fiscalYear]))
+      .toEqual([['g1', 2027], ['g2', 2026]]);
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string) as { variables: { columnIds: string[] } };
+    expect(body.variables.columnIds).toContain('dt');
+  });
+  it('pageDonationCredits throws, naming the board, when Monday returns no board', async () => {
+    const client = clientReturning({ data: { boards: [] } });
+    await expect(client.pageDonationCredits(CREDITS_CFG, null, 7)).rejects.toThrow(/board 9/);
+  });
+  it('pageItemsColumnsText with requireBoard throws, naming the board, when Monday returns no board', async () => {
+    const client = clientReturning({ data: { boards: [] } });
+    expect(await client.pageItemsColumnsText(5, ['a'], null)).toEqual({ items: [], cursor: null });
+    await expect(client.pageItemsColumnsText(5, ['a'], null, { requireBoard: true })).rejects.toThrow(/board 5/);
+  });
+  it('getItemsState maps states and leaves unknown ids out', async () => {
+    const client = clientReturning({ data: { items: [{ id: 'a', state: 'active' }, { id: 'b', state: 'archived' }] } });
+    expect(await client.getItemsState(['a', 'b', 'c'])).toEqual(new Map([['a', 'active'], ['b', 'archived']]));
   });
   it('getDonationsByIds reads a blank Status as blank even when its text is the id-5 label', async () => {
     const client = clientReturning(itemsResponse([
@@ -406,5 +482,63 @@ describe('status columns read by stored value (label id 5)', () => {
       { id: 'vol', text: 'Ada', linked_item_ids: ['p1'] }, { id: 'dt', text: '2019-06-01' }, { id: 'hrs', text: '2' }, { id: 'st', text: 'Completed', value: null }] }] } }] } });
     expect((await shifts.pageHistoricalShifts({ boardId: 9, columns: { volunteer: 'vol', date: 'dt', hours: 'hrs', status: 'st' }, countedStatusLabels: ['Completed'] }, null)).items[0]!.statusLabel)
       .toBeNull();
+  });
+});
+
+describe('roll call board writes', () => {
+  const sent = () => (vi.mocked(fetch).mock.calls as [string, RequestInit][])
+    .map(([, init]) => JSON.parse(init.body as string) as { query: string; variables: Record<string, unknown> });
+
+  it('pageItemsColumnsText also reads each item\'s name, group and linked item ids', async () => {
+    const client = clientReturning({ data: { boards: [{ items_page: { cursor: null, items: [{ id: '7', name: 'Ada', group: { id: 'g26' },
+      column_values: [{ id: 'people', text: 'Bo, Ada', value: '{}', linked_item_ids: ['2', '1'] }, { id: 'key', text: '2026|item:1', value: '"x"' }] }] } }] } });
+    const item = (await client.pageItemsColumnsText(1, ['people', 'key'], null)).items[0]!;
+    expect(item).toMatchObject({ id: '7', name: 'Ada', groupId: 'g26' });
+    expect(item.linkedIds).toEqual(new Map([['people', ['2', '1']]]));
+    expect(sent()[0]!.query).toMatch(/name group \{ id \}/);
+  });
+
+  it('listGroups, createGroup, updateGroupTitle, createItemInGroup, moveItemToGroup and deleteItem send their mutations', async () => {
+    const client = clientReturning({ data: {
+      boards: [{ groups: [{ id: 'g26', title: 'FY2026' }] }],
+      create_group: { id: 'g27' }, update_group: { id: 'g26' }, create_item: { id: '9' }, move_item_to_group: { id: '9' }, delete_item: { id: '9' },
+    } });
+    expect(await client.listGroups(5)).toEqual([{ id: 'g26', title: 'FY2026' }]);
+    expect(await client.createGroup(5, 'FY2027 (in progress)')).toBe('g27');
+    await client.updateGroupTitle(5, 'g26', 'FY2026');
+    expect(await client.createItemInGroup(5, 'g27', 'Ada', { key: '2027|item:1' })).toBe('9');
+    await client.moveItemToGroup('9', 'g26');
+    await client.deleteItem('9');
+    const calls = sent();
+    expect(calls[1]!.query).toMatch(/create_group\(board_id: \$boardId, group_name: \$title\)/);
+    expect(calls[2]!.query).toMatch(/update_group\(board_id: \$boardId, group_id: \$groupId, group_attribute: title, new_value: \$title\)/);
+    expect(calls[2]!.variables).toEqual({ boardId: '5', groupId: 'g26', title: 'FY2026' });
+    expect(calls[3]!.query).toMatch(/create_item\(board_id: \$boardId, group_id: \$groupId, item_name: \$itemName, column_values: \$columnValues\)/);
+    expect(calls[3]!.variables).toEqual({ boardId: '5', groupId: 'g27', itemName: 'Ada', columnValues: '{"key":"2027|item:1"}' });
+    expect(calls[4]!.query).toMatch(/move_item_to_group\(item_id: \$itemId, group_id: \$groupId\)/);
+    expect(calls[5]!.query).toMatch(/delete_item\(item_id: \$itemId\)/);
+  });
+
+  it('deleteItem treats an item already gone (say, deleted by an attempt whose response was lost) as deleted', async () => {
+    const gone = (message: string, code: string) => new Response(JSON.stringify({ errors: [{ message, extensions: { code } }] }), { status: 200 });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('bad gateway', { status: 502 }))
+      .mockResolvedValueOnce(gone('Item not found in board', 'ResourceNotFoundException')));
+    const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
+    await expect(client.deleteItem('9')).resolves.toBeUndefined();
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    for (const code of ['InvalidItemIdException', 'ItemNotFoundException']) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(gone('No such item', code)));
+      await expect(client.deleteItem('9'), code).resolves.toBeUndefined();
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(gone('User unauthorized to perform action', 'UserUnauthorizedException')));
+    await expect(client.deleteItem('9')).rejects.toThrow(/unauthorized/);
+  });
+
+  it('a group or item create that may have committed is an AmbiguousWriteError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response('bad gateway', { status: 502 }))));
+    const client = new HttpMondayClient('https://api.monday.test/v2', 'token', NO_SLEEP);
+    expect(await client.createGroup(5, 'FY2027').catch((e) => e)).toBeInstanceOf(AmbiguousWriteError);
+    expect(await client.createItemInGroup(5, 'g', 'Ada', {}).catch((e) => e)).toBeInstanceOf(AmbiguousWriteError);
   });
 });

@@ -4,6 +4,7 @@ import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
 import { statusLabelDefaults } from '../configure/labels.js';
 import { SF_ID_COLUMN } from './lookup.js';
+import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
 // 'Fiscal Year Ending' is deliberately 'text', not 'numbers': Monday renders every numbers
 // column with a thousands separator, so FY2025 displayed as "2,025" in the sandbox. A 4-digit
@@ -212,7 +213,7 @@ export async function ensureBoards(
     const res = await client.gql<{ boards: { columns: { id: string; title: string }[] }[] }>(
       `query ($ids: [ID!]) { boards (ids: $ids) { columns { id title type } } }`,
       { ids: [String(entry.boardId)] });
-    for (const col of res.boards[0]?.columns ?? []) entry.columns[col.title] = col.id;
+    for (const col of res.boards[0]?.columns ?? []) entry.columns[bareTitle(col.title)] = col.id;
 
     for (const [oldTitle, newTitle] of Object.entries(COLUMN_RENAMES[key] ?? {})) {
       const id = entry.columns[oldTitle];

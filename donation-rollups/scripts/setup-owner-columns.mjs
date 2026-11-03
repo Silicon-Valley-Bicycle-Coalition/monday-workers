@@ -11,6 +11,7 @@
 //   MONDAY_API_TOKEN=... node scripts/setup-owner-columns.mjs <boardId> [<boardId> ...]
 
 import { MondayGraphQL } from '../src/monday/graphql.ts';
+import { bareTitle } from '../../scripts/lib/column-titles.mjs';
 
 const token = process.env.MONDAY_API_TOKEN;
 if (!token) {
@@ -64,7 +65,7 @@ for (const boardId of boardIds) {
     { ids: [boardId] });
   const board = data.boards?.[0];
   if (!board) throw new Error(`setup-owner-columns: board ${boardId} not found`);
-  const byTitle = new Map(board.columns.map((c) => [c.title, c]));
+  const byTitle = new Map(board.columns.map((c) => [bareTitle(c.title), c]));
 
   const cols = {};
   for (const [field, spec] of Object.entries(FIELDS)) {

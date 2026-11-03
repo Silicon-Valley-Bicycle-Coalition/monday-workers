@@ -484,7 +484,7 @@ Workers; `.gitlab-ci.yml`'s `deploy-sandbox:eventbrite-sync` job is the gated fa
 
 ## Deploy
 
-Production has not been run; the sandbox has (2026-10-26, D1 `svbc-eventbrite-sync-sandbox` with migrations 0001–0002). This is the order (sandbox first, `--env sandbox` on every command,
+Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002. Production's attendee feed is still unset (`attendeeSync` placeholders, events boards null), so only the order webhook is registered there. This is the order (sandbox first, `--env sandbox` on every command,
 then production at cutover without it):
 
 ```sh
@@ -564,9 +564,8 @@ beyond the table above:
    register the attendee webhook; after any backfill, set Follow-ups = Sent on recent classes
    already emailed by hand (setup checklist Step 5); name an owner. Known limits: no Class Time column (reminders
    carry a `[start time]` note), and Spanish class day/date render in English.
-1. **The `Eventbrite Order ID` column id** in config — the column arrives with the next sandbox
-   load and the production cutover load; see "Prerequisite column". Nothing can be written until
-   the id is set.
+1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
+   next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
 2. **The `Refunded` Status label** — shared with funraise-sync; still missing on sandbox v3.
 3. **Eventbrite private token and organization id** — which staff account mints the token, and
    `eventbrite.organizationId` in config (optional but recommended; without it the missed-order

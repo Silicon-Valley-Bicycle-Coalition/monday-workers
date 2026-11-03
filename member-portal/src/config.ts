@@ -13,6 +13,7 @@ const REQUIRED_TOP_LEVEL = [
   'donations',
   'eventRegistrations',
   'funraise',
+  'getInvolved',
   'pledges',
   'matchingGifts',
   'impact',
@@ -114,6 +115,7 @@ const REQUIRED_EVENT_REGISTRATION_KEYS = ['boardId', 'columns', 'eventDateColumn
 const REQUIRED_EVENT_REGISTRATION_COLUMNS = ['attendeeLink', 'eventLink', 'attended'] as const;
 const REQUIRED_FUNRAISE_KEYS = ['manageRecurringUrl', 'renewMembershipUrl'] as const;
 const FUNRAISE_URL_PLACEHOLDER = 'REPLACE_WITH_FUNRAISE_URL';
+const GET_INVOLVED_CATEGORIES = ['transit', 'civic', 'events', 'volunteer'] as const;
 const REQUIRED_PLEDGES_KEYS = ['boardId', 'columns'] as const;
 const REQUIRED_PLEDGE_COLUMNS = ['donorLink', 'pledgedAmount', 'fulfilledAmount', 'status', 'dueDate'] as const;
 const REQUIRED_MATCHING_GIFTS_KEYS = ['doubleTheDonationPublicKey'] as const;
@@ -290,6 +292,37 @@ export function validateConfig(raw: unknown): Config {
       throw new Error(`config: "funraise.${key}" must be an https:// URL (or the placeholder "${FUNRAISE_URL_PLACEHOLDER}")`);
     }
   }
+
+  // Same reasoning as funraise: every URL here is rendered to donors, so a bad one fails at
+  // deploy. An empty list is the gate (no section), not an error.
+  const getInvolved = requireObject(cfg, 'getInvolved');
+  const links = getInvolved['links'];
+  if (!Array.isArray(links)) {
+    throw new Error('config: "getInvolved.links" must be a list');
+  }
+  links.forEach((link: unknown, i) => {
+    const path = `getInvolved.links[${i}]`;
+    if (typeof link !== 'object' || link === null) {
+      throw new Error(`config: "${path}" must be an object`);
+    }
+    const { category, label, url, calendarUrl } = link as Record<string, unknown>;
+    if (!GET_INVOLVED_CATEGORIES.includes(category as (typeof GET_INVOLVED_CATEGORIES)[number])) {
+      throw new Error(`config: "${path}.category" must be one of ${GET_INVOLVED_CATEGORIES.join(', ')}`);
+    }
+    if (label !== undefined && (typeof label !== 'string' || label.trim() === '')) {
+      throw new Error(`config: "${path}.label" must be a non-blank string when present`);
+    }
+    // transit/civic links have no translated fallback text, so they must name the committee.
+    if (label === undefined && (category === 'transit' || category === 'civic')) {
+      throw new Error(`config: "${path}.label" is required for ${category} links`);
+    }
+    if (typeof url !== 'string' || !url.startsWith('https://')) {
+      throw new Error(`config: "${path}.url" must be an https:// URL`);
+    }
+    if (calendarUrl !== undefined && (typeof calendarUrl !== 'string' || !calendarUrl.startsWith('https://'))) {
+      throw new Error(`config: "${path}.calendarUrl" must be an https:// URL when present`);
+    }
+  });
 
   // Both gated (pledgesEnabled / matchingGiftsSearchEnabled), not deploy-blocking — presence
   // checks only, same treatment as changeRequests' columns.
