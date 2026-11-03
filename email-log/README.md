@@ -49,7 +49,7 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
    Cloudflare Email Routing ──▶ email() handler
       1. too large (maxRawBytes) or unparseable → setReject
       2. authenticate the sender (staff From domain + DKIM aligned to it) → else setReject
-      3. classify: BCC vs Gmail-style forward; pick the counterpart addresses
+      3. classify: BCC vs Gmail/Apple Mail forward; pick the counterpart addresses
       4. no non-staff counterpart (plain BCC) → drop quietly
       5. claim the Message-ID hash in D1 (already there → stop quietly)
       6. enqueue the extracted fields ──▶ queue ──▶ consumer
@@ -65,11 +65,15 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
 * **BCC:** the staff member is the sender. Counterparts are To + Cc, minus staff-domain addresses
   and the logging address, lowercased and deduped. A colleague on Cc or the logging address in To
   is ignored; the message is still logged against the external recipients.
-* **Forward:** the subject starts with `Fwd:`/`FW:` and the body holds Gmail's
-  `---------- Forwarded message ---------` header block. The counterpart is the block's `From:`
-  plus its non-staff Cc's (if the forwarded message was one the staff member sent, the block's
-  To + Cc instead). The item takes the block's `Date:` (read in `mail.forwardTimeZone`), the
-  subject without `Fwd:`, and the forwarded message's text. Only Gmail's block is parsed.
+* **Forward:** the subject starts with `Fwd:`/`FW:` and the body holds a forward header block:
+  Gmail's `---------- Forwarded message ---------` or Apple Mail's (macOS, iOS)
+  `Begin forwarded message:`, whose block and forwarded text are usually `> `-quoted (the quoting
+  on the marker line is removed from what follows). The first block in the body wins. The
+  counterpart is the block's `From:` plus its non-staff Cc's (if the forwarded message was one
+  the staff member sent, the block's To + Cc instead). The item takes the block's `Date:`, the subject without `Fwd:`, and the
+  forwarded message's text. Gmail's `Date:` has no zone and is read in `mail.forwardTimeZone`;
+  Apple's names its own (`PST`, `PDT`, `GMT+2`, …), which wins, and only a zoneless one falls
+  back to `mail.forwardTimeZone`. Outlook's `From:`/`Sent:` block isn't parsed.
 * **Body:** `text/plain`, else HTML stripped to text. Quoted history is cut at Gmail's
   `On … wrote:` line. Truncated to `mail.bodyMaxChars` (1,900), ending `… [truncated]`.
 * **Dedupe:** D1 `logged_messages` is keyed on the SHA-256 of the Message-ID (a forward uses the
@@ -120,7 +124,7 @@ still unset until the board and live mail exist.
 | `mail.staffDomains` | exact domain match; subdomains are not staff |
 | `mail.staffSenders` | optional allowlist of addresses; `[]` = the whole staff domain |
 | `mail.trustedAuthServId` | authserv-id of the `Authentication-Results` header to trust (see below) |
-| `mail.bodyMaxChars`, `maxRawBytes`, `forwardTimeZone` | body cut (200-1950), message size cap, zone for forwarded `Date:` lines |
+| `mail.bodyMaxChars`, `maxRawBytes`, `forwardTimeZone` | body cut (200-1950), message size cap, zone for forwarded `Date:` lines that carry none (Gmail's) |
 | `mail.replyFrom` | sender of replies (`noreply@mail.bikesiliconvalley.org`) |
 | `capacity.activitiesMaxItems`, `warnPct` | board ceiling and the percentage at which the consumer files a capacity alert |
 | `alerts.itRequests` | IT Requests board id, type column id, label, and `cooldownDays`; `null` disables alerts |
@@ -301,6 +305,11 @@ dry-runs everything.
   counterparts, never dropped. That list is usually empty, so the result is a `Needs Person` item
   with no Person link, and the staff member gets the "no outside address was found" reply with
   the item link.
+  Gmail and Apple Mail blocks parse; Outlook's doesn't, nor does a forward sent as HTML only (the
+  block is read from `text/plain`, which both Gmail and Apple Mail always include; stripped HTML
+  runs Apple's header lines together). An Apple `Date:` with a zone abbreviation outside North
+  America (other than `GMT`/`UTC` or a `GMT±h` offset) leaves the item on the forward's own date,
+  and that date then feeds the dedupe hash, so two forwards of that message aren't caught.
 * **Create succeeded, D1 `markLogged` failed.** The retry finds the item by its Message Hash and
   adopts it; no reply to staff is sent for that message.
 * **A row can stay `queued`** if the isolate dies between claiming the hash and enqueueing. The
