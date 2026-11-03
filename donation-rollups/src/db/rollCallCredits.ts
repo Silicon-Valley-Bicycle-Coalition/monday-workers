@@ -13,7 +13,8 @@ export interface CreditRow {
 }
 
 export interface RollCallCreditsStore {
-  all(fromFY: number): Promise<CreditRow[]>;
+  // Every year: a flagged gift keeps its row whatever year it reads now (see creditFor).
+  all(): Promise<CreditRow[]>;
   // Diff-only, like GiftsStore.refreshFacts: reads the stored rows and writes only new or changed
   // ones. Returns how many rows it wrote.
   upsert(rows: CreditRow[], now: string): Promise<number>;
@@ -42,11 +43,10 @@ const differs = (a: CreditRow | undefined, b: CreditRow): boolean =>
 export class D1RollCallCreditsStore implements RollCallCreditsStore {
   constructor(private db: D1Database) {}
 
-  async all(fromFY: number): Promise<CreditRow[]> {
+  async all(): Promise<CreditRow[]> {
     const res = await this.db
       .prepare(`SELECT gift_item_id, fiscal_year, amount_cents, status, gift_type, credit, unmatched_match, archived_at
-                FROM roll_call_credits WHERE fiscal_year >= ?1 ORDER BY gift_item_id`)
-      .bind(fromFY)
+                FROM roll_call_credits ORDER BY gift_item_id`)
       .all<D1Row>();
     return res.results.map(fromD1);
   }

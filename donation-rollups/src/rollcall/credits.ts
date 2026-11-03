@@ -1,5 +1,6 @@
 // Keeps the roll_call_credits table (migration 0011) in step with the active Donations board: one
-// row per counted gift that the Donors ledger can't credit by itself. The nightly rollcall duty
+// row per counted gift that the Donors ledger can't credit by itself, and one per Anonymous or
+// Matched By gift whether it counts or not (see creditFor). The nightly rollcall duty
 // diffs the table, not Monday, so a quiet night writes nothing. See the donor roll call design,
 // spec §3, for the rules creditFor carries.
 import type { CustodianDeps, CustodianMondayClient } from '../custodian/custodian';
@@ -15,30 +16,33 @@ const MATCHING = 'Matching Donation';
 // (no row); otherwise the row's credit. A null credit is a matching gift with no Matched By
 // company: the employee keeps it, and the row exists only to carry unmatchedMatch.
 export function creditFor(
-  item: DonationCreditItem, excludedGiftTypes: string[],
+  item: DonationCreditItem, excludedGiftTypes: string[], years: { first: number; current: number },
 ): { credit: string | null; unmatchedMatch: boolean } | 'ledger' | 'skip' {
-  // Never on the amount: the credit (who is named, or not) comes from the flags alone, so a $0 or
-  // unreadable Amount can't drop an Anonymous or Matched By gift's row and hand it back to its
-  // Donor through the ledger. Whether the gift counts is rollCallGifts' call.
-  if (!Number.isInteger(item.fiscalYear) || item.fiscalYear <= 0) return 'skip';
-  if (item.status === null || !RECEIVED_LABELS.includes(item.status)) return 'skip';
-  if (excludedGiftTypes.includes(item.giftType)) return 'skip';
+  // A credit that names someone else (Matched By, Anonymous) comes from the flags alone, before
+  // anything that decides whether the gift counts: not the amount, year, status or gift type.
+  // The ledger keeps its own copy of those facts, which can lag the board or, for a gift whose
+  // Date was cleared, never refresh at all, so it may still count a gift this read would skip.
+  // Dropping the row there would hand the gift back to its Donor by name. rollCallGifts' counted()
+  // decides whether it counts, from whichever copy it has.
   const matching = item.giftType === MATCHING;
   const matchedBy = item.matchedByItemIds[0];
   // A matching gift goes to its company even when the employee is anonymous.
   if (matching && matchedBy !== undefined) return { credit: `item:${matchedBy}`, unmatchedMatch: false };
   if (item.anonymous) return { credit: 'anonymous', unmatchedMatch: false };
+  // years.current bounds the years counted from above: a gift dated past it (a typo like 2062)
+  // is skipped rather than given a year group of its own.
+  if (!Number.isInteger(item.fiscalYear) || item.fiscalYear < years.first || item.fiscalYear > years.current) return 'skip';
+  if (item.status === null || !RECEIVED_LABELS.includes(item.status)) return 'skip';
+  if (excludedGiftTypes.includes(item.giftType)) return 'skip';
   if (item.donorItemIds.length === 0) return { credit: 'unplaced', unmatchedMatch: false };
   if (matching) return { credit: null, unmatchedMatch: true };
   return 'ledger';
 }
 
-// currentFY bounds the years counted from above: a gift dated past it (a typo like 2062) is
-// skipped rather than given a year group of its own.
 export async function refreshCredits(
   deps: CustodianDeps, cfg: RollCallConfig, now: string, currentFY: number,
 ): Promise<{ upserted: number; removed: number; archived: number }> {
-  const stored = new Map((await deps.rollCallCredits.all(cfg.firstFiscalYear)).map((r) => [r.giftItemId, r]));
+  const stored = new Map((await deps.rollCallCredits.all()).map((r) => [r.giftItemId, r]));
 
   const seen = new Set<string>();
   const rows = new Map<string, CreditRow>(); // by gift id: a paging race can repeat an item
@@ -48,11 +52,12 @@ export async function refreshCredits(
     const page = await deps.mondayClient.pageDonationCredits(cfg.donations, cursor, deps.config.fiscalYear.startMonth);
     for (const item of page.items) {
       seen.add(item.id);
-      const verdict = item.fiscalYear < cfg.firstFiscalYear || item.fiscalYear > currentFY ? 'skip' : creditFor(item, cfg.excludedGiftTypes);
+      const verdict = creditFor(item, cfg.excludedGiftTypes, { first: cfg.firstFiscalYear, current: currentFY });
       if (typeof verdict === 'object') {
         // archivedAt null: an item restored from the archive clears its old stamp.
-        // amount_cents is NOT NULL: a blank Amount is stored as 0, which counts for nothing either.
-        rows.set(item.id, { giftItemId: item.id, fiscalYear: item.fiscalYear, amountCents: item.amountCents ?? 0,
+        // amount_cents is NOT NULL: a blank Amount is stored as 0, which counts for nothing either;
+        // so is an unreadable fiscal year, which counted() never counts.
+        rows.set(item.id, { giftItemId: item.id, fiscalYear: Number.isInteger(item.fiscalYear) ? item.fiscalYear : 0, amountCents: item.amountCents ?? 0,
           status: item.status ?? '', giftType: item.giftType, credit: verdict.credit,
           unmatchedMatch: verdict.unmatchedMatch, archivedAt: null });
       } else if (stored.has(item.id)) {

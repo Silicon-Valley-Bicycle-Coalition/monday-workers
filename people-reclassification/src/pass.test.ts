@@ -171,13 +171,17 @@ describe('runPass', () => {
     expect(report.moved).toBe(2);
     expect(report.cutoffISO).toBe('2019-10-09');
     expect(state.moves).toEqual([
+      // Every source column but the name, once (Monday rejects a partial mapping and a mapped
+      // name): connect columns map by title, formula columns go to null.
       { itemId: 'stale', boardId: HIST, groupId: `g_${HIST}`, mapping: [
         { source: 'date_lg_l', target: 'date_lg_h' }, { source: 'date_mu_l', target: 'date_mu_h' },
         { source: 'color_mt_l', target: 'color_mt_h' }, { source: 'link_fp_l', target: 'link_fp_h' },
+        { source: 'br_org_l', target: 'br_org_h' }, { source: 'formula_l', target: null },
       ] },
       { itemId: 'gave-again', boardId: LIVE, groupId: `g_${LIVE}`, mapping: [
         { source: 'date_lg_h', target: 'date_lg_l' }, { source: 'date_mu_h', target: 'date_mu_l' },
         { source: 'color_mt_h', target: 'color_mt_l' }, { source: 'link_fp_h', target: 'link_fp_l' },
+        { source: 'br_org_h', target: 'br_org_l' }, { source: 'formula_h', target: null },
       ] },
     ]);
     expect(await moveRows()).toEqual([

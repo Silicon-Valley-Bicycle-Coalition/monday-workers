@@ -19,35 +19,36 @@ describe('D1RollCallCreditsStore', () => {
     expect(await store.upsert(rows, '2026-11-02T00:00:00Z')).toBe(0);
     const stored = await env.DB.prepare(`SELECT updated_at FROM roll_call_credits WHERE gift_item_id = 'a'`).first();
     expect(stored).toEqual({ updated_at: '2026-11-01T00:00:00Z' });
-    expect(await store.all(2026)).toEqual(expect.arrayContaining(rows));
+    expect(await store.all()).toEqual(expect.arrayContaining(rows));
   });
 
   it('upsert rewrites only the rows whose values changed', async () => {
     const store = new D1RollCallCreditsStore(env.DB);
     await store.upsert([row({ giftItemId: 'a' }), row({ giftItemId: 'b' })], 'now');
     expect(await store.upsert([row({ giftItemId: 'a' }), row({ giftItemId: 'b', amountCents: 9000 })], 'later')).toBe(1);
-    expect((await store.all(2026)).find((r) => r.giftItemId === 'b')?.amountCents).toBe(9000);
+    expect((await store.all()).find((r) => r.giftItemId === 'b')?.amountCents).toBe(9000);
   });
 
   it('markArchived stamps archived_at', async () => {
     const store = new D1RollCallCreditsStore(env.DB);
     await store.upsert([row({ giftItemId: 'a' }), row({ giftItemId: 'b' })], 'now');
     await store.markArchived(['a'], '2026-11-03T00:00:00Z');
-    const rows = await store.all(2026);
+    const rows = await store.all();
     expect(rows.find((r) => r.giftItemId === 'a')?.archivedAt).toBe('2026-11-03T00:00:00Z');
     expect(rows.find((r) => r.giftItemId === 'b')?.archivedAt).toBeNull();
   });
 
-  it('all(fromFY) leaves out earlier fiscal years', async () => {
+  it('all() returns every fiscal year, including an unreadable one stored as 0', async () => {
     const store = new D1RollCallCreditsStore(env.DB);
-    await store.upsert([row({ giftItemId: 'old', fiscalYear: 2025 }), row({ giftItemId: 'new', fiscalYear: 2026 })], 'now');
-    expect((await store.all(2026)).map((r) => r.giftItemId)).toEqual(['new']);
+    await store.upsert([row({ giftItemId: 'old', fiscalYear: 2025 }), row({ giftItemId: 'new', fiscalYear: 2026 }),
+      row({ giftItemId: 'none', fiscalYear: 0 })], 'now');
+    expect((await store.all()).map((r) => r.giftItemId)).toEqual(['new', 'none', 'old']);
   });
 
   it('remove deletes the named rows', async () => {
     const store = new D1RollCallCreditsStore(env.DB);
     await store.upsert([row({ giftItemId: 'a' }), row({ giftItemId: 'b' })], 'now');
     await store.remove(['a']);
-    expect((await store.all(2026)).map((r) => r.giftItemId)).toEqual(['b']);
+    expect((await store.all()).map((r) => r.giftItemId)).toEqual(['b']);
   });
 });

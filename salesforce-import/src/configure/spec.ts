@@ -139,19 +139,23 @@ const DNS_VIEWS = dnsViews('Personal Email');
 const ORG_DNS_VIEWS = dnsViews('Website');
 const NOT_DNS = { columnTitle: 'Do Not Solicit', operator: 'is_empty' } as const;
 
+// Both People boards get exactly these: people-reclassification moves items between them and
+// aborts a pass if either board has a column the other lacks (spec.test.ts enforces the match).
+const PEOPLE_COLUMNS: ColumnSpec[] = [
+  // Normally already created by load (transform seeds Elected Official — see people.ts); this
+  // entry only matters for a board loaded with no elected contact in the run.
+  { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
+  { title: 'Campaign', type: 'tags' },
+  DNS_COLUMN,
+];
+
 export const BOARD_SPECS: Record<string, BoardSpec> = {
   'people-live': {
     description: 'Individual donors, members, and other real-relationship contacts with activity ' +
       'since about 2019. A person is always a separate item from any organization they’re ' +
       `linked to (see Organizations and Affiliations). Process overview & how-to: ${DOC('46299435')}`,
     groupTitle: 'People',
-    columns: [
-      // Normally already created by load (transform seeds Elected Official — see people.ts); this
-      // entry only matters for a board loaded with no elected contact in the run.
-      { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
-      { title: 'Campaign', type: 'tags' },
-      DNS_COLUMN,
-    ],
+    columns: PEOPLE_COLUMNS,
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",
@@ -274,7 +278,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       "lost — search here when someone 'used to give' and isn't on People. Don't move items by " +
       `hand; a periodic pass will move people between the two boards. Process overview & how-to: ${DOC('46299435')}`,
     groupTitle: 'People',
-    columns: [DNS_COLUMN],
+    columns: PEOPLE_COLUMNS,
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS, ...POSTAL_DESCRIPTIONS, ...PORTFOLIO_DESCRIPTIONS, ...WINDFALL_DESCRIPTIONS,
       'Personal Email': "The person's own address. Email consent for this address is in Personal Email Consent.",

@@ -847,7 +847,13 @@ through its Donor link); and the Anonymous Donor flag isn't stored. Rather than 
 table: each night it pages the active Donations items and upserts a row for every gift whose
 credit isn't simply its Donor — a Matching Donation with Matched By, anything marked Anonymous
 Donor, anything with no Donor — plus an `unmatched_match` flag for an employer match with no
-Matched By. A row is dropped when its gift no longer qualifies or is deleted. When a gift
+Matched By. A row is dropped when its gift no longer qualifies or is deleted. An Anonymous or
+Matched By row is kept whether or not its gift counts tonight (any year, any status or gift type,
+a blank Date), and only clearing the flag or deleting the gift drops it: the ledger keeps its own
+copy of a gift's facts, which can lag the board or (for a gift whose Date was cleared) never
+refresh, so it may still count a gift the board says doesn't. Dropping the row there would credit
+the gift to its Donor by name. Whether a gift counts is decided once, when the roll call is
+computed, from whichever copy it has. When a gift
 archives its row is **kept** and stamped `archived_at` (an archived item's connect columns read
 back empty, so it can't be recomputed from Monday); that keeps closed years reproducible. The first
 night fills the table; no backfill is needed. A gift's year is its Fiscal Year Ending, or derived
