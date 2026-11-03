@@ -142,7 +142,7 @@ export class CensusGeocoder implements Geocoder {
     const form = new FormData();
     form.append('addressFile', new Blob([buildBatchCsv(rows)], { type: 'text/csv' }), 'batch.csv');
     form.append('benchmark', this.cfg.benchmark);
-    const res = await fetch(this.cfg.url, { method: 'POST', body: form });
+    const res = await fetch(this.cfg.url, { method: 'POST', body: form, signal: AbortSignal.timeout(this.cfg.timeoutMs) });
     if (!res.ok) throw new Error(`census geocoder returned ${res.status}`);
     return parseBatchResponse(await res.text());
   }
@@ -150,9 +150,10 @@ export class CensusGeocoder implements Geocoder {
 
 const DAY_MS = 86_400_000;
 
+// `clock` is for tests; it times the geocoding budget (cfg.budgetMs).
 export async function resolveLocations(
   records: BoardRecord[], store: GeocodeStore, geocoder: Geocoder,
-  cfg: MapConfig['geocoder'], now: Date,
+  cfg: MapConfig['geocoder'], now: Date, clock: () => number = Date.now,
 ): Promise<{ located: Map<string, LatLng>; unplaced: number; geocoded: number }> {
   const located = new Map<string, LatLng>();
   let unplaced = 0;
@@ -161,6 +162,9 @@ export async function resolveLocations(
   for (const rec of records) {
     const own = boardCoordinates(rec.lat, rec.lng);
     if (own) { located.set(rec.itemId, own); continue; }
+    // Organizations are mapped from their board coordinates only: never geocoded, and not people,
+    // so not counted in unplaced ("people with no usable address").
+    if (rec.board === 'organizations') continue;
     const normalized = normalizeAddress(rec);
     if (normalized === null) { unplaced++; continue; }
     needCache.push({ rec, normalized });
@@ -189,7 +193,14 @@ export async function resolveLocations(
 
   let geocoded = 0;
   let failedBatches = 0;
+  const started = clock();
   for (let i = 0; i < sending.length; i += cfg.batchSize) {
+    if (clock() - started >= cfg.budgetMs) {
+      // No cache rows written, so these are first in line next run.
+      unplaced += sending.length - i;
+      console.warn(`member-map: geocode time budget spent; ${sending.length - i} address(es) left for the next run`);
+      break;
+    }
     const batch = sending.slice(i, i + cfg.batchSize);
     const inputs: BatchInput[] = batch.map(({ rec }) => ({
       id: rec.itemId, street: (rec.address ?? '').trim(), city: (rec.city ?? '').trim(),

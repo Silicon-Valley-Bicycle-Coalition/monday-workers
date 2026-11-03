@@ -37,4 +37,28 @@ describe('validateConfig', () => {
     bad.boards.organizations = -1;
     expect(() => validateConfig(bad)).toThrow(/boards\.organizations/);
   });
+
+  it('reads lapsedLabel, timeoutMs and budgetMs', () => {
+    const c = validateConfig(sandbox);
+    expect(c.lapsedLabel).toBe('Lapsed');
+    expect(c.geocoder.timeoutMs).toBe(120000);
+    expect(c.geocoder.budgetMs).toBe(480000);
+  });
+
+  it('rejects a missing lapsedLabel', () => {
+    const bad = structuredClone(sandbox) as Record<string, unknown>;
+    delete bad.lapsedLabel;
+    expect(() => validateConfig(bad)).toThrow(/lapsedLabel/);
+  });
+
+  it('rejects a zero or missing geocoder timeoutMs / budgetMs', () => {
+    for (const key of ['timeoutMs', 'budgetMs'] as const) {
+      const zero = structuredClone(sandbox);
+      (zero.geocoder as Record<string, unknown>)[key] = 0;
+      expect(() => validateConfig(zero)).toThrow(new RegExp(`geocoder\\.${key}`));
+      const missing = structuredClone(sandbox);
+      delete (missing.geocoder as Record<string, unknown>)[key];
+      expect(() => validateConfig(missing)).toThrow(new RegExp(`geocoder\\.${key}`));
+    }
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BoardRecord } from './monday/client';
 import type { MapConfig } from './config';
 import {
@@ -8,7 +8,7 @@ import {
 
 const cfg: MapConfig['geocoder'] = {
   url: 'https://example.test/geocode', benchmark: 'Public_AR_Current', defaultState: 'CA',
-  batchSize: 4, maxPerRun: 10, retryNoMatchDays: 90,
+  batchSize: 4, maxPerRun: 10, retryNoMatchDays: 90, timeoutMs: 120_000, budgetMs: 480_000,
 };
 const NOW = new Date('2026-11-02T00:00:00Z');
 
@@ -94,6 +94,34 @@ describe('CensusGeocoder', () => {
     globalThis.fetch = (async () => new Response('no', { status: 500 })) as typeof fetch;
     try { await expect(new CensusGeocoder(cfg).geocode([])).rejects.toThrow(/500/); }
     finally { globalThis.fetch = orig; }
+  });
+});
+
+describe('CensusGeocoder timeout', () => {
+  it('a reply that never comes within timeoutMs fails that batch and the run continues', async () => {
+    const orig = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = ((_u: unknown, init: RequestInit) => {
+      calls++;
+      if (calls === 1) {
+        // Hangs until aborted, like a Census request that never answers.
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+        });
+      }
+      return Promise.resolve(new Response('"5","x","Match","Exact","x","-121.5,37.5","1","L"\n"6","x","No_Match"\n'));
+    }) as typeof fetch;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const fast = { ...cfg, timeoutMs: 20 };
+      const recs = Array.from({ length: 6 }, (_, i) => rec(String(i + 1)));
+      const store = new FakeStore();
+      const r = await resolveLocations(recs, store, new CensusGeocoder(fast), fast, NOW);
+      expect(calls).toBe(2);
+      expect([...r.located.keys()]).toEqual(['5']);
+      expect(r.unplaced).toBe(5);
+      expect([...store.rows.keys()].sort()).toEqual(['5', '6']);
+    } finally { globalThis.fetch = orig; warn.mockRestore(); }
   });
 });
 
@@ -213,5 +241,36 @@ describe('resolveLocations', () => {
         expect(r.located.size).toBe(0);
       } finally { globalThis.fetch = orig; }
     }
+  });
+
+  it('once the time budget is spent, no further batches go out and the rest count unplaced', async () => {
+    let t = 0;
+    const clock = () => t;
+    const g = new FakeGeocoder();
+    const slow: Geocoder = { geocode: async (rows) => { t += 300_000; return g.geocode(rows); } };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const recs = Array.from({ length: 10 }, (_, i) => rec(String(i + 1)));
+    const r = await resolveLocations(recs, new FakeStore(), slow, { ...cfg, budgetMs: 480_000 }, NOW, clock);
+    // Batch 1 at t=0, batch 2 at t=300s (under budget), then t=600s >= 480s: batch 3 never sent.
+    expect(g.batches.map((b) => b.length)).toEqual([4, 4]);
+    expect(r.located.size).toBe(8);
+    expect(r.unplaced).toBe(2);
+    expect(r.geocoded).toBe(8);
+    expect(warn.mock.calls.map((c) => String(c[0])).join('\n')).toContain('geocode time budget spent');
+    warn.mockRestore();
+  });
+
+  it('organizations without board coordinates are skipped: not sent, not unplaced, not located', async () => {
+    const g = new FakeGeocoder();
+    const recs = [
+      rec('1', { board: 'organizations' }),
+      rec('2', { board: 'organizations', address: null }),
+      rec('3', { board: 'organizations', lat: '37.3', lng: '-121.9' }),
+      rec('4'),
+    ];
+    const r = await resolveLocations(recs, new FakeStore(), g, cfg, NOW);
+    expect(g.batches.flat().map((b) => b.id)).toEqual(['4']);
+    expect(r.unplaced).toBe(0);
+    expect([...r.located.keys()].sort()).toEqual(['3', '4']);
   });
 });

@@ -10,10 +10,16 @@ export interface MapConfig {
     address: string; city: string; zip: string; lat: string; lng: string;
     membershipStatus: string; doNotSolicit: string;
   };
+  // Membership Status labels: activeLabel is a member, lapsedLabel a lapsed member; any other
+  // value (or blank) on a People board is a never-member.
   activeLabel: string;
+  lapsedLabel: string;
   geocoder: {
     url: string; benchmark: string; defaultState: string;
     batchSize: number; maxPerRun: number; retryNoMatchDays: number;
+    // Per Census request (abort after), and for all of a run's geocoding together: once spent, the
+    // remaining addresses wait for the next run, so the snapshot is always written in time.
+    timeoutMs: number; budgetMs: number;
   };
   // teamDomain "" = Cloudflare Access not set up yet; the gate then refuses every request.
   access: { teamDomain: string; aud: string; allowedEmailDomain: string };
@@ -78,6 +84,7 @@ export function validateConfig(raw: unknown): MapConfig {
       doNotSolicit: str(columns, 'doNotSolicit', 'columns'),
     },
     activeLabel: str(root, 'activeLabel', 'config'),
+    lapsedLabel: str(root, 'lapsedLabel', 'config'),
     geocoder: {
       url: httpsUrl(geocoder, 'url', 'geocoder'),
       benchmark: str(geocoder, 'benchmark', 'geocoder'),
@@ -85,6 +92,8 @@ export function validateConfig(raw: unknown): MapConfig {
       batchSize: int(geocoder, 'batchSize', 'geocoder', 1),
       maxPerRun: int(geocoder, 'maxPerRun', 'geocoder', 1),
       retryNoMatchDays: int(geocoder, 'retryNoMatchDays', 'geocoder', 0),
+      timeoutMs: int(geocoder, 'timeoutMs', 'geocoder', 1),
+      budgetMs: int(geocoder, 'budgetMs', 'geocoder', 1),
     },
     access: { teamDomain, aud: access.aud, allowedEmailDomain },
   };

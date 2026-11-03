@@ -32,13 +32,19 @@ const index: BlockGroupIndex = {
 const at = (lng: number): LatLng => ({ lat: 37, lng });
 
 describe('kindOf', () => {
+  const labels = { activeLabel: 'Active', lapsedLabel: 'Lapsed' };
   it('maps Active/Lapsed/blank/org', () => {
-    expect(kindOf(rec('1', 'Active'), 'Active')).toBe('member');
-    expect(kindOf(rec('2', 'Lapsed'), 'Active')).toBe('lapsed');
-    expect(kindOf(rec('3', null), 'Active')).toBe('never');
-    expect(kindOf(rec('4', 'Prospect'), 'Active')).toBe('never');
-    expect(kindOf(org('5'), 'Active')).toBe('org');
-    expect(kindOf(rec('6', 'Gold'), 'Gold')).toBe('member');
+    expect(kindOf(rec('1', 'Active'), labels)).toBe('member');
+    expect(kindOf(rec('2', 'Lapsed'), labels)).toBe('lapsed');
+    expect(kindOf(rec('3', null), labels)).toBe('never');
+    expect(kindOf(rec('4', 'Prospect'), labels)).toBe('never');
+    expect(kindOf(org('5'), labels)).toBe('org');
+    expect(kindOf(rec('6', 'Gold'), { ...labels, activeLabel: 'Gold' })).toBe('member');
+  });
+  it('the lapsed label comes from config', () => {
+    const expired = { activeLabel: 'Active', lapsedLabel: 'Expired' };
+    expect(kindOf(rec('1', 'Expired'), expired)).toBe('lapsed');
+    expect(kindOf(rec('2', 'Lapsed'), expired)).toBe('never');
   });
 });
 

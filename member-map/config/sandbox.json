@@ -18,13 +18,16 @@
     "doNotSolicit": "Do Not Solicit"
   },
   "activeLabel": "Active",
+  "lapsedLabel": "Lapsed",
   "geocoder": {
     "url": "https://geocoding.geo.census.gov/geocoder/locations/addressbatch",
     "benchmark": "Public_AR_Current",
     "defaultState": "CA",
     "batchSize": 1000,
     "maxPerRun": 5000,
-    "retryNoMatchDays": 90
+    "retryNoMatchDays": 90,
+    "timeoutMs": 120000,
+    "budgetMs": 480000
   },
   "access": {
     "teamDomain": "",

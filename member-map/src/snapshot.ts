@@ -24,10 +24,10 @@ const BLOCK_GROUPS_URL = 'https://assets.local/data/blockgroups.geojson';
 const MIN_POPULATION = referenceConfig.minPopulation;
 const BOARD_KEYS: BoardKey[] = ['peopleLive', 'peopleHistorical', 'organizations'];
 
-export function kindOf(r: BoardRecord, activeLabel: string): PointKind {
+export function kindOf(r: BoardRecord, labels: Pick<MapConfig, 'activeLabel' | 'lapsedLabel'>): PointKind {
   if (r.board === 'organizations') return 'org';
-  if (r.membershipStatus === activeLabel) return 'member';
-  if (r.membershipStatus === 'Lapsed') return 'lapsed';
+  if (r.membershipStatus === labels.activeLabel) return 'member';
+  if (r.membershipStatus === labels.lapsedLabel) return 'lapsed';
   return 'never';
 }
 
@@ -43,7 +43,7 @@ export function buildSnapshot(
   for (const r of records) {
     const at = located.get(r.itemId);
     if (!at) continue;
-    const kind = kindOf(r, cfg.activeLabel);
+    const kind = kindOf(r, cfg);
     points.push({ id: r.itemId, boardId: r.boardId, name: r.name, lat: at.lat, lng: at.lng, kind, dns: r.doNotSolicit });
     const geoid = index.find(at.lng, at.lat);
     const counts = geoid === null ? undefined : tally.get(geoid);
