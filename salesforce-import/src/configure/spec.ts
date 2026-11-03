@@ -372,7 +372,8 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'In-Kind Category': 'What kind of goods or services an in-kind gift was (Bicycle, Travel, Wine…).',
       'Sponsorship Cycle': 'Which sponsorship cycle(s) a Salesforce sponsorship opportunity belonged to (e.g. 2024 Summit). ' +
         'Migrated history; earlier cycles are in the sponsor-history export in the Drive archive.',
-      'Campaign': 'The Salesforce campaign the gift came in under, where known. Reference only.',
+      'Campaign': 'The appeal or Salesforce campaign the gift came in under. For an appeal gift, ' +
+        "pick the appeal's item on Campaigns.",
       'Recurring Gift': 'Set when this gift is one installment of a recurring pledge.',
       'Thank You Sent': 'Checked automatically for Funraise gifts (Funraise sends the receipt). ' +
         "For hand-entered gifts, check it yourself once you've acknowledged the donor.",
@@ -448,16 +449,19 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
   },
 
   'campaigns': {
-    description: "Salesforce campaigns, kept so each migrated gift's Campaign link still " +
-      'resolves. Reference data — not where new outreach is tagged. Tag people for a new push ' +
-      'with the Campaign tags column on People instead.',
+    description: 'Salesforce campaigns, plus one item per appeal from go-live on (e.g. "2026 ' +
+      'Year-End Appeal"), created by whoever runs the appeal with Type set to Appeal. Gifts link ' +
+      "to their appeal through Donations' Campaign column. Bulk outreach lists (Bike to Work Day " +
+      'lists, recruitment pushes) use the Campaign tags column on People instead, not this board.',
     groupTitle: 'Campaigns',
     columnDescriptions: {
-      'Type': 'Salesforce campaign record type.',
-      'Active': "Salesforce's IsActive flag at migration.",
+      'Type': 'Appeal for an appeal created in Monday; otherwise the Salesforce campaign record type.',
+      'Active': "Salesforce's IsActive flag at migration. Not maintained, and blank on appeals.",
     },
     views: [
       { name: 'All Campaigns', tag: 'Reference', columns: ['Type', 'Start', 'End', 'Active'], sort: [{ columnTitle: 'End', direction: 'desc' }] },
+      { name: 'Appeals', tag: 'Reference', columns: ['Type', 'Start', 'End'],
+        filter: { rules: [{ columnTitle: 'Type', operator: 'contains_text', compareValue: 'Appeal' }] }, sort: [{ columnTitle: 'Start', direction: 'desc' }] },
       { name: 'Active', tag: 'Reference', columns: ['Type', 'Start', 'End'], filter: { rules: [{ columnTitle: 'Active', operator: 'is_not_empty' }] } },
     ],
     deleteStrayViews: ['Build Vibe view'],
