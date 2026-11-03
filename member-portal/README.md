@@ -2,8 +2,13 @@
 
 **Staff UAT script:** [`docs/uat/member-portal.md`](../docs/uat/member-portal.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status:** Not yet deployed to production — no version has been live. Code-complete through v8
-(the sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
+**Status:** Production config filled 2026-11-02 (813261b: People, Donations, Organizations and
+Volunteers ids from the Donors & Contacts workspace, 18201685); this repo doesn't record a
+production deploy yet. Still placeholders in `config/svbc.json`, each a feature gate rather than a
+deploy blocker: `preferredLanguage`, the email/SMS opt-out columns, `changeRequests` (no
+production Change Requests board yet), `letterCron`, `eventRegistrations`, `pledges`,
+`taxLetter.benefitStatement` and `funraise.renewMembershipUrl`. Code-complete through v8 (the
+sections below); the first production deploy follows [DEPLOY.md](DEPLOY.md) and the root
 [production deploy checklist](../docs/production-deploy-checklist.md). The sandbox environment is
 live at `member.sandbox.bikesiliconvalley.org` (see "Sending the email"). Donation history is
 date-gated (see "v7 — Clean-start donation history"): hidden until 2027-01-01, and from then on
