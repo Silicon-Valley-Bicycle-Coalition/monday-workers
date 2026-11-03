@@ -35,6 +35,7 @@ export const EXPECTED = {
   'monday-backup': 'ReadOnlyToken',
   'report-digests': 'ReadOnlyToken',
   'member-map': 'ReadOnlyToken',
+  'nearby-search': 'SyncToken',
 };
 
 // Each Worker's Wrangler config file, keyed like EXPECTED.

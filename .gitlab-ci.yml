@@ -84,13 +84,22 @@ monday-graphql-copies:
   script:
     - |
       status=0
-      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
+      for copy in benevity-import/src/monday/graphql.ts donation-rollups/src/monday/graphql.ts email-log/src/monday/graphql.ts eventbrite-sync/src/monday/graphql.ts funraise-sync/src/monday/graphql.ts geo-filter/src/monday/graphql.ts mailchimp-sync/src/monday/graphql.ts member-map/src/monday/graphql.ts member-portal/src/monday/graphql.ts nearby-search/src/monday/graphql.ts people-reclassification/src/monday/graphql.ts quickbooks-sync/src/monday/graphql.ts report-digests/src/monday/graphql.ts; do
         cmp monday-backup/src/monday/graphql.ts "$copy" || { echo "$copy differs from monday-backup/src/monday/graphql.ts"; status=1; }
       done
       # The Workers' .mjs scripts import graphql.ts through Node's strip-only type support, so it
       # must stay loadable without a TypeScript compile step.
       node --input-type=module -e "await import('./monday-backup/src/monday/graphql.ts')" || status=1
       exit $status
+
+# geo-filter/src/geometry.ts is the canonical corridor/point-in-polygon logic; nearby-search carries
+# a byte-identical copy (the Worker stays self-contained). Edit geo-filter's, then copy it over.
+geo-geometry-copies:
+  stage: test
+  rules:
+    - changes: ["*/src/geometry.ts", .gitlab-ci.yml]
+  script:
+    - cmp geo-filter/src/geometry.ts nearby-search/src/geometry.ts
 
 # The write switch (off/hold/on) lives in one module, member-portal/src/flags.ts. Every in-scope
 # Worker carries a byte-identical copy and the same FLAGS KV namespace ids; edit the canonical file,
@@ -218,6 +227,11 @@ monday-backup:
   variables:
     WORKER_DIR: monday-backup
 
+nearby-search:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: nearby-search
+
 people-reclassification:
   extends: .worker_job
   variables:
@@ -339,6 +353,11 @@ deploy-sandbox:monday-backup:
   extends: .deploy_sandbox_job
   variables:
     WORKER_DIR: monday-backup
+
+deploy-sandbox:nearby-search:
+  extends: .deploy_sandbox_job
+  variables:
+    WORKER_DIR: nearby-search
 
 deploy-sandbox:people-reclassification:
   extends: .deploy_sandbox_job

@@ -129,7 +129,11 @@ async function processOne(donorItemId: string, previousEmail: string | undefined
     }
   }
 
-  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config));
+  // The member's current Near: tags are needed to deactivate the ones Monday's column no longer
+  // holds. Only read when the Nearby column is configured; a member not in the audience reads as
+  // no tags, and updateMember below still reports 'not-in-audience'.
+  const currentTags = config.monday.columns.nearby === null ? [] : await mailchimpClient.getMemberTagNames(donor.email);
+  const result = await mailchimpClient.updateMember(donor.email, buildMergeFields(donor, config), buildTags(donor, config), managedTags(config, currentTags));
   if (result === 'not-in-audience') {
     // Expected for every Donor who never opted in — Mailchimp owns consent, so this
     // Worker only enriches existing members. 'skipped', not 'written', so it's countable.

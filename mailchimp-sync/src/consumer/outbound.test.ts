@@ -12,10 +12,10 @@ const CONFIG: Config = {
   monday: { apiUrl: '', donorsBoardId: null, campaignsBoardId: null, columns: {
     membershipStatus: 's', membershipTier: 't', memberSince: 'ms', memberUntil: 'mu',
     addr1: 'a1', city: 'c', state: 'st', zip: 'z', email: 'e', totalGiven: 'g', mailchimpCampaigns: 'mc',
-    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus',
+    doNotSolicit: 'dns', dnsReasonStatus: 'dnsStatus', nearby: null,
   } },
   mailchimp: {
-    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'],
+    apiBaseUrl: '', audienceId: '', interestCategoryIds: ['cat1'], nearbyTagPrefix: 'Near: ',
     mergeFields: { memberSince: 'MS', memberUntil: 'MU', membershipTier: 'MT', membershipStatus: 'MST', address: 'AD', totalGiven: 'TG' },
     tags: { activeMember: 'active-member', lapsedMember: 'lapsed-member', lifetimeMember: 'lifetime-member', hasDonated: 'has-donated', doNotSolicit: 'do-not-solicit' },
   },
@@ -36,7 +36,7 @@ function donor(overrides: Partial<DonorRecord> = {}): DonorRecord {
   return {
     id: '1', email: 'a@b.com', membershipStatus: 'Active', membershipTier: 'Standard',
     memberSince: '2026-01-01', memberUntil: '', addr1: '', city: '', state: '', zip: '', totalGiven: '0',
-    doNotSolicit: false, dnsReasonStatus: '',
+    doNotSolicit: false, dnsReasonStatus: '', nearby: [],
     ...overrides,
   };
 }
@@ -51,7 +51,7 @@ describe('processOutboundBatch', () => {
     };
     const mailchimpClient: MailchimpClient = {
       updateMember: vi.fn().mockResolvedValue('updated'),
-      getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -79,7 +79,7 @@ describe('processOutboundBatch', () => {
     };
     const mailchimpClient: MailchimpClient = {
       updateMember: vi.fn().mockResolvedValue('not-in-audience'),
-      getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -97,7 +97,7 @@ describe('processOutboundBatch', () => {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
-    const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn() };
+    const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
@@ -114,7 +114,7 @@ describe('processOutboundBatch', () => {
       createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
       findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
     };
-    const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn() };
+    const mailchimpClient: MailchimpClient = { updateMember: vi.fn(), getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn() };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
     await processOutboundBatch([message], { mondayClient, mailchimpClient, pendingStore, config: CONFIG, dnsLog: fakeDnsLog() });
@@ -131,7 +131,7 @@ describe('processOutboundBatch', () => {
     };
     const mailchimpClient: MailchimpClient = {
       updateMember: vi.fn().mockRejectedValue(new Error('rate limited')),
-      getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -151,7 +151,7 @@ describe('processOutboundBatch', () => {
     };
     const mailchimpClient: MailchimpClient = {
       updateMember: vi.fn().mockRejectedValue(new MailchimpPermanentError('invalid email')),
-      getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+      getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
     };
     const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
 
@@ -160,6 +160,61 @@ describe('processOutboundBatch', () => {
     expect(pendingStore.updateStatus).toHaveBeenCalledWith('5', 'failed', 'invalid email');
     expect(message.ack).toHaveBeenCalled();
     expect(message.retry).not.toHaveBeenCalled();
+  });
+
+  describe('Nearby tags', () => {
+    const NEARBY_CONFIG: Config = { ...CONFIG, monday: { ...CONFIG.monday, columns: { ...CONFIG.monday.columns, nearby: 'nearby' } } };
+
+    function nearbyDeps(d: DonorRecord | null, memberTags: string[], config: Config = NEARBY_CONFIG, updateResult = 'updated') {
+      const mondayClient: MondayClient = {
+        getDonorById: vi.fn().mockResolvedValue(d),
+        createCampaignItem: vi.fn(), renameItem: vi.fn(), archiveItem: vi.fn(),
+        findItemIdByEmail: vi.fn(), setConnectColumn: vi.fn(),
+      };
+      const mailchimpClient: MailchimpClient = {
+        updateMember: vi.fn().mockResolvedValue(updateResult),
+        renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+        getMemberInterests: vi.fn(), getMemberTagNames: vi.fn().mockResolvedValue(memberTags), listInterests: vi.fn(),
+      };
+      const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
+      return { mondayClient, mailchimpClient, pendingStore, dnsLog: fakeDnsLog(), config };
+    }
+
+    it('deactivates a Near: tag the Monday column no longer holds, and activates the current ones', async () => {
+      const d = nearbyDeps(donor({ nearby: ['New'] }), ['Near: Old', 'Near: New', 'VIP']);
+      await processOutboundBatch([fakeMessage('1')], d);
+
+      const [, , desired, managed] = (d.mailchimpClient.updateMember as ReturnType<typeof vi.fn>).mock.calls[0]!;
+      expect(desired).toEqual(['active-member', 'Near: New']);
+      expect(managed).toContain('Near: Old');
+      expect(managed).not.toContain('VIP');
+      expect(d.mailchimpClient.getMemberTagNames).toHaveBeenCalledWith('a@b.com');
+    });
+
+    it('never reads the member\'s tags when the nearby column is null', async () => {
+      const d = nearbyDeps(donor(), ['Near: Old'], CONFIG);
+      await processOutboundBatch([fakeMessage('1')], d);
+
+      expect(d.mailchimpClient.getMemberTagNames).not.toHaveBeenCalled();
+      expect(d.mailchimpClient.updateMember).toHaveBeenCalled();
+    });
+
+    it('does not read tags when the donor has no email', async () => {
+      const d = nearbyDeps(donor({ email: '' }), []);
+      await processOutboundBatch([fakeMessage('1')], d);
+      expect(d.mailchimpClient.getMemberTagNames).not.toHaveBeenCalled();
+    });
+
+    it('retries (not acks) when reading the member\'s tags fails transiently', async () => {
+      const d = nearbyDeps(donor(), []);
+      (d.mailchimpClient.getMemberTagNames as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('mailchimp getMemberTagNames: HTTP 503'));
+      const message = fakeMessage('1');
+      await processOutboundBatch([message], d);
+
+      expect(d.mailchimpClient.updateMember).not.toHaveBeenCalled();
+      expect(message.retry).toHaveBeenCalled();
+      expect(message.ack).not.toHaveBeenCalled();
+    });
   });
 
   describe('Do Not Solicit', () => {
@@ -172,7 +227,7 @@ describe('processOutboundBatch', () => {
       const mailchimpClient: MailchimpClient = {
         updateMember: vi.fn().mockResolvedValue(opts.updateResult ?? 'updated'),
         renameMember: vi.fn(), unsubscribeMember: vi.fn().mockResolvedValue(opts.unsubscribeResult ?? 'unsubscribed'),
-        getMemberInterests: vi.fn(), listInterests: vi.fn(),
+        getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(),
       };
       const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
       const dnsLog = fakeDnsLog(opts.alreadyLogged);
@@ -269,7 +324,7 @@ describe('processOutboundBatch', () => {
         updateMember: vi.fn().mockResolvedValue(opts.updateResult ?? 'updated'),
         renameMember: rename,
         unsubscribeMember: vi.fn().mockResolvedValue('unsubscribed'),
-        getMemberInterests: vi.fn(), listInterests: vi.fn(),
+        getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(),
       };
       const pendingStore: PendingOutboundStore = { upsertPending: vi.fn(), updateStatus: vi.fn() };
       return { mondayClient, mailchimpClient, pendingStore, dnsLog: fakeDnsLog(), config: CONFIG };
@@ -346,7 +401,7 @@ describe('processOutboundBatch', () => {
       };
       const mailchimpClient: MailchimpClient = {
         updateMember: vi.fn().mockRejectedValue(err),
-        getMemberInterests: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
+        getMemberInterests: vi.fn(), getMemberTagNames: vi.fn(), listInterests: vi.fn(), renameMember: vi.fn(), unsubscribeMember: vi.fn(),
       };
       return {
         mondayClient, mailchimpClient, config: CONFIG, dnsLog: fakeDnsLog(),

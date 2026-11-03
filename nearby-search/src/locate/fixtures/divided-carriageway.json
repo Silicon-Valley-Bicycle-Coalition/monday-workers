@@ -1,0 +1,11 @@
+{
+  "_note": "Synthetic, hand-built: a divided Example Road as two parallel one-way ways (north side eastbound, south side westbound, the south side bowed so it is the longer one), each crossed by West Street (west end) and East Street (east end). Each cross street shares one node with each carriageway, so each crossing has two candidate nodes. The shortest West -> East path is the north carriageway, nodes 1-2-3-4.",
+  "elements": [
+    { "type": "way", "id": 100, "nodes": [1, 2, 3, 4], "tags": { "highway": "primary", "name": "Example Road", "oneway": "yes" },
+      "geometry": [ { "lat": 37.3010, "lon": -121.9300 }, { "lat": 37.3010, "lon": -121.9250 }, { "lat": 37.3010, "lon": -121.9200 }, { "lat": 37.3010, "lon": -121.9150 } ] },
+    { "type": "way", "id": 101, "nodes": [8, 7, 6, 5], "tags": { "highway": "primary", "name": "Example Road", "oneway": "yes" },
+      "geometry": [ { "lat": 37.3000, "lon": -121.9150 }, { "lat": 37.2990, "lon": -121.9200 }, { "lat": 37.2990, "lon": -121.9250 }, { "lat": 37.3000, "lon": -121.9300 } ] },
+    { "type": "way", "id": 200, "nodes": [10, 1, 5, 11], "tags": { "highway": "secondary", "name": "West Street" } },
+    { "type": "way", "id": 201, "nodes": [12, 4, 8, 13], "tags": { "highway": "secondary", "name": "East Street" } }
+  ]
+}

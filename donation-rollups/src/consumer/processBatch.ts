@@ -194,6 +194,7 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
   // An owner-keyed message: a gift moved away from this owner (issue #26). Recompute it
   // unconditionally — its totals still include the gift until it does.
   if (message.ownerItemId !== undefined && message.ownerBoardId !== undefined) {
+    if (await ownerIsGone(deps, message.ownerItemId)) return;
     await recomputeOwner(deps, message.ownerItemId, message.ownerBoardId, donationItemId);
     return;
   }
@@ -231,7 +232,11 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 
   const ownerBoardId = await mondayClient.getItemBoardId(ownerItemId);
   if (ownerBoardId === null) {
-    throw new Error(`owner item "${ownerItemId}" has no resolvable board (deleted between link and lookup?)`);
+    // The owner was deleted (getItemBoardId reads a trashed item as gone). Retrying can't bring it
+    // back, and a gift whose owner is gone counts for no one — the same as a cleared link.
+    await detachDonation(deps, donationItemId, 'owner deleted');
+    await deps.pendingStore.updateStatus(donationItemId, 'written', { writtenAt: new Date().toISOString() });
+    return;
   }
 
   // Keep the reverse index current *before* reading it back — this donation's own
@@ -284,13 +289,17 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 // toward the owner D1 last linked it to. Drop the link, take the gift out of the ledger's totals
 // (soft — a restore or re-link brings it back on its next recompute), then recompute that owner
 // here: this message has no other recompute to do, so it costs no more than a normal one.
-async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, state: 'active' | 'deleted'): Promise<void> {
+async function detachDonation(deps: ProcessBatchDeps, donationItemId: string, state: 'active' | 'deleted' | 'owner deleted'): Promise<void> {
   const link = await deps.linksStore.getLinkForDonation(donationItemId);
   const removed = await deps.giftsStore.markRemoved(donationItemId, new Date().toISOString());
   await deps.linksStore.deleteLink(donationItemId);
   const previous = link ?? (removed === null ? null : { ownerItemId: removed.ownerItemId, ownerBoardId: removed.ownerBoardId });
   if (previous === null) return; // never linked to anyone D1 knows — nothing to recompute
-  console.log(`donation-rollups consumer: donation "${donationItemId}" ${state === 'deleted' ? 'was deleted' : 'lost its Donor link'} — recomputing former owner ${previous.ownerItemId}`);
+  // Deleting a donor clears (or orphans) every gift's link at once: the former owner is gone, so
+  // there is nothing to rewrite.
+  if (await ownerIsGone(deps, previous.ownerItemId)) return;
+  const why = state === 'deleted' ? 'was deleted' : state === 'owner deleted' ? 'lost its deleted owner' : 'lost its Donor link';
+  console.log(`donation-rollups consumer: donation "${donationItemId}" ${why} — recomputing former owner ${previous.ownerItemId}`);
   const extraAffiliations = new Set<string>();
   if (removed?.actingForItemId) extraAffiliations.add(removed.actingForItemId);
   await recomputeOwner(deps, previous.ownerItemId, previous.ownerBoardId, donationItemId, extraAffiliations);
@@ -340,11 +349,22 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
   const recomputable = owners.filter((o) => config.donationRollups.ownerColumnsByBoard[o.ownerBoardId]?.membership !== undefined);
   const [first, ...rest] = recomputable;
   for (const o of rest) await enqueueOwnerRecompute(deps, message, o);
-  if (first !== undefined) await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
+  // Only the attendee was just read live; an owner from a stored row may since have been deleted.
+  if (first !== undefined && (first.ownerItemId === reg?.attendeeItemId || !(await ownerIsGone(deps, first.ownerItemId)))) {
+    await recomputeOwner(deps, first.ownerItemId, first.ownerBoardId, registrationItemId);
+  }
 
   await deps.pendingStore.updateStatus(registrationItemId, 'written', {
     ...(first ? { ownerItemId: first.ownerItemId, ownerBoard: first.ownerBoardId } : {}), writtenAt: new Date().toISOString(),
   });
+}
+
+// An owner D1 remembers (a former owner, an owner-keyed message) may have been deleted on Monday
+// since. Its recompute could only fail on the write and retry toward the DLQ; skip it instead.
+async function ownerIsGone(deps: ProcessBatchDeps, ownerItemId: string): Promise<boolean> {
+  if ((await deps.mondayClient.getItemBoardId(ownerItemId)) !== null) return false;
+  console.log(`donation-rollups consumer: owner ${ownerItemId} was deleted on Monday — nothing to recompute`);
+  return true;
 }
 
 async function enqueueOwnerRecompute(

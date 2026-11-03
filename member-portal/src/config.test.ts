@@ -93,6 +93,12 @@ const validConfig = {
     manageRecurringUrl: 'https://example.funraise.org/account',
     renewMembershipUrl: 'https://example.funraise.org/give?campaign=membership',
   },
+  getInvolved: {
+    links: [
+      { category: 'civic', label: 'Example BPAC', url: 'https://example.legistar.com/Calendar.aspx', calendarUrl: 'https://example.org/bpac.ics' },
+      { category: 'volunteer', url: 'https://example.org/volunteer' },
+    ],
+  },
   pledges: {
     boardId: 456,
     columns: {
@@ -121,6 +127,39 @@ const validConfig = {
     maxTriggersPerRun: 200,
   },
 };
+
+describe('validateConfig getInvolved', () => {
+  const withLinks = (links: unknown) => ({ ...validConfig, getInvolved: { links } });
+
+  it('accepts an empty list (section omitted)', () => {
+    expect(() => validateConfig(withLinks([]))).not.toThrow();
+  });
+
+  it('throws when getInvolved is missing', () => {
+    const { getInvolved: _omit, ...rest } = validConfig;
+    expect(() => validateConfig(rest)).toThrow('getInvolved');
+  });
+
+  it('throws when links is not a list', () => {
+    expect(() => validateConfig(withLinks({}))).toThrow('"getInvolved.links" must be a list');
+  });
+
+  it('rejects an unknown category', () => {
+    expect(() => validateConfig(withLinks([{ category: 'parks', label: 'x', url: 'https://x.org' }]))).toThrow('getInvolved.links[0].category');
+  });
+
+  it('rejects a non-https url or calendarUrl', () => {
+    expect(() => validateConfig(withLinks([{ category: 'events', url: 'http://x.org' }]))).toThrow('getInvolved.links[0].url');
+    expect(() => validateConfig(withLinks([{ category: 'events', url: 'https://x.org', calendarUrl: 'webcal://x.org/a.ics' }]))).toThrow(
+      'getInvolved.links[0].calendarUrl'
+    );
+  });
+
+  it('requires a label on transit and civic links', () => {
+    expect(() => validateConfig(withLinks([{ category: 'transit', url: 'https://x.org' }]))).toThrow('label" is required for transit');
+    expect(() => validateConfig(withLinks([{ category: 'civic', label: ' ', url: 'https://x.org' }]))).toThrow('non-blank');
+  });
+});
 
 describe('validateConfig', () => {
   it('returns the config unchanged when valid', () => {

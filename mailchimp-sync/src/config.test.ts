@@ -10,13 +10,13 @@ function validRaw() {
       columns: {
         membershipStatus: 'c1', membershipTier: 'c2', memberSince: 'c3', memberUntil: 'c4',
         addr1: 'c5', city: 'c6', state: 'c7', zip: 'c8', email: 'c9', totalGiven: 'c10',
-        mailchimpCampaigns: 'c11', doNotSolicit: 'c12', dnsReasonStatus: 'c13',
+        mailchimpCampaigns: 'c11', doNotSolicit: 'c12', dnsReasonStatus: 'c13', nearby: null,
       },
     },
     mailchimp: {
       apiBaseUrl: 'https://us1.api.mailchimp.com/3.0',
       audienceId: 'abc123',
-      interestCategoryIds: ['cat1'] as unknown,
+      interestCategoryIds: ['cat1'] as unknown, nearbyTagPrefix: 'Near: ',
       mergeFields: {
         memberSince: 'MEMBERSINCE', memberUntil: 'MEMBERUNTIL', membershipTier: 'MTIER',
         membershipStatus: 'MSTATUS', address: 'ADDRESS', totalGiven: 'TOTALGIVE',
@@ -62,6 +62,46 @@ describe('validateConfig', () => {
       raw.mailchimp.interestCategoryIds = bad;
       expect(() => validateConfig(raw)).toThrow(message);
     }
+  });
+
+  it('rejects an empty or missing mailchimp.nearbyTagPrefix', () => {
+    for (const bad of [undefined, '', 5]) {
+      const raw = validRaw();
+      (raw.mailchimp as Record<string, unknown>).nearbyTagPrefix = bad;
+      expect(() => validateConfig(raw)).toThrow('config: missing required key "mailchimp.nearbyTagPrefix"');
+    }
+  });
+
+  it('accepts a null or string monday.columns.nearby and rejects anything else', () => {
+    const withNearby = (value: unknown) => {
+      const raw = validRaw();
+      (raw.monday.columns as Record<string, unknown>).nearby = value;
+      return raw;
+    };
+    expect(validateConfig(withNearby(null)).monday.columns.nearby).toBeNull();
+    expect(validateConfig(withNearby('dropdown_x')).monday.columns.nearby).toBe('dropdown_x');
+    for (const bad of [undefined, '', 5]) {
+      expect(() => validateConfig(withNearby(bad))).toThrow('config: "monday.columns.nearby" must be a column id or null');
+    }
+  });
+
+  it('accepts a null or string monday.columns.state and rejects anything else', () => {
+    const withState = (value: unknown) => {
+      const raw = validRaw();
+      (raw.monday.columns as Record<string, unknown>).state = value;
+      return raw;
+    };
+    expect(validateConfig(withState(null)).monday.columns.state).toBeNull();
+    expect(validateConfig(withState('text_x')).monday.columns.state).toBe('text_x');
+    for (const bad of [undefined, '', 5]) {
+      expect(() => validateConfig(withState(bad))).toThrow('config: "monday.columns.state" must be a column id or null');
+    }
+  });
+
+  it('rejects a REPLACE_WITH_COLUMN_ID placeholder for monday.columns.state', () => {
+    const raw = validRaw();
+    (raw.monday.columns as Record<string, unknown>).state = 'REPLACE_WITH_COLUMN_ID';
+    expect(() => validateConfig(raw)).toThrow('config: "monday.columns.state" must be a column id or null');
   });
 
   it('rejects a missing mailchimp.tags key', () => {
