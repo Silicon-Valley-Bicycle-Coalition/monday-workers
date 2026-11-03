@@ -19,7 +19,7 @@ const NULLABLE_COLUMN_KEYS = {
 
 const ATTENDEE_EVENT_COLUMN_KEYS = [
   'eventbriteIdColumn', 'dateColumn', 'endColumn', 'venueColumn', 'addressColumn', 'cityColumn',
-  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn',
+  'programColumn', 'eventStatusColumn', 'sourceColumn', 'urlColumn', 'sendLinkColumn',
 ] as const;
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
@@ -139,5 +139,15 @@ function validateAttendeeSync(raw: unknown): void {
   requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
   requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
+  if (!isObject(a.classEmails)) {
+    throw new Error('config: missing required key "attendeeSync.classEmails"');
+  }
+  const { pageUrl, sandboxRecipient } = a.classEmails;
+  if (pageUrl !== null && !(typeof pageUrl === 'string' && /^https:\/\/[^\s/]+\S*$/.test(pageUrl))) {
+    throw new Error('config: "attendeeSync.classEmails.pageUrl" must be an https URL, or null until the page is deployed');
+  }
+  if (sandboxRecipient !== null && !(typeof sandboxRecipient === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sandboxRecipient))) {
+    throw new Error('config: "attendeeSync.classEmails.sandboxRecipient" must be an email address, or null');
+  }
 
 }

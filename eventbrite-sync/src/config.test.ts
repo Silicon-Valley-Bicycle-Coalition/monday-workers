@@ -137,6 +137,38 @@ describe('validateConfig', () => {
       expect(() => validateConfig(cfg)).toThrow('config: missing required key "attendeeSync"');
     });
 
+    it('requires classEmails.pageUrl to be an https URL or null', () => {
+      const cfg = valid();
+      cfg.attendeeSync.classEmails.pageUrl = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.classEmails.pageUrl = 'https://example.org/classes';
+      expect(() => validateConfig(cfg)).not.toThrow();
+      for (const bad of ['http://example.org/classes', 'example.org', '', 7, undefined]) {
+        cfg.attendeeSync.classEmails.pageUrl = bad;
+        expect(() => validateConfig(cfg)).toThrow('attendeeSync.classEmails.pageUrl');
+      }
+      delete cfg.attendeeSync.classEmails;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.classEmails');
+    });
+
+    it('requires classEmails.sandboxRecipient to be an address or null', () => {
+      const cfg = valid();
+      cfg.attendeeSync.classEmails.sandboxRecipient = null;
+      expect(() => validateConfig(cfg)).not.toThrow();
+      cfg.attendeeSync.classEmails.sandboxRecipient = 'sandbox@bikesiliconvalley.org';
+      expect(() => validateConfig(cfg)).not.toThrow();
+      for (const bad of ['not an address', 'a@b', '', 7, undefined]) {
+        cfg.attendeeSync.classEmails.sandboxRecipient = bad;
+        expect(() => validateConfig(cfg)).toThrow('attendeeSync.classEmails.sandboxRecipient');
+      }
+    });
+
+    it('requires events.sendLinkColumn to be a column id string', () => {
+      const cfg = valid();
+      delete cfg.attendeeSync.events.sendLinkColumn;
+      expect(() => validateConfig(cfg)).toThrow('attendeeSync.events.sendLinkColumn');
+    });
+
     it('accepts null board ids for events and event-registrations, but requires the keys', () => {
       const cfg = valid();
       cfg.monday.boards['events'] = null;

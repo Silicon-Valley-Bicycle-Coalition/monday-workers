@@ -196,6 +196,24 @@ describe('HttpMondayClient transport (#35)', () => {
     });
   });
 
+  describe('postUpdate', () => {
+    it('postUpdate sends create_update once', async () => {
+      const fetchMock = mockFetchOnce({ data: { create_update: { id: '9' } } });
+
+      await newClient().postUpdate('777', 'Sent reminder to 3');
+
+      const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+      expect(body.query).toContain('create_update');
+      expect(body.variables).toEqual({ itemId: '777', body: 'Sent reminder to 3' });
+    });
+
+    it('is not retried after an ambiguous failure', async () => {
+      const fetchMock = mockFetchOnce({}, false);
+      await expect(newClient().postUpdate('777', 'x')).rejects.toBeInstanceOf(AmbiguousWriteError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('notify', () => {
     it('creates a Project notification for the user on the item', async () => {
       const fetchMock = mockFetchOnce({ data: { create_notification: { text: 'hi' } } });

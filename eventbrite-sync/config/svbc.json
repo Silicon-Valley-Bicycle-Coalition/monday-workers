@@ -57,7 +57,8 @@
       "programColumn": "color_mm8nqqdv",
       "eventStatusColumn": "color_mm8n8y5v",
       "sourceColumn": "color_mm8nbh4t",
-      "urlColumn": "link_mm8njbkh"
+      "urlColumn": "link_mm8njbkh",
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm8ng6d5",
@@ -72,6 +73,10 @@
       "classDateColumn": "date_mm8reqgs",
       "classDayColumn": "text_mm8rh4f4",
       "classLocationColumn": "text_mm8rpb9h"
+    },
+    "classEmails": {
+      "pageUrl": null,
+      "sandboxRecipient": null
     },
     "peopleEmailColumn": "email_mm8nx6qg"
   }

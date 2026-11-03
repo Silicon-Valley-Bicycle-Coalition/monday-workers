@@ -16,6 +16,9 @@ export interface MondayClient {
   getItems(boardId: number, itemIds: string[], columnIds: string[]): Promise<MondayItemColumns[]>;
   // Bell notification to a user about an item (create_notification, target_type Project).
   notify(userId: number, itemId: string, text: string): Promise<void>;
+  // An update (comment) on an item's page (create_update). Not retried: a retry after an
+  // ambiguous failure could post it twice.
+  postUpdate(itemId: string, body: string): Promise<void>;
 }
 
 export interface MondayItemColumns {
@@ -146,6 +149,18 @@ export class HttpMondayClient implements MondayClient {
         }
       }`,
       { userId, itemId, text },
+      { idempotent: false }
+    );
+  }
+
+  async postUpdate(itemId: string, body: string): Promise<void> {
+    await this.transport.request<{ create_update: { id: string } }>(
+      `mutation ($itemId: ID!, $body: String!) {
+        create_update(item_id: $itemId, body: $body) {
+          id
+        }
+      }`,
+      { itemId, body },
       { idempotent: false }
     );
   }

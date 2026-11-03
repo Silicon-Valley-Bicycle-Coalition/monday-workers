@@ -57,7 +57,8 @@
       "programColumn": "color_mm79t0ga",
       "eventStatusColumn": "color_mm79dkmj",
       "sourceColumn": "color_mm799v1e",
-      "urlColumn": "link_mm79b6kx"
+      "urlColumn": "link_mm79b6kx",
+      "sendLinkColumn": "REPLACE_WITH_COLUMN_ID"
     },
     "registrations": {
       "attendeeIdColumn": "text_mm79bmyb",
@@ -72,6 +73,10 @@
       "classDateColumn": "date_mm8gggwd",
       "classDayColumn": "text_mm8gkw96",
       "classLocationColumn": "text_mm8gmxsr"
+    },
+    "classEmails": {
+      "pageUrl": null,
+      "sandboxRecipient": "sandbox@bikesiliconvalley.org"
     },
     "peopleEmailColumn": "email_mm79m5qa"
   }

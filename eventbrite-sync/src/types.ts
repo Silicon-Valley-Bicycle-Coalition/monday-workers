@@ -137,6 +137,8 @@ export interface EventbriteSyncConfig {
       eventStatusColumn: string;
       sourceColumn: string;
       urlColumn: string;
+      // The Events board link column holding the class's send-page link.
+      sendLinkColumn: string;
     };
     registrations: {
       attendeeIdColumn: string;
@@ -151,6 +153,12 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
+    };
+    // The class email send page. pageUrl is the page's https URL (null until deployed);
+    // sandboxRecipient, when set, receives every class email in place of the attendee (null in production).
+    classEmails: {
+      pageUrl: string | null;
+      sandboxRecipient: string | null;
     };
     // People board email column used to match attendees to People.
     peopleEmailColumn: string;

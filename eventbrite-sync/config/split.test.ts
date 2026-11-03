@@ -38,6 +38,7 @@ const COLUMN_KEYS = [
   'attendeeSync.events.eventStatusColumn',
   'attendeeSync.events.sourceColumn',
   'attendeeSync.events.urlColumn',
+  'attendeeSync.events.sendLinkColumn',
   'attendeeSync.registrations.attendeeIdColumn',
   'attendeeSync.registrations.attendeeNameColumn',
   'attendeeSync.registrations.attendeeEmailColumn',
@@ -65,8 +66,8 @@ describe('config split: board and column ids', () => {
   it.each(COLUMN_KEYS)('%s: a real sandbox id never appears in production', (path) => {
     const sb = get(sandbox, path);
     const prod = get(production, path);
-    if (sb === null) return;
-    expect(sb).not.toBe(PLACEHOLDER_COLUMN_ID);
+    // A placeholder is "not created yet" (sendLinkColumn until the column exists); only a real id is checked.
+    if (sb === null || sb === PLACEHOLDER_COLUMN_ID) return;
     expect(prod === PLACEHOLDER_COLUMN_ID || prod === null || prod !== sb).toBe(true);
   });
 
@@ -98,9 +99,23 @@ describe('config split: board and column ids', () => {
   it('production fills the attendee feed: both boards and every attendeeSync column', () => {
     expect(production.monday.boards['events']).toBe(18437909790);
     expect(production.monday.boards['event-registrations']).toBe(18437909792);
-    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.'))) {
+    // sendLinkColumn is the one exception: the Events "Send link" column does not exist yet, so
+    // it holds the placeholder until it is created.
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.') && k !== 'attendeeSync.events.sendLinkColumn')) {
       expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
     }
+    expect(production.attendeeSync.events.sendLinkColumn).toBe(PLACEHOLDER_COLUMN_ID);
+  });
+
+  it('class emails: production never redirects to the sandbox inbox; sandbox always does', () => {
+    expect(production.attendeeSync.classEmails.sandboxRecipient).toBeNull();
+    expect(sandbox.attendeeSync.classEmails.sandboxRecipient).toBe('sandbox@bikesiliconvalley.org');
+  });
+
+  it('class emails: sandbox and production send pages differ when both are set', () => {
+    const sb = sandbox.attendeeSync.classEmails.pageUrl;
+    const prod = production.attendeeSync.classEmails.pageUrl;
+    if (sb !== null && prod !== null) expect(sb).not.toBe(prod);
   });
 
   it('sandbox.json targets the CRM Sandbox (sandbox v3) Donations and People boards — the same ones funraise-sync writes', () => {

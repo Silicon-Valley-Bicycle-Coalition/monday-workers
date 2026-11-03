@@ -47,7 +47,7 @@ describe('integration: webhook -> D1 -> Queue -> consumer -> Eventbrite fetch ->
       findItemByColumnValue: vi.fn().mockImplementation(async (boardId: number) => (boardId === 555666 ? { id: '9001' } : null)),
       createItem: vi.fn().mockResolvedValue({ id: 'monday-item-int-1' }),
       changeColumnValues: vi.fn().mockResolvedValue(undefined),
-      getItems: vi.fn(), notify: vi.fn(),
+      getItems: vi.fn(), notify: vi.fn(), postUpdate: vi.fn(),
     };
 
     const ack = vi.fn();
@@ -151,6 +151,7 @@ describe('integration: event + attendee webhooks -> D1 -> Queue -> consumers -> 
       }),
       getItems: vi.fn().mockImplementation(async (_board: number, ids: string[]) => ids.filter((id) => items.has(id)).map((id) => mondayItem(id, items.get(id)!.name, items.get(id)!.columns))),
       notify: vi.fn().mockResolvedValue(undefined),
+      postUpdate: vi.fn().mockResolvedValue(undefined),
     };
     const eventbriteClient: EventbriteClient = {
       getOrder: vi.fn(),
