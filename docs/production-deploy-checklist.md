@@ -41,9 +41,9 @@ These are landmines in the repo itself that break the cutover MR if left alone.
 - [x] **`member-portal/DEPLOY.md` was stale** (fixed 2026-09-25). Phase 4 now applies
       migrations 0001–0005, creates the `member-portal-letter-emails` queue + DLQ, sets
       `LETTER_WEBHOOK_SECRET`, and covers the "Send Giving Letter" automation.
-- [ ] **`salesforce-import/config/svbc.json` still targets the sandbox workspace**
-      (`boardSuffix: " (sandbox v2)"`, `workspaceId: 17141226`). Prepare the production values in
-      the cutover MR; don't flip them early.
+- [x] **`salesforce-import/config/svbc.json` targets production.** `boardSuffix` is `""` and
+      `workspaceId` is 18201685, the Donors & Contacts workspace (set 2026-10-26, 3fcaa80; merged !235).
+      The sandbox workspace is now CRM Sandbox v4 (18210301, built 2026-10-28; 4fe2c97).
 - [ ] Decide the open `donation-rollups` item "retire the numeric Fiscal Year column?" (its
       README, "Not yet done") — it changes which column ids go into production config.
 
