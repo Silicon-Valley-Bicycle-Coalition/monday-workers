@@ -170,6 +170,22 @@ donation-rollups:
         - "$WORKER_DIR/**/*"
         - scripts/lib/**/*
 
+# Also runs the Worker's setup-columns script tests (node:test), which import scripts/lib.
+dtd-sync:
+  extends: .worker_job
+  variables:
+    WORKER_DIR: dtd-sync
+  rules:
+    - changes:
+        - "$WORKER_DIR/**/*"
+        - scripts/lib/**/*
+  script:
+    - cd "$WORKER_DIR"
+    - npm ci
+    - npm test
+    - npm run test:scripts
+    - npm run typecheck
+
 email-log:
   extends: .worker_job
   variables:

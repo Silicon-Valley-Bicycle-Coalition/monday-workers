@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "dev": "wrangler dev",
     "dev:sandbox": "wrangler dev --env sandbox",
     "deploy": "wrangler deploy",
