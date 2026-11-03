@@ -2,7 +2,8 @@
 
 **Staff UAT script:** [`docs/uat/people-reclassification.md`](../docs/uat/people-reclassification.md) — what a non-technical tester can try in the sandbox and what they should see. Keep it in step with this README.
 
-**Status: Live in sandbox, writes on** (2026-11-03; Deploy step 6). The daily cron continues
+**Status: Live in production and sandbox, writes on** (2026-11-03). Production's first live
+pass is 2027-01-01 (see "Production" below). Sandbox (Deploy step 6): the daily cron continues
 the remaining work (about 270 moves) on 2026-11-04 at 10:00 UTC, then runs quarterly. Deploy steps 1–5 are done against CRM
 Sandbox v4: one live move succeeded and kept every value and link checked (see "Move
 mechanics"), after fixing the `columns_mapping` it sends. A full live pass followed
@@ -252,7 +253,25 @@ with the top level. Design: `../docs/superpowers/specs/2026-09-18-sandbox-enviro
 
 Steps 1–6 are done in sandbox (2026-11-02/03; the sandbox operator secret is
 `RECLASSIFY_SECRET_SANDBOX` in `monday-migration/.env`). The sandbox write switch is `on`.
-Production has not been started.
+
+**Production: live, writes on** (2026-11-03). The first live pass is the quarterly one on
+**2027-01-01 at 10:00 UTC**. Until then no trigger is due: operator dry runs don't count, People
+is at 8% of the 100,000 limit Monday reports, and there's no earlier live pass to continue.
+Starting one by hand (`POST /reclassify/run`) would move people now. Done so far:
+* The D1 `svbc-people-reclassification` was created and migrations 0001–0002 applied.
+* `config/svbc.json` has the board ids, and the two People boards' columns match.
+* The Worker is deployed. Its write switch was turned `on` on 2026-11-03, after the dry run below.
+* `RECLASSIFY_SECRET` was replaced on 2026-11-03, because the 10-31 value wasn't recoverable.
+  The current value is `RECLASSIFY_SECRET_PRODUCTION` in `monday-migration/.env`, and belongs
+  in the secure note too.
+
+The first production dry run (cutoff 2019-11-02) scanned 8,361 People and 8,037 Historical
+items. It decided 543 to-historical and 131 to-live, and planned 400 to-historical, all
+`aged-out` with latest activity 2001-01-01 to 2019-05-10. Three sampled items matched
+max(Last Gift Date, Member Until), with no Lifetime tier and no Funraise profile.
+
+When that first pass runs, check `runs`/`moves` for failures, and spot-check one moved person
+who has gifts. Inbound Donor links are the one link type not yet seen across a live move.
 Before step 1 in any environment, check that the two People boards' columns match (same title
 and type both ways): a pass aborts on any difference, and Monday's API can't create a
 `direct_doc` column to fix one.
