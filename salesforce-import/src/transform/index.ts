@@ -14,9 +14,9 @@ import { deriveMembers, termColumnsByOpportunity, type MembershipRow } from './m
 import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount, personNamedAccountIds,
   rosterContactIds, soleContactAccountIds,
   type InclusionInput } from './people.js';
-import { donationArchivePlan, shouldArchive } from './schedule.js';
+import { archiveCutoffFY, donationArchivePlan, shouldArchive } from './schedule.js';
 import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
-  eventbriteOrderIdsByOpportunity, foldFeeCoverage } from './donations.js';
+  eventbriteOrderIdsByOpportunity, foldFeeCoverage, LOST } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { activeRecurringDonors, subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
   registrationToPayload, eventbriteEventToPayload, eventbriteAttendeeToPayload, campaignToPayload,
@@ -382,6 +382,7 @@ export async function runTransform(args: string[]): Promise<number> {
       're-run extract before a real load, or eventbrite-sync will duplicate migrated ticket gifts');
   }
   const ebOrders = eventbriteOrderIdsByOpportunity(ordersExist ? await load('eb4sf_orders') : []);
+  const staleBeforeFY = archiveCutoffFY(cfg.cutoverDateISO, cfg.donationsActiveFiscalYears);
   for (const o of opportunities) {
     if (!o['npsp__Primary_Contact__c'] && !o['funraise__fr_Donor__c']) {
       notePersonAccountGift(o['AccountId'] as string | null, o['Id'], o['Amount'], o['CloseDate']);
@@ -389,8 +390,12 @@ export async function runTransform(args: string[]): Promise<number> {
     payloads.push(opportunityToPayload(o, { termCols, donorAlias, orgAccountIds, placeholderDonorSfIds, personAccountIds,
       actingFor: attributedOpps.get(o['Id'] as string) ?? null, softCredits: softCredits.get(o['Id'] as string),
       eventbriteIntegrationUserName: cfg.eventbriteIntegrationUserName,
-      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null }));
+      eventbriteOrderId: ebOrders.byOpportunity.get(o['Id'] as string) ?? null, staleBeforeFY }));
   }
+  const lostCount = payloads.filter((p) => p.board === 'donations'
+    && (p.columns['Status'] as { label?: string } | undefined)?.label === LOST).length;
+  warnings.push(`donations: ${lostCount} gifts Lost — pipeline pitches closed lost or withdrawn, and open ` +
+    `stages dated before FY${staleBeforeFY} (docs/32)`);
   if (ebOrders.multiOrderOpportunities > 0) {
     warnings.push(`donations: ${ebOrders.multiOrderOpportunities} gifts link more than one Eventbrite order; ` +
       'each keeps the lowest order id, so eventbrite-sync creates a separate item for the others');

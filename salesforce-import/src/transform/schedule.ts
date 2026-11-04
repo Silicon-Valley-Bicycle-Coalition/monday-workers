@@ -16,15 +16,20 @@ export interface ArchivePlan {
 
 const payloadFY = (p: ItemPayload): string => String(p.columns['Fiscal Year Ending'] ?? '');
 
-export function donationArchivePlan(
-  donations: ItemPayload[], cutoverDateISO: string, activeFiscalYears: number,
-): ArchivePlan {
+// First fiscal year that stays active: the cutover's, and activeFiscalYears - 1 before it.
+export function archiveCutoffFY(cutoverDateISO: string, activeFiscalYears: number): number {
   // fiscalYear() returns '' on a malformed date, which Number() coerces to 0 — not NaN.
   const currentFY = Number(fiscalYear(cutoverDateISO));
   if (!Number.isInteger(currentFY) || currentFY <= 0) {
     throw new Error(`schedule: bad cutoverDateISO "${cutoverDateISO}"`);
   }
-  const cutoffFY = currentFY - activeFiscalYears + 1;
+  return currentFY - activeFiscalYears + 1;
+}
+
+export function donationArchivePlan(
+  donations: ItemPayload[], cutoverDateISO: string, activeFiscalYears: number,
+): ArchivePlan {
+  const cutoffFY = archiveCutoffFY(cutoverDateISO, activeFiscalYears);
   const countsByFY = new Map<string, number>();
   for (const p of donations) {
     const fy = payloadFY(p);

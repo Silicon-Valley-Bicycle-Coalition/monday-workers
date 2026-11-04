@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { opportunityToPayload, cnpToPayload, cnpOverlapCheck, softCreditsByGift, unknownStages,
-  isEventbriteTicketOrder, eventbriteOrderIdsByOpportunity, foldFeeCoverage, FEE_COVERED } from './donations.js';
+  isEventbriteTicketOrder, eventbriteOrderIdsByOpportunity, foldFeeCoverage, FEE_COVERED, giftStatus, LOST } from './donations.js';
 
 describe('opportunityToPayload', () => {
   const base = { Id: 'o1', Name: 'Gift', Amount: 50, CloseDate: '2026-01-15', StageName: 'Posted',
@@ -328,6 +328,40 @@ describe('audited Opportunity columns (docs/32)', () => {
       'In-Kind Value', 'In-Kind Category', 'Sponsorship Cycle']) {
       expect(p.columns[col], col).toBe('');
     }
+  });
+});
+
+describe('giftStatus: Lost (docs/32 decisions 5 and 6)', () => {
+  const gift = (RecordType: string, StageName: string, CloseDate = '2026-01-15') =>
+    ({ Id: 'o1', Amount: 100, CloseDate, StageName, RecordType: { Name: RecordType } });
+
+  it('makes Closed Lost and Withdrawn pipeline pitches Lost, keeping Failed for donations', () => {
+    for (const type of ['Sponsorship', 'Grants', 'Contracts', 'Membership', 'In Kind Donation / Sponsorship',
+      'Commute Workshop', 'Driver Training']) {
+      expect(giftStatus(gift(type, 'Closed Lost')), type).toBe(LOST);
+      expect(giftStatus(gift(type, 'Withdrawn')), type).toBe(LOST);
+    }
+    for (const type of ['Donation', 'Matching Donation', 'Major Gift']) {
+      expect(giftStatus(gift(type, 'Closed Lost')), type).toBe('Failed');
+    }
+  });
+
+  it('makes an open stage dated before the cutoff fiscal year Lost; newer ones stay Pending', () => {
+    expect(giftStatus(gift('Contracts', 'Invoiced', '2025-06-30'), 2026)).toBe(LOST); // FY2025
+    expect(giftStatus(gift('Contracts', 'Invoiced', '2025-07-01'), 2026)).toBe('Pending'); // FY2026
+    expect(giftStatus(gift('Donation', 'Pledged', '2014-01-14'), 2026)).toBe(LOST);
+    expect(giftStatus(gift('Sponsorship', 'Prospecting', ''), 2026)).toBe(LOST); // undated
+    expect(giftStatus(gift('Contracts', 'Invoiced', '2025-06-30'))).toBe('Pending'); // no cutoff given
+  });
+
+  it('never touches received gifts, however old', () => {
+    expect(giftStatus(gift('Sponsorship', 'Posted', '2012-01-01'), 2026)).toBe('Received');
+    expect(giftStatus(gift('Donation', 'Closed Won', '2012-01-01'), 2026)).toBe('Received (Historical)');
+  });
+
+  it('is what opportunityToPayload writes, given the cutoff', () => {
+    const p = opportunityToPayload(gift('Sponsorship', 'Prospecting', '2019-05-09'), { termCols: new Map(), staleBeforeFY: 2026 });
+    expect(p.columns['Status']).toEqual({ label: LOST });
   });
 });
 
