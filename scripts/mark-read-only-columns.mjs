@@ -94,7 +94,8 @@ export const MARKED_COLUMNS = {
     locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
-  'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Type', 'Start', 'End', 'Active'] },
+  // Type, Start and End stay editable: whoever runs an appeal fills them in on its new item (#82).
+  'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Active'] },
   'Volunteers': { locked: [], history: [...SALESFORCE, 'Job', 'Hours', 'Date', 'Status', 'Historical', 'Volunteer'] },
   'Activities': { locked: [], history: [...SALESFORCE, 'Owner'] },
 };
