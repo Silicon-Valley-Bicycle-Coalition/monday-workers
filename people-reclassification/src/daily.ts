@@ -2,6 +2,7 @@ import { errorText } from './logSafe';
 import { decideCron } from './duties';
 import { runPass, type PassDeps } from './pass';
 import { sweepPromotes } from './promote';
+import { moveLoggedContacts } from './loggedContact';
 import { todayInZone } from './classify';
 
 // What the cron does each morning the write switch allows it. The sweep comes first, every day:
@@ -30,6 +31,12 @@ export async function runDaily(deps: PassDeps, opts: { dryRun: boolean }): Promi
   });
   if (decision === null) {
     console.log(`reclassify cron: no pass due (People at ${live.itemsCount}/${live.itemsLimit ?? config.thresholds.itemsLimit})`);
+    try {
+      const moved = await moveLoggedContacts(deps, { runId: `${todayISO}-logged-contact`, dryRun: opts.dryRun });
+      if ('skipped' in moved) console.log(`reclassify cron: ${moved.skipped}`);
+    } catch (err) {
+      console.error(`reclassify cron (logged contact): ${errorText(err)}`);
+    }
     return;
   }
   try {
