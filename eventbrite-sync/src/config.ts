@@ -24,7 +24,7 @@ const ATTENDEE_EVENT_COLUMN_KEYS = [
 const ATTENDEE_REGISTRATION_COLUMN_KEYS = [
   'attendeeIdColumn', 'attendeeNameColumn', 'attendeeEmailColumn', 'firstNameColumn', 'attendanceColumn',
   'sourceColumn', 'roleColumn', 'eventLinkColumn', 'attendeeLinkColumn', 'classDateColumn', 'classDayColumn',
-  'classLocationColumn',
+  'classLocationColumn', 'registrantsLinkColumn',
 ] as const;
 
 const AMOUNT_SOURCES = ['gross', 'base_price'] as const;
@@ -139,6 +139,9 @@ function validateAttendeeSync(raw: unknown): void {
   requireColumns(a.events, 'attendeeSync.events', ATTENDEE_EVENT_COLUMN_KEYS);
   requireColumns(a.registrations, 'attendeeSync.registrations', ATTENDEE_REGISTRATION_COLUMN_KEYS);
   requireColumns(a, 'attendeeSync', ['peopleEmailColumn']);
+  if (!Array.isArray(a.registrantsLinkExcludedEventIds) || a.registrantsLinkExcludedEventIds.some((id) => typeof id !== 'string')) {
+    throw new Error('config: "attendeeSync.registrantsLinkExcludedEventIds" must be an array of Eventbrite event ids');
+  }
   if (!isObject(a.classEmails)) {
     throw new Error('config: missing required key "attendeeSync.classEmails"');
   }

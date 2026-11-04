@@ -55,6 +55,7 @@ const COLUMN_KEYS = [
   'attendeeSync.registrations.classDateColumn',
   'attendeeSync.registrations.classDayColumn',
   'attendeeSync.registrations.classLocationColumn',
+  'attendeeSync.registrations.registrantsLinkColumn',
   'attendeeSync.peopleEmailColumn',
 ];
 

@@ -155,7 +155,11 @@ export interface EventbriteSyncConfig {
       classDateColumn: string;
       classDayColumn: string;
       classLocationColumn: string;
+      // Second link to the event, two-way, so its registrants show on the event's card.
+      registrantsLinkColumn: string;
     };
+    // Eventbrite events too large for Monday's two-way link (cell_limit_exceeded); no registrants link.
+    registrantsLinkExcludedEventIds: string[];
     // The class email send page. pageUrl is the page's https URL (null until deployed);
     // sandboxRecipient, when set, receives every class email in place of the attendee (null in production).
     classEmails: {

@@ -76,8 +76,10 @@
       "attendeeLinkColumn": "board_relation_mm8nbcw7",
       "classDateColumn": "date_mm8reqgs",
       "classDayColumn": "text_mm8rh4f4",
-      "classLocationColumn": "text_mm8rpb9h"
+      "classLocationColumn": "text_mm8rpb9h",
+      "registrantsLinkColumn": "board_relation_mm8svmgy"
     },
+    "registrantsLinkExcludedEventIds": ["1977741403778"],
     "classEmails": {
       "pageUrl": "https://script.google.com/a/macros/bikesiliconvalley.org/s/AKfycbwF1OXrt89F3p6V2sPg__6L6fLzIg1kd4DJ8wODWSyem1J-jucCw7PT96ROpHaTMejP/exec",
       "sandboxRecipient": null,
