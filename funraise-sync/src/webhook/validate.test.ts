@@ -35,6 +35,25 @@ describe('validateEnvelope', () => {
     expect(bare.sentAt).toBeNull();
   });
 
+  // The stale-delivery guard keeps the newest send time, so a forged far-future one would block
+  // every later genuine edit of that gift.
+  describe('a send time in the future', () => {
+    const NOW = 1_800_000_000_000;
+    const HOUR = 3_600_000;
+
+    it('rejects a sentAt more than an hour ahead', () => {
+      expect(() => validateEnvelope({ sentAt: NOW + HOUR + 1, data: { id: 123 } }, NOW)).toThrow(/in the future/);
+    });
+
+    it('rejects a far-future updtime used as the fallback', () => {
+      expect(() => validateEnvelope({ data: { id: 123, updtime: 99999999999999 } }, NOW)).toThrow(/in the future/);
+    });
+
+    it('accepts a sentAt up to an hour ahead, so clock drift cannot lose a real gift', () => {
+      expect(validateEnvelope({ sentAt: NOW + HOUR, data: { id: 123 } }, NOW).sentAt).toBe(NOW + HOUR);
+    });
+  });
+
   it('throws when the body is not an object', () => {
     expect(() => validateEnvelope('not-an-object')).toThrow(/must be a JSON object/);
   });

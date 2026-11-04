@@ -12,6 +12,8 @@ export interface ValidatedEnvelope {
   raw: Record<string, unknown>;
 }
 
+const MAX_FUTURE_SKEW_MS = 60 * 60 * 1000;
+
 const idString = (value: unknown): string | null => {
   if (typeof value === 'string') return value.length > 0 ? value : null;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -31,8 +33,12 @@ const epochMs = (value: unknown): number | null => {
  * entity id plus the send time: a later edit of the same transaction (new `sentAt`) is an update,
  * an identical redelivery (same `sentAt`) is a duplicate. `data.updtime` is the fallback when an
  * envelope arrives without `sentAt`, then the bare id.
+ *
+ * A send time more than an hour ahead is rejected. The stale-delivery guard keeps the newest send
+ * time, so a forged far-future one would block every later genuine edit of that gift. The hour
+ * leaves room for clock drift, since a rejected delivery isn't retried.
  */
-export function validateEnvelope(body: unknown): ValidatedEnvelope {
+export function validateEnvelope(body: unknown, nowMs: number = Date.now()): ValidatedEnvelope {
   if (typeof body !== 'object' || body === null) {
     throw new Error('funraise webhook: payload must be a JSON object');
   }
@@ -47,6 +53,9 @@ export function validateEnvelope(body: unknown): ValidatedEnvelope {
     throw new Error('funraise webhook: payload missing a non-empty "data.id" field');
   }
   const sentAt = epochMs(envelope.sentAt) ?? epochMs(raw.updtime);
+  if (sentAt !== null && sentAt > nowMs + MAX_FUTURE_SKEW_MS) {
+    throw new Error(`funraise webhook: send time ${sentAt} is in the future`);
+  }
   const eventId = sentAt === null ? entityId : `${entityId}:${sentAt}`;
   return { eventId, sentAt, raw };
 }

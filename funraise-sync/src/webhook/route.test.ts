@@ -94,6 +94,18 @@ describe('createApp', () => {
     expect(eventStore.updateStatusByEntity).toHaveBeenCalledWith('transaction', 'txn-9', 'queued');
   });
 
+  it('stores and enqueues nothing for a delivery sent from the far future', async () => {
+    const eventStore = fakeEventStore();
+    const send = vi.fn();
+    const app = createApp({ eventStore, config, queue: { send }, webhookSecret: SECRET, writeMode: live });
+
+    const res = await postEvent(app, { sentAt: 99999999999999, data: { id: 123, transactionId: 'txn-9', amount: 5000 } });
+
+    expect(await res.json()).toEqual(expect.objectContaining({ ok: false }));
+    expect(eventStore.upsertEvent).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('re-enqueues when the upsert reports an update to a known entity', async () => {
     const eventStore = fakeEventStore({ upsertEvent: vi.fn().mockResolvedValue('updated') });
     const send = vi.fn().mockResolvedValue(undefined);
