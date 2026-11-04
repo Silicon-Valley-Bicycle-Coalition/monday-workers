@@ -26,7 +26,7 @@ export interface SnapshotStep {
 
 // Any one call stuck retrying gives up here with a clear BudgetExhaustedError, ahead of the step's
 // own 30-minute timeout (src/workflow.ts), which reports only that it timed out. The largest board
-// takes about 4 minutes.
+// takes about 5.5 minutes.
 const STEP_DEADLINE_MS = 25 * 60_000;
 
 // A failing step costs at least 3 minutes of retries. When Drive or Monday is down, trying all 286

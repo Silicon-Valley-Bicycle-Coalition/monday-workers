@@ -1,6 +1,7 @@
 # monday-backup: a complete snapshot, split across a Workflow
 
-**Status:** proposed 2026-11-04. Nothing built yet.
+**Status:** shipped 2026-11-04 (MRs 370 and 375). First complete snapshot: run 3, 264 boards, 24 docs, 43 minutes.
+The real run also found that `boards(ids:)` skips archived boards unless passed `state: all`, which this design missed.
 
 ## Why
 
