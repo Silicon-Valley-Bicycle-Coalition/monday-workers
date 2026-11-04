@@ -4,7 +4,7 @@ import { validateMondayWebhookBody } from './validateMonday';
 import type { Config, OutboundSyncMessage } from '../types';
 import { stampFor, type WriteMode } from '../flags';
 import { secretsMatch } from '../secret';
-import { donorColumnIds } from '../monday/client';
+import { columnsForBoard, donorColumnIds } from '../monday/client';
 
 export interface OutboundQueueLike {
   send(message: OutboundSyncMessage): Promise<void>;
@@ -68,7 +68,9 @@ export function createOutboundApp(deps: OutboundAppDeps) {
     // connect-column (an outbound→Mailchimp→inbound feedback loop otherwise), and bulk writes to
     // unrelated columns, such as a Location backfill. Item creation carries no columnId and
     // always enqueues.
-    if (donorEvent.columnId !== undefined && !donorColumnIds(deps.config.monday.columns).includes(donorEvent.columnId)) {
+    // Column ids differ between People and People (Historical), so read against the event's board.
+    const columns = columnsForBoard(deps.config.monday, donorEvent.boardId);
+    if (donorEvent.columnId !== undefined && !donorColumnIds(columns).includes(donorEvent.columnId)) {
       return c.json({ ok: true, skipped: true }, 200);
     }
 
@@ -76,7 +78,7 @@ export function createOutboundApp(deps: OutboundAppDeps) {
 
     // Only the configured Email column's old address: an email-shaped value from any other
     // column (Household Email) must not move this Donor's Mailchimp member.
-    const previousEmail = donorEvent.columnId === deps.config.monday.columns.email ? donorEvent.previousEmail : undefined;
+    const previousEmail = donorEvent.columnId === columns.email ? donorEvent.previousEmail : undefined;
     const stamp = stampFor(await deps.writeMode());
     try {
       await deps.queue.send({ donorItemId: donorEvent.donorItemId, ...(previousEmail === undefined ? {} : { previousEmail }), ...stamp });

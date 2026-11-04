@@ -127,11 +127,14 @@ results board is the organizer's to keep or archive.
 
 ## Known caveat: People (Historical) and Mailchimp (#83)
 
-The Nearby column goes on People (Historical) as well as People, but `mailchimp-sync` watches the
-People board only. Until it is extended
+The Nearby column goes on People (Historical) as well as People. `mailchimp-sync` can now sync
+that board
 ([#83](https://gitlab.com/silicon-valley-bicycle-coalition/svbc-monday-workers/-/work_items/83)),
-a Historical match gets its results-board row and label but no Mailchimp tag, so no email; the
-confirmation step says so.
+but only once its Monday webhook is registered there (its README, "People (Historical)"). Until
+then a Historical match gets its results-board row and label but no Mailchimp tag, so no email;
+the confirmation step says so. Remove that note when the webhook is on. A Historical match whose
+address is also on People gets no tag from this label even then, because the People item owns the
+contact.
 
 ## "Find nearby" link on the Events board
 

@@ -53,7 +53,12 @@ in the SVBC Sandbox audience. Ask the migration team for one if you don't know w
 - Household Email and any second email address are not synced; only Personal Email is.
 - If someone changes their email address *in Mailchimp*, the sync skips them until staff update
   Monday to match.
-- Only People is watched, not People (Historical) or Organizations.
+- Only People and People (Historical) are watched, not Organizations.
+- A People (Historical) person whose address is also on People doesn't change the Mailchimp
+  contact; the People record owns it. The exception is a Confirmed Do Not Solicit, which still
+  unsubscribes.
+- Editing a person on People (Historical) doesn't update the Campaigns column; that only runs on
+  People.
 - A Mailchimp unsubscribe does not tick Do Not Solicit on Monday; unsubscribing from email and
   asking not to be solicited are treated as different things.
 

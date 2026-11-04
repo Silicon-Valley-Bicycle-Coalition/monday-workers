@@ -1,12 +1,14 @@
-import type { Config, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
+import type { Config, DonorColumnsConfig, HistoricalBoardConfig, MondayColumnsConfig, MailchimpMergeFieldsConfig, MailchimpTagsConfig } from './types';
 
 const REQUIRED_TOP_LEVEL = ['monday', 'mailchimp', 'lifetimeTierValue', 'activeStatusValue', 'dnsConfirmedValue'] as const;
 
-const REQUIRED_MONDAY_COLUMNS: (keyof MondayColumnsConfig)[] = [
+const REQUIRED_DONOR_COLUMNS: (keyof DonorColumnsConfig)[] = [
   'membershipStatus', 'membershipTier', 'memberSince', 'memberUntil',
-  'addr1', 'city', 'zip', 'email', 'totalGiven', 'mailchimpCampaigns',
+  'addr1', 'city', 'zip', 'email', 'totalGiven',
   'doNotSolicit', 'dnsReasonStatus',
 ];
+
+const REQUIRED_MONDAY_COLUMNS: (keyof MondayColumnsConfig)[] = [...REQUIRED_DONOR_COLUMNS, 'mailchimpCampaigns'];
 
 const REQUIRED_MERGE_FIELDS: (keyof MailchimpMergeFieldsConfig)[] = [
   'memberSince', 'memberUntil', 'membershipTier', 'membershipStatus', 'address', 'totalGiven',
@@ -39,6 +41,35 @@ function numberOrNull(value: unknown, path: string): number | null {
   return value;
 }
 
+function requireNullableColumns(columns: Record<string, unknown>, prefix: string): void {
+  // Explicit null says "this board has no State column" (production People): the ADDRESS merge
+  // field then takes the state from the ZIP. The placeholder is rejected rather than queried:
+  // Monday silently drops an unknown column id, which left every ADDRESS unwritten.
+  if (columns.state !== null && (typeof columns.state !== 'string' || columns.state === '' || columns.state === 'REPLACE_WITH_COLUMN_ID')) {
+    throw new Error(`config: "${prefix}.state" must be a column id or null`);
+  }
+  // Explicit null (not an absent key) says "this deployment has no Nearby column yet".
+  if (columns.nearby !== null && (typeof columns.nearby !== 'string' || columns.nearby === '')) {
+    throw new Error(`config: "${prefix}.nearby" must be a column id or null`);
+  }
+}
+
+function historicalBoard(value: unknown, donorsBoardId: number | null): HistoricalBoardConfig | null {
+  if (value === null || value === undefined) return null;
+  const board = requireObject(value, 'monday.historical');
+  if (typeof board.boardId !== 'number') {
+    throw new Error('config: "monday.historical.boardId" must be a number');
+  }
+  // The consumer asks People whether it holds an address before a Historical item may write it.
+  if (donorsBoardId === null) {
+    throw new Error('config: "monday.historical" needs "monday.donorsBoardId" set');
+  }
+  const columns = requireObject(board.columns, 'monday.historical.columns');
+  requireStringKeys(columns, REQUIRED_DONOR_COLUMNS, 'monday.historical.columns');
+  requireNullableColumns(columns, 'monday.historical.columns');
+  return { boardId: board.boardId, columns: columns as unknown as DonorColumnsConfig };
+}
+
 export function validateConfig(raw: unknown): Config {
   if (typeof raw !== 'object' || raw === null) {
     throw new Error('config: expected an object');
@@ -57,16 +88,8 @@ export function validateConfig(raw: unknown): Config {
   }
   const columns = requireObject(monday.columns, 'monday.columns');
   requireStringKeys(columns, REQUIRED_MONDAY_COLUMNS, 'monday.columns');
-  // Explicit null says "this board has no State column" (production People): the ADDRESS merge
-  // field then takes the state from the ZIP. The placeholder is rejected rather than queried:
-  // Monday silently drops an unknown column id, which left every ADDRESS unwritten.
-  if (columns.state !== null && (typeof columns.state !== 'string' || columns.state === '' || columns.state === 'REPLACE_WITH_COLUMN_ID')) {
-    throw new Error('config: "monday.columns.state" must be a column id or null');
-  }
-  // Explicit null (not an absent key) says "this deployment has no Nearby column yet".
-  if (columns.nearby !== null && (typeof columns.nearby !== 'string' || columns.nearby === '')) {
-    throw new Error('config: "monday.columns.nearby" must be a column id or null');
-  }
+  requireNullableColumns(columns, 'monday.columns');
+  const donorsBoardId = numberOrNull(monday.donorsBoardId, 'monday.donorsBoardId');
 
   const mailchimp = requireObject(cfg.mailchimp, 'mailchimp');
   if (typeof mailchimp.apiBaseUrl !== 'string' || mailchimp.apiBaseUrl === '') {
@@ -101,9 +124,10 @@ export function validateConfig(raw: unknown): Config {
   return {
     monday: {
       apiUrl: monday.apiUrl,
-      donorsBoardId: numberOrNull(monday.donorsBoardId, 'monday.donorsBoardId'),
+      donorsBoardId,
       campaignsBoardId: numberOrNull(monday.campaignsBoardId, 'monday.campaignsBoardId'),
       columns: columns as unknown as MondayColumnsConfig,
+      historical: historicalBoard(monday.historical, donorsBoardId),
     },
     mailchimp: {
       apiBaseUrl: mailchimp.apiBaseUrl,
