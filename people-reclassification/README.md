@@ -134,6 +134,10 @@ values depends on `columns_mapping`. **The rules, probed against sandbox v4 on 2
 * Given at all, `columns_mapping` must have an entry for **every source column except the name
   column**. Leaving any column out, or including the name, fails with "Columns mapping is not in
   the expected format". So does any mapping on API versions 2026-07, 2026-10 and 2027-01 alike.
+* **The exception: a doc column (`direct_doc`) must be left out.** Monday rejects any mapping that
+  names one, even with a null target, with that same error. So `monday Doc v2` stops every live move
+  if mapped, while dry runs pass, since they never call the move (found 2026-11-03 in sandbox v4). Whether
+  a doc attached to an item survives a move is unverified: `create_doc` returned nothing in the probe.
 * A `target: null` entry is accepted and drops that column's data. Formula columns can't be
   mapped, so they are always null.
 * Connect columns **are** mapped explicitly, like any other column.
@@ -145,6 +149,9 @@ So:
   column but the name** by title + type (`src/columns.ts`), leaving nothing to "best match";
   a column with no counterpart maps to null, which is only allowed for types holding no value
   of their own (formula, mirror, auto-number, …).
+* `dtd-sync/scripts/setup-columns.mjs` adds `DTD Company ID`, `DTD Company` and `DTD match link` to
+  People only, which stops every move here until Historical has them too. Sandbox v4's were added
+  by hand on 2026-11-03. Production needs the same when that script runs there.
 * **If either board lacks a column the other has, the pass refuses to move anything** and names
   the columns — a column added to one board by hand (as happened to Donations in the v3
   rebuild) would otherwise silently lose values. **Any column added to one People board must be
