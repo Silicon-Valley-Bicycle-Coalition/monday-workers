@@ -141,8 +141,8 @@ genuinely blank and need real input.
       Matching Donation, Grants and Contracts don't appear, and a donor with only those gets no
       letter for that year. Confirm this, including for event tickets, which may instead need a
       statement of what the ticket's value was, and for in-kind gifts, which may need their own
-      acknowledgment. An employer's match leaves the employee's letter, and the company gets no
-      letter from this list either.
+      acknowledgment. An employer's matching gift no longer appears on the employee's letter, and
+      this feature sends the company no letter for it.
 
 **Still blank, need real answers:**
 
