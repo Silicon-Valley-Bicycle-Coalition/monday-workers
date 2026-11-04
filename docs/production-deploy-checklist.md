@@ -363,8 +363,9 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
 - [ ] **6. `monday-backup`** — Drive folder id in `config/backup.json`; confirm the first daily
       snapshot lands in Drive and `snapshot_runs` records it. A clean run posts nothing to Slack;
       only a partial or failed run alerts. **Deployed 2026-11-03 with `writes on`; Slack alerts
-      verified (#52). Still open: the first run (2026-11-04) captured 19 of about 262 boards, so the
-      snapshot moved to a Workflow; its first complete snapshot is still to be confirmed.**
+      verified (#52). The first run (2026-11-04) captured 19 of about 262 boards, so the snapshot
+      moved to a Workflow; run 3, started outside the 09:00 UTC cron the same day, completed with
+      264 boards, 24 docs and no errors. Still open: a complete run from the daily cron.**
 - [ ] **7. `bp-feedback-notify`** — deploy, then add the `Post-Event Feedback` column and the
       automation (`bp-feedback-notify/README.md`, "Monday automation setup"); verify with
       `wrangler tail` on one real trigger.
