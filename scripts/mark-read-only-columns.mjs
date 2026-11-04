@@ -55,7 +55,7 @@ const WINDFALL = [
   'Philanthropic Giver', 'Windfall Company', 'Windfall Priority', 'Windfall Profile',
 ];
 const PEOPLE = {
-  locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile'],
+  locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile', 'Promoted On'],
   history: [...SALESFORCE, 'Salesforce Owner', ...WINDFALL],
 };
 

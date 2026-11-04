@@ -104,6 +104,8 @@ date is read in `window.timeZone`):
 | Last gift | People `Last Gift Date` — donation-rollups' rollup, kept current on **both** boards | Activity date |
 | Membership term end | People `Member Until` on or before today | Activity date |
 | Event registration | Event Registrations → the linked Event's `Date`, counted when `Attendance` ∈ `countedAttendanceLabels` (`Attended`) **or** `Source` ∈ `countedRegisteredSources` (`Funraise`) — the import's "a Funraise registration is a paid ticket; an Eventbrite registration counts only once checked in" rule (decision 2026-09-08) | Activity date |
+| Logged contact | Activities (Logged) `Date`, via the `Person` link, when `Activity Type` is `Email`, `Call` or `Meeting` (`countedTypeLabels`). `Bulk Email`, one per mail-merge recipient, doesn't count | Activity date (optional source; `loggedActivities: null` turns it off) |
+| Promotion | People `Promoted On`, written when staff promote someone | Activity date |
 | Volunteer hours | Volunteers `Date`, via the `Volunteer` link | Activity date (optional source; `volunteers: null` turns it off) |
 
 Latest activity = the max of the activity dates; dates after today are ignored as data-entry
@@ -111,9 +113,10 @@ defects (docs/07's `CloseDate` finding), except Member Until, which is clamped t
 if latest activity ≥ cutoff, historical if before it. **No evidence at all → left in place and
 counted** (`verdicts.unknown` in the report): advocacy contacts (Stakeholder Type = City or
 Agency Staff / Elected Official) and anyone staff add by hand leave no gift, term or
-registration behind, and sweeping them to Historical on absence would be wrong. Staff Task
-activity (`recentActivityIds` in the import) is not a source: the sizing analysis left it out,
-and the Activities board holds two years of it, inside any window.
+registration behind, and sweeping them to Historical on absence would be wrong. Once such a person
+has a logged contact or a promotion they have an activity date, so seven years later they can age
+out like anyone else. The imported Activities board (`recentActivityIds` in the import) is not a
+source: the sizing analysis left it out, and it holds two years of staff Tasks, inside any window.
 
 Rollup columns that already exist on People are used in preference to re-scanning Donations:
 `Last Gift Date` is donation-rollups' maintained rollup (it writes all three owner boards, so a
@@ -199,7 +202,43 @@ So:
 * A pass stops after five consecutive move failures (Monday is unhappy, not one odd item) and
   reports `remaining`; the next day's cron continues.
 
-### Moving one person now
+### Staff promote and logged contact
+
+Two daily paths bring someone back to People without waiting for a quarterly pass. Each morning's
+order is in `src/daily.ts`: the promote sweep, then a pass if one is owed, otherwise the logged-contact
+run. Neither run counts as a pass when the cron decides whether one is due.
+
+**A logged contact** (`src/loggedContact.ts`): on a morning no pass is owed, anyone on Historical
+with a counted Activities (Logged) item inside the window moves to People, most recent first, under
+the pass's lease, column check, `maxMovesPerRun` and room checks. Only logged contact does this; a
+new gift still waits for the pass. This pages all of Activities (Logged) every day, so watch the
+invocation's CPU and subrequests as that board grows.
+
+**A promotion** (`src/promote.ts`): staff set `Promote to People` = `Promote` on the person's item, on
+either board. A Monday webhook calls `POST /webhooks/monday/promote?secret=…`
+(`PROMOTE_WEBHOOK_SECRET`). The Worker writes `Promoted On` = today, moves the item if it's on
+Historical, then sets `Promoted`. There's no liveness check: the date is what keeps them on People
+for the window. On People it restarts the window with no move.
+
+The status stays at `Promote` until the work is done, so a crash leaves something to find. Each
+morning a sweep finds anything at `Promote` on either board and runs the same steps, which also
+covers a dropped webhook, a lease held by a running pass, and a label carried across by a pass's move.
+
+| Situation | What staff see |
+|---|---|
+| Worked | `Promoted`, and the item on People |
+| People is full, or the two boards' columns disagree | `Couldn't promote`, and an Update with the reason. No date is written |
+| The move fails from the webhook | Still `Promote`; the morning sweep retries |
+| The move fails from the sweep | `Couldn't promote`, `Promoted On` cleared (so no pass moves them later), and an Update. Set `Promote` again to retry |
+| Monday may have applied the move (`ambiguous`) | Still `Promote`; the sweep re-reads the board and finishes or retries |
+| Write switch `off`, `hold` or `unknown` | Still `Promote`, since a label is a Monday write. The first morning with the switch `on` acts on it. `off` records a `dry-run` row; `hold` and `unknown` answer 503 |
+
+Anyone who can edit the board can promote. `moves` records each move, with reason `staff-promoted`.
+Set it up with `scripts/setup-promote.mjs`, which adds both columns to both boards together (a column
+on one board stops every pass) and subscribes the webhook, then re-run
+`scripts/mark-read-only-columns.mjs`. The webhook runs on `workers.dev`, outside the zone's bot rules.
+
+### Moving one person now (operators)
 
 For someone who can't wait for the next pass, `POST /reclassify/move-to-people/<itemId>` moves one
 person from People (Historical) to People. Unlike `POST /reclassify/run`, it touches nobody else.
@@ -266,16 +305,18 @@ in config and a renamed column fails the pass loudly rather than reading blanks.
 
 | Config | Sandbox (`config/sandbox.json`, CRM Sandbox v4) | Production (`config/svbc.json`) |
 |---|---|---|
-| `boards.live` | People `18437342592` | `0` until cutover |
-| `boards.historical` | People (Historical) `18437342607` | `0` |
-| `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `0` / `0` |
-| `volunteers` | Volunteers `18437342662` | `0` |
+| `boards.live` | People `18437342592` | People `18437909781` |
+| `boards.historical` | People (Historical) `18437342607` | People (Historical) `18437909784` |
+| `eventRegistrations` / `.events` | Event Registrations `18437342649` / Events `18437342639` | `18437909792` / `18437909790` |
+| `volunteers` | Volunteers `18437342662` | `18437909797` |
+| `loggedActivities` | Activities (Logged) `18438204391` | Activities (Logged) `18438042551` |
 | `alerts.itRequests` | `null` (log only — IT Requests is a production board) | `8846215481`, `Type` = `IT Support`, 30-day cooldown |
 
 Column titles (`peopleColumns`, the registrations and volunteers `columns` blocks) are the ones
 the import and donation-rollups create: `Last Gift Date`, `Member Until`, `Membership Tier`,
 `Funraise Profile`, `Attendee`, `Event`, `Attendance`, `Source`, `Date` (Events), `Volunteer`,
-`Date` (Volunteers). Checked against the CRM Sandbox v4 boards 2026-10-28: all present with the
+`Date` (Volunteers), and on Activities (Logged) `Person`, `Date`, `Activity Type`. `promote` holds
+the status labels. Checked against the CRM Sandbox v4 boards 2026-10-28: all present with the
 expected types, and the two People boards' columns agree. The Events start date is titled
 `Date`, not `Start` — `Start` is the Campaigns and Affiliations column — so the config's
 original `startColumn: "Start"` would have failed every pass at the Events schema read.

@@ -12,18 +12,24 @@ work with. (It was first made because a board was thought to hold at most 10,000
 real limit is 100,000, so neither board is close to full.) The migration decides who goes where
 once; nothing keeps it right afterwards. This integration does: every quarter it looks at each
 person's most recent activity — their last gift, their membership term, an event they attended
-or a ticket they bought, volunteer hours — and moves anyone with nothing in the last **seven
+or a ticket they bought, volunteer hours, an email, call or meeting logged on Activities (Logged)
+— and moves anyone with nothing in the last **seven
 years** to People (Historical). It also moves people the other way: a lapsed donor on
-Historical who gives again comes back to People, so you see them where you work.
+Historical who gives again comes back to People, so you see them where you work. Mail-merge emails
+from `learn@` don't count, because they're bulk sends.
 
 A person's item keeps its id, its Updates thread and its links to gifts and organizations when
 it moves. Someone with **no** activity recorded at all (a city staff contact, someone added by
 hand) is never moved by the quarterly pass.
 
-**If someone can't wait for the next pass,** file an IT Request with a link to their item. IT can
-move one person to People right away. If their latest activity is more than seven years old, IT
-can't move them until the new activity is recorded, because the next pass would only send them
-back.
+**Logging an email, call or meeting brings someone back.** BCC or forward the email to the logging
+address, or log the call or meeting on Activities (Logged), linked to the person and with a Date. If
+they're on People (Historical), they move to People the next morning.
+
+**To bring someone back without a logged contact,** set **Promote to People** to **Promote** on their
+item. They move to People within a few seconds and it shows **Promoted**. That counts as activity, so
+they stay for seven years. On someone already on People, it restarts their seven years. If it shows
+**Couldn't promote**, the item's Updates say why.
 
 ## Try it (once it is live in the sandbox)
 
@@ -39,7 +45,17 @@ back.
 3. **Nothing lost.** Pick a moved person and open their item card: every column that was filled
    in before (email, address, membership, giving totals) should still be filled in.
 
+4. **Promote someone.** On People (Historical) (sandbox v4), find someone whose latest activity is
+   years old and set Promote to People to Promote. Within a few seconds they should be on People
+   (sandbox v4), showing Promoted, with today's date in Promoted On and their gifts, organization
+   and Updates intact. After the next pass, they should still be there.
+5. **Log a contact.** Log a Call on Activities (Logged) (sandbox), linked to another person on
+   People (Historical), dated today. By the next morning they should be on People.
+
 ## Don't report these
+
+* Someone whose only logged item is a `Bulk Email` staying on People (Historical) — by design.
+* A call or meeting logged with no Date not counting — fill in the Date.
 
 * People with no gifts, membership or events at all staying on People — by design.
 * Lifetime members and anyone with a Funraise profile staying on People however old their last
