@@ -38,6 +38,8 @@
       "attendee.updated",
       "attendee.checked_in",
       "attendee.checked_out",
+      "barcode.checked_in",
+      "barcode.un_checked_in",
       "event.created",
       "event.published",
       "event.updated",

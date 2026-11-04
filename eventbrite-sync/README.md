@@ -7,7 +7,7 @@
 — **deployed: sandbox 2026-10-26, production 2026-11-02** (see "Deploy"). Production's order path
 is filled from the live boards (Donations, People, `Eventbrite Order ID` `text_mm8n459q`; c579d0d),
 with its own D1 and queues; its attendee feed is configured (2026-11-03) with the class emails sent from the send page (see
-"Class emails"), and its webhook isn't registered yet, so only the order webhook is live there. The sandbox order path still can't write: `orderIdColumn` in
+"Class emails"), and its webhook is registered (2026-11-03, id 15945672), with the 17 live upcoming events backfilled. The production order webhook was also registered that day (id 15945679): until then none pointed at this Worker, and the only orders in D1 were the 132 from the 2026-11-02 backfill. The 8 orders placed in that gap were all $0, so nothing needed replaying. The sandbox order path still can't write: `orderIdColumn` in
 `config/sandbox.json` is `REPLACE_WITH_COLUMN_ID`. This README doesn't record whether the
 `Refunded` Status label it shares with `funraise-sync` has been added to either board.
 **Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
@@ -111,7 +111,7 @@ standard across every webhook-driven Worker here.
   own authenticated fetch, so a forged delivery can at most make the Worker re-read a real order.
   When `eventbrite.organizationId` is set in config, a delivery whose `config.user_id` names
   another organization is acknowledged and ignored — a sanity filter, not an auth control.
-* **Registering it** (not done yet): Eventbrite → Account Settings → Developer Links → Webhooks
+* **Registering it** (production done 2026-11-03): Eventbrite → Account Settings → Developer Links → Webhooks
   → Add Webhook: Payload URL = the full URL above, Event = *All events* (no `event_id` filter:
   every paid order anywhere is giving), Actions = `order.placed`, `order.updated`,
   `order.refunded`. Or via the API, `POST /v3/organizations/{organization_id}/webhooks/` with
@@ -318,6 +318,7 @@ a coordinator sends the mail from Gmail through the send page. Design:
 ```
 Eventbrite (SaaS)
   │  second webhook: attendee.updated, attendee.checked_in, attendee.checked_out,
+  │  barcode.checked_in, barcode.un_checked_in,
   │  event.created, event.published, event.updated, event.unpublished   (attendeeSync.actions)
   ▼
 Worker   POST /webhooks/eventbrite/attendee   (same shared secret: X-Webhook-Secret or ?secret=)
@@ -378,6 +379,11 @@ with `configure`, which would also have re-applied the board's five existing vie
 Same dashboard route as the order webhook: Payload URL
 `https://<worker-host>/webhooks/eventbrite/attendee?secret=<EVENTBRITE_WEBHOOK_SECRET>`, Event =
 *All events*, Actions = the list in `attendeeSync.actions` in config. Sandbox keeps its own.
+
+Eventbrite stores `attendee.checked_in` and `attendee.checked_out` as `barcode.checked_in` and
+`barcode.un_checked_in` (production's webhook read back that way on 2026-11-03), and the Worker
+ignores an action its config doesn't list, so the config lists both spellings. No real check-in
+delivery has been seen yet, so which spelling arrives, and its `api_url` shape, are unconfirmed.
 
 ### Class email routes
 

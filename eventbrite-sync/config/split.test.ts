@@ -6,6 +6,8 @@ import { parseJsonc } from '../test/jsonc';
 import { validateConfig, PLACEHOLDER_COLUMN_ID } from '../src/config';
 import { queueBaseName } from '../src/environment';
 import { isDeadLetterBatch } from '../src/index';
+import { validateAttendeeDelivery } from '../src/webhook/validateAttendee';
+import type { EventbriteSyncConfig } from '../src/types';
 
 // Keeps the sandbox and production deployments apart at the repo level: sandbox.json is the
 // real CRM Sandbox config; svbc.json is production and may hold no sandbox id; and env.sandbox
@@ -229,5 +231,19 @@ describe('wrangler.jsonc env.sandbox', () => {
   it('does not set a name — Wrangler derives svbc-eventbrite-sync-sandbox', () => {
     expect(sandboxEnv.name).toBeUndefined();
     expect(wrangler.name).toBe('svbc-eventbrite-sync');
+  });
+});
+
+describe('check-in deliveries', () => {
+  // Eventbrite stores attendee.checked_in/out as these on the webhook, and the route ignores an
+  // action the config doesn't list, which would leave a checked-in attendee as Registered.
+  it.each([['production', production], ['sandbox', sandbox]])('%s accepts the names Eventbrite stores', (_name, config) => {
+    for (const action of ['barcode.checked_in', 'barcode.un_checked_in']) {
+      const verdict = validateAttendeeDelivery(
+        { api_url: 'https://www.eventbriteapi.com/v3/events/1001/attendees/2002/', config: { action } },
+        config as unknown as EventbriteSyncConfig,
+      );
+      expect(verdict).toEqual({ kind: 'process', delivery: { kind: 'attendee', eventId: '1001', attendeeId: '2002', action } });
+    }
   });
 });
