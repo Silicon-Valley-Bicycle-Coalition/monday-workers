@@ -84,6 +84,8 @@ export function contactToPayload(
     .filter(Boolean).join('; ');
   const dnmReason = [(c['Do_Not_Mail_Reason__c'] ?? '') as string, dnc ? DNC_REASON : ''].filter(Boolean).join('; ');
   const columns: Record<string, unknown> = {
+    'First Name': String(c['FirstName'] ?? '').trim(),
+    'Last Name': String(c['LastName'] ?? '').trim(),
     'Personal Email': emailCol(personal),
     'Household Email': emailCol(household),
     'Phone': (c['Phone'] ?? c['MobilePhone'] ?? '') as string,

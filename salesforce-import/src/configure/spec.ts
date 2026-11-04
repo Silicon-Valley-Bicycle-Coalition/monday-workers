@@ -157,6 +157,8 @@ const PEOPLE_COLUMNS: ColumnSpec[] = [
   { title: 'Stakeholder Type', type: 'status', labels: [...STAKEHOLDER_TYPE_LABELS] },
   { title: 'Campaign', type: 'tags' },
   DNS_COLUMN,
+  { title: 'First Name', type: 'text' },
+  { title: 'Last Name', type: 'text' },
 ];
 
 export const BOARD_SPECS: Record<string, BoardSpec> = {
@@ -529,7 +531,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Deductible Amount': "Funraise's tax-deductible portion of the ticket price.",
     },
     views: [
-      { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'Role', 'Attendance', 'Ticket Amount'],
+      { name: 'By event', tag: 'Report', columns: ['Attendee', 'Attendee Name', 'First Name', 'Attendee Email', 'Role', 'Attendance', 'Ticket Amount'],
         groupBy: { columnTitle: 'Event' } },
       { name: 'Class roster', tag: 'Report', columns: ['Attendee Name', 'Attendee Email', 'Role', 'Attendance', 'Class Date', 'Class Location'],
         filter: { rules: [
@@ -539,7 +541,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
         groupBy: { columnTitle: 'Event' }, sort: [{ columnTitle: 'Class Date' }] },
       { name: 'Volunteers', tag: 'Report', columns: ['Event', 'Attendee', 'Attendee Name', 'Attendance'],
         filter: { rules: [{ columnTitle: 'Role', operator: 'any_of', labelValues: ['Volunteer'] }] } },
-      { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'Role'],
+      { name: 'Attended', tag: 'Reference', columns: ['Event', 'Attendee', 'Attendee Name', 'First Name', 'Attendee Email', 'Role'],
         filter: { rules: [{ columnTitle: 'Attendance', operator: 'any_of', labelValues: ['Attended'] }] } },
       { name: 'Unlinked attendees', tag: 'Worklist', columns: ['Attendee Name', 'Attendee Email', 'Event'],
         filter: { rules: [{ columnTitle: 'Attendee', operator: 'is_empty' }, { columnTitle: 'Source', operator: 'any_of', labelValues: ['Eventbrite'] }] } },

@@ -59,6 +59,17 @@ describe('rosterContactIds', () => {
 });
 
 describe('contactToPayload', () => {
+  it('writes First Name and Last Name alongside the joined item name', () => {
+    const p = contactToPayload({ Id: 'c1', FirstName: ' Ada ', LastName: 'Lovelace' }, 'people-live', { consent: new Map() });
+    expect(p.columns['First Name']).toBe('Ada');
+    expect(p.columns['Last Name']).toBe('Lovelace');
+    expect(p.name).toBe(' Ada  Lovelace');
+  });
+  it('leaves First Name blank for a surname-only contact', () => {
+    const p = contactToPayload({ Id: 'c2', LastName: 'Lovelace' }, 'people-live', { consent: new Map() });
+    expect(p.columns['First Name']).toBe('');
+    expect(p.name).toBe('Lovelace');
+  });
   // 1,492 People in the 2026-09-08 extract had a Mailing City but no geocode result, so City and
   // Zip loaded blank even though Address showed them (#13 sample review, 2026-10-23).
   it('falls back to Mailing City/Zip when there is no geocode result', () => {
