@@ -105,14 +105,26 @@ describe('eventbriteEventToPayload', () => {
     expect(p.columns['Source']).toEqual({ label: 'Eventbrite' });
     expect(p.columns['Eventbrite ID']).toBe('1999043957289');
     expect(p.columns['Eventbrite URL']).toBe('https://www.eventbrite.com/e/x-tickets-1999043957289');
-    expect(p.columns['Date']).toEqual({ date: '2026-09-05' });
-    expect(p.columns['End']).toEqual({ date: '2026-09-05' });
+    expect(p.columns['Date']).toEqual({ date: '2026-09-04' });
+    expect(p.columns['End']).toEqual({ date: '2026-09-04' });
     expect(p.columns['Venue']).toBe('Stanford Stadium');
     expect(p.columns['City']).toBe('Palo Alto');
     expect(p.columns['Address']).toBe('625 Nelson Rd, Palo Alto, CA 94305');
     expect(p.columns['Tickets Sold']).toBe('12');
     expect(p.columns['Program']).toEqual({ label: 'Bike Parking' });
     expect(p.columns['Event Status']).toEqual({ label: 'Completed' });
+  });
+  it('dates an evening event by its Pacific day, as eventbrite-sync does', () => {
+    const p = eventbriteEventToPayload({ ...base,
+      eb4sf__Start__c: '2025-10-26T00:30:00.000+0000', eb4sf__End__c: '2025-10-26T03:30:00.000+0000' }, CUTOVER, { hasAttendees: true })!;
+    expect(p.columns['Date']).toEqual({ date: '2025-10-25' });
+    expect(p.columns['End']).toEqual({ date: '2025-10-25' });
+  });
+  it('does not end an afternoon event on the next day', () => {
+    const p = eventbriteEventToPayload({ ...base,
+      eb4sf__Start__c: '2025-12-28T22:30:00.000+0000', eb4sf__End__c: '2025-12-29T02:00:00.000+0000' }, CUTOVER, { hasAttendees: true })!;
+    expect(p.columns['Date']).toEqual({ date: '2025-12-28' });
+    expect(p.columns['End']).toEqual({ date: '2025-12-28' });
   });
   describe('Event Status', () => {
     const status = (s: string, start: string | null, end: string | null) => eventbriteEventToPayload(
@@ -135,7 +147,10 @@ describe('eventbriteEventToPayload', () => {
       expect(status('started', PAST, FUTURE)).toEqual({ label: 'Upcoming' });
     });
     it('keeps an event ending on the cutover day itself Upcoming', () => {
-      expect(status('started', PAST, `${CUTOVER}T02:00:00.000+0000`)).toEqual({ label: 'Upcoming' });
+      expect(status('started', PAST, `${CUTOVER}T20:00:00.000+0000`)).toEqual({ label: 'Upcoming' });
+    });
+    it('marks an event ending the evening before cutover Completed, by its Pacific day', () => {
+      expect(status('started', PAST, `${CUTOVER}T02:00:00.000+0000`)).toEqual({ label: 'Completed' });
     });
     it('falls back to the start date when an event has no end', () => {
       expect(status('started', PAST, null)).toEqual({ label: 'Completed' });
