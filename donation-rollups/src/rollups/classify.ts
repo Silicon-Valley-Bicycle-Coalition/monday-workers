@@ -9,7 +9,7 @@ export interface GiftClassification { fundingStream: string; giftSize: string; f
 
 export const FUNDING_STREAMS = [
   'Individual Giving', 'Membership', 'Sponsorships', 'Grants & Contracts',
-  'Matching Donations', 'Other Program Revenue',
+  'Matching Donations', 'Other Program Revenue', 'Donor Advised Funds',
 ] as const;
 
 // Gift Type holds Salesforce RecordType display names ("Matching Donation"); the migration
@@ -27,6 +27,7 @@ const STREAM_BY_TYPE = new Map<string, string>([
   ['matchingdonation', 'Matching Donations'],
   ['commuteworkshop', 'Other Program Revenue'],
   ['drivertraining', 'Other Program Revenue'],
+  ['donoradvisedfund', 'Donor Advised Funds'],
 ]);
 
 export const GIFT_SIZES = ['< $100', '$100–249', '$250–999', '$1k–4.9k', '$5k+'] as const;

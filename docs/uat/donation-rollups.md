@@ -53,6 +53,8 @@ do not.
 4. **Come back the next morning.** The chart columns on your new gift, Funding Stream, Gift Size,
    Fiscal Quarter, and Gift Fiscal Year, fill in overnight (the nightly pass runs around 2 am
    Pacific). Editing them by hand is ignored: they are derived from Gift Type, Amount, and Date.
+   A gift with Gift Type **Donor Advised Fund**, typed exactly, reads Funding Stream **Donor Advised
+   Funds** and renews the donor's membership the way a Donation does.
 5. **Annual Giving Summary.** Open
    [Annual Giving Summary (sandbox v4)](https://bikesiliconvalley.monday.com/boards/18437530607):
    one row per closed fiscal year, FY2005 and FY2009 through FY2025, with Total Received, Gift

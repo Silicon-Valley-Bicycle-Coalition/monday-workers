@@ -17,6 +17,8 @@ describe('classifyGift — funding stream', () => {
     ['  matching donation ', 'Matching Donations'],
     ['Commute Workshop', 'Other Program Revenue'],
     ['Driver_Training', 'Other Program Revenue'],
+    ['Donor Advised Fund', 'Donor Advised Funds'],
+    ['  donor-advised fund ', 'Donor Advised Funds'],
     ['Donation', 'Individual Giving'],
     ['Major Gift', 'Individual Giving'],
     ['Funraise Online', 'Individual Giving'],
@@ -28,7 +30,7 @@ describe('classifyGift — funding stream', () => {
   });
 
   it('only ever returns a label from FUNDING_STREAMS', () => {
-    for (const t of ['Membership', 'x', 'Grants', 'Sponsorship']) {
+    for (const t of ['Membership', 'x', 'Grants', 'Sponsorship', 'Donor Advised Fund']) {
       expect(FUNDING_STREAMS).toContain(g({ giftType: t }).fundingStream);
     }
   });
