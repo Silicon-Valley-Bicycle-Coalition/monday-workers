@@ -97,11 +97,12 @@ To check how it treats different gifts, look at a letter for a person who has, i
 
 - **A gift with Gift Type `Donor Advised Fund`:** it should appear in its own table below the
   total, and its amount should not be in the total.
-- **A gift with Gift Type `Event Ticket`, `Sponsorship`, `Grants` or `Contracts`:** it should not
-  appear on the letter at all, but should still appear in their giving history.
+- **A gift with Gift Type `Event Ticket`, `Sponsorship`, `In Kind Donation / Sponsorship`,
+  `Matching Donation`, `Grants` or `Contracts`:** it should not appear on the letter at all, but
+  should still appear in their giving history.
 
 A person with only Donor Advised Fund gifts that year should get a letter with just that table,
-and no total. A person with only the other four types should have no letter for that year.
+and no total. A person with only those other types should have no letter for that year.
 
 ## If something seems stuck
 
@@ -136,9 +137,12 @@ genuinely blank and need real input.
       records only. They are not counted as contributions in this letter."* A donor whose only
       gifts that year came through a fund gets a letter with just this table. Approve the wording
       and that these gifts are listed at all.
-- [ ] **Gifts left off the letter.** Event Ticket, Sponsorship, Grants and Contracts don't appear,
-      and a donor with only those gets no letter for that year. Confirm this, including for
-      event tickets, which may instead need a statement of what the ticket's value was.
+- [ ] **Gifts left off the letter.** Event Ticket, Sponsorship, In Kind Donation / Sponsorship,
+      Matching Donation, Grants and Contracts don't appear, and a donor with only those gets no
+      letter for that year. Confirm this, including for event tickets, which may instead need a
+      statement of what the ticket's value was, and for in-kind gifts, which may need their own
+      acknowledgment. An employer's match leaves the employee's letter, and the company gets no
+      letter from this list either.
 
 **Still blank, need real answers:**
 

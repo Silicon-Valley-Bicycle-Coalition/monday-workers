@@ -281,8 +281,8 @@ config-gated features:
   stored server-side. Only completed calendar years with at least one donation get a letter.
   **Gift Types treated differently** (`monday.columns.donationDescription` is the board's Gift Type
   column; labels compare without case or punctuation): `taxLetter.excludedGiftTypes` (Event Ticket,
-  Sponsorship, Grants, Contracts) are left off and never earn a letter or a January email on their
-  own. `taxLetter.separateGiftTypes` (Donor Advised Fund) are listed after the total under
+  Sponsorship, In Kind Donation / Sponsorship, Matching Donation, Grants, Contracts) are left off and
+  never earn a letter or a January email on their own. `taxLetter.separateGiftTypes` (Donor Advised Fund) are listed after the total under
   `taxLetter.separateGiftsStatement`, outside the total and away from the no-goods sentence; a donor
   with only those gets a letter with no contributions table, total, statement or tax-records line.
   Any other label, or a blank, is an ordinary contribution. A DAF gift only counts as one once its

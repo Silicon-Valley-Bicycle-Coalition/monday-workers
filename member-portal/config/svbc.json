@@ -64,7 +64,14 @@
     "plainStatement": "No goods or services were provided in exchange for these contributions.",
     "benefitStatement": "REPLACE_AFTER_SIGNOFF",
     "benefitTiers": [],
-    "excludedGiftTypes": ["Event Ticket", "Sponsorship", "Grants", "Contracts"],
+    "excludedGiftTypes": [
+      "Event Ticket",
+      "Sponsorship",
+      "In Kind Donation / Sponsorship",
+      "Matching Donation",
+      "Grants",
+      "Contracts"
+    ],
     "separateGiftTypes": ["Donor Advised Fund"],
     "separateGiftsStatement": "REPLACE_AFTER_SIGNOFF"
   },

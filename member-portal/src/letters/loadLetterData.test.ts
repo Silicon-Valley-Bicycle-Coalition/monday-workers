@@ -9,7 +9,7 @@ const taxLetter: TaxLetterConfig = {
   signatureName: 'Alex', signatureTitle: 'ED',
   plainStatement: 'PLAIN-STATEMENT', benefitStatement: 'BENEFIT-STATEMENT',
   benefitTiers: ['Champion'],
-  excludedGiftTypes: ['Event Ticket', 'Sponsorship', 'Grants', 'Contracts'],
+  excludedGiftTypes: ['Event Ticket', 'Sponsorship', 'In Kind Donation / Sponsorship', 'Matching Donation', 'Grants', 'Contracts'],
   separateGiftTypes: ['Donor Advised Fund'],
   separateGiftsStatement: 'SEPARATE-STATEMENT',
 };
@@ -117,7 +117,7 @@ describe('loadLetterData by Gift Type', () => {
     expect(result!.totalFormatted).toBe('$0.00');
   });
 
-  it.each(['Event Ticket', 'Sponsorship', 'Grants', 'Contracts'])('leaves %s off the letter entirely', async (type) => {
+  it.each(['Event Ticket', 'Sponsorship', 'In Kind Donation / Sponsorship', 'Matching Donation', 'Grants', 'Contracts'])('leaves %s off the letter entirely', async (type) => {
     const d = donor({ donations: [gift('2025-02-01', '$100.00', 'Donation'), gift('2025-03-01', '$75.00', type)] });
     const result = await loadLetterData('donor-1', 2025, fakeMonday({ 'donor-1': d }), taxLetter, NOW);
     expect(result!.gifts).toEqual([{ date: '2025-02-01', amount: '$100.00' }]);
