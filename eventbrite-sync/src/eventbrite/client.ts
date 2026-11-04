@@ -41,14 +41,16 @@ export interface EventbriteOrder {
   [key: string]: unknown;
 }
 
-// Event (object), fetched with `?expand=venue,organizer`: `venue` and `organizer` are only
-// present when expanded. The organizer's name is what resolves a class's Program.
+// Event (object), fetched with `?expand=venue,organizer,event_sales_status`: those three are only
+// present when expanded. The organizer's name is what resolves a class's Program, and the sales
+// status can be the only sign of a cancellation (mapping/event.ts).
 export interface EventbriteEvent {
   id: string;
   name?: { text?: string | null } | null;
   start?: { utc?: string | null; timezone?: string | null } | null;
   end?: { utc?: string | null } | null;
   status?: string | null;
+  event_sales_status?: { sales_status?: string | null; message_code?: string | null } | null;
   url?: string | null;
   organizer_id?: string | null;
   organizer?: { name?: string | null } | null;
@@ -111,7 +113,7 @@ export class HttpEventbriteClient implements EventbriteClient, EventbriteOrderLi
   }
 
   async getEvent(eventId: string): Promise<EventbriteEvent | null> {
-    return this.getResource<EventbriteEvent>('event', eventId, [eventId], `/events/${eventId}/?expand=venue,organizer`);
+    return this.getResource<EventbriteEvent>('event', eventId, [eventId], `/events/${eventId}/?expand=venue,organizer,event_sales_status`);
   }
 
   async getAttendee(eventId: string, attendeeId: string): Promise<EventbriteAttendee | null> {

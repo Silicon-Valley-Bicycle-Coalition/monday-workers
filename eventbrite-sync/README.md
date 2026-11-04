@@ -366,6 +366,13 @@ says: `live` and `started` mean Upcoming only until then. `started` can outlive 
 in the 2026-11-02 Salesforce org, every one over), so a replay would otherwise write Upcoming back
 over a corrected row. Canceled and Draft stay as they are.
 
+A canceled event can keep reporting `live` or `started`, with only its sales status saying so
+(`?expand=event_sales_status`, `message_code: event_cancelled`; an Eventbrite staff answer on its
+developer forum in 2021, not seen on an SVBC event yet). The consumer treats that as `canceled`, on
+the board and in the ledger, so the class gets no follow-ups. It only learns this when it fetches
+the event: on a delivery, or when the sweep below re-queues it after its end, which is before the
+next morning's follow-ups.
+
 Whether Eventbrite sends `event.updated` when an event ends is unconfirmed: we found nothing in its
 docs that says so, and the sandbox ledger has no event that ended with the webhook registered (the
 production ledger hasn't been checked). So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event

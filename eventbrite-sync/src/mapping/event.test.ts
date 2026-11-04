@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapEvent } from './event';
+import { effectiveEventStatus, mapEvent } from './event';
 import { testConfig } from '../test/testConfig';
 import type { EventbriteEvent } from '../eventbrite/client';
 
@@ -79,6 +79,28 @@ describe('mapEvent', () => {
     ['something-new', 'Completed'],
   ])('maps Eventbrite status %s to Event Status %s', (status, label) => {
     expect(mapEvent(event({ status }), config, NOW).columnValues.ev_status_col).toBe(label);
+  });
+
+  describe('a canceled event Eventbrite still reports as live or started', () => {
+    const canceled = { sales_status: 'sales_ended', message_code: 'event_cancelled' };
+    const afterEnd = new Date('2030-01-01T00:00:00Z');
+
+    it.each(['live', 'started'])('writes Canceled for %s, before and after the event', (status) => {
+      const e = event({ status, event_sales_status: canceled });
+      expect(mapEvent(e, config, NOW).columnValues.ev_status_col).toBe('Canceled');
+      expect(mapEvent(e, config, afterEnd).columnValues.ev_status_col).toBe('Canceled');
+    });
+
+    it('ignores a sales status that is not a cancellation', () => {
+      const e = event({ status: 'live', event_sales_status: { sales_status: 'sales_ended', message_code: 'tickets_not_on_sale' } });
+      expect(mapEvent(e, config, NOW).columnValues.ev_status_col).toBe('Upcoming');
+    });
+
+    it('reports the status the ledger should keep', () => {
+      expect(effectiveEventStatus(event({ status: 'live', event_sales_status: canceled }))).toBe('canceled');
+      expect(effectiveEventStatus(event({ status: 'live' }))).toBe('live');
+      expect(effectiveEventStatus({ id: '1' })).toBeUndefined();
+    });
   });
 
   describe('once the event has ended', () => {

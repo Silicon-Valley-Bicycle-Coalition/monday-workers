@@ -94,6 +94,17 @@ describe('processEvent', () => {
     expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Completed' }));
   });
 
+  // The follow-up sweep and the ended-event sweep read this, so neither treats the class as having run.
+  it('records a canceled event Eventbrite still reports as live as canceled in the ledger', async () => {
+    const { deps, eventStore, mondayClient } = setup({
+      row: eventRow({ mondayItemId: 'item-9' }),
+      event: event({ status: 'live', event_sales_status: { sales_status: 'sales_ended', message_code: 'event_cancelled' } }),
+    });
+    await processEvent(message, deps);
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(222, 'item-9', expect.objectContaining({ ev_status_col: 'Canceled' }));
+    expect(eventStore.updateStatus).toHaveBeenCalledWith('9001', 'written', expect.objectContaining({ eventbriteStatus: 'canceled' }));
+  });
+
   // The ended-event sweep reads written_at before ends_at as "that write can't have been Completed".
   it('stamps written_at with the moment it chose the status, when the Monday write spans the end', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });

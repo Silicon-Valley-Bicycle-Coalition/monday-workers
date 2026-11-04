@@ -40,6 +40,13 @@ function programFromOrganizer(organizer: unknown): string {
   return (suffix && ORGANIZER_PROGRAMS[suffix]) || 'Public';
 }
 
+// A canceled event's status can stay `live` or `started`, with only its sales status saying so
+// (Eventbrite staff, developer forum, 2021). This is the status everything downstream goes by: the
+// Event Status label, and through the ledger the follow-up and ended-event sweeps.
+export function effectiveEventStatus(event: EventbriteEvent): string | null | undefined {
+  return event.event_sales_status?.message_code === 'event_cancelled' ? 'canceled' : event.status;
+}
+
 // `started` can outlive the event (84 of them in the 2026-11-02 Salesforce org, all over), so Upcoming is a matter of the clock as well as the
 // status. Same rule as salesforce-import's transform, to the minute rather than the day.
 function eventStatusLabel(status: string | undefined | null, endsAt: string | null, startsAt: string | null, now: Date): string {
@@ -67,7 +74,7 @@ export function mapEvent(event: EventbriteEvent, config: EventbriteSyncConfig, n
   const columnValues: Record<string, unknown> = {
     [cols.eventbriteIdColumn]: event.id,
     [cols.programColumn]: program,
-    [cols.eventStatusColumn]: eventStatusLabel(event.status, endsAt, startsAt, now),
+    [cols.eventStatusColumn]: eventStatusLabel(effectiveEventStatus(event), endsAt, startsAt, now),
     [cols.sourceColumn]: 'Eventbrite',
   };
   if (classDate !== null) columnValues[cols.dateColumn] = { date: classDate };
