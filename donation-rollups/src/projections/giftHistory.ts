@@ -35,6 +35,19 @@ export const GIFT_LEDGER_MAX_BYTES = 60_000;
 // collide with a Monday item id (they're numeric), and reconciliation keys off it.
 export const GIFT_LEDGER_TRUNCATION_ID = '~truncated';
 
+// set_item_description_content returns a bare Internal server error past roughly 250 doc blocks,
+// and every table cell is a block, whatever its length: measured on the sandbox 2026-11-04, a
+// lone 62-row 4-column table writes and a 70-row one fails at under 1KB, split across two tables
+// or not, and an owner with 62 gifts (63 rows plus heading and note) fails. This is the total
+// across every table in one description, with a margin below the measured edge. Since the write
+// is non-fatal, going over means an empty description and only a log line.
+export const DESCRIPTION_TABLE_ROW_BUDGET = 55;
+
+// Header and body rows, not the `| --- |` separators, which render as no row.
+export function countTableRows(markdown: string): number {
+  return markdown.split('\n').filter((l) => l.startsWith('|') && !l.startsWith('| ---')).length;
+}
+
 export interface GiftLedgerProjection {
   json: string; // what to write to the column — truncated when the full form won't fit
   fullBytes: number; // byte size of the untruncated projection (the alert-decision number)
@@ -121,21 +134,29 @@ export const cell = (text: string): string => text.replace(/\r?\n|\r/g, ' ').rep
 export function buildGiftHistoryMarkdown(
   rows: GiftHistoryRow[], accountUrl: string,
   driven?: { affiliationName: string; cents: number; count: number }[],
+  maxTableRows: number = DESCRIPTION_TABLE_ROW_BUDGET,
 ): string {
+  // Driven-for rows are few and summarize what the table can't show, so gift rows give way first.
+  const drivenRows = driven && driven.length > 0 ? driven.length + 1 : 0;
+  const shown = sorted(rows).slice(0, Math.max(0, maxTableRows - drivenRows - 1));
   const lines = [
     '## Gift History',
     '',
     '| Date | Amount | Type | Status |',
     '| --- | --- | --- | --- |',
   ];
-  for (const r of sorted(rows)) {
+  for (const r of shown) {
     const date = r.giftDateISO || '(undated)';
     const dateCell = r.donationBoardId
       ? `[${date}](${accountUrl}/boards/${r.donationBoardId}/pulses/${r.mondayItemId})`
       : date;
     lines.push(`| ${dateCell} | ${dollars(r.amountCents)} | ${cell(r.giftType ?? '')} | ${cell(r.status)} |`);
   }
-  lines.push('', `_${rows.length} gifts. Maintained automatically by donation-rollups — edits here are overwritten._`);
+  const gifts = `${rows.length} gift${rows.length === 1 ? '' : 's'}`;
+  const count = shown.length < rows.length
+    ? `Newest ${shown.length} of ${gifts} shown; the full history is in the Gift Ledger (JSON) column.`
+    : `${gifts}.`;
+  lines.push('', `_${count} Maintained automatically by donation-rollups — edits here are overwritten._`);
   if (driven && driven.length > 0) {
     lines.push('', '## Driven for organizations', '', '| Affiliation | Attributed giving | Gifts |', '| --- | --- | --- |');
     for (const d of driven) lines.push(`| ${cell(d.affiliationName)} | ${dollars(d.cents)} | ${d.count} |`);
