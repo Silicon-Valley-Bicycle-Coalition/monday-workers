@@ -160,7 +160,18 @@ describe('GET /class-emails/:eventId', () => {
     const items = [mondayItem('900', 'Learn to Ride', { [ev.venueColumn]: 'Millbrae Rec', [ev.addressColumn]: '477 Lincoln Cir' }), reg('10')];
     const h = harness({ items });
     const body = (await (await get(h)).json()) as any;
-    expect(body.fields).toEqual({ 'Class Day': 'Thursday', 'Class Date': 'November 12', 'Start Time': '9:00 AM', 'Class Location': 'Millbrae Rec, 477 Lincoln Cir' });
+    expect(body.fields).toEqual({
+      'Class Day': 'Thursday',
+      'Class Date': 'November 12',
+      'Start Time': '9:00 AM',
+      'End Time': '11:00 AM',
+      'Arrival Time': '8:55 AM',
+      'Spanish Day': 'jueves',
+      'Spanish Date': '12 de noviembre',
+      'Spanish Time': '9:00 a.m.',
+      'Spanish Arrival Time': '8:55 a.m.',
+      'Class Location': 'Millbrae Rec, 477 Lincoln Cir',
+    });
     expect(h.client.getItems).toHaveBeenCalledWith(expect.any(Number), ['900'], [ev.venueColumn, ev.addressColumn]);
   });
 
