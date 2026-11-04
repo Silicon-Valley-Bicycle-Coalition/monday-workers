@@ -385,7 +385,12 @@ local D1): 6,122 outbound rows, 1 inbound row and 3 campaign items cleared, the 
   its usual update. Its status — subscribed, unsubscribed, cleaned — and tags and history carry
   over unchanged, so consent follows the person and nothing is ever created. No rename when the
   new address is already a contact (two contacts are never merged; the new one is updated as
-  before), when the old address isn't one, or when only case or spacing changed. A permanent
+  before), when the old address isn't one, when only case or spacing changed, or when another
+  People or Historical item still holds the old address. That last check is a forgery guard: the
+  old address comes from the webhook payload, so a leaked webhook secret could otherwise move any
+  member. It protects anyone with a CRM record, not a Mailchimp-only contact. A refused move logs
+  a warning and the update carries on by the new address, so a shared address needs moving by hand
+  in Mailchimp. A permanent
   Mailchimp refusal is logged and the update carries on by the new address, as before this
   existed. Fixed 2026-11-02, after the cutover's Gate C check showed an edited address skipping
   (svbc-monday-migration cutover log, Mon 9:31 am). Edits made before this deploy aren't
