@@ -317,9 +317,10 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     columnDescriptions: {
       ...SHARED_DESCRIPTIONS,
       'Donor Level': DONOR_LEVEL_DESCRIPTION,
-      'Partner Type': "Free text today, straight from Salesforce. Use an existing value for " +
-        "consistency. Cities, counties, and public agencies must be 'Municipal' — that's what " +
-        'Stakeholder Type on People links against.',
+      'Partner Type': "What kind of organization this is; pick one. Cities, counties, and public " +
+        "agencies must be 'Municipal' — that's what Stakeholder Type on People links against. " +
+        'Blank means nobody has classified it yet (the Untyped worklist). Migrated values were ' +
+        'mapped from Salesforce Type, Type 2 and Industry.',
       'Website': 'From Salesforce, or from Google Places where Salesforce had none (exact-name ' +
         'matches only; near-matches await human review).',
     },
@@ -331,7 +332,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       { name: 'Untyped', tag: 'Worklist', columns: ['Website', 'City', 'Lifetime Giving'],
         filter: { rules: [{ columnTitle: 'Partner Type', operator: 'is_empty' }] }, sort: [{ columnTitle: 'Name' }] },
       { name: 'Municipal', tag: 'Reference', columns: ['Partner Type', 'City', 'Website', 'Phone'],
-        filter: { rules: [{ columnTitle: 'Partner Type', operator: 'contains_text', compareValue: 'Municipal' }] } },
+        filter: { rules: [{ columnTitle: 'Partner Type', operator: 'any_of', labelValues: ['Municipal'] }] } },
       { name: 'Funders and matching companies', tag: 'Report', columns: ['Partner Type', 'Lifetime Giving', 'Last Gift Date', 'This Year Amount'],
         filter: { rules: [{ columnTitle: 'Lifetime Giving', operator: 'greater_than', compareValue: 0 }] }, sort: [{ columnTitle: 'Lifetime Giving', direction: 'desc' }] },
       ...ORG_DNS_VIEWS,

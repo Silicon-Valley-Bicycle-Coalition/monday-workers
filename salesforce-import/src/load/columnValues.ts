@@ -26,6 +26,7 @@ export function formatColumnValue(type: string, value: unknown): unknown {
     // SVBC's contacts are US-local; countryShortName only affects display formatting.
     return { phone: digits, countryShortName: 'US' };
   }
+  if (type === 'dropdown') return { labels: [String(value)] };
   if (type === 'email') {
     const email = String(value).trim();
     if (email === '') return null;

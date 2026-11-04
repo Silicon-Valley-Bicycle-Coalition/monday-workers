@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import type { Config } from '../config.js';
 import { dataPath, readJson, writeJson } from '../artifacts.js';
 import type { MondayClient } from './monday.js';
-import { statusLabelDefaults } from '../configure/labels.js';
+import { dropdownLabelDefaults, statusLabelDefaults } from '../configure/labels.js';
+import { PARTNER_TYPES } from '../transform/partnerType.js';
 import { SF_ID_COLUMN } from './lookup.js';
 import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 
@@ -29,7 +30,7 @@ export const COLUMN_TYPES: Record<string, string> = {
   'Check/Reference Number': 'text', 'In-Kind Value': 'numbers', 'In-Kind Category': 'text',
   'Sponsorship Cycle': 'text',
   'Term Start': 'date', 'Term End': 'date', 'Membership Type': 'text',
-  'Partner Type': 'text', 'Website': 'link',
+  'Partner Type': 'dropdown', 'Website': 'link',
   'Has Active Recurring Gift': 'checkbox',
   'Installment Amount': 'numbers', 'Annualized Value': 'numbers', 'Frequency': 'status',
   'Next Payment': 'date', 'Designation': 'text', 'Company Match': 'checkbox', 'Match Employer': 'text',
@@ -248,6 +249,7 @@ export async function ensureBoards(
       } else {
         const labels = statusLabelsFor(key, title);
         if (labels) defaults = statusLabelDefaults(labels);
+        else if (title === 'Partner Type') defaults = dropdownLabelDefaults(PARTNER_TYPES, { single: true });
       }
 
       const res2 = await client.gql<{ create_column: { id: string } }>(
