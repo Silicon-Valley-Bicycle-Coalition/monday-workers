@@ -175,6 +175,10 @@ config-ready JSON block of every id:
 * **The Matching Gift Program board** (one row per fiscal year) and a Donations view,
   **Matching gifts to follow up** (Match Status = Waiting for donor, newest first).
 
+`scripts/mark-read-only-columns.mjs` puts 🔒 on these titles so staff leave them alone, on both
+People boards. Matches gift and Match pairing stay unmarked, since staff set them by hand when
+pairing.
+
 **People → Employer is never written.** `benevity-import` matches people by exact name plus
 Employer text, and DTD's company names ("Google") would not match Benevity's ("Google, LLC"), so
 writing them there would quietly break that matching.
@@ -240,7 +244,10 @@ rest from the repo root. Both crons are UTC: the hourly run is at :15 past each 
    must finish: if the columns land on People but not People (Historical), `people-reclassification`
    stops moving anyone until they match. It is idempotent, so re-run it after any failure. CRM Sandbox
    v4's Historical columns were added by hand on 2026-11-03; a re-run there finds them by title and
-   creates nothing, as long as their types match.
+   creates nothing, as long as their types match. After it finishes, run
+   `MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace <id>` to preview the 🔒
+   renames, and again with `--apply` to make them. It also renames anything else still unmarked in
+   that workspace, so read the preview first.
 
 ### Cutover backfill
 
