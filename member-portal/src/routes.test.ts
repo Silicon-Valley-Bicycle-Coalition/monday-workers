@@ -1910,12 +1910,14 @@ describe('GET /verify/:token', () => {
     expect(html).toContain('Tier: Member');
     expect(html).toContain('Status: Active');
     expect(res.headers.get('cache-control')).toBe('private, no-store, max-age=0');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
   });
 
   it('shows the not-valid state for an unknown token', async () => {
     const app = createApp(makeDeps());
     const res = await app.request('/verify/no-such-token');
     expect(await res.text()).toContain('not valid');
+    expect(res.headers.get('x-robots-tag')).toBe('noindex');
   });
 
   // The distinguishing design decision for this route: unlike every other authenticated page,

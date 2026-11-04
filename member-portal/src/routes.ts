@@ -864,6 +864,9 @@ export function createApp(deps: AppDeps) {
   app.get('/verify/:token', async (c) => {
     const locale = detectLocale(c);
     c.header('Cache-Control', NO_STORE);
+    // Public, and shows a member's name and status to anyone holding the link, so keep a leaked
+    // token URL out of search indexes. Set first so every response below carries it.
+    c.header('X-Robots-Tag', 'noindex');
 
     // Rate-limit before the kill-switch check below, not after — otherwise disabling the card
     // feature (config revert, incident response) also disables rate limiting on this endpoint,
