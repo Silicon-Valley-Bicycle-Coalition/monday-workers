@@ -638,8 +638,8 @@ beyond the table above:
 
 0. **Production class emails.** Configured 2026-11-04: the `🔒 Send class email` column on Events
    (`link_mm8sk30a`), and the send page deployed as the Apps Script project "SVBC Class Emails". Its
-   `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Still open: name an
-   owner, a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
+   `CLASS_EMAIL_SECRET` is on this Worker and in the page's Script Properties. Owner: Kendra Toy.
+   Still open: a real check-in delivery, and a timed run of `result` on a 26-person roster (the CPU limit
    in `wrangler.jsonc`).
 1. **The `Eventbrite Order ID` column id** in `config/sandbox.json` — the column arrives with the
    next sandbox load; see "Prerequisite column". Production has it (`text_mm8n459q`, 2026-11-02).
