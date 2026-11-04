@@ -62,6 +62,20 @@ export interface AffiliationsConfig {
     attributedGiftCount: string; // numbers
     lastAttributedGift: string;  // date
   };
+  // Keeps People's Employer Name on the current affiliation's organization. Absent = off, and the
+  // Affiliations board's webhooks (if any) are ignored as an unconfigured board.
+  employerSync?: EmployerSyncConfig;
+}
+
+export interface EmployerSyncConfig {
+  currentStatusLabel: string; // the Status label that means "works here now"
+  columns: {
+    organizationLink: string; // Affiliations board: connect → Organizations
+    status: string;           // status
+    primary: string;          // checkbox
+  };
+  // Keyed by real Monday board id, like ownerColumnsByBoard: every board Person can link to.
+  ownerColumnsByBoard: Record<string, { employerName: string; affiliationsLink: string }>;
 }
 
 // The org's fiscal year (issue #27): which month it starts in and which time zone "today" is
@@ -210,7 +224,7 @@ export interface DonorLevelConfig {
 // a later delivery for the same item resets it to 'received' (upsertPending).
 export type PendingStatus = 'received' | 'queued' | 'written' | 'failed' | 'dropped';
 
-export type RecomputeKind = 'donation' | 'registration';
+export type RecomputeKind = 'donation' | 'registration' | 'affiliation';
 
 export interface PendingRow {
   donationItemId: string;
@@ -249,7 +263,8 @@ export interface Env {
 export interface RecomputeQueueMessage extends WriteStamp {
   kind?: RecomputeKind;
   // donationItemId is the triggering item: a Donations item for kind 'donation' (the default), an
-  // Event Registrations item for kind 'registration'. The name predates registrations.
+  // Event Registrations item for kind 'registration', an Affiliations item for kind 'affiliation'.
+  // The name predates both.
   donationItemId: string;
   // Which Donations *era* board this donation lives on — needed to resolve its Donor
   // link using that board's own column ids (see DonationBoardConfig).

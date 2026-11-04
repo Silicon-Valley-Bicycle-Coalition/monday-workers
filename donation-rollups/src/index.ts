@@ -97,6 +97,8 @@ export default {
         donationBoardIds: new Set(config.donationRollups.donationBoards.map((b) => String(b.boardId))),
         registrationBoards: new Map(config.donationRollups.volunteerBoards.map((b) => [String(b.boardId),
           new Set([b.columns.attendee, b.columns.event, b.columns.attendance, b.columns.role, ...(b.columns.hours ? [b.columns.hours] : [])])])),
+        affiliationBoards: new Map(config.affiliations?.employerSync ? [[String(config.affiliations.boardId), new Set([
+          config.affiliations.columns.personLink, ...Object.values(config.affiliations.employerSync.columns)])]] : []),
         ignoredColumnIds: new Set(config.donationRollups.donationBoards.flatMap((b) =>
           b.columns.classification ? Object.values(b.columns.classification).map((col) => `${b.boardId}:${col}`) : [])),
         queue: {

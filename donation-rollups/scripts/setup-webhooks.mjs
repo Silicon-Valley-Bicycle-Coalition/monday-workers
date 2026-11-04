@@ -97,4 +97,22 @@ for (const board of config.donationRollups.volunteerBoards ?? []) {
   }
 }
 
+// Affiliations board, once employer sync is configured: a new item or a column change re-derives
+// the person's Employer Name. The route ignores every column but Person, Organization, Status and
+// Primary, which covers the attributed totals this Worker writes here. No deletion events: removing
+// an affiliation leaves Employer Name as it was.
+if (config.affiliations?.employerSync) {
+  const boardId = String(config.affiliations.boardId);
+  const existing = await graphql('query ($id: ID!) { webhooks (board_id: $id) { id event } }', { id: boardId });
+  const have = new Set((existing.webhooks ?? []).map((w) => w.event));
+  for (const event of ['create_item', 'change_column_value']) {
+    if (have.has(event)) { console.error(`setup-webhooks: affiliations board ${boardId} already has ${event} — skipping`); continue; }
+    const created = await graphql(
+      `mutation ($board: ID!, $url: String!, $event: WebhookEventType!) {
+         create_webhook (board_id: $board, url: $url, event: $event) { id } }`,
+      { board: boardId, url, event });
+    console.error(`setup-webhooks: affiliations board ${boardId} subscribed ${event} → webhook ${created.create_webhook.id}`);
+  }
+}
+
 console.error('setup-webhooks: done');

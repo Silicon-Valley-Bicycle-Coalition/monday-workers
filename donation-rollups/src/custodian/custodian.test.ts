@@ -732,6 +732,14 @@ describe('requeue duty', () => {
     expect(state.updates).toHaveLength(1); // one alert
   });
 
+  it('re-sends a stuck affiliation with its kind', async () => {
+    await new D1PendingStore(env.DB).upsertPending({ donationItemId: 'aff-stuck', donationBoardId: '555', eventId: 'e',
+      receivedAt: '2026-07-29T00:00:00Z', kind: 'affiliation' });
+    const sent: RecomputeQueueMessage[] = [];
+    await runDuty('requeue', deps({ archived: [], updates: [] }, sent, testConfig({ alertItemId: null })));
+    expect(sent).toEqual([{ kind: 'affiliation', donationItemId: 'aff-stuck', donationBoardId: '555' }]);
+  });
+
   it('re-sends a stuck registration with kind: registration, and a donation with no kind key', async () => {
     await new D1PendingStore(env.DB).upsertPending({ donationItemId: 'reg-stuck', donationBoardId: '700', eventId: 'e',
       receivedAt: '2026-07-29T00:00:00Z', kind: 'registration' });

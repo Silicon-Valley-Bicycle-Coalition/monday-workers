@@ -286,6 +286,31 @@ describe('HttpMondayClient — affiliation model reads', () => {
     const client = clientReturningSequence(calls.map((c) => ({ data: c })));
     expect(await client.getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'Ada @ Acme', personItemId: 'p-1', personBoardId: '18428131737' });
   });
+  it('getPersonEmployerState returns the Employer Name text and the Affiliations link', async () => {
+    const client = clientReturning({ data: { items: [{ state: 'active', column_values: [
+      { id: 'emp', text: 'Old Co' }, { id: 'br_a', text: null, linked_item_ids: ['af-1', 'af-2'] }] }] } });
+    expect(await client.getPersonEmployerState('p-1', { employerName: 'emp', affiliationsLink: 'br_a' }))
+      .toEqual({ employerName: 'Old Co', affiliationItemIds: ['af-1', 'af-2'] });
+  });
+  it('getPersonEmployerState: a person in the trash or gone reads as null', async () => {
+    const cols = { employerName: 'emp', affiliationsLink: 'br_a' };
+    expect(await clientReturning({ data: { items: [{ state: 'deleted', column_values: [] }] } }).getPersonEmployerState('p-1', cols)).toBeNull();
+    expect(await clientReturning({ data: { items: [] } }).getPersonEmployerState('p-1', cols)).toBeNull();
+  });
+  it('getEmployerAffiliations reads status, primary and the linked organization name, skipping items not active', async () => {
+    const client = clientReturning({ data: { items: [
+      { id: 'af-1', state: 'active', column_values: [{ id: 'st', text: 'Current' }, { id: 'pr', text: 'v', checked: true },
+        { id: 'br_o', text: null, linked_items: [{ name: 'Acme' }] }] },
+      { id: 'af-2', state: 'active', column_values: [{ id: 'st', text: 'Former' }, { id: 'pr', text: '', checked: false },
+        { id: 'br_o', text: null, linked_items: [] }] },
+      { id: 'af-3', state: 'deleted', column_values: [{ id: 'st', text: 'Current' }, { id: 'pr', text: '', checked: false },
+        { id: 'br_o', text: null, linked_items: [{ name: 'Trashed' }] }] },
+    ] } });
+    expect(await client.getEmployerAffiliations(['af-1', 'af-2', 'af-3'], { organizationLink: 'br_o', status: 'st', primary: 'pr' })).toEqual([
+      { id: 'af-1', statusLabel: 'Current', primary: true, organizationName: 'Acme' },
+      { id: 'af-2', statusLabel: 'Former', primary: false, organizationName: null },
+    ]);
+  });
   it('getAffiliationSummary: no Person link → nulls; deleted item → null', async () => {
     expect(await clientReturningSequence([{ data: { items: [{ id: 'af-1', name: 'X @ Y', column_values: [{ id: 'br_p', linked_item_ids: [] }] }] } }])
       .getAffiliationSummary('af-1', 'br_p')).toEqual({ name: 'X @ Y', personItemId: null, personBoardId: null });
