@@ -193,7 +193,7 @@ async function processOne(orderId: string, deps: ProcessBatchDeps): Promise<void
   // no donor is worse than a late one. An order with no email is written without the link.
   let donorItemId = row.matchedDonorItemId;
   if (donorItemId === null) {
-    const match = await matchDonor(mondayClient, config, { email: order.email, name: order.name });
+    const match = await matchDonor(mondayClient, config, { email: order.email, name: order.name, firstName: order.first_name, lastName: order.last_name });
     if (match.donorItemId === null) {
       console.warn(`eventbrite-sync consumer: order "${orderId}" has no donor link: ${match.reason}`);
     } else {

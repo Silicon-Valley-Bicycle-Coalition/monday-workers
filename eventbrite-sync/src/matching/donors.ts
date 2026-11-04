@@ -7,6 +7,8 @@ export type { DonorMatchResult };
 export interface Buyer {
   email: string | null | undefined;
   name: string | null | undefined;
+  firstName?: string | null | undefined;
+  lastName?: string | null | undefined;
 }
 
 // funraise-sync's matchDonor minus the Funraise-profile step: Eventbrite has no stable buyer id
@@ -17,6 +19,13 @@ export async function matchDonor(mondayClient: MondayClient, config: EventbriteS
     throw new Error('config: monday.boards.people-live is not configured');
   }
   const name = typeof buyer.name === 'string' && buyer.name.trim() !== '' ? buyer.name : 'Unknown Donor';
-  const result = await matchPerson(mondayClient, peopleBoardId, config.eventbriteSync.donorEmailColumn, { email: buyer.email, name });
+  const { donorEmailColumn, donorFirstNameColumn, donorLastNameColumn } = config.eventbriteSync;
+  const result = await matchPerson(
+    mondayClient,
+    peopleBoardId,
+    donorEmailColumn,
+    { email: buyer.email, name, firstName: buyer.firstName, lastName: buyer.lastName },
+    { first: donorFirstNameColumn, last: donorLastNameColumn }
+  );
   return result.donorItemId === null ? { donorItemId: null, reason: 'order has no email' } : result;
 }

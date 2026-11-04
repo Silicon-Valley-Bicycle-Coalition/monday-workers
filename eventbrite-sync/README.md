@@ -188,6 +188,7 @@ indistinguishable on the board. Re-verify against production ids at cutover.
 | `eventbriteSync.giftTypeColumn` / `giftTypeValue` | Donations → Gift Type (text) | `text_mm79fzs3` / `Event Ticket` | first write only; the label `donation-rollups`' membership rule excludes |
 | `eventbriteSync.fiscalYearColumn` | Donations → Fiscal Year Ending (text) | `text_mm7973ah` | first write only, derived from the same date as the Date column |
 | `eventbriteSync.donorEmailColumn` | People → Personal Email (email) | `email_mm79m5qa` | lookup by bare address; create writes `{ email, text }` |
+| `eventbriteSync.donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8swwq5` / `text_mm8s1f86` | written from the order's `first_name` / `last_name` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
 | `eventbriteSync.donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm795r2d` | `{ item_ids: [n] }` |
 
 ## Field mapping

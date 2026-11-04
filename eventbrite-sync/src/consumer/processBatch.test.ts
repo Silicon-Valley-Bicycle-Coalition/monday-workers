@@ -176,6 +176,12 @@ describe('processOrderQueueBatch', () => {
     expect(orderStore.updateStatus).toHaveBeenCalledWith('442719216', 'written', expect.objectContaining({ mondayItemId: 'adopted-9' }));
   });
 
+  it("stores the order's first and last name on a person it creates", async () => {
+    const mondayClient = fakeMonday({ findItemByColumnValue: vi.fn().mockResolvedValue(null) });
+    await processOrderQueueBatch([fakeMessage()], { orderStore: fakeStore(orderRow()), eventStore: fakeEventStore(), attendeeStore: fakeAttendeeStore(), queue: { send: vi.fn(), sendBatch: vi.fn() }, eventbriteClient: fakeEventbrite(testOrder()), mondayClient, config });
+    expect(mondayClient.changeColumnValues).toHaveBeenCalledWith(42, 'item-1', { first_col: 'Jane', last_col: 'Rider' });
+  });
+
   it('writes the gift without a Donor link, with a warning, when the order has no email', async () => {
     const orderStore = fakeStore(orderRow());
     const mondayClient = fakeMonday();

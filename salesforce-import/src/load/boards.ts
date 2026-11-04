@@ -12,6 +12,7 @@ import { bareTitle } from '../../../scripts/lib/column-titles.mjs';
 export const COLUMN_TYPES: Record<string, string> = {
   'Salesforce Debug': 'long_text', [SF_ID_COLUMN]: 'text',
   'Personal Email': 'email', 'Household Email': 'email', 'Work Email': 'email', 'Phone': 'phone',
+  'First Name': 'text', 'Last Name': 'text',
   'Address': 'text', 'City': 'text', 'Zip': 'text', 'Lat': 'text', 'Lng': 'text',
   'Do Not Solicit': 'checkbox', 'Do Not Solicit Reason': 'text',
   'Do Not Mail': 'checkbox', 'Do Not Mail Reason': 'text',

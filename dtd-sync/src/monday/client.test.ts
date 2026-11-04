@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { HttpDtdMondayClient, splitName } from './client';
+import { HttpDtdMondayClient, personName, splitName } from './client';
 import { validateConfig } from '../config';
 import sandbox from '../../config/sandbox.json';
 
@@ -49,6 +49,21 @@ function donationItem(id: string, over: Record<string, unknown> = {}) {
     column_values: Object.values({ ...base, ...over }),
   };
 }
+
+describe('personName', () => {
+  it('uses the stored names as they are', () => {
+    expect(personName('Mary', 'Van Der Berg', 'Mary Van Der Berg')).toEqual({ firstName: 'Mary', lastName: 'Van Der Berg' });
+  });
+  it('keeps a blank Last Name blank when First Name is stored', () => {
+    expect(personName('Cher', null, 'Cher')).toEqual({ firstName: 'Cher', lastName: '' });
+  });
+  it('guesses from the item name when First Name is blank, even with a Last Name', () => {
+    expect(personName(null, 'Smith', 'Smith')).toEqual({ firstName: 'Smith', lastName: '' });
+  });
+  it('treats a First Name of only spaces as blank', () => {
+    expect(personName('  ', 'Example', 'Pat Example')).toEqual({ firstName: 'Pat', lastName: 'Example' });
+  });
+});
 
 describe('splitName', () => {
   it('last token is the last name, the rest the first name', () => {
@@ -198,6 +213,15 @@ describe('HttpDtdMondayClient people and organizations', () => {
     const [p] = await client.getPeople(['1']);
     expect(p).toEqual({ id: '1', email: 'pat@example.org', householdEmail: 'home@example.org', firstName: 'Pat', lastName: 'Example', phone: '+15551230000', dtdCompanyId: 'co_1' });
     expect(calls[0]!.variables.ids).toEqual(['1']);
+  });
+
+  it('getPeople sends the stored names when they are filled in', async () => {
+    const item = person('1', 'Mary Van Der Berg', 'mary@example.org', '');
+    item.column_values.push(cv(P.firstName, 'Mary'), cv(P.lastName, 'Van Der Berg'));
+    const { client, calls } = mondayFetch([{ items: [item] }]);
+    const [p] = await client.getPeople(['1']);
+    expect(p).toMatchObject({ firstName: 'Mary', lastName: 'Van Der Berg' });
+    expect(calls[0]!.variables.columnIds).toEqual(expect.arrayContaining([P.firstName, P.lastName]));
   });
 
   it('getPeople asks for the board and drops donors that are not on People (Organizations, People (Historical))', async () => {

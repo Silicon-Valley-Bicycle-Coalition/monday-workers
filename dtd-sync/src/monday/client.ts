@@ -84,8 +84,16 @@ function chunksOf<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-// People have no first/last name columns; the item name is split on whitespace, the last token
-// being the last name and the rest the first. A single word is a first name.
+// People's First Name and Last Name columns, as they are. With no First Name, guess from the item
+// name instead of sending a blank: nobody has confirmed Double the Donation accepts one, and a
+// rejected push loses that donor's matching-gift prompt.
+export function personName(first: string | null, last: string | null, name: string): { firstName: string; lastName: string } {
+  if (first === null || first.trim() === '') return splitName(name);
+  return { firstName: first.trim(), lastName: (last ?? '').trim() };
+}
+
+// The guess, for people whose names aren't stored: the item name is split on whitespace, the last
+// token being the last name and the rest the first. A single word is a first name.
 export function splitName(name: string): { firstName: string; lastName: string } {
   const tokens = name.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return { firstName: '', lastName: '' };
@@ -223,7 +231,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
         `query ($ids: [ID!], $columnIds: [String!]) {
           items(ids: $ids, limit: 100) { id name state board { id } column_values(ids: $columnIds) { id text value } }
         }`,
-        { ids: chunk, columnIds: [p.email, p.householdEmail, p.phone, p.dtdCompanyId] },
+        { ids: chunk, columnIds: [p.email, p.householdEmail, p.firstName, p.lastName, p.phone, p.dtdCompanyId] },
       );
       // Only People-board donors: an Organizations or People (Historical) donor has no DTD columns.
       for (const item of data.items.filter((i) => live(i) && onBoard(i, peopleBoard))) {
@@ -232,7 +240,7 @@ export class HttpDtdMondayClient implements DtdMondayClient {
           id: item.id,
           email: text(byId.get(p.email)) ?? text(byId.get(p.householdEmail)),
           householdEmail: text(byId.get(p.householdEmail)),
-          ...splitName(item.name ?? ''),
+          ...personName(text(byId.get(p.firstName)), text(byId.get(p.lastName)), item.name ?? ''),
           phone: text(byId.get(p.phone)),
           dtdCompanyId: text(byId.get(p.dtdCompanyId)),
         });

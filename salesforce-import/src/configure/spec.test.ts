@@ -17,6 +17,16 @@ describe('BOARD_SPECS columns', () => {
     const cols = (key: string) => (BOARD_SPECS[key]!.columns ?? []).map((c) => `${c.title} (${c.type})`).sort();
     expect(cols('people-historical')).toEqual(cols('people-live'));
   });
+  it('People boards carry First Name and Last Name as text', () => {
+    const cols = (BOARD_SPECS['people-live']!.columns ?? []).map((c) => `${c.title} (${c.type})`);
+    expect(cols).toEqual(expect.arrayContaining(['First Name (text)', 'Last Name (text)']));
+  });
+  it('attendee list views show what a mail merge needs', () => {
+    for (const name of ['By event', 'Attended']) {
+      const view = BOARD_SPECS['event-registrations']!.views!.find((v) => v.name === name)!;
+      expect(view.columns).toEqual(expect.arrayContaining(['First Name', 'Attendee Email']));
+    }
+  });
 });
 
 describe('Possible Duplicate flag (#54)', () => {

@@ -186,6 +186,7 @@ too — see "Rebuilt boards: remap, re-bootstrap, re-verify".)
 | `recurringGiftLinkColumn` | Donations → Recurring Gift (connect) | `board_relation_mm79pphw` | set on every write of an installment |
 | `donorExternalIdColumn` | People → Funraise Profile (link) | `link_mm79dag0` | lookup by bare id; create writes `{url, text}` |
 | `donorEmailColumn` | People → Personal Email (email) | `email_mm79m5qa` | lookup by address; create writes `{email, text}` |
+| `donorFirstNameColumn` / `donorLastNameColumn` | People → First Name / Last Name (text) | `text_mm8swwq5` / `text_mm8s1f86` | written from `donorFirstNameField` / `donorLastNameField` after creating a person, best effort; a failure leaves them blank and doesn't retry. Never written on a matched person |
 | `donorLinkColumn` | Donations → Donor (connect) | `board_relation_mm795r2d` | connects to People, People (Historical) and Organizations |
 | `subscriptionsPoll.columns.funraiseId` | Recurring Gifts → Funraise ID (link) | `link_mm79bx08` | transaction URL + bare id as text, same as the importer; the adopt-before-create lookup key |
 | `subscriptionsPoll.columns.donor` | Recurring Gifts → Donor (connect) | `board_relation_mm792b0c` | |
