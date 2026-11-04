@@ -16,6 +16,8 @@ export interface EmailLogConfig {
   activities: {
     activityTypeColumn: string;
     activityTypeLabel: string;
+    // What a BCC from one of mail.bulkSenders is labelled instead: a bulk send, not a contact.
+    bulkActivityTypeLabel: string;
     dateColumn: string;
     statusColumn: string;
     doneLabel: string;
@@ -35,6 +37,9 @@ export interface EmailLogConfig {
     loggingAddress: string;
     staffDomains: string[];
     staffSenders: string[];
+    // Senders whose BCCs are bulk sends (the Mail Merge Sheet's learn@). A forward from one is
+    // still a real reply, so it keeps activityTypeLabel.
+    bulkSenders: string[];
     trustedAuthServId: string;
     bodyMaxChars: number;
     maxRawBytes: number;

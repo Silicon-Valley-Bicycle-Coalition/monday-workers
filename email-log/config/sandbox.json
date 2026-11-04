@@ -12,6 +12,7 @@
   "activities": {
     "activityTypeColumn": "color_mm8ryerm",
     "activityTypeLabel": "Email",
+    "bulkActivityTypeLabel": "Bulk Email",
     "dateColumn": "date_mm8rjmz9",
     "statusColumn": "color_mm8rgzd2",
     "doneLabel": "Done",
@@ -39,6 +40,7 @@
       "bikesiliconvalley.org"
     ],
     "staffSenders": [],
+    "bulkSenders": ["learn@bikesiliconvalley.org"],
     "trustedAuthServId": "mx.cloudflare.net",
     "bodyMaxChars": 1900,
     "maxRawBytes": 10000000,
