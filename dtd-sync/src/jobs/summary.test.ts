@@ -24,7 +24,7 @@ async function seed(id: string, datetime: string): Promise<void> {
   await upsertRecord(env.DB, {
     donationIdentifier: `monday-${id}`, mondayItemId: id, source: null, status: ':in-progress', matchingGiftStatus: null,
     employerStatus: ':complete', companyId: null, companyName: null, matchedAmount: null, donationDatetime: datetime,
-    updatedSeenAt: NOW.toISOString(), unmatched: false,
+    updatedSeenAt: NOW.toISOString(), unmatched: false, donorEmailHash: null, donationAmount: null,
   });
 }
 

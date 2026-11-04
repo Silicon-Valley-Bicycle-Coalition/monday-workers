@@ -59,4 +59,15 @@ describe('moveMapping', () => {
       { title: 'Membership Tier', type: 'status' }, { title: 'Organization', type: 'board_relation' },
     ]);
   });
+
+  it('leaves a doc column out of the mapping, since Monday rejects any mapping that names one', () => {
+    const doc = (id: string): BoardColumn => ({ id, title: 'monday Doc v2', type: 'direct_doc' });
+    const text = (id: string): BoardColumn => ({ id, title: 'Note', type: 'text' });
+    expect(moveMapping([text('a'), doc('d1')], [text('b'), doc('d2')])).toEqual({ mapping: [{ source: 'a', target: 'b' }], missing: [] });
+  });
+
+  it('still blocks a move when a doc column is on the source board only, since its doc would be lost', () => {
+    const doc: BoardColumn = { id: 'd1', title: 'monday Doc v2', type: 'direct_doc' };
+    expect(moveMapping([doc], []).missing).toEqual([{ title: 'monday Doc v2', type: 'direct_doc' }]);
+  });
 });

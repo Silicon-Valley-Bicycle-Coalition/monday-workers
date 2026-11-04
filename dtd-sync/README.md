@@ -37,7 +37,8 @@ Cron 15 * * * *  (hourly, UTC)
   │
   ├─ pull     DTD get_updated_donations(since watermark − overlap; first run: July 1 of the
   │             previous fiscal year)
-  │             → find the Donations item (Funraise ID, else Salesforce ID, else our own pushed id;
+  │             → find the Donations item (Funraise ID, else Salesforce ID, else our own pushed id,
+  │               which counts only if the push ledger shows we sent it;
   │               an item on another board doesn't count)
   │             → Match Status / DTD Status (raw) / Match Company on Donations
   │             → DTD Company ID / DTD Company / DTD match link on the donor's People item
@@ -59,6 +60,20 @@ Cron 0 10 * * *  (nightly, UTC)
   └─ summary  Matching Gift Program board: one row per fiscal year (current and previous),
               recomputed from scratch each run
 ```
+
+**Ownership check.** DTD's plugin key is public (browsers receive it) and `register_donation` accepts
+it, so anyone can register a record with an identifier of their choosing. Pull therefore writes
+Monday only for a record it can tie to the item: a `monday-<id>` identifier counts only if the push
+ledger shows this Worker sent that item, and for every resolved item the record's donor email
+(trimmed, case-insensitive) must equal the donor's People personal or household email, and the
+amounts (when DTD sends one) must agree within 1%. A record that fails is stored as unmatched
+without an item id and logged as `dtd-sync: pull item <id> skipped: donor mismatch` (never the
+email); retries re-apply the check from a stored SHA-256 of the email (migration
+`0002_add_donor_email_hash.sql`), never the address itself. Donors on Organizations or People
+(Historical) can't be verified, so their gifts get no DTD status written. A mismatch on a record
+that was already verified leaves its stored row and link untouched. The Program Summary counts only
+DTD records verified against a Monday gift. Residual risk: someone who knows a donor's email and the
+gift amount can still pass the check; the public key can't prevent that.
 
 Every job has its own try/catch, so one failing job is logged by name and the run continues, with
 one exception: push runs only after a pull that completed this run (push skips gifts DTD already
@@ -114,7 +129,7 @@ run re-checks this for each linked Matching Donation in the window, Staff links 
 |---|---|---|
 | DTD | Base `https://doublethedonation.com/api/360matchpro/v1/` (`dtd.apiBase`). The private key is the Worker secret `DTD_PRIVATE_KEY`, sent as the `key` query parameter. | `register_donation` also carries the public key (`dtd.publicKey`, not a secret; the same one the member-portal employer-search widget uses). Never logged. |
 | Monday | The `monday-auth` broker's Staff sync app, bound as `MONDAY_AUTH` (`SyncToken` entrypoint). | Same arrangement as the other Workers; no Monday secret here. |
-| D1 | `DB`: `dtd_records` (DTD records seen), `pushes` (sent ledger), `sync_state` (pull watermark). | Migration `migrations/0001_create_tables.sql`. |
+| D1 | `DB`: `dtd_records` (DTD records seen), `pushes` (sent ledger), `sync_state` (pull watermark). | Migrations `migrations/0001_create_tables.sql`, `0002_add_donor_email_hash.sql`. |
 
 Endpoints used: `get_updated_donations` (pull, capped at 100,000 per call), `register_donation`
 (push). DTD's docs label the custom API **Enterprise-only**; it worked on SVBC's **Standard** plan
@@ -152,8 +167,17 @@ config-ready JSON block of every id:
 
 * **Donations:** Match Status, DTD Status (raw), Match Company, Matches gift, Match pairing, Sent to DTD.
 * **People:** DTD Company ID, DTD Company, DTD match link (the per-donor "start your match" link).
+* **People (Historical):** the same three, same titles and types. The Worker never writes them
+  there and its config holds no ids for them, so the printed block leaves them out. They exist because
+  `people-reclassification` moves nobody while a value-bearing column is on only one of the two
+  People boards. **The columns must land on both boards**, and the script stops, creating neither board's
+  columns, if either has one of these titles with another type.
 * **The Matching Gift Program board** (one row per fiscal year) and a Donations view,
   **Matching gifts to follow up** (Match Status = Waiting for donor, newest first).
+
+`scripts/mark-read-only-columns.mjs` puts 🔒 on these titles so staff leave them alone, on both
+People boards. Matches gift and Match pairing stay unmarked, since staff set them by hand when
+pairing.
 
 **People → Employer is never written.** `benevity-import` matches people by exact name plus
 Employer text, and DTD's company names ("Google") would not match Benevity's ("Google, LLC"), so
@@ -213,9 +237,17 @@ rest from the repo root. Both crons are UTC: the hourly run is at :15 past each 
    allow-listed donor shows Sent to DTD and appears in DTD under the test campaign; a test Matching
    Donation with Matched By set gets Matches gift and `Matched`. Remove the test items and the DTD
    test donations.
-9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --workspace <id> --config dtd-sync/config/svbc.json`
-   against the production boards, paste the printed ids into `config/svbc.json`, set the
-   campaign, deploy, run with the flag `off` and read the logs, then turn it `on`.
+9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --people-historical <id> --workspace <id> --config dtd-sync/config/svbc.json`
+   against the production boards (the Historical id is `boards.historical.boardId` in
+   `people-reclassification/config/svbc.json`), paste the printed ids into `config/svbc.json`, set
+   the campaign, deploy, run with the flag `off` and read the logs, then turn it `on`. The script
+   must finish: if the columns land on People but not People (Historical), `people-reclassification`
+   stops moving anyone until they match. It is idempotent, so re-run it after any failure. CRM Sandbox
+   v4's Historical columns were added by hand on 2026-11-03; a re-run there finds them by title and
+   creates nothing, as long as their types match. After it finishes, run
+   `MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace <id>` to preview the 🔒
+   renames, and again with `--apply` to make them. It also renames anything else still unmarked in
+   that workspace, so read the preview first.
 
 ### Cutover backfill
 

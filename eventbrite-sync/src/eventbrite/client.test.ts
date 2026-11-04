@@ -60,7 +60,7 @@ describe('HttpEventbriteClient', () => {
   });
 
   describe('getEvent', () => {
-    it('fetches the event with the venue and organizer expansions', async () => {
+    it('fetches the event with the venue, organizer and sales status expansions', async () => {
       const fetchImpl = vi.fn().mockResolvedValue(response(200, { id: '1993885250458', organizer: { name: 'SVBC' } }));
       const client = new HttpEventbriteClient('https://www.eventbriteapi.com/v3', 'tok', fetchImpl);
 
@@ -68,7 +68,7 @@ describe('HttpEventbriteClient', () => {
 
       expect(event?.organizer?.name).toBe('SVBC');
       const [url, init] = fetchImpl.mock.calls[0]!;
-      expect(url).toBe('https://www.eventbriteapi.com/v3/events/1993885250458/?expand=venue,organizer');
+      expect(url).toBe('https://www.eventbriteapi.com/v3/events/1993885250458/?expand=venue,organizer,event_sales_status');
       expect(init.headers.Authorization).toBe('Bearer tok');
     });
 

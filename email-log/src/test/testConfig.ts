@@ -26,6 +26,7 @@ export function testConfig(overrides: DeepPartial<EmailLogConfig> = {}): EmailLo
     activities: {
       activityTypeColumn: 'type_col',
       activityTypeLabel: 'Email',
+      bulkActivityTypeLabel: 'Bulk Email',
       dateColumn: 'date_col',
       statusColumn: 'status_col',
       doneLabel: 'Done',
@@ -45,12 +46,14 @@ export function testConfig(overrides: DeepPartial<EmailLogConfig> = {}): EmailLo
       loggingAddress: 'log@log.example.org',
       staffDomains: ['example.org'],
       staffSenders: [],
+      bulkSenders: [],
       trustedAuthServId: 'mx.example.net',
       bodyMaxChars: 1900,
       maxRawBytes: 10_000_000,
       forwardTimeZone: 'America/Los_Angeles',
       replyFrom: { email: 'noreply@mail.example.org', name: 'Monday Log' },
     },
+    timeline: { customActivityId: null },
     capacity: { activitiesMaxItems: 100000, warnPct: 95 },
     alerts: { itRequests: null },
   };

@@ -1,5 +1,5 @@
 // eventbrite-sync's side of the write switch (src/flags.ts, spec 2026-10-26): the dry-run versions
-// of the consumer's and the hourly follow-up sweep's deps. The business logic runs unchanged against them, so a dry run fetches,
+// of the consumer's and the ended-event sweep's deps. The business logic runs unchanged against them, so a dry run fetches,
 // maps and matches exactly as a live run would; only the last step — the Monday write or the D1
 // bookkeeping that records it — is swapped out here. The Eventbrite client is GET-only and passes
 // through untouched.
@@ -9,7 +9,7 @@ import type { EventStore } from './db/events';
 import type { AttendeeStore } from './db/attendees';
 import type { MondayClient, MondayItem } from './monday/client';
 import type { ConsumerQueue, ProcessBatchDeps } from './consumer/processBatch';
-import type { FollowupDeps } from './followups/run';
+import type { EndedEventSweepDeps } from './endedEvents/sweep';
 import type { EventRow, MondayBoards } from './types';
 import { EVENT_NOT_FOUND_ERROR } from './consumer/processEvent';
 
@@ -63,12 +63,11 @@ export function dryRunMondayClient(client: MondayClient, boards: MondayBoards, c
     }
     return proxy;
   };
-  const notifications = recordingProxy(client, 'Monday notification', { notify: undefined }, ctx);
+  const updates = recordingProxy(client, 'Monday update', { postUpdate: undefined }, ctx);
   return {
     findItemByColumnValue: (boardId, columnId, value) => client.findItemByColumnValue(boardId, columnId, value),
     getItems: (boardId, itemIds, columnIds) => client.getItems(boardId, itemIds, columnIds),
-    // A bell notification is a Monday write too, logged under its own sink.
-    notify: (userId, itemId, text) => notifications.notify(userId, itemId, text),
+    postUpdate: (itemId, body) => updates.postUpdate(itemId, body),
     createItem: (boardId, itemName, columnValues) => sinkFor(boardId).createItem(boardId, itemName, columnValues),
     changeColumnValues: (boardId, itemId, columnValues) => sinkFor(boardId).changeColumnValues(boardId, itemId, columnValues),
   };
@@ -129,17 +128,12 @@ export function dryRunConsumerDeps(deps: ProcessBatchDeps, ctx: SkipContext, kin
   };
 }
 
-// The follow-up sweep's deps for a cron run that runDisposition allowed: live for `run`, proxied
-// for `dry-run` — every Follow-up Email / Attendance / People-link / Follow-ups write and the
-// Held bell notification logged as a skip line. The sweep has no cursor: its run-once guard is the
-// event's Follow-ups column, which a dry run never sets, so the sweep logs the same would-be
-// writes every hour the event stays due.
-export function followupDepsFor(disposition: 'run' | 'dry-run', deps: FollowupDeps, ctx: SkipContext): FollowupDeps {
-  if (disposition === 'run') return deps;
+// The ended-event sweep's deps under `off`: each event it would re-drive is a `Write queue` skip
+// line and the ledger stays as it is. It has no cursor, so an ended event is logged again every
+// hour until it ages out of the sweep's window.
+export function dryRunEndedEventDeps(deps: EndedEventSweepDeps, ctx: SkipContext): EndedEventSweepDeps {
   return {
-    ...deps,
     eventStore: dryRunEventStore(deps.eventStore),
-    attendeeStore: dryRunAttendeeStore(deps.attendeeStore),
-    mondayClient: dryRunMondayClient(deps.mondayClient, deps.config.monday.boards, ctx),
+    queue: recordingProxy(deps.queue, 'Write queue', { send: undefined }, ctx),
   };
 }

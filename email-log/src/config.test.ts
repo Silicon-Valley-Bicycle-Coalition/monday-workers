@@ -34,6 +34,20 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).toThrow('monday.boards.people-live');
   });
 
+  it('rejects a missing or non-array mail.bulkSenders', () => {
+    for (const value of [undefined, 'learn@example.org']) {
+      const cfg = clone();
+      cfg.mail.bulkSenders = value;
+      expect(() => validateConfig(cfg)).toThrow('mail.bulkSenders');
+    }
+  });
+
+  it('rejects a missing activities.bulkActivityTypeLabel', () => {
+    const cfg = clone();
+    delete cfg.activities.bulkActivityTypeLabel;
+    expect(() => validateConfig(cfg)).toThrow('activities.bulkActivityTypeLabel');
+  });
+
   it('rejects an empty staffDomains', () => {
     const cfg = clone();
     cfg.mail.staffDomains = [];
@@ -92,6 +106,16 @@ describe('validateConfig', () => {
     expect(() => validateConfig(cfg)).not.toThrow();
     cfg.alerts.itRequests.cooldownDays = 0;
     expect(() => validateConfig(cfg)).toThrow('alerts.itRequests.cooldownDays');
+  });
+
+  it('requires timeline.customActivityId: a string, or null to turn the timeline entry off', () => {
+    const cfg = clone();
+    cfg.timeline.customActivityId = 'act-1';
+    expect(() => validateConfig(cfg)).not.toThrow();
+    cfg.timeline.customActivityId = '';
+    expect(() => validateConfig(cfg)).toThrow('timeline.customActivityId');
+    delete (cfg as Partial<typeof cfg>).timeline;
+    expect(() => validateConfig(cfg)).toThrow('timeline');
   });
 
   it('rejects a non-object config', () => {

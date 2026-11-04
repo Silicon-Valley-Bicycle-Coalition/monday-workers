@@ -30,7 +30,7 @@ export interface PassReport {
   cutoffISO: string;
   live: BoardCount;
   historical: BoardCount;
-  scanned: { live: number; historical: number; registrations: number; volunteers: number };
+  scanned: { live: number; historical: number; registrations: number; volunteers: number; logged: number };
   verdicts: Record<Verdict['kind'], number>;
   decided: { toHistorical: number; toLive: number };
   // What this pass actually did (or, dry run, would have done) — capped by run.maxMovesPerRun
@@ -46,13 +46,13 @@ export interface PassReport {
   error: string | null;
 }
 
-interface Resolved {
+export interface Resolved {
   live: BoardSchema; historical: BoardSchema;
   liveCols: PersonColumnIds; historicalCols: PersonColumnIds;
   toHistorical: ColumnMapping[]; toLive: ColumnMapping[];
   liveGroup: string; historicalGroup: string;
 }
-interface PersonColumnIds { lastGift: string; memberUntil: string; membershipTier: string; funraiseProfile: string | null }
+export interface PersonColumnIds { lastGift: string; memberUntil: string; membershipTier: string; funraiseProfile: string | null; promoteStatus: string; promotedOn: string }
 
 export class PassAbort extends Error {
   constructor(message: string) {
@@ -61,12 +61,21 @@ export class PassAbort extends Error {
   }
 }
 
+// What one operator-requested move did. 'refused' means the rule says this person belongs on
+// Historical, so the next pass would send them straight back.
+export type SingleMoveResult =
+  | { outcome: 'moved' | 'dry-run'; itemId: string; reason: string; latestActivity: string | null }
+  | { outcome: 'already-on-people' | 'not-found'; itemId: string }
+  | { outcome: 'wrong-board'; itemId: string; boardId: string }
+  | { outcome: 'refused'; itemId: string; latestActivity: string; cutoffISO: string }
+  | { outcome: 'skipped' | 'failed' | 'ambiguous' | 'error'; itemId: string; error: string };
+
 const HISTORICAL_ALERT_KIND = 'historical-capacity';
 // Consecutive move failures that stop a pass: Monday is unhappy, not one odd item.
 const MAX_CONSECUTIVE_FAILURES = 5;
 // How long a pass's lease lasts before another pass may take it over: well past the longest pass
 // a Worker invocation can run, so it only ever frees a lease whose holder died.
-const LEASE_MS = 30 * 60_000;
+export const LEASE_MS = 30 * 60_000;
 
 export async function runPass(deps: PassDeps, opts: PassOptions): Promise<PassReport | { skipped: string }> {
   const now = deps.now ?? (() => new Date());
@@ -112,7 +121,7 @@ async function executePass(deps: PassDeps, opts: PassOptions, now: () => Date): 
 
   const report: PassReport = {
     runId: opts.runId, trigger: opts.trigger, dryRun: opts.dryRun, todayISO, cutoffISO, live, historical,
-    scanned: { live: 0, historical: 0, registrations: 0, volunteers: 0 },
+    scanned: { live: 0, historical: 0, registrations: 0, volunteers: 0, logged: 0 },
     verdicts: { live: 0, historical: 0, unknown: 0 },
     decided: { toHistorical: 0, toLive: 0 }, planned: { toHistorical: 0, toLive: 0 },
     moved: 0, failed: 0, ambiguous: 0, settled: 0, remaining: 0, warnings, error: null,
@@ -124,58 +133,20 @@ async function executePass(deps: PassDeps, opts: PassOptions, now: () => Date): 
   // 2. Read everything.
   const people = new Map<string, PersonFacts>();
   for (const [board, schema, cols] of [['live', resolved.live, resolved.liveCols], ['historical', resolved.historical, resolved.historicalCols]] as const) {
-    const ids = [cols.lastGift, cols.memberUntil, cols.membershipTier, ...(cols.funraiseProfile ? [cols.funraiseProfile] : [])];
-    for await (const item of pageAll(monday, Number(schema.id), ids)) {
+    for await (const item of pageAll(monday, Number(schema.id), personColumnIdList(cols))) {
       report.scanned[board] += 1;
-      people.set(item.id, {
-        itemId: item.id, board: board as Board,
-        lastGiftISO: dateOnly(item.text.get(cols.lastGift)),
-        memberUntilISO: dateOnly(item.text.get(cols.memberUntil)),
-        membershipTier: item.text.get(cols.membershipTier) ?? null,
-        funraiseLinked: cols.funraiseProfile !== null && item.text.get(cols.funraiseProfile) !== null,
-        latestRegistrationISO: null, latestVolunteerISO: null,
-      });
+      people.set(item.id, personFacts(item, board, cols));
     }
   }
-  const bump = (personId: string, key: 'latestRegistrationISO' | 'latestVolunteerISO', dateISO: string | null) => {
+  const bump = (personId: string, key: ActivityKey, dateISO: string | null) => {
     const p = people.get(personId);
     if (p === undefined || dateISO === null) return;
     if (p[key] === null || dateISO > p[key]!) p[key] = dateISO;
   };
-  if (config.eventRegistrations !== null) {
-    const er = config.eventRegistrations;
-    const events = await requireSchema(monday, er.events.boardId, 'Events');
-    const startId = columnIdByTitle(events.columns, er.events.startColumn, `Events board ${events.id}`);
-    const eventStart = new Map<string, string | null>();
-    for await (const e of pageAll(monday, er.events.boardId, [startId])) eventStart.set(e.id, dateOnly(e.text.get(startId)));
-    const regs = await requireSchema(monday, er.boardId, 'Event Registrations');
-    const label = `Event Registrations board ${regs.id}`;
-    const c = {
-      attendee: columnIdByTitle(regs.columns, er.columns.attendee, label), event: columnIdByTitle(regs.columns, er.columns.event, label),
-      attendance: columnIdByTitle(regs.columns, er.columns.attendance, label), source: columnIdByTitle(regs.columns, er.columns.source, label),
-    };
-    const counted = (r: PageItem) =>
-      er.countedAttendanceLabels.includes(r.text.get(c.attendance) ?? '') || er.countedRegisteredSources.includes(r.text.get(c.source) ?? '');
-    for await (const r of pageAll(monday, er.boardId, [c.attendee, c.event, c.attendance, c.source])) {
-      report.scanned.registrations += 1;
-      if (!counted(r)) continue;
-      const start = (r.linked.get(c.event) ?? []).map((id) => eventStart.get(id) ?? null).find((d) => d !== null) ?? null;
-      for (const personId of r.linked.get(c.attendee) ?? []) bump(personId, 'latestRegistrationISO', start);
-    }
-  }
-  if (config.volunteers !== null) {
-    const v = config.volunteers;
-    const vol = await requireSchema(monday, v.boardId, 'Volunteers');
-    const label = `Volunteers board ${vol.id}`;
-    const c = { volunteer: columnIdByTitle(vol.columns, v.columns.volunteer, label), date: columnIdByTitle(vol.columns, v.columns.date, label) };
-    for await (const r of pageAll(monday, v.boardId, [c.volunteer, c.date])) {
-      report.scanned.volunteers += 1;
-      for (const personId of r.linked.get(c.volunteer) ?? []) bump(personId, 'latestVolunteerISO', dateOnly(r.text.get(c.date)));
-    }
-  }
+  await readActivity(monday, config, bump, report.scanned);
 
   // 3. Decide.
-  const rule = { todayISO, cutoffISO, lifetimeTierLabel: config.perpetual.lifetimeTierLabel, funraiseLinked: config.perpetual.funraiseLinked };
+  const rule = ruleOptions(config, todayISO, cutoffISO);
   const toHistorical: { p: PersonFacts; v: Verdict }[] = [];
   const toLive: { p: PersonFacts; v: Verdict }[] = [];
   for (const p of people.values()) {
@@ -262,6 +233,165 @@ async function executePass(deps: PassDeps, opts: PassOptions, now: () => Date): 
   return report;
 }
 
+// Moves one named person from People (Historical) to People, now, for an operator who can't wait
+// for the next pass. Same safeguards as a pass (the lease, the column check, the ledger), but only
+// in that direction, only for an item that really is on Historical, and only if the liveness rule
+// agrees: a person with old activity would just go back on the next pass. Reads the activity
+// boards in full, since their links can't be looked up by person.
+export async function moveOneToPeople(deps: PassDeps, opts: { runId: string; itemId: string; dryRun: boolean }): Promise<SingleMoveResult> {
+  const now = deps.now ?? (() => new Date());
+  const { itemId } = opts;
+  const leaseExpires = new Date(now().getTime() + LEASE_MS).toISOString();
+  if (!(await deps.ledger.acquireLease(opts.runId, now().toISOString(), leaseExpires))) {
+    return { outcome: 'skipped', itemId, error: 'another pass is running' };
+  }
+  try {
+    return await executeSingleMove(deps, opts, now);
+  } catch (err) {
+    const message = errorText(err);
+    console.error(`reclassify ${opts.runId}: move of item ${itemId} stopped: ${message}`);
+    return { outcome: 'error', itemId, error: message };
+  } finally {
+    await deps.ledger.releaseLease(opts.runId);
+  }
+}
+
+async function executeSingleMove(deps: PassDeps, opts: { runId: string; itemId: string; dryRun: boolean }, now: () => Date): Promise<SingleMoveResult> {
+  const { config, monday, ledger } = deps;
+  const { itemId, runId, dryRun } = opts;
+  const boardId = await monday.getItemBoardId(itemId);
+  if (boardId === null) return { outcome: 'not-found', itemId };
+  if (boardId === String(config.boards.live.boardId)) return { outcome: 'already-on-people', itemId };
+  if (boardId !== String(config.boards.historical.boardId)) return { outcome: 'wrong-board', itemId, boardId };
+
+  const resolved = await resolveBoards(monday, config);
+  const item = await monday.getItemValues(itemId, personColumnIdList(resolved.historicalCols));
+  if (item === null) return { outcome: 'not-found', itemId };
+  const person = personFacts(item, 'historical', resolved.historicalCols);
+  await readActivity(monday, config, (personId, key, dateISO) => {
+    if (personId !== itemId || dateISO === null) return;
+    if (person[key] === null || dateISO > person[key]!) person[key] = dateISO;
+  }, { registrations: 0, volunteers: 0, logged: 0 });
+
+  const todayISO = todayInZone(now(), config.window.timeZone);
+  const cutoffISO = cutoffFor(todayISO, config.window.years);
+  // 'unknown' (no evidence) may move: no pass ever moves such a person, so the move sticks.
+  const verdict = classify(person, ruleOptions(config, todayISO, cutoffISO));
+  if (verdict.kind === 'historical') return { outcome: 'refused', itemId, latestActivity: verdict.latestActivity, cutoffISO };
+  if (resolved.live.itemsCount >= config.thresholds.itemsLimit) {
+    throw new PassAbort(`People has no room (${resolved.live.itemsCount} of ${config.thresholds.itemsLimit} items)`);
+  }
+
+  const { created, existing } = await ledger.startRun({ runId, trigger: 'single-move', dryRun, startedAt: now().toISOString() });
+  if (!created) return { outcome: 'skipped', itemId, error: `run ${runId} already recorded (${existing!.status})` };
+  const decided = { reason: verdict.reason, latestActivity: verdict.latestActivity };
+  const id = await ledger.insertMove({
+    runId, itemId, fromBoardId: resolved.historical.id, toBoardId: resolved.live.id, direction: 'to-live',
+    ...decided, status: dryRun ? 'dry-run' : 'planned', plannedAt: now().toISOString(),
+  });
+  let result: SingleMoveResult;
+  if (dryRun) {
+    result = { outcome: 'dry-run', itemId, ...decided };
+  } else {
+    try {
+      await monday.moveItemToBoard(itemId, Number(resolved.live.id), resolved.liveGroup, resolved.toLive);
+      await ledger.setMoveStatus(id, 'moved', now().toISOString());
+      result = { outcome: 'moved', itemId, ...decided };
+    } catch (err) {
+      const message = errorText(err);
+      // An ambiguous row stays unsettled, and the next pass asks Monday where the item ended up.
+      const outcome = err instanceof AmbiguousWriteError ? 'ambiguous' : 'failed';
+      await ledger.setMoveStatus(id, outcome, now().toISOString(), message);
+      console.error(`reclassify ${runId}: move of item ${itemId} to-live is ${outcome}: ${message}`);
+      result = { outcome, itemId, error: message };
+    }
+  }
+  await ledger.finishRun(runId, result.outcome === 'failed' || result.outcome === 'ambiguous' ? 'failed' : 'ok', now().toISOString(), result);
+  console.log(`reclassify ${runId}: item ${itemId} to People: ${result.outcome}`);
+  return result;
+}
+
+const personColumnIdList = (cols: PersonColumnIds): string[] =>
+  [cols.lastGift, cols.memberUntil, cols.membershipTier, cols.promotedOn, ...(cols.funraiseProfile ? [cols.funraiseProfile] : [])];
+
+const personFacts = (item: PageItem, board: Board, cols: PersonColumnIds): PersonFacts => ({
+  itemId: item.id, board,
+  lastGiftISO: dateOnly(item.text.get(cols.lastGift)),
+  memberUntilISO: dateOnly(item.text.get(cols.memberUntil)),
+  membershipTier: item.text.get(cols.membershipTier) ?? null,
+  funraiseLinked: cols.funraiseProfile !== null && item.text.get(cols.funraiseProfile) !== null,
+  latestRegistrationISO: null, latestVolunteerISO: null, latestLoggedISO: null,
+  promotedOnISO: dateOnly(item.text.get(cols.promotedOn)),
+});
+
+const ruleOptions = (config: ReclassificationConfig, todayISO: string, cutoffISO: string) =>
+  ({ todayISO, cutoffISO, lifetimeTierLabel: config.perpetual.lifetimeTierLabel, funraiseLinked: config.perpetual.funraiseLinked });
+
+// Pages the optional activity boards, reporting each person's counted dates through `bump`.
+type ActivityKey = 'latestRegistrationISO' | 'latestVolunteerISO' | 'latestLoggedISO';
+
+export async function readActivity(
+  monday: ReclassificationMondayClient, config: ReclassificationConfig,
+  bump: (personId: string, key: ActivityKey, dateISO: string | null) => void,
+  scanned: { registrations: number; volunteers: number; logged: number },
+): Promise<void> {
+  await readLoggedActivities(monday, config, (personId, dateISO) => bump(personId, 'latestLoggedISO', dateISO), scanned);
+  if (config.eventRegistrations !== null) {
+    const er = config.eventRegistrations;
+    const events = await requireSchema(monday, er.events.boardId, 'Events');
+    const startId = columnIdByTitle(events.columns, er.events.startColumn, `Events board ${events.id}`);
+    const eventStart = new Map<string, string | null>();
+    for await (const e of pageAll(monday, er.events.boardId, [startId])) eventStart.set(e.id, dateOnly(e.text.get(startId)));
+    const regs = await requireSchema(monday, er.boardId, 'Event Registrations');
+    const label = `Event Registrations board ${regs.id}`;
+    const c = {
+      attendee: columnIdByTitle(regs.columns, er.columns.attendee, label), event: columnIdByTitle(regs.columns, er.columns.event, label),
+      attendance: columnIdByTitle(regs.columns, er.columns.attendance, label), source: columnIdByTitle(regs.columns, er.columns.source, label),
+    };
+    const counted = (r: PageItem) =>
+      er.countedAttendanceLabels.includes(r.text.get(c.attendance) ?? '') || er.countedRegisteredSources.includes(r.text.get(c.source) ?? '');
+    for await (const r of pageAll(monday, er.boardId, [c.attendee, c.event, c.attendance, c.source])) {
+      scanned.registrations += 1;
+      if (!counted(r)) continue;
+      const start = (r.linked.get(c.event) ?? []).map((id) => eventStart.get(id) ?? null).find((d) => d !== null) ?? null;
+      for (const personId of r.linked.get(c.attendee) ?? []) bump(personId, 'latestRegistrationISO', start);
+    }
+  }
+  if (config.volunteers !== null) {
+    const v = config.volunteers;
+    const vol = await requireSchema(monday, v.boardId, 'Volunteers');
+    const label = `Volunteers board ${vol.id}`;
+    const c = { volunteer: columnIdByTitle(vol.columns, v.columns.volunteer, label), date: columnIdByTitle(vol.columns, v.columns.date, label) };
+    for await (const r of pageAll(monday, v.boardId, [c.volunteer, c.date])) {
+      scanned.volunteers += 1;
+      for (const personId of r.linked.get(c.volunteer) ?? []) bump(personId, 'latestVolunteerISO', dateOnly(r.text.get(c.date)));
+    }
+  }
+}
+
+// Pages Activities (Logged), reporting each linked person's counted dates. An item with no Date or
+// no Person counts for nobody; a Bulk Email isn't in countedTypeLabels.
+export async function readLoggedActivities(
+  monday: ReclassificationMondayClient, config: ReclassificationConfig,
+  report: (personId: string, dateISO: string) => void,
+  scanned: { logged: number },
+): Promise<void> {
+  const la = config.loggedActivities;
+  if (la === null) return;
+  const board = await requireSchema(monday, la.boardId, 'Activities (Logged)');
+  const label = `Activities (Logged) board ${board.id}`;
+  const c = {
+    person: columnIdByTitle(board.columns, la.columns.person, label), date: columnIdByTitle(board.columns, la.columns.date, label),
+    activityType: columnIdByTitle(board.columns, la.columns.activityType, label),
+  };
+  for await (const a of pageAll(monday, la.boardId, [c.person, c.date, c.activityType])) {
+    scanned.logged += 1;
+    const date = dateOnly(a.text.get(c.date));
+    if (date === null || !la.countedTypeLabels.includes(a.text.get(c.activityType) ?? '')) continue;
+    for (const personId of a.linked.get(c.person) ?? []) report(personId, date);
+  }
+}
+
 async function raiseHistoricalAlert(deps: PassDeps, opts: PassOptions, board: BoardSchema, text: string, now: () => Date): Promise<void> {
   const alert = deps.config.alerts.itRequests;
   if (alert === null || opts.dryRun) return;
@@ -279,7 +409,7 @@ async function raiseHistoricalAlert(deps: PassDeps, opts: PassOptions, board: Bo
   }
 }
 
-async function settleUnsettled(deps: PassDeps, now: () => Date): Promise<number> {
+export async function settleUnsettled(deps: PassDeps, now: () => Date): Promise<number> {
   const rows = await deps.ledger.unsettledMoves();
   for (const row of rows) {
     const boardId = await deps.monday.getItemBoardId(row.itemId);
@@ -298,7 +428,7 @@ async function requireSchema(monday: ReclassificationMondayClient, boardId: numb
   return schema;
 }
 
-async function resolveBoards(monday: ReclassificationMondayClient, config: ReclassificationConfig): Promise<Resolved> {
+export async function resolveBoards(monday: ReclassificationMondayClient, config: ReclassificationConfig): Promise<Resolved> {
   const live = await requireSchema(monday, config.boards.live.boardId, 'People');
   const historical = await requireSchema(monday, config.boards.historical.boardId, 'People (Historical)');
   const cols = (schema: BoardSchema, label: string): PersonColumnIds => {
@@ -307,6 +437,7 @@ async function resolveBoards(monday: ReclassificationMondayClient, config: Recla
       lastGift: columnIdByTitle(schema.columns, pc.lastGift, label), memberUntil: columnIdByTitle(schema.columns, pc.memberUntil, label),
       membershipTier: columnIdByTitle(schema.columns, pc.membershipTier, label),
       funraiseProfile: pc.funraiseProfile === null ? null : columnIdByTitle(schema.columns, pc.funraiseProfile, label),
+      promoteStatus: columnIdByTitle(schema.columns, pc.promoteStatus, label), promotedOn: columnIdByTitle(schema.columns, pc.promotedOn, label),
     };
   };
   const toHistorical = moveMapping(live.columns, historical.columns);
@@ -334,12 +465,12 @@ async function resolveBoards(monday: ReclassificationMondayClient, config: Recla
   };
 }
 
-function countOf(schema: BoardSchema, configuredLimit: number): BoardCount {
+export function countOf(schema: BoardSchema, configuredLimit: number): BoardCount {
   const itemsLimit = schema.itemsLimit ?? configuredLimit;
   return { boardId: schema.id, name: schema.name, itemsCount: schema.itemsCount, itemsLimit, pct: Math.round((schema.itemsCount / itemsLimit) * 100) };
 }
 
-async function* pageAll(monday: ReclassificationMondayClient, boardId: number, columnIds: string[]): AsyncGenerator<PageItem> {
+export async function* pageAll(monday: ReclassificationMondayClient, boardId: number, columnIds: string[]): AsyncGenerator<PageItem> {
   let cursor: string | null = null;
   do {
     const page: { items: PageItem[]; cursor: string | null } = await monday.pageItems(boardId, columnIds, cursor);

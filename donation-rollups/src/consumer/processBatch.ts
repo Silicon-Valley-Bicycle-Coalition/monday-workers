@@ -27,6 +27,7 @@ import { attributedRollupFromTotals, attributedToColumnValues, organizationalGiv
 import { formatCents } from '../money';
 import { buildSponsorshipsMarkdown } from '../projections/sponsorships';
 import { registrationQualifies } from '../membership/volunteer';
+import { employerNameFor } from '../affiliations/employer';
 
 export interface QueueMessageLike<T> {
   body: T;
@@ -189,6 +190,11 @@ async function processOne(message: RecomputeQueueMessage, deps: ProcessBatchDeps
 
   if (message.kind === 'registration') {
     await processRegistration(message, deps);
+    return;
+  }
+
+  if (message.kind === 'affiliation') {
+    await processAffiliation(message, deps);
     return;
   }
 
@@ -358,6 +364,38 @@ async function processRegistration(message: RecomputeQueueMessage, deps: Process
   await deps.pendingStore.updateStatus(registrationItemId, 'written', {
     ...(first ? { ownerItemId: first.ownerItemId, ownerBoard: first.ownerBoardId } : {}), writtenAt: new Date().toISOString(),
   });
+}
+
+// An Affiliations item changed: re-read the person's affiliations and bring Employer Name in line.
+// Reads Monday fresh every time, so a retry or a duplicate delivery lands on the same answer and
+// the write is skipped once the column already matches. A re-pointed Person keeps the old person's
+// Employer Name as it was, the same as a Former affiliation (affiliations/employer.ts).
+async function processAffiliation(message: RecomputeQueueMessage, deps: ProcessBatchDeps): Promise<void> {
+  const { donationItemId: affiliationItemId } = message;
+  const { mondayClient, pendingStore, config } = deps;
+  const affiliations = config.affiliations;
+  const sync = affiliations?.employerSync;
+  let owner: { ownerItemId: string; ownerBoard: string } | undefined;
+  if (affiliations && sync) {
+    const summary = await mondayClient.getAffiliationSummary(affiliationItemId, affiliations.columns.personLink);
+    const columns = summary?.personBoardId ? sync.ownerColumnsByBoard[summary.personBoardId] : undefined;
+    if (summary?.personItemId && summary.personBoardId) {
+      if (columns === undefined) {
+        console.warn(`donation-rollups consumer: no employerSync entry for board "${summary.personBoardId}" — Employer Name for "${summary.personItemId}" not written`);
+      } else {
+        owner = { ownerItemId: summary.personItemId, ownerBoard: summary.personBoardId };
+        const state = await mondayClient.getPersonEmployerState(summary.personItemId, columns);
+        if (state !== null) {
+          const ids = [...new Set([...state.affiliationItemIds, affiliationItemId])];
+          const employerName = employerNameFor(await mondayClient.getEmployerAffiliations(ids, sync.columns), affiliationItemId, sync.currentStatusLabel);
+          if (employerName !== null && employerName !== state.employerName) {
+            await mondayClient.changeColumnValues(Number(summary.personBoardId), summary.personItemId, { [columns.employerName]: employerName });
+          }
+        }
+      }
+    }
+  }
+  await pendingStore.updateStatus(affiliationItemId, 'written', { ...owner, writtenAt: new Date().toISOString() });
 }
 
 // An owner D1 remembers (a former owner, an owner-keyed message) may have been deleted on Monday

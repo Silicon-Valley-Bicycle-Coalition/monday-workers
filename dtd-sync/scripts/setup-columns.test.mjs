@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   matchStatusLabels, labelIds, donationColumnSpecs, PEOPLE_COLUMN_SPECS, programSummarySpecs,
   planColumns, createColumnDefaults, labelIndex, viewFilter, parseArgs, RESERVED_LABEL_ID,
+  typeConflicts, ensurePeopleColumns,
 } from './setup-columns.mjs';
 
 const STATUS_LABELS = {
@@ -65,8 +66,73 @@ test('viewFilter is a single any_of rule on the label index', () => {
   assert.deepEqual(viewFilter('color_x', 1), { operator: 'and', rules: [{ column_id: 'color_x', compare_value: [1], operator: 'any_of' }] });
 });
 
+const ARGS = ['--donations', '1', '--people', '2', '--people-historical', '4', '--workspace', '3'];
+
 test('parseArgs requires numeric ids and a value per flag', () => {
-  assert.deepEqual(parseArgs(['--donations', '1', '--people', '2', '--workspace', '3']), { donations: '1', people: '2', workspace: '3' });
-  assert.throws(() => parseArgs(['--donations', '1', '--people', '2']), /workspace/);
-  assert.throws(() => parseArgs(['--donations', '--people', '2', '--workspace', '3']), /needs a value/);
+  assert.deepEqual(parseArgs(ARGS), { donations: '1', people: '2', 'people-historical': '4', workspace: '3' });
+  assert.throws(() => parseArgs(['--donations', '1', '--people', '2', '--people-historical', '4']), /workspace/);
+  assert.throws(() => parseArgs(['--donations', '--people', '2', '--people-historical', '4', '--workspace', '3']), /needs a value/);
 });
+
+test('parseArgs requires --people-historical', () => {
+  assert.throws(() => parseArgs(['--donations', '1', '--people', '2', '--workspace', '3']), /--people-historical/);
+});
+
+test('parseArgs refuses the same board as People and People (Historical)', () => {
+  assert.throws(() => parseArgs(['--donations', '1', '--people', '2', '--people-historical', '2', '--workspace', '3']), /different boards/);
+});
+
+test('planColumns finds People columns on Historical by bare title', () => {
+  const { have, missing } = planColumns(PEOPLE_COLUMN_SPECS, [
+    { id: 'text_h', title: '🔒 DTD Company ID', type: 'text' }, { id: 'link_h', title: 'DTD match link', type: 'link' },
+  ]);
+  assert.deepEqual(have, { dtdCompanyId: 'text_h', dtdLink: 'link_h' });
+  assert.deepEqual(missing.map((s) => s.key), ['dtdCompany']);
+});
+
+test('typeConflicts names a same-title column of another type, ignoring markers', () => {
+  assert.deepEqual(typeConflicts(PEOPLE_COLUMN_SPECS, [
+    { id: 'a', title: '🔒 DTD match link', type: 'text' },
+    { id: 'b', title: '📜 DTD Company', type: 'text' },
+    { id: 'c', title: 'Unrelated', type: 'link' },
+  ]), [{ title: 'DTD match link', expected: 'link', actual: 'text' }]);
+});
+
+// Boards keyed by id, with an ensureColumns that records what it was asked to provision.
+function fakeMonday(boards) {
+  const ensured = [];
+  return {
+    ensured,
+    readBoard: async (id) => boards[id],
+    ensureColumns: async (board, specs) => {
+      ensured.push({ board: board.id, specs });
+      return Object.fromEntries(specs.map((s) => [s.key, `${board.id}:${s.key}`]));
+    },
+  };
+}
+
+const PEOPLE_ARGS = { people: '2', 'people-historical': '4' };
+
+test('ensurePeopleColumns provisions identical specs on both boards', async () => {
+  const monday = fakeMonday({ 2: { id: '2', name: 'People', columns: [] }, 4: { id: '4', name: 'People (Historical)', columns: [] } });
+  await ensurePeopleColumns(PEOPLE_ARGS, monday);
+  assert.deepEqual(monday.ensured.map((e) => e.board).sort(), ['2', '4']);
+  assert.deepEqual(monday.ensured[0].specs, PEOPLE_COLUMN_SPECS);
+  assert.deepEqual(monday.ensured[1].specs, PEOPLE_COLUMN_SPECS);
+});
+
+test('ensurePeopleColumns returns only the People ids, the ones config needs', async () => {
+  const monday = fakeMonday({ 2: { id: '2', name: 'People', columns: [] }, 4: { id: '4', name: 'People (Historical)', columns: [] } });
+  assert.deepEqual(await ensurePeopleColumns(PEOPLE_ARGS, monday), { dtdCompanyId: '2:dtdCompanyId', dtdCompany: '2:dtdCompany', dtdLink: '2:dtdLink' });
+});
+
+for (const [label, peopleColumns, historicalColumns, named] of [
+  ['Historical', [], [{ id: 'x', title: 'DTD Company', type: 'long_text' }], 'People (Historical)'],
+  ['People', [{ id: 'x', title: 'DTD match link', type: 'text' }], [], 'People'],
+]) {
+  test(`ensurePeopleColumns creates nothing when ${label} has a wrong-typed column`, async () => {
+    const monday = fakeMonday({ 2: { id: '2', name: 'People', columns: peopleColumns }, 4: { id: '4', name: 'People (Historical)', columns: historicalColumns } });
+    await assert.rejects(ensurePeopleColumns(PEOPLE_ARGS, monday), new RegExp(`${named.replace(/[()]/g, '\\$&')}: "DTD`));
+    assert.deepEqual(monday.ensured, []);
+  });
+}

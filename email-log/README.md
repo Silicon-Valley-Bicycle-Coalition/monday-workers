@@ -5,8 +5,8 @@
 — **sandbox deployed 2026-11-02** (`svbc-email-log-sandbox`, `log-sandbox@log.bikesiliconvalley.org`;
 a staff BCC logged end to end); **production live 2026-11-03** (`svbc-email-log`,
 `log@log.bikesiliconvalley.org`, writes on; a staff BCC logged end to end, see "Production
-bring-up"). The sandbox still owes the forgery check (step 5) and steps 6 to 10 (see "Sandbox
-bring-up"), and the staff note isn't written yet.
+bring-up"). The sandbox still owes steps 6 to 10 (see "Sandbox bring-up"), and the staff note
+isn't written yet. The forgery check (step 5) is closed from Cloudflare's docs, not a live send.
 **Priority:** Post-cutover, non-blocking. It replaces the Salesforce Gmail extension's one-click
 email logging.
 **Stack:** TypeScript + D1 + Cloudflare Queues + Email Routing (an `email()` handler; there is no
@@ -39,10 +39,23 @@ email stays in email.
   forward the Worker couldn't parse), the reply says so and the item is `Needs Person`: open it
   and link the person by hand. You'll also hear back if the item couldn't be written after
   several tries.
+* **Where it shows:** on the Activities (Logged) board, in the person's **Activities (Logged)**
+  column, and as a `Logged email` entry on their **Emails & Activities** timeline.
 * A clean log is silent. Mail with no one outside SVBC on it (staff to staff) is dropped without
   a reply.
 
 If you BCC and also forward the same email, you may get two items; delete the extra one.
+
+**One standing exception to "significant touches only":** the Program Email Mail Merge Sheet BCCs
+this address on every email it sends as `learn@` (`scripts/apps-script/mail-merge.gs` in the
+migration repo, `docs/37`). The merge sends one message per recipient, so each gets its own item
+and timeline entry, and each recipient not on a People record gets its own `Needs Person` item and
+reply to `learn@`. A BCC from an address in `mail.bulkSenders` (`learn@`) gets Activity Type
+`Bulk Email` instead of `Email`, so people-reclassification doesn't count it as contact. A forward
+from `learn@` stays `Email`, because it's a reply someone really sent. Someone writing by hand from
+`learn@` and BCCing the log looks the same as the merge, and is labelled bulk too. The label must
+exist on the Activity Type column before this deploys. `scripts/relabel-bulk-email.mjs` relabels
+items logged before it did.
 
 ## Data flow
 
@@ -91,6 +104,15 @@ staff Gmail ──BCC/forward──▶ log@log.bikesiliconvalley.org
   then `+N more`, and Notes as a whole is cut to 2,000 characters), Message Hash = the dedupe
   hash. Inline images the HTML shows in place (signature logos) aren't listed as attachments.
 * **If nothing matched, the item is still created**, with an empty Person link and `Needs Person`.
+* **The timeline entry** (one per matched person, when `timeline.customActivityId` is set): a
+  `Logged email` custom activity on the person's **Emails & Activities** timeline, so the email
+  shows where staff look for email, not only in the person's Activities (Logged) column. Title =
+  the item's name, summary = the body on one line (255 characters), content = the item's Notes,
+  timestamp = the email's date, URL = the Activity item. Best effort, after the item is logged: a
+  failure is logged with the item and person ids and isn't retried (a retry would adopt the item
+  without re-posting, and an entry can't be looked up to dedupe). The entry is a copy: fixing the
+  item's Person link later doesn't move it. Works on People and People (Historical) items alike
+  (checked in the sandbox 2026-11-03), though only People shows the Emails & Activities view.
 
 ## Matching
 
@@ -120,8 +142,10 @@ still unset until the board and live mail exist.
 |---|---|
 | `monday.boards` | `activities-logged` (write target), `people-live`, `people-historical`, `affiliations`; `null` = not configured |
 | `activities.*Column` | column ids on Activities (Logged): activity type, date, status, owner, person, notes, message hash |
+| `activities.bulkActivityTypeLabel`, `mail.bulkSenders` | the label for a BCC from a bulk sender, and those senders |
 | `activities.activityTypeLabel`, `doneLabel`, `needsPersonLabel` | status/label text written (`Email`, `Done`, `Needs Person`) |
 | `matching.*` | email column ids on People, People (Historical), and Affiliations (Work Email + Person link) |
+| `timeline.customActivityId` | the Emails & Activities custom activity posted on each matched person (`Logged email`, `79eba48d-…`, created 2026-11-03; one account, so both configs share it); `null` turns the entry off |
 | `mail.loggingAddress` | the address staff BCC; must not be on a staff domain |
 | `mail.staffDomains` | exact domain match; subdomains are not staff |
 | `mail.staffSenders` | optional allowlist of addresses; `[]` = the whole staff domain |
@@ -151,8 +175,10 @@ still unset until the board and live mail exist.
 
 Standard Monday GraphQL through the canonical transport copy `src/monday/graphql.ts`
 (byte-identical to `monday-backup`'s; the `monday-graphql-copies` CI job enforces it). The Worker
-reads People, People (Historical), Affiliations and the users list, and writes Activities (Logged)
-plus, if alerts are on, IT Requests. Use a dedicated integration user and run
+reads People, People (Historical), Affiliations and the users list, and writes Activities (Logged),
+Emails & Activities timeline entries on matched People items (`create_timeline_item`, which needs a
+CRM seat; API-created entries don't fire "new timeline item" automations) and, if alerts are on, IT
+Requests. Use a dedicated integration user and run
 `node ../scripts/check-monday-token-scope.mjs --workspace <id>` before calling the token scoped.
 
 ## Prerequisites (board work nobody has done)
@@ -223,6 +249,24 @@ Do these in order. Steps 5 to 9 are live checks: the answer decides config or co
    making two, which the parser rejects. Confirm the message is rejected. **If Cloudflare does not
    add its own `Authentication-Results` header to unsigned mail, stop and report back before going
    live:** the parser's single-header rule is then forgeable.
+   *Closed from the docs 2026-11-03; no forged message was sent* (port 25 is blocked from the
+   machine this was done on). The evidence:
+   * Cloudflare's [email handler docs](https://developers.cloudflare.com/email-service/api/route-emails/email-handler/#authentication-results)
+     say Email Routing validates DMARC before invoking the Worker and prepends its own
+     `Authentication-Results` header from `mx.cloudflare.net`, warning that other such headers may
+     come from the sender. They don't single out unsigned mail, so "adds it to unsigned mail" is
+     read from that general statement. Only signed mail has been seen doing it here.
+   * Cloudflare's [postmaster docs](https://developers.cloudflare.com/email-service/reference/postmaster/#dmarc-enforcing)
+     say incoming mail failing the claimed sender's DMARC policy is rejected, and mail failing both
+     SPF and DKIM is rejected too. `bikesiliconvalley.org` publishes `p=reject; adkim=s; aspf=s`,
+     so unsigned mail with a staff `From:` from an unauthorized server shouldn't reach the Worker.
+   * `authenticate.test.ts` covers the Worker's half: two headers with the trusted id are rejected,
+     whichever comes first.
+
+   **Send the forged message after all if** that DMARC record is ever relaxed, or if Cloudflare's
+   documented behavior changes. Mail from a server the domain's SPF record authorizes can pass
+   DMARC on SPF alone, so for that sender only the prepended header stands between a forged header
+   and the parser.
 6. **Live check: email lookup case.** Does `items_page_by_column_values` on an email column
    ignore case? The Worker looks up lowercased addresses. If Monday's lookup is case-sensitive,
    record that here and open an issue: a person stored with a mixed-case address shows as
@@ -270,9 +314,9 @@ Started 2026-11-03, post-cutover.
    works in production too.
 8. **Staff note:** one paragraph in the staff guide (significant touches only).
 
-The sandbox's forgery check (step 5) and steps 6 to 10 are still owed. They test the code, not the
-deployment, so they apply to production as they stand; until the forgery check is done, keep the
-`log@` address internal.
+The sandbox's steps 6 to 10 are still owed. They test the code, not the deployment, so they apply
+to production as they stand. The forgery check (step 5) is closed from Cloudflare's docs rather
+than a live send; see step 5 for the evidence and for when to send it after all.
 
 ## Failures and alerts
 

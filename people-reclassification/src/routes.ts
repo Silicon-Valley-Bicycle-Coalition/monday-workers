@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
 import { secretsMatch } from './secret';
 import type { RunRow } from './db/ledger';
-import type { PassReport } from './pass';
+import type { PassReport, SingleMoveResult } from './pass';
+import { parsePromoteEvent } from './promote';
 import { runDisposition, type WriteMode } from './flags';
 
 export interface RoutesDeps {
   // Runs one pass now. dryRun comes from the write mode (off = dry) or a forced ?dryRun=true.
   runPass(opts: { dryRun: boolean; runId: string }): Promise<PassReport | { skipped: string }>;
+  // Moves one person from People (Historical) to People, under the same write mode.
+  moveToPeople(opts: { itemId: string; dryRun: boolean; runId: string }): Promise<SingleMoveResult>;
   recentRuns(): Promise<RunRow[]>;
   // The write switch, read once per request.
   mode(): Promise<WriteMode>;
@@ -14,7 +17,31 @@ export interface RoutesDeps {
   // never in the query string, where it would land in request logs (#64). Checked constant-time
   // and fail-closed: an unset/empty secret disables the routes entirely.
   secret?: string;
+  // Promotes one person on staff request (src/promote.ts).
+  promote(opts: { itemId: string; dryRun: boolean; runId: string }): Promise<unknown>;
+  requestLabel: string;
+  // Shared secret on the registered Monday webhook URL (`?secret=`); unset = route disabled.
+  webhookSecret?: string;
+  // ctx.waitUntil: a promote can outlast Monday's webhook timeout, and the sweep covers a lost one.
+  defer(work: Promise<unknown>): void;
   now?: () => Date;
+}
+
+const MOVE_STATUS: Record<SingleMoveResult['outcome'], 200 | 404 | 409 | 502> = {
+  moved: 200, 'dry-run': 200, 'already-on-people': 200,
+  'not-found': 404, 'wrong-board': 409, refused: 409, skipped: 409,
+  failed: 502, ambiguous: 502, error: 502,
+};
+
+// Whether a request writes: the write mode decides, and ?dryRun=true forces a preview.
+function writeChoice(param: string | undefined, mode: WriteMode): { dryRun: boolean } | { status: 400 | 409 | 503; error: string } {
+  if (param === 'false') return { status: 400, error: 'dryRun=false is no longer accepted; use scripts/flags.mjs' };
+  if (param !== undefined && param !== 'true') return { status: 400, error: 'dryRun must be "true"' };
+  if (param === 'true') {
+    return mode === 'unknown' ? { status: 503, error: 'write mode is unknown (KV read failed)' } : { dryRun: true };
+  }
+  const disposition = runDisposition(mode);
+  return disposition === 'skip' ? { status: 409, error: `write mode is ${mode}; nothing run` } : { dryRun: disposition === 'dry-run' };
 }
 
 // The operator surface: the cron calls the same pass, so there is no cron-only behaviour to
@@ -33,24 +60,49 @@ export function createApp(deps: RoutesDeps) {
 
   app.post('/reclassify/run', async (c) => {
     if (!(await authorized(c.req.header('Authorization')))) return c.json({ ok: false }, 401);
-    const param = c.req.query('dryRun');
-    if (param === 'false') return c.json({ ok: false, error: 'dryRun=false is no longer accepted; use scripts/flags.mjs' }, 400);
-    if (param !== undefined && param !== 'true') return c.json({ ok: false, error: 'dryRun must be "true"' }, 400);
-    const mode = await deps.mode();
-    let dryRun: boolean;
-    if (param === 'true') {
-      if (mode === 'unknown') return c.json({ ok: false, error: 'write mode is unknown (KV read failed)' }, 503);
-      dryRun = true;
-    } else {
-      const disposition = runDisposition(mode);
-      if (disposition === 'skip') return c.json({ ok: false, error: `write mode is ${mode}; no pass run` }, 409);
-      dryRun = disposition === 'dry-run';
-    }
+    const choice = writeChoice(c.req.query('dryRun'), await deps.mode());
+    if ('error' in choice) return c.json({ ok: false, error: choice.error }, choice.status);
     const runId = `http-${now().toISOString().replace(/[:.]/g, '-')}`;
-    const result = await deps.runPass({ dryRun, runId });
+    const result = await deps.runPass({ dryRun: choice.dryRun, runId });
     // Skipped: another pass holds the lease, or this run_id was already recorded.
     if ('skipped' in result) return c.json({ ok: false, ...result }, 409);
     return c.json({ ok: result.error === null, ...result });
+  });
+
+  // One person, now, rather than waiting for the next pass (src/pass.ts moveOneToPeople).
+  app.post('/reclassify/move-to-people/:itemId', async (c) => {
+    if (!(await authorized(c.req.header('Authorization')))) return c.json({ ok: false }, 401);
+    const itemId = c.req.param('itemId');
+    if (!/^\d+$/.test(itemId)) return c.json({ ok: false, error: 'item id must be numeric' }, 400);
+    const choice = writeChoice(c.req.query('dryRun'), await deps.mode());
+    if ('error' in choice) return c.json({ ok: false, error: choice.error }, choice.status);
+    const runId = `move-${itemId}-${now().toISOString().replace(/[:.]/g, '-')}`;
+    const result = await deps.moveToPeople({ itemId, dryRun: choice.dryRun, runId });
+    const status = MOVE_STATUS[result.outcome];
+    return c.json({ ok: status === 200, ...result }, status);
+  });
+
+  // Staff set Promote to People = Promote on an item. Monday can't send a header, so the secret is in
+  // the URL (root README, "Webhook secrets in the URL").
+  app.post('/webhooks/monday/promote', async (c) => {
+    if (!(await secretsMatch(c.req.query('secret'), deps.webhookSecret))) return c.json({ ok: false }, 401);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: 'invalid JSON body' }, 200);
+    }
+    const challenge = (body as { challenge?: unknown } | null)?.challenge;
+    if (typeof challenge === 'string') return c.json({ challenge }, 200);
+    const event = parsePromoteEvent(body, deps.requestLabel);
+    if (event === null) return c.json({ ok: false, ignored: true }, 200);
+    // The status stays at Promote under hold, so the morning sweep picks it up after.
+    const mode = await deps.mode();
+    const disposition = runDisposition(mode);
+    if (disposition === 'skip') return c.json({ ok: false, error: `write mode is ${mode}` }, 503);
+    const runId = `promote-${event.itemId}-${now().toISOString().replace(/[:.]/g, '-')}`;
+    deps.defer(deps.promote({ itemId: event.itemId, dryRun: disposition === 'dry-run', runId }));
+    return c.json({ ok: true }, 200);
   });
 
   return app;

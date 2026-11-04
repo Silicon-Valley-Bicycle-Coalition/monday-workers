@@ -35,6 +35,12 @@ describe('expectedGifts', () => {
     { Id: 'tx2', CnP_PaaS__TotalCharged__c: 52.25, CnP_PaaS__TransactionDate__c: '2021-03-04T18:11:10.000+0000' },
   ];
 
+  it('files a C&P transaction in the fiscal year of its Pacific day, as transform does', () => {
+    const r = expectedGifts([], [{ Id: 'tx3', CnP_PaaS__TotalCharged__c: 10,
+      CnP_PaaS__TransactionDate__c: '2021-07-01T05:00:00.000+0000' }]);
+    expect(r.gifts).toEqual([{ sfId: 'tx3', fy: '2021', cents: 1000 }]);
+  });
+
   it('counts every Opportunity regardless of stage, plus only the C&P not already an Opportunity', () => {
     const r = expectedGifts(opps, cnp);
     expect(r.cnpUnique).toBe(1);

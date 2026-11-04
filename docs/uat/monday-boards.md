@@ -155,7 +155,8 @@ that a person should confirm or reject) · **Current** · **By organization**.
 2. On **By organization**, open a company you know. Are the right people listed with the right
    roles?
 3. Add an affiliation for your UAT test person: new item, set Person, Organization, Role, Primary.
-   Open the person's card and confirm it appears under Affiliations.
+   Open the person's card and confirm it appears under Affiliations, and that Employer Name now
+   shows the organization.
 
 ## Donations
 
@@ -249,7 +250,8 @@ Salesforce. Ongoing Eventbrite check-ins flow to the live workspace's Event Part
 
 **Events tabs:** **Upcoming** (opens here) · **All events**. Calendar (by Date) and Kanban (by
 Program) views are still to be added by hand.
-**Registrations tabs:** **By event** (opens here; grouped by Event) · **Volunteers** ·
+**Registrations tabs:** **By event** (opens here; grouped by Event) · **Class roster** (who is
+registered right now for each upcoming class; needs the Eventbrite attendee feed) · **Volunteers** ·
 **Attended** · **Unlinked attendees** (Worklist: registrations with no People match) · **Needs
 review**.
 

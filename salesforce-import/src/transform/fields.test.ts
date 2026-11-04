@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, fiscalYear, ownerAttribution, consentLabel } from './fields.js';
+import { salesforceDebug, setStaffMatcher, funraiseTransactionLink, funraiseSupporterLink, collapseEmail, consentColumns, localNewsUrl, localNewsName, dateCol, pacificDateCol, fiscalYear, ownerAttribution, consentLabel } from './fields.js';
 
 describe('salesforceDebug', () => {
   it('folds SF ID and audit fields into one long-text column', () => {
@@ -68,6 +68,19 @@ describe('localNewsName', () => {
     expect(localNewsName('CUPERTINO', cfg)).toBe('Civic Digest');
     expect(localNewsName('Oakland', cfg)).toBe('Local News Matters');
     expect(localNewsName(null, cfg)).toBe('Local News Matters');
+  });
+});
+
+describe('pacificDateCol', () => {
+  it('takes the Pacific calendar day of a Salesforce datetime', () => {
+    expect(pacificDateCol('2025-10-26T00:30:00.000+0000')).toEqual({ date: '2025-10-25' }); // PDT
+    expect(pacificDateCol('2026-01-10T07:59:00.000+0000')).toEqual({ date: '2026-01-09' }); // PST
+    expect(pacificDateCol('2026-01-10T08:00:00.000+0000')).toEqual({ date: '2026-01-10' });
+  });
+  it('leaves an empty or unparseable value empty', () => {
+    expect(pacificDateCol(null)).toBeNull();
+    expect(pacificDateCol('')).toBeNull();
+    expect(pacificDateCol('soon')).toBeNull();
   });
 });
 

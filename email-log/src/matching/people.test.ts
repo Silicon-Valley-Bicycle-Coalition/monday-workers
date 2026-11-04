@@ -24,6 +24,9 @@ function fakeClient(finds: Record<string, string[]>, connections: Record<string,
     async createItem() {
       return '1';
     },
+    async createTimelineItem() {
+      return 'tl-1';
+    },
   };
   return { client, calls };
 }

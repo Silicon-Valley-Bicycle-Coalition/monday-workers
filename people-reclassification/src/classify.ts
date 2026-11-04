@@ -5,13 +5,14 @@
 // cutoff replaced by a window of `years` ending today:
 //   perpetual (never ages out): a linked Funraise supporter profile; Membership Tier = Lifetime.
 //   activity dates: Last Gift Date; Member Until; a counted event registration's event start; a
-//     volunteer-hours date. A date after today is a data-entry defect (docs/07's CloseDate
+//     volunteer-hours date; a logged email, call or meeting on Activities (Logged); Promoted On,
+//     which staff set by promoting someone (src/promote.ts). A date after today is a data-entry defect (docs/07's CloseDate
 //     finding) and is ignored — except Member Until, where "after today" is just a current term.
 //   no evidence at all: left where it is, and counted. Moving on absence would sweep advocacy
 //     contacts (Stakeholder Type = City or Agency Staff, Elected Official) and anyone staff add
 //     by hand off the live board, since none of those leave a gift, term or registration behind.
-// Staff Task activity (classifyContact's recentActivityIds) is not a source here: the sizing
-// analysis left it out too, and the Activities board holds two years of it, inside any window.
+// The imported Activities board (classifyContact's recentActivityIds) is not a source here: the
+// sizing analysis left it out too, and it holds two years of staff Tasks, inside any window.
 
 export type Board = 'live' | 'historical';
 
@@ -24,6 +25,8 @@ export interface PersonFacts {
   funraiseLinked: boolean;
   latestRegistrationISO: string | null;
   latestVolunteerISO: string | null;
+  latestLoggedISO: string | null;
+  promotedOnISO: string | null;
 }
 
 export type Verdict =
@@ -42,6 +45,7 @@ export function latestActivity(p: PersonFacts, todayISO: string): string | null 
   const until = dateOnly(p.memberUntilISO);
   const candidates = [
     dateOnly(p.lastGiftISO), dateOnly(p.latestRegistrationISO), dateOnly(p.latestVolunteerISO),
+    dateOnly(p.latestLoggedISO), dateOnly(p.promotedOnISO),
     until === null ? null : until > todayISO ? todayISO : until,
   ].filter((d): d is string => d !== null && d <= todayISO);
   return candidates.length === 0 ? null : candidates.reduce((a, b) => (a > b ? a : b));

@@ -84,6 +84,8 @@ sandbox mirror's actual live config on 2026-09-21, not just described genericall
    status changes to something, send a webhook" (monday's natural-language automation-creation
    API could not resolve this action by name — two different phrasings both matched an unrelated
    *inbound* webhook trigger block instead. It only worked by building it directly in the UI).
+   Use the template: "Create from scratch" has no webhook action. The template first asks for an
+   account connection, which here means the webhook URL: choose "Use another account" and paste it.
    Trigger: `Post-Event Feedback` → `Ready to Send`. Webhook URL:
    `https://svbc-bp-feedback-notify.svbc-account.workers.dev/webhook/bp-feedback?secret=<the WEBHOOK_SECRET from step 1>`
    (there's no header field, hence the secret in the query string — see Data flow above). monday
@@ -173,8 +175,8 @@ holds the sandbox Organizer Feedback Form's real URL; `config/production.json`'s
 (`https://forms.monday.com/forms/4a5ce8f0e00550987dffbcf96280094e`, confirmed live 2026-09-20 —
 its questions and welcome/success copy are already organizer-specific; only the browser-tab title
 and some dead board columns are still cosmetically wrong, see `migration-plan.md`). That cosmetic
-cleanup doesn't block this Worker functionally, but production deploy is still gated on the two
-items in Open Questions below.
+cleanup doesn't block this Worker functionally, and production went live on 2026-11-03 (see Open
+questions below).
 
 **Confirmed working end-to-end as of 2026-09-21.** Sends to `sandbox@bikesiliconvalley.org` had
 initially failed with `destination address is not a verified address` — Cloudflare requires every
@@ -202,7 +204,7 @@ npm run dev           # wrangler dev — local Worker, no real email sends witho
                        # domain configured locally; see wrangler docs for local email testing
 npm run dev:sandbox
 npm run deploy:sandbox
-npm run deploy         # do not run until the Open Questions below are resolved
+npm run deploy         # production: live, and goes straight to real organizers
 ```
 
 ## Open questions
@@ -215,6 +217,9 @@ npm run deploy         # do not run until the Open Questions below are resolved
 - ~~Production `feedbackFormUrl` is a placeholder~~ — resolved (2026-09-20): points at the real
   live form now (see Sandbox environment section above for the URL and what's still cosmetically
   pending on the board itself).
-- To go live in production: follow the four steps in Monday automation setup above (deploy,
-  add the column, wire the webhook automation, hand off the manual "mark sent" step to staff).
-  Nobody's done this yet — it needs a human with write access to the live board.
+- ~~To go live in production~~ — done (2026-11-03): the Worker is deployed with
+  `bp-feedback-notify:writes` = `on`, the live board has the `Post-Event Feedback` column
+  (`color_mm8rtt99`), and the webhook automation is on, its handshake answered 200. Still open: no
+  real item has gone through it yet, so a production email is unconfirmed, and staff need telling
+  about the manual "mark sent" step (`sendStatus` is still `null`). Changing the board's structure
+  takes board ownership; the `+` column button is simply dead without it.

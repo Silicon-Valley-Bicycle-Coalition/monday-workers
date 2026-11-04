@@ -12,6 +12,7 @@
   "activities": {
     "activityTypeColumn": "color_mm8qm5nz",
     "activityTypeLabel": "Email",
+    "bulkActivityTypeLabel": "Bulk Email",
     "dateColumn": "date_mm8qsv2p",
     "statusColumn": "color_mm8qgdjb",
     "doneLabel": "Done",
@@ -39,6 +40,7 @@
       "bikesiliconvalley.org"
     ],
     "staffSenders": [],
+    "bulkSenders": ["learn@bikesiliconvalley.org"],
     "trustedAuthServId": "mx.cloudflare.net",
     "bodyMaxChars": 1900,
     "maxRawBytes": 10000000,
@@ -47,6 +49,9 @@
       "email": "noreply@mail.bikesiliconvalley.org",
       "name": "SVBC Monday Log"
     }
+  },
+  "timeline": {
+    "customActivityId": "79eba48d-2a58-4f88-8fa3-758fd19eb7c2"
   },
   "capacity": {
     "activitiesMaxItems": 100000,

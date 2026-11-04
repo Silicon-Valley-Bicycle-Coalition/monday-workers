@@ -46,7 +46,8 @@ export interface ParityResult {
 // a column or includes the name (the older community advice to leave connect columns out was
 // wrong); a null target is accepted and drops that column. So each column but the name maps to
 // the same-title, same-type target column, else to null; formula columns can't be mapped, so
-// they are always null. Every value-bearing column must have a match, or the move is blocked.
+// they are always null. Every value-bearing column must have a match, or the move is blocked. The one
+// column left out is a doc column, which Monday won't take in a mapping at all.
 export function moveMapping(source: BoardColumn[], target: BoardColumn[]): ParityResult {
   const targetByKey = new Map(target.map((c) => [`${bareTitle(c.title)}\u0000${c.type}`, c]));
   const mapping: ColumnMapping[] = [];
@@ -55,6 +56,8 @@ export function moveMapping(source: BoardColumn[], target: BoardColumn[]): Parit
     if (col.type === 'name') continue;   // the item name always travels with the item
     const match = col.type === 'formula' ? undefined : targetByKey.get(`${bareTitle(col.title)}\u0000${col.type}`);
     if (match === undefined && !VALUELESS_TYPES.has(col.type)) missing.push({ title: col.title, type: col.type });
+    // Monday rejects a mapping naming a doc column, even with a null target (sandbox v4, 2026-11-03).
+    if (col.type === 'direct_doc') continue;
     mapping.push({ source: col.id, target: match?.id ?? null });
   }
   return { mapping, missing };

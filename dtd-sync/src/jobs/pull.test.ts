@@ -6,6 +6,7 @@ import { DtdAuthError } from '../dtd/client';
 import type { DtdDonation } from '../dtd/types';
 import type { DonationItem, DtdMondayClient, PersonItem } from '../monday/client';
 import { getRecord, upsertRecord } from '../db/records';
+import { recordPush } from '../db/pushes';
 import { getWatermark, setWatermark } from '../db/state';
 import sandbox from '../../config/sandbox.json';
 
@@ -21,10 +22,13 @@ function item(over: Partial<DonationItem> = {}): DonationItem {
     matchesGiftItemId: null, matchPairing: null, matchStatus: null, sentToDtd: null, updatedAt: '', ...over,
   };
 }
+function person(over: Partial<PersonItem> = {}): PersonItem {
+  return { id: '900', email: 'pat@example.org', householdEmail: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null, ...over };
+}
 function dtd(over: Partial<DtdDonation> = {}): DtdDonation {
   return {
     donation_identifier: 'fr-1', source: null, donation_datetime: '2026-10-01T08:00:00-07:00',
-    donor_email: 'pat@example.org', company_name: 'Example Corp', doublethedonation_company_id: 'c-7',
+    donor_email: 'pat@example.org', donation_amount: null, company_name: 'Example Corp', doublethedonation_company_id: 'c-7',
     status: ':waiting-for-donor-action', matching_gift_status: null, employer_identification_status: 'identified',
     matched_amount: null, plugin_link: 'https://example.org/match/abc', ...over,
   };
@@ -46,6 +50,7 @@ function harness(donations: DtdDonation[] = []): Harness {
     fetched: [], donationWrites: [], personWrites: [], lookups: [], items: new Map(), people: new Map(),
     state: { donations, failDonationWrite: false }, deps: undefined as unknown as PullDeps,
   };
+  h.people.set('900', person());
   const monday: Partial<DtdMondayClient> = {
     findDonationByFunraiseId: async (id) => { h.lookups.push(`fr:${id}`); return [...h.items.values()].find((i) => i.funraiseId === id) ?? null; },
     findDonationBySalesforceId: async (id) => { h.lookups.push(`sf:${id}`); return [...h.items.values()].find((i) => i.salesforceId === id) ?? null; },
@@ -66,6 +71,7 @@ function harness(donations: DtdDonation[] = []): Harness {
 
 beforeEach(async () => {
   await env.DB.prepare('DELETE FROM dtd_records').run();
+  await env.DB.prepare('DELETE FROM pushes').run();
   await env.DB.prepare('DELETE FROM sync_state').run();
 });
 afterEach(() => vi.restoreAllMocks());
@@ -74,7 +80,7 @@ function unmatchedRow(identifier: string, seenAt: string) {
   return {
     donationIdentifier: identifier, mondayItemId: null, source: null, status: ':pending', matchingGiftStatus: null,
     employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
-    updatedSeenAt: seenAt, unmatched: true,
+    updatedSeenAt: seenAt, unmatched: true, donorEmailHash: null, donationAmount: null,
   };
 }
 
@@ -105,6 +111,7 @@ describe('runPull', () => {
   });
 
   it('resolves monday- identifiers to the item directly', async () => {
+    await recordPush(env.DB, '501', 'monday-501', NOW.toISOString());
     const h = harness([dtd({ donation_identifier: 'monday-501', source: 'monday' })]);
     h.items.set('501', item({ id: '501', funraiseId: null }));
     await runPull(h.deps, NOW);
@@ -221,11 +228,13 @@ describe('runPull', () => {
     expect(h.lookups[0]).toBe('fr:fr-50');
   });
 
-  it('skips the People write for a donor that is not on People (an Organizations donor)', async () => {
+  it('writes nothing for a donor that is not on People (an Organizations donor): ownership is unprovable', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     const h = harness([dtd()]);
     h.items.set('500', item({ donorItemId: '777' })); // getPeople drops off-board ids, so 777 comes back empty
     const result = await runPull(h.deps, NOW);
-    expect(result).toEqual({ fetched: 1, written: 1, unmatched: 0 });
+    expect(result).toEqual({ fetched: 1, written: 0, unmatched: 1 });
+    expect(h.donationWrites).toEqual([]);
     expect(h.personWrites).toEqual([]);
     expect(await getWatermark(env.DB)).toBe(NOW.toISOString());
   });
@@ -254,7 +263,7 @@ describe('runPull', () => {
   it('never writes People Employer, only the three DTD columns', async () => {
     const h = harness([dtd()]);
     h.items.set('500', item());
-    h.people.set('900', { id: '900', email: 'pat@example.org', firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null });
+    h.people.set('900', person());
     await runPull(h.deps, NOW);
     expect(h.personWrites).toEqual([{
       id: '900',
@@ -271,14 +280,14 @@ describe('runPull', () => {
   it('skips the People write when the person already has that company id, and omits non-https links', async () => {
     const h = harness([dtd()]);
     h.items.set('500', item());
-    h.people.set('900', { id: '900', email: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: 'c-7' });
+    h.people.set('900', person({ dtdCompanyId: 'c-7' }));
     await runPull(h.deps, NOW);
     expect(h.personWrites).toEqual([]);
 
     await env.DB.prepare('DELETE FROM dtd_records').run();
     const h2 = harness([dtd({ plugin_link: 'http://insecure.example.org/x' })]);
     h2.items.set('500', item());
-    h2.people.set('900', { id: '900', email: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null });
+    h2.people.set('900', person());
     await runPull(h2.deps, NOW);
     expect(Object.keys(h2.personWrites[0]!.values).sort()).toEqual([P.dtdCompany, P.dtdCompanyId].sort());
   });
@@ -296,7 +305,7 @@ describe('runPull', () => {
     await upsertRecord(env.DB, {
       donationIdentifier: 'fr-1', mondayItemId: '500', source: null, status: ':old', matchingGiftStatus: null,
       employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
-      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: false,
+      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: true, donorEmailHash: null, donationAmount: null,
     });
     const h = harness([dtd()]);
     await runPull(h.deps, NOW);
@@ -307,7 +316,7 @@ describe('runPull', () => {
     await upsertRecord(env.DB, {
       donationIdentifier: 'fr-1', mondayItemId: '500', source: null, status: ':old', matchingGiftStatus: null,
       employerStatus: null, companyId: null, companyName: null, matchedAmount: null, donationDatetime: null,
-      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: false,
+      updatedSeenAt: '2026-10-01T00:00:00.000Z', unmatched: true, donorEmailHash: null, donationAmount: null,
     });
     const h = harness([dtd()]);
     await runPull(h.deps, NOW);
@@ -323,7 +332,7 @@ describe('runPull', () => {
   it('keeps a record retryable when updatePerson throws after updateDonation, then finishes it next run', async () => {
     const h = harness([dtd()]);
     h.items.set('500', item());
-    h.people.set('900', { id: '900', email: null, firstName: 'Pat', lastName: 'Example', phone: null, dtdCompanyId: null });
+    h.people.set('900', person());
     const updatePerson = h.deps.monday.updatePerson;
     h.deps.monday.updatePerson = async () => { throw new Error('monday down'); };
     await runPull(h.deps, NOW);
@@ -343,5 +352,193 @@ describe('runPull', () => {
     h.deps.dtd = { getUpdatedDonations: async () => { throw new DtdAuthError('bad key'); } };
     await expect(runPull(h.deps, NOW)).rejects.toBeInstanceOf(DtdAuthError);
     expect(await getWatermark(env.DB)).toBeNull();
+  });
+
+  describe('ownership check (DTD plugin key is public, so a record can be forged)', () => {
+    const noWrites = (h: Harness) => { expect(h.donationWrites).toEqual([]); expect(h.personWrites).toEqual([]); };
+
+    it('ignores a monday- identifier this Worker never pushed', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donation_identifier: 'monday-501', source: 'monday' })]);
+      h.items.set('501', item({ id: '501', funraiseId: null }));
+      expect(await runPull(h.deps, NOW)).toEqual({ fetched: 1, written: 0, unmatched: 1 });
+      noWrites(h);
+      expect(await getRecord(env.DB, 'monday-501')).toMatchObject({ mondayItemId: null, unmatched: true });
+    });
+
+    it('ignores a monday- identifier whose push is only recorded as failed', async () => {
+      await env.DB.prepare("INSERT INTO pushes (monday_item_id, dtd_identifier, state) VALUES ('501', 'monday-501', 'failed')").run();
+      const h = harness([dtd({ donation_identifier: 'monday-501', source: 'monday' })]);
+      h.items.set('501', item({ id: '501', funraiseId: null }));
+      await runPull(h.deps, NOW);
+      noWrites(h);
+    });
+
+    it('does not write when the donor email differs, and logs the item id without the email', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donor_email: 'attacker@evil.example' })]);
+      h.items.set('500', item());
+      expect(await runPull(h.deps, NOW)).toEqual({ fetched: 1, written: 0, unmatched: 1 });
+      noWrites(h);
+      expect(log).toHaveBeenCalledWith('dtd-sync: pull item 500 skipped: donor mismatch');
+      expect(log.mock.calls.map((c) => String(c[0])).join('\n')).not.toMatch(/@/);
+      const rec = await getRecord(env.DB, 'fr-1');
+      expect(rec).toMatchObject({ mondayItemId: null, unmatched: true });
+      expect(JSON.stringify(rec)).not.toContain('evil.example');
+    });
+
+    it('does not write when the DTD record has no email', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donor_email: null })]);
+      h.items.set('500', item());
+      await runPull(h.deps, NOW);
+      noWrites(h);
+    });
+
+    it('does not write when the item has no donor on People', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd()]);
+      h.items.set('500', item({ donorItemId: null }));
+      await runPull(h.deps, NOW);
+      noWrites(h);
+      h.items.set('500', item({ donorItemId: '777' }));
+      await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+      noWrites(h);
+    });
+
+    it('matches the email case-insensitively and trimmed, and accepts the household email', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donor_email: '  PAT@Example.ORG ' })]);
+      h.items.set('500', item());
+      await runPull(h.deps, NOW);
+      expect(h.donationWrites.map((w) => w.id)).toEqual(['500']);
+
+      const h2 = harness([dtd({ donation_identifier: 'fr-2', donor_email: 'home@example.org' })]);
+      h2.items.set('500', item({ funraiseId: 'fr-2' }));
+      h2.people.set('900', person({ householdEmail: 'Home@Example.org' }));
+      await runPull(h2.deps, NOW);
+      expect(h2.donationWrites.map((w) => w.id)).toEqual(['500']);
+    });
+
+    it('does not write when the amounts differ by more than 1%, and writes within 1%', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donation_amount: 60 })]);
+      h.items.set('500', item({ amount: 50 }));
+      await runPull(h.deps, NOW);
+      noWrites(h);
+
+      const ok = harness([dtd({ donation_amount: 50.4 })]);
+      ok.items.set('500', item({ amount: 50 }));
+      await runPull(ok.deps, NOW);
+      expect(ok.donationWrites).toHaveLength(1);
+    });
+
+    it('skips the amount check when DTD sends no amount or the item has none', async () => {
+      const h = harness([dtd({ donation_amount: null })]);
+      h.items.set('500', item({ amount: 50 }));
+      await runPull(h.deps, NOW);
+      expect(h.donationWrites).toHaveLength(1);
+    });
+
+    it('never writes a mismatched record on retry, nor stores the raw email', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donor_email: 'attacker@evil.example' })]);
+      h.items.set('500', item());
+      await runPull(h.deps, NOW);
+      h.state.donations = [];
+      await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+      await runPull(h.deps, new Date('2026-11-03T14:00:00Z'));
+      noWrites(h);
+      const row = await env.DB.prepare('SELECT * FROM dtd_records WHERE donation_identifier = ?').bind('fr-1').first();
+      expect(JSON.stringify(row)).not.toContain('evil.example');
+      expect(row).toMatchObject({ unmatched: 1, monday_item_id: null });
+    });
+
+    it('never writes an amount-mismatched record on retry', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donation_amount: 5000 })]);
+      h.items.set('500', item({ amount: 50 }));
+      await runPull(h.deps, NOW);
+      h.state.donations = [];
+      await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+      noWrites(h);
+    });
+
+    it('keeps a verified row unchanged when a later DTD update has a different email', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd()]);
+      h.items.set('500', item());
+      await runPull(h.deps, NOW);
+      const before = await getRecord(env.DB, 'fr-1');
+      expect(before).toMatchObject({ mondayItemId: '500', unmatched: false });
+      h.donationWrites.length = 0;
+      h.personWrites.length = 0;
+      h.state.donations = [dtd({ donor_email: 'attacker@evil.example', status: ':ineligible', company_name: 'Evil Co' })];
+      await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+      noWrites(h);
+      expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+      expect(log).toHaveBeenCalledWith('dtd-sync: pull item 500 kept: unverified update');
+    });
+
+    describe('a verified row changes only after re-verification', () => {
+      async function verified() {
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+        const h = harness([dtd()]);
+        h.items.set('500', item());
+        await runPull(h.deps, NOW);
+        const before = await getRecord(env.DB, 'fr-1');
+        expect(before).toMatchObject({ mondayItemId: '500', unmatched: false });
+        h.donationWrites.length = 0;
+        h.personWrites.length = 0;
+        h.state.donations = [dtd({ status: ':ineligible', company_name: 'Other Co' })];
+        return { h, before };
+      }
+      const LATER = new Date('2026-11-03T13:00:00Z');
+
+      it('keeps the row when the record no longer resolves', async () => {
+        const { h, before } = await verified();
+        h.items.clear();
+        await runPull(h.deps, LATER);
+        noWrites(h);
+        expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+      });
+
+      it('keeps the row when the record resolves to a different item', async () => {
+        const { h, before } = await verified();
+        h.items.set('500', item({ funraiseId: null }));
+        h.items.set('501', item({ id: '501' }));
+        await runPull(h.deps, LATER);
+        noWrites(h);
+        expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+      });
+
+      it('keeps the row when the lookup throws, and the watermark still advances', async () => {
+        const { h, before } = await verified();
+        h.deps.monday.findDonationByFunraiseId = async () => { throw new Error('monday down'); };
+        await runPull(h.deps, LATER);
+        noWrites(h);
+        expect(await getRecord(env.DB, 'fr-1')).toEqual(before);
+        expect(await getWatermark(env.DB)).toBe(LATER.toISOString());
+      });
+
+      it('updates as before when the same item verifies', async () => {
+        const { h } = await verified();
+        await runPull(h.deps, LATER);
+        expect(h.donationWrites).toHaveLength(1);
+        expect(await getRecord(env.DB, 'fr-1')).toMatchObject({ mondayItemId: '500', unmatched: false, status: ':ineligible', companyName: 'Other Co' });
+      });
+    });
+
+    it('still writes on retry when a failed record belongs to the item', async () => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const h = harness([dtd({ donation_amount: 50 })]);
+      h.items.set('500', item({ amount: 50 }));
+      h.state.failDonationWrite = true;
+      await runPull(h.deps, NOW);
+      h.state.failDonationWrite = false;
+      h.state.donations = [];
+      await runPull(h.deps, new Date('2026-11-03T13:00:00Z'));
+      expect(h.donationWrites.map((w) => w.id)).toEqual(['500']);
+    });
   });
 });

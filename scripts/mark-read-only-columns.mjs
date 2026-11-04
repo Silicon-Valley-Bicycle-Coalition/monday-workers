@@ -55,7 +55,8 @@ const WINDFALL = [
   'Philanthropic Giver', 'Windfall Company', 'Windfall Priority', 'Windfall Profile',
 ];
 const PEOPLE = {
-  locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile'],
+  locked: [...OWNER_ROLLUPS, ...MEMBERSHIP, 'Organizational Giving', 'Has Active Recurring Gift', 'Funraise Profile', 'Promoted On',
+    'DTD Company ID', 'DTD Company', 'DTD match link'],
   history: [...SALESFORCE, 'Salesforce Owner', ...WINDFALL],
 };
 
@@ -65,9 +66,15 @@ export const MARKED_COLUMNS = {
   'Organizations': { locked: OWNER_ROLLUPS, history: [...SALESFORCE, 'Salesforce Owner'] },
   'Donations': {
     locked: ['Funding Stream', 'Gift Size', 'Fiscal Quarter', 'Gift Fiscal Year', 'Funraise ID',
-      'Eventbrite Order ID', 'Benevity Transaction ID'],
+      'Eventbrite Order ID', 'Benevity Transaction ID', 'Match Status', 'DTD Status (raw)', 'Match Company',
+      'Sent to DTD'],
     history: [...SALESFORCE, 'Salesforce Owner', 'Finance Class', 'Revenue Code', 'Sponsorship Cycle',
       'Fee Covered', 'In-Kind Value', 'In-Kind Category', 'Soft Credit'],
+  },
+  'Matching Gift Program': {
+    locked: ['Fiscal Year', 'Screened', 'Employer identified', 'Eligible', 'Submitted', 'Matches paid',
+      'Match dollars', 'Matched gift dollars', 'New matching companies', 'First-time matched donors', 'As of'],
+    history: [],
   },
   'Recurring Gifts': {
     locked: ['Funraise ID', 'Installment Amount', 'Annualized Value', 'Frequency', 'Status',
@@ -82,9 +89,9 @@ export const MARKED_COLUMNS = {
     locked: ['Fiscal Year Ending', 'Total Received', 'Gift Count', 'By Gift Type', 'Restated'],
     history: [],
   },
-  'Events': { locked: ['Eventbrite ID'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
+  'Events': { locked: ['Eventbrite ID', 'Send class email'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID'],
+    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Type', 'Start', 'End', 'Active'] },

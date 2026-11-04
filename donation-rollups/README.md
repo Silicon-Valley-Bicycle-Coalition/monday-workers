@@ -781,6 +781,18 @@ only); only the Organizations-owned in-kind rows matter for the section.
    connected to its pipeline item. Copy them into their Box Notes, and point the five pipeline
    boards' "earlier years" description line at the company card.
 
+## Employer Name from Affiliations
+
+Adding or changing an affiliation updates the person's `Employer Name` to the organization's name,
+gated on `config.affiliations.employerSync` (absent = off). The Affiliations board's webhooks reach
+the same route as kind `affiliation`; only Person, Organization, Status and Primary count, so the
+attributed totals below don't trigger it. The consumer reads all of the person's affiliations and
+picks with `employerNameFor` (`src/affiliations/employer.ts`): `Current` only, the `Primary` one
+first, then the one that just changed. With nothing current (`Draft`, `Former`, or a deleted
+affiliation) the column keeps its value. It runs on change only: people whose affiliations nobody
+edits keep their Salesforce value, and a staff edit to the column lasts until the next affiliation
+change. Re-run `setup-webhooks.mjs` after deploying to subscribe the board.
+
 ## Affiliation model (Plan 2)
 
 A gift a Primary Contact drove **for an organization** — rather than personally — carries an

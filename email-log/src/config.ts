@@ -10,6 +10,7 @@ const BOARD_KEYS = ['activities-logged', 'people-live', 'people-historical', 'af
 const ACTIVITY_STRING_KEYS = [
   'activityTypeColumn',
   'activityTypeLabel',
+  'bulkActivityTypeLabel',
   'dateColumn',
   'statusColumn',
   'doneLabel',
@@ -89,6 +90,9 @@ export function validateConfig(raw: unknown): EmailLogConfig {
   if (!isStringArray(mail.staffSenders)) {
     throw new Error('config: "mail.staffSenders" must be an array of addresses ([] allows the whole staff domain)');
   }
+  if (!isStringArray(mail.bulkSenders)) {
+    throw new Error('config: "mail.bulkSenders" must be an array of addresses');
+  }
   // Staff means exact domain equality, so a logging subdomain (log.example.org) is fine, but the
   // logging address on a staff domain itself would make the Worker treat its own address as staff.
   const loggingDomain = mail.loggingAddress.slice(mail.loggingAddress.lastIndexOf('@') + 1).toLowerCase();
@@ -110,6 +114,11 @@ export function validateConfig(raw: unknown): EmailLogConfig {
     throw new Error('config: "mail.replyFrom.email" must be an email address');
   }
   if (!isNonEmptyString(replyFrom.name)) throw new Error('config: "mail.replyFrom.name" must be a non-empty string');
+
+  const timeline = section(raw, 'timeline', 'timeline');
+  if (!('customActivityId' in timeline) || (timeline.customActivityId !== null && !isNonEmptyString(timeline.customActivityId))) {
+    throw new Error('config: "timeline.customActivityId" must be a custom activity id string, or null to turn the timeline entry off');
+  }
 
   const capacity = section(raw, 'capacity', 'capacity');
   if (!isPositiveInt(capacity.activitiesMaxItems)) {

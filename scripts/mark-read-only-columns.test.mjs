@@ -66,6 +66,23 @@ describe('MARKED_COLUMNS', () => {
     }
   });
 
+  it('locks the Send class email link on Events', () => {
+    assert.ok(MARKED_COLUMNS.Events.locked.includes('Send class email'));
+  });
+
+  it('locks what dtd-sync writes, on both People boards and Donations', () => {
+    for (const board of ['People', 'People (Historical)']) {
+      for (const title of ['DTD Company ID', 'DTD Company', 'DTD match link']) assert.ok(MARKED_COLUMNS[board].locked.includes(title), `${board}: ${title}`);
+    }
+    for (const title of ['Match Status', 'DTD Status (raw)', 'Match Company', 'Sent to DTD']) assert.ok(MARKED_COLUMNS.Donations.locked.includes(title), title);
+    assert.ok(MARKED_COLUMNS['Matching Gift Program'].locked.includes('Match dollars'));
+  });
+
+  it('leaves the pairing columns staff set by hand unmarked', () => {
+    const { locked, history } = MARKED_COLUMNS.Donations;
+    for (const title of ['Matches gift', 'Match pairing']) assert.ok(![...locked, ...history].includes(title), title);
+  });
+
   it('marks both People boards identically, so people-reclassification moves keep matching', () => {
     assert.deepEqual(MARKED_COLUMNS['People (Historical)'], MARKED_COLUMNS.People);
   });
