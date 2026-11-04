@@ -59,9 +59,9 @@ These are landmines in the repo itself that break the cutover MR if left alone.
       an early warning, not noise.
 - [x] **Every Worker carries `limits.cpu_ms`** (re-audited 2026-10-21) — the guard that matters
       once Paid's 30 s default applies. Present at top level and in `env.sandbox` for all
-      thirteen Workers. Three run above 100 ms on purpose, each with the reason in a comment
+      thirteen Workers. Two run above 100 ms on purpose, each with the reason in a comment
       beside the setting: `monday-backup` (`cpu_ms: 300000` and `subrequests: 50000`, a
-      full-workspace snapshot), `email-log` (`1000`, MIME-parsing a large message) and
+      full-workspace snapshot) and
       `people-reclassification` (`1000`, a board sweep). Keep those exceptions; re-check
       the rest before the production deploy if a `wrangler.jsonc` changes.
 - [x] **Rate-limit `namespace_id`s are unique per account** (resolved 2026-10-01). Cloudflare's

@@ -5,7 +5,7 @@
 // cutoff replaced by a window of `years` ending today:
 //   perpetual (never ages out): a linked Funraise supporter profile; Membership Tier = Lifetime.
 //   activity dates: Last Gift Date; Member Until; a counted event registration's event start; a
-//     volunteer-hours date; a logged email, call or meeting on Activities (Logged); Promoted On,
+//     volunteer-hours date; a logged item on Activities (Logged); Promoted On,
 //     which staff set by promoting someone (src/promote.ts). A date after today is a data-entry defect (docs/07's CloseDate
 //     finding) and is ignored — except Member Until, where "after today" is just a current term.
 //   no evidence at all: left where it is, and counted. Moving on absence would sweep advocacy

@@ -40,8 +40,8 @@ describe('checkBindings', () => {
   });
   it('flags production bound to the sandbox broker', () => {
     const configs = correct();
-    configs['email-log'].services[1].service = SANDBOX_BROKER;
-    assert.match(checkBindings(configs)[0], /email-log \(production\).*expected "svbc-monday-auth"/);
+    configs['eventbrite-sync'].services[1].service = SANDBOX_BROKER;
+    assert.match(checkBindings(configs)[0], /eventbrite-sync \(production\).*expected "svbc-monday-auth"/);
   });
   it('flags a Worker with no MONDAY_AUTH binding', () => {
     const configs = correct();
@@ -55,7 +55,7 @@ describe('checkBindings', () => {
   it('flags a Worker whose config is missing, and a config not in EXPECTED', () => {
     const configs = correct();
     delete configs['quickbooks-sync'];
-    configs['new-worker'] = configs['email-log'];
+    configs['new-worker'] = configs['eventbrite-sync'];
     const problems = checkBindings(configs);
     assert.ok(problems.some((p) => p.startsWith('quickbooks-sync: no Wrangler config')));
     assert.ok(problems.some((p) => p.startsWith('new-worker: not in EXPECTED')));

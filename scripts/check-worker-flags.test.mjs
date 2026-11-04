@@ -45,8 +45,8 @@ describe('checkIds', () => {
   });
 });
 
-it('IN_SCOPE names the fourteen Workers', () => {
-  assert.equal(IN_SCOPE.length, 14);
+it('IN_SCOPE names the thirteen Workers', () => {
+  assert.equal(IN_SCOPE.length, 13);
   assert.ok(IN_SCOPE.includes('report-digests'));
   assert.ok(IN_SCOPE.includes('member-portal'));
 });
