@@ -133,8 +133,8 @@ describe('mapEvent', () => {
     const END = '2026-10-31T04:00:00Z';
     const status = (e: EventbriteEvent, now: string) => mapEvent(e, config, new Date(now)).columnValues.ev_status_col;
 
-    // Eventbrite's `started` can outlive the event (84 of them in the 2026-11-02 Salesforce org,
-    // all over): a replay of one must not write Upcoming back over a corrected row.
+    // When Eventbrite moves an event to `completed` isn't documented, so a fetch can still read
+    // `started` after the end: it must not write Upcoming back over a corrected row.
     it.each(['live', 'started'])('writes Completed for a finished %s event', (s) => {
       expect(status(event({ status: s }), '2026-10-31T04:00:01Z')).toBe('Completed');
     });

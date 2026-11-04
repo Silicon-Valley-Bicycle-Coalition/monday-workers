@@ -389,19 +389,21 @@ delivery has been seen yet, so which spelling arrives, and its `api_url` shape, 
 ### Event Status after the event ends
 
 `mapEvent` writes **Completed** once the event's end (else its start) has passed, whatever Eventbrite
-says: `live` and `started` mean Upcoming only until then. `started` can outlive the event (84 of them
-in the 2026-11-02 Salesforce org, every one over), so a replay would otherwise write Upcoming back
-over a corrected row. Canceled and Draft stay as they are.
+says: `live` and `started` mean Upcoming only until then. Salesforce's copy of `started` outlived 84
+events (2026-11-02 org). Eventbrite itself read `completed` for all 211 past events on the board on
+2026-11-03, but when it flips isn't documented, so a fetch near the end could otherwise write
+Upcoming back over a corrected row. Canceled and Draft stay as they are.
 
-A canceled event can keep reporting `live` or `started`, with only its sales status saying so
-(`?expand=event_sales_status`, `message_code: event_cancelled`; an Eventbrite staff answer on its
-developer forum in 2021, not seen on an SVBC event yet). The consumer treats that as `canceled`, on
+A canceled event's status doesn't reliably say so, but its sales status does
+(`?expand=event_sales_status`, `message_code: event_cancelled`). On 2026-11-03 SVBC's 7 canceled
+events read `deleted`, `draft` and `completed`, all with that code, and none of the 226 others had
+it; Eventbrite staff describe `live` too (developer forum, 2021). The consumer treats that code as `canceled`, on
 the board and in the ledger, so the send page refuses every class email for it. It only learns this
 when it fetches the event: on a delivery, or when the sweep below re-queues it after its end.
 
 Whether Eventbrite sends `event.updated` when an event ends is unconfirmed: we found nothing in its
-docs that says so, and the sandbox ledger has no event that ended with the webhook registered (the
-production ledger hasn't been checked). So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event
+docs that says so, and no ledger has an event that ended with the webhook registered yet (production's
+first ends 2026-11-09). So the hourly **ended-event sweep** (`src/endedEvents/sweep.ts`) re-queues each event
 in the last 30 days that ended, was last seen `live` or `started`, is `written`, and whose
 `written_at` is before its `ends_at`. The ordinary event consumer then fetches it and writes it, so a
 class canceled or moved since is written as that, and failures get the usual retries and DLQ. The
@@ -410,7 +412,8 @@ does arrive at the end, it does the same and the sweep finds nothing to do.
 
 It only sees this Worker's own ledger, with `ends_at` set: **an item `salesforce-import` loaded has no
 row until a delivery for that event arrives**, so a future event imported at cutover that hears
-nothing stays Upcoming. Run `scripts/backfill-attendees.mjs` for those events to give them rows. An
+nothing stays Upcoming. Run `scripts/backfill-attendees.mjs` for those events to give them rows (all 15
+future events were in the production ledger by 2026-11-04). An
 event older than 30 days (a longer `hold`, say) needs the same.
 
 ### Class email routes
