@@ -167,8 +167,17 @@ config-ready JSON block of every id:
 
 * **Donations:** Match Status, DTD Status (raw), Match Company, Matches gift, Match pairing, Sent to DTD.
 * **People:** DTD Company ID, DTD Company, DTD match link (the per-donor "start your match" link).
+* **People (Historical):** the same three, same titles and types. The Worker never writes them
+  there and its config holds no ids for them, so the printed block leaves them out. They exist because
+  `people-reclassification` moves nobody while a value-bearing column is on only one of the two
+  People boards. **The columns must land on both boards**, and the script stops, creating neither board's
+  columns, if either has one of these titles with another type.
 * **The Matching Gift Program board** (one row per fiscal year) and a Donations view,
   **Matching gifts to follow up** (Match Status = Waiting for donor, newest first).
+
+`scripts/mark-read-only-columns.mjs` puts 🔒 on these titles so staff leave them alone, on both
+People boards. Matches gift and Match pairing stay unmarked, since staff set them by hand when
+pairing.
 
 **People → Employer is never written.** `benevity-import` matches people by exact name plus
 Employer text, and DTD's company names ("Google") would not match Benevity's ("Google, LLC"), so
@@ -228,9 +237,17 @@ rest from the repo root. Both crons are UTC: the hourly run is at :15 past each 
    allow-listed donor shows Sent to DTD and appears in DTD under the test campaign; a test Matching
    Donation with Matched By set gets Matches gift and `Matched`. Remove the test items and the DTD
    test donations.
-9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --workspace <id> --config dtd-sync/config/svbc.json`
-   against the production boards, paste the printed ids into `config/svbc.json`, set the
-   campaign, deploy, run with the flag `off` and read the logs, then turn it `on`.
+9. **Production:** from the repo root run `MONDAY_API_TOKEN=... node dtd-sync/scripts/setup-columns.mjs --donations <id> --people <id> --people-historical <id> --workspace <id> --config dtd-sync/config/svbc.json`
+   against the production boards (the Historical id is `boards.historical.boardId` in
+   `people-reclassification/config/svbc.json`), paste the printed ids into `config/svbc.json`, set
+   the campaign, deploy, run with the flag `off` and read the logs, then turn it `on`. The script
+   must finish: if the columns land on People but not People (Historical), `people-reclassification`
+   stops moving anyone until they match. It is idempotent, so re-run it after any failure. CRM Sandbox
+   v4's Historical columns were added by hand on 2026-11-03; a re-run there finds them by title and
+   creates nothing, as long as their types match. After it finishes, run
+   `MONDAY_API_TOKEN=... node scripts/mark-read-only-columns.mjs --workspace <id>` to preview the 🔒
+   renames, and again with `--apply` to make them. It also renames anything else still unmarked in
+   that workspace, so read the preview first.
 
 ### Cutover backfill
 
