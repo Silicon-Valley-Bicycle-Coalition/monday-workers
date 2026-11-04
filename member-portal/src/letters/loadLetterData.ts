@@ -2,6 +2,7 @@ import type { MondayClient } from '../monday/client';
 import type { DonationRecord, TaxLetterConfig } from '../types';
 import { parseAmount as parseAmountOrNull } from '../amounts';
 import { formatUsd } from '../money';
+import { giftTypeIn } from './giftTypes';
 
 export interface LetterGift {
   date: string;
@@ -12,7 +13,10 @@ export interface LetterData {
   donorId: string;
   donorName: string;
   year: number;
+  // The acknowledged contributions: these make up the total and sit under the statement.
   gifts: LetterGift[];
+  // Listed for the donor's records under taxLetter.separateGiftsStatement instead, outside the total.
+  separateGifts: LetterGift[];
   totalFormatted: string;
   statement: string;
 }
@@ -34,12 +38,19 @@ export function giftYear(date: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-function completedYearsWithGifts(donations: DonationRecord[], now: Date): number[] {
+// A DonationRecord's description is the board's Gift Type column (monday.columns.donationDescription
+// holds its id). The filter lives here rather than in the client because the portal's giving
+// history still shows every gift; only the letter treats them differently.
+function onLetter(donation: DonationRecord, taxLetter: TaxLetterConfig): boolean {
+  return !giftTypeIn(taxLetter.excludedGiftTypes, donation.description);
+}
+
+function completedYearsWithGifts(donations: DonationRecord[], taxLetter: TaxLetterConfig, now: Date): number[] {
   const currentYear = now.getUTCFullYear();
   const years = new Set<number>();
   for (const donation of donations) {
     const year = giftYear(donation.date);
-    if (year !== null && year < currentYear) {
+    if (year !== null && year < currentYear && onLetter(donation, taxLetter)) {
       years.add(year);
     }
   }
@@ -49,13 +60,14 @@ function completedYearsWithGifts(donations: DonationRecord[], now: Date): number
 export async function listLetterYears(
   donorItemIds: string[],
   monday: MondayClient,
+  taxLetter: TaxLetterConfig,
   now: Date
 ): Promise<LetterYearListing[]> {
   const donors = await Promise.all(donorItemIds.map((id) => monday.getMemberPortalData(id)));
   return donors.map((donor) => ({
     donorId: donor.id,
     donorName: donor.name,
-    years: completedYearsWithGifts(donor.donations, now),
+    years: completedYearsWithGifts(donor.donations, taxLetter, now),
   }));
 }
 
@@ -71,18 +83,19 @@ export async function loadLetterData(
   }
 
   const donor = await monday.getMemberPortalData(donorItemId);
-  const gifts = donor.donations
-    .filter((donation) => giftYear(donation.date) === year)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((donation) => ({ date: donation.date, amount: donation.amount }));
+  const onThisLetter = donor.donations
+    .filter((donation) => giftYear(donation.date) === year && onLetter(donation, taxLetter))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const isSeparate = (donation: DonationRecord) => giftTypeIn(taxLetter.separateGiftTypes, donation.description);
+  const acknowledged = onThisLetter.filter((donation) => !isSeparate(donation));
+  const separate = onThisLetter.filter(isSeparate);
 
-  if (gifts.length === 0) {
+  if (onThisLetter.length === 0) {
     return null;
   }
 
-  const total = donor.donations
-    .filter((donation) => giftYear(donation.date) === year)
-    .reduce((sum, donation) => sum + parseAmount(donation.amount), 0);
+  const toLetterGift = (donation: DonationRecord) => ({ date: donation.date, amount: donation.amount });
+  const total = acknowledged.reduce((sum, donation) => sum + parseAmount(donation.amount), 0);
 
   const statement = taxLetter.benefitTiers.includes(donor.membershipTier)
     ? taxLetter.benefitStatement
@@ -92,7 +105,8 @@ export async function loadLetterData(
     donorId: donor.id,
     donorName: donor.name,
     year,
-    gifts,
+    gifts: acknowledged.map(toLetterGift),
+    separateGifts: separate.map(toLetterGift),
     totalFormatted: formatUsd(total),
     statement,
   };

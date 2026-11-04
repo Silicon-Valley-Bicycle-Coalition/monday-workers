@@ -33,6 +33,9 @@ const config: Config = {
     plainStatement: 'plain',
     benefitStatement: 'benefit',
     benefitTiers: ['Champion'],
+    excludedGiftTypes: [],
+    separateGiftTypes: [],
+    separateGiftsStatement: 'SEPARATE-STATEMENT',
   },
   changeRequests: {
     boardId: 99,

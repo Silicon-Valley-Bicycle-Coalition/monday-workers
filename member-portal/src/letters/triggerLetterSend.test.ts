@@ -1,3 +1,4 @@
+import type { TaxLetterConfig } from '../types';
 import { describe, it, expect, vi } from 'vitest';
 import { triggerLetterSend } from './triggerLetterSend';
 import type { LetterSendStore } from '../db/letterSends';
@@ -35,12 +36,18 @@ function makeDeps(overrides: { store?: LetterSendStore; monday?: MondayClient } 
   return {
     store: overrides.store ?? fakeStore(),
     monday: overrides.monday ?? fakeMonday([{ date: '2025-03-01', amount: '$50.00', description: 'Gift' }]),
+    taxLetter: { excludedGiftTypes: ['Event Ticket'], separateGiftTypes: ['Donor Advised Fund'] } as TaxLetterConfig,
     queue: { send: vi.fn().mockResolvedValue(undefined) },
     now: () => new Date('2026-08-24T10:00:00.000Z'),
   };
 }
 
 describe('triggerLetterSend', () => {
+  it('has no eligible year when the donor gave only through an excluded Gift Type', async () => {
+    const deps = makeDeps({ monday: fakeMonday([{ date: '2025-03-01', amount: '$50.00', description: 'Event Ticket' }]) });
+    expect(await triggerLetterSend('donor-1', deps)).toEqual({ kind: 'no-eligible-year' });
+  });
+
   it('rejects an empty donor item id', async () => {
     const deps = makeDeps();
     const result = await triggerLetterSend('', deps);

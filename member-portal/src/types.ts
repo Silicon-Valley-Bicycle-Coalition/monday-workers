@@ -52,6 +52,13 @@ export interface TaxLetterConfig {
   plainStatement: string;
   benefitStatement: string;
   benefitTiers: string[];
+  // Gift Type labels (the Donations board's text column) a letter treats differently. Excluded
+  // gifts are left off entirely and never earn a letter on their own. Separate ones are listed
+  // below the total under separateGiftsStatement, not as contributions. Any other label, or a
+  // blank, is an ordinary contribution.
+  excludedGiftTypes: string[];
+  separateGiftTypes: string[];
+  separateGiftsStatement: string;
 }
 
 export interface ChangeRequestColumns {

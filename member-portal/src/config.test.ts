@@ -65,6 +65,9 @@ const validConfig = {
     plainStatement: 'No goods or services were provided in exchange for these contributions.',
     benefitStatement: 'Your membership benefits have an estimated fair-market value of $0.',
     benefitTiers: ['Champion'],
+    excludedGiftTypes: [],
+    separateGiftTypes: [],
+    separateGiftsStatement: 'SEPARATE-STATEMENT',
   },
   changeRequests: {
     boardId: 123,
@@ -316,6 +319,9 @@ const v2Sections = {
     plainStatement: 'No goods or services were provided in exchange for these contributions.',
     benefitStatement: 'Your membership benefits have an estimated fair-market value of $0.',
     benefitTiers: ['Champion'],
+    excludedGiftTypes: [],
+    separateGiftTypes: [],
+    separateGiftsStatement: 'SEPARATE-STATEMENT',
   },
   changeRequests: {
     boardId: 123,
@@ -384,6 +390,35 @@ describe('v2 config sections', () => {
     Object.assign(cfg, structuredClone(v2Sections));
     (cfg as { taxLetter: { plainStatement: string } }).taxLetter.plainStatement = 'REPLACE_AFTER_SIGNOFF';
     expect(() => validateConfig(cfg)).not.toThrow();
+  });
+});
+
+describe('taxLetter Gift Type lists', () => {
+  const withTaxLetter = (patch: Record<string, unknown>) => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as unknown as Record<string, unknown>;
+    raw.taxLetter = { ...(raw.taxLetter as Record<string, unknown>), ...patch };
+    return raw;
+  };
+
+  it.each(['excludedGiftTypes', 'separateGiftTypes', 'separateGiftsStatement'])('requires %s', (key) => {
+    const raw = Object.assign(structuredClone(validConfig), structuredClone(v2Sections)) as unknown as Record<string, unknown>;
+    delete (raw.taxLetter as Record<string, unknown>)[key];
+    expect(() => validateConfig(raw)).toThrow(key);
+  });
+
+  it('rejects a list that is not an array of non-empty strings', () => {
+    expect(() => validateConfig(withTaxLetter({ excludedGiftTypes: 'Event Ticket' }))).toThrow('excludedGiftTypes');
+    expect(() => validateConfig(withTaxLetter({ separateGiftTypes: [''] }))).toThrow('separateGiftTypes');
+  });
+
+  it('rejects a label in both lists, however it is spelled', () => {
+    expect(() =>
+      validateConfig(withTaxLetter({ excludedGiftTypes: ['donor-advised fund'], separateGiftTypes: ['Donor Advised Fund'] }))
+    ).toThrow('in both');
+  });
+
+  it('keeps letters off until the separate-gifts statement is signed off', () => {
+    expect(lettersEnabled(validateConfig(withTaxLetter({ separateGiftsStatement: 'REPLACE_AFTER_SIGNOFF' })))).toBe(false);
   });
 });
 

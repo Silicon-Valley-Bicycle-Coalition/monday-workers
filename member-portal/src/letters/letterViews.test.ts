@@ -9,6 +9,9 @@ const taxLetter: TaxLetterConfig = {
   signatureName: 'Alex Example', signatureTitle: 'Executive Director',
   plainStatement: 'No goods or services were provided.', benefitStatement: 'FMV statement.',
   benefitTiers: ['Champion'],
+  excludedGiftTypes: [],
+  separateGiftTypes: ['Donor Advised Fund'],
+  separateGiftsStatement: 'Listed <for> your records only.',
 };
 
 const letter: LetterData = {
@@ -17,6 +20,7 @@ const letter: LetterData = {
     { date: '2025-01-15', amount: '$25.00' },
     { date: '2025-06-01', amount: '$50.00' },
   ],
+  separateGifts: [],
   totalFormatted: '$75.00',
   statement: 'No goods or services were provided.',
 };
@@ -49,6 +53,42 @@ describe('letterView', () => {
     expect(html).toContain('2025-01-15');
     expect(html).toContain('$75.00');
     expect(html).toContain('August 24, 2026');
+  });
+
+  it('has no separate section when no gift is separately listed', () => {
+    const html = letterView(letter, taxLetter, 'August 24, 2026', 'en');
+    expect(html).not.toContain('your records only');
+  });
+
+  it('lists separate gifts after the total under their own statement, keeping the main statement', () => {
+    const html = letterView(
+      { ...letter, separateGifts: [{ date: '2025-03-01', amount: '$500.00' }] },
+      taxLetter,
+      'August 24, 2026',
+      'en'
+    );
+    expect(html).toContain('Listed &lt;for&gt; your records only.');
+    expect(html).toContain('$500.00');
+    expect(html).toContain('No goods or services were provided.');
+    expect(html.indexOf('$75.00')).toBeLessThan(html.indexOf('$500.00'));
+    expect(html.indexOf('No goods or services')).toBeLessThan(html.indexOf('your records only'));
+  });
+
+  it('drops the contributions table, total, statement and tax-records line when only separate gifts exist', () => {
+    const html = letterView(
+      { ...letter, gifts: [], totalFormatted: '$0.00', separateGifts: [{ date: '2025-03-01', amount: '$500.00' }] },
+      taxLetter,
+      'August 24, 2026',
+      'en'
+    );
+    expect(html).toContain('$500.00');
+    expect(html).toContain('your records only');
+    expect(html).toContain('Thank you for supporting');
+    expect(html).not.toContain('Total contributions');
+    expect(html).not.toContain('following contributions');
+    expect(html).not.toContain('No goods or services');
+    expect(html).not.toContain('retain this letter');
+    expect(html).toContain('contact us');
   });
 
   it('escapes donor-sourced text', () => {

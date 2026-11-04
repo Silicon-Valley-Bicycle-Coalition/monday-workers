@@ -105,7 +105,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
   }
 
   const year = targetYear;
-  const eligibleDonorIds = await deps.monday.listDonorIdsWithDonationsInYear(year);
+  const eligibleDonorIds = await deps.monday.listDonorIdsWithDonationsInYear(year, config.taxLetter.excludedGiftTypes);
   const handled = await deps.letterStore.listDonorItemIdsForYear(year);
   const pending = eligibleDonorIds.filter((id) => !handled.has(id));
   const batch = pending.slice(0, config.letterCron.maxTriggersPerRun);
@@ -118,6 +118,7 @@ async function runLetterCronInner(deps: RunLetterCronDeps): Promise<RunLetterCro
     try {
       const result = await triggerLetterSend(donorItemId, {
         monday: deps.monday,
+        taxLetter: config.taxLetter,
         store: deps.letterStore,
         queue: stampedQueue(deps.queue, deps.mode),
         now: deps.now,
