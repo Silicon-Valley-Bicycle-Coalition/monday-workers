@@ -152,9 +152,10 @@ export function buildGiftHistoryMarkdown(
       : date;
     lines.push(`| ${dateCell} | ${dollars(r.amountCents)} | ${cell(r.giftType ?? '')} | ${cell(r.status)} |`);
   }
+  const gifts = `${rows.length} gift${rows.length === 1 ? '' : 's'}`;
   const count = shown.length < rows.length
-    ? `Newest ${shown.length} of ${rows.length} gifts shown; the full history is in the Gift Ledger (JSON) column.`
-    : `${rows.length} gifts.`;
+    ? `Newest ${shown.length} of ${gifts} shown; the full history is in the Gift Ledger (JSON) column.`
+    : `${gifts}.`;
   lines.push('', `_${count} Maintained automatically by donation-rollups — edits here are overwritten._`);
   if (driven && driven.length > 0) {
     lines.push('', '## Driven for organizations', '', '| Affiliation | Attributed giving | Gifts |', '| --- | --- | --- |');

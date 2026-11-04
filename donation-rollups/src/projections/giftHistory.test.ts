@@ -143,6 +143,12 @@ describe('buildGiftHistoryMarkdown', () => {
     expect(md).not.toContain('pulses/');
   });
 
+  it('uses the singular for a lone gift, shown or cut', () => {
+    expect(buildGiftHistoryMarkdown(manyRows(1), 'https://x')).toContain('_1 gift. Maintained automatically');
+    expect(buildGiftHistoryMarkdown(manyRows(1), 'https://x', undefined, 0)).toContain('Newest 0 of 1 gift shown');
+    expect(buildGiftHistoryMarkdown([], 'https://x')).toContain('_0 gifts. Maintained automatically');
+  });
+
   it('renders a newest-first table with deep links and a maintenance note', () => {
     const md = buildGiftHistoryMarkdown([
       row({ mondayItemId: 'a', giftDateISO: '2015-06-01' }),
