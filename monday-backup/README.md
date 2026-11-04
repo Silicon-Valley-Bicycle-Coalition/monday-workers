@@ -140,7 +140,10 @@ When this gets built, its `wrangler.jsonc` follows the conventions applied fleet
 * **Failure visibility.** Any partial run and any total failure alerts Slack immediately. A
   second, hourly cron (`30 * * * *`, `src/watchdog.ts`) runs independently of the backup and
   alerts if a run is stuck in `running` for over an hour (the runtime killed it — marked
-  `abandoned` in D1) or if no snapshot has succeeded in 36 hours.
+  `abandoned` in D1) or if no snapshot has succeeded in 36 hours. A clean run posts nothing, so
+  silence is the healthy state. Production Slack alerts verified 2026-11-03/04: real API usage
+  and partial-backup alerts arrived. The watchdog uses the same webhook but hasn't fired yet.
+  Production alerts go to a private staff channel (#52).
 * **Monday API daily usage.** The same hourly cron reads the account's API usage
   (`platform_api { daily_limit daily_analytics }`; this works on Pro, not only Enterprise) and
   alerts Slack once when today's calls pass **50%**, and again at **80%**, of the daily limit
@@ -163,9 +166,7 @@ Drive folder in `config/backup.sandbox.json` (chosen at request time by the `ENV
 `src/environment.ts`), alerting `#crm-sandbox` through the sandbox `SLACK_WEBHOOK_URL`. Both
 sinks are staff-only; `config/split.test.ts` fails if the two configs ever share the folder id.
 Own D1, same daily cron, no public surface. The sandbox config leaves `apiUsageAlerts` off,
-because production already reports the shared account's API usage. Until production is
-deployed, set it to `true` in `config/backup.sandbox.json` if you want the usage alert from the
-sandbox instead; any token on the account can read the figure. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
+because production already reports the shared account's API usage. Local development against the sandbox uses `npm run dev:sandbox`; `npm run dev` targets the production config and, once production secrets exist in `.dev.vars`, would write to production sinks. Secrets exist twice (`wrangler secret put … --env
 sandbox`): the sandbox Monday token, a service account shared only into the sandbox folder
 (also as Contributor), the
 sandbox Slack webhook. `npm run deploy:sandbox` fails until `env.sandbox.d1_databases[0].database_id`

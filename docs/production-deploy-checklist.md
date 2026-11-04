@@ -355,8 +355,11 @@ why it was already deployed, bootstrapped and subscribed in Phase 3.
       foreign-key order (`rows`, `disbursements`, `uploads`); a real row deleted from Monday
       but left in D1 stays `written` and is skipped forever. Don't backfill through this Worker.
 - [ ] **6. `monday-backup`** — Drive folder id in `config/backup.json`; confirm the first daily
-      snapshot lands and Slack reports it. **Deployed 2026-11-03 with `writes on`; only the first
-      snapshot is left to confirm.**
+      snapshot lands in Drive and `snapshot_runs` records it. A clean run posts nothing to Slack;
+      only a partial or failed run alerts. **Deployed 2026-11-03 with `writes on`; Slack alerts
+      verified (#52). Still open: the first snapshot (2026-11-04) was partial, stopping at the
+      12-minute budget in `People (Historical)` with most boards and all docs skipped, so no
+      complete snapshot exists yet.**
 - [ ] **7. `bp-feedback-notify`** — deploy, then add the `Post-Event Feedback` column and the
       automation (`bp-feedback-notify/README.md`, "Monday automation setup"); verify with
       `wrangler tail` on one real trigger.
