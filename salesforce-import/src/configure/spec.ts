@@ -28,7 +28,8 @@ export interface ColumnSpec {
 export interface FilterRule {
   columnTitle: string;
   // any_of | not_any_of | is_empty | is_not_empty | contains_text | greater_than | between | ... |
-  // within_the_next / within_the_last (relative date; compareValue ['DAYS' | 'MONTHS', n]).
+  // within_the_next / within_the_last (relative date; compareValue ['DAYS' | 'MONTHS', n]) |
+  // greater_than_or_equals with compareValue ['TODAY'] (a date column, today included).
   // Widgets only: labelValues may hold '@FY' / '@FY-1', and a date rule's compareValue may be
   // { fiscalYear: 'current' | 'previous' } (resolved at apply time from the clock, fiscal.ts).
   operator: string;
@@ -139,6 +140,15 @@ const DNS_VIEWS = dnsViews('Personal Email');
 const ORG_DNS_VIEWS = dnsViews('Website');
 const NOT_DNS = { columnTitle: 'Do Not Solicit', operator: 'is_empty' } as const;
 
+// The status rule keeps Canceled and Draft out; the date rule drops a finished event even when its
+// status has gone stale. Date, not End: Funraise events never have an End, so an End rule would hide
+// them all, and Monday excludes a blank date from a comparison. A multi-day event therefore leaves
+// once it has started. Shared by the Events view and its Overview tile, so tile and tab agree.
+export const UPCOMING_EVENT: FilterRule[] = [
+  { columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] },
+  { columnTitle: 'Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+];
+
 // Both People boards get exactly these: people-reclassification moves items between them and
 // aborts a pass if either board has a column the other lacks (spec.test.ts enforces the match).
 const PEOPLE_COLUMNS: ColumnSpec[] = [
@@ -175,7 +185,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
       'Member Until': 'Current membership term. Each membership payment on Donations carries its own Term Start / Term End.',
       'Organization': 'Organizations this person is affiliated with. Tenure, role, and work ' +
         'email for each are on the Affiliations board.',
-      'Employer Name': 'Free text from Salesforce. Structured employment lives on Affiliations.',
+      'Employer Name': 'Starts as free text from Salesforce; set to the Organization when a current affiliation is added or changed. Structured employment lives on Affiliations.',
       'Stakeholder Type': 'Advocacy classification. City or Agency Staff and Elected Official ' +
         'link to their municipal organization via Organization.',
       'Campaign': 'Which outreach pushes this person was loaded or tagged into (replaces ' +
@@ -486,7 +496,7 @@ export const BOARD_SPECS: Record<string, BoardSpec> = {
     },
     views: [
       { name: 'Upcoming', tag: 'Report', columns: ['Date', 'Program', 'Venue', 'City', 'Tickets Sold', 'Eventbrite URL'],
-        filter: { rules: [{ columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] }] }, sort: [{ columnTitle: 'Date' }] },
+        filter: { rules: UPCOMING_EVENT }, sort: [{ columnTitle: 'Date' }] },
       { name: 'All events', tag: 'Reference', columns: ['Date', 'Program', 'Event Status', 'Source', 'City'],
         groupBy: { columnTitle: 'Event Status' }, sort: [{ columnTitle: 'Date', direction: 'desc' }],
         coloring: [{ columnTitle: 'Event Status', labelValues: ['Completed', 'Canceled'], color: 'grey' }] },

@@ -79,6 +79,11 @@ describe('relative dates and fiscal values', () => {
   const f = (rules: NonNullable<WidgetSpec['filter']>['rules'], now = NOW) =>
     widgetFilter({ name: 'x', kind: 'NUMBER', number: { boards: ['donations'], count: true }, filter: { board: 'donations', rules } }, cols, now);
 
+  it('passes a relative TODAY through, for Monday to resolve when it reads the widget', () => {
+    expect(f([{ columnTitle: 'Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] }]))
+      .toEqual({ operator: 'and', rules: [{ column_id: 'dt', operator: 'greater_than_or_equals', compare_value: ['TODAY'] }] });
+  });
+
   it('passes within_the_last through with its unit and count', () => {
     expect(f([{ columnTitle: 'First Gift', operator: 'within_the_last', compareValue: ['MONTHS', 24] }]))
       .toEqual({ operator: 'and', rules: [{ column_id: 'fd', operator: 'within_the_last', compare_value: ['MONTHS', 24] }] });

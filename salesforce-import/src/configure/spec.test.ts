@@ -146,6 +146,13 @@ describe('DASHBOARD_SPECS revenue filters', () => {
 describe('final-review spec rulings', () => {
   const view = (b: string, n: string) => BOARD_SPECS[b]!.views!.find((v) => v.name === n)!;
 
+  it('"Upcoming" events need the Upcoming status and a Date of today or later, so a stale status drops out', () => {
+    expect(view('events', 'Upcoming').filter!.rules).toEqual([
+      { columnTitle: 'Event Status', operator: 'any_of', labelValues: ['Upcoming'] },
+      { columnTitle: 'Date', operator: 'greater_than_or_equals', compareValue: ['TODAY'] },
+    ]);
+  });
+
   it('"Gave last year, not this year" keys on This Year Count < 1 (rollups write 0.00, never blank)', () => {
     const rules = view('people-live', 'Gave last year, not this year').filter!.rules;
     expect(rules).toContainEqual({ columnTitle: 'This Year Count', operator: 'lower_than', compareValue: 1 });

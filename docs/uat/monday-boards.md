@@ -155,7 +155,8 @@ that a person should confirm or reject) · **Current** · **By organization**.
 2. On **By organization**, open a company you know. Are the right people listed with the right
    roles?
 3. Add an affiliation for your UAT test person: new item, set Person, Organization, Role, Primary.
-   Open the person's card and confirm it appears under Affiliations.
+   Open the person's card and confirm it appears under Affiliations, and that Employer Name now
+   shows the organization.
 
 ## Donations
 

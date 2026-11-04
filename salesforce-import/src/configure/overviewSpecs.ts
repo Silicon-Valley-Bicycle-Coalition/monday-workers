@@ -1,5 +1,5 @@
 import type { OverviewSpec } from './overviews.js';
-import { withReceivedRule, type FilterRule } from './spec.js';
+import { UPCOMING_EVENT, withReceivedRule, type FilterRule } from './spec.js';
 import type { WidgetSpec } from './widgets.js';
 
 // Overview dashboard views (docs/31 in the private planning repo; spec 2026-10-14). Columns are
@@ -123,7 +123,7 @@ const RAW_OVERVIEW_SPECS: Record<string, OverviewSpec> = {
   // docs/31 §4.5
   events: { widgets: [
     count('Events', 'events'),
-    count('Upcoming', 'events', [is('Event Status', 'Upcoming')]),
+    count('Upcoming', 'events', UPCOMING_EVENT),
     sum('Tickets sold', 'events', 'Tickets Sold', [], 'number'),
     count('Drafts', 'events', [is('Event Status', 'Draft')]),
     // coloured by board (verified); colorBy 'Program' is unverified, see docs/31 §9

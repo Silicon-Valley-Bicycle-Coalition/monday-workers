@@ -24,6 +24,10 @@ export interface AppDeps {
   // Attendance, Role, Hours). create_pulse and item deletion always matter; any other column
   // change on these boards is acknowledged and ignored.
   registrationBoards: ReadonlyMap<string, ReadonlySet<string>>;
+  // The Affiliations board → the column ids that decide a person's Employer Name (Person,
+  // Organization, Status, Primary). Anything else is ignored, notably the attributed totals this
+  // Worker writes to that same board. Absent while employer sync is off.
+  affiliationBoards?: ReadonlyMap<string, ReadonlySet<string>>;
   // "<boardId>:<columnId>" for the classify duty's own output columns (spec 2026-09-29 §10.2):
   // writing them must not enqueue owner recomputes, or the first classify pass floods the queue.
   ignoredColumnIds: ReadonlySet<string>;
@@ -77,7 +81,8 @@ export function createApp(deps: AppDeps) {
     }
 
     const registrationColumns = deps.registrationBoards.get(donationEvent.boardId);
-    const kind: RecomputeKind = registrationColumns !== undefined ? 'registration' : 'donation';
+    const affiliationColumns = deps.affiliationBoards?.get(donationEvent.boardId);
+    const kind: RecomputeKind = registrationColumns !== undefined ? 'registration' : affiliationColumns !== undefined ? 'affiliation' : 'donation';
     if (kind === 'donation' && !deps.donationBoardIds.has(donationEvent.boardId)) {
       console.warn(`donation-rollups webhook: ignoring event for item "${donationEvent.donationItemId}" on board "${donationEvent.boardId}" — not in config.donationBoards or volunteerBoards (stale subscription?)`);
       return c.json({ ok: true, ignored: `board "${donationEvent.boardId}" not in config.donationBoards or volunteerBoards` }, 200);
@@ -87,6 +92,10 @@ export function createApp(deps: AppDeps) {
     }
     if (kind === 'registration' && donationEvent.columnId !== null && !registrationColumns!.has(donationEvent.columnId)) {
       return c.json({ ok: true, ignored: `registration column "${donationEvent.columnId}" does not affect membership` }, 200);
+    }
+
+    if (kind === 'affiliation' && donationEvent.columnId !== null && !affiliationColumns!.has(donationEvent.columnId)) {
+      return c.json({ ok: true, ignored: `affiliation column "${donationEvent.columnId}" does not affect Employer Name` }, 200);
     }
 
     await deps.pendingStore.upsertPending({
@@ -99,7 +108,7 @@ export function createApp(deps: AppDeps) {
 
     const stamp = stampFor(await deps.writeMode());
     try {
-      await deps.queue.send({ ...(kind === 'registration' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId, ...stamp });
+      await deps.queue.send({ ...(kind !== 'donation' ? { kind } : {}), donationItemId: donationEvent.donationItemId, donationBoardId: donationEvent.boardId, ...stamp });
       // A delivery stamped dropped is a dry run from the start: recorded as 'dropped', not
       // 'queued', so the nightly requeue never re-sends it as a live recompute later.
       await deps.pendingStore.updateStatus(donationEvent.donationItemId, stamp.writeStamp === 'dropped' ? 'dropped' : 'queued');
