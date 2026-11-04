@@ -231,7 +231,7 @@ it('release frees claimed and failed rows, but not sent ones', async () => {
 
 ### Task 6: The send page
 
-Private repo. Worktree: `git -C monday-migration worktree add ../monday-migration-class-page -b feat/class-email-page origin/main`. Rebase on `feat/learn-mail-merge-log` once that lands.
+Private repo. Worktree: `git -C monday-migration worktree add ../monday-migration-class-page -b feat/class-email-page origin/main`.
 
 **Files:**
 - Create: `scripts/apps-script/class-email-page/Code.gs`, `Page.html`, `appsscript.json`, `class-email-page.test.mjs`, `README.md`
@@ -258,7 +258,6 @@ Private repo. Worktree: `git -C monday-migration worktree add ../monday-migratio
   - `a blank First Name fails that row, sends nothing to it, and carries on`
   - `a GmailApp error on one row doesn't stop the rest, and is reported failed`
   - `sendAll reports results even if every row failed`
-  - `the log@ BCC is set for learn@ only`
 
 - [ ] **Step 2: Run them.** `node --test scripts/apps-script/class-email-page/`. Expected: FAIL.
 
@@ -276,7 +275,7 @@ Each production step needs the user's go-ahead.
 
 - [ ] **Step 1: Sandbox Worker.** Run the D1 migration and set the secret with `--env sandbox`, set the sandbox link column and `pageUrl`, then `npm run deploy:sandbox`. Expected: `GET /class-emails/<id>` with the secret returns a roster with every address replaced by the sandbox address. Also read one raw **Attendee Email** cell on the sandbox Event Registrations board and confirm its `text` is a bare address that Gmail will accept (no display name, no `address - address` form). Recipients come from that `text`, and nothing yet proves its real format.
 
-- [ ] **Step 2: Sandbox page.** Create a project named **SVBC Class Emails (sandbox)**, deploy as the visitor and domain-only, set Script Property `LOG_ADDRESS` to `log-sandbox@log.bikesiliconvalley.org`, and open it from a sandbox Events link. Run as dwk@: test, send, reload and resend. Expected: mail only at the sandbox address, a second send claims nobody, and one update on the item.
+- [ ] **Step 2: Sandbox page.** Create a project named **SVBC Class Emails (sandbox)**, deploy as the visitor and domain-only, and open it from a sandbox Events link. Run as dwk@: test, send, reload and resend. Expected: mail only at the sandbox address, a second send claims nobody, and one update on the item.
 
 - [ ] **Step 3: Sandbox checks.** Run each against the sandbox deployment and record the result. A failure here can change the code, so do it before the coordinator's call.
   - Template and page render, including dark mode and phone width.
@@ -288,7 +287,6 @@ Each production step needs the user's go-ahead.
   - A reload mid-send: the run keeps going. `beforeunload` inside the HtmlService iframe: does the prompt appear at all?
   - Time for 26 sends. Time for a 26-person Thank-you against `cpu_ms: 100`, including the People linking under `waitUntil`, which has about 30 seconds after the response.
   - Whether uncaught errors reach the logs, and whether the secret header appears in Workers Logs.
-  - The `log@` BCC from the sandbox deployment goes to `log-sandbox@` once `LOG_ADDRESS` is set, not to the production email-log Worker.
   - Staff first-run consent, domain access, and UrlFetch reaching the Worker with no Cloudflare bot block. Rate limits on shared Google IPs (the Worker limits by IP, and Apps Script shares them).
   - The test's cache entry survives 30 minutes.
   - `column_values(ids: [])` on the Events item read in GET and claim: what does Monday return for an empty id list?
@@ -296,7 +294,7 @@ Each production step needs the user's go-ahead.
   - How Monday renders newlines in an update.
   - Two tabs sending at once, as one person and as two: the second claim gets nobody, and each result reports only its own.
 
-- [ ] **Step 4: Staff account.** With the coordinator on a call, set up the alias and authorize the page, noting the wording of any warning. Send to a staff-only registration, and confirm From and replies reaching the group. Staff-only mail can't prove timeline logging, because `email-log` drops mail with no external counterpart, so also register a non-SVBC test address the user controls, with a People record, and confirm the send lands on that person's timeline. The sandbox Worker replaces every address with `sandbox@`, a staff address, so this proof needs the production Worker and a test class holding only these registrations (production go-ahead required), or a temporary change of `sandboxRecipient` to the test address and a People record on the sandbox board. Decide how to handle the warning, and record this in `docs/37`.
+- [ ] **Step 4: Staff account.** With the coordinator on a call, set up the alias and authorize the page, noting the wording of any warning. Send to a staff-only registration, and confirm From and replies reaching the group. Check whether Monday's built-in logging picks up a send as `learn@`, which needs an outside address you control with a People record. **Decided 2026-11-03:** no `log@` BCC, because every staff member gets a CRM seat.
 
 - [ ] **Step 5: Production.** After the attendee feed is live: create the column, mark it, fill in the config, run the migration, set the secret, deploy both, backfill links for upcoming events with `scripts/backfill-attendees.mjs`. Move the project to its agreed owner.
 
