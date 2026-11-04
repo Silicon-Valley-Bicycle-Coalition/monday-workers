@@ -15,7 +15,7 @@ import { classifyContact, contactToPayload, accountToPayload, isOneToOneAccount,
   rosterContactIds, soleContactAccountIds,
   type InclusionInput } from './people.js';
 import { archiveCutoffFY, donationArchivePlan, shouldArchive } from './schedule.js';
-import { opportunityToPayload, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
+import { opportunityToPayload, cnpGiftDay, cnpOverlapCheck, cnpToPayload, softCreditsByGift, unknownStages,
   eventbriteOrderIdsByOpportunity, foldFeeCoverage, LOST } from './donations.js';
 import { donorRollups, applyRollups } from './rollups.js';
 import { activeRecurringDonors, subscriptionToPayload, pledgeColumnsBySubscription, eventToPayload,
@@ -111,7 +111,7 @@ export async function runTransform(args: string[]): Promise<number> {
     ?? personNamed.get(t['CnP_PaaS__Account__c'] as string) ?? null;
   const cnpDonorIds = new Set(cnpUnique.map(cnpDonorOf).filter((x): x is string => !!x));
   const cnpRecentDonorIds = new Set(cnpUnique
-    .filter((t) => ((t['CnP_PaaS__TransactionDate__c'] as string) ?? '') >= cfg.peopleActiveSinceISO)
+    .filter((t) => cnpGiftDay(t) >= cfg.peopleActiveSinceISO)
     .map(cnpDonorOf).filter((x): x is string => !!x));
 
   // Event registrants from both platforms feed People inclusion: a Funraise registration (a paid
@@ -403,7 +403,7 @@ export async function runTransform(args: string[]): Promise<number> {
   for (const t of rollups.cnpUnique) {
     if (!t['CnP_PaaS__Contact__c']) {
       notePersonAccountGift(t['CnP_PaaS__Account__c'] as string | null, t['Id'], t['CnP_PaaS__TotalCharged__c'],
-        t['CnP_PaaS__TransactionDate__c']);
+        cnpGiftDay(t));
     }
     payloads.push(cnpToPayload(t, donorAlias, personAccountIds));
   }

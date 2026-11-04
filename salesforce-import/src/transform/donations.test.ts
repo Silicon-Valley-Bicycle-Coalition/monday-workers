@@ -206,6 +206,16 @@ describe('opportunityToPayload — Benevity matching gifts (plan: Benevity in In
 });
 
 describe('click & pledge', () => {
+  it('dates a gift by its Pacific day, the one Salesforce shows and CloseDate takes', () => {
+    const p = cnpToPayload({ Id: 't8', CnP_PaaS__TransactionDate__c: '2022-01-01T07:28:38.000+0000' });
+    expect(p.columns['Date']).toEqual({ date: '2021-12-31' });
+  });
+
+  it('files a gift in the fiscal year of its Pacific day', () => {
+    const p = cnpToPayload({ Id: 't9', CnP_PaaS__TransactionDate__c: '2021-07-01T05:00:00.000+0000' });
+    expect(p.columns['Fiscal Year Ending']).toBe('2021');
+  });
+
   it('re-points an Account-only Donor link at the person the Account was folded into', () => {
     const p = cnpToPayload({ Id: 't3', Name: 'CP Gift', CnP_PaaS__TotalCharged__c: 25,
       CnP_PaaS__TransactionDate__c: '2016-05-01T00:00:00Z', CnP_PaaS__Contact__c: null, CnP_PaaS__Account__c: 'a-pn',

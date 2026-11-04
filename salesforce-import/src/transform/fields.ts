@@ -24,9 +24,8 @@ export function pacificDateCol(iso: string | null | undefined): unknown {
 
 // SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes
 // into the fiscal year ending the following June once its month is July or later. Integer
-// parsing, not Date-object arithmetic — no timezone conversion needed since CloseDate/
-// TransactionDate are already plain dates by the time they reach this column (see
-// docs/07-migration-gotchas.md §7 in monday-migration for why that's safe).
+// parsing, not Date-object arithmetic: it takes a plain date such as CloseDate and converts no
+// timezone, so a datetime has to be reduced to its Pacific day first (see cnpGiftDay).
 export function fiscalYear(iso: string | null | undefined): string {
   if (!iso) return '';
   const [y, m] = iso.slice(0, 10).split('-').map(Number);
