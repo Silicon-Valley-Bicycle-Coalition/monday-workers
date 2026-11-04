@@ -12,8 +12,9 @@ export function planPromoteSetup(boards, statusColumnTitle, dateColumnTitle, { w
       if (find(title) === undefined) createColumns.push({ boardId: board.id, title, type });
     }
     const columnId = find(statusColumnTitle)?.id;
+    // Monday returns config as {"columnId" => "color_x"}, not JSON, so look for the quoted id.
     const subscribed = board.webhooks.some((w) => w.event === 'change_specific_column_value'
-      && columnId !== undefined && JSON.parse(w.config ?? '{}').columnId === columnId);
+      && columnId !== undefined && (w.config ?? '').includes(`"${columnId}"`));
     if (webhooks && !subscribed) createWebhooks.push(board.id);
   }
   return { createColumns, createWebhooks };

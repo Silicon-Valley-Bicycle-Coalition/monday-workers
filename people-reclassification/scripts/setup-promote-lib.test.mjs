@@ -43,6 +43,14 @@ describe('planPromoteSetup', () => {
     });
   });
 
+  it('reads the config the way Monday really returns it, which is not JSON', () => {
+    const real = (id) => ({ event: 'change_specific_column_value', config: `{"columnId" => "${id}"}` });
+    const columns = [{ id: 's1', title: STATUS }, { id: 'd1', title: DATE }];
+    expect(planPromoteSetup([{ id: '1', columns, webhooks: [real('s1')] }], STATUS, DATE).createWebhooks).toEqual([]);
+    expect(planPromoteSetup([{ id: '1', columns, webhooks: [real('s10')] }], STATUS, DATE).createWebhooks).toEqual(['1']);
+    expect(planPromoteSetup([{ id: '1', columns, webhooks: [{ event: 'change_specific_column_value', config: null }] }], STATUS, DATE).createWebhooks).toEqual(['1']);
+  });
+
   it('plans a webhook when one exists only for another column', () => {
     const boards = [{ id: '1', columns: [{ id: 's1', title: STATUS }, { id: 'd1', title: DATE }], webhooks: [hook('other')] }];
     expect(planPromoteSetup(boards, STATUS, DATE).createWebhooks).toEqual(['1']);
