@@ -12,9 +12,14 @@ const pacificDay = new Intl.DateTimeFormat('en-CA', {
 
 // For a true datetime field, which the API returns in UTC: dateCol's slice puts anything after
 // 4 or 5 pm Pacific on the next day. Same day eventbrite-sync writes (src/util/isoDate.ts).
-export function pacificDateCol(iso: string | null | undefined): unknown {
+export function pacificDate(iso: string | null | undefined): string {
   const ms = Date.parse(iso ?? '');
-  return Number.isNaN(ms) ? null : { date: pacificDay.format(ms) };
+  return Number.isNaN(ms) ? '' : pacificDay.format(ms);
+}
+
+export function pacificDateCol(iso: string | null | undefined): unknown {
+  const date = pacificDate(iso);
+  return date ? { date } : null;
 }
 
 // SVBC's fiscal year runs July→June (Organization.FiscalYearStartMonth = 7), so a gift closes

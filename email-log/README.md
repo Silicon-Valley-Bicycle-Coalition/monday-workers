@@ -46,6 +46,12 @@ email stays in email.
 
 If you BCC and also forward the same email, you may get two items; delete the extra one.
 
+**One standing exception to "significant touches only":** the Program Email Mail Merge Sheet BCCs
+this address on every email it sends as `learn@` (`scripts/apps-script/mail-merge.gs` in the
+migration repo, `docs/37`). The merge sends one message per recipient, so each gets its own item
+and timeline entry, and each recipient not on a People record gets its own `Needs Person` item and
+reply to `learn@`. The Worker treats these like any other BCC; nothing in it is specific to them.
+
 ## Data flow
 
 ```

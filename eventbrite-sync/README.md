@@ -6,8 +6,8 @@
 [`docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md`](../docs/superpowers/specs/2026-10-06-eventbrite-orders-design.md))
 — **deployed: sandbox 2026-10-26, production 2026-11-02** (see "Deploy"). Production's order path
 is filled from the live boards (Donations, People, `Eventbrite Order ID` `text_mm8n459q`; c579d0d),
-with its own D1 and queues; its attendee feed is still unset, so only the order webhook is
-registered there. The sandbox order path still can't write: `orderIdColumn` in
+with its own D1 and queues; its attendee feed is configured (2026-11-03) with follow-ups off (see
+"Class roster"), and its webhook isn't registered yet, so only the order webhook is live there. The sandbox order path still can't write: `orderIdColumn` in
 `config/sandbox.json` is `REPLACE_WITH_COLUMN_ID`. This README doesn't record whether the
 `Refunded` Status label it shares with `funraise-sync` has been added to either board.
 **Attendee feed and class emails:** built on `feat/eventbrite-attendees` (2026-10-26; design:
@@ -352,6 +352,23 @@ delivery.
   boards in a monday CRM workspace, so production Events and Event Registrations must live in one.
 * Register the second webhook (below).
 
+### Class roster
+
+The **Class roster** view on Event Registrations is how staff see who is registered right now:
+Attendance = Registered and Class Date today or later, grouped by Event, soonest first.
+`salesforce-import`'s `configure` creates it and the four columns this feed writes per attendee
+(First Name, Class Date, Class Day, Class Location). Only this feed fills Class Date, so the view
+stays empty until the attendee webhook is registered, and a class that was already on sale needs
+`scripts/backfill-attendees.mjs` before its existing registrants appear. Check-ins and cancellations
+drop people off the view; a class leaves it the day after it runs.
+
+In production the view and columns were created directly on the board on 2026-11-03 rather than
+with `configure`, which would also have re-applied the board's five existing views. **Follow-ups are
+off in production:** SVBC sends class emails by hand (2026-10-28), so the production boards have no
+Class Type, Follow-ups or Follow-up Email column and those config keys stay placeholders. Monday
+ignores an unknown column id on a read, every event reads as having no Class Type, and the hourly
+job skips it. Turning follow-ups on means creating those columns and filling those keys.
+
 ### Registering it
 
 Same dashboard route as the order webhook: Payload URL
@@ -485,7 +502,7 @@ Workers; `.gitlab-ci.yml`'s `deploy-sandbox:eventbrite-sync` job is the gated fa
 
 ## Deploy
 
-Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002. Production's attendee feed is still unset (`attendeeSync` placeholders, events boards null), so only the order webhook is registered there. This is the order (sandbox first, `--env sandbox` on every command,
+Both have been run: the sandbox on 2026-10-26 (D1 `svbc-eventbrite-sync-sandbox`), production on 2026-11-02 (D1 `svbc-eventbrite-sync`, queues `eventbrite-sync-writes` and `-dlq`), each with migrations 0001–0002. Production's attendee feed config was filled on 2026-11-03; only the order webhook is registered there so far. This is the order (sandbox first, `--env sandbox` on every command,
 then production at cutover without it):
 
 ```sh

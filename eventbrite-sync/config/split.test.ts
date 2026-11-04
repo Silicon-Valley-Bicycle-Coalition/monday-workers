@@ -85,7 +85,7 @@ describe('config split: board and column ids', () => {
   });
 
   // The order path is live in production (2026-11-02): every Donations/People key is filled from
-  // the production boards. The attendee feed stays unset until Event Registrations is mapped.
+  // the production boards.
   it('production fills the order path: both boards and every eventbriteSync column', () => {
     expect(production.monday.boards['donations:live']).toBe(18437909794);
     expect(production.monday.boards['people-live']).toBe(18437909781);
@@ -97,6 +97,20 @@ describe('config split: board and column ids', () => {
   it('both shipped configs validate', () => {
     expect(() => validateConfig(sandbox)).not.toThrow();
     expect(() => validateConfig(production)).not.toThrow();
+  });
+
+  // SVBC sends class emails by hand (2026-10-28), so production has no Class Type column for staff
+  // to set, and the follow-up job, which skips an event with no Class Type, can never label anyone.
+  // Filling these three means deciding to turn follow-ups on.
+  it('production fills the attendee feed but leaves the follow-up columns as placeholders', () => {
+    const followupOnly = ['attendeeSync.events.classTypeColumn', 'attendeeSync.events.followupsColumn',
+      'attendeeSync.registrations.classTypeColumn', 'attendeeSync.registrations.followupEmailColumn'];
+    expect(production.monday.boards['events']).toBe(18437909790);
+    expect(production.monday.boards['event-registrations']).toBe(18437909792);
+    for (const path of COLUMN_KEYS.filter((k) => k.startsWith('attendeeSync.'))) {
+      if (followupOnly.includes(path)) expect(get(production, path), path).toBe(PLACEHOLDER_COLUMN_ID);
+      else expect(get(production, path), path).toMatch(/^[a-z_]+_mm[0-9a-z]+$/);
+    }
   });
 
   it('sandbox.json targets the CRM Sandbox (sandbox v3) Donations and People boards — the same ones funraise-sync writes', () => {

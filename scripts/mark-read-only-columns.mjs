@@ -84,7 +84,7 @@ export const MARKED_COLUMNS = {
   },
   'Events': { locked: ['Eventbrite ID'], history: [...SALESFORCE, 'Funraise Event ID', 'Tickets Sold'] },
   'Event Registrations': {
-    locked: ['Eventbrite Attendee ID'],
+    locked: ['Eventbrite Attendee ID', 'First Name', 'Class Date', 'Class Day', 'Class Location'],
     history: [...SALESFORCE, 'Ticket Type', 'Ticket Amount', 'Deductible Amount', 'Payment'],
   },
   'Campaigns': { locked: [], history: [...SALESFORCE, 'Salesforce Owner', 'Type', 'Start', 'End', 'Active'] },

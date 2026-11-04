@@ -1,4 +1,4 @@
-import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig, RollCallConfig, SponsorshipsConfig } from './types';
+import type { DonationRollupsConfig, DonationBoardConfig, OwnerColumns, CustodianConfig, MembershipConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, AffiliationsConfig, EmployerSyncConfig, FiscalYearConfig, ClassificationColumns, DonorLevelConfig, RecurringGiftsConfig, RollCallConfig, SponsorshipsConfig } from './types';
 
 const REQUIRED_DONATION_COLUMNS = ['donorLink', 'amount', 'date', 'status'] as const;
 const REQUIRED_OWNER_COLUMNS = [
@@ -492,7 +492,33 @@ function validateAffiliations(raw: unknown, donationBoards: DonationBoardConfig[
       throw new Error(`config: donationBoards[${b.boardId}].columns.actingForLink is required when affiliations is set`);
     }
   }
-  return { boardId: a.boardId, columns: columns as unknown as AffiliationsConfig['columns'] };
+  const employerSync = validateEmployerSync(a.employerSync);
+  return { boardId: a.boardId, columns: columns as unknown as AffiliationsConfig['columns'], ...(employerSync ? { employerSync } : {}) };
+}
+
+function validateEmployerSync(raw: unknown): EmployerSyncConfig | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object') throw new Error('config: "affiliations.employerSync" must be an object or null');
+  const e = raw as Record<string, unknown>;
+  if (typeof e.currentStatusLabel !== 'string' || e.currentStatusLabel === '') {
+    throw new Error('config: "affiliations.employerSync.currentStatusLabel" must be a status label string');
+  }
+  const columns = (e.columns ?? {}) as Record<string, unknown>;
+  for (const key of ['organizationLink', 'status', 'primary'] as const) {
+    if (typeof columns[key] !== 'string' || columns[key] === '') {
+      throw new Error(`config: "affiliations.employerSync.columns.${key}" must be a Monday column id string`);
+    }
+  }
+  const boards = (e.ownerColumnsByBoard ?? {}) as Record<string, Record<string, unknown>>;
+  if (Object.keys(boards).length === 0) throw new Error('config: "affiliations.employerSync.ownerColumnsByBoard" must name at least one board');
+  for (const [boardId, board] of Object.entries(boards)) {
+    for (const key of ['employerName', 'affiliationsLink'] as const) {
+      if (typeof board[key] !== 'string' || board[key] === '') {
+        throw new Error(`config: "affiliations.employerSync.ownerColumnsByBoard[${boardId}].${key}" must be a Monday column id string`);
+      }
+    }
+  }
+  return raw as EmployerSyncConfig;
 }
 
 function validateCustodian(raw: unknown): CustodianConfig {

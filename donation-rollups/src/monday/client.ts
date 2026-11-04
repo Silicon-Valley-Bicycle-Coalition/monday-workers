@@ -2,7 +2,8 @@ import { fiscalYearFromDate } from '../rollups/compute';
 import { parseAmountCents } from '../money';
 import { parseHours } from '../membership/volunteer';
 import type { BoardMembership } from '../membership/derive';
-import type { OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig, RollCallConfig } from '../types';
+import type { EmployerAffiliation } from '../affiliations/employer';
+import type { EmployerSyncConfig, OwnerMembershipColumns, VolunteerBoardConfig, HistoricalVolunteerBoardConfig, RecurringGiftsConfig, RollCallConfig } from '../types';
 import {
   AmbiguousWriteError, MONDAY_API_VERSION, MondayApiError, MondayGraphQL,
   type MondayErrorDetails, type MondayGraphQLOptions, type RequestOptions, type TokenProvider,
@@ -147,6 +148,11 @@ export interface DonationRollupsMondayClient {
   // needed since Person items can live on the Donor or Organization board) — null when the
   // Affiliation item itself has been deleted.
   getAffiliationSummary(affiliationItemId: string, personLinkColumnId: string): Promise<AffiliationSummary | null>;
+  // A person's Employer Name and Affiliations link. Null for a person in the trash or gone.
+  getPersonEmployerState(personItemId: string, columns: { employerName: string; affiliationsLink: string }):
+    Promise<{ employerName: string; affiliationItemIds: string[] } | null>;
+  // What decides Employer Name on each affiliation; items not active are left out.
+  getEmployerAffiliations(affiliationItemIds: string[], columns: EmployerSyncConfig['columns']): Promise<EmployerAffiliation[]>;
   // Rewrites an owner item's description with the markdown gift-history projection.
   setItemDescription(itemId: string, markdown: string): Promise<void>;
   // All items on one Donations board, each with its raw Donor-link value — used only
@@ -599,6 +605,43 @@ export class HttpMondayClient implements DonationRollupsMondayClient {
     const personItemId = item.column_values[0]?.linked_item_ids?.[0] ?? null;
     const personBoardId = personItemId === null ? null : await this.getItemBoardId(personItemId);
     return { name: item.name, personItemId, personBoardId };
+  }
+
+  async getPersonEmployerState(
+    personItemId: string, columns: { employerName: string; affiliationsLink: string },
+  ): Promise<{ employerName: string; affiliationItemIds: string[] } | null> {
+    const data = await this.graphql<{ items: { state: string; column_values: { id: string; text: string | null; linked_item_ids?: string[] }[] }[] }>(
+      `query ($itemId: ID!, $columnIds: [String!]) {
+        items(ids: [$itemId]) { state column_values(ids: $columnIds) { id text ... on BoardRelationValue { linked_item_ids } } }
+      }`,
+      { itemId: personItemId, columnIds: [columns.employerName, columns.affiliationsLink] },
+    );
+    const item = data.items[0];
+    if (item === undefined || item.state !== 'active') return null;
+    const cell = (id: string) => item.column_values.find((c) => c.id === id);
+    return { employerName: cell(columns.employerName)?.text ?? '', affiliationItemIds: cell(columns.affiliationsLink)?.linked_item_ids ?? [] };
+  }
+
+  async getEmployerAffiliations(affiliationItemIds: string[], columns: EmployerSyncConfig['columns']): Promise<EmployerAffiliation[]> {
+    const data = await this.graphql<{ items: { id: string; state: string; column_values: {
+      id: string; text: string | null; checked?: boolean | null; linked_items?: { name: string }[];
+    }[] }[] }>(
+      `query ($itemIds: [ID!], $limit: Int, $columnIds: [String!]) {
+        items(ids: $itemIds, limit: $limit) { id state column_values(ids: $columnIds) {
+          id text ... on CheckboxValue { checked } ... on BoardRelationValue { linked_items { name } }
+        } }
+      }`,
+      { itemIds: affiliationItemIds, limit: affiliationItemIds.length, columnIds: [columns.status, columns.primary, columns.organizationLink] },
+    );
+    return data.items.filter((item) => item.state === 'active').map((item) => {
+      const cell = (id: string) => item.column_values.find((c) => c.id === id);
+      return {
+        id: item.id,
+        statusLabel: cell(columns.status)?.text ?? null,
+        primary: cell(columns.primary)?.checked === true,
+        organizationName: cell(columns.organizationLink)?.linked_items?.[0]?.name ?? null,
+      };
+    });
   }
 
   async listDonationOwnerLinks(

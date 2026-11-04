@@ -1,5 +1,5 @@
 import type { ItemPayload } from './types.js';
-import { dateCol, funraiseTransactionLink, ownerAttribution, pacificDateCol, salesforceDebug } from './fields.js';
+import { dateCol, funraiseTransactionLink, ownerAttribution, pacificDate, pacificDateCol, salesforceDebug } from './fields.js';
 import { attributionColumns } from './attribution.js';
 
 const ANNUAL: Record<string, number> = { Yearly: 1, Quarterly: 4, Monthly: 12 };
@@ -114,18 +114,22 @@ export function registrationToPayload(
 type Venue = { eb4sf__Name__c?: string; eb4sf__City__c?: string; eb4sf__Localized_Address_Display__c?: string } | null;
 
 export function eventbriteEventToPayload(
-  e: Record<string, unknown>, opts: { hasAttendees: boolean },
+  e: Record<string, unknown>, cutoverISO: string, opts: { hasAttendees: boolean },
 ): ItemPayload | null {
   const status = String(e['eb4sf__Status__c'] ?? '');
   // Unpublished drafts nobody registered for are Eventbrite-side scratch, not SVBC history.
   if (status === 'draft' && !opts.hasAttendees) return null;
   const venue = (e['eb4sf__Eventbrite_Venue__r'] ?? null) as Venue;
+  // `started` outlives the event: 84 of them in the 2026-11-02 org, every one already over, while
+  // `live` was only ever future. So anything still "open" that ended before cutover is Completed.
+  const lastDay = pacificDate((e['eb4sf__End__c'] ?? e['eb4sf__Start__c']) as string | null | undefined);
+  const eventStatus = EVENTBRITE_EVENT_STATUS[status] ?? 'Completed';
   return {
     board: 'events', sfId: e['Id'] as string,
     name: (e['eb4sf__Event_Name__c'] as string) || (e['Name'] as string) || '(event)',
     columns: {
       'Source': label('Eventbrite'), 'Program': label(programFromOrganizer(e['eb4sf__Organizer_Name__c'])),
-      'Event Status': label(EVENTBRITE_EVENT_STATUS[status] ?? 'Completed'),
+      'Event Status': label(eventStatus === 'Upcoming' && lastDay && lastDay < cutoverISO ? 'Completed' : eventStatus),
       'Date': pacificDateCol(e['eb4sf__Start__c'] as string), 'End': pacificDateCol(e['eb4sf__End__c'] as string),
       'Venue': venue?.eb4sf__Name__c ?? '', 'City': venue?.eb4sf__City__c ?? '',
       'Address': venue?.eb4sf__Localized_Address_Display__c ?? '',

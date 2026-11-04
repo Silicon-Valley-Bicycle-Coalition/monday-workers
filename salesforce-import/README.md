@@ -452,7 +452,8 @@ trivial: if validation fails, Salesforce is simply untouched and still authorita
   **Source** status column (Funraise / Eventbrite) tells the rows apart and the platform ids ride
   along as text (**Funraise Event ID**, **Eventbrite ID**, **Eventbrite Attendee ID**) so the
   post-migration Eventbrite Worker can upsert idempotently. Shared closed vocabularies: **Event
-  Status** (Upcoming / Completed / Canceled / Draft), **Program** from the Eventbrite organizer
+  Status** (Upcoming / Completed / Canceled / Draft; an Eventbrite event over before cutover is
+  Completed even when Eventbrite still says `started` or `live`), **Program** from the Eventbrite organizer
   account suffix (Public / Volunteering / Bike Parking / Group Rides / Private, Fundraiser for
   Funraise), **Attendance** (Registered / Attended / No Show / Canceled — mirrors the production
   Event Participation board; the import never sets No Show) and **Role** (Volunteer for the
