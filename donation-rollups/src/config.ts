@@ -275,8 +275,8 @@ function validateSponsorships(raw: unknown, ownerBoardIds: string[]): Sponsorshi
   }
   const pb = s.pipelineBoards;
   if (typeof pb !== 'object' || pb === null || Array.isArray(pb)
-    || Object.entries(pb).some(([k, v]) => k === '' || typeof v !== 'string' || v === '')) {
-    throw new Error('config: "donationRollups.sponsorships.pipelineBoards" must map pipeline board ids to non-empty event names');
+    || Object.entries(pb).some(([k, v]) => k === '' || typeof v !== 'string')) {
+    throw new Error('config: "donationRollups.sponsorships.pipelineBoards" must map pipeline board ids to event names ("" when the group title already names the event)');
   }
   return {
     organizationsBoardId: s.organizationsBoardId,

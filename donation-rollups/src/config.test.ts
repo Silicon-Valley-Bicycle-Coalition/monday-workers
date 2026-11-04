@@ -428,6 +428,11 @@ describe('sponsorships config', () => {
     expect(cfg.donationRollups.sponsorships).toEqual(sponsorships);
   });
 
+  it('accepts an empty event name, for a board whose group titles name the event', () => {
+    const cfg = validateConfig(withSponsorships({ ...sponsorships, pipelineBoards: { '18391037433': '' } }));
+    expect(cfg.donationRollups.sponsorships?.pipelineBoards).toEqual({ '18391037433': '' });
+  });
+
   it('sponsorships null or missing parses as null', () => {
     expect(validateConfig(base).donationRollups.sponsorships).toBeNull();
     expect(validateConfig(withSponsorships(null)).donationRollups.sponsorships).toBeNull();
