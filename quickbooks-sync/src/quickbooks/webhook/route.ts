@@ -44,6 +44,13 @@ export function createQbWebhookApp(deps: QbWebhookDeps) {
   const app = new Hono();
 
   app.post('/webhooks/quickbooks', async (c) => {
+    // Refuse outright rather than let verifyQbSignature throw on an empty HMAC key (#68). Same answer
+    // as the Monday route's unset secret; the log line is what tells this apart from a bad signature.
+    if (!deps.verifierToken) {
+      console.error('quickbooks-sync qb webhook: QB_WEBHOOK_VERIFIER_TOKEN is not set — refusing every delivery');
+      return c.body(null, 401);
+    }
+
     const rawBody = await c.req.text();
     const signature = c.req.header('intuit-signature');
     const valid = await verifyQbSignature(rawBody, signature, deps.verifierToken);

@@ -61,6 +61,28 @@ const notificationPayload = {
 };
 
 describe('createQbWebhookApp', () => {
+  // #68: an unset verifier token used to reach crypto.subtle.importKey, which throws on the empty
+  // key, so the refusal was an accident of an unhandled 500. It is now an explicit one.
+  it.each([undefined, ''])('refuses every delivery, without throwing, when the verifier token is %j', async (missingToken) => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const eventStore = fakeEventStore();
+    const send = vi.fn();
+    const { body, signature } = await signedBody(notificationPayload);
+    const res = await createQbWebhookApp({
+      qbEventStore: eventStore,
+      queue: { send },
+      verifierToken: missingToken as unknown as string,
+      connectedRealmId: async () => '123',
+      writeMode: async () => 'on',
+    }).request('/webhooks/quickbooks', { method: 'POST', body, headers: { 'intuit-signature': signature } });
+
+    expect(res.status).toBe(401);
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('QB_WEBHOOK_VERIFIER_TOKEN'));
+    expect(eventStore.insertEvent).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
   function app(eventStore: QbEventStore, queue: QueueLike, connectedRealmId: string | null = '123') {
     return createQbWebhookApp({
       qbEventStore: eventStore,
