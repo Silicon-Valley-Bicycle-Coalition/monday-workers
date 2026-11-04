@@ -8,6 +8,8 @@ const REQUIRED_QUICKBOOKS_SYNC_KEYS = [
   'customerCreateFieldMap',
   'customerQbIdColumn',
   'currency',
+  'payloadRetentionDays',
+  'unresolvedRetentionDays',
 ] as const;
 const REQUIRED_ENTITY_KEYS = ['customer', 'invoice', 'product'] as const;
 
@@ -66,6 +68,12 @@ export function validateConfig(raw: unknown): QuickbooksSyncConfig {
 
   if (typeof quickbooksSync.currency !== 'string' || !/^[A-Z]{3}$/.test(quickbooksSync.currency)) {
     throw new Error('config: "quickbooksSync.currency" must be the QuickBooks home currency as an ISO 4217 code, such as "USD"');
+  }
+
+  for (const key of ['payloadRetentionDays', 'unresolvedRetentionDays'] as const) {
+    if (typeof quickbooksSync[key] !== 'number' || quickbooksSync[key] <= 0) {
+      throw new Error(`config: "quickbooksSync.${key}" must be a positive number of days`);
+    }
   }
 
   const columnMap = requireObject(quickbooksSync.columnMap, 'quickbooksSync.columnMap');

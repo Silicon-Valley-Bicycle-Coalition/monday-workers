@@ -10,11 +10,19 @@
   //   QB_CLIENT_ID              — QuickBooks OAuth2 app client id
   //   QB_CLIENT_SECRET          — QuickBooks OAuth2 app client secret
   //   QB_WEBHOOK_VERIFIER_TOKEN — QuickBooks webhook verifier token (HMAC signature check)
+  //   QB_TOKEN_ENCRYPTION_KEY   — AES-256-GCM key for the OAuth pair in D1: `openssl rand -base64 32`.
+  //                               Without it the consumer refuses to touch QuickBooks; set it before
+  //                               the first deploy that carries it. See README "OAuth tokens".
   //   MONDAY_WEBHOOK_SECRET     — shared secret for the Monday webhook; the route fails closed
   //                               (401s everything) until it's set. The Monday webhook
   //                               subscription URL must include it: register the webhook as
   //                               https://<worker>/webhooks/monday?secret=<MONDAY_WEBHOOK_SECRET>
   //                               — re-register the subscription if the secret changes.
+  "triggers": {
+    // Daily PII retention purge (src/db/retention.ts); the windows are quickbooksSync.payloadRetentionDays
+    // and unresolvedRetentionDays in config. Runs in every write mode.
+    "crons": ["30 9 * * *"]
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -77,11 +85,16 @@
   // Design: docs/superpowers/specs/2026-09-18-sandbox-environment-design.md.
   // Secrets exist twice — `wrangler secret put <NAME> --env sandbox` for
   // QB_CLIENT_ID and QB_CLIENT_SECRET (the sandbox app's *development* keys — production keys
-  // are refused by the sandbox host), QB_WEBHOOK_VERIFIER_TOKEN, MONDAY_WEBHOOK_SECRET. Monday
+  // are refused by the sandbox host), QB_WEBHOOK_VERIFIER_TOKEN, QB_TOKEN_ENCRYPTION_KEY (its own
+  // key, never production's), MONDAY_WEBHOOK_SECRET. Monday
   // access comes from the MONDAY_AUTH binding, not a MONDAY_API_TOKEN secret.
   "env": {
     "sandbox": {
       "vars": { "ENVIRONMENT": "sandbox" },
+      // Same purge as production (the split test asserts they match).
+      "triggers": {
+        "crons": ["30 9 * * *"]
+      },
       "d1_databases": [
         {
           "binding": "DB",
