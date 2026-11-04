@@ -42,7 +42,7 @@ export async function loadRoster(eventId: string, deps: RosterDeps): Promise<Ros
 }
 
 // Sandbox only: every email goes to one inbox. Applied after planning, never to the roster.
-export function sandboxRecipients(recipients: Recipient[], config: EventbriteSyncConfig): Recipient[] {
+export function sandboxRecipients<T extends Recipient>(recipients: T[], config: EventbriteSyncConfig): T[] {
   const { sandboxRecipient } = config.attendeeSync.classEmails;
   if (sandboxRecipient === null) return recipients;
   return recipients.map((r) => ({ ...r, email: sandboxRecipient }));

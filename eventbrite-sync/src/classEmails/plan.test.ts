@@ -186,7 +186,8 @@ describe('planKind', () => {
     const plan = planKind('reminder', facts, roster, ledger, BEFORE);
     expect(plan.sent).toBe(1);
     expect(plan.unresolved.map((u) => u.registrationId)).toEqual(['b', 'c']);
-    expect(plan.unresolved[0]).toEqual({ registrationId: 'b', email: 'b@x.org', firstName: 'Fb', name: 'Fb L' });
+    expect(plan.unresolved[0]).toEqual({ registrationId: 'b', email: 'b@x.org', firstName: 'Fb', name: 'Fb L', status: 'claimed' });
+    expect(plan.unresolved[1]!.status).toBe('failed');
     expect(ids(plan)).toEqual(['d']);
   });
 
@@ -216,8 +217,8 @@ describe('planKind', () => {
     const ledger = [row('gone', 'claimed'), row('gone2', 'failed'), row('gone3', 'sent')];
     const plan = planKind('reminder', facts, roster, ledger, BEFORE);
     expect(plan.unresolved).toEqual([
-      { registrationId: 'gone', email: '', firstName: '', name: '' },
-      { registrationId: 'gone2', email: '', firstName: '', name: '' },
+      { registrationId: 'gone', email: '', firstName: '', name: '', status: 'claimed' },
+      { registrationId: 'gone2', email: '', firstName: '', name: '', status: 'failed' },
     ]);
     expect(plan.sent).toBe(1);
     expect(ids(plan)).toEqual(['a']);
@@ -230,6 +231,21 @@ describe('planKind', () => {
     expect(plan.recipients).toEqual([]);
     expect(plan.sent).toBe(1);
     expect(plan.unresolved.map((u) => u.registrationId)).toEqual(['b']);
+  });
+
+  it('checkedIn counts eligible Attended rows on the roster, for every kind and on a refusal', () => {
+    const roster = [
+      entry('a', 'Attended'),
+      entry('b', 'Attended'),
+      entry('v', 'Attended', { role: 'Volunteer' }),
+      entry('blank', 'Attended', { email: ' ' }),
+      entry('r', 'Registered'),
+    ];
+    expect(planKind('missed-you', facts, roster, [], AFTER).checkedIn).toBe(2);
+    expect(planKind('thank-you', facts, roster, [], AFTER).checkedIn).toBe(2);
+    expect(planKind('reminder', facts, roster, [], AFTER).checkedIn).toBe(2);
+    expect(planKind('missed-you', facts, roster, [], DURING)).toMatchObject({ refusal: expect.any(String), checkedIn: 2 });
+    expect(planKind('missed-you', facts, [entry('r', 'Registered')], [], AFTER)).toMatchObject({ refusal: expect.any(String), checkedIn: 0 });
   });
 
   it('a recipient with a blank first name stays listed', () => {

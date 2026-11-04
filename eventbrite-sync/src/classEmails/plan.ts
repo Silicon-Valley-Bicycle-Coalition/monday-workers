@@ -24,11 +24,17 @@ export interface Recipient {
   name: string;
 }
 
+export interface UnresolvedRecipient extends Recipient {
+  status: 'claimed' | 'failed';
+}
+
 export interface KindPlan {
   refusal: string | null;
   recipients: Recipient[];
   sent: number;
-  unresolved: Recipient[];
+  // People on the roster who are checked in (see isCheckedIn), for the preview to show.
+  checkedIn: number;
+  unresolved: UnresolvedRecipient[];
 }
 
 // An allowlist: draft, a missing status and anything Eventbrite adds later all refuse until listed.
@@ -81,17 +87,19 @@ export function planKind(kind: ClassEmailKind, facts: ClassFacts, roster: Roster
 
   const sent = rows.filter((r) => r.status === 'sent').length;
 
-  const unresolved: Recipient[] = [];
+  const checkedIn = roster.filter(isCheckedIn).length;
+
+  const unresolved: UnresolvedRecipient[] = [];
   const seenUnresolved = new Set<string>();
   for (const r of rows) {
     if (r.status === 'sent' || seenUnresolved.has(r.registrationId)) continue;
     seenUnresolved.add(r.registrationId);
     const e = byId.get(r.registrationId);
-    unresolved.push(e ? toRecipient(e) : { registrationId: r.registrationId, email: '', firstName: '', name: '' });
+    unresolved.push({ ...(e ? toRecipient(e) : { registrationId: r.registrationId, email: '', firstName: '', name: '' }), status: r.status });
   }
 
   const refusal = refusalFor(kind, facts, roster, now);
-  if (refusal !== null) return { refusal, recipients: [], sent, unresolved };
+  if (refusal !== null) return { refusal, recipients: [], sent, checkedIn, unresolved };
 
   // Addresses already handled by any ledger row for this kind, whatever its status, are off limits.
   const taken = new Set<string>();
@@ -115,5 +123,5 @@ export function planKind(kind: ClassEmailKind, facts: ClassFacts, roster: Roster
     recipients.push(toRecipient(e));
   }
 
-  return { refusal: null, recipients, sent, unresolved };
+  return { refusal: null, recipients, sent, checkedIn, unresolved };
 }

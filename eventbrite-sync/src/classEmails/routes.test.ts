@@ -627,6 +627,14 @@ describe('sandbox lock', () => {
     expect(body.recipients.map((r: any) => r.registrationId)).toEqual(['10']);
   });
 
+  it('keeps each unresolved status, and checkedIn, through the swap', async () => {
+    const h = harness({ sandbox: SANDBOX, event: PAST, items: [reg('10', { [rc.attendanceColumn]: 'Attended' }), reg('11')], ledger: [row('thank-you', '10'), row('missed-you', '11', 'failed')] });
+    const kinds = ((await (await get(h)).json()) as any).kinds;
+    expect(kinds['thank-you'].unresolved).toEqual([{ registrationId: '10', email: SANDBOX, firstName: 'F10', name: 'Al One', status: 'claimed' }]);
+    expect(kinds['missed-you'].unresolved).toEqual([{ registrationId: '11', email: SANDBOX, firstName: 'F11', name: 'Bo Two', status: 'failed' }]);
+    expect(kinds['missed-you'].checkedIn).toBe(1);
+  });
+
   it('uses the replaced address in the update Failed lines', async () => {
     const h = harness({ sandbox: SANDBOX, ledger: [row('reminder', '10'), row('reminder', '11')] });
     const res = await post(h, 'result', sendResult('reminder', [{ registrationId: '10', status: 'sent' }, { registrationId: '11', status: 'failed', error: 'bounced' }]));
