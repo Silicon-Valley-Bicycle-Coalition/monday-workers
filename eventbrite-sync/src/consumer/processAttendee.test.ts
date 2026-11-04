@@ -120,7 +120,7 @@ describe('processAttendee', () => {
       monday: { getItems: vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'No Show' })]), findItemByColumnValue: vi.fn().mockResolvedValue({ id: '777' }) },
     });
     await processAttendee(message, deps);
-    expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col', 'att_person_col']);
+    expect(mondayClient.getItems).toHaveBeenCalledWith(333, ['reg-9'], ['att_attendance_col', 'att_person_col', 'att_registrants_col']);
     const [board, id, values] = (mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect([board, id]).toEqual([333, 'reg-9']);
     expect(values.att_attendance_col).toBe('Attended');
@@ -359,6 +359,51 @@ describe('processAttendee', () => {
 });
 
 // Write switch (spec 2026-10-26): attendee messages go through consumeWriteBatch like orders.
+describe('registrants link', () => {
+  const registrantsWrite = (monday: MondayClient) =>
+    (monday.changeColumnValues as ReturnType<typeof vi.fn>).mock.calls.filter(([, , v]) => 'att_registrants_col' in v);
+
+  it('links a new registration in its own write, after recording it', async () => {
+    const { deps, mondayClient, attendeeStore } = setup();
+    await processAttendee(message, deps);
+    const [, , created] = (mondayClient.createItem as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(created.att_registrants_col).toBeUndefined();
+    expect(registrantsWrite(mondayClient)).toEqual([[333, 'reg-1', { att_registrants_col: { item_ids: [5551] } }]]);
+    const written = (attendeeStore.updateStatus as ReturnType<typeof vi.fn>).mock.invocationCallOrder.at(-1)!;
+    expect(written).toBeLessThan((mondayClient.changeColumnValues as ReturnType<typeof vi.fn>).mock.invocationCallOrder.at(-1)!);
+  });
+
+  it('adds the link to an existing registration that lacks it', async () => {
+    const { deps, mondayClient } = setup({ ...existing, current: 'Registered' });
+    await processAttendee(message, deps);
+    expect(registrantsWrite(mondayClient)).toEqual([[333, 'reg-9', { att_registrants_col: { item_ids: [5551] } }]]);
+  });
+
+  it('does not write the link again when it is already set', async () => {
+    const getItems = vi.fn().mockResolvedValue([mondayItem('reg-9', 'Pat', { att_attendance_col: 'Registered', att_registrants_col: 'Adult Learn to Ride' })]);
+    const { deps, mondayClient } = setup({ ...existing, monday: { getItems } });
+    await processAttendee(message, deps);
+    expect(registrantsWrite(mondayClient)).toEqual([]);
+  });
+
+  it('leaves out an excluded event', async () => {
+    const { deps, mondayClient, attendeeStore } = setup();
+    await processAttendee({ ...message, eventId: '8888' }, deps);
+    expect(registrantsWrite(mondayClient)).toEqual([]);
+    expect(attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.anything());
+  });
+
+  it('keeps the registration when Monday refuses the link: no throw, recorded as written', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const changeColumnValues = vi.fn().mockRejectedValue(new MondayApiError('cell_limit_exceeded'));
+    const { deps, attendeeStore } = setup({ monday: { changeColumnValues } });
+    await expect(processAttendee(message, deps)).resolves.toBeUndefined();
+    expect(attendeeStore.updateStatus).toHaveBeenLastCalledWith('a1', 'written', expect.objectContaining({ mondayItemId: 'reg-1' }));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('registrants link not written'));
+    warn.mockRestore();
+  });
+});
+
 describe('attendee messages under the write switch', () => {
   // setup() builds only what this consumer reaches; the dry-run deps also wrap the orders ledger.
   const full = (deps: ProcessBatchDeps): ProcessBatchDeps => ({ ...deps, orderStore: { recordDelivery: vi.fn(), updateStatus: vi.fn(), getOrder: vi.fn() } });
@@ -380,7 +425,10 @@ describe('attendee messages under the write switch', () => {
       expect(eventStore.recordDelivery).not.toHaveBeenCalled();
       expect(queue.send).not.toHaveBeenCalled();
       expect(m.ack).toHaveBeenCalled();
-      expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([['Event Registrations', 'createItem', 'attendee:a1']]);
+      expect(skipLines(log).map((l) => [l.sink, l.operation, l.deliveryId])).toEqual([
+        ['Event Registrations', 'createItem', 'attendee:a1'],
+        ['Event Registrations', 'changeColumnValues', 'attendee:a1'],
+      ]);
     } finally {
       log.mockRestore();
     }
@@ -432,7 +480,7 @@ describe('attendee messages under the write switch', () => {
       // No placeholder person id reaches the ledger.
       expect(attendeeStore.updateStatus).not.toHaveBeenCalled();
       const lines = skipLines(log);
-      expect(lines.map((l) => l.sink)).toEqual(['People', 'Event Registrations']);
+      expect(lines.map((l) => l.sink)).toEqual(['People', 'Event Registrations', 'Event Registrations']);
       expect(JSON.stringify(lines[1]!.payload)).toContain('"item_ids":["dry-run-1"]');
       expect(JSON.stringify(lines)).not.toContain('pat@example.com');
     } finally {

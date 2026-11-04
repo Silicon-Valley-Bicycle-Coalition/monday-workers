@@ -81,8 +81,9 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
 
   let currentAttendance: string | null = null;
   let linkAlreadySet = false;
+  let registrantsLinkSet = false;
   if (mondayItemId !== null) {
-    const [current] = await mondayClient.getItems(boardId, [mondayItemId], [cols.attendanceColumn, cols.attendeeLinkColumn]);
+    const [current] = await mondayClient.getItems(boardId, [mondayItemId], [cols.attendanceColumn, cols.attendeeLinkColumn, cols.registrantsLinkColumn]);
     if (!isActive(current)) {
       // Staff deleted or archived the item (purged items are omitted; items(ids:) still returns
       // archived and deleted ones, with their state). Recreating or writing it would resurrect a
@@ -94,6 +95,7 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     currentAttendance = statusText(current, cols.attendanceColumn) || null;
     // A link already on the item may be a staff relink: never match over it or overwrite it.
     linkAlreadySet = (current.columns[cols.attendeeLinkColumn] ?? '').trim() !== '';
+    registrantsLinkSet = (current.columns[cols.registrantsLinkColumn] ?? '').trim() !== '';
   }
 
   const attendance = mergeAttendance(currentAttendance, attendanceFromEventbrite(attendee));
@@ -122,6 +124,11 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
     columnValues[cols.attendeeLinkColumn] = { item_ids: [linkedItemId(personItemId)] };
   }
 
+  const addRegistrantsLink = async (itemId: string) => {
+    if (registrantsLinkSet || config.attendeeSync.registrantsLinkExcludedEventIds.includes(eventId)) return;
+    await linkRegistrant(deps, boardId, itemId, eventRow.mondayItemId!, attendeeId);
+  };
+
   const writtenAt = new Date().toISOString();
   const person = personItemId === null ? {} : { matchedPersonItemId: personItemId };
   if (mondayItemId !== null) {
@@ -136,9 +143,25 @@ export async function processAttendee(message: AttendeeQueueMessage, deps: Proce
       return;
     }
     await attendeeStore.updateStatus(attendeeId, 'written', { ...person, mondayItemId, writtenAt });
+    await addRegistrantsLink(mondayItemId);
     return;
   }
 
   const item = await mondayClient.createItem(boardId, mapping.itemName, columnValues);
   await attendeeStore.updateStatus(attendeeId, 'written', { ...person, mondayItemId: item.id, writtenAt });
+  await addRegistrantsLink(item.id);
+}
+
+// The two-way link that lists a registration on its event's card. Its own write, after the
+// registration is recorded, because Monday can refuse it (`cell_limit_exceeded` on a very large
+// event) and that must never fail or retry the registration. A miss is picked up by the
+// attendee's next update, or by scripts/backfill-registrants-link.mjs.
+async function linkRegistrant(deps: ProcessBatchDeps, boardId: number, itemId: string, eventItemId: string, attendeeId: string): Promise<void> {
+  const column = deps.config.attendeeSync.registrations.registrantsLinkColumn;
+  try {
+    await deps.mondayClient.changeColumnValues(boardId, itemId, { [column]: { item_ids: [linkedItemId(eventItemId)] } });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`eventbrite-sync consumer: attendee "${attendeeId}": registrants link not written: ${reason}`);
+  }
 }

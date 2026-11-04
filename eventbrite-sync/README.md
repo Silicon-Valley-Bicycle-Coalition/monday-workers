@@ -373,6 +373,20 @@ stays empty until the attendee webhook is registered, and a class that was alrea
 `scripts/backfill-attendees.mjs` before its existing registrants appear. Check-ins and cancellations
 drop people off the view; a class leaves it the day after it runs.
 
+**Registrants on the event's card.** A registration also has a **Registrants link**, a second connect
+to the same event whose reverse column, **Registrants**, lists the registrations on the event. The
+Events board's **Item Card** opens by default and shows them in a Connected boards widget. It's a
+separate column because Monday refuses to make the existing Event link two-way
+(`cell_limit_exceeded`), most likely because of Pledge to Ride's 2,557 registrations. So:
+
+* The Worker writes it after the registration, in its own call, and only logs if Monday refuses, so it
+  can never fail a registration. A miss is retried on the attendee's next update.
+* `attendeeSync.registrantsLinkExcludedEventIds` lists events too large for it. Tested up to 303
+  registrations on one event; the real limit isn't known.
+* Everything else that reads the event uses the Event column, as before.
+* `scripts/backfill-registrants-link.mjs` fills it for older registrations. It needs a
+  `MONDAY_API_TOKEN` that can reach the board, skips what's linked, and is safe to re-run.
+
 In production the view and columns were created directly on the board on 2026-11-03 rather than
 with `configure`, which would also have re-applied the board's five existing views.
 
